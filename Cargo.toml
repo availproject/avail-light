@@ -1,0 +1,27 @@
+[package]
+name = "substrate-lite"
+version = "0.1.0"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+license = "GPL"
+edition = "2018"
+
+[dependencies]
+env_logger = "0.4"
+futures = "0.3.1"
+futures-timer = "3.0"
+libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
+log = "0.4"
+parity-scale-codec = "1.0.0"
+parity-wasm = "0.41.0"
+pin-project = "0.4"
+rand = "0.7"
+serde = { version = "1.0.101", features = ["derive"] }
+wasmi = "0.6.2"
+
+# TODO: remove using slog
+slog = { version = "2.5.2", features = ["nested-values"] }
+slog-json = { version = "2.3.0", features = ["nested-values"] }
+
+[features]
+default = ["telemetry"]
+telemetry = []
