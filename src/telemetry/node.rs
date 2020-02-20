@@ -18,9 +18,15 @@
 
 use futures::prelude::*;
 use futures_timer::Delay;
-use libp2p::{Multiaddr, core::transport::Transport};
+use libp2p::{core::transport::Transport, Multiaddr};
 use rand::Rng as _;
-use std::{collections::VecDeque, fmt, mem, pin::Pin, task::{Context, Poll}, time::Duration};
+use std::{
+    collections::VecDeque,
+    fmt, mem,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 /// Maximum number of pending telemetry messages.
 const MAX_PENDING: usize = 10;

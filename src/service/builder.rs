@@ -1,5 +1,5 @@
-use crate::{network, telemetry};
 use super::Service;
+use crate::{network, telemetry};
 use core::{future::Future, pin::Pin};
 use libp2p::Multiaddr;
 
@@ -21,16 +21,20 @@ pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
         executor: None,
         network: network::builder(),
-            //.with_executor(),     // TODO: centralize threading in service
-        telemetry_endpoints: vec![
-            (telemetry::url_to_multiaddr("wss://telemetry.polkadot.io/submit/").unwrap(), 0),
-        ],
+        //.with_executor(),     // TODO: centralize threading in service
+        telemetry_endpoints: vec![(
+            telemetry::url_to_multiaddr("wss://telemetry.polkadot.io/submit/").unwrap(),
+            0,
+        )],
     }
 }
 
 impl ServiceBuilder {
     /// Sets how the service should spawn background tasks.
-    pub fn with_executor(mut self, executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>) -> Self {
+    pub fn with_executor(
+        mut self,
+        executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    ) -> Self {
         self.executor = Some(executor);
         self
     }

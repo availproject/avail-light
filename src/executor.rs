@@ -1,10 +1,5 @@
-
-
-
 /// Collection of WASM virtual machines.
-pub struct WasmVirtualMachines {
-
-}
+pub struct WasmVirtualMachines {}
 
 /// Identifier for a virtual machine within the collection.
 pub struct WasmVmId(u64);
@@ -16,9 +11,7 @@ pub struct Entry<'a> {
 
 impl Default for WasmVirtualMachines {
     fn default() -> Self {
-        WasmVirtualMachines {
-
-        }
+        WasmVirtualMachines {}
     }
 }
 

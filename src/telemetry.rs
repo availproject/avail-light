@@ -16,8 +16,8 @@
 
 use futures::{prelude::*, ready};
 use libp2p::{core::transport::OptionalTransport, wasm_ext, Multiaddr, Transport};
-use std::{io, pin::Pin, task::Context, task::Poll, time};
 use slog::Drain as _;
+use std::{io, pin::Pin, task::Context, task::Poll, time};
 
 #[cfg(feature = "telemetry")]
 mod node;
@@ -78,7 +78,9 @@ impl Telemetry {
             libp2p::websocket::framed::WsConfig::new(inner).and_then(|connec, _| {
                 let connec = connec
                     .with(|item: Vec<u8>| {
-                        let item = libp2p::websocket::framed::OutgoingData::Binary(item.into_iter().collect());
+                        let item = libp2p::websocket::framed::OutgoingData::Binary(
+                            item.into_iter().collect(),
+                        );
                         future::ready(Ok::<_, io::Error>(item))
                     })
                     .try_filter(|item| future::ready(item.is_data()))

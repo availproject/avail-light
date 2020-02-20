@@ -13,7 +13,10 @@ pub fn builder() -> NetworkBuilder {
 }
 
 impl NetworkBuilder {
-    pub fn with_executor(mut self, executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>) -> Self {
+    pub fn with_executor(
+        mut self,
+        executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    ) -> Self {
         self.executor = Some(executor);
         self
     }
