@@ -23,8 +23,6 @@ impl NetworkBuilder {
 
     /// Starts the networking.
     pub fn build(self) -> worker::Network {
-        worker::Network::start(worker::Config {
-
-        })
+        worker::Network::start(worker::Config {})
     }
 }

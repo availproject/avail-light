@@ -1,4 +1,3 @@
-
 /// State machine representing the network currently running.
 pub struct Network {}
 
@@ -12,9 +11,7 @@ pub enum Event {
 /// Configuration for starting the network.
 ///
 /// Internal to the `network` module.
-pub(super) struct Config {
-
-}
+pub(super) struct Config {}
 
 impl Network {
     pub(super) fn start(config: Config) -> Self {
