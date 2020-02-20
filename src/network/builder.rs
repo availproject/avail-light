@@ -1,4 +1,4 @@
-use super::Network;
+use super::worker;
 use core::{future::Future, pin::Pin};
 
 pub struct NetworkBuilder {
@@ -21,7 +21,10 @@ impl NetworkBuilder {
         self
     }
 
-    pub fn build(self) -> Network {
-        Network {}
+    /// Starts the networking.
+    pub fn build(self) -> worker::Network {
+        worker::Network::start(worker::Config {
+
+        })
     }
 }

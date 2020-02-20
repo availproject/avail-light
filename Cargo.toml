@@ -17,6 +17,7 @@ pin-project = "0.4"
 rand = "0.7"
 serde = { version = "1.0.101", features = ["derive"] }
 wasmi = "0.6.2"
+wasm-timer = "0.2.4"
 
 # TODO: remove using slog
 slog = { version = "2.5.2", features = ["nested-values"] }
