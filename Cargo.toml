@@ -7,8 +7,10 @@ edition = "2018"
 
 [dependencies]
 env_logger = "0.4"
-futures = "0.3.1"
+fnv = "1.0"
+futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures-timer = "3.0"
+hashbrown = { version = "0.7.0", default-features = false }
 libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
 parity-scale-codec = "1.0.0"
