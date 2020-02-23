@@ -1,5 +1,7 @@
 use core::convert::TryFrom;
 
+mod vm;
+
 /// Collection of WASM virtual machines.
 ///
 /// The `TUser` generic parameter represents a user data.

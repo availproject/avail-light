@@ -1,3 +1,5 @@
+extern crate alloc;
+
 pub mod executor;
 pub mod network;
 pub mod service;
