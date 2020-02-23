@@ -1,13 +1,17 @@
-use crate::{network, telemetry};
-use futures::prelude::*;
+use crate::{executor, network, telemetry};
+use futures::{executor::ThreadPool, prelude::*};
 
 pub use builder::{builder, ServiceBuilder};
 
 mod builder;
 
 pub struct Service {
+    wasm_vms: executor::WasmVirtualMachines<()>,
     network: network::Network,
     telemetry: telemetry::Telemetry,
+
+    /// Optional threads pool that we keep alive.
+    _threads_pool: Option<ThreadPool>,
 }
 
 pub enum Event {}

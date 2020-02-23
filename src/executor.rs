@@ -1,18 +1,27 @@
-use core::convert::TryFrom;
+use core::{future::Future, pin::Pin};
 
 mod vm;
+
+pub use vm::WasmBlob;
 
 /// Collection of WASM virtual machines.
 ///
 /// The `TUser` generic parameter represents a user data.
 pub struct WasmVirtualMachines<TUser> {
+    /// How to spawn background tasks.
+    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+
+    virtual_machines: Vec<VmState<TUser>>,
+
     // TODO: remove
-    marker: core::marker::PhantomData<TUser>
+    marker: core::marker::PhantomData<TUser>,
 }
 
-/// WASM blob known to be valid.
-pub struct WasmBlob {
-    inner: wasmi::Module,
+struct VmState<TUser> {
+    /// The inner virtual machine.
+    vm: vm::VirtualMachine,
+    /// User data decided by the user.
+    user_data: TUser,
 }
 
 /// Identifier for a virtual machine within the collection.
@@ -23,15 +32,18 @@ pub struct Entry<'a, TUser> {
     vms: &'a WasmVirtualMachines<TUser>,
 }
 
-impl<TUser> Default for WasmVirtualMachines<TUser> {
-    fn default() -> Self {
+impl<TUser> WasmVirtualMachines<TUser> {
+    /// Initializes the collection.
+    pub fn with_executor(
+        tasks_executor: impl Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + 'static,
+    ) -> Self {
         WasmVirtualMachines {
+            tasks_executor: Box::new(tasks_executor),
+            virtual_machines: Vec::new(),
             marker: core::marker::PhantomData,
         }
     }
-}
 
-impl<TUser> WasmVirtualMachines<TUser> {
     /// Starts a new virtual machine.
     pub fn start_virtual_machine(&self, user_data: TUser, blob: &WasmBlob) -> Entry<TUser> {
         /*let not_started =
@@ -55,29 +67,12 @@ impl<TUser> WasmVirtualMachines<TUser> {
     pub fn get_by_id(&self) -> Option<Entry<TUser>> {
         unimplemented!()
     }
+
+    pub async fn next_event() {}
 }
 
 impl<'a, TUser> Entry<'a, TUser> {
     pub async fn wait(&self) {
         unimplemented!()
-    }
-}
-
-impl WasmBlob {
-    // TODO: better error type
-    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, ()> {
-        let inner = wasmi::Module::from_buffer(bytes.as_ref()).map_err(|_| ())?;
-        inner.deny_floating_point().map_err(|_| ())?;
-        Ok(WasmBlob {
-            inner,
-        })
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for WasmBlob {
-    type Error = ();    // TODO: better error type
-
-    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        WasmBlob::from_bytes(bytes)
     }
 }

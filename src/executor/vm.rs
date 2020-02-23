@@ -1,10 +1,9 @@
-use alloc::{
-    borrow::ToOwned as _,
-    boxed::Box,
-    format,
-    vec::Vec,
+use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
+use core::{
+    cell::RefCell,
+    convert::{TryFrom, TryInto as _},
+    fmt,
 };
-use core::{cell::RefCell, convert::TryInto, fmt};
 
 /// WASM virtual machine that executes a specific function.
 ///
@@ -87,6 +86,12 @@ pub enum ExecOutcome {
     },
 }
 
+/// WASM blob known to be valid.
+// Note: this struct exists in order to hide wasmi as an implementation detail.
+pub struct WasmBlob {
+    inner: wasmi::Module,
+}
+
 /// Error that can happen when initializing a VM.
 #[derive(Debug)]
 pub enum NewErr {
@@ -102,7 +107,6 @@ pub enum NewErr {
     /// The requested function has been found in the list of exports, but it is not a function.
     NotAFunction,
 }
-
 
 /// Error that can happen when resuming the execution of a function.
 #[derive(Debug)]
@@ -127,7 +131,7 @@ impl VirtualMachine {
     /// the call.
     // TODO: don't expose wasmi in API
     pub fn new(
-        module: &wasmi::Module,
+        module: &WasmBlob,
         function_name: &str,
         params: &[wasmi::RuntimeValue],
         mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
@@ -191,9 +195,9 @@ impl VirtualMachine {
         }
 
         let not_started =
-            wasmi::ModuleInstance::new(module, &ImportResolve(RefCell::new(&mut symbols)))
+            wasmi::ModuleInstance::new(&module.inner, &ImportResolve(RefCell::new(&mut symbols)))
                 .map_err(NewErr::Interpreter)?;
-        // TODO: explain this
+        // TODO: explain `assert_no_start`
         let module = not_started.assert_no_start();
 
         let memory = if let Some(mem) = module.export_by_name("memory") {
@@ -330,7 +334,7 @@ impl VirtualMachine {
                     params: interrupt.args.clone(),
                 })
             }
-            Err(wasmi::ResumableError::Trap(trap)) => {
+            Err(wasmi::ResumableError::Trap(_)) => {
                 self.is_poisoned = true;
                 Ok(ExecOutcome::Finished {
                     return_value: Err(()),
@@ -378,6 +382,23 @@ unsafe impl Send for VirtualMachine {}
 impl fmt::Debug for VirtualMachine {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("VirtualMachine").finish()
+    }
+}
+
+impl WasmBlob {
+    // TODO: better error type
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, ()> {
+        let inner = wasmi::Module::from_buffer(bytes.as_ref()).map_err(|_| ())?;
+        inner.deny_floating_point().map_err(|_| ())?;
+        Ok(WasmBlob { inner })
+    }
+}
+
+impl<'a> TryFrom<&'a [u8]> for WasmBlob {
+    type Error = (); // TODO: better error type
+
+    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
+        WasmBlob::from_bytes(bytes)
     }
 }
 

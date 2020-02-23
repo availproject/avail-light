@@ -8,7 +8,9 @@ async fn async_main() {
     env_logger::init().unwrap();
 
     let mut service = substrate_lite::service::builder()
-        .with_wasm_runtime(TryFrom::try_from(&include_bytes!("../../node_runtime.compact.wasm")[..]).unwrap())
+        .with_wasm_runtime(
+            TryFrom::try_from(&include_bytes!("../../node_runtime.compact.wasm")[..]).unwrap(),
+        )
         .build();
 
     loop {
