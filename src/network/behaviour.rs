@@ -18,7 +18,6 @@ use crate::{
 	debug_info, discovery::DiscoveryBehaviour, discovery::DiscoveryOut, DiscoveryNetBehaviour,
 	Event, protocol::event::DhtEvent
 };
-use crate::{ExHashT, specialization::NetworkSpecialization};
 use crate::protocol::{self, light_client_handler, CustomMessageOutcome, Protocol};
 use libp2p::NetworkBehaviour;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
@@ -33,9 +32,7 @@ use void;
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "BehaviourOut<B>", poll_method = "poll")]
-pub struct Behaviour<B: BlockT, S: NetworkSpecialization<B>, H: ExHashT> {
-	/// All the substrate-specific protocols.
-	substrate: Protocol<B, S, H>,
+pub struct Behaviour {
 	/// Periodically pings and identifies the nodes we are connected to, and store information in a
 	/// cache.
 	debug_info: debug_info::DebugInfoBehaviour,

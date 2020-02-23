@@ -1,13 +1,17 @@
 use super::Service;
-use crate::{network, telemetry};
+use crate::{executor, network, telemetry};
+
 use core::{future::Future, pin::Pin};
 use libp2p::Multiaddr;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
+    /// Runtime of the Substrate chain.
+    wasm_runtime: Option<executor::WasmBlob>,
+
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
-    executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+    tasks_executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
 
     /// Prototype for the network.
     network: network::NetworkBuilder,
@@ -19,7 +23,8 @@ pub struct ServiceBuilder {
 /// Creates a new prototype of the service.
 pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
-        executor: None,
+        wasm_runtime: None, // TODO: this default is meh
+        tasks_executor: None,
         network: network::builder(),
         //.with_executor(),     // TODO: centralize threading in service
         telemetry_endpoints: vec![(
@@ -30,12 +35,18 @@ pub fn builder() -> ServiceBuilder {
 }
 
 impl ServiceBuilder {
+    /// Sets the WASM runtime blob to use.
+    pub fn with_wasm_runtime(mut self, wasm_runtime: executor::WasmBlob) -> Self {
+        self.wasm_runtime = Some(wasm_runtime);
+        self
+    }
+
     /// Sets how the service should spawn background tasks.
-    pub fn with_executor(
+    pub fn with_tasks_executor(
         mut self,
         executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
     ) -> Self {
-        self.executor = Some(executor);
+        self.tasks_executor = Some(executor);
         self
     }
 
