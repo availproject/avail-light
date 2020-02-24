@@ -1,6 +1,6 @@
 use core::{future::Future, pin::Pin};
-use futures::{prelude::*, channel::mpsc};
 use fnv::FnvBuildHasher;
+use futures::{channel::mpsc, prelude::*};
 use hashbrown::HashMap;
 
 mod vm;
@@ -64,22 +64,26 @@ impl<TUser> WasmVirtualMachines<TUser> {
 
     /// Starts a new virtual machine.
     pub fn start_virtual_machine(&self, user_data: TUser, module: &WasmBlob) -> Entry<TUser> {
-        let mut virtual_machine = vm::VirtualMachine::new(module, "test", &[], |_, _, _| Err(())).unwrap();     // TODO: don't unwrap
+        let mut virtual_machine =
+            vm::VirtualMachine::new(module, "test", &[], |_, _, _| Err(())).unwrap(); // TODO: don't unwrap
         let mut events_tx = self.events_tx.clone();
         let wasm_id = self.next_vm_id;
         //self.next_vm_id.0 = self.next_vm_id.0.checked_add(1).unwrap();
         (self.tasks_executor)(Box::pin(async move {
             loop {
-                match virtual_machine.run(None).unwrap() {  // TODO: don't unwrap
+                match virtual_machine.run(None).unwrap() {
+                    // TODO: don't unwrap
                     vm::ExecOutcome::Finished { return_value } => {
-                        let _ = events_tx.send(BackToFront::Finished(wasm_id, return_value)).await;
+                        let _ = events_tx
+                            .send(BackToFront::Finished(wasm_id, return_value))
+                            .await;
                         // We close the task here, no matter if returning the result succeeded.
                         break;
-                    },
+                    }
                     vm::ExecOutcome::Interrupted { id, params } => {
                         // An error happens here if the front has been closed.
                         //events_tx.send().await;
-                    },
+                    }
                 }
             }
         }));

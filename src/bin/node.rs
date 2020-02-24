@@ -7,9 +7,12 @@ fn main() {
 async fn async_main() {
     env_logger::init().unwrap();
 
-    let chain_specs = substrate_lite::chain_spec::ChainSpec::from_json_bytes(&include_bytes!("../../flaming-fir.json")[..]).unwrap();
+    let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(
+        &include_bytes!("../../flaming-fir.json")[..],
+    )
+    .unwrap();
 
-    let mut service = substrate_lite::service::builder()
+    let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_wasm_runtime(
             TryFrom::try_from(&include_bytes!("../../node_runtime.compact.wasm")[..]).unwrap(),
         )

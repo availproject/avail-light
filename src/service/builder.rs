@@ -1,5 +1,5 @@
 use super::Service;
-use crate::{executor, network, telemetry};
+use crate::{chain_spec::ChainSpec, executor, network, telemetry};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin};
@@ -35,7 +35,18 @@ pub fn builder() -> ServiceBuilder {
     }
 }
 
+impl<'a> From<&'a ChainSpec> for ServiceBuilder {
+    fn from(specs: &'a ChainSpec) -> ServiceBuilder {
+        let mut builder = builder();
+        builder.load_chain_specs(specs);
+        builder
+    }
+}
+
 impl ServiceBuilder {
+    /// Overwrites the current configuration with values from the given chain specs.
+    pub fn load_chain_specs(&mut self, specs: &ChainSpec) {}
+
     /// Sets the WASM runtime blob to use.
     pub fn with_wasm_runtime(mut self, wasm_runtime: executor::WasmBlob) -> Self {
         self.wasm_runtime = Some(wasm_runtime);
