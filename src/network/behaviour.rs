@@ -74,12 +74,13 @@ impl Behaviour {
         let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
         let protocol_id = {
             let mut protocol_id = smallvec::SmallVec::new();
-            protocol_id.push(b's');
-            protocol_id.push(b'u');
-            protocol_id.push(b'p');
+            protocol_id.push(b'f');
+            protocol_id.push(b'i');
+            protocol_id.push(b'r');
+            protocol_id.push(b'5');
             protocol_id
         };
-        let legacy = legacy_proto::LegacyProto::new(protocol_id, &[6], peerset);
+        let legacy = legacy_proto::LegacyProto::new(protocol_id, &[6, 5], peerset);
 
         Behaviour {
             legacy,
@@ -152,45 +153,16 @@ impl NetworkBehaviourEventProcess<debug_info::DebugInfoEvent> for Behaviour {
 impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
     fn inject_event(&mut self, out: legacy_proto::LegacyProtoOut) {
         match out {
-            _ => {}
-            /*
-
-            pub enum LegacyProtoOut {
-                /// Opened a custom protocol with the remote.
-                CustomProtocolOpen {
-                    /// Version of the protocol that has been opened.
-                    version: u8,
-                    /// Id of the node we have opened a connection with.
-                    peer_id: PeerId,
-                    /// Endpoint used for this custom protocol.
-                    endpoint: ConnectedPoint,
-                },
-
-                /// Closed a custom protocol with the remote.
-                CustomProtocolClosed {
-                    /// Id of the peer we were connected to.
-                    peer_id: PeerId,
-                    /// Reason why the substream closed, for debugging purposes.
-                    reason: Cow<'static, str>,
-                },
-
-                /// Receives a message on a custom protocol substream.
-                CustomMessage {
-                    /// Id of the peer the message came from.
-                    peer_id: PeerId,
-                    /// Message that has been received.
-                    message: BytesMut,
-                },
-
-                /// The substream used by the protocol is pretty large. We should print avoid sending more
-                /// messages on it if possible.
-                Clogged {
-                    /// Id of the peer which is clogged.
-                    peer_id: PeerId,
-                    /// Copy of the messages that are within the buffer, for further diagnostic.
-                    messages: Vec<Vec<u8>>,
-                },
-            }*/
+            legacy_proto::LegacyProtoOut::CustomProtocolOpen { version, peer_id, endpoint } => {
+                println!("open");
+            },
+            legacy_proto::LegacyProtoOut::CustomProtocolClosed { peer_id, .. } => {
+                
+            },
+            legacy_proto::LegacyProtoOut::CustomMessage { peer_id, message } => {
+                println!("message from {:?}", peer_id);
+            },
+            legacy_proto::LegacyProtoOut::Clogged { .. } => {},
         }
     }
 }
@@ -205,7 +177,7 @@ impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
                 // implementation for `DebugInfoEvent`.
             }
             DiscoveryOut::Discovered(peer_id) => {
-                //self.substrate.add_discovered_nodes(iter::once(peer_id));
+                self.legacy.add_discovered_nodes(iter::once(peer_id));
             }
             DiscoveryOut::ValueFound(results) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValueFound(results))));
