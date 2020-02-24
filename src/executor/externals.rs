@@ -27,7 +27,14 @@ enum RegisteredFunction {
     /// The external function performs some immediate action and returns.
     Immediate {
         /// How to execute this function.
-        implementation: Box<dyn FnMut(&[vm::RuntimeValue], &mut vm::VirtualMachine, &mut allocator::FreeingBumpHeapAllocator) -> Option<vm::RuntimeValue> + Send>,
+        implementation: Box<
+            dyn FnMut(
+                    &[vm::RuntimeValue],
+                    &mut vm::VirtualMachine,
+                    &mut allocator::FreeingBumpHeapAllocator,
+                ) -> Option<vm::RuntimeValue>
+                + Send,
+        >,
     },
     /// Function isn't known.
     Unresolved {
@@ -102,7 +109,7 @@ impl ExternalsVm {
         // We have to do that in two steps in order to satisfy the borrow checker.
         match self.state {
             StateInner::Ready(_) => return State::ReadyToRun(StateReadyToRun { inner: self }),
-            StateInner::Finished(_) => {},
+            StateInner::Finished(_) => {}
         }
         match &self.state {
             StateInner::Ready(_) => unreachable!(),
@@ -139,7 +146,7 @@ impl<'a> StateReadyToRun<'a> {
 
                     let ret_len = u32::try_from(ret >> 32).unwrap();
                     let ret_ptr = u32::try_from(ret & 0xffffffff).unwrap();
-                    let ret_data = self.inner.vm.read_memory(ret_ptr, ret_len).unwrap();// TODO: don't unwrap
+                    let ret_data = self.inner.vm.read_memory(ret_ptr, ret_len).unwrap(); // TODO: don't unwrap
                     self.inner.state = StateInner::Finished(ret_data);
                     break;
                 }
@@ -149,7 +156,11 @@ impl<'a> StateReadyToRun<'a> {
                             panic!("Unresolved function called: {:?}", name) // TODO: don't panic
                         }
                         Some(RegisteredFunction::Immediate { implementation }) => {
-                            let ret_val = implementation(&params, &mut self.inner.vm, &mut self.inner.allocator);
+                            let ret_val = implementation(
+                                &params,
+                                &mut self.inner.vm,
+                                &mut self.inner.allocator,
+                            );
                             self.inner.state = StateInner::Ready(ret_val);
                         }
 
@@ -176,27 +187,31 @@ impl<'a, T> StateWaitExternalResolve<'a, T> {
 fn get_function(name: &str) -> RegisteredFunction {
     match name {
         "ext_allocator_malloc_version_1" => {
-            RegisteredFunction::Immediate { implementation: Box::new(move |params, vm, alloc| {
-                let param = match params[0] {
-                    vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
-                    _ => panic!(),  // TODO:
-                };
+            RegisteredFunction::Immediate {
+                implementation: Box::new(move |params, vm, alloc| {
+                    let param = match params[0] {
+                        vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
+                        _ => panic!(),                                         // TODO:
+                    };
 
-                let ret = alloc.allocate(&mut MemAccess(vm), param).unwrap();  // TODO: don't unwrap
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap()))        // TODO: don't unwrap
-            })}
-        },
+                    let ret = alloc.allocate(&mut MemAccess(vm), param).unwrap(); // TODO: don't unwrap
+                    Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
+                }),
+            }
+        }
         "ext_allocator_free_version_1" => {
-            RegisteredFunction::Immediate { implementation: Box::new(move |params, vm, alloc| {
-                let param = match params[0] {
-                    vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
-                    _ => panic!(),  // TODO:
-                };
+            RegisteredFunction::Immediate {
+                implementation: Box::new(move |params, vm, alloc| {
+                    let param = match params[0] {
+                        vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
+                        _ => panic!(),                                         // TODO:
+                    };
 
-                alloc.deallocate(&mut MemAccess(vm), param).unwrap();  // TODO: don't unwrap
-                None
-            })}
-        },
+                    alloc.deallocate(&mut MemAccess(vm), param).unwrap(); // TODO: don't unwrap
+                    None
+                }),
+            }
+        }
         _ => RegisteredFunction::Unresolved {
             name: name.to_owned(),
         },
@@ -206,14 +221,14 @@ fn get_function(name: &str) -> RegisteredFunction {
 struct MemAccess<'a>(&'a mut vm::VirtualMachine);
 impl<'a> allocator::Memory for MemAccess<'a> {
     fn read_le_u64(&self, ptr: u32) -> Result<u64, allocator::Error> {
-        let bytes = self.0.read_memory(ptr, 8).unwrap();        // TODO: convert error
+        let bytes = self.0.read_memory(ptr, 8).unwrap(); // TODO: convert error
         Ok(u64::from_le_bytes(<[u8; 8]>::try_from(&bytes[..]).unwrap()))
     }
 
     fn write_le_u64(&mut self, ptr: u32, val: u64) -> Result<(), allocator::Error> {
         let bytes = val.to_le_bytes();
         self.0.write_memory(ptr, &bytes).unwrap(); // TODO: convert error instead
-		Ok(())
+        Ok(())
     }
 
     fn size(&self) -> u32 {

@@ -84,8 +84,8 @@ impl<TUser> WasmVirtualMachines<TUser> {
                     }
                     externals::State::Finished(data) => {
                         //println!("call finished: {:?}", data);
-                    },
-                    _ => unimplemented!()
+                    }
+                    _ => unimplemented!(),
                 }
             }
         }));

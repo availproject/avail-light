@@ -405,15 +405,18 @@ impl VirtualMachine {
 
     /// Returns the value of a global that the module exports.
     pub fn global_value(&self, name: &str) -> Result<u32, GlobalValueErr> {
-        let heap_base_val = self.module
-            .export_by_name(name).ok_or_else(|| GlobalValueErr::NotFound)?
-            .as_global().ok_or_else(|| GlobalValueErr::Invalid)?
+        let heap_base_val = self
+            .module
+            .export_by_name(name)
+            .ok_or_else(|| GlobalValueErr::NotFound)?
+            .as_global()
+            .ok_or_else(|| GlobalValueErr::Invalid)?
             .get();
 
         match heap_base_val {
             wasmi::RuntimeValue::I32(v) => match u32::try_from(v) {
                 Ok(v) => Ok(v),
-                Err(_) => Err(GlobalValueErr::Invalid)
+                Err(_) => Err(GlobalValueErr::Invalid),
             },
             _ => Err(GlobalValueErr::Invalid),
         }
