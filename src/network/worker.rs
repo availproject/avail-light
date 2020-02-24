@@ -29,12 +29,18 @@ impl Network {
         let local_public_key = local_key_pair.public();
         let local_peer_id = local_public_key.clone().into_peer_id();
         let (transport, _) = transport::build_transport(local_key_pair, false, None, true);
-        let behaviour = behaviour::Behaviour::new("substrate-lite".to_string(), local_public_key, config.known_addresses, true, true, 50).await;
+        let behaviour = behaviour::Behaviour::new(
+            "substrate-lite".to_string(),
+            local_public_key,
+            config.known_addresses,
+            true,
+            true,
+            50,
+        )
+        .await;
         let swarm = Swarm::new(transport, behaviour, local_peer_id);
 
-        Network {
-            swarm,
-        }
+        Network { swarm }
     }
 
     /// Sends out an announcement about the given block.

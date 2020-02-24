@@ -47,9 +47,12 @@ impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
     pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
         // TODO: chain specs should use stronger typing
-        self.network.set_boot_nodes(specs.boot_nodes().iter().map(|bootnode_str| {
-            network::builder::parse_str_addr(bootnode_str).unwrap()
-        }));
+        self.network.set_boot_nodes(
+            specs
+                .boot_nodes()
+                .iter()
+                .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
+        );
     }
 
     /// Sets the WASM runtime blob to use.
