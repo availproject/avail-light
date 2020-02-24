@@ -5,6 +5,9 @@ use core::{
     fmt,
 };
 
+// TODO: redefine our own type locally
+pub use wasmi::RuntimeValue;
+
 /// WASM virtual machine that executes a specific function.
 ///
 /// # Usage
@@ -29,8 +32,8 @@ pub struct VirtualMachine {
     /// Memory of the module instantiation.
     ///
     /// Right now we only support one unique `Memory` object per process. This is it.
-    /// Contains `None` if the process doesn't export any memory object, which means it doesn't use
-    /// any memory.
+    /// Contains `None` if the process doesn't export any memory object, which means it doesn't
+    /// use any memory.
     memory: Option<wasmi::MemoryRef>,
 
     /// Table of the indirect function calls.
@@ -125,10 +128,10 @@ pub enum RunErr {
 impl VirtualMachine {
     /// Creates a new state machine from the given module that executes the given function.
     ///
-    /// The closure is called for each import that the module has. It must assign a number to each
-    /// import, or return an error if the import can't be resolved. When the VM calls one of these
-    /// functions, this number will be returned back in order for the user to know how to handle
-    /// the call.
+    /// The closure is called for each function that the module imports. It must assign a number
+    /// to each import, or return an error if the import can't be resolved. When the VM calls one
+    /// of these functions, this number will be returned back in order for the user to know how
+    /// to handle the call.
     // TODO: don't expose wasmi in API
     pub fn new(
         module: &WasmBlob,
@@ -136,9 +139,12 @@ impl VirtualMachine {
         params: &[wasmi::RuntimeValue],
         mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        struct ImportResolve<'a>(
-            RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
-        );
+        struct ImportResolve<'a> {
+            functions: RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            import_memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
+            heap_pages: usize,
+        }
+
         impl<'a> wasmi::ImportResolver for ImportResolve<'a> {
             fn resolve_func(
                 &self,
@@ -146,7 +152,7 @@ impl VirtualMachine {
                 field_name: &str,
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
-                let closure = &mut **self.0.borrow_mut();
+                let closure = &mut **self.functions.borrow_mut();
                 let index = match closure(module_name, field_name, signature) {
                     Ok(i) => i,
                     Err(_) => {
@@ -174,12 +180,44 @@ impl VirtualMachine {
             fn resolve_memory(
                 &self,
                 _module_name: &str,
-                _field_name: &str,
-                _memory_type: &wasmi::MemoryDescriptor,
+                field_name: &str,
+                memory_type: &wasmi::MemoryDescriptor,
             ) -> Result<wasmi::MemoryRef, wasmi::Error> {
-                Err(wasmi::Error::Instantiation(
-                    "Importing memory is not supported yet".to_owned(),
-                ))
+                if field_name != "memory" {
+                    return Err(wasmi::Error::Instantiation(
+                        format!("Unknown memory reference with name: {}", field_name),
+                    ))
+                }
+
+                match &mut *self.import_memory.borrow_mut() {
+                    Some(_) => Err(wasmi::Error::Instantiation(
+                        "Memory can not be imported twice!".into(),
+                    )),
+                    memory_ref @ None => {
+                        if memory_type
+                            .maximum()
+                            .map(|m| m.saturating_sub(memory_type.initial()))
+                            .map(|m| self.heap_pages > m as usize)
+                            .unwrap_or(false)
+                        {
+                            Err(wasmi::Error::Instantiation(format!(
+                                "Heap pages ({}) is greater than imported memory maximum ({}).",
+                                self.heap_pages,
+                                memory_type
+                                    .maximum()
+                                    .map(|m| m.saturating_sub(memory_type.initial()))
+                                    .expect("Maximum is set, checked above; qed"),
+                            )))
+                        } else {
+                            let memory = wasmi::MemoryInstance::alloc(
+                                wasmi::memory_units::Pages(memory_type.initial() as usize + self.heap_pages),
+                                Some(wasmi::memory_units::Pages(memory_type.initial() as usize + self.heap_pages)),
+                            )?;
+                            **memory_ref = Some(memory.clone());
+                            Ok(memory)
+                        }
+                    }
+                }
             }
 
             fn resolve_table(
@@ -194,13 +232,22 @@ impl VirtualMachine {
             }
         }
 
-        let not_started =
-            wasmi::ModuleInstance::new(&module.inner, &ImportResolve(RefCell::new(&mut symbols)))
-                .map_err(NewErr::Interpreter)?;
+        let mut import_memory = None;
+        let not_started = {
+            let resolver = ImportResolve {
+                functions: RefCell::new(&mut symbols),
+                import_memory: RefCell::new(&mut import_memory),
+                heap_pages: 1024,
+            };
+            wasmi::ModuleInstance::new(&module.inner, &resolver)
+                .map_err(NewErr::Interpreter)?
+        };
         // TODO: explain `assert_no_start`
         let module = not_started.assert_no_start();
 
-        let memory = if let Some(mem) = module.export_by_name("memory") {
+        let memory = if let Some(import_memory) = import_memory {
+            Some(import_memory)
+        } else if let Some(mem) = module.export_by_name("memory") {
             if let Some(mem) = mem.as_memory() {
                 Some(mem.clone())
             } else {
@@ -224,7 +271,7 @@ impl VirtualMachine {
             Some(wasmi::ExternVal::Func(f)) => {
                 match wasmi::FuncInstance::invoke_resumable(&f, params.to_vec()) {
                     Ok(e) => e,
-                    Err(err) => unreachable!("{:?}", err),
+                    Err(err) => unreachable!("{:?}", err),  // TODO:
                 }
             }
             None => return Err(NewErr::FunctionNotFound),

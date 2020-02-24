@@ -3,6 +3,7 @@ use fnv::FnvBuildHasher;
 use futures::{channel::mpsc, prelude::*};
 use hashbrown::HashMap;
 
+mod externals;
 mod vm;
 
 pub use vm::WasmBlob;
@@ -32,7 +33,7 @@ enum BackToFront {
 
 struct VmState<TUser> {
     /// The inner virtual machine.
-    vm: vm::VirtualMachine,
+    vm: externals::ExternalsVm,
     /// User data decided by the user.
     user_data: TUser,
 }
@@ -63,32 +64,24 @@ impl<TUser> WasmVirtualMachines<TUser> {
     }
 
     /// Starts a new virtual machine.
-    pub fn start_virtual_machine(&self, user_data: TUser, module: &WasmBlob) -> Entry<TUser> {
+    pub fn execute(&self, user_data: TUser, module: &WasmBlob, function: &str, data: &[u8]) -> Entry<TUser> {
         let mut virtual_machine =
-            vm::VirtualMachine::new(module, "test", &[], |_, _, _| Err(())).unwrap(); // TODO: don't unwrap
+            externals::ExternalsVm::new(module, function, data).unwrap(); // TODO: don't unwrap
         let mut events_tx = self.events_tx.clone();
         let wasm_id = self.next_vm_id;
         //self.next_vm_id.0 = self.next_vm_id.0.checked_add(1).unwrap();
         (self.tasks_executor)(Box::pin(async move {
             loop {
-                match virtual_machine.run(None).unwrap() {
-                    // TODO: don't unwrap
-                    vm::ExecOutcome::Finished { return_value } => {
-                        let _ = events_tx
-                            .send(BackToFront::Finished(wasm_id, return_value))
-                            .await;
-                        // We close the task here, no matter if returning the result succeeded.
-                        break;
-                    }
-                    vm::ExecOutcome::Interrupted { id, params } => {
-                        // An error happens here if the front has been closed.
-                        //events_tx.send().await;
-                    }
+                match virtual_machine.state() {
+                    externals::State::ReadyToRun(vm) => { vm.run(); },
+                    _ => unimplemented!(),
                 }
             }
         }));
 
-        unimplemented!()
+        Entry {
+            vms: self,
+        }
     }
 
     pub fn get_by_id(&self) -> Option<Entry<TUser>> {

@@ -63,7 +63,7 @@ impl ServiceBuilder {
     }
 
     /// Builds the actual service, starting everything.
-    pub fn build(self) -> Service {
+    pub fn build(mut self) -> Service {
         let (threads_pool, tasks_executor) = match self.tasks_executor {
             Some(tasks_executor) => {
                 let tasks_executor = Arc::new(tasks_executor)
@@ -90,6 +90,8 @@ impl ServiceBuilder {
                 let tasks_executor = tasks_executor.clone();
                 move |task| (*tasks_executor)(task)
             }),
+            // TODO: don't unwrap; instead, misconfig error
+            wasm_runtime: self.wasm_runtime.take().unwrap(),
             network: self
                 .network
                 .with_executor({
