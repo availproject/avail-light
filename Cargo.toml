@@ -7,9 +7,11 @@ edition = "2018"
 
 [dependencies]
 bitflags = "1.2.1"  # TODO: I hate bitflags
+bytes = "0.5.0"  # TODO: I hate bytes
 env_logger = "0.4"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
+futures_codec = "0.3.3"
 futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }
 impl-serde = "0.2.3"  # TODO: that looks like a hack
@@ -19,8 +21,11 @@ parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
 rand = "0.7"
+sc-peerset = { git = "https://github.com/paritytech/substrate" }    # TODO: remove
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
+smallvec = "0.6.10"
+unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 void = "1.0"    # TODO: remove
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"

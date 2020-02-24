@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::{debug_info, discovery::DiscoveryBehaviour, discovery::DiscoveryOut};
+use super::{debug_info, discovery::{DiscoveryBehaviour, DiscoveryOut}, legacy_proto};
 
 use libp2p::NetworkBehaviour;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
@@ -27,6 +27,8 @@ use core::{iter, task::{Context, Poll}};
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "BehaviourOut", poll_method = "poll")]
 pub struct Behaviour {
+	/// Legacy protocol. To remove at some point.
+	legacy: legacy_proto::LegacyProto,
 	/// Periodically pings and identifies the nodes we are connected to, and store information in a
 	/// cache.
 	debug_info: debug_info::DebugInfoBehaviour,
@@ -54,7 +56,26 @@ impl Behaviour {
 		allow_private_ipv4: bool,
 		discovery_only_if_under_num: u64,
 	) -> Self {
+		let peerset_config = sc_peerset::PeersetConfig {
+			in_peers: 25,
+			out_peers: 25,
+			bootnodes: Vec::new(),
+			reserved_only: false,
+			reserved_nodes: Vec::new(),
+		};
+
+		let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
+		let protocol_id = {
+			let mut protocol_id = smallvec::SmallVec::new();
+			protocol_id.push(b's');
+			protocol_id.push(b'u');
+			protocol_id.push(b'p');
+			protocol_id
+		};
+		let legacy = legacy_proto::LegacyProto::new(protocol_id, &[6], peerset);
+
 		Behaviour {
+			legacy,
 			debug_info: debug_info::DebugInfoBehaviour::new(user_agent, local_public_key.clone()),
 			discovery: DiscoveryBehaviour::new(
 				local_public_key,
@@ -115,6 +136,52 @@ impl NetworkBehaviourEventProcess<debug_info::DebugInfoEvent> for Behaviour {
 		}
 		for addr in &info.listen_addrs {
 			self.discovery.add_self_reported_address(&peer_id, addr.clone());
+		}
+	}
+}
+
+impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
+	fn inject_event(&mut self, out: legacy_proto::LegacyProtoOut) {
+		match out {
+			_ => {},
+			/*
+
+pub enum LegacyProtoOut {
+	/// Opened a custom protocol with the remote.
+	CustomProtocolOpen {
+		/// Version of the protocol that has been opened.
+		version: u8,
+		/// Id of the node we have opened a connection with.
+		peer_id: PeerId,
+		/// Endpoint used for this custom protocol.
+		endpoint: ConnectedPoint,
+	},
+
+	/// Closed a custom protocol with the remote.
+	CustomProtocolClosed {
+		/// Id of the peer we were connected to.
+		peer_id: PeerId,
+		/// Reason why the substream closed, for debugging purposes.
+		reason: Cow<'static, str>,
+	},
+
+	/// Receives a message on a custom protocol substream.
+	CustomMessage {
+		/// Id of the peer the message came from.
+		peer_id: PeerId,
+		/// Message that has been received.
+		message: BytesMut,
+	},
+
+	/// The substream used by the protocol is pretty large. We should print avoid sending more
+	/// messages on it if possible.
+	Clogged {
+		/// Id of the peer which is clogged.
+		peer_id: PeerId,
+		/// Copy of the messages that are within the buffer, for further diagnostic.
+		messages: Vec<Vec<u8>>,
+	},
+}*/
 		}
 	}
 }

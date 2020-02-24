@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{DiscoveryNetBehaviour, config::ProtocolId};
-use crate::protocol::legacy_proto::handler::{CustomProtoHandlerProto, CustomProtoHandlerOut, CustomProtoHandlerIn};
-use crate::protocol::legacy_proto::upgrade::RegisteredProtocol;
+use super::handler::{CustomProtoHandlerProto, CustomProtoHandlerOut, CustomProtoHandlerIn};
+use super::upgrade::RegisteredProtocol;
+
 use bytes::BytesMut;
 use fnv::FnvHashMap;
 use futures::prelude::*;
@@ -225,7 +225,7 @@ pub enum LegacyProtoOut {
 impl LegacyProto {
 	/// Creates a `CustomProtos`.
 	pub fn new(
-		protocol: impl Into<ProtocolId>,
+		protocol: impl Into<SmallVec<[u8; 6]>>,
 		versions: &[u8],
 		peerset: sc_peerset::Peerset,
 	) -> Self {
@@ -358,6 +358,13 @@ impl LegacyProto {
 				message,
 			}
 		});
+	}
+
+	pub fn add_discovered_nodes(&mut self, peer_ids: impl Iterator<Item = PeerId>) {
+		self.peerset.discovered(peer_ids.into_iter().map(|peer_id| {
+			debug!(target: "sub-libp2p", "PSM <= Discovered({:?})", peer_id);
+			peer_id
+		}));
 	}
 
 	/// Returns the state of the peerset manager, for debugging purposes.
@@ -600,15 +607,6 @@ impl LegacyProto {
 			event: CustomProtoHandlerIn::Disable,
 		});
 		*state = PeerState::Disabled { open: false, connected_point, banned_until: None };
-	}
-}
-
-impl DiscoveryNetBehaviour for LegacyProto {
-	fn add_discovered_nodes(&mut self, peer_ids: impl Iterator<Item = PeerId>) {
-		self.peerset.discovered(peer_ids.into_iter().map(|peer_id| {
-			debug!(target: "sub-libp2p", "PSM <= Discovered({:?})", peer_id);
-			peer_id
-		}));
 	}
 }
 

@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::config::ProtocolId;
 use bytes::BytesMut;
 use futures::prelude::*;
 use futures_codec::Framed;
 use libp2p::core::{Endpoint, UpgradeInfo, InboundUpgrade, OutboundUpgrade, upgrade::ProtocolName};
+use smallvec::SmallVec;
 use std::{collections::VecDeque, io, pin::Pin, vec::IntoIter as VecIntoIter};
 use std::task::{Context, Poll};
 use unsigned_varint::codec::UviBytes;
@@ -29,7 +29,7 @@ use unsigned_varint::codec::UviBytes;
 /// each protocol can have multiple different versions for networking purposes.
 pub struct RegisteredProtocol {
 	/// Id of the protocol for API purposes.
-	id: ProtocolId,
+	id: SmallVec<[u8; 6]>,
 	/// Base name of the protocol as advertised on the network.
 	/// Ends with `/` so that we can append a version number behind.
 	base_name: Vec<u8>,
@@ -41,11 +41,11 @@ pub struct RegisteredProtocol {
 impl RegisteredProtocol {
 	/// Creates a new `RegisteredProtocol`. The `custom_data` parameter will be
 	/// passed inside the `RegisteredProtocolOutput`.
-	pub fn new(protocol: impl Into<ProtocolId>, versions: &[u8])
+	pub fn new(protocol: impl Into<SmallVec<[u8; 6]>>, versions: &[u8])
 		-> Self {
 		let protocol = protocol.into();
 		let mut base_name = b"/substrate/".to_vec();
-		base_name.extend_from_slice(protocol.as_bytes());
+		base_name.extend_from_slice(protocol.as_ref());
 		base_name.extend_from_slice(b"/");
 
 		RegisteredProtocol {
