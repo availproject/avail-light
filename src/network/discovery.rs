@@ -60,7 +60,6 @@ use libp2p::multiaddr::Protocol;
 use log::{debug, info, trace, warn, error};
 use std::{cmp, collections::VecDeque, time::Duration};
 use std::task::{Context, Poll};
-use sp_core::hexdisplay::HexDisplay;
 
 /// Implementation of `NetworkBehaviour` that discovers the nodes on the network.
 pub struct DiscoveryBehaviour {
@@ -368,12 +367,12 @@ impl NetworkBehaviour for DiscoveryBehaviour {
 							Err(GetClosestPeersError::Timeout { key, peers }) => {
 								debug!(target: "sub-libp2p",
 									"Libp2p => Query for {:?} timed out with {} results",
-									HexDisplay::from(&key), peers.len());
+									key, peers.len());
 							},
 							Ok(ok) => {
 								trace!(target: "sub-libp2p",
 									"Libp2p => Query for {:?} yielded {:?} results",
-									HexDisplay::from(&ok.key), ok.peers.len());
+									ok.key, ok.peers.len());
 								if ok.peers.is_empty() && self.num_connections != 0 {
 									debug!(target: "sub-libp2p", "Libp2p => Random Kademlia query has yielded empty \
 										results");

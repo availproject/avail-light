@@ -86,7 +86,7 @@ impl ServiceBuilder {
         };
 
         Service {
-            wasm_vms: executor::WasmVirtualMachines::with_executor({
+            wasm_vms: executor::WasmVirtualMachines::with_tasks_executor({
                 let tasks_executor = tasks_executor.clone();
                 move |task| (*tasks_executor)(task)
             }),

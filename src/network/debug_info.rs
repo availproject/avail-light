@@ -16,6 +16,7 @@
 
 use fnv::FnvHashMap;
 use futures::prelude::*;
+use futures_timer::Delay;
 use libp2p::Multiaddr;
 use libp2p::core::nodes::listeners::ListenerId;
 use libp2p::core::{ConnectedPoint, either::EitherOutput, PeerId, PublicKey};
@@ -29,7 +30,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use wasm_timer::Instant;
-use crate::utils::interval;
 
 /// Time after we disconnect from a node before we purge its information from the cache.
 const CACHE_EXPIRE: Duration = Duration::from_secs(10 * 60);
@@ -78,7 +78,9 @@ impl DebugInfoBehaviour {
 			ping: Ping::new(PingConfig::new()),
 			identify,
 			nodes_info: FnvHashMap::default(),
-			garbage_collect: Box::pin(interval(GARBAGE_COLLECT_INTERVAL)),
+			garbage_collect: Box::pin(futures::stream::unfold((), move |()| {
+				Delay::new(GARBAGE_COLLECT_INTERVAL).map(move |_| Some(((), ())))
+			})),
 		}
 	}
 

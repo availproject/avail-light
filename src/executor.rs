@@ -50,7 +50,7 @@ pub struct Entry<'a, TUser> {
 
 impl<TUser> WasmVirtualMachines<TUser> {
     /// Initializes the collection.
-    pub fn with_executor(
+    pub fn with_tasks_executor(
         tasks_executor: impl Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + 'static,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(0);

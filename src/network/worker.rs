@@ -1,11 +1,15 @@
+
 /// State machine representing the network currently running.
 pub struct Network {}
 
 /// Event that can happen on the network.
 #[derive(Debug)]
 pub enum Event {
-    /// Received a block announcement for a block we've never heard of before.
-    BlockAnnouncementReceived {},
+    /// Received a block announcement for specific blocks.
+    BlocksAnnouncementReceived {
+        /// List of encoded headers.
+        headers: Vec<Vec<u8>>,
+    },
 }
 
 /// Configuration for starting the network.

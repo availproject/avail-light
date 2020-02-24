@@ -97,6 +97,8 @@ impl ExternalsVm {
         // indicating where the memory allocator is allowed to allocate memory.
         let heap_base = vm.global_value("__heap_base").unwrap(); // TODO: don't unwrap
 
+        registered_functions.shrink_to_fit();
+
         Ok(ExternalsVm {
             vm,
             state: StateInner::Ready(None),

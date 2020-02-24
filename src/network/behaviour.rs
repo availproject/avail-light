@@ -19,6 +19,7 @@ use crate::{
 	Event, protocol::event::DhtEvent
 };
 use crate::protocol::{self, light_client_handler, CustomMessageOutcome, Protocol};
+
 use libp2p::NetworkBehaviour;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
 use libp2p::kad::record;
@@ -27,7 +28,6 @@ use log::debug;
 use sp_consensus::{BlockOrigin, import_queue::{IncomingBlock, Origin}};
 use sp_runtime::{traits::{Block as BlockT, NumberFor}, Justification};
 use std::{iter, task::Context, task::Poll};
-use void;
 
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
