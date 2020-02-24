@@ -4,6 +4,7 @@ use core::{
     convert::{TryFrom, TryInto as _},
     fmt,
 };
+use wasmi::memory_units::ByteSize as _;
 
 // TODO: redefine our own type locally
 pub use wasmi::RuntimeValue;
@@ -125,6 +126,13 @@ pub enum RunErr {
     },
 }
 
+/// Error that can happen when calling [`VirtualMachine::global_value`].
+#[derive(Debug)]
+pub enum GlobalValueErr {
+    NotFound,
+    Invalid,
+}
+
 impl VirtualMachine {
     /// Creates a new state machine from the given module that executes the given function.
     ///
@@ -140,7 +148,8 @@ impl VirtualMachine {
         mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a> {
-            functions: RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
+            functions:
+                RefCell<&'a mut dyn FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>>,
             import_memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
             heap_pages: usize,
         }
@@ -184,9 +193,10 @@ impl VirtualMachine {
                 memory_type: &wasmi::MemoryDescriptor,
             ) -> Result<wasmi::MemoryRef, wasmi::Error> {
                 if field_name != "memory" {
-                    return Err(wasmi::Error::Instantiation(
-                        format!("Unknown memory reference with name: {}", field_name),
-                    ))
+                    return Err(wasmi::Error::Instantiation(format!(
+                        "Unknown memory reference with name: {}",
+                        field_name
+                    )));
                 }
 
                 match &mut *self.import_memory.borrow_mut() {
@@ -210,8 +220,12 @@ impl VirtualMachine {
                             )))
                         } else {
                             let memory = wasmi::MemoryInstance::alloc(
-                                wasmi::memory_units::Pages(memory_type.initial() as usize + self.heap_pages),
-                                Some(wasmi::memory_units::Pages(memory_type.initial() as usize + self.heap_pages)),
+                                wasmi::memory_units::Pages(
+                                    memory_type.initial() as usize + self.heap_pages,
+                                ),
+                                Some(wasmi::memory_units::Pages(
+                                    memory_type.initial() as usize + self.heap_pages,
+                                )),
                             )?;
                             **memory_ref = Some(memory.clone());
                             Ok(memory)
@@ -239,8 +253,7 @@ impl VirtualMachine {
                 import_memory: RefCell::new(&mut import_memory),
                 heap_pages: 1024,
             };
-            wasmi::ModuleInstance::new(&module.inner, &resolver)
-                .map_err(NewErr::Interpreter)?
+            wasmi::ModuleInstance::new(&module.inner, &resolver).map_err(NewErr::Interpreter)?
         };
         // TODO: explain `assert_no_start`
         let module = not_started.assert_no_start();
@@ -271,7 +284,7 @@ impl VirtualMachine {
             Some(wasmi::ExternVal::Func(f)) => {
                 match wasmi::FuncInstance::invoke_resumable(&f, params.to_vec()) {
                     Ok(e) => e,
-                    Err(err) => unreachable!("{:?}", err),  // TODO:
+                    Err(err) => unreachable!("{:?}", err), // TODO:
                 }
             }
             None => return Err(NewErr::FunctionNotFound),
@@ -388,6 +401,34 @@ impl VirtualMachine {
                 })
             }
         }
+    }
+
+    /// Returns the value of a global that the module exports.
+    pub fn global_value(&self, name: &str) -> Result<u32, GlobalValueErr> {
+        let heap_base_val = self.module
+            .export_by_name(name).ok_or_else(|| GlobalValueErr::NotFound)?
+            .as_global().ok_or_else(|| GlobalValueErr::Invalid)?
+            .get();
+
+        match heap_base_val {
+            wasmi::RuntimeValue::I32(v) => match u32::try_from(v) {
+                Ok(v) => Ok(v),
+                Err(_) => Err(GlobalValueErr::Invalid)
+            },
+            _ => Err(GlobalValueErr::Invalid),
+        }
+    }
+
+    /// Returns the size of the memory, in bytes.
+    ///
+    /// > **Note**: This can change over time if the WASM code uses the `grow` opcode.
+    pub fn memory_size(&self) -> u32 {
+        let mem = match self.memory.as_ref() {
+            Some(m) => m,
+            None => unreachable!(),
+        };
+
+        u32::try_from(mem.current_size().0 * wasmi::memory_units::Pages::byte_size().0).unwrap()
     }
 
     /// Copies the given memory range into a `Vec<u8>`.

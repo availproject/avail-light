@@ -20,7 +20,8 @@ pub enum Event {}
 
 impl Service {
     pub async fn next_event(&mut self) {
-        self.wasm_vms.execute((), &self.wasm_runtime, "Core_version", &[]);
+        self.wasm_vms
+            .execute((), &self.wasm_runtime, "Core_version", &[]);
 
         loop {
             let network_next = self.network.next_event();

@@ -65,24 +65,32 @@ impl<TUser> WasmVirtualMachines<TUser> {
     }
 
     /// Starts a new virtual machine.
-    pub fn execute(&self, user_data: TUser, module: &WasmBlob, function: &str, data: &[u8]) -> Entry<TUser> {
-        let mut virtual_machine =
-            externals::ExternalsVm::new(module, function, data).unwrap(); // TODO: don't unwrap
+    pub fn execute(
+        &self,
+        user_data: TUser,
+        module: &WasmBlob,
+        function: &str,
+        data: &[u8],
+    ) -> Entry<TUser> {
+        let mut virtual_machine = externals::ExternalsVm::new(module, function, data).unwrap(); // TODO: don't unwrap
         let mut events_tx = self.events_tx.clone();
         let wasm_id = self.next_vm_id;
         //self.next_vm_id.0 = self.next_vm_id.0.checked_add(1).unwrap();
         (self.tasks_executor)(Box::pin(async move {
             loop {
                 match virtual_machine.state() {
-                    externals::State::ReadyToRun(vm) => { vm.run(); },
-                    _ => unimplemented!(),
+                    externals::State::ReadyToRun(vm) => {
+                        vm.run();
+                    }
+                    externals::State::Finished(data) => {
+                        //println!("call finished: {:?}", data);
+                    },
+                    _ => unimplemented!()
                 }
             }
         }));
 
-        Entry {
-            vms: self,
-        }
+        Entry { vms: self }
     }
 
     pub fn get_by_id(&self) -> Option<Entry<TUser>> {
