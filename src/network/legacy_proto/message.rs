@@ -111,6 +111,30 @@ impl parity_scale_codec::Decode for Roles {
     }
 }
 
+/*/// Abstraction over a block header for a substrate chain.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+pub struct Header<Number: Copy + Into<U256> + TryFrom<U256>, Hash: HashT> {
+	/// The parent hash.
+	pub parent_hash: Hash::Output,
+	/// The block number.
+	pub number: Number,
+	/// The state trie merkle root
+	pub state_root: Hash::Output,
+	/// The merkle root of the extrinsics.
+	pub extrinsics_root: Hash::Output,
+	/// A chain-specific digest of data useful for light clients or referencing auxiliary data.
+	pub digest: Digest<Hash::Output>,
+}*/
+
+/// Abstraction over a substrate block.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+pub struct Block<Header, Extrinsic> {
+	/// The block header.
+	pub header: Header,
+	/// The accompanying extrinsics.
+	pub extrinsics: Vec<Extrinsic>,
+}
+
 /// A proof that some set of key-value pairs are included in the storage trie. The proof contains
 /// the storage values so that the partial storage backend can be reconstructed by a verifier that
 /// does not already have access to the key-value pairs.
