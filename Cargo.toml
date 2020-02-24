@@ -20,6 +20,7 @@ pin-project = "0.4"
 rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
+void = "1.0"    # TODO: remove
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"
 

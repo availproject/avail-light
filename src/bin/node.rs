@@ -16,7 +16,8 @@ async fn async_main() {
         .with_wasm_runtime(
             TryFrom::try_from(&include_bytes!("../../node_runtime.compact.wasm")[..]).unwrap(),
         )
-        .build();
+        .build()
+        .await;
 
     loop {
         let _ = service.next_event().await;

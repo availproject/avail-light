@@ -1,8 +1,9 @@
-pub use builder::{builder, NetworkBuilder};
+pub use builder::builder;
 pub use worker::{Event, Network};
 
-//mod behaviour;
-mod builder;
+pub mod builder;
+
+mod behaviour;
 mod debug_info;
 mod discovery;
 mod transport;

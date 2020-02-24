@@ -16,7 +16,7 @@ pub struct ServiceBuilder {
     tasks_executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>>,
 
     /// Prototype for the network.
-    network: network::NetworkBuilder,
+    network: network::builder::NetworkBuilder,
 
     /// Where the telemetry should connect to.
     telemetry_endpoints: Vec<(Multiaddr, u8)>,
@@ -45,7 +45,12 @@ impl<'a> From<&'a ChainSpec> for ServiceBuilder {
 
 impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
-    pub fn load_chain_specs(&mut self, specs: &ChainSpec) {}
+    pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
+        // TODO: chain specs should use stronger typing
+        self.network.set_boot_nodes(specs.boot_nodes().iter().map(|bootnode_str| {
+            network::builder::parse_str_addr(bootnode_str).unwrap()
+        }));
+    }
 
     /// Sets the WASM runtime blob to use.
     pub fn with_wasm_runtime(mut self, wasm_runtime: executor::WasmBlob) -> Self {
@@ -63,7 +68,7 @@ impl ServiceBuilder {
     }
 
     /// Builds the actual service, starting everything.
-    pub fn build(mut self) -> Service {
+    pub async fn build(mut self) -> Service {
         let (threads_pool, tasks_executor) = match self.tasks_executor {
             Some(tasks_executor) => {
                 let tasks_executor = Arc::new(tasks_executor)
@@ -98,7 +103,8 @@ impl ServiceBuilder {
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| (*tasks_executor)(task))
                 })
-                .build(),
+                .build()
+                .await,
             telemetry: telemetry::Telemetry::new(self.telemetry_endpoints, None).unwrap(),
             _threads_pool: threads_pool,
         }
