@@ -3,6 +3,7 @@ use fnv::FnvBuildHasher;
 use futures::{channel::mpsc, prelude::*};
 use hashbrown::HashMap;
 
+mod allocator;
 mod externals;
 mod vm;
 

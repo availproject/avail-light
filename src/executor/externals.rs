@@ -1,14 +1,18 @@
 use super::vm;
 use core::convert::TryFrom as _;
 
-/// WASM virtual machine.
+/// WASM virtual machine specific to the Substrate/Polkadot Runtime Environment.
 ///
-/// > **Note**: Contrary to [`VirtualMachine`](super::vm::VirtualMachine), this code is aware of
-/// >           the runtime environment. The external functions that the WASM code calls are
-/// >           automatically resolved and parsed into high-level structs.
+/// Contrary to [`VirtualMachine`](super::vm::VirtualMachine), this code is not just a generic
+/// WASM virtual machine, but is aware of the runtime environment. The external functions that
+/// the WASM code calls are automatically resolved and either handled or notified to the user of
+/// this module.
 pub struct ExternalsVm {
+    /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
     state: StateInner,
+
+    // TODO: this is used in order to ignore imports; remove once all functions are implemented
     functions: hashbrown::HashMap<usize, String, fnv::FnvBuildHasher>,
 }
 
