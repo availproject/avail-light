@@ -23,7 +23,7 @@ use hashbrown::HashMap;
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 struct ChildRawStorage {
@@ -31,7 +31,7 @@ struct ChildRawStorage {
     child_type: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 /// Storage content for genesis block.
@@ -40,19 +40,18 @@ struct RawGenesis {
     children: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-enum Genesis<G> {
-    Runtime(G),
+enum Genesis {
     Raw(RawGenesis),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-struct StorageKey(/*#[serde(with="impl_serde::serialize")]*/ Vec<u8>);
+struct StorageKey(#[serde(with = "impl_serde::serialize")] Vec<u8>);
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-struct StorageData(/*#[serde(with="impl_serde::serialize")]*/ Vec<u8>);
+struct StorageData(#[serde(with = "impl_serde::serialize")] Vec<u8>);
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -76,8 +75,7 @@ struct ClientSpec<E> {
     properties: Option<Properties>,
     #[serde(flatten)]
     extensions: E,
-    #[serde(skip_serializing)]
-    genesis: serde::de::IgnoredAny,
+    genesis: Genesis,
 }
 
 /// A type denoting empty extensions.
