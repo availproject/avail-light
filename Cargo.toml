@@ -6,6 +6,7 @@ license = "GPL"
 edition = "2018"
 
 [dependencies]
+bitflags = "1.2.1"  # TODO: I hate bitflags
 env_logger = "0.4"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
@@ -14,7 +15,7 @@ hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] 
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
-parity-scale-codec = "1.0.0"
+parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
 rand = "0.7"
