@@ -2,39 +2,89 @@
 name = "substrate-lite"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
-license = "GPL"
+license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL
 edition = "2018"
 
 [dependencies]
-bitflags = "1.2.1"  # TODO: I hate bitflags
-bytes = "0.5.0"  # TODO: I hate bytes
 env_logger = "0.4"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures_codec = "0.3.3"
 futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }
-impl-serde = "0.2.3"  # TODO: that looks like a hack
 libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
-primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "std"] } # TODO: don't use parity crates
 rand = "0.7"
-sc-peerset = { git = "https://github.com/paritytech/substrate" }    # TODO: remove
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 smallvec = "0.6.10"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
-void = "1.0"    # TODO: remove
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"
 
-# TODO: remove using slog
+# BELOW: DEPENDENCIES TO REMOVE
+# TODO:
+bitflags = "1.2.1"  # TODO: I hate bitflags
+bytes = "0.5.0"  # TODO: I hate bytes
+impl-serde = "0.2.3"  # TODO: that looks like a hack
+primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "std"] } # TODO: don't use parity crates
+sc-peerset = { git = "https://github.com/paritytech/substrate" }    # TODO: remove
 slog = { version = "2.5.2", features = ["nested-values"] }
 slog-json = { version = "2.3.0", features = ["nested-values"] }
+void = "1.0"    # TODO: remove
 
 [features]
-default = ["telemetry"]
+default = ["telemetry"]  # TODO: this is pretty much an idea, and needs proper implementation
 telemetry = []
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package.aes-ctr]
+opt-level = 3
+[profile.dev.package.aes-soft]
+opt-level = 3
+[profile.dev.package.aesni]
+opt-level = 3
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+[profile.dev.package.ed25519-dalek]
+opt-level = 3
+[profile.dev.package.hashbrown]
+opt-level = 3
+[profile.dev.package.keccak]
+opt-level = 3
+[profile.dev.package.libsecp256k1]
+opt-level = 3
+[profile.dev.package.mio]
+opt-level = 3
+[profile.dev.package.num-bigint]
+opt-level = 3
+[profile.dev.package.parity-scale-codec]
+opt-level = 3
+[profile.dev.package.parking_lot]
+opt-level = 3
+[profile.dev.package.ring]
+opt-level = 3
+[profile.dev.package.rustls]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.sha3]
+opt-level = 3
+[profile.dev.package.smallvec]
+opt-level = 3
+[profile.dev.package.snow]
+opt-level = 3
+[profile.dev.package.soketto]
+opt-level = 3
+[profile.dev.package.uint]
+opt-level = 3
+[profile.dev.package.wasmi]
+opt-level = 3
+[profile.dev.package.x25519-dalek]
+opt-level = 3
+[profile.dev.package.yamux]
+opt-level = 3

@@ -1,10 +1,21 @@
 use super::{behaviour, transport};
+use fnv::FnvBuildHasher;
+use hashbrown::HashSet;
 use libp2p::{Multiaddr, PeerId, Swarm};
 
 /// State machine representing the network currently running.
 pub struct Network {
     swarm: Swarm<behaviour::Behaviour>,
+
+    /// List of block requests in progress.
+    blocks_requests: HashSet<BlocksRequestId, FnvBuildHasher>,
+
+    /// Identifier to assign to the next blocks request to start.
+    next_blocks_request: BlocksRequestId,
 }
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct BlocksRequestId(u64);
 
 /// Event that can happen on the network.
 #[derive(Debug)]
@@ -13,6 +24,11 @@ pub enum Event {
     BlocksAnnouncementReceived {
         /// List of encoded headers.
         headers: Vec<Vec<u8>>,
+    },
+
+    /// A blocks request started with [`Network::start_block_request`] has gotten a response.
+    BlocksRequestFinished {
+        result: Result<(), ()>,
     },
 }
 
@@ -40,7 +56,11 @@ impl Network {
         .await;
         let swarm = Swarm::new(transport, behaviour, local_peer_id);
 
-        Network { swarm }
+        Network {
+            swarm,
+            blocks_requests: Default::default(),
+            next_blocks_request: BlocksRequestId(0),
+        }
     }
 
     /// Sends out an announcement about the given block.
@@ -48,8 +68,18 @@ impl Network {
         unimplemented!()
     }
 
-    pub async fn request_block() {
+    pub async fn start_block_request(&mut self, block_num: u32) {
+        let id = self.next_blocks_request;
+        self.next_blocks_request.0 += 1;    // TODO: overflows
 
+        self.blocks_requests.insert(id);
+
+        self.swarm.send_block_request(block_num);
+    }
+
+    /// Returns the number of ongoing block requests.
+    pub fn num_blocks_request(&self) -> usize {
+        self.blocks_requests.len()
     }
 
     /// Returns the next event that happened on the network.
