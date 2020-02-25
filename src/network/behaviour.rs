@@ -155,14 +155,35 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
     fn inject_event(&mut self, out: legacy_proto::LegacyProtoOut) {
         match out {
             legacy_proto::LegacyProtoOut::CustomProtocolOpen { version, peer_id, endpoint } => {
-                println!("open");
+                let message = legacy_proto::message::Message::Status(legacy_proto::message::Status {
+                    version: 6,
+                    min_supported_version: 6,
+                    roles: legacy_proto::message::Roles::LIGHT,
+                    best_number: 0,
+                    best_hash: "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325".parse().unwrap(),
+                    genesis_hash: "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325".parse().unwrap(),
+                    chain_status: Vec::new(),
+                });
+
+                self.legacy.send_packet(&peer_id, message.encode());
+
+                let message = legacy_proto::message::Message::BlockRequest(legacy_proto::message::BlockRequest {
+                    id: 0,
+                    fields: legacy_proto::message::BlockAttributes::HEADER,
+                    from: legacy_proto::message::FromBlock::Number(1),
+                    to: None,
+                    direction: legacy_proto::message::Direction::Ascending,
+                    max: None,
+                });
+
+                self.legacy.send_packet(&peer_id, message.encode());
             },
             legacy_proto::LegacyProtoOut::CustomProtocolClosed { peer_id, .. } => {
                 
             },
             legacy_proto::LegacyProtoOut::CustomMessage { peer_id, message } => {
-                println!("message from {:?}", peer_id);
                 let message = legacy_proto::message::Message::decode_all(&message).unwrap();
+                println!("message from {:?} => {:?}", peer_id, message);
             },
             legacy_proto::LegacyProtoOut::Clogged { .. } => {},
         }

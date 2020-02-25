@@ -44,7 +44,13 @@ impl Network {
     }
 
     /// Sends out an announcement about the given block.
-    pub async fn announce_block(&mut self) {}
+    pub async fn announce_block(&mut self) {
+        unimplemented!()
+    }
+
+    pub async fn request_block() {
+
+    }
 
     /// Returns the next event that happened on the network.
     pub async fn next_event(&mut self) -> Event {
