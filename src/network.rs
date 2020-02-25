@@ -1,3 +1,4 @@
+pub use behaviour::BlockHeader;
 pub use builder::builder;
 pub use worker::{Event, Network};
 

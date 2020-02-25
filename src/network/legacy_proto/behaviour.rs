@@ -332,7 +332,7 @@ impl LegacyProto {
                     inc
                 } else {
                     error!(target: "sub-libp2p", "State mismatch in libp2p: no entry in \
-						incoming for incoming peer");
+                        incoming for incoming peer");
                     return;
                 };
 
@@ -423,7 +423,7 @@ impl LegacyProto {
         match mem::replace(occ_entry.get_mut(), PeerState::Poisoned) {
             PeerState::Banned { ref until } if *until > now => {
                 debug!(target: "sub-libp2p", "PSM => Connect({:?}): Will start to connect at \
-					until {:?}", occ_entry.key(), until);
+                    until {:?}", occ_entry.key(), until);
                 *occ_entry.into_mut() = PeerState::PendingRequest {
                     timer: futures_timer::Delay::new(until.clone() - now),
                     timer_deadline: until.clone(),
@@ -445,7 +445,7 @@ impl LegacyProto {
                 banned_until: Some(ref banned),
             } if *banned > now => {
                 debug!(target: "sub-libp2p", "PSM => Connect({:?}): Has idle connection through \
-					{:?} but node is banned until {:?}", occ_entry.key(), connected_point, banned);
+                    {:?} but node is banned until {:?}", occ_entry.key(), connected_point, banned);
                 *occ_entry.into_mut() = PeerState::DisabledPendingEnable {
                     connected_point: connected_point.clone(),
                     open,
@@ -460,7 +460,7 @@ impl LegacyProto {
                 banned_until: _,
             } => {
                 debug!(target: "sub-libp2p", "PSM => Connect({:?}): Enabling previously-idle \
-					connection through {:?}", occ_entry.key(), connected_point);
+                    connection through {:?}", occ_entry.key(), connected_point);
                 debug!(target: "sub-libp2p", "Handler({:?}) <= Enable", occ_entry.key());
                 self.events.push(NetworkBehaviourAction::SendEvent {
                     peer_id: occ_entry.key().clone(),
@@ -476,7 +476,7 @@ impl LegacyProto {
                 connected_point, ..
             } => {
                 debug!(target: "sub-libp2p", "PSM => Connect({:?}): Enabling incoming \
-					connection through {:?}", occ_entry.key(), connected_point);
+                    connection through {:?}", occ_entry.key(), connected_point);
                 if let Some(inc) = self
                     .incoming
                     .iter_mut()
@@ -485,7 +485,7 @@ impl LegacyProto {
                     inc.alive = false;
                 } else {
                     error!(target: "sub-libp2p", "State mismatch in libp2p: no entry in \
-						incoming for incoming peer")
+                        incoming for incoming peer")
                 }
                 debug!(target: "sub-libp2p", "Handler({:?}) <= Enable", occ_entry.key());
                 self.events.push(NetworkBehaviourAction::SendEvent {
@@ -500,17 +500,17 @@ impl LegacyProto {
 
             st @ PeerState::Enabled { .. } => {
                 warn!(target: "sub-libp2p", "PSM => Connect({:?}): Already connected to this \
-					peer", occ_entry.key());
+                    peer", occ_entry.key());
                 *occ_entry.into_mut() = st;
             }
             st @ PeerState::DisabledPendingEnable { .. } => {
                 warn!(target: "sub-libp2p", "PSM => Connect({:?}): Already have an idle \
-					connection to this peer and waiting to enable it", occ_entry.key());
+                    connection to this peer and waiting to enable it", occ_entry.key());
                 *occ_entry.into_mut() = st;
             }
             st @ PeerState::Requested { .. } | st @ PeerState::PendingRequest { .. } => {
                 warn!(target: "sub-libp2p", "PSM => Connect({:?}): Received a previous \
-					request for that peer", occ_entry.key());
+                    request for that peer", occ_entry.key());
                 *occ_entry.into_mut() = st;
             }
 
@@ -543,7 +543,7 @@ impl LegacyProto {
                 ..
             } => {
                 debug!(target: "sub-libp2p", "PSM => Drop({:?}): Interrupting pending \
-					enable", entry.key());
+                    enable", entry.key());
                 *entry.into_mut() = PeerState::Disabled {
                     open,
                     connected_point,
@@ -569,7 +569,7 @@ impl LegacyProto {
             }
             st @ PeerState::Incoming { .. } => {
                 error!(target: "sub-libp2p", "PSM => Drop({:?}): Was in incoming mode",
-					entry.key());
+                    entry.key());
                 *entry.into_mut() = st;
             }
             PeerState::Requested => {
@@ -604,7 +604,7 @@ impl LegacyProto {
 
         if !incoming.alive {
             debug!(target: "sub-libp2p", "PSM => Accept({:?}, {:?}): Obsolete incoming,
-				sending back dropped", index, incoming.peer_id);
+                sending back dropped", index, incoming.peer_id);
             debug!(target: "sub-libp2p", "PSM <= Dropped({:?})", incoming.peer_id);
             self.peerset.dropped(incoming.peer_id.clone());
             return;
@@ -614,7 +614,7 @@ impl LegacyProto {
             state
         } else {
             error!(target: "sub-libp2p", "State mismatch in libp2p: no entry in peers \
-				corresponding to an alive incoming");
+                corresponding to an alive incoming");
             return;
         };
 
@@ -622,12 +622,12 @@ impl LegacyProto {
             connected_point.clone()
         } else {
             error!(target: "sub-libp2p", "State mismatch in libp2p: entry in peers corresponding \
-				to an alive incoming is not in incoming state");
+                to an alive incoming is not in incoming state");
             return;
         };
 
         debug!(target: "sub-libp2p", "PSM => Accept({:?}, {:?}): Enabling connection \
-			through {:?}", index, incoming.peer_id, connected_point);
+            through {:?}", index, incoming.peer_id, connected_point);
         debug!(target: "sub-libp2p", "Handler({:?}) <= Enable", incoming.peer_id);
         self.events.push(NetworkBehaviourAction::SendEvent {
             peer_id: incoming.peer_id,
@@ -652,7 +652,7 @@ impl LegacyProto {
 
         if !incoming.alive {
             error!(target: "sub-libp2p", "PSM => Reject({:?}, {:?}): Obsolete incoming, \
-				ignoring", index, incoming.peer_id);
+                ignoring", index, incoming.peer_id);
             return;
         }
 
@@ -660,7 +660,7 @@ impl LegacyProto {
             state
         } else {
             error!(target: "sub-libp2p", "State mismatch in libp2p: no entry in peers \
-				corresponding to an alive incoming");
+                corresponding to an alive incoming");
             return;
         };
 
@@ -668,12 +668,12 @@ impl LegacyProto {
             connected_point.clone()
         } else {
             error!(target: "sub-libp2p", "State mismatch in libp2p: entry in peers corresponding \
-				to an alive incoming is not in incoming state");
+                to an alive incoming is not in incoming state");
             return;
         };
 
         debug!(target: "sub-libp2p", "PSM => Reject({:?}, {:?}): Rejecting connection through \
-			{:?}", index, incoming.peer_id, connected_point);
+            {:?}", index, incoming.peer_id, connected_point);
         debug!(target: "sub-libp2p", "Handler({:?}) <= Disable", incoming.peer_id);
         self.events.push(NetworkBehaviourAction::SendEvent {
             peer_id: incoming.peer_id,
@@ -739,9 +739,9 @@ impl NetworkBehaviour for LegacyProto {
                     }
                 };
                 debug!(target: "sub-libp2p", "Libp2p => Connected({:?}): Incoming connection",
-					peer_id);
+                    peer_id);
                 debug!(target: "sub-libp2p", "PSM <= Incoming({:?}, {:?}): Through {:?}",
-					incoming_id, peer_id, connected_point);
+                    incoming_id, peer_id, connected_point);
                 self.peerset.incoming(peer_id.clone(), incoming_id);
                 self.incoming.push(IncomingPeer {
                     peer_id: peer_id.clone(),
@@ -759,7 +759,7 @@ impl NetworkBehaviour for LegacyProto {
                     None
                 };
                 debug!(target: "sub-libp2p", "Libp2p => Connected({:?}): Requested by something \
-					else than PSM, disabling", peer_id);
+                    else than PSM, disabling", peer_id);
                 debug!(target: "sub-libp2p", "Handler({:?}) <= Disable", peer_id);
                 self.events.push(NetworkBehaviourAction::SendEvent {
                     peer_id: peer_id.clone(),
@@ -790,14 +790,14 @@ impl NetworkBehaviour for LegacyProto {
             // This is a serious bug either in this state machine or in libp2p.
             {
                 error!(target: "sub-libp2p", "Received inject_disconnected for non-connected \
-					node {:?}", peer_id)
+                    node {:?}", peer_id)
             }
 
             Some(PeerState::Disabled {
                 open, banned_until, ..
             }) => {
                 debug!(target: "sub-libp2p", "Libp2p => Disconnected({:?}): Was disabled \
-					(through {:?})", peer_id, endpoint);
+                    (through {:?})", peer_id, endpoint);
                 if let Some(until) = banned_until {
                     self.peers
                         .insert(peer_id.clone(), PeerState::Banned { until });
@@ -820,7 +820,7 @@ impl NetworkBehaviour for LegacyProto {
                 ..
             }) => {
                 debug!(target: "sub-libp2p", "Libp2p => Disconnected({:?}): Was disabled \
-					(through {:?}) but pending enable", peer_id, endpoint);
+                    (through {:?}) but pending enable", peer_id, endpoint);
                 debug!(target: "sub-libp2p", "PSM <= Dropped({:?})", peer_id);
                 self.peerset.dropped(peer_id.clone());
                 self.peers.insert(
@@ -843,7 +843,7 @@ impl NetworkBehaviour for LegacyProto {
 
             Some(PeerState::Enabled { open, .. }) => {
                 debug!(target: "sub-libp2p", "Libp2p => Disconnected({:?}): Was enabled \
-					(through {:?})", peer_id, endpoint);
+                    (through {:?})", peer_id, endpoint);
                 debug!(target: "sub-libp2p", "PSM <= Dropped({:?})", peer_id);
                 self.peerset.dropped(peer_id.clone());
 
@@ -872,11 +872,11 @@ impl NetworkBehaviour for LegacyProto {
             Some(PeerState::Incoming { .. }) => {
                 if let Some(state) = self.incoming.iter_mut().find(|i| i.peer_id == *peer_id) {
                     debug!(target: "sub-libp2p", "Libp2p => Disconnected({:?}): Was in incoming \
-						mode (id {:?}, through {:?})", peer_id, state.incoming_id, endpoint);
+                        mode (id {:?}, through {:?})", peer_id, state.incoming_id, endpoint);
                     state.alive = false;
                 } else {
                     error!(target: "sub-libp2p", "State mismatch in libp2p: no entry in incoming \
-						corresponding to an incoming state in peers")
+                        corresponding to an incoming state in peers")
                 }
             }
 
@@ -1063,7 +1063,7 @@ impl NetworkBehaviour for LegacyProto {
                 trace!(target: "sub-libp2p", "Handler({:?}) => Clogged", source);
                 trace!(target: "sub-libp2p", "External API <= Clogged({:?})", source);
                 warn!(target: "sub-libp2p", "Queue of packets to send to {:?} is \
-					pretty large", source);
+                    pretty large", source);
                 self.events.push(NetworkBehaviourAction::GenerateEvent(
                     LegacyProtoOut::Clogged {
                         peer_id: source,
@@ -1078,12 +1078,12 @@ impl NetworkBehaviour for LegacyProto {
                 ref error,
             } if !is_severe => {
                 debug!(target: "sub-libp2p", "Handler({:?}) => Benign protocol error: {:?}",
-					source, error)
+                    source, error)
             }
 
             CustomProtoHandlerOut::ProtocolError { error, .. } => {
                 debug!(target: "sub-libp2p", "Handler({:?}) => Severe protocol error: {:?}",
-					source, error);
+                    source, error);
                 // A severe protocol error happens when we detect a "bad" node, such as a node on
                 // a different chain, or a node that doesn't speak the same protocol(s). We
                 // decrease the node's reputation, hence lowering the chances we try this node

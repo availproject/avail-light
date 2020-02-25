@@ -1,7 +1,8 @@
 use super::{behaviour, transport};
+
 use fnv::FnvBuildHasher;
 use hashbrown::HashSet;
-use libp2p::{Multiaddr, PeerId, Swarm};
+use libp2p::{Multiaddr, PeerId, Swarm, swarm::SwarmEvent};
 
 /// State machine representing the network currently running.
 pub struct Network {
@@ -20,11 +21,8 @@ pub struct BlocksRequestId(u64);
 /// Event that can happen on the network.
 #[derive(Debug)]
 pub enum Event {
-    /// Received a block announcement for specific blocks.
-    BlocksAnnouncementReceived {
-        /// List of encoded headers.
-        headers: Vec<Vec<u8>>,
-    },
+    /// An announcement about a block has been gossiped to us.
+    BlockAnnounce(behaviour::BlockHeader),
 
     /// A blocks request started with [`Network::start_block_request`] has gotten a response.
     BlocksRequestFinished {
@@ -86,8 +84,11 @@ impl Network {
     pub async fn next_event(&mut self) -> Event {
         loop {
             match self.swarm.next_event().await {
-                // TODO: don't println
-                ev => println!("{:?}", ev),
+                SwarmEvent::Behaviour(behaviour::BehaviourOut::BlockAnnounce(header)) => {
+                    return Event::BlockAnnounce(header);
+                },
+                // TODO:
+                _ => {},
             }
         }
     }

@@ -12,6 +12,7 @@ futures = "0.3.1"   # TODO: should be default-features = false, but we use some 
 futures_codec = "0.3.3"
 futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }
+jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
 libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }

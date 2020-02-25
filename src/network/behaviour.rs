@@ -30,6 +30,7 @@ use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollPa
 use libp2p::NetworkBehaviour;
 use log::debug;
 use parity_scale_codec::{DecodeAll, Encode};
+use primitive_types::U256;
 
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
@@ -52,7 +53,23 @@ pub struct Behaviour {
 }
 
 #[derive(Debug)]
-pub enum BehaviourOut {}
+pub enum BehaviourOut {
+    /// An announcement about a block has been gossiped to us.
+    BlockAnnounce(BlockHeader),
+}
+
+/// Abstraction over a block header for a substrate chain.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct BlockHeader {
+    /// The parent hash.
+    pub parent_hash: U256,
+    /// The block number.
+    pub number: u32,
+    /// The state trie merkle root
+    pub state_root: U256,
+    /// The merkle root of the extrinsics.
+    pub extrinsics_root: U256,
+}
 
 impl Behaviour {
     /// Builds a new `Behaviour`.
@@ -199,8 +216,19 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
             }
             legacy_proto::LegacyProtoOut::CustomProtocolClosed { peer_id, .. } => {}
             legacy_proto::LegacyProtoOut::CustomMessage { peer_id, message } => {
-                let message = legacy_proto::message::Message::decode_all(&message).unwrap();
-                println!("message from {:?} => {:?}", peer_id, message);
+                match legacy_proto::message::Message::decode_all(&message) {
+                    Ok(legacy_proto::message::Message::BlockAnnounce(announcement)) => {
+                        self.events.push(BehaviourOut::BlockAnnounce(BlockHeader {
+                            parent_hash: announcement.header.parent_hash,
+                            number: announcement.header.number,
+                            state_root: announcement.header.state_root,
+                            extrinsics_root: announcement.header.extrinsics_root,
+                        }));
+                    }
+                    Ok(legacy_proto::message::Message::Status(_)) => {},
+                    msg => println!("message from {:?} => {:?}", peer_id, message),
+                }
+                
             }
             legacy_proto::LegacyProtoOut::Clogged { .. } => {}
         }

@@ -4,6 +4,24 @@ fn main() {
     futures::executor::block_on(async_main())
 }
 
+/*
+    account.nextIndex
+    author.submitExtrinsic
+    author.submitAndWatchExtrinsic
+    chain.getBlock
+    chain.getHeader
+    chain.subscribeNewHeads
+    chain.getBlockHash
+    chain.subscribeFinalizedHeads
+    state.getStorage
+    state.subscribeStorage
+    state.getMetadata
+    state.getRuntimeVersion
+    system.chain
+    system.properties
+    system.health
+*/
+
 async fn async_main() {
     env_logger::init().unwrap();
 
@@ -19,7 +37,17 @@ async fn async_main() {
         .build()
         .await;
 
+    let rpc_server = jsonrpsee::http_server(&"0.0.0.0:9933".parse().unwrap()).await.unwrap();
+
+    let foo_method = rpc_server.register_method(From::from("system_chain")).unwrap();
+
     loop {
-        let _ = service.next_event().await;
+        let next_server_event = service.next_event().await;
+        match next_server_event {
+            substrate_lite::service::Event::NewChainHead(num) => {
+                println!("new chain head: {}", num);
+            }
+            _ => {}
+        }
     }
 }

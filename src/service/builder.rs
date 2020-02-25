@@ -96,7 +96,7 @@ impl ServiceBuilder {
         Service {
             wasm_vms: executor::WasmVirtualMachines::with_tasks_executor({
                 let tasks_executor = tasks_executor.clone();
-                move |task| (*tasks_executor)(task)
+                move |name, task| (*tasks_executor)(task)
             }),
             // TODO: don't unwrap; instead, misconfig error
             wasm_runtime: self.wasm_runtime.take().unwrap(),

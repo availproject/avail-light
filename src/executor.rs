@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use core::{future::Future, pin::Pin};
 use fnv::FnvBuildHasher;
 use futures::{channel::mpsc, prelude::*};
@@ -14,7 +15,9 @@ pub use vm::WasmBlob;
 /// The `TUser` generic parameter represents a user data.
 pub struct WasmVirtualMachines<TUser> {
     /// How to spawn background tasks.
-    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    ///
+    /// The parameters of the `Fn` are the name of the task and the task itself.
+    tasks_executor: Box<dyn Fn(Cow<'static, str>, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     virtual_machines: HashMap<WasmVmId, VmState<TUser>, FnvBuildHasher>,
 
@@ -50,8 +53,12 @@ pub struct Entry<'a, TUser> {
 
 impl<TUser> WasmVirtualMachines<TUser> {
     /// Initializes the collection.
+    ///
+    /// The closure is held and will be called by the [`WasmVirtualMachines`] whenever it wants
+    /// to spawn a task running in the background. The parameter to the closure are the name of
+    /// the task and the task itself.
     pub fn with_tasks_executor(
-        tasks_executor: impl Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + 'static,
+        tasks_executor: impl Fn(Cow<'static, str>, Pin<Box<dyn Future<Output = ()> + Send>>) + Send + 'static,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(0);
 
@@ -76,13 +83,14 @@ impl<TUser> WasmVirtualMachines<TUser> {
         let mut events_tx = self.events_tx.clone();
         let wasm_id = self.next_vm_id;
         //self.next_vm_id.0 = self.next_vm_id.0.checked_add(1).unwrap();
-        (self.tasks_executor)(Box::pin(async move {
+        (self.tasks_executor)(Cow::Owned(format!("wasm-vm-{}", function)), Box::pin(async move {
             loop {
                 match virtual_machine.state() {
                     externals::State::ReadyToRun(vm) => {
                         vm.run();
                     }
                     externals::State::Finished(data) => {
+                        break;
                         //println!("call finished: {:?}", data);
                     }
                     _ => unimplemented!(),
