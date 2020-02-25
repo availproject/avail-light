@@ -29,6 +29,7 @@ use libp2p::kad::record;
 use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
 use libp2p::NetworkBehaviour;
 use log::debug;
+use parity_scale_codec::{Encode, DecodeAll};
 
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
@@ -161,6 +162,7 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
             },
             legacy_proto::LegacyProtoOut::CustomMessage { peer_id, message } => {
                 println!("message from {:?}", peer_id);
+                let message = legacy_proto::message::Message::decode_all(&message).unwrap();
             },
             legacy_proto::LegacyProtoOut::Clogged { .. } => {},
         }

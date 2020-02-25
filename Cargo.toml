@@ -20,6 +20,7 @@ log = "0.4"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
+primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "std"] } # TODO: don't use parity crates
 rand = "0.7"
 sc-peerset = { git = "https://github.com/paritytech/substrate" }    # TODO: remove
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }

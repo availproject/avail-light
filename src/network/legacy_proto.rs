@@ -18,5 +18,6 @@ pub use self::behaviour::{LegacyProto, LegacyProtoOut};
 
 mod behaviour;
 mod handler;
-mod message;
 mod upgrade;
+
+pub mod message;
