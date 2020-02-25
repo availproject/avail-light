@@ -226,9 +226,11 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                         }));
                     }
                     Ok(legacy_proto::message::Message::Status(_)) => {},
-                    msg => println!("message from {:?} => {:?}", peer_id, message),
+                    /*Ok(legacy_proto::message::Message::BlockResponse(response)) => {
+
+                    },*/
+                    msg => println!("message from {:?} => {:?}", peer_id, msg),
                 }
-                
             }
             legacy_proto::LegacyProtoOut::Clogged { .. } => {}
         }

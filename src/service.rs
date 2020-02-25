@@ -36,17 +36,22 @@ pub enum Event {
 impl Service {
     /// Returns the next event that happens in the service.
     pub async fn next_event(&mut self) -> Event {
-        self.wasm_vms
-            .execute((), &self.wasm_runtime, "Core_version", &[]);
+        /*self.wasm_vms
+            .execute((), &self.wasm_runtime, "Core_version", &[]);*/
 
         loop {
-            let network_next = self.network.next_event();
-            /*let telemetry_next = async move {
-                self.telemetry.next_event().await
-            };*/
-            futures::pin_mut!(network_next);
-            match network_next.await {
+            let event = {
+                let network_next = self.network.next_event();
+                /*let telemetry_next = async move {
+                    self.telemetry.next_event().await
+                };*/
+                futures::pin_mut!(network_next);
+                network_next.await
+            };
+
+            match event {
                 network::Event::BlockAnnounce(header) => {
+                    self.network.start_block_request(header.number).await;
                     return Event::NewChainHead(header.number);      // TODO: not necessarily the head
                 },
                 network::Event::BlocksRequestFinished { .. } => {}

@@ -8,5 +8,6 @@ pub mod storage;
 pub mod telemetry;
 
 pub fn storage_from_chain_specs(specs: &chain_spec::ChainSpec) -> storage::Storage {
-    storage::Storage::default()
+    let mut storage = storage::Storage::empty();
+    storage
 }
