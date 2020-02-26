@@ -58,7 +58,9 @@ impl Service {
                     self.network.start_block_request(header.number).await;
                     return Event::NewChainHead(header.number);      // TODO: not necessarily the head
                 },
-                network::Event::BlocksRequestFinished { .. } => {}
+                network::Event::BlocksRequestFinished { result } => {
+                    println!("{:?}", result);
+                }
             }
         }
     }

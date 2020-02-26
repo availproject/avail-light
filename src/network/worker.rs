@@ -27,7 +27,7 @@ pub enum Event {
 
     /// A blocks request started with [`Network::start_block_request`] has gotten a response.
     BlocksRequestFinished {
-        result: Result<(), ()>,
+        result: Result<Vec<behaviour::BlockData>, ()>,
     },
 }
 
@@ -92,6 +92,11 @@ impl Network {
             match self.swarm.next_event().await {
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::BlockAnnounce(header)) => {
                     return Event::BlockAnnounce(header);
+                },
+                SwarmEvent::Behaviour(behaviour::BehaviourOut::BlocksResponse { blocks }) => {
+                    return Event::BlocksRequestFinished {
+                        result: Ok(blocks),
+                    };
                 },
                 // TODO:
                 _ => {},

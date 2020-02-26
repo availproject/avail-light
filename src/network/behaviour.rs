@@ -145,7 +145,7 @@ impl Behaviour {
                 from: legacy_proto::message::FromBlock::Number(block_num),
                 to: None,
                 direction: legacy_proto::message::Direction::Ascending,
-                max: None,
+                max: Some(1),
             });
 
         self.legacy.send_packet(&target, message.encode());
