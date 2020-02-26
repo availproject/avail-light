@@ -30,7 +30,8 @@ use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollPa
 use libp2p::NetworkBehaviour;
 use log::debug;
 use parity_scale_codec::{DecodeAll, Encode};
-use primitive_types::U256;
+use primitive_types::{H256, U256};
+use smallvec::SmallVec;
 
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
@@ -56,6 +57,9 @@ pub struct Behaviour {
 pub enum BehaviourOut {
     /// An announcement about a block has been gossiped to us.
     BlockAnnounce(BlockHeader),
+    BlocksResponse {
+        blocks: Vec<BlockData>,
+    },
 }
 
 /// Abstraction over a block header for a substrate chain.
@@ -71,10 +75,31 @@ pub struct BlockHeader {
     pub extrinsics_root: U256,
 }
 
+/// Block data sent in the response.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct BlockData {
+    /// Block header hash.
+    pub hash: H256,
+    /// Block header if requested.
+    pub header: Option<BlockHeader>,
+    /// Block body if requested.
+    pub body: Option<Vec<Extrinsic>>,
+    /// Block receipt if requested.
+    pub receipt: Option<Vec<u8>>,
+    /// Block message queue if requested.
+    pub message_queue: Option<Vec<u8>>,
+    /// Justification if requested.
+    pub justification: Option<Vec<u8>>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct Extrinsic(pub Vec<u8>);
+
 impl Behaviour {
     /// Builds a new `Behaviour`.
     pub async fn new(
         user_agent: String,
+        chain_spec_protocol_id: SmallVec<[u8; 6]>,
         local_public_key: PublicKey,
         known_addresses: Vec<(PeerId, Multiaddr)>,
         enable_mdns: bool,
@@ -90,15 +115,7 @@ impl Behaviour {
         };
 
         let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
-        let protocol_id = {
-            let mut protocol_id = smallvec::SmallVec::new();
-            protocol_id.push(b'f');
-            protocol_id.push(b'i');
-            protocol_id.push(b'r');
-            protocol_id.push(b'5');
-            protocol_id
-        };
-        let legacy = legacy_proto::LegacyProto::new(protocol_id, &[6, 5], peerset);
+        let legacy = legacy_proto::LegacyProto::new(chain_spec_protocol_id, &[6, 5], peerset);
 
         Behaviour {
             legacy,
@@ -115,7 +132,7 @@ impl Behaviour {
         }
     }
 
-    pub fn send_block_request(&mut self, block_num: u32) {
+    pub fn send_block_data_request(&mut self, block_num: u32) {
         let target = match self.legacy.open_peers().next() {
             Some(p) => p.clone(),
             None => return,
@@ -124,7 +141,7 @@ impl Behaviour {
         let message =
             legacy_proto::message::Message::BlockRequest(legacy_proto::message::BlockRequest {
                 id: 0,
-                fields: legacy_proto::message::BlockAttributes::HEADER,
+                fields: legacy_proto::message::BlockAttributes::HEADER | legacy_proto::message::BlockAttributes::BODY,
                 from: legacy_proto::message::FromBlock::Number(block_num),
                 to: None,
                 direction: legacy_proto::message::Direction::Ascending,
@@ -226,9 +243,29 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                         }));
                     }
                     Ok(legacy_proto::message::Message::Status(_)) => {},
-                    /*Ok(legacy_proto::message::Message::BlockResponse(response)) => {
-
-                    },*/
+                    Ok(legacy_proto::message::Message::BlockResponse(response)) => {
+                        self.events.push(BehaviourOut::BlocksResponse {
+                            blocks: response.blocks.into_iter().map(|data| {
+                                BlockData {
+                                    hash: data.hash,
+                                    header: data.header.map(|header| {
+                                        BlockHeader {
+                                            parent_hash: header.parent_hash,
+                                            number: header.number,
+                                            state_root: header.state_root,
+                                            extrinsics_root: header.extrinsics_root,
+                                        }
+                                    }),
+                                    body: data.body.map(|body| {
+                                        body.into_iter().map(|ext| Extrinsic(ext.0)).collect()
+                                    }),
+                                    receipt: data.receipt,
+                                    message_queue: data.message_queue,
+                                    justification: data.justification,
+                                }
+                            }).collect(),
+                        });
+                    },
                     msg => println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }

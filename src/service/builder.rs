@@ -70,6 +70,16 @@ impl ServiceBuilder {
         self
     }
 
+    /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
+    pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
+        ServiceBuilder {
+            wasm_runtime: self.wasm_runtime,
+            tasks_executor: self.tasks_executor,
+            network: self.network.with_chain_spec_protocol_id(id),
+            telemetry_endpoints: self.telemetry_endpoints,
+        }
+    }
+
     /// Builds the actual service, starting everything.
     pub async fn build(mut self) -> Service {
         let (threads_pool, tasks_executor) = match self.tasks_executor {

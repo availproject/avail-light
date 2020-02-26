@@ -1,11 +1,15 @@
 use super::worker;
 use core::{fmt, future::Future, pin::Pin};
 use libp2p::{multiaddr, Multiaddr, PeerId};
+use smallvec::{smallvec, SmallVec};
 
 pub struct NetworkBuilder {
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
     executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+
+    /// Small string identifying the chain, in order to detect incompatible nodes earlier.
+    chain_spec_protocol_id: SmallVec<[u8; 6]>,
 
     /// List of known bootnodes.
     boot_nodes: Vec<(PeerId, Multiaddr)>,
@@ -15,6 +19,7 @@ pub struct NetworkBuilder {
 pub fn builder() -> NetworkBuilder {
     NetworkBuilder {
         executor: None,
+        chain_spec_protocol_id: smallvec![b's', b'u', b'p'],
         boot_nodes: Vec::new(),
     }
 }
@@ -43,10 +48,17 @@ impl NetworkBuilder {
         self
     }
 
+    /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
+    pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
+        self.chain_spec_protocol_id = id.as_ref().into_iter().cloned().collect();
+        self
+    }
+
     /// Starts the networking.
     pub async fn build(self) -> worker::Network {
         worker::Network::start(worker::Config {
             known_addresses: self.boot_nodes,
+            chain_spec_protocol_id: self.chain_spec_protocol_id,
         })
         .await
     }

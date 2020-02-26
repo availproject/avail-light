@@ -3,6 +3,7 @@ use super::{behaviour, transport};
 use fnv::FnvBuildHasher;
 use hashbrown::HashSet;
 use libp2p::{Multiaddr, PeerId, Swarm, swarm::SwarmEvent};
+use smallvec::SmallVec;
 
 /// State machine representing the network currently running.
 pub struct Network {
@@ -34,7 +35,11 @@ pub enum Event {
 ///
 /// Internal to the `network` module.
 pub(super) struct Config {
+    /// List of peer ids and their addresses that we know are part of the peer-to-peer network.
     pub(super) known_addresses: Vec<(PeerId, Multiaddr)>,
+    /// Small string identifying the name of the chain, in order to detect incompatible nodes
+    /// earlier.
+    pub(super) chain_spec_protocol_id: SmallVec<[u8; 6]>,
 }
 
 impl Network {
@@ -45,6 +50,7 @@ impl Network {
         let (transport, _) = transport::build_transport(local_key_pair, false, None, true);
         let behaviour = behaviour::Behaviour::new(
             "substrate-lite".to_string(),
+            config.chain_spec_protocol_id,
             local_public_key,
             config.known_addresses,
             true,
@@ -72,7 +78,7 @@ impl Network {
 
         self.blocks_requests.insert(id);
 
-        self.swarm.send_block_request(block_num);
+        self.swarm.send_block_data_request(block_num);
     }
 
     /// Returns the number of ongoing block requests.
