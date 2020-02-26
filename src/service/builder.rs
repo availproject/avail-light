@@ -46,7 +46,7 @@ impl<'a> From<&'a ChainSpec> for ServiceBuilder {
 impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
     pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
-        self.storage = crate::storage_from_chain_specs(specs);
+        self.storage = crate::storage_from_genesis_block(specs);
 
         // TODO: chain specs should use stronger typing
         self.network.set_boot_nodes(
@@ -55,6 +55,8 @@ impl ServiceBuilder {
                 .iter()
                 .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
         );
+
+        self.network.set_chain_spec_protocol_id(specs.protocol_id().unwrap());
     }
 
     /// Sets how the service should spawn background tasks.

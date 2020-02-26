@@ -49,8 +49,13 @@ impl NetworkBuilder {
     }
 
     /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
-    pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
+    pub fn set_chain_spec_protocol_id(&mut self, id: impl AsRef<[u8]>) {
         self.chain_spec_protocol_id = id.as_ref().into_iter().cloned().collect();
+    }
+
+    /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
+    pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
+        self.set_chain_spec_protocol_id(id);
         self
     }
 
