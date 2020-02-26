@@ -1,5 +1,5 @@
 use super::Service;
-use crate::{chain_spec::ChainSpec, executor, network, telemetry};
+use crate::{chain_spec::ChainSpec, executor, network, storage, telemetry};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin};
@@ -8,8 +8,8 @@ use libp2p::Multiaddr;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
-    /// Runtime of the Substrate chain.
-    wasm_runtime: Option<executor::WasmBlob>,
+    /// Storage for the state of all blocks.
+    storage: storage::Storage,
 
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
@@ -25,7 +25,7 @@ pub struct ServiceBuilder {
 /// Creates a new prototype of the service.
 pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
-        wasm_runtime: None, // TODO: this default is meh
+        storage: storage::Storage::empty(),
         tasks_executor: None,
         network: network::builder(),
         telemetry_endpoints: vec![(
@@ -46,6 +46,8 @@ impl<'a> From<&'a ChainSpec> for ServiceBuilder {
 impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
     pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
+        self.storage = crate::storage_from_chain_specs(specs);
+
         // TODO: chain specs should use stronger typing
         self.network.set_boot_nodes(
             specs
@@ -53,12 +55,6 @@ impl ServiceBuilder {
                 .iter()
                 .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
         );
-    }
-
-    /// Sets the WASM runtime blob to use.
-    pub fn with_wasm_runtime(mut self, wasm_runtime: executor::WasmBlob) -> Self {
-        self.wasm_runtime = Some(wasm_runtime);
-        self
     }
 
     /// Sets how the service should spawn background tasks.
@@ -73,7 +69,7 @@ impl ServiceBuilder {
     /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
     pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
         ServiceBuilder {
-            wasm_runtime: self.wasm_runtime,
+            storage: self.storage,
             tasks_executor: self.tasks_executor,
             network: self.network.with_chain_spec_protocol_id(id),
             telemetry_endpoints: self.telemetry_endpoints,
@@ -108,8 +104,7 @@ impl ServiceBuilder {
                 let tasks_executor = tasks_executor.clone();
                 move |name, task| (*tasks_executor)(task)
             }),
-            // TODO: don't unwrap; instead, misconfig error
-            wasm_runtime: self.wasm_runtime.take().unwrap(),
+            storage: self.storage,
             network: self
                 .network
                 .with_executor({

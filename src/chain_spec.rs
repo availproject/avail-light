@@ -23,12 +23,13 @@ use hashbrown::HashMap;
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
 
+// TODO: shouldn't be public
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-struct ChildRawStorage {
-    child_info: Vec<u8>,
-    child_type: u32,
+pub(crate) struct ChildRawStorage {
+    pub(crate) child_info: Vec<u8>,
+    pub(crate) child_type: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,11 +48,13 @@ enum Genesis {
     Raw(RawGenesis),
 }
 
+// TODO: shouldn't be public
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-struct StorageKey(#[serde(with = "impl_serde::serialize")] Vec<u8>);
+pub(crate) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
 
+// TODO: shouldn't be public
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-struct StorageData(#[serde(with = "impl_serde::serialize")] Vec<u8>);
+pub(crate) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +126,18 @@ impl ChainSpec {
     /// Add a bootnode to the list.
     pub fn add_boot_node(&mut self, addr: Multiaddr) {
         self.client_spec.boot_nodes.push(addr.to_string())
+    }
+
+    // TODO: bad API
+    pub(crate) fn genesis_top(&self) -> &HashMap<StorageKey, StorageData, FnvBuildHasher> {
+        let Genesis::Raw(genesis) = &self.client_spec.genesis;
+        &genesis.top
+    }
+
+    // TODO: bad API
+    pub(crate) fn genesis_children(&self) -> &HashMap<StorageKey, ChildRawStorage, FnvBuildHasher> {
+        let Genesis::Raw(genesis) = &self.client_spec.genesis;
+        &genesis.children
     }
 
     /*/// Create hardcoded spec.

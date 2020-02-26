@@ -90,8 +90,8 @@ impl<TUser> WasmVirtualMachines<TUser> {
                         vm.run();
                     }
                     externals::State::Finished(data) => {
+                        println!("call finished: {:?}", data);
                         break;
-                        //println!("call finished: {:?}", data);
                     }
                     _ => unimplemented!(),
                 }

@@ -1,4 +1,4 @@
-use crate::{executor, network, telemetry};
+use crate::{executor, network, storage, telemetry};
 use futures::{executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 
@@ -10,7 +10,9 @@ pub struct Service {
     /// Collection of all the WASM VMs that are currently running.
     wasm_vms: executor::WasmVirtualMachines<()>,
     /// Blob of WASM code of the runtime of the chain.
-    wasm_runtime: executor::WasmBlob,
+    //wasm_runtime: executor::WasmBlob,
+    /// Database of the state of all the blocks.
+    storage: storage::Storage,
     /// Management of the network. Contains all the active connections and their state.
     network: network::Network,
     /// Connections to zero or more telemetry servers.
@@ -36,8 +38,10 @@ pub enum Event {
 impl Service {
     /// Returns the next event that happens in the service.
     pub async fn next_event(&mut self) -> Event {
-        /*self.wasm_vms
-            .execute((), &self.wasm_runtime, "Core_version", &[]);*/
+        /*let block0 = "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap();
+        let wasm_runtime = executor::WasmBlob::from_bytes(self.storage.block(&block0).storage().unwrap().code_key().unwrap()).unwrap();
+        self.wasm_vms
+            .execute((), &wasm_runtime, "Core_version", &[]);*/
 
         loop {
             let event = {

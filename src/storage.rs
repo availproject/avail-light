@@ -1,4 +1,4 @@
-//! Storage of abstract data, accessible from the runtime.
+//! Data structure containing all blocks in the chain.
 
 use alloc::sync::Arc;
 use fnv::FnvBuildHasher;
@@ -11,8 +11,9 @@ pub struct Storage {
     blocks: HashMap<H256, BlockState, FnvBuildHasher>,
 }
 
+#[derive(Default)]
 struct BlockState {
-    storage: Arc<BlockStorage>,
+    storage: Option<Arc<BlockStorage>>,
 }
 
 /// Access to a block within the storage.
@@ -25,7 +26,7 @@ pub struct Block<'a> {
 #[derive(Debug, Clone)]
 pub struct BlockStorage {
     top_trie: HashMap<Vec<u8>, Vec<u8>, FnvBuildHasher>,
-    children:  HashMap<Vec<u8>, Child>,
+    children: HashMap<Vec<u8>, Child, FnvBuildHasher>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +42,11 @@ impl Storage {
         }
     }
 
-    pub fn block_access(&mut self, hash: &H256) -> Block {
+    /// Returns an object representing an access to the given block in the storage.
+    ///
+    /// Since every single hash can potentially be valid, this function always succeeds whatever
+    /// hash you pass and lets you insert a corresponding block.
+    pub fn block(&mut self, hash: &H256) -> Block {
         Block {
             entry: self.blocks.entry(hash.clone())
         }
@@ -49,16 +54,52 @@ impl Storage {
 }
 
 impl<'a> Block<'a> {
-    pub fn get_storage(&self) -> Option<Arc<BlockStorage>> {
+    /// Returns an access to the storage of this block, if known.
+    pub fn storage(&self) -> Option<Arc<BlockStorage>> {
         if let hashbrown::hash_map::Entry::Occupied(e) = &self.entry {
-            Some(e.get().storage.clone())
+            e.get().storage.as_ref().map(|s| s.clone())
         } else {
             None
         }
+    }
+
+    // TODO: should be &mut self normally
+    pub fn set_storage(mut self, block_storage: BlockStorage) -> Result<(), ()> {
+        // TODO: check proper hash of block_storage
+
+        self.entry
+            .or_insert_with(|| BlockState::default())
+            .storage = Some(Arc::new(block_storage));
+        Ok(())
+    }
+
+    /// Returns an access to the hash of this block, if known.
+    pub fn header(&self) -> Option<()> {
+        unimplemented!()
     }
 
     /*pub fn insert(self, state: BlockState) {
         let _was_in = self.storage.blocks.insert(self.hash.clone(), Arc::new(state));
         debug_assert!(_was_in.is_none());
     }*/
+}
+
+impl BlockStorage {
+    /// Builds a new empty [`BlockStorage`].
+    pub fn empty() -> BlockStorage {
+        BlockStorage {
+            top_trie: HashMap::default(),
+            children: HashMap::default(),
+        }
+    }
+
+    pub fn insert(&mut self, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) {
+        self.top_trie.insert(key.as_ref().to_owned(), value.as_ref().to_owned());
+    }
+
+    /// Returns the value of the `:code` key, containing the WASM code.
+    pub fn code_key<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
+        const CODE: &[u8] = b":code";
+        self.top_trie.get(CODE)
+    }
 }

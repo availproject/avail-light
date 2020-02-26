@@ -31,10 +31,6 @@ async fn async_main() {
     .unwrap();
 
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
-        .with_wasm_runtime(
-            TryFrom::try_from(&include_bytes!("../../node_runtime.compact.wasm")[..]).unwrap(),
-        )
-        .with_chain_spec_protocol_id(chain_spec.protocol_id().unwrap())     // TODO: don't unwrap
         .build()
         .await;
 
