@@ -9,8 +9,6 @@ mod builder;
 pub struct Service {
     /// Collection of all the WASM VMs that are currently running.
     wasm_vms: executor::WasmVirtualMachines<()>,
-    /// Blob of WASM code of the runtime of the chain.
-    //wasm_runtime: executor::WasmBlob,
     /// Database of the state of all the blocks.
     storage: storage::Storage,
     /// Management of the network. Contains all the active connections and their state.

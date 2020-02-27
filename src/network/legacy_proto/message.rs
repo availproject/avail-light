@@ -16,6 +16,7 @@
 
 //! Network packet message types. These get serialized and put into the lower level protocol payload.
 
+use blake2::digest::{Input as _, VariableOutput as _};
 use bitflags::bitflags;
 use core::fmt;
 use parity_scale_codec::{
@@ -131,6 +132,28 @@ pub struct Header {
     pub extrinsics_root: U256,
     /// A chain-specific digest of data useful for light clients or referencing auxiliary data.
     pub digest: Digest<H256>,
+}
+
+impl Header {
+    /// Returns the hash of the header, and thus also of the block.
+    pub fn block_hash(&self) -> BlockHash {
+        let mut out = [0; 32];
+        blake2_256_into(&self.encode(), &mut out);
+        BlockHash(out)
+    }
+}
+
+/// Hash of a block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockHash(pub [u8; 32]);
+
+/// Do a Blake2 256-bit hash and place result in `dest`.
+fn blake2_256_into(data: &[u8], dest: &mut [u8; 32]) {
+    let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
+    hasher.input(data);
+    let result = hasher.vec_result();
+    assert_eq!(result.len(), 32);
+    dest.copy_from_slice(&result);
 }
 
 impl Decode for Header {
@@ -366,11 +389,18 @@ pub struct ChangesTrieConfiguration {
 
 /// Abstraction over a substrate block.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct Block<Extrinsic> {
+pub struct Block {
     /// The block header.
     pub header: Header,
     /// The accompanying extrinsics.
     pub extrinsics: Vec<Extrinsic>,
+}
+
+impl Block {
+    /// Returns the hash of the block.
+    pub fn block_hash(&self) -> BlockHash {
+        self.header.block_hash()
+    }
 }
 
 /// A proof that some set of key-value pairs are included in the storage trie. The proof contains
