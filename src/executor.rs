@@ -8,6 +8,7 @@ mod allocator;
 mod externals;
 mod vm;
 
+pub use externals::FunctionToCall;
 pub use vm::WasmBlob;
 
 /// Collection of WASM virtual machines.
@@ -76,14 +77,13 @@ impl<TUser> WasmVirtualMachines<TUser> {
         &self,
         user_data: TUser,
         module: &WasmBlob,
-        function: &str,
-        data: &[u8],
+        to_call: FunctionToCall,
     ) -> Entry<TUser> {
-        let mut virtual_machine = externals::ExternalsVm::new(module, function, data).unwrap(); // TODO: don't unwrap
+        let mut virtual_machine = externals::ExternalsVm::new(module, to_call).unwrap(); // TODO: don't unwrap
         let mut events_tx = self.events_tx.clone();
         let wasm_id = self.next_vm_id;
         //self.next_vm_id.0 = self.next_vm_id.0.checked_add(1).unwrap();
-        (self.tasks_executor)(Cow::Owned(format!("wasm-vm-{}", function)), Box::pin(async move {
+        (self.tasks_executor)(Cow::Owned(format!("wasm-vm")), Box::pin(async move {
             loop {
                 match virtual_machine.state() {
                     externals::State::ReadyToRun(vm) => {

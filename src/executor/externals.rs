@@ -10,6 +10,8 @@ use core::convert::TryFrom as _;
 pub struct ExternalsVm {
     /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
+
+    /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
     state: StateInner,
 
     /// List of functions that the WASM code imports.
@@ -21,6 +23,13 @@ pub struct ExternalsVm {
 
     /// Memory allocator in order to answer the calls to `malloc` and `free`.
     allocator: allocator::FreeingBumpHeapAllocator,
+}
+
+/// Which function to call on a runtime blob, and its parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionToCall/*<'a>*/ {
+    CoreVersion,
+    //CoreExecuteBlock(&'a Block),
 }
 
 enum RegisteredFunction {
@@ -70,6 +79,20 @@ impl ExternalsVm {
     ///
     /// The `data` parameter is the SCALE-encoded data to inject into the runtime.
     pub fn new(
+        module: &vm::WasmBlob,
+        to_call: FunctionToCall,
+    ) -> Result<Self, vm::NewErr> {
+        match to_call {
+            FunctionToCall::CoreVersion => {
+                ExternalsVm::new_inner(module, "Core_version", &[])
+            },
+        }
+    }
+
+    /// Creates a new state machine from the given module that executes the given function.
+    ///
+    /// The `data` parameter is the SCALE-encoded data to inject into the runtime.
+    fn new_inner(
         module: &vm::WasmBlob,
         function_name: &str,
         data: &[u8],
