@@ -18,29 +18,89 @@
 //!
 //! # Overview
 //!
-//! A blockchain is, as its name says, a list of blocks.
+//! A blockchain is, as its name says, a chained list of blocks.
 //!
-//! A block primarily consists in:
+//! A block primarily consists in two properties:
 //!
 //! - An (optional) parent block, referred to by its hash (see below).
-//! - A list of **extrinsics** (also often called **transactions**).
+//! - An ordered list of **extrinsics** (also often called **transactions**).
+//!
+//! TODO: digest; what is it exactly?
+//!
+//! > **Note**: A block without a parent is called a *genesis block*, and represents the head of
+//! >           a chain. Each chain only has one genesis block, whose definition is part of the
+//! >           properties of this chain.
 //!
 //! From these information, we can derive:
 //!
 //! - The hash of the block. This is a unique identifier obtained by hashing all the information
-//! together. You can obtain this by calling [`Block::hash`].
+//! together in a specific way. You can obtain this by calling [`Block::hash`].
 //! - The block number. It is equal to the parent's block number plus one, or equal to zero if
 //! there is no parent block.
 //! - The state of the storage at the height of the block. See the [`storage`](crate::storage)
 //! module for an explanation of the concept of storage. The state at the height of the block
-//! consists in the state of the parent's block on top of which we have applied the block's
-//! extrinsics.
-//! - The extrinsics root, which consists in the trie root of all the extrinsics within the block.
+//! consists in the state of the parent block on top of which we have applied the block's
+//! extrinsics in order.
+//! - The extrinsics trie root, which consists in the trie root of all the extrinsics within the
+//! block.
 //! TODO: explain calculation process
-//! - The state root, which consists in the trie root of all the entries in the storage at the
-//! height of the block. TODO: explain calculation process or link to other module
+//! - The state trie root, which consists in the trie root of all the entries in the storage at
+//! the height of the block. TODO: explain calculation process or link to other module
 //!
-//! TODO: digest; what is it exactly?
+//! # Finalization
+//!
+//! Each block of a chain can be or not **finalized** in the context of a given chain. Once a
+//! block has been finalized, we consider as invalid any block that is not a descendant of it. In
+//! other words, a finalized block can never be reverted and is forever part of the chain.
+//!
+//! By extension, the parent of a finalized block must be finalized as well. The genesis block of
+//! a chain is by definition always finalized.
+//!
+//! # TODO: what's a justification?
+//!
+//! # Extrinsics
+//!
+//! An **extrinsic** represents a change, potential or not, to the state of the storage.It can be
+//! seen as something similar to a *diff*. An extrinsic is only ever valid in a specific context.
+//! In other words, an extrinsic that could be applicable on top of a specific block might not be
+//! on top of a different one.
+//!
+//! > **Note**: Extrinsics were called *transactions* in earlier blockchain projects such as
+//! >           Bitcoin.
+//!
+//! A block is valid only if its list of extrinsics can be applied, in order, on top of the state
+//! of its parent. Non-valid blocks should only ever happen in case of malicious nodes or bugs in
+//! the code.
+//!
+//! From the perspective of the client, an extrinsic is an opaque buffer of data. It is the
+//! responsibility of the runtime to decode that buffer of data and reports about its validity.
+//!
+//! # Block headers
+//!
+//! For optimization purposes, we don't always store and/or transmit on the network the entire
+//! block (i.e. the parent block hash, list of extrinsics, and so on) but only its **header**.
+//!
+//! A block's header consists only in some information.
+//!
+//! TODO: finish
+//!
+//! # About canonical hash trees
+//!
+//! So-called "light nodes" typically hold only a limited amount of information about the blocks
+//! of a chain, and no information about the storage.
+//! When such a node wants to know about a value in the storage, it has the possibility to ask
+//! this information to a node (typically called a "full node") that holds the storage.
+//!
+//! But how does the light node know that the full node is not lying to it?
+//!
+//! Part of the information that the light node holds is the state trie root, which is the trie
+//! root of all the key-value pairs of the state. When the full node sends us the value of the
+//! key that we have requested, it also sends us the leaf hashes necessary to calculate the root
+//! of the state trie. The local node can do that calculation, and check whether the trie root that
+//! it has calculated matches the trie root that it knows.
+//!
+//! Since the state trie root is part of the hash of the block, the light node can therefore be
+//! certain that this specific key-value indeed belongs to the block with the given hash.
 //!
 
 use blake2::digest::{Input as _, VariableOutput as _};
