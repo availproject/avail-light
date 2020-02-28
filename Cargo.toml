@@ -33,7 +33,7 @@ bitflags = "1.2.1"  # TODO: I hate bitflags
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "std"] } # TODO: don't use parity crates
-sc-peerset = { git = "https://github.com/paritytech/substrate" }    # TODO: remove
+sc-peerset = "2.0.0-alpha.3"
 slog = { version = "2.5.2", features = ["nested-values"] }
 slog-json = { version = "2.3.0", features = ["nested-values"] }
 void = "1.0"    # TODO: remove

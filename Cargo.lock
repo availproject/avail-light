@@ -2175,8 +2175,8 @@ dependencies = [
 
 [[package]]
 name = "sc-peerset"
-version = "2.0.0-dev"
-source = "git+https://github.com/paritytech/substrate#41bb2193a267805e2093a081bc3e2aaccc64283a"
+version = "2.0.0-alpha.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "futures 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "libp2p 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2403,7 +2403,7 @@ dependencies = [
  "pin-project 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "primitive-types 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "sc-peerset 2.0.0-dev (git+https://github.com/paritytech/substrate)",
+ "sc-peerset 2.0.0-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.104 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.48 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog 2.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3172,7 +3172,7 @@ dependencies = [
 "checksum ryu 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "bfa8506c1de11c9c4e4c38863ccbe02a305c8188e85a05a784c9e11e1c3910c8"
 "checksum salsa20 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "2324b0e8c3bb9a586a571fdb3136f70e7e2c748de00a78043f86e0cff91f91fe"
 "checksum salsa20-core 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "2fe6cc1b9f5a5867853ade63099de70f042f7679e408d1ffe52821c9248e6e69"
-"checksum sc-peerset 2.0.0-dev (git+https://github.com/paritytech/substrate)" = "<none>"
+"checksum sc-peerset 2.0.0-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)" = "7159587f78e9a6599b7d3a56d9d1bb247b10111bbeb43a116befa514d8bfffe8"
 "checksum scopeguard 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 "checksum sct 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e3042af939fca8c3453b7af0f1c66e533a15a86169e39de2657310ade8f98d3c"
 "checksum semver 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
