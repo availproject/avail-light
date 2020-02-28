@@ -14,11 +14,36 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Data structures representing blocks and stuff.
+//! Data structures representing blocks and other Substrate primitives.
+//!
+//! # Overview
+//!
+//! A blockchain is, as its name says, a list of blocks.
+//!
+//! A block primarily consists in:
+//!
+//! - An (optional) parent block, referred to by its hash (see below).
+//! - A list of **extrinsics** (also often called **transactions**).
+//!
+//! From these information, we can derive:
+//!
+//! - The hash of the block. This is a unique identifier obtained by hashing all the information
+//! together. You can obtain this by calling [`Block::hash`].
+//! - The block number. It is equal to the parent's block number plus one, or equal to zero if
+//! there is no parent block.
+//! - The state of the storage at the height of the block. See the [`storage`](crate::storage)
+//! module for an explanation of the concept of storage. The state at the height of the block
+//! consists in the state of the parent's block on top of which we have applied the block's
+//! extrinsics.
+//! - The extrinsics root, which consists in the trie root of all the extrinsics within the block.
+//! TODO: explain calculation process
+//! - The state root, which consists in the trie root of all the entries in the storage at the
+//! height of the block. TODO: explain calculation process or link to other module
+//!
+//! TODO: digest; what is it exactly?
+//!
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use bitflags::bitflags;
-use core::fmt;
 use parity_scale_codec::{
     Decode, Encode, EncodeAsRef, EncodeLike, Error, HasCompact, Input, Output,
 };
