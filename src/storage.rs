@@ -39,19 +39,19 @@ struct Child {
 }
 
 mod columns {
-	pub const META: u8 = 0;
-	pub const STATE: u8 = 1;
-	pub const STATE_META: u8 = 2;
-	/// maps hashes to lookup keys and numbers to canon hashes.
-	pub const KEY_LOOKUP: u8 = 3;
-	pub const HEADER: u8 = 4;
-	pub const BODY: u8 = 5;
-	pub const JUSTIFICATION: u8 = 6;
-	pub const CHANGES_TRIE: u8 = 7;
-	pub const AUX: u8 = 8;
-	/// Offchain workers local storage
-	pub const OFFCHAIN: u8 = 9;
-	pub const CACHE: u8 = 10;
+    pub const META: u8 = 0;
+    pub const STATE: u8 = 1;
+    pub const STATE_META: u8 = 2;
+    /// maps hashes to lookup keys and numbers to canon hashes.
+    pub const KEY_LOOKUP: u8 = 3;
+    pub const HEADER: u8 = 4;
+    pub const BODY: u8 = 5;
+    pub const JUSTIFICATION: u8 = 6;
+    pub const CHANGES_TRIE: u8 = 7;
+    pub const AUX: u8 = 8;
+    /// Offchain workers local storage
+    pub const OFFCHAIN: u8 = 9;
+    pub const CACHE: u8 = 10;
 }
 
 impl Storage {
@@ -59,7 +59,12 @@ impl Storage {
     pub fn empty() -> Self {
         // TODO:
         let disk_database = {
-            let mut options = parity_db::Options::with_columns(std::path::Path::new("/home/pierre/.local/share/substrate/chains/flamingfir7/paritydb"), 11);
+            let mut options = parity_db::Options::with_columns(
+                std::path::Path::new(
+                    "/home/pierre/.local/share/substrate/chains/flamingfir7/paritydb",
+                ),
+                11,
+            );
             let mut column_options = &mut options.columns[usize::from(columns::STATE)];
             column_options.ref_counted = true;
             column_options.preimage = true;
@@ -71,7 +76,10 @@ impl Storage {
         println!("genesis hash = {:?}", genesis_hash);
 
         let best_block_lookup = disk_database.get(columns::META, b"best").unwrap().unwrap();
-        let best_block = disk_database.get(columns::HEADER, &best_block_lookup).unwrap().unwrap();
+        let best_block = disk_database
+            .get(columns::HEADER, &best_block_lookup)
+            .unwrap()
+            .unwrap();
         println!("best block = {:?}", best_block);
         let decoded = crate::block::Header::decode(&mut &best_block[..]).unwrap();
         println!("decoded block = {:?}", decoded);
@@ -88,7 +96,7 @@ impl Storage {
     /// hash you pass and lets you insert a corresponding block.
     pub fn block(&mut self, hash: &H256) -> Block {
         Block {
-            entry: self.blocks.entry(hash.clone())
+            entry: self.blocks.entry(hash.clone()),
         }
     }
 }
@@ -107,9 +115,7 @@ impl<'a> Block<'a> {
     pub fn set_storage(mut self, block_storage: BlockStorage) -> Result<(), ()> {
         // TODO: check proper hash of block_storage
 
-        self.entry
-            .or_insert_with(|| BlockState::default())
-            .storage = Some(Arc::new(block_storage));
+        self.entry.or_insert_with(|| BlockState::default()).storage = Some(Arc::new(block_storage));
         Ok(())
     }
 
@@ -134,7 +140,8 @@ impl BlockStorage {
     }
 
     pub fn insert(&mut self, key: impl AsRef<[u8]>, value: impl AsRef<[u8]>) {
-        self.top_trie.insert(key.as_ref().to_owned(), value.as_ref().to_owned());
+        self.top_trie
+            .insert(key.as_ref().to_owned(), value.as_ref().to_owned());
     }
 
     /// Returns the value of the `:code` key, containing the Wasm code.

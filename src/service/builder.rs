@@ -57,7 +57,8 @@ impl ServiceBuilder {
                 .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
         );
 
-        self.network.set_chain_spec_protocol_id(specs.protocol_id().unwrap());
+        self.network
+            .set_chain_spec_protocol_id(specs.protocol_id().unwrap());
     }
 
     /// Sets how the service should spawn background tasks.

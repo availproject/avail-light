@@ -72,13 +72,13 @@ pub(crate) struct StorageChangeSet<Hash> {
 pub(crate) struct ClientSpec {
     pub(crate) name: String,
     pub(crate) id: String,
-	#[serde(default)]
-	pub(crate) chain_type: ChainType,
+    #[serde(default)]
+    pub(crate) chain_type: ChainType,
     pub(crate) boot_nodes: Vec<String>,
     pub(crate) telemetry_endpoints: Option<TelemetryEndpoints>,
     pub(crate) protocol_id: Option<String>,
     pub(crate) properties: Option<Properties>,
-	pub(crate) fork_blocks: Option<Vec<(u64, H256)>>,
+    pub(crate) fork_blocks: Option<Vec<(u64, H256)>>,
     pub(crate) bad_blocks: Option<HashSet<H256>>,
     // Unused but for some reason still part of the chain specs.
     pub(crate) consensus_engine: (),
@@ -92,20 +92,20 @@ pub(crate) struct ClientSpec {
 /// additional information or enabling additional features.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ChainType {
-	/// A development chain that runs mainly on one node.
-	Development,
-	/// A local chain that runs locally on multiple nodes for testing purposes.
-	Local,
-	/// A live chain.
-	Live,
-	/// Some custom chain type.
-	Custom(String),
+    /// A development chain that runs mainly on one node.
+    Development,
+    /// A local chain that runs locally on multiple nodes for testing purposes.
+    Local,
+    /// A live chain.
+    Live,
+    /// Some custom chain type.
+    Custom(String),
 }
 
 impl Default for ChainType {
-	fn default() -> Self {
-		Self::Live
-	}
+    fn default() -> Self {
+        Self::Live
+    }
 }
 
 /// List of telemetry servers we want to talk to. Contains the URL of the server, and the

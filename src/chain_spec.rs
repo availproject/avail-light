@@ -75,13 +75,17 @@ impl ChainSpec {
     }
 
     // TODO: bad API
-    pub(crate) fn genesis_top(&self) -> &HashMap<structs::StorageKey, structs::StorageData, FnvBuildHasher> {
+    pub(crate) fn genesis_top(
+        &self,
+    ) -> &HashMap<structs::StorageKey, structs::StorageData, FnvBuildHasher> {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         &genesis.top
     }
 
     // TODO: bad API
-    pub(crate) fn genesis_children(&self) -> &HashMap<structs::StorageKey, structs::ChildRawStorage, FnvBuildHasher> {
+    pub(crate) fn genesis_children(
+        &self,
+    ) -> &HashMap<structs::StorageKey, structs::ChildRawStorage, FnvBuildHasher> {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         &genesis.children_default
     }

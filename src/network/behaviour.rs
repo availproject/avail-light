@@ -141,7 +141,8 @@ impl Behaviour {
         let message =
             legacy_proto::message::Message::BlockRequest(legacy_proto::message::BlockRequest {
                 id: 0,
-                fields: legacy_proto::message::BlockAttributes::HEADER | legacy_proto::message::BlockAttributes::BODY,
+                fields: legacy_proto::message::BlockAttributes::HEADER
+                    | legacy_proto::message::BlockAttributes::BODY,
                 from: legacy_proto::message::FromBlock::Number(block_num),
                 to: None,
                 direction: legacy_proto::message::Direction::Ascending,
@@ -242,19 +243,19 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                             extrinsics_root: announcement.header.extrinsics_root,
                         }));
                     }
-                    Ok(legacy_proto::message::Message::Status(_)) => {},
+                    Ok(legacy_proto::message::Message::Status(_)) => {}
                     Ok(legacy_proto::message::Message::BlockResponse(response)) => {
                         self.events.push(BehaviourOut::BlocksResponse {
-                            blocks: response.blocks.into_iter().map(|data| {
-                                BlockData {
+                            blocks: response
+                                .blocks
+                                .into_iter()
+                                .map(|data| BlockData {
                                     hash: data.hash,
-                                    header: data.header.map(|header| {
-                                        BlockHeader {
-                                            parent_hash: header.parent_hash,
-                                            number: header.number,
-                                            state_root: header.state_root,
-                                            extrinsics_root: header.extrinsics_root,
-                                        }
+                                    header: data.header.map(|header| BlockHeader {
+                                        parent_hash: header.parent_hash,
+                                        number: header.number,
+                                        state_root: header.state_root,
+                                        extrinsics_root: header.extrinsics_root,
                                     }),
                                     body: data.body.map(|body| {
                                         body.into_iter().map(|ext| Extrinsic(ext.0)).collect()
@@ -262,10 +263,10 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                                     receipt: data.receipt,
                                     message_queue: data.message_queue,
                                     justification: data.justification,
-                                }
-                            }).collect(),
+                                })
+                                .collect(),
                         });
-                    },
+                    }
                     msg => println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }

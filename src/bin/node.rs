@@ -34,9 +34,13 @@ async fn async_main() {
         .build()
         .await;
 
-    let rpc_server = jsonrpsee::http_server(&"0.0.0.0:9933".parse().unwrap()).await.unwrap();
+    let rpc_server = jsonrpsee::http_server(&"0.0.0.0:9933".parse().unwrap())
+        .await
+        .unwrap();
 
-    let foo_method = rpc_server.register_method(From::from("system_chain")).unwrap();
+    let foo_method = rpc_server
+        .register_method(From::from("system_chain"))
+        .unwrap();
 
     loop {
         let next_server_event = service.next_event().await;

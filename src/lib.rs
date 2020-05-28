@@ -21,6 +21,13 @@ pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Sto
     }
 
     let mut storage = storage::Storage::empty();
-    storage.block(&"0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap()).set_storage(block0).unwrap();
+    storage
+        .block(
+            &"0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap(),
+        )
+        .set_storage(block0)
+        .unwrap();
     storage
 }

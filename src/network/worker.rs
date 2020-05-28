@@ -2,7 +2,7 @@ use super::{behaviour, transport};
 
 use fnv::FnvBuildHasher;
 use hashbrown::HashSet;
-use libp2p::{Multiaddr, PeerId, Swarm, swarm::SwarmEvent};
+use libp2p::{swarm::SwarmEvent, Multiaddr, PeerId, Swarm};
 use smallvec::SmallVec;
 
 /// State machine representing the network currently running.
@@ -74,7 +74,7 @@ impl Network {
 
     pub async fn start_block_request(&mut self, block_num: u64) {
         let id = self.next_blocks_request;
-        self.next_blocks_request.0 += 1;    // TODO: overflows
+        self.next_blocks_request.0 += 1; // TODO: overflows
 
         self.blocks_requests.insert(id);
 
@@ -92,14 +92,12 @@ impl Network {
             match self.swarm.next_event().await {
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::BlockAnnounce(header)) => {
                     return Event::BlockAnnounce(header);
-                },
+                }
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::BlocksResponse { blocks }) => {
-                    return Event::BlocksRequestFinished {
-                        result: Ok(blocks),
-                    };
-                },
+                    return Event::BlocksRequestFinished { result: Ok(blocks) };
+                }
                 // TODO:
-                _ => {},
+                _ => {}
             }
         }
     }

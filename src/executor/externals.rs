@@ -27,7 +27,7 @@ pub struct ExternalsVm {
 
 /// Which function to call on a runtime blob, and its parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionToCall/*<'a>*/ {
+pub enum FunctionToCall /*<'a>*/ {
     CoreVersion,
     //CoreExecuteBlock(&'a Block),
 }
@@ -78,14 +78,9 @@ impl ExternalsVm {
     /// Creates a new state machine from the given module that executes the given function.
     ///
     /// The `data` parameter is the SCALE-encoded data to inject into the runtime.
-    pub fn new(
-        module: &vm::WasmBlob,
-        to_call: FunctionToCall,
-    ) -> Result<Self, vm::NewErr> {
+    pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, vm::NewErr> {
         match to_call {
-            FunctionToCall::CoreVersion => {
-                ExternalsVm::new_inner(module, "Core_version", &[])
-            },
+            FunctionToCall::CoreVersion => ExternalsVm::new_inner(module, "Core_version", &[]),
         }
     }
 
