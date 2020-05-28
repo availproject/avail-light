@@ -19,9 +19,11 @@
 // TODO: document all that correctly
 
 use fnv::FnvBuildHasher;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
+
+use primitive_types::{H256, U256};
 
 // TODO: shouldn't be public
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +40,7 @@ pub(crate) struct ChildRawStorage {
 /// Storage content for genesis block.
 struct RawGenesis {
     top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
-    children: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
+    children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,22 +71,44 @@ struct StorageChangeSet<Hash> {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-struct ClientSpec<E> {
+struct ClientSpec {
     name: String,
     id: String,
+	#[serde(default)]
+	chain_type: ChainType,
     boot_nodes: Vec<String>,
     telemetry_endpoints: Option<TelemetryEndpoints>,
     protocol_id: Option<String>,
     properties: Option<Properties>,
-    #[serde(flatten)]
-    extensions: E,
+	fork_blocks: Option<Vec<(u64, H256)>>,
+    bad_blocks: Option<HashSet<H256>>,
+    // Unused but for some reason still part of the chain specs.
+    consensus_engine: (),
+    // TODO: looks deprecated
     genesis: Genesis,
 }
 
-/// A type denoting empty extensions.
+/// The type of a chain.
 ///
-/// We use `Option` here since `()` is not flattenable by serde.
-type NoExtension = Option<()>;
+/// This can be used by tools to determine the type of a chain for displaying
+/// additional information or enabling additional features.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ChainType {
+	/// A development chain that runs mainly on one node.
+	Development,
+	/// A local chain that runs locally on multiple nodes for testing purposes.
+	Local,
+	/// A live chain.
+	Live,
+	/// Some custom chain type.
+	Custom(String),
+}
+
+impl Default for ChainType {
+	fn default() -> Self {
+		Self::Live
+	}
+}
 
 /// List of telemetry servers we want to talk to. Contains the URL of the server, and the
 /// maximum verbosity level.
@@ -99,7 +123,7 @@ pub type Properties = serde_json::map::Map<String, serde_json::Value>;
 /// A configuration of a chain. Can be used to build a genesis block.
 #[derive(Clone)]
 pub struct ChainSpec {
-    client_spec: ClientSpec<NoExtension>,
+    client_spec: ClientSpec,
 }
 
 impl ChainSpec {
@@ -137,7 +161,7 @@ impl ChainSpec {
     // TODO: bad API
     pub(crate) fn genesis_children(&self) -> &HashMap<StorageKey, ChildRawStorage, FnvBuildHasher> {
         let Genesis::Raw(genesis) = &self.client_spec.genesis;
-        &genesis.children
+        &genesis.children_default
     }
 
     /*/// Create hardcoded spec.
@@ -219,3 +243,15 @@ impl ChainSpec {
             .map_err(|e| format!("Error generating spec json: {}", e))
     }
 }*/
+
+#[cfg(test)]
+mod tests {
+    use super::ChainSpec;
+
+    #[test]
+    fn can_decode_polkadot_genesis() {
+        // TODO: test not passing
+        let spec = &include_bytes!("chain_spec/polkadot.json")[..];
+        ChainSpec::from_json_bytes(&spec).unwrap();
+    }
+}

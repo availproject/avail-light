@@ -16,6 +16,7 @@ hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] 
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
 libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
+parity-db = "0.1.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
@@ -32,7 +33,7 @@ wasm-timer = "0.2.4"
 bitflags = "1.2.1"  # TODO: I hate bitflags
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
-primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "std"] } # TODO: don't use parity crates
+primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: don't use parity crates
 sc-peerset = "2.0.0-alpha.3"
 slog = { version = "2.5.2", features = ["nested-values"] }
 slog-json = { version = "2.3.0", features = ["nested-values"] }
@@ -63,6 +64,8 @@ opt-level = 3
 [profile.dev.package.mio]
 opt-level = 3
 [profile.dev.package.num-bigint]
+opt-level = 3
+[profile.dev.package.parity-db]
 opt-level = 3
 [profile.dev.package.parity-scale-codec]
 opt-level = 3
