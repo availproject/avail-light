@@ -1,11 +1,11 @@
 use super::{allocator, vm};
 use core::convert::TryFrom as _;
 
-/// WASM virtual machine specific to the Substrate/Polkadot Runtime Environment.
+/// Wasm virtual machine specific to the Substrate/Polkadot Runtime Environment.
 ///
 /// Contrary to [`VirtualMachine`](super::vm::VirtualMachine), this code is not just a generic
-/// WASM virtual machine, but is aware of the runtime environment. The external functions that
-/// the WASM code calls are automatically resolved and either handled or notified to the user of
+/// Wasm virtual machine, but is aware of the runtime environment. The external functions that
+/// the Wasm code calls are automatically resolved and either handled or notified to the user of
 /// this module.
 pub struct ExternalsVm {
     /// Inner lower-level virtual machine.
@@ -14,10 +14,10 @@ pub struct ExternalsVm {
     /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
     state: StateInner,
 
-    /// List of functions that the WASM code imports.
+    /// List of functions that the Wasm code imports.
     ///
     /// The keys of this `Vec` (i.e. the `usize` indices) have been passed to the virtual machine
-    /// executor. Whenever the WASM code invokes an external function, we obtain its index, and
+    /// executor. Whenever the Wasm code invokes an external function, we obtain its index, and
     /// look within this `Vec` to know what to do.
     registered_functions: Vec<RegisteredFunction>,
 
@@ -116,7 +116,7 @@ impl ExternalsVm {
             },
         )?;
 
-        // In the runtime environment, WASM blobs must export a global symbol named `__heap_base`
+        // In the runtime environment, Wasm blobs must export a global symbol named `__heap_base`
         // indicating where the memory allocator is allowed to allocate memory.
         let heap_base = vm.global_value("__heap_base").unwrap(); // TODO: don't unwrap
 

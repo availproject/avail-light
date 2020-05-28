@@ -29,6 +29,7 @@ pub fn builder() -> ServiceBuilder {
         tasks_executor: None,
         network: network::builder(),
         telemetry_endpoints: vec![(
+            // TODO: should be empty
             telemetry::url_to_multiaddr("wss://telemetry.polkadot.io/submit/").unwrap(),
             0,
         )],

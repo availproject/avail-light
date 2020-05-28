@@ -137,7 +137,7 @@ impl BlockStorage {
         self.top_trie.insert(key.as_ref().to_owned(), value.as_ref().to_owned());
     }
 
-    /// Returns the value of the `:code` key, containing the WASM code.
+    /// Returns the value of the `:code` key, containing the Wasm code.
     pub fn code_key<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
         const CODE: &[u8] = b":code";
         self.top_trie.get(CODE)

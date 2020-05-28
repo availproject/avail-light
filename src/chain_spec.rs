@@ -15,8 +15,23 @@
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Substrate chain configuration.
-
-// TODO: document all that correctly
+//!
+//! A **chain spec** (short for *chain specification*) is the description of everything that is
+//! required for the client to successfully interact with a certain blockchain.
+//! For example, the Polkadot chain spec contains all the constants that are needed in order to
+//! successfully interact with Polkadot.
+//!
+//! Chain specs contain, notably:
+//!
+//! - The state of the genesis block. In other words, the initial content of the database. This
+//! includes the Wasm runtime code of the genesis block.
+//! - The list of bootstrap nodes. These are the IP addresses of the machines we need to connect
+//! to.
+//! - The default telemetry endpoints, to which we should send telemetry information to.
+//! - The name of the network protocol, in order to avoid accidentally connecting to a different
+//! network.
+//! - Multiple other miscellaneous information.
+//!
 
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
@@ -25,105 +40,12 @@ use serde::{Deserialize, Serialize};
 
 use primitive_types::{H256, U256};
 
-// TODO: shouldn't be public
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChildRawStorage {
-    pub(crate) child_info: Vec<u8>,
-    pub(crate) child_type: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-/// Storage content for genesis block.
-struct RawGenesis {
-    top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
-    children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-enum Genesis {
-    Raw(RawGenesis),
-}
-
-// TODO: shouldn't be public
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
-
-// TODO: shouldn't be public
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
-
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct StorageChangeSet<Hash> {
-    /// Block hash
-    block: Hash,
-    /// A list of changes
-    changes: Vec<(StorageKey, Option<StorageData>)>,
-}
-
-/// A configuration of a client. Does not include runtime storage initialization.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-struct ClientSpec {
-    name: String,
-    id: String,
-	#[serde(default)]
-	chain_type: ChainType,
-    boot_nodes: Vec<String>,
-    telemetry_endpoints: Option<TelemetryEndpoints>,
-    protocol_id: Option<String>,
-    properties: Option<Properties>,
-	fork_blocks: Option<Vec<(u64, H256)>>,
-    bad_blocks: Option<HashSet<H256>>,
-    // Unused but for some reason still part of the chain specs.
-    consensus_engine: (),
-    // TODO: looks deprecated
-    genesis: Genesis,
-}
-
-/// The type of a chain.
-///
-/// This can be used by tools to determine the type of a chain for displaying
-/// additional information or enabling additional features.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum ChainType {
-	/// A development chain that runs mainly on one node.
-	Development,
-	/// A local chain that runs locally on multiple nodes for testing purposes.
-	Local,
-	/// A live chain.
-	Live,
-	/// Some custom chain type.
-	Custom(String),
-}
-
-impl Default for ChainType {
-	fn default() -> Self {
-		Self::Live
-	}
-}
-
-/// List of telemetry servers we want to talk to. Contains the URL of the server, and the
-/// maximum verbosity level.
-///
-/// The URL string can be either a URL or a multiaddress.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-struct TelemetryEndpoints(Vec<(String, u8)>);
-
-/// Arbitrary properties defined in chain spec as a JSON object
-pub type Properties = serde_json::map::Map<String, serde_json::Value>;
+mod structs;
 
 /// A configuration of a chain. Can be used to build a genesis block.
 #[derive(Clone)]
 pub struct ChainSpec {
-    client_spec: ClientSpec,
+    client_spec: structs::ClientSpec,
 }
 
 impl ChainSpec {
@@ -153,14 +75,14 @@ impl ChainSpec {
     }
 
     // TODO: bad API
-    pub(crate) fn genesis_top(&self) -> &HashMap<StorageKey, StorageData, FnvBuildHasher> {
-        let Genesis::Raw(genesis) = &self.client_spec.genesis;
+    pub(crate) fn genesis_top(&self) -> &HashMap<structs::StorageKey, structs::StorageData, FnvBuildHasher> {
+        let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         &genesis.top
     }
 
     // TODO: bad API
-    pub(crate) fn genesis_children(&self) -> &HashMap<StorageKey, ChildRawStorage, FnvBuildHasher> {
-        let Genesis::Raw(genesis) = &self.client_spec.genesis;
+    pub(crate) fn genesis_children(&self) -> &HashMap<structs::StorageKey, structs::ChildRawStorage, FnvBuildHasher> {
+        let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         &genesis.children_default
     }
 
@@ -250,7 +172,6 @@ mod tests {
 
     #[test]
     fn can_decode_polkadot_genesis() {
-        // TODO: test not passing
         let spec = &include_bytes!("chain_spec/polkadot.json")[..];
         ChainSpec::from_json_bytes(&spec).unwrap();
     }

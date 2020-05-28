@@ -9,7 +9,7 @@ use wasmi::memory_units::ByteSize as _;
 // TODO: redefine our own type locally
 pub use wasmi::RuntimeValue;
 
-/// WASM virtual machine that executes a specific function.
+/// Wasm virtual machine that executes a specific function.
 ///
 /// # Usage
 ///
@@ -17,7 +17,7 @@ pub use wasmi::RuntimeValue;
 /// initializes the machine but doesn't run it. As parameter, you must pass a list of external
 /// functions that are available to the code running in the virtual machine.
 ///
-/// - Call [`VirtualMachine::run`], passing `None` as parameter. This runs the WASM virtual
+/// - Call [`VirtualMachine::run`], passing `None` as parameter. This runs the Wasm virtual
 /// machine until either function finishes or calls an external function.
 ///
 /// - If [`VirtualMachine::run`] returns [`ExecOutcome::Finished`], then it is forbidden to call
@@ -39,7 +39,7 @@ pub struct VirtualMachine {
 
     /// Table of the indirect function calls.
     ///
-    /// In WASM, function pointers are in reality indices in a table called
+    /// In Wasm, function pointers are in reality indices in a table called
     /// `__indirect_function_table`. This is this table, if it exists.
     indirect_table: Option<wasmi::TableRef>,
 
@@ -51,7 +51,7 @@ pub struct VirtualMachine {
     execution: Option<wasmi::FuncInvocation<'static>>,
 
     /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
-    /// This is a particularity of the WASM interpreter that we don't want to expose in our API.
+    /// This is a particularity of the Wasm interpreter that we don't want to expose in our API.
     interrupted: bool,
 
     /// If true, the state machine is in a poisoned state and cannot run any code anymore.
@@ -90,7 +90,7 @@ pub enum ExecOutcome {
     },
 }
 
-/// WASM blob known to be valid.
+/// Wasm blob known to be valid.
 // Note: this struct exists in order to hide wasmi as an implementation detail.
 pub struct WasmBlob {
     inner: wasmi::Module,
@@ -424,7 +424,7 @@ impl VirtualMachine {
 
     /// Returns the size of the memory, in bytes.
     ///
-    /// > **Note**: This can change over time if the WASM code uses the `grow` opcode.
+    /// > **Note**: This can change over time if the Wasm code uses the `grow` opcode.
     pub fn memory_size(&self) -> u32 {
         let mem = match self.memory.as_ref() {
             Some(m) => m,

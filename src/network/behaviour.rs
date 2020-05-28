@@ -68,7 +68,7 @@ pub struct BlockHeader {
     /// The parent hash.
     pub parent_hash: U256,
     /// The block number.
-    pub number: u32,
+    pub number: u64,
     /// The state trie merkle root
     pub state_root: U256,
     /// The merkle root of the extrinsics.
@@ -132,7 +132,7 @@ impl Behaviour {
         }
     }
 
-    pub fn send_block_data_request(&mut self, block_num: u32) {
+    pub fn send_block_data_request(&mut self, block_num: u64) {
         let target = match self.legacy.open_peers().next() {
             Some(p) => p.clone(),
             None => return,

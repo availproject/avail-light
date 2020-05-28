@@ -72,7 +72,7 @@ impl Network {
         unimplemented!()
     }
 
-    pub async fn start_block_request(&mut self, block_num: u32) {
+    pub async fn start_block_request(&mut self, block_num: u64) {
         let id = self.next_blocks_request;
         self.next_blocks_request.0 += 1;    // TODO: overflows
 

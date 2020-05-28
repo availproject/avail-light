@@ -7,7 +7,7 @@ pub use builder::{builder, ServiceBuilder};
 mod builder;
 
 pub struct Service {
-    /// Collection of all the WASM VMs that are currently running.
+    /// Collection of all the Wasm VMs that are currently running.
     wasm_vms: executor::WasmVirtualMachines<()>,
     /// Database of the state of all the blocks.
     storage: storage::Storage,
@@ -22,12 +22,12 @@ pub struct Service {
 
 pub enum Event {
     /// Head of the chain has been updated.
-    NewChainHead(u32),
+    NewChainHead(u64),
 
     /// The finalized block has been updated to a different one.
     NewFinalized {
         /// Number of the finalized block.
-        number: u32,
+        number: u64,
         /// Hash of the finalized block.
         hash: H256,
     },

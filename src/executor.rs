@@ -11,7 +11,7 @@ mod vm;
 pub use externals::FunctionToCall;
 pub use vm::WasmBlob;
 
-/// Collection of WASM virtual machines.
+/// Collection of Wasm virtual machines.
 ///
 /// The `TUser` generic parameter represents a user data.
 pub struct WasmVirtualMachines<TUser> {

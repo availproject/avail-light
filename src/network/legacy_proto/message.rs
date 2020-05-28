@@ -184,7 +184,7 @@ pub enum FromBlock {
     /// Start with given hash.
     Hash(H256),
     /// Start with given block number.
-    Number(u32),
+    Number(u64), // TODO: Must be exactly correct, which is annoying. But it doesn't matter if we're switching to the new blocks protocol
 }
 
 /// A network message.

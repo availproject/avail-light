@@ -222,7 +222,7 @@ pub fn url_to_multiaddr(url: &str) -> Result<Multiaddr, libp2p::multiaddr::Error
 /// to one call of `write`.
 ///
 /// For some context, we put this object around the `wasm_ext::ExtTransport` in order to make sure
-/// that each telemetry message maps to one single call to `write` in the WASM FFI.
+/// that each telemetry message maps to one single call to `write` in the Wasm FFI.
 #[pin_project::pin_project]
 struct StreamSink<T>(#[pin] T, Option<Vec<u8>>);
 
