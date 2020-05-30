@@ -1,7 +1,11 @@
+// TODO: fix all the compilation errors caused by the copy-pasted code
+//#![cfg_attr(not(test), no_std)]
+
 extern crate alloc;
 
 pub mod block;
 pub mod chain_spec;
+pub mod database;
 pub mod executor;
 pub mod network;
 pub mod service;

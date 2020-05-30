@@ -1,3 +1,20 @@
+//! The "service" is where all the major components are plugged together:
+//!
+//! - The networking.
+//! - The Wasm virtual machines.
+//! - The storage and database.
+//!
+//! The service performs the following actions:
+//!
+//! - Tries to download all the active blocks (i.e. all blocks that descend from the latest
+//! finalized block that have been announced) and put them in the database after having verified
+//! their validity.
+//! - Relays all block announces and transaction announces between the peers we're connected to.
+//! - Announces our own locally-emitted transactions.
+//! - Answers blocks requests made by remotes.
+//!
+//! At the moment, authoring blocks and running GrandPa isn't supported.
+
 use crate::{executor, network, storage, telemetry};
 use futures::{executor::ThreadPool, prelude::*};
 use primitive_types::H256;
@@ -42,22 +59,17 @@ impl Service {
             .execute((), &wasm_runtime, "Core_version", &[]);*/
 
         loop {
-            let event = {
-                let network_next = self.network.next_event();
-                /*let telemetry_next = async move {
-                    self.telemetry.next_event().await
-                };*/
-                futures::pin_mut!(network_next);
-                network_next.await
-            };
-
-            match event {
-                network::Event::BlockAnnounce(header) => {
-                    self.network.start_block_request(header.number).await;
-                    return Event::NewChainHead(header.number); // TODO: not necessarily the head
-                }
-                network::Event::BlocksRequestFinished { result } => {
-                    println!("{:?}", result);
+            futures::select!{
+                event = self.network.next_event().fuse() => {
+                    match event {
+                        network::Event::BlockAnnounce(header) => {
+                            self.network.start_block_request(header.number).await;
+                            return Event::NewChainHead(header.number); // TODO: not necessarily the head
+                        }
+                        network::Event::BlocksRequestFinished { result } => {
+                            println!("{:?}", result);
+                        }
+                    }
                 }
             }
         }
