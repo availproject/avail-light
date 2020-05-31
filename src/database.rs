@@ -56,8 +56,6 @@ impl Database {
         let decoded = crate::block::Header::decode(&mut &best_block[..]).unwrap();
         println!("decoded block = {:?}", decoded);
 
-        Database {
-            inner: Some(inner),
-        }
+        Database { inner: Some(inner) }
     }
 }

@@ -1,3 +1,9 @@
+//! Wasm virtual machine that executes a specific function.
+//!
+//! This module handles everything related to executing Wasm code in general. Features specific to
+//! Substrate/Polkadot (such as the external functions available to the Wasm code) are not handled
+//! by this module and must instead be built on top.
+
 use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
 use core::{
     cell::RefCell,
@@ -127,7 +133,7 @@ pub enum RunErr {
 }
 
 /// Error that can happen when calling [`VirtualMachine::global_value`].
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub enum GlobalValueErr {
     NotFound,
     Invalid,

@@ -53,13 +53,23 @@ pub enum Event {
 impl Service {
     /// Returns the next event that happens in the service.
     pub async fn next_event(&mut self) -> Event {
-        /*let block0 = "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap();
-        let wasm_runtime = executor::WasmBlob::from_bytes(self.storage.block(&block0).storage().unwrap().code_key().unwrap()).unwrap();
+        let block0 = "0000000000000000000000000000000000000000000000000000000000000000"
+            .parse()
+            .unwrap();
+        let wasm_runtime = executor::WasmBlob::from_bytes(
+            self.storage
+                .block(&block0)
+                .storage()
+                .unwrap()
+                .code_key()
+                .unwrap(),
+        )
+        .unwrap();
         self.wasm_vms
-            .execute((), &wasm_runtime, "Core_version", &[]);*/
+            .execute((), &wasm_runtime, executor::FunctionToCall::CoreVersion);
 
         loop {
-            futures::select!{
+            futures::select! {
                 event = self.network.next_event().fuse() => {
                     match event {
                         network::Event::BlockAnnounce(header) => {
