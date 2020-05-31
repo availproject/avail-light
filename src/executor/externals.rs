@@ -20,12 +20,15 @@ use super::{allocator, vm};
 use crate::block::Block;
 
 use core::convert::TryFrom as _;
-use parity_scale_codec::Encode as _;
+use parity_scale_codec::{DecodeAll as _, Encode as _};
 
 /// A running virtual machine.
 pub struct ExternalsVm {
     /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
+
+    /// Function currently being called.
+    called_function: CalledFunction,
 
     /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
     state: StateInner,
@@ -50,6 +53,32 @@ pub enum FunctionToCall<'a> {
     GrandpaApiGrandpaAuthorities,
     TaggedTransactionsQueueValidateTransaction(&'a [u8]),
     // TODO: add the block builder functions
+}
+
+/// Same as [`FunctionToCall`] but without parameters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CalledFunction {
+    CoreVersion,
+    CoreExecuteBlock,
+    BabeApiConfiguration,
+    GrandpaApiGrandpaAuthorities,
+    TaggedTransactionsQueueValidateTransaction,
+}
+
+impl<'a, 'b> From<&'a FunctionToCall<'b>> for CalledFunction {
+    fn from(c: &'a FunctionToCall<'b>) -> Self {
+        match c {
+            FunctionToCall::CoreVersion => CalledFunction::CoreVersion,
+            FunctionToCall::CoreExecuteBlock(_) => CalledFunction::CoreExecuteBlock,
+            FunctionToCall::BabeApiConfiguration => CalledFunction::BabeApiConfiguration,
+            FunctionToCall::GrandpaApiGrandpaAuthorities => {
+                CalledFunction::GrandpaApiGrandpaAuthorities
+            }
+            FunctionToCall::TaggedTransactionsQueueValidateTransaction(_) => {
+                CalledFunction::TaggedTransactionsQueueValidateTransaction
+            }
+        }
+    }
 }
 
 enum RegisteredFunction {
@@ -78,14 +107,14 @@ enum StateInner {
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
     Trapped,
-    Finished(Vec<u8>),
+    Finished(Success),
 }
 
 /// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
 /// state can't change.
 pub enum State<'a> {
     ReadyToRun(StateReadyToRun<'a>),
-    Finished(&'a [u8]),
+    Finished(&'a Success),
     /// The Wasm blob did something that doesn't conform to the runtime environment.
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
@@ -94,6 +123,28 @@ pub enum State<'a> {
         // TODO: params
         resolve: StateWaitExternalResolve<'a, ()>,
     },
+}
+
+/// Contains the same variants as [`FunctionToCall`] but with the strongly-typed sucess value.
+#[derive(Debug)]
+pub enum Success {
+    CoreVersion(CoreVersionSuccess),
+    CoreExecuteBlock(bool),
+    // TODO: other functions
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub struct CoreVersionSuccess {
+    pub spec_name: String,
+    pub impl_name: String,
+    pub authoring_version: u32,
+    pub spec_version: u32,
+    pub impl_version: u32,
+    // TODO: specs document this as an unexplained `ApisVec`; report that to specs writer
+    // TODO: stronger typing
+    pub apis: Vec<([u8; 8], u32)>,
+    // TODO: this field has been introduced recently and isn't mention in the specs; report that to specs writer
+    pub transaction_version: u32,
 }
 
 /// Reason why the Wasm blob isn't conforming to the runtime environment.
@@ -115,6 +166,9 @@ pub enum NonConformingErr {
         /// Size of the virtual memory.
         memory_size: u32,
     },
+    /// Failed to decode the structure returned by the function.
+    #[display(fmt = "Failed to decode the structure returned by the function")]
+    ReturnedValueDecodeFail(parity_scale_codec::Error),
 }
 
 pub struct StateReadyToRun<'a> {
@@ -129,25 +183,23 @@ pub struct StateWaitExternalResolve<'a, T: ?Sized> {
 impl ExternalsVm {
     /// Creates a new state machine from the given module that executes the given function.
     pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, vm::NewErr> {
+        let called_function = CalledFunction::from(&to_call);
+
         match to_call {
-            FunctionToCall::CoreVersion => ExternalsVm::new_inner(module, "Core_version", &[]),
+            FunctionToCall::CoreVersion => ExternalsVm::new_inner(module, called_function, &[]),
             FunctionToCall::CoreExecuteBlock(block) => {
                 let encoded = block.encode();
-                ExternalsVm::new_inner(module, "Core_execute_block", &encoded)
+                ExternalsVm::new_inner(module, called_function, &encoded)
             }
             FunctionToCall::BabeApiConfiguration => {
-                ExternalsVm::new_inner(module, "BabeApi_configuration", &[])
+                ExternalsVm::new_inner(module, called_function, &[])
             }
             FunctionToCall::GrandpaApiGrandpaAuthorities => {
-                ExternalsVm::new_inner(module, "GrandpaApi_grandpa_authorities", &[])
+                ExternalsVm::new_inner(module, called_function, &[])
             }
             FunctionToCall::TaggedTransactionsQueueValidateTransaction(extrinsic) => {
                 let encoded = extrinsic.encode();
-                ExternalsVm::new_inner(
-                    module,
-                    "TaggedTransactionsQueue_validate_transaction",
-                    &encoded,
-                )
+                ExternalsVm::new_inner(module, called_function, &encoded)
             }
         }
     }
@@ -157,11 +209,21 @@ impl ExternalsVm {
     /// The `data` parameter is the SCALE-encoded data to inject into the runtime.
     fn new_inner(
         module: &vm::WasmBlob,
-        function_name: &str,
+        called_function: CalledFunction,
         data: &[u8],
     ) -> Result<Self, vm::NewErr> {
         // TODO: write params in memory
         assert!(data.is_empty(), "not implemented");
+
+        let function_name = match called_function {
+            CalledFunction::CoreVersion => "Core_version",
+            CalledFunction::CoreExecuteBlock => "Core_execute_block",
+            CalledFunction::BabeApiConfiguration => "BabeApi_configuration",
+            CalledFunction::GrandpaApiGrandpaAuthorities => "GrandpaApi_grandpa_authorities",
+            CalledFunction::TaggedTransactionsQueueValidateTransaction => {
+                "TaggedTransactionsQueue_validate_transaction"
+            }
+        };
 
         let mut registered_functions = Vec::new();
         let vm = vm::VirtualMachine::new(
@@ -188,6 +250,7 @@ impl ExternalsVm {
 
         Ok(ExternalsVm {
             vm,
+            called_function,
             state: StateInner::Ready(None),
             registered_functions,
             allocator: allocator::FreeingBumpHeapAllocator::new(heap_base),
@@ -239,16 +302,37 @@ impl<'a> StateReadyToRun<'a> {
                     // return value.
                     let ret_len = u32::try_from(ret >> 32).unwrap();
                     let ret_ptr = u32::try_from(ret & 0xffffffff).unwrap();
-                    if let Ok(ret_data) = self.inner.vm.read_memory(ret_ptr, ret_len) {
-                        self.inner.state = StateInner::Finished(ret_data);
+                    // TODO: optimization: don't copy memory but immediately decode from slice
+
+                    self.inner.state = if let Ok(ret_data) =
+                        self.inner.vm.read_memory(ret_ptr, ret_len)
+                    {
+                        // We have the raw data, now try to decode it into the proper
+                        // strongly-typed return value.
+                        let decoded = match self.inner.called_function {
+                            CalledFunction::CoreVersion => {
+                                CoreVersionSuccess::decode_all(&ret_data).map(Success::CoreVersion)
+                            }
+                            CalledFunction::CoreExecuteBlock => {
+                                bool::decode_all(&ret_data).map(Success::CoreExecuteBlock)
+                            }
+                            _ => unimplemented!("return value for this function not implemented"), // TODO:
+                        };
+
+                        match decoded {
+                            Ok(v) => StateInner::Finished(v),
+                            Err(err) => StateInner::NonConforming(
+                                NonConformingErr::ReturnedValueDecodeFail(err),
+                            ),
+                        }
                     } else {
-                        self.inner.state =
-                            StateInner::NonConforming(NonConformingErr::ReturnedPtrOutOfRange {
-                                pointer: ret_ptr,
-                                size: ret_len,
-                                memory_size: self.inner.vm.memory_size(),
-                            });
-                    }
+                        StateInner::NonConforming(NonConformingErr::ReturnedPtrOutOfRange {
+                            pointer: ret_ptr,
+                            size: ret_len,
+                            memory_size: self.inner.vm.memory_size(),
+                        })
+                    };
+
                     break;
                 }
 
