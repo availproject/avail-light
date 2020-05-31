@@ -218,11 +218,12 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                     min_supported_version: 6,
                     roles: legacy_message::Roles::LIGHT,
                     best_number: 0,
-                    best_hash: "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
+                    // TODO: proper hash
+                    best_hash: "e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39"
                         .parse()
                         .unwrap(),
                     genesis_hash:
-                        "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
+                        "e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39"
                             .parse()
                             .unwrap(),
                     chain_status: Vec::new(),

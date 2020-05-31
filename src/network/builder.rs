@@ -1,6 +1,8 @@
 use super::worker;
+
 use core::{fmt, future::Future, pin::Pin};
 use libp2p::{multiaddr, Multiaddr, PeerId};
+use primitive_types::H256;
 
 pub struct NetworkBuilder {
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
@@ -12,6 +14,9 @@ pub struct NetworkBuilder {
 
     /// List of known bootnodes.
     boot_nodes: Vec<(PeerId, Multiaddr)>,
+
+    /// Hash of the genesis block of our chain. Reported to other nodes.
+    genesis_hash: H256,
 }
 
 /// Creates a new prototype of the network.
@@ -20,6 +25,7 @@ pub fn builder() -> NetworkBuilder {
         executor: None,
         chain_spec_protocol_id: vec![b's', b'u', b'p'],
         boot_nodes: Vec::new(),
+        genesis_hash: Default::default(),
     }
 }
 
@@ -58,8 +64,22 @@ impl NetworkBuilder {
         self
     }
 
+    /// Sets the hash of the genesis block of the chain. Compared to the one of other nodes to
+    /// know whether we're compatible.
+    pub fn with_genesis_hash(mut self, hash: H256) -> Self {
+        self.set_genesis_hash(hash);
+        self
+    }
+
+    /// Sets the hash of the genesis block of the chain. Compared to the one of other nodes to
+    /// know whether we're compatible.
+    pub fn set_genesis_hash(&mut self, hash: H256) {
+        self.genesis_hash = hash;
+    }
+
     /// Starts the networking.
     pub async fn build(self) -> worker::Network {
+        // TODO: use genesis_hash
         worker::Network::start(worker::Config {
             known_addresses: self.boot_nodes,
             chain_spec_protocol_id: self.chain_spec_protocol_id,
