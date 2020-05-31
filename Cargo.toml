@@ -21,6 +21,7 @@ parity-db = "0.1.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"
 pin-project = "0.4"
+prost = "0.6.1"
 rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
@@ -44,6 +45,9 @@ void = "1.0"    # TODO: remove
 version = "0.19.1"
 default-features = false
 features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
+
+[build-dependencies]
+prost-build = "0.6.1"
 
 [features]
 default = ["telemetry"]  # TODO: this is pretty much an idea, and needs proper implementation

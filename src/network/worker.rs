@@ -96,8 +96,21 @@ impl Network {
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::BlocksResponse { blocks }) => {
                     return Event::BlocksRequestFinished { result: Ok(blocks) };
                 }
+
+                /*SwarmEvent::ConnectionEstablished { .. } => {},
+                SwarmEvent::ConnectionClosed { .. } => {},
+                SwarmEvent::NewListenAddr(_) => {},
+                SwarmEvent::ExpiredListenAddr(_) => {},
+                SwarmEvent::UnreachableAddr { .. } => {}
+                SwarmEvent::Dialing(peer_id) => {},
+                SwarmEvent::IncomingConnection { .. } => {},
+                SwarmEvent::IncomingConnectionError { .. } => {},
+                SwarmEvent::BannedPeer { .. } => {},
+                SwarmEvent::UnknownPeerUnreachableAddr { .. } => {},
+                SwarmEvent::ListenerClosed { .. } => {},
+                SwarmEvent::ListenerError { .. } => {},*/
                 // TODO:
-                _ => {}
+                ev => println!("network event: {:?}", ev),
             }
         }
     }

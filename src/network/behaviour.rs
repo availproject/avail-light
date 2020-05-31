@@ -109,15 +109,15 @@ impl Behaviour {
         let peerset_config = sc_peerset::PeersetConfig {
             in_peers: 25,
             out_peers: 25,
-            bootnodes: Vec::new(),
+            bootnodes: known_addresses.iter().map(|(p, _)| p.clone()).collect(),
             reserved_only: false,
             priority_groups: Default::default(),
         };
 
         let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
-        let legacy = generic_proto::GenericProto::new(
+        let mut legacy = generic_proto::GenericProto::new(
             local_public_key.clone().into_peer_id(),
-            chain_spec_protocol_id,
+            chain_spec_protocol_id.clone(),
             &[6, 5],
             peerset,
         );
@@ -131,6 +131,7 @@ impl Behaviour {
                 cfg.with_mdns(enable_mdns);
                 cfg.allow_private_ipv4(allow_private_ipv4);
                 cfg.discovery_limit(discovery_only_if_under_num);
+                cfg.add_protocol(chain_spec_protocol_id);
                 cfg.finish()
             },
             events: Vec::new(),

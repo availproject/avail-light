@@ -1,7 +1,6 @@
 use super::worker;
 use core::{fmt, future::Future, pin::Pin};
 use libp2p::{multiaddr, Multiaddr, PeerId};
-use smallvec::{smallvec, SmallVec};
 
 pub struct NetworkBuilder {
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by

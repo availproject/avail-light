@@ -50,6 +50,7 @@ pub struct ChainSpec {
 
 impl ChainSpec {
     /// A list of bootnode addresses.
+    // TODO: more strongly typed?
     pub fn boot_nodes(&self) -> &[String] {
         &self.client_spec.boot_nodes
     }

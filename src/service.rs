@@ -68,6 +68,9 @@ impl Service {
         self.wasm_vms
             .execute((), &wasm_runtime, executor::FunctionToCall::CoreVersion);
 
+        // TODO: don't put that here
+        self.network.start_block_request(1).await;
+
         loop {
             futures::select! {
                 event = self.network.next_event().fuse() => {
