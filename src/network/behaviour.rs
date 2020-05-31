@@ -16,8 +16,8 @@
 
 use super::{
     debug_info,
-    discovery::{DiscoveryBehaviour, DiscoveryOut},
-    legacy_proto,
+    discovery::{DiscoveryBehaviour, DiscoveryConfig, DiscoveryOut},
+    generic_proto, legacy_message,
 };
 
 use core::{
@@ -37,8 +37,8 @@ use smallvec::SmallVec;
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "BehaviourOut", poll_method = "poll")]
 pub struct Behaviour {
-    /// Legacy protocol. To remove at some point.
-    legacy: legacy_proto::LegacyProto,
+    /// Generic protocol. To remove at some point.
+    legacy: generic_proto::GenericProto,
     /// Periodically pings and identifies the nodes we are connected to, and store information in a
     /// cache.
     debug_info: debug_info::DebugInfoBehaviour,
@@ -99,7 +99,7 @@ impl Behaviour {
     /// Builds a new `Behaviour`.
     pub async fn new(
         user_agent: String,
-        chain_spec_protocol_id: SmallVec<[u8; 6]>,
+        chain_spec_protocol_id: Vec<u8>,
         local_public_key: PublicKey,
         known_addresses: Vec<(PeerId, Multiaddr)>,
         enable_mdns: bool,
@@ -111,23 +111,28 @@ impl Behaviour {
             out_peers: 25,
             bootnodes: Vec::new(),
             reserved_only: false,
-            reserved_nodes: Vec::new(),
+            priority_groups: Default::default(),
         };
 
         let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
-        let legacy = legacy_proto::LegacyProto::new(chain_spec_protocol_id, &[6, 5], peerset);
+        let legacy = generic_proto::GenericProto::new(
+            local_public_key.clone().into_peer_id(),
+            chain_spec_protocol_id,
+            &[6, 5],
+            peerset,
+        );
 
         Behaviour {
             legacy,
             debug_info: debug_info::DebugInfoBehaviour::new(user_agent, local_public_key.clone()),
-            discovery: DiscoveryBehaviour::new(
-                local_public_key,
-                known_addresses,
-                enable_mdns,
-                allow_private_ipv4,
-                discovery_only_if_under_num,
-            )
-            .await,
+            discovery: {
+                let mut cfg = DiscoveryConfig::new(local_public_key);
+                cfg.with_user_defined(known_addresses);
+                cfg.with_mdns(enable_mdns);
+                cfg.allow_private_ipv4(allow_private_ipv4);
+                cfg.discovery_limit(discovery_only_if_under_num);
+                cfg.finish()
+            },
             events: Vec::new(),
         }
     }
@@ -138,16 +143,14 @@ impl Behaviour {
             None => return,
         };
 
-        let message =
-            legacy_proto::message::Message::BlockRequest(legacy_proto::message::BlockRequest {
-                id: 0,
-                fields: legacy_proto::message::BlockAttributes::HEADER
-                    | legacy_proto::message::BlockAttributes::BODY,
-                from: legacy_proto::message::FromBlock::Number(block_num),
-                to: None,
-                direction: legacy_proto::message::Direction::Ascending,
-                max: Some(1),
-            });
+        let message = legacy_message::Message::BlockRequest(legacy_message::BlockRequest {
+            id: 0,
+            fields: legacy_message::BlockAttributes::HEADER | legacy_message::BlockAttributes::BODY,
+            from: legacy_message::FromBlock::Number(block_num),
+            to: None,
+            direction: legacy_message::Direction::Ascending,
+            max: Some(1),
+        });
 
         self.legacy.send_packet(&target, message.encode());
     }
@@ -205,37 +208,31 @@ impl NetworkBehaviourEventProcess<debug_info::DebugInfoEvent> for Behaviour {
     }
 }
 
-impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
-    fn inject_event(&mut self, out: legacy_proto::LegacyProtoOut) {
+impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour {
+    fn inject_event(&mut self, out: generic_proto::GenericProtoOut) {
         match out {
-            legacy_proto::LegacyProtoOut::CustomProtocolOpen {
-                version,
-                peer_id,
-                endpoint,
-            } => {
-                let message =
-                    legacy_proto::message::Message::Status(legacy_proto::message::Status {
-                        version: 6,
-                        min_supported_version: 6,
-                        roles: legacy_proto::message::Roles::LIGHT,
-                        best_number: 0,
-                        best_hash:
-                            "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
-                                .parse()
-                                .unwrap(),
-                        genesis_hash:
-                            "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
-                                .parse()
-                                .unwrap(),
-                        chain_status: Vec::new(),
-                    });
+            generic_proto::GenericProtoOut::CustomProtocolOpen { peer_id } => {
+                let message = legacy_message::Message::Status(legacy_message::Status {
+                    version: 6,
+                    min_supported_version: 6,
+                    roles: legacy_message::Roles::LIGHT,
+                    best_number: 0,
+                    best_hash: "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
+                        .parse()
+                        .unwrap(),
+                    genesis_hash:
+                        "1d18dc9db0c97a2d3f1ab307ffcdea3445cbe8c54b5f2d491590db5366f84325"
+                            .parse()
+                            .unwrap(),
+                    chain_status: Vec::new(),
+                });
 
                 self.legacy.send_packet(&peer_id, message.encode());
             }
-            legacy_proto::LegacyProtoOut::CustomProtocolClosed { peer_id, .. } => {}
-            legacy_proto::LegacyProtoOut::CustomMessage { peer_id, message } => {
-                match legacy_proto::message::Message::decode_all(&message) {
-                    Ok(legacy_proto::message::Message::BlockAnnounce(announcement)) => {
+            generic_proto::GenericProtoOut::CustomProtocolClosed { peer_id, .. } => {}
+            generic_proto::GenericProtoOut::LegacyMessage { peer_id, message } => {
+                match legacy_message::Message::decode_all(&message) {
+                    Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
                         self.events.push(BehaviourOut::BlockAnnounce(BlockHeader {
                             parent_hash: announcement.header.parent_hash,
                             number: announcement.header.number,
@@ -243,8 +240,8 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                             extrinsics_root: announcement.header.extrinsics_root,
                         }));
                     }
-                    Ok(legacy_proto::message::Message::Status(_)) => {}
-                    Ok(legacy_proto::message::Message::BlockResponse(response)) => {
+                    Ok(legacy_message::Message::Status(_)) => {}
+                    Ok(legacy_message::Message::BlockResponse(response)) => {
                         self.events.push(BehaviourOut::BlocksResponse {
                             blocks: response
                                 .blocks
@@ -270,7 +267,8 @@ impl NetworkBehaviourEventProcess<legacy_proto::LegacyProtoOut> for Behaviour {
                     msg => println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }
-            legacy_proto::LegacyProtoOut::Clogged { .. } => {}
+            generic_proto::GenericProtoOut::Clogged { .. } => {}
+            generic_proto::GenericProtoOut::Notification { .. } => {} // TODO: !
         }
     }
 }
@@ -287,6 +285,7 @@ impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
             DiscoveryOut::Discovered(peer_id) => {
                 self.legacy.add_discovered_nodes(iter::once(peer_id));
             }
+            DiscoveryOut::RandomKademliaStarted(_) => {}
             DiscoveryOut::ValueFound(results) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValueFound(results))));
             }

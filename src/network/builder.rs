@@ -9,7 +9,7 @@ pub struct NetworkBuilder {
     executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
 
     /// Small string identifying the chain, in order to detect incompatible nodes earlier.
-    chain_spec_protocol_id: SmallVec<[u8; 6]>,
+    chain_spec_protocol_id: Vec<u8>,
 
     /// List of known bootnodes.
     boot_nodes: Vec<(PeerId, Multiaddr)>,
@@ -19,7 +19,7 @@ pub struct NetworkBuilder {
 pub fn builder() -> NetworkBuilder {
     NetworkBuilder {
         executor: None,
-        chain_spec_protocol_id: smallvec![b's', b'u', b'p'],
+        chain_spec_protocol_id: vec![b's', b'u', b'p'],
         boot_nodes: Vec::new(),
     }
 }

@@ -2,7 +2,7 @@
 name = "substrate-lite"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
-license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL
+license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL; can probably be removed if we remove all of Substrate's code
 edition = "2018"
 
 [dependencies]
@@ -14,8 +14,8 @@ futures = "0.3.1"   # TODO: should be default-features = false, but we use some 
 futures_codec = "0.3.3"
 futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }
+ip_network = "0.3.4"
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
-libp2p = { version = "0.16.0", default-features = false, features = ["libp2p-websocket"] }
 log = "0.4"
 parity-db = "0.1.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
@@ -40,18 +40,17 @@ slog = { version = "2.5.2", features = ["nested-values"] }
 slog-json = { version = "2.3.0", features = ["nested-values"] }
 void = "1.0"    # TODO: remove
 
+[dependencies.libp2p]
+version = "0.19.1"
+default-features = false
+features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
+
 [features]
 default = ["telemetry"]  # TODO: this is pretty much an idea, and needs proper implementation
 telemetry = []
 
 [profile.dev]
 opt-level = 1
-[profile.dev.package.aes-ctr]
-opt-level = 3
-[profile.dev.package.aes-soft]
-opt-level = 3
-[profile.dev.package.aesni]
-opt-level = 3
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
 [profile.dev.package.ed25519-dalek]

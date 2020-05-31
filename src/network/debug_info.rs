@@ -17,18 +17,20 @@
 use fnv::FnvHashMap;
 use futures::prelude::*;
 use futures_timer::Delay;
-use libp2p::core::nodes::listeners::ListenerId;
+use libp2p::core::connection::{ConnectionId, ListenerId};
 use libp2p::core::{either::EitherOutput, ConnectedPoint, PeerId, PublicKey};
 use libp2p::identify::{Identify, IdentifyEvent, IdentifyInfo};
 use libp2p::ping::{Ping, PingConfig, PingEvent, PingSuccess};
 use libp2p::swarm::{IntoProtocolsHandler, IntoProtocolsHandlerSelect, ProtocolsHandler};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
 use libp2p::Multiaddr;
+use log::{debug, error, trace};
+use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
-use std::error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use std::{error, io};
 use wasm_timer::Instant;
 
 /// Time after we disconnect from a node before we purge its information from the cache.
@@ -55,12 +57,25 @@ struct NodeInfo {
     /// When we will remove the entry about this node from the list, or `None` if we're connected
     /// to the node.
     info_expire: Option<Instant>,
-    /// How we're connected to the node.
-    endpoint: ConnectedPoint,
+    /// Non-empty list of connected endpoints, one per connection.
+    endpoints: SmallVec<[ConnectedPoint; 2]>,
     /// Version reported by the remote, or `None` if unknown.
     client_version: Option<String>,
     /// Latest ping time with this node.
     latest_ping: Option<Duration>,
+}
+
+impl NodeInfo {
+    fn new(endpoint: ConnectedPoint) -> Self {
+        let mut endpoints = SmallVec::new();
+        endpoints.push(endpoint);
+        NodeInfo {
+            info_expire: None,
+            endpoints,
+            client_version: None,
+            latest_ping: None,
+        }
+    }
 }
 
 impl DebugInfoBehaviour {
@@ -68,16 +83,19 @@ impl DebugInfoBehaviour {
     pub fn new(user_agent: String, local_public_key: PublicKey) -> Self {
         let identify = {
             let proto_version = "/substrate/1.0".to_string();
-            Identify::new(proto_version, user_agent, local_public_key.clone())
+            Identify::new(proto_version, user_agent, local_public_key)
         };
 
         DebugInfoBehaviour {
             ping: Ping::new(PingConfig::new()),
             identify,
             nodes_info: FnvHashMap::default(),
-            garbage_collect: Box::pin(futures::stream::unfold((), move |()| {
-                Delay::new(GARBAGE_COLLECT_INTERVAL).map(move |_| Some(((), ())))
-            })),
+            garbage_collect: Box::pin(
+                stream::unfold((), move |_| {
+                    Delay::new(GARBAGE_COLLECT_INTERVAL).map(|_| Some(((), ())))
+                })
+                .map(drop),
+            ),
         }
     }
 
@@ -93,11 +111,11 @@ impl DebugInfoBehaviour {
     /// Inserts a ping time in the cache. Has no effect if we don't have any entry for that node,
     /// which shouldn't happen.
     fn handle_ping_report(&mut self, peer_id: &PeerId, ping_time: Duration) {
-        log::trace!(target: "sub-libp2p", "Ping time with {:?}: {:?}", peer_id, ping_time);
+        trace!(target: "sub-libp2p", "Ping time with {:?}: {:?}", peer_id, ping_time);
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.latest_ping = Some(ping_time);
         } else {
-            log::error!(target: "sub-libp2p",
+            error!(target: "sub-libp2p",
 				"Received ping from node we're not connected to {:?}", peer_id);
         }
     }
@@ -105,11 +123,11 @@ impl DebugInfoBehaviour {
     /// Inserts an identify record in the cache. Has no effect if we don't have any entry for that
     /// node, which shouldn't happen.
     fn handle_identify_report(&mut self, peer_id: &PeerId, info: &IdentifyInfo) {
-        log::trace!(target: "sub-libp2p", "Identified {:?} => {:?}", peer_id, info);
+        trace!(target: "sub-libp2p", "Identified {:?} => {:?}", peer_id, info);
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.client_version = Some(info.agent_version.clone());
         } else {
-            log::error!(target: "sub-libp2p",
+            error!(target: "sub-libp2p",
 				"Received pong from node we're not connected to {:?}", peer_id);
         }
     }
@@ -119,9 +137,9 @@ impl DebugInfoBehaviour {
 pub struct Node<'a>(&'a NodeInfo);
 
 impl<'a> Node<'a> {
-    /// Returns the endpoint we are connected to or were last connected to.
+    /// Returns the endpoint of an established connection to the peer.
     pub fn endpoint(&self) -> &'a ConnectedPoint {
-        &self.0.endpoint
+        &self.0.endpoints[0] // `endpoints` are non-empty by definition
     }
 
     /// Returns the latest version information we know of.
@@ -166,20 +184,24 @@ impl NetworkBehaviour for DebugInfoBehaviour {
         list
     }
 
-    fn inject_connected(&mut self, peer_id: PeerId, endpoint: ConnectedPoint) {
-        self.ping
-            .inject_connected(peer_id.clone(), endpoint.clone());
-        self.identify
-            .inject_connected(peer_id.clone(), endpoint.clone());
+    fn inject_connected(&mut self, peer_id: &PeerId) {
+        self.ping.inject_connected(peer_id);
+        self.identify.inject_connected(peer_id);
+    }
 
-        match self.nodes_info.entry(peer_id) {
+    fn inject_connection_established(
+        &mut self,
+        peer_id: &PeerId,
+        conn: &ConnectionId,
+        endpoint: &ConnectedPoint,
+    ) {
+        self.ping
+            .inject_connection_established(peer_id, conn, endpoint);
+        self.identify
+            .inject_connection_established(peer_id, conn, endpoint);
+        match self.nodes_info.entry(peer_id.clone()) {
             Entry::Vacant(e) => {
-                e.insert(NodeInfo {
-                    info_expire: None,
-                    endpoint,
-                    client_version: None,
-                    latest_ping: None,
-                });
+                e.insert(NodeInfo::new(endpoint.clone()));
             }
             Entry::Occupied(e) => {
                 let e = e.into_mut();
@@ -192,53 +214,50 @@ impl NetworkBehaviour for DebugInfoBehaviour {
                     e.latest_ping = None;
                 }
                 e.info_expire = None;
-                e.endpoint = endpoint;
+                e.endpoints.push(endpoint.clone());
             }
         }
     }
 
-    fn inject_disconnected(&mut self, peer_id: &PeerId, endpoint: ConnectedPoint) {
-        self.ping.inject_disconnected(peer_id, endpoint.clone());
-        self.identify.inject_disconnected(peer_id, endpoint);
+    fn inject_connection_closed(
+        &mut self,
+        peer_id: &PeerId,
+        conn: &ConnectionId,
+        endpoint: &ConnectedPoint,
+    ) {
+        self.ping.inject_connection_closed(peer_id, conn, endpoint);
+        self.identify
+            .inject_connection_closed(peer_id, conn, endpoint);
+
+        if let Some(entry) = self.nodes_info.get_mut(peer_id) {
+            entry.endpoints.retain(|ep| ep != endpoint)
+        } else {
+            error!(target: "sub-libp2p",
+				"Unknown connection to {:?} closed: {:?}", peer_id, endpoint);
+        }
+    }
+
+    fn inject_disconnected(&mut self, peer_id: &PeerId) {
+        self.ping.inject_disconnected(peer_id);
+        self.identify.inject_disconnected(peer_id);
 
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.info_expire = Some(Instant::now() + CACHE_EXPIRE);
         } else {
-            log::error!(target: "sub-libp2p",
+            error!(target: "sub-libp2p",
 				"Disconnected from node we were not connected to {:?}", peer_id);
         }
     }
 
-    fn inject_node_event(
+    fn inject_event(
         &mut self,
         peer_id: PeerId,
+        connection: ConnectionId,
         event: <<Self::ProtocolsHandler as IntoProtocolsHandler>::Handler as ProtocolsHandler>::OutEvent,
     ) {
         match event {
-            EitherOutput::First(event) => self.ping.inject_node_event(peer_id, event),
-            EitherOutput::Second(event) => self.identify.inject_node_event(peer_id, event),
-        }
-    }
-
-    fn inject_replaced(
-        &mut self,
-        peer_id: PeerId,
-        closed_endpoint: ConnectedPoint,
-        new_endpoint: ConnectedPoint,
-    ) {
-        self.ping.inject_replaced(
-            peer_id.clone(),
-            closed_endpoint.clone(),
-            new_endpoint.clone(),
-        );
-        self.identify
-            .inject_replaced(peer_id.clone(), closed_endpoint, new_endpoint.clone());
-
-        if let Some(entry) = self.nodes_info.get_mut(&peer_id) {
-            entry.endpoint = new_endpoint;
-        } else {
-            log::error!(target: "sub-libp2p",
-				"Disconnected from node we were not connected to {:?}", peer_id);
+            EitherOutput::First(event) => self.ping.inject_event(peer_id, connection, event),
+            EitherOutput::Second(event) => self.identify.inject_event(peer_id, connection, event),
         }
     }
 
@@ -278,9 +297,9 @@ impl NetworkBehaviour for DebugInfoBehaviour {
         self.identify.inject_listener_error(id, err);
     }
 
-    fn inject_listener_closed(&mut self, id: ListenerId) {
-        self.ping.inject_listener_closed(id);
-        self.identify.inject_listener_closed(id);
+    fn inject_listener_closed(&mut self, id: ListenerId, reason: Result<(), &io::Error>) {
+        self.ping.inject_listener_closed(id, reason);
+        self.identify.inject_listener_closed(id, reason);
     }
 
 	fn poll(
@@ -308,12 +327,17 @@ impl NetworkBehaviour for DebugInfoBehaviour {
                 Poll::Ready(NetworkBehaviourAction::DialAddress { address }) => {
                     return Poll::Ready(NetworkBehaviourAction::DialAddress { address })
                 }
-                Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id }) => {
-                    return Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id })
+                Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id, condition }) => {
+                    return Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id, condition })
                 }
-                Poll::Ready(NetworkBehaviourAction::SendEvent { peer_id, event }) => {
-                    return Poll::Ready(NetworkBehaviourAction::SendEvent {
+                Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    peer_id,
+                    handler,
+                    event,
+                }) => {
+                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id,
+                        handler,
                         event: EitherOutput::First(event),
                     })
                 }
@@ -333,19 +357,24 @@ impl NetworkBehaviour for DebugInfoBehaviour {
                         return Poll::Ready(NetworkBehaviourAction::GenerateEvent(event));
                     }
                     IdentifyEvent::Error { peer_id, error } => {
-                        log::debug!(target: "sub-libp2p", "Identification with peer {:?} failed => {}", peer_id, error)
+                        debug!(target: "sub-libp2p", "Identification with peer {:?} failed => {}", peer_id, error)
                     }
                     IdentifyEvent::Sent { .. } => {}
                 },
                 Poll::Ready(NetworkBehaviourAction::DialAddress { address }) => {
                     return Poll::Ready(NetworkBehaviourAction::DialAddress { address })
                 }
-                Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id }) => {
-                    return Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id })
+                Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id, condition }) => {
+                    return Poll::Ready(NetworkBehaviourAction::DialPeer { peer_id, condition })
                 }
-                Poll::Ready(NetworkBehaviourAction::SendEvent { peer_id, event }) => {
-                    return Poll::Ready(NetworkBehaviourAction::SendEvent {
+                Poll::Ready(NetworkBehaviourAction::NotifyHandler {
+                    peer_id,
+                    handler,
+                    event,
+                }) => {
+                    return Poll::Ready(NetworkBehaviourAction::NotifyHandler {
                         peer_id,
+                        handler,
                         event: EitherOutput::Second(event),
                     })
                 }

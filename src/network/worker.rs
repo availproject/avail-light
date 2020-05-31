@@ -39,7 +39,7 @@ pub(super) struct Config {
     pub(super) known_addresses: Vec<(PeerId, Multiaddr)>,
     /// Small string identifying the name of the chain, in order to detect incompatible nodes
     /// earlier.
-    pub(super) chain_spec_protocol_id: SmallVec<[u8; 6]>,
+    pub(super) chain_spec_protocol_id: Vec<u8>,
 }
 
 impl Network {

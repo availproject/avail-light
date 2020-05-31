@@ -394,6 +394,8 @@ impl<'a, T> StateWaitExternalResolve<'a, T> {
     }
 }
 
+// TODO: should somehow filter out categories of functions, so that offchain worker functions
+// are for example forbidden for regular blocks
 fn get_function(name: &str) -> RegisteredFunction {
     match name {
         "ext_storage_set_version_1" => RegisteredFunction::Immediate {

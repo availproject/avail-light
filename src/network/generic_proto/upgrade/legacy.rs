@@ -1,24 +1,25 @@
-// Copyright 2018-2020 Parity Technologies (UK) Ltd.
 // This file is part of Substrate.
 
-// Substrate is free software: you can redistribute it and/or modify
+// Copyright (C) 2018-2020 Parity Technologies (UK) Ltd.
+// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+
+// This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-// Substrate is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU General Public License for more details.
 
 // You should have received a copy of the GNU General Public License
-// along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use bytes::BytesMut;
 use futures::prelude::*;
 use futures_codec::Framed;
 use libp2p::core::{upgrade::ProtocolName, Endpoint, InboundUpgrade, OutboundUpgrade, UpgradeInfo};
-use smallvec::SmallVec;
 use std::task::{Context, Poll};
 use std::{collections::VecDeque, io, pin::Pin, vec::IntoIter as VecIntoIter};
 use unsigned_varint::codec::UviBytes;
@@ -29,7 +30,7 @@ use unsigned_varint::codec::UviBytes;
 /// each protocol can have multiple different versions for networking purposes.
 pub struct RegisteredProtocol {
     /// Id of the protocol for API purposes.
-    id: SmallVec<[u8; 6]>,
+    id: Vec<u8>,
     /// Base name of the protocol as advertised on the network.
     /// Ends with `/` so that we can append a version number behind.
     base_name: Vec<u8>,
@@ -41,10 +42,10 @@ pub struct RegisteredProtocol {
 impl RegisteredProtocol {
     /// Creates a new `RegisteredProtocol`. The `custom_data` parameter will be
     /// passed inside the `RegisteredProtocolOutput`.
-    pub fn new(protocol: impl Into<SmallVec<[u8; 6]>>, versions: &[u8]) -> Self {
+    pub fn new(protocol: impl Into<Vec<u8>>, versions: &[u8]) -> Self {
         let protocol = protocol.into();
         let mut base_name = b"/substrate/".to_vec();
-        base_name.extend_from_slice(protocol.as_ref());
+        base_name.extend_from_slice(&protocol);
         base_name.extend_from_slice(b"/");
 
         RegisteredProtocol {

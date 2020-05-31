@@ -14,7 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::upgrade::{RegisteredProtocol, RegisteredProtocolEvent, RegisteredProtocolSubstream};
+use crate::network::generic_proto::upgrade::{
+    RegisteredProtocol, RegisteredProtocolEvent, RegisteredProtocolSubstream,
+};
 use bytes::BytesMut;
 use futures::prelude::*;
 use futures_timer::Delay;
@@ -26,7 +28,7 @@ use libp2p::swarm::{
 };
 use log::{debug, error};
 use smallvec::{smallvec, SmallVec};
-use std::{borrow::Cow, error, fmt, io, mem, time::Duration};
+use std::{borrow::Cow, collections::VecDeque, error, fmt, io, mem, time::Duration};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -36,12 +38,11 @@ use std::{
 ///
 /// Every time a connection with a remote starts, an instance of this struct is created and
 /// sent to a background task dedicated to this connection. Once the connection is established,
-/// it is turned into a `CustomProtoHandler`. It then handles all communications that are specific
+/// it is turned into a `LegacyProtoHandler`. It then handles all communications that are specific
 /// to Substrate on that single connection.
 ///
-/// Note that there can be multiple instance of this struct simultaneously for same peer. However
-/// if that happens, only one main instance can communicate with the outer layers of the code. In
-/// other words, the outer layers of the code only ever see one handler.
+/// Note that there can be multiple instance of this struct simultaneously for same peer,
+/// if there are multiple established connections to the peer.
 ///
 /// ## State of the handler
 ///
@@ -60,6 +61,7 @@ use std::{
 /// these states. For example, if the handler reports a network misbehaviour, it will close the
 /// substreams but it is the role of the user to send a `Disabled` event if it wants the connection
 /// to close. Otherwise, the handler will try to reopen substreams.
+///
 /// The handler starts in the "Initializing" state and must be transitionned to Enabled or Disabled
 /// as soon as possible.
 ///
@@ -86,20 +88,20 @@ use std::{
 /// We consider that we are now "closed" if the remote closes all the existing substreams.
 /// Re-opening it can then be performed by closing all active substream and re-opening one.
 ///
-pub struct CustomProtoHandlerProto {
+pub struct LegacyProtoHandlerProto {
     /// Configuration for the protocol upgrade to negotiate.
     protocol: RegisteredProtocol,
 }
 
-impl CustomProtoHandlerProto {
-    /// Builds a new `CustomProtoHandlerProto`.
+impl LegacyProtoHandlerProto {
+    /// Builds a new `LegacyProtoHandlerProto`.
     pub fn new(protocol: RegisteredProtocol) -> Self {
-        CustomProtoHandlerProto { protocol }
+        LegacyProtoHandlerProto { protocol }
     }
 }
 
-impl IntoProtocolsHandler for CustomProtoHandlerProto {
-    type Handler = CustomProtoHandler;
+impl IntoProtocolsHandler for LegacyProtoHandlerProto {
+    type Handler = LegacyProtoHandler;
 
     fn inbound_protocol(&self) -> RegisteredProtocol {
         self.protocol.clone()
@@ -110,21 +112,21 @@ impl IntoProtocolsHandler for CustomProtoHandlerProto {
         remote_peer_id: &PeerId,
         connected_point: &ConnectedPoint,
     ) -> Self::Handler {
-        CustomProtoHandler {
+        LegacyProtoHandler {
             protocol: self.protocol,
-            endpoint: connected_point.to_endpoint(),
+            endpoint: connected_point.clone(),
             remote_peer_id: remote_peer_id.clone(),
             state: ProtocolState::Init {
                 substreams: SmallVec::new(),
-                init_deadline: Delay::new(Duration::from_secs(5)),
+                init_deadline: Delay::new(Duration::from_secs(20)),
             },
-            events_queue: SmallVec::new(),
+            events_queue: VecDeque::new(),
         }
     }
 }
 
 /// The actual handler once the connection has been established.
-pub struct CustomProtoHandler {
+pub struct LegacyProtoHandler {
     /// Configuration for the protocol upgrade to negotiate.
     protocol: RegisteredProtocol,
 
@@ -137,15 +139,14 @@ pub struct CustomProtoHandler {
 
     /// Whether we are the connection dialer or listener. Used to determine who, between the local
     /// node and the remote node, has priority.
-    endpoint: Endpoint,
+    endpoint: ConnectedPoint,
 
     /// Queue of events to send to the outside.
     ///
     /// This queue must only ever be modified to insert elements at the back, or remove the first
     /// element.
-    events_queue: SmallVec<
-        [ProtocolsHandlerEvent<RegisteredProtocol, (), CustomProtoHandlerOut, ConnectionKillError>;
-            16],
+    events_queue: VecDeque<
+        ProtocolsHandlerEvent<RegisteredProtocol, (), LegacyProtoHandlerOut, ConnectionKillError>,
     >,
 }
 
@@ -199,9 +200,9 @@ enum ProtocolState {
     Poisoned,
 }
 
-/// Event that can be received by a `CustomProtoHandler`.
+/// Event that can be received by a `LegacyProtoHandler`.
 #[derive(Debug)]
-pub enum CustomProtoHandlerIn {
+pub enum LegacyProtoHandlerIn {
     /// The node should start using custom protocols.
     Enable,
 
@@ -215,19 +216,23 @@ pub enum CustomProtoHandlerIn {
     },
 }
 
-/// Event that can be emitted by a `CustomProtoHandler`.
+/// Event that can be emitted by a `LegacyProtoHandler`.
 #[derive(Debug)]
-pub enum CustomProtoHandlerOut {
+pub enum LegacyProtoHandlerOut {
     /// Opened a custom protocol with the remote.
     CustomProtocolOpen {
         /// Version of the protocol that has been opened.
         version: u8,
+        /// The connected endpoint.
+        endpoint: ConnectedPoint,
     },
 
     /// Closed a custom protocol with the remote.
     CustomProtocolClosed {
         /// Reason why the substream closed, for diagnostic purposes.
         reason: Cow<'static, str>,
+        /// The connected endpoint.
+        endpoint: ConnectedPoint,
     },
 
     /// Receives a message on a custom protocol substream.
@@ -252,7 +257,19 @@ pub enum CustomProtoHandlerOut {
     },
 }
 
-impl CustomProtoHandler {
+impl LegacyProtoHandler {
+    /// Returns true if the legacy substream is currently open.
+    pub fn is_open(&self) -> bool {
+        match &self.state {
+            ProtocolState::Init { substreams, .. } => !substreams.is_empty(),
+            ProtocolState::Opening { .. } => false,
+            ProtocolState::Normal { substreams, .. } => !substreams.is_empty(),
+            ProtocolState::Disabled { .. } => false,
+            ProtocolState::KillAsap => false,
+            ProtocolState::Poisoned => false,
+        }
+    }
+
     /// Enables the handler.
     fn enable(&mut self) {
         self.state = match mem::replace(&mut self.state, ProtocolState::Poisoned) {
@@ -267,21 +284,24 @@ impl CustomProtoHandler {
                 ..
             } => {
                 if incoming.is_empty() {
-                    if let Endpoint::Dialer = self.endpoint {
-                        self.events_queue
-                            .push(ProtocolsHandlerEvent::OutboundSubstreamRequest {
+                    if let ConnectedPoint::Dialer { .. } = self.endpoint {
+                        self.events_queue.push_back(
+                            ProtocolsHandlerEvent::OutboundSubstreamRequest {
                                 protocol: SubstreamProtocol::new(self.protocol.clone()),
                                 info: (),
-                            });
+                            },
+                        );
                     }
                     ProtocolState::Opening {
                         deadline: Delay::new(Duration::from_secs(60)),
                     }
                 } else {
-                    let event = CustomProtoHandlerOut::CustomProtocolOpen {
+                    let event = LegacyProtoHandlerOut::CustomProtocolOpen {
                         version: incoming[0].protocol_version(),
+                        endpoint: self.endpoint.clone(),
                     };
-                    self.events_queue.push(ProtocolsHandlerEvent::Custom(event));
+                    self.events_queue
+                        .push_back(ProtocolsHandlerEvent::Custom(event));
                     ProtocolState::Normal {
                         substreams: incoming.into_iter().collect(),
                         shutdown: SmallVec::new(),
@@ -346,7 +366,7 @@ impl CustomProtoHandler {
         &mut self,
         cx: &mut Context,
     ) -> Option<
-        ProtocolsHandlerEvent<RegisteredProtocol, (), CustomProtoHandlerOut, ConnectionKillError>,
+        ProtocolsHandlerEvent<RegisteredProtocol, (), LegacyProtoHandlerOut, ConnectionKillError>,
     > {
         match mem::replace(&mut self.state, ProtocolState::Poisoned) {
             ProtocolState::Poisoned => {
@@ -362,28 +382,28 @@ impl CustomProtoHandler {
             } => {
                 match Pin::new(&mut init_deadline).poll(cx) {
                     Poll::Ready(()) => {
-                        init_deadline = Delay::new(Duration::from_secs(60));
                         error!(target: "sub-libp2p", "Handler initialization process is too long \
-							with {:?}", self.remote_peer_id)
+							with {:?}", self.remote_peer_id);
+                        self.state = ProtocolState::KillAsap;
                     }
-                    Poll::Pending => {}
+                    Poll::Pending => {
+                        self.state = ProtocolState::Init {
+                            substreams,
+                            init_deadline,
+                        };
+                    }
                 }
 
-                self.state = ProtocolState::Init {
-                    substreams,
-                    init_deadline,
-                };
                 None
             }
 
             ProtocolState::Opening { mut deadline } => match Pin::new(&mut deadline).poll(cx) {
                 Poll::Ready(()) => {
-                    deadline = Delay::new(Duration::from_secs(60));
-                    let event = CustomProtoHandlerOut::ProtocolError {
+                    let event = LegacyProtoHandlerOut::ProtocolError {
                         is_severe: true,
                         error: "Timeout when opening protocol".to_string().into(),
                     };
-                    self.state = ProtocolState::Opening { deadline };
+                    self.state = ProtocolState::KillAsap;
                     Some(ProtocolsHandlerEvent::Custom(event))
                 }
                 Poll::Pending => {
@@ -401,7 +421,7 @@ impl CustomProtoHandler {
                     match Pin::new(&mut substream).poll_next(cx) {
                         Poll::Pending => substreams.push(substream),
                         Poll::Ready(Some(Ok(RegisteredProtocolEvent::Message(message)))) => {
-                            let event = CustomProtoHandlerOut::CustomMessage { message };
+                            let event = LegacyProtoHandlerOut::CustomMessage { message };
                             substreams.push(substream);
                             self.state = ProtocolState::Normal {
                                 substreams,
@@ -410,7 +430,7 @@ impl CustomProtoHandler {
                             return Some(ProtocolsHandlerEvent::Custom(event));
                         }
                         Poll::Ready(Some(Ok(RegisteredProtocolEvent::Clogged { messages }))) => {
-                            let event = CustomProtoHandlerOut::Clogged { messages };
+                            let event = LegacyProtoHandlerOut::Clogged { messages };
                             substreams.push(substream);
                             self.state = ProtocolState::Normal {
                                 substreams,
@@ -421,8 +441,9 @@ impl CustomProtoHandler {
                         Poll::Ready(None) => {
                             shutdown.push(substream);
                             if substreams.is_empty() {
-                                let event = CustomProtoHandlerOut::CustomProtocolClosed {
+                                let event = LegacyProtoHandlerOut::CustomProtocolClosed {
                                     reason: "All substreams have been closed by the remote".into(),
+                                    endpoint: self.endpoint.clone(),
                                 };
                                 self.state = ProtocolState::Disabled {
                                     shutdown: shutdown.into_iter().collect(),
@@ -433,9 +454,10 @@ impl CustomProtoHandler {
                         }
                         Poll::Ready(Some(Err(err))) => {
                             if substreams.is_empty() {
-                                let event = CustomProtoHandlerOut::CustomProtocolClosed {
+                                let event = LegacyProtoHandlerOut::CustomProtocolClosed {
                                     reason: format!("Error on the last substream: {:?}", err)
                                         .into(),
+                                    endpoint: self.endpoint.clone(),
                                 };
                                 self.state = ProtocolState::Disabled {
                                     shutdown: shutdown.into_iter().collect(),
@@ -510,10 +532,12 @@ impl CustomProtoHandler {
             }
 
             ProtocolState::Opening { .. } => {
-                let event = CustomProtoHandlerOut::CustomProtocolOpen {
+                let event = LegacyProtoHandlerOut::CustomProtocolOpen {
                     version: substream.protocol_version(),
+                    endpoint: self.endpoint.clone(),
                 };
-                self.events_queue.push(ProtocolsHandlerEvent::Custom(event));
+                self.events_queue
+                    .push_back(ProtocolsHandlerEvent::Custom(event));
                 ProtocolState::Normal {
                     substreams: smallvec![substream],
                     shutdown: SmallVec::new(),
@@ -557,9 +581,9 @@ impl CustomProtoHandler {
     }
 }
 
-impl ProtocolsHandler for CustomProtoHandler {
-    type InEvent = CustomProtoHandlerIn;
-    type OutEvent = CustomProtoHandlerOut;
+impl ProtocolsHandler for LegacyProtoHandler {
+    type InEvent = LegacyProtoHandlerIn;
+    type OutEvent = LegacyProtoHandlerOut;
     type Error = ConnectionKillError;
     type InboundProtocol = RegisteredProtocol;
     type OutboundProtocol = RegisteredProtocol;
@@ -584,11 +608,11 @@ impl ProtocolsHandler for CustomProtoHandler {
         self.inject_fully_negotiated(proto);
     }
 
-    fn inject_event(&mut self, message: CustomProtoHandlerIn) {
+    fn inject_event(&mut self, message: LegacyProtoHandlerIn) {
         match message {
-            CustomProtoHandlerIn::Disable => self.disable(),
-            CustomProtoHandlerIn::Enable => self.enable(),
-            CustomProtoHandlerIn::SendCustomMessage { message } => self.send_message(message),
+            LegacyProtoHandlerIn::Disable => self.disable(),
+            LegacyProtoHandlerIn::Enable => self.enable(),
+            LegacyProtoHandlerIn::SendCustomMessage { message } => self.send_message(message),
         }
     }
 
@@ -599,8 +623,8 @@ impl ProtocolsHandler for CustomProtoHandler {
             _ => false,
         };
 
-        self.events_queue.push(ProtocolsHandlerEvent::Custom(
-            CustomProtoHandlerOut::ProtocolError {
+        self.events_queue.push_back(ProtocolsHandlerEvent::Custom(
+            LegacyProtoHandlerOut::ProtocolError {
                 is_severe,
                 error: Box::new(err),
             },
@@ -630,8 +654,7 @@ impl ProtocolsHandler for CustomProtoHandler {
         >,
     > {
         // Flush the events queue if necessary.
-        if !self.events_queue.is_empty() {
-            let event = self.events_queue.remove(0);
+        if let Some(event) = self.events_queue.pop_front() {
             return Poll::Ready(event);
         }
 
@@ -649,9 +672,9 @@ impl ProtocolsHandler for CustomProtoHandler {
     }
 }
 
-impl fmt::Debug for CustomProtoHandler {
+impl fmt::Debug for LegacyProtoHandler {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        f.debug_struct("CustomProtoHandler").finish()
+        f.debug_struct("LegacyProtoHandler").finish()
     }
 }
 
