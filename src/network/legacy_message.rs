@@ -116,7 +116,7 @@ impl parity_scale_codec::Decode for Roles {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Copy, Encode, Decode)]
 /// Block enumeration direction.
 pub enum Direction {
     /// Enumerate in ascending order (from child to parent).
@@ -179,7 +179,7 @@ pub struct BlockData {
 }
 
 /// Identifies starting point of a block sequence.
-#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Encode, Decode)]
 pub enum FromBlock {
     /// Start with given hash.
     Hash(H256),
@@ -309,7 +309,7 @@ impl Decode for Status {
 }
 
 /// Request block data from a peer.
-#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Encode, Decode)]
 pub struct BlockRequest {
     /// Unique request id.
     pub id: RequestId,

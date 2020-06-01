@@ -8,16 +8,7 @@ use smallvec::SmallVec;
 /// State machine representing the network currently running.
 pub struct Network {
     swarm: Swarm<behaviour::Behaviour>,
-
-    /// List of block requests in progress.
-    blocks_requests: HashSet<BlocksRequestId, FnvBuildHasher>,
-
-    /// Identifier to assign to the next blocks request to start.
-    next_blocks_request: BlocksRequestId,
 }
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct BlocksRequestId(u64);
 
 /// Event that can happen on the network.
 #[derive(Debug)]
@@ -27,6 +18,7 @@ pub enum Event {
 
     /// A blocks request started with [`Network::start_block_request`] has gotten a response.
     BlocksRequestFinished {
+        id: behaviour::BlocksRequestId,
         result: Result<Vec<behaviour::BlockData>, ()>,
     },
 }
@@ -60,11 +52,7 @@ impl Network {
         .await;
         let swarm = Swarm::new(transport, behaviour, local_peer_id);
 
-        Network {
-            swarm,
-            blocks_requests: Default::default(),
-            next_blocks_request: BlocksRequestId(0),
-        }
+        Network { swarm }
     }
 
     /// Sends out an announcement about the given block.
@@ -72,18 +60,11 @@ impl Network {
         unimplemented!()
     }
 
-    pub async fn start_block_request(&mut self, block_num: u64) {
-        let id = self.next_blocks_request;
-        self.next_blocks_request.0 += 1; // TODO: overflows
-
-        self.blocks_requests.insert(id);
-
-        self.swarm.send_block_data_request(block_num);
-    }
-
-    /// Returns the number of ongoing block requests.
-    pub fn num_blocks_request(&self) -> usize {
-        self.blocks_requests.len()
+    pub async fn start_block_request(
+        &mut self,
+        config: behaviour::BlocksRequestConfig,
+    ) -> behaviour::BlocksRequestId {
+        self.swarm.send_block_data_request(config)
     }
 
     /// Returns the next event that happened on the network.
@@ -93,24 +74,22 @@ impl Network {
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::BlockAnnounce(header)) => {
                     return Event::BlockAnnounce(header);
                 }
-                SwarmEvent::Behaviour(behaviour::BehaviourOut::BlocksResponse { blocks }) => {
-                    return Event::BlocksRequestFinished { result: Ok(blocks) };
+                SwarmEvent::Behaviour(behaviour::BehaviourOut::BlocksResponse { id, result }) => {
+                    return Event::BlocksRequestFinished { id, result };
                 }
 
-                /*SwarmEvent::ConnectionEstablished { .. } => {},
-                SwarmEvent::ConnectionClosed { .. } => {},
-                SwarmEvent::NewListenAddr(_) => {},
-                SwarmEvent::ExpiredListenAddr(_) => {},
+                SwarmEvent::ConnectionEstablished { .. } => {}
+                SwarmEvent::ConnectionClosed { .. } => {}
+                SwarmEvent::NewListenAddr(_) => {}
+                SwarmEvent::ExpiredListenAddr(_) => {}
                 SwarmEvent::UnreachableAddr { .. } => {}
-                SwarmEvent::Dialing(peer_id) => {},
-                SwarmEvent::IncomingConnection { .. } => {},
-                SwarmEvent::IncomingConnectionError { .. } => {},
-                SwarmEvent::BannedPeer { .. } => {},
-                SwarmEvent::UnknownPeerUnreachableAddr { .. } => {},
-                SwarmEvent::ListenerClosed { .. } => {},
-                SwarmEvent::ListenerError { .. } => {},*/
-                // TODO:
-                ev => println!("network event: {:?}", ev),
+                SwarmEvent::Dialing(peer_id) => {}
+                SwarmEvent::IncomingConnection { .. } => {}
+                SwarmEvent::IncomingConnectionError { .. } => {}
+                SwarmEvent::BannedPeer { .. } => {}
+                SwarmEvent::UnknownPeerUnreachableAddr { .. } => {}
+                SwarmEvent::ListenerClosed { .. } => {}
+                SwarmEvent::ListenerError { .. } => {}
             }
         }
     }

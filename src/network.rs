@@ -1,4 +1,7 @@
-pub use behaviour::BlockHeader;
+pub use behaviour::{
+    BlockHeader, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
+    BlocksRequestFields,
+};
 pub use builder::builder;
 pub use worker::{Event, Network};
 

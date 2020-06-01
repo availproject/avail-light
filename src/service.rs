@@ -16,6 +16,8 @@
 //! At the moment, authoring blocks and running GrandPa isn't supported.
 
 use crate::{executor, network, storage, telemetry};
+
+use core::num::NonZeroU64;
 use futures::{executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 
@@ -53,6 +55,7 @@ pub enum Event {
 impl Service {
     /// Returns the next event that happens in the service.
     pub async fn next_event(&mut self) -> Event {
+        // TODO: block0's hash is not 0
         let block0 = "0000000000000000000000000000000000000000000000000000000000000000"
             .parse()
             .unwrap();
@@ -69,17 +72,28 @@ impl Service {
             .execute((), &wasm_runtime, executor::FunctionToCall::CoreVersion);
 
         // TODO: don't put that here
-        self.network.start_block_request(1).await;
+        self.network
+            .start_block_request(network::BlocksRequestConfig {
+                start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
+                direction: network::BlocksRequestDirection::Ascending,
+                desired_count: 1,
+                fields: network::BlocksRequestFields {
+                    header: true,
+                    body: true,
+                    justification: false,
+                },
+            })
+            .await;
 
         loop {
             futures::select! {
                 event = self.network.next_event().fuse() => {
                     match event {
                         network::Event::BlockAnnounce(header) => {
-                            self.network.start_block_request(header.number).await;
+                            //self.network.start_block_request(header.number).await;
                             return Event::NewChainHead(header.number); // TODO: not necessarily the head
                         }
-                        network::Event::BlocksRequestFinished { result } => {
+                        network::Event::BlocksRequestFinished { id, result } => {
                             println!("{:?}", result);
                         }
                     }

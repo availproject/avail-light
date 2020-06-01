@@ -15,15 +15,18 @@
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::{
-    debug_info,
+    block_requests, debug_info,
     discovery::{DiscoveryBehaviour, DiscoveryConfig, DiscoveryOut},
     generic_proto, legacy_message,
 };
 
+use alloc::collections::VecDeque;
 use core::{
     iter,
+    num::NonZeroU64,
     task::{Context, Poll},
 };
+use hashbrown::HashMap;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
 use libp2p::kad::record;
 use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
@@ -44,13 +47,21 @@ pub struct Behaviour {
     debug_info: debug_info::DebugInfoBehaviour,
     /// Discovers nodes of the network.
     discovery: DiscoveryBehaviour,
-    /*/// Block request handling.
-    block_requests: protocol::BlockRequests<B>,
-    /// Light client request handling.
-    light_client_handler: protocol::LightClientHandler<B>,*/
+    /// Block request handling.
+    block_requests: block_requests::BlockRequests,
+    // TODO: light_client_handler: protocol::LightClientHandler,
+
+    // TODO: this is a stupid translation layer between block_requests and a proper API
+    // because block_requests is copy-pasted from Substrate, and because we want to be able to
+    // easily refresh it, we need some API adjustments
+    #[behaviour(ignore)]
+    pending_block_requests: HashMap<(PeerId, legacy_message::BlockRequest), BlocksRequestId>,
+    #[behaviour(ignore)]
+    next_block_request_id: BlocksRequestId,
+
     /// Queue of events to produce for the outside.
     #[behaviour(ignore)]
-    events: Vec<BehaviourOut>,
+    events: VecDeque<BehaviourOut>,
 }
 
 #[derive(Debug)]
@@ -58,7 +69,9 @@ pub enum BehaviourOut {
     /// An announcement about a block has been gossiped to us.
     BlockAnnounce(BlockHeader),
     BlocksResponse {
-        blocks: Vec<BlockData>,
+        id: BlocksRequestId,
+        // TODO: proper error type
+        result: Result<Vec<BlockData>, ()>,
     },
 }
 
@@ -95,6 +108,50 @@ pub struct BlockData {
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Extrinsic(pub Vec<u8>);
 
+// TODO: the BlocksRequestConfig and all derivates should be in the block_requests module, but the
+// block_requests module at the moment is more or less copy-pasted from upstream Substrate, so we
+// have them here to make it easier to update the code
+/// Description of a blocks request that the network must perform.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BlocksRequestConfig {
+    /// First block that the remote must return.
+    pub start: BlocksRequestConfigStart,
+    /// Number of blocks to request. The remote is free to return fewer blocks than requested.
+    pub desired_count: u32,
+    /// Whether the first block should be the one with the highest number, of the one with the
+    /// lowest number.
+    pub direction: BlocksRequestDirection,
+    /// Which fields should be present in the response.
+    pub fields: BlocksRequestFields,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BlocksRequestDirection {
+    Ascending,
+    Descending,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct BlocksRequestFields {
+    pub header: bool,
+    pub body: bool,
+    pub justification: bool,
+}
+
+/// Which block the remote must return first.
+#[derive(Debug, PartialEq, Eq)]
+pub enum BlocksRequestConfigStart {
+    /// Hash of the block.
+    ///
+    /// > **Note**: As a reminder, the hash of a block is the same thing as the hash of its header.
+    Hash(H256),
+    /// Number of the block, where 0 would be the genesis block.
+    Number(NonZeroU64),
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct BlocksRequestId(u64);
+
 impl Behaviour {
     /// Builds a new `Behaviour`.
     pub async fn new(
@@ -122,9 +179,14 @@ impl Behaviour {
             peerset,
         );
 
+        let block_requests = block_requests::BlockRequests::new(block_requests::Config::new(
+            &chain_spec_protocol_id,
+        ));
+
         Behaviour {
             legacy,
             debug_info: debug_info::DebugInfoBehaviour::new(user_agent, local_public_key.clone()),
+            block_requests,
             discovery: {
                 let mut cfg = DiscoveryConfig::new(local_public_key);
                 cfg.with_user_defined(known_addresses);
@@ -134,26 +196,81 @@ impl Behaviour {
                 cfg.add_protocol(chain_spec_protocol_id);
                 cfg.finish()
             },
-            events: Vec::new(),
+            pending_block_requests: Default::default(),
+            next_block_request_id: BlocksRequestId(0),
+            events: VecDeque::new(),
         }
     }
 
-    pub fn send_block_data_request(&mut self, block_num: u64) {
+    pub fn send_block_data_request(&mut self, config: BlocksRequestConfig) -> BlocksRequestId {
+        let request_id = self.next_block_request_id;
+        self.next_block_request_id.0 += 1;
+
         let target = match self.legacy.open_peers().next() {
             Some(p) => p.clone(),
-            None => return,
+            None => {
+                self.events.push_back(BehaviourOut::BlocksResponse {
+                    id: request_id,
+                    result: Err(()),
+                });
+                return request_id;
+            }
         };
 
-        let message = legacy_message::Message::BlockRequest(legacy_message::BlockRequest {
+        let legacy = legacy_message::BlockRequest {
             id: 0,
-            fields: legacy_message::BlockAttributes::HEADER | legacy_message::BlockAttributes::BODY,
-            from: legacy_message::FromBlock::Number(block_num),
+            fields: {
+                let mut fields = legacy_message::BlockAttributes::empty();
+                if config.fields.header {
+                    fields |= legacy_message::BlockAttributes::HEADER;
+                }
+                if config.fields.body {
+                    fields |= legacy_message::BlockAttributes::BODY;
+                }
+                if config.fields.justification {
+                    fields |= legacy_message::BlockAttributes::JUSTIFICATION;
+                }
+                fields
+            },
+            from: match config.start {
+                BlocksRequestConfigStart::Hash(h) => unimplemented!(),
+                BlocksRequestConfigStart::Number(n) => legacy_message::FromBlock::Number(n.get()),
+            },
             to: None,
-            direction: legacy_message::Direction::Ascending,
-            max: Some(1),
-        });
+            direction: match config.direction {
+                BlocksRequestDirection::Ascending => legacy_message::Direction::Ascending,
+                BlocksRequestDirection::Descending => legacy_message::Direction::Descending,
+            },
+            max: Some(config.desired_count),
+        };
 
-        self.legacy.send_packet(&target, message.encode());
+        match self.block_requests.send_request(&target, legacy.clone()) {
+            block_requests::SendRequestOutcome::EncodeError(_) => panic!(),
+            block_requests::SendRequestOutcome::Ok => {
+                self.pending_block_requests
+                    .insert((target, legacy), request_id);
+            }
+            block_requests::SendRequestOutcome::Replaced { previous, .. } => {
+                self.pending_block_requests
+                    .insert((target.clone(), legacy), request_id);
+                let previous = self
+                    .pending_block_requests
+                    .remove(&(target, previous))
+                    .unwrap();
+                self.events.push_back(BehaviourOut::BlocksResponse {
+                    id: previous,
+                    result: Err(()),
+                });
+            }
+            block_requests::SendRequestOutcome::NotConnected => {
+                self.events.push_back(BehaviourOut::BlocksResponse {
+                    id: request_id,
+                    result: Err(()),
+                });
+            }
+        }
+
+        request_id
     }
 
     /// Returns the list of nodes that we know exist in the network.
@@ -235,37 +352,15 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
             generic_proto::GenericProtoOut::LegacyMessage { peer_id, message } => {
                 match legacy_message::Message::decode_all(&message) {
                     Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
-                        self.events.push(BehaviourOut::BlockAnnounce(BlockHeader {
-                            parent_hash: announcement.header.parent_hash,
-                            number: announcement.header.number,
-                            state_root: announcement.header.state_root,
-                            extrinsics_root: announcement.header.extrinsics_root,
-                        }));
+                        self.events
+                            .push_back(BehaviourOut::BlockAnnounce(BlockHeader {
+                                parent_hash: announcement.header.parent_hash,
+                                number: announcement.header.number,
+                                state_root: announcement.header.state_root,
+                                extrinsics_root: announcement.header.extrinsics_root,
+                            }));
                     }
                     Ok(legacy_message::Message::Status(_)) => {}
-                    Ok(legacy_message::Message::BlockResponse(response)) => {
-                        self.events.push(BehaviourOut::BlocksResponse {
-                            blocks: response
-                                .blocks
-                                .into_iter()
-                                .map(|data| BlockData {
-                                    hash: data.hash,
-                                    header: data.header.map(|header| BlockHeader {
-                                        parent_hash: header.parent_hash,
-                                        number: header.number,
-                                        state_root: header.state_root,
-                                        extrinsics_root: header.extrinsics_root,
-                                    }),
-                                    body: data.body.map(|body| {
-                                        body.into_iter().map(|ext| Extrinsic(ext.0)).collect()
-                                    }),
-                                    receipt: data.receipt,
-                                    message_queue: data.message_queue,
-                                    justification: data.justification,
-                                })
-                                .collect(),
-                        });
-                    }
                     msg => println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }
@@ -277,6 +372,7 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
 
 impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
     fn inject_event(&mut self, out: DiscoveryOut) {
+        // TODO:
         match out {
             DiscoveryOut::UnroutablePeer(_peer_id) => {
                 // Obtaining and reporting listen addresses for unroutable peers back
@@ -304,14 +400,74 @@ impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
     }
 }
 
+impl NetworkBehaviourEventProcess<block_requests::Event> for Behaviour {
+    fn inject_event(&mut self, out: block_requests::Event) {
+        match out {
+            block_requests::Event::AnsweredRequest { .. } => {}
+            block_requests::Event::Response {
+                peer,
+                original_request,
+                response,
+                ..
+            } => {
+                let id = self
+                    .pending_block_requests
+                    .remove(&(peer, original_request))
+                    .unwrap();
+                self.events.push_back(BehaviourOut::BlocksResponse {
+                    id,
+                    result: Ok(response
+                        .blocks
+                        .into_iter()
+                        .map(|data| BlockData {
+                            hash: data.hash,
+                            header: data.header.map(|header| BlockHeader {
+                                parent_hash: header.parent_hash,
+                                number: header.number,
+                                state_root: header.state_root,
+                                extrinsics_root: header.extrinsics_root,
+                            }),
+                            body: data
+                                .body
+                                .map(|body| body.into_iter().map(|ext| Extrinsic(ext.0)).collect()),
+                            receipt: data.receipt,
+                            message_queue: data.message_queue,
+                            justification: data.justification,
+                        })
+                        .collect()),
+                });
+            }
+            block_requests::Event::RequestCancelled {
+                peer,
+                original_request,
+                ..
+            }
+            | block_requests::Event::RequestTimeout {
+                peer,
+                original_request,
+                ..
+            } => {
+                let id = self
+                    .pending_block_requests
+                    .remove(&(peer, original_request))
+                    .unwrap();
+                self.events.push_back(BehaviourOut::BlocksResponse {
+                    id,
+                    result: Err(()),
+                });
+            }
+        }
+    }
+}
+
 impl Behaviour {
     fn poll<TEv>(
         &mut self,
         _: &mut Context,
         _: &mut impl PollParameters,
     ) -> Poll<NetworkBehaviourAction<TEv, BehaviourOut>> {
-        if !self.events.is_empty() {
-            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(self.events.remove(0)));
+        if let Some(event) = self.events.pop_front() {
+            return Poll::Ready(NetworkBehaviourAction::GenerateEvent(event));
         }
 
         Poll::Pending
