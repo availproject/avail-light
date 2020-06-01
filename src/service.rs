@@ -15,30 +15,39 @@
 //!
 //! At the moment, authoring blocks and running GrandPa isn't supported.
 
-use crate::{executor, network, storage, telemetry};
+// # Implementation notes
+//
+// In terms of implementation, the service works by spawning various tasks that send messages to
+// each other.
+//
+// Most of the magic happens at initialization, as that is the moment when we spawn the tasks.
+
+use crate::{executor, network, storage};
 
 use core::num::NonZeroU64;
-use futures::{executor::ThreadPool, prelude::*};
+use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 
 pub use builder::{builder, ServiceBuilder};
 
 mod builder;
+mod executor_task;
+mod import_queue_task;
+mod network_task;
+mod sync_task;
 
 pub struct Service {
-    /// Collection of all the Wasm VMs that are currently running.
-    wasm_vms: executor::WasmVirtualMachines<()>,
-    /// Database of the state of all the blocks.
-    storage: storage::Storage,
-    /// Management of the network. Contains all the active connections and their state.
-    network: network::Network,
-    /// Connections to zero or more telemetry servers.
-    telemetry: telemetry::Telemetry,
+    /// Channel used by the background tasks to report what happens.
+    /// Remember that this channel is bounded, and tasks will back-pressure if the user doesn't
+    /// process events. This is an intended behaviour.
+    events_in: mpsc::Receiver<Event>,
 
     /// Optional threads pool that is used to dispatch tasks and that we keep alive.
     _threads_pool: Option<ThreadPool>,
 }
 
+/// Event that happened on the service.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Event {
     /// Head of the chain has been updated.
     NewChainHead(u64),
@@ -55,6 +64,11 @@ pub enum Event {
 impl Service {
     /// Returns the next event that happens in the service.
     pub async fn next_event(&mut self) -> Event {
+        // The events channel is never closed unless the background tasks have all closed as well,
+        // in which case it is totally appropriate to panic.
+        self.events_in.next().await.unwrap()
+    }
+    /*
         // TODO: block0's hash is not 0
         let block0 = "0000000000000000000000000000000000000000000000000000000000000000"
             .parse()
@@ -100,5 +114,5 @@ impl Service {
                 }
             }
         }
-    }
+    }*/
 }

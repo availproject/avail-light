@@ -83,6 +83,7 @@ impl NetworkBuilder {
         worker::Network::start(worker::Config {
             known_addresses: self.boot_nodes,
             chain_spec_protocol_id: self.chain_spec_protocol_id,
+            executor: self.executor,
         })
         .await
     }

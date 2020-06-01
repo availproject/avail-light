@@ -1,8 +1,13 @@
 use super::{behaviour, transport};
 
+use alloc::boxed::Box;
+use core::{future::Future, num::NonZeroUsize, pin::Pin};
 use fnv::FnvBuildHasher;
 use hashbrown::HashSet;
-use libp2p::{swarm::SwarmEvent, Multiaddr, PeerId, Swarm};
+use libp2p::{
+    swarm::{SwarmBuilder, SwarmEvent},
+    Multiaddr, PeerId, Swarm,
+};
 use smallvec::SmallVec;
 
 /// State machine representing the network currently running.
@@ -32,6 +37,9 @@ pub(super) struct Config {
     /// Small string identifying the name of the chain, in order to detect incompatible nodes
     /// earlier.
     pub(super) chain_spec_protocol_id: Vec<u8>,
+    /// How to spawn libp2p background tasks. If `None`, then a threads pool will be used by
+    /// default.
+    pub(super) executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
 }
 
 impl Network {
@@ -50,7 +58,23 @@ impl Network {
             50,
         )
         .await;
-        let swarm = Swarm::new(transport, behaviour, local_peer_id);
+
+        let swarm = {
+            let mut builder = SwarmBuilder::new(transport, behaviour, local_peer_id)
+                .peer_connection_limit(2)
+                .notify_handler_buffer_size(NonZeroUsize::new(64).unwrap())
+                .connection_event_buffer_size(256);
+            if let Some(spawner) = config.executor {
+                struct SpawnImpl<F>(F);
+                impl<F: Fn(Pin<Box<dyn Future<Output = ()> + Send>>)> libp2p::core::Executor for SpawnImpl<F> {
+                    fn exec(&self, f: Pin<Box<dyn Future<Output = ()> + Send>>) {
+                        (self.0)(f)
+                    }
+                }
+                builder = builder.executor(Box::new(SpawnImpl(spawner)));
+            }
+            builder.build()
+        };
 
         Network { swarm }
     }

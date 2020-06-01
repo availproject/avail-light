@@ -26,6 +26,7 @@ rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 smallvec = "0.6.10"
+twox-hash = "1.5.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"
@@ -35,10 +36,8 @@ wasm-timer = "0.2.4"
 bitflags = "1.2.1"  # TODO: I hate bitflags
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
-primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: don't use parity crates
+primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
 sc-peerset = "2.0.0-alpha.3"
-slog = { version = "2.5.2", features = ["nested-values"] }
-slog-json = { version = "2.3.0", features = ["nested-values"] }
 void = "1.0"    # TODO: remove
 
 [dependencies.libp2p]
@@ -49,12 +48,9 @@ features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-asy
 [build-dependencies]
 prost-build = "0.6.1"
 
-[features]
-default = ["telemetry"]  # TODO: this is pretty much an idea, and needs proper implementation
-telemetry = []
-
 [profile.dev]
 opt-level = 1
+panic = "abort"
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
 [profile.dev.package.ed25519-dalek]
@@ -89,6 +85,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.soketto]
 opt-level = 3
+[profile.dev.package.twox-hash]
+opt-level = 3
 [profile.dev.package.uint]
 opt-level = 3
 [profile.dev.package.wasmi]
@@ -97,3 +95,6 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.yamux]
 opt-level = 3
+
+[profile.release]
+panic = "abort"

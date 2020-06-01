@@ -128,13 +128,13 @@ pub struct Extrinsic(pub Vec<u8>);
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Header {
     /// The parent hash.
-    pub parent_hash: U256,
+    pub parent_hash: H256,
     /// The block number.
     pub number: u64,
     /// The state trie merkle root
-    pub state_root: U256,
+    pub state_root: H256,
     /// The merkle root of the extrinsics.
-    pub extrinsics_root: U256,
+    pub extrinsics_root: H256,
     /// A chain-specific digest of data useful for light clients or referencing auxiliary data.
     pub digest: Digest<H256>,
 }

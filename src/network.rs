@@ -1,5 +1,5 @@
 pub use behaviour::{
-    BlockHeader, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
+    BlockData, BlockHeader, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
     BlocksRequestFields,
 };
 pub use builder::builder;

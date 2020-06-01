@@ -10,7 +10,6 @@ pub mod executor;
 pub mod network;
 pub mod service;
 pub mod storage;
-pub mod telemetry;
 
 pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Storage {
     let mut block0 = storage::BlockStorage::empty();
@@ -27,7 +26,8 @@ pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Sto
     let mut storage = storage::Storage::empty();
     storage
         .block(
-            &"0000000000000000000000000000000000000000000000000000000000000000"
+            // TODO: properly calculate this
+            &"e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39"
                 .parse()
                 .unwrap(),
         )

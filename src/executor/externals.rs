@@ -19,7 +19,7 @@
 use super::{allocator, vm};
 use crate::block::Block;
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, hash::Hasher as _};
 use parity_scale_codec::{DecodeAll as _, Encode as _};
 
 /// A running virtual machine.
@@ -94,6 +94,19 @@ enum RegisteredFunction {
                 + Send,
         >,
     },
+    /// Function resolution requires an interruption of the virtual machine so that the user can
+    /// handle the call.
+    Interrupt {
+        /// How to execute this function.
+        implementation: Box<
+            dyn FnMut(
+                    &[vm::RuntimeValue],
+                    &mut vm::VirtualMachine,
+                    &mut allocator::FreeingBumpHeapAllocator,
+                ) -> StateInner
+                + Send,
+        >,
+    },
     /// Function isn't known.
     Unresolved {
         /// Name of the function.
@@ -107,6 +120,16 @@ enum StateInner {
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
     Trapped,
+    ExternalStorageGet {
+        storage_key: Vec<u8>,
+    },
+    ExternalStorageSet {
+        storage_key: Vec<u8>,
+        new_storage_value: Vec<u8>,
+    },
+    ExternalStorageClear {
+        storage_key: Vec<u8>,
+    },
     Finished(Success),
 }
 
@@ -119,8 +142,25 @@ pub enum State<'a> {
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
     Trapped,
+    ExternalStorageGet {
+        /// Which key is requested.
+        storage_key: Vec<u8>,
+        /// Object to use to inject the storage value back. Pass back `None` if key is missing
+        /// from storage.
+        resolve: StateWaitExternalResolve<'a, Option<Vec<u8>>>,
+    },
     ExternalStorageSet {
-        // TODO: params
+        /// Which key to change.
+        storage_key: Vec<u8>,
+        /// Which storage value to change.
+        new_storage_value: Vec<u8>,
+        /// Object to use to finish the call
+        resolve: StateWaitExternalResolve<'a, ()>,
+    },
+    ExternalStorageClear {
+        /// Which key to clear.
+        storage_key: Vec<u8>,
+        /// Object to use to finish the call
         resolve: StateWaitExternalResolve<'a, ()>,
     },
 }
@@ -177,7 +217,7 @@ pub struct StateReadyToRun<'a> {
 
 pub struct StateWaitExternalResolve<'a, T: ?Sized> {
     inner: &'a mut ExternalsVm,
-    resume: Box<dyn FnOnce(&mut ExternalsVm, &T) -> Option<vm::RuntimeValue>>,
+    resume: Box<dyn FnOnce(&mut ExternalsVm, T) -> Option<vm::RuntimeValue>>,
 }
 
 impl ExternalsVm {
@@ -212,9 +252,6 @@ impl ExternalsVm {
         called_function: CalledFunction,
         data: &[u8],
     ) -> Result<Self, vm::NewErr> {
-        // TODO: write params in memory
-        assert!(data.is_empty(), "not implemented");
-
         let function_name = match called_function {
             CalledFunction::CoreVersion => "Core_version",
             CalledFunction::CoreExecuteBlock => "Core_execute_block",
@@ -226,10 +263,13 @@ impl ExternalsVm {
         };
 
         let mut registered_functions = Vec::new();
-        let vm = vm::VirtualMachine::new(
+        let mut vm = vm::VirtualMachine::new(
             module,
             function_name,
-            &[vm::RuntimeValue::I32(0), vm::RuntimeValue::I32(0)],
+            &[
+                vm::RuntimeValue::I32(0),
+                vm::RuntimeValue::I32(i32::try_from(data.len()).unwrap()),
+            ],
             |mod_name, f_name, signature| {
                 if mod_name != "env" {
                     return Err(());
@@ -240,6 +280,10 @@ impl ExternalsVm {
                 Ok(id)
             },
         )?;
+
+        // TODO: is 0 a correct offset?
+        // TODO: might conflict with the memory allocator
+        vm.write_memory(0, data).unwrap();
 
         // In the runtime environment, Wasm blobs must export a global symbol named `__heap_base`
         // indicating where the memory allocator is allowed to allocate memory.
@@ -264,11 +308,57 @@ impl ExternalsVm {
             return State::ReadyToRun(StateReadyToRun { inner: self });
         }
 
+        if let StateInner::ExternalStorageGet { storage_key } = &self.state {
+            return State::ExternalStorageGet {
+                storage_key: storage_key.clone(), // TODO: don't clone
+                resolve: StateWaitExternalResolve {
+                    inner: self,
+                    resume: Box::new(|this, value| {
+                        let data = value.encode(); // TODO: clones the value
+                        let data_len_u32 = u32::try_from(data.len()).unwrap(); // TODO: don't unwrap
+                        let ret = this
+                            .allocator
+                            .allocate(&mut MemAccess(&mut this.vm), data_len_u32)
+                            .unwrap(); // TODO: don't unwrap
+                        this.vm.write_memory(ret, &data).unwrap();
+                        let ret = (u64::from(data_len_u32) << 32) | u64::from(ret);
+                        Some(vm::RuntimeValue::I64(i64::from_ne_bytes(ret.to_ne_bytes())))
+                    }),
+                },
+            };
+        }
+
+        if let StateInner::ExternalStorageSet {
+            storage_key,
+            new_storage_value,
+        } = &self.state
+        {
+            return State::ExternalStorageSet {
+                storage_key: storage_key.clone(),             // TODO: don't clone
+                new_storage_value: new_storage_value.clone(), // TODO: don't clone
+                resolve: StateWaitExternalResolve {
+                    inner: self,
+                    resume: Box::new(|this, ()| None),
+                },
+            };
+        }
+
+        if let StateInner::ExternalStorageClear { storage_key } = &self.state {
+            return State::ExternalStorageClear {
+                storage_key: storage_key.clone(), // TODO: don't clone
+                resolve: StateWaitExternalResolve {
+                    inner: self,
+                    resume: Box::new(|this, ()| None),
+                },
+            };
+        }
+
         match &self.state {
             StateInner::Ready(_) => unreachable!(),
             StateInner::NonConforming(err) => State::NonConforming(err.clone()),
             StateInner::Trapped => State::Trapped,
             StateInner::Finished(data) => State::Finished(data),
+            _ => unreachable!(),
         }
     }
 }
@@ -338,12 +428,6 @@ impl<'a> StateReadyToRun<'a> {
 
                 Ok(vm::ExecOutcome::Interrupted { id, params }) => {
                     match self.inner.registered_functions.get_mut(id) {
-                        Some(RegisteredFunction::Unresolved { name }) => {
-                            self.inner.state = StateInner::NonConforming(
-                                NonConformingErr::UnknownFunction(name.clone()),
-                            );
-                            break;
-                        }
                         Some(RegisteredFunction::Immediate { implementation }) => {
                             let ret_val = implementation(
                                 &params,
@@ -351,6 +435,21 @@ impl<'a> StateReadyToRun<'a> {
                                 &mut self.inner.allocator,
                             );
                             self.inner.state = StateInner::Ready(ret_val);
+                        }
+                        Some(RegisteredFunction::Interrupt { implementation }) => {
+                            let new_state = implementation(
+                                &params,
+                                &mut self.inner.vm,
+                                &mut self.inner.allocator,
+                            );
+                            self.inner.state = new_state;
+                            break;
+                        }
+                        Some(RegisteredFunction::Unresolved { name }) => {
+                            self.inner.state = StateInner::NonConforming(
+                                NonConformingErr::UnknownFunction(name.clone()),
+                            );
+                            break;
                         }
 
                         // Internal error. We have been passed back an `id` that we didn't return
@@ -388,7 +487,7 @@ impl<'a, T> StateWaitExternalResolve<'a, T> {
     /// run.
     ///
     /// > **Note**: This function is lightweight and doesn't perform anything CPU-heavy.
-    pub fn finish_call(self, resolve: &T) -> StateReadyToRun<'a> {
+    pub fn finish_call(self, resolve: T) -> StateReadyToRun<'a> {
         self.inner.state = StateInner::Ready((self.resume)(self.inner, resolve));
         StateReadyToRun { inner: self.inner }
     }
@@ -398,17 +497,31 @@ impl<'a, T> StateWaitExternalResolve<'a, T> {
 // are for example forbidden for regular blocks
 fn get_function(name: &str) -> RegisteredFunction {
     match name {
-        "ext_storage_set_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+        "ext_storage_set_version_1" => RegisteredFunction::Interrupt {
+            implementation: Box::new(|params, vm, alloc| {
+                // TODO: check params count
+                let storage_key = expect_ptr_len(&params[0], vm);
+                let new_storage_value = expect_ptr_len(&params[1], vm);
+                StateInner::ExternalStorageSet {
+                    storage_key,
+                    new_storage_value,
+                }
+            }),
         },
-        "ext_storage_get_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+        "ext_storage_get_version_1" => RegisteredFunction::Interrupt {
+            implementation: Box::new(|params, vm, alloc| {
+                let storage_key = expect_one_ptr_len(&params, vm);
+                StateInner::ExternalStorageGet { storage_key }
+            }),
         },
         "ext_storage_read_version_1" => RegisteredFunction::Immediate {
             implementation: Box::new(|_, _, _| unimplemented!()),
         },
-        "ext_storage_clear_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+        "ext_storage_clear_version_1" => RegisteredFunction::Interrupt {
+            implementation: Box::new(|params, vm, alloc| {
+                let storage_key = expect_one_ptr_len(&params, vm);
+                StateInner::ExternalStorageClear { storage_key }
+            }),
         },
         "ext_storage_exists_version_1" => RegisteredFunction::Immediate {
             implementation: Box::new(|_, _, _| unimplemented!()),
@@ -497,13 +610,59 @@ fn get_function(name: &str) -> RegisteredFunction {
             implementation: Box::new(|_, _, _| unimplemented!()),
         },
         "ext_hashing_twox_64_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+            implementation: Box::new(|params, vm, alloc| {
+                let data = expect_one_ptr_len(&params, vm);
+
+                let mut h0 = twox_hash::XxHash::with_seed(0);
+                h0.write(&data);
+                let r0 = h0.finish();
+
+                let ret = alloc.allocate(&mut MemAccess(vm), 8).unwrap(); // TODO: don't unwrap
+                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
+                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
+            }),
         },
         "ext_hashing_twox_128_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+            implementation: Box::new(|params, vm, alloc| {
+                let data = expect_one_ptr_len(&params, vm);
+
+                let mut h0 = twox_hash::XxHash::with_seed(0);
+                let mut h1 = twox_hash::XxHash::with_seed(1);
+                h0.write(&data);
+                h1.write(&data);
+                let r0 = h0.finish();
+                let r1 = h1.finish();
+
+                let ret = alloc.allocate(&mut MemAccess(vm), 16).unwrap(); // TODO: don't unwrap
+                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
+                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
+                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
+            }),
         },
         "ext_hashing_twox_256_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
+            implementation: Box::new(|params, vm, alloc| {
+                let data = expect_one_ptr_len(&params, vm);
+
+                let mut h0 = twox_hash::XxHash::with_seed(0);
+                let mut h1 = twox_hash::XxHash::with_seed(1);
+                let mut h2 = twox_hash::XxHash::with_seed(2);
+                let mut h3 = twox_hash::XxHash::with_seed(3);
+                h0.write(&data);
+                h1.write(&data);
+                h2.write(&data);
+                h3.write(&data);
+                let r0 = h0.finish();
+                let r1 = h1.finish();
+                let r2 = h2.finish();
+                let r3 = h3.finish();
+
+                let ret = alloc.allocate(&mut MemAccess(vm), 32).unwrap(); // TODO: don't unwrap
+                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
+                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
+                vm.write_memory(ret + 16, &r2.to_le_bytes()).unwrap();
+                vm.write_memory(ret + 24, &r3.to_le_bytes()).unwrap();
+                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
+            }),
         },
         "ext_offchain_is_validator_version_1" => RegisteredFunction::Immediate {
             implementation: Box::new(|_, _, _| unimplemented!()),
@@ -604,6 +763,29 @@ fn get_function(name: &str) -> RegisteredFunction {
             name: name.to_owned(),
         },
     }
+}
+
+// TODO: document and all
+// TODO: don't panic, return a result
+// TODO: should ideally not copy the data
+fn expect_one_ptr_len(params: &[vm::RuntimeValue], vm: &mut vm::VirtualMachine) -> Vec<u8> {
+    assert_eq!(params.len(), 1);
+    expect_ptr_len(&params[0], vm)
+}
+
+// TODO: document and all
+// TODO: don't panic, return a result
+// TODO: should ideally not copy the data
+fn expect_ptr_len(param: &vm::RuntimeValue, vm: &mut vm::VirtualMachine) -> Vec<u8> {
+    let val = match param {
+        vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
+        _ => panic!(),
+    };
+
+    let len = u32::try_from(val >> 32).unwrap();
+    let ptr = u32::try_from(val & 0xffffffff).unwrap();
+
+    vm.read_memory(ptr, len).unwrap()
 }
 
 struct MemAccess<'a>(&'a mut vm::VirtualMachine);

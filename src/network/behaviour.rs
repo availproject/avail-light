@@ -79,13 +79,13 @@ pub enum BehaviourOut {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockHeader {
     /// The parent hash.
-    pub parent_hash: U256,
+    pub parent_hash: H256,
     /// The block number.
     pub number: u64,
     /// The state trie merkle root
-    pub state_root: U256,
+    pub state_root: H256,
     /// The merkle root of the extrinsics.
-    pub extrinsics_root: U256,
+    pub extrinsics_root: H256,
 }
 
 /// Block data sent in the response.
@@ -97,10 +97,6 @@ pub struct BlockData {
     pub header: Option<BlockHeader>,
     /// Block body if requested.
     pub body: Option<Vec<Extrinsic>>,
-    /// Block receipt if requested.
-    pub receipt: Option<Vec<u8>>,
-    /// Block message queue if requested.
-    pub message_queue: Option<Vec<u8>>,
     /// Justification if requested.
     pub justification: Option<Vec<u8>>,
 }
@@ -430,8 +426,6 @@ impl NetworkBehaviourEventProcess<block_requests::Event> for Behaviour {
                             body: data
                                 .body
                                 .map(|body| body.into_iter().map(|ext| Extrinsic(ext.0)).collect()),
-                            receipt: data.receipt,
-                            message_queue: data.message_queue,
                             justification: data.justification,
                         })
                         .collect()),

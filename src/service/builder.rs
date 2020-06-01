@@ -1,9 +1,9 @@
-use super::Service;
-use crate::{chain_spec::ChainSpec, executor, network, storage, telemetry};
+use super::{executor_task, network_task, sync_task, Service};
+use crate::{chain_spec::ChainSpec, executor, network, storage};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin};
-use futures::executor::ThreadPool;
+use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 use libp2p::Multiaddr;
 
 /// Prototype for a service.
@@ -17,9 +17,6 @@ pub struct ServiceBuilder {
 
     /// Prototype for the network.
     network: network::builder::NetworkBuilder,
-
-    /// Where the telemetry should connect to.
-    telemetry_endpoints: Vec<(Multiaddr, u8)>,
 }
 
 /// Creates a new prototype of the service.
@@ -28,11 +25,6 @@ pub fn builder() -> ServiceBuilder {
         storage: storage::Storage::empty(),
         tasks_executor: None,
         network: network::builder(),
-        telemetry_endpoints: vec![(
-            // TODO: should be empty
-            telemetry::url_to_multiaddr("wss://telemetry.polkadot.io/submit/").unwrap(),
-            0,
-        )],
     }
 }
 
@@ -76,12 +68,13 @@ impl ServiceBuilder {
             storage: self.storage,
             tasks_executor: self.tasks_executor,
             network: self.network.with_chain_spec_protocol_id(id),
-            telemetry_endpoints: self.telemetry_endpoints,
         }
     }
 
     /// Builds the actual service, starting everything.
     pub async fn build(mut self) -> Service {
+        // Start by building the function that will spawn tasks. Since the user is allowed to
+        // not specify an executor, we also spawn a supporting threads pool if necessary.
         let (threads_pool, tasks_executor) = match self.tasks_executor {
             Some(tasks_executor) => {
                 let tasks_executor = Arc::new(tasks_executor)
@@ -103,21 +96,47 @@ impl ServiceBuilder {
             }
         };
 
-        Service {
-            wasm_vms: executor::WasmVirtualMachines::with_tasks_executor({
-                let tasks_executor = tasks_executor.clone();
-                move |name, task| (*tasks_executor)(task)
-            }),
-            storage: self.storage,
-            network: self
-                .network
-                .with_executor({
+        // This is when we actually create all the channels between the various tasks.
+        // TODO: eventually this should be tweaked so that we are able to measure the congestion
+        let (to_service_out, events_in) = mpsc::channel(16);
+        let (to_network_tx, to_network_rx) = mpsc::channel(256);
+        let (to_executor_tx, to_executor_rx) = mpsc::channel(256);
+
+        // Now actually spawn all the tasks.
+        tasks_executor(
+            network_task::run_networking_task(network_task::Config {
+                to_network: to_network_rx,
+                to_service_out,
+                network_builder: self.network.with_executor({
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| (*tasks_executor)(task))
-                })
-                .build()
-                .await,
-            telemetry: telemetry::Telemetry::new(self.telemetry_endpoints, None).unwrap(),
+                }),
+            })
+            .boxed(),
+        );
+
+        tasks_executor(
+            sync_task::run_sync_task(sync_task::Config {
+                to_executor: to_executor_tx,
+                to_network: to_network_tx,
+            })
+            .boxed(),
+        );
+
+        tasks_executor(
+            executor_task::run_executor_task(executor_task::Config {
+                tasks_executor: Box::new({
+                    let tasks_executor = tasks_executor.clone();
+                    Box::new(move |task| tasks_executor(task))
+                }),
+                to_executor: to_executor_rx,
+                storage: self.storage,
+            })
+            .boxed(),
+        );
+
+        Service {
+            events_in,
             _threads_pool: threads_pool,
         }
     }
