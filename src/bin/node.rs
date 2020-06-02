@@ -57,8 +57,8 @@ async fn async_main() {
                     num_connected_peers: 0,
                     best_number: 0,
                     finalized_number: 0,
-                    best_hash: "0x0",
-                    finalized_hash: "0x0",
+                    best_hash: &"e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39".parse().unwrap(),
+                    finalized_hash: &"e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39".parse().unwrap(),
                 });
             }
             ev = service.next_event().fuse() => {
