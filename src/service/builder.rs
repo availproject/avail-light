@@ -1,5 +1,5 @@
-use super::{executor_task, network_task, sync_task, Service};
-use crate::{chain_spec::ChainSpec, executor, network, storage};
+use super::{executor_task, keystore_task, network_task, sync_task, Service};
+use crate::{chain_spec::ChainSpec, executor, keystore, network, storage};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin};
@@ -101,6 +101,7 @@ impl ServiceBuilder {
         let (to_service_out, events_in) = mpsc::channel(16);
         let (to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_executor_tx, to_executor_rx) = mpsc::channel(256);
+        let (to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
 
         // Now actually spawn all the tasks.
         tasks_executor(
@@ -119,6 +120,14 @@ impl ServiceBuilder {
             sync_task::run_sync_task(sync_task::Config {
                 to_executor: to_executor_tx,
                 to_network: to_network_tx,
+            })
+            .boxed(),
+        );
+
+        tasks_executor(
+            keystore_task::run_keystore_task(keystore_task::Config {
+                keystore: keystore::Keystore::empty(),
+                to_keystore: to_keystore_rx,
             })
             .boxed(),
         );

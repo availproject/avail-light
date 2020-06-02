@@ -33,6 +33,7 @@ pub use builder::{builder, ServiceBuilder};
 mod builder;
 mod executor_task;
 mod import_queue_task;
+mod keystore_task;
 mod network_task;
 mod sync_task;
 

@@ -124,6 +124,10 @@ use primitive_types::{H256, U256};
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
 pub struct Extrinsic(pub Vec<u8>);
 
+/// Hash of a block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockHash(pub [u8; 32]);
+
 /// Header of a block for a substrate chain.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Header {
@@ -143,22 +147,16 @@ impl Header {
     /// Returns the hash of the header, and thus also of the block.
     pub fn block_hash(&self) -> BlockHash {
         let mut out = [0; 32];
-        blake2_256_into(&self.encode(), &mut out);
+
+        let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
+        hasher.input(&self.encode());
+        hasher.variable_result(|result| {
+            debug_assert_eq!(result.len(), 32);
+            out.copy_from_slice(result)
+        });
+
         BlockHash(out)
     }
-}
-
-/// Hash of a block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockHash(pub [u8; 32]);
-
-/// Do a Blake2 256-bit hash and place result in `dest`.
-fn blake2_256_into(data: &[u8], dest: &mut [u8; 32]) {
-    let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
-    hasher.input(data);
-    let result = hasher.vec_result();
-    assert_eq!(result.len(), 32);
-    dest.copy_from_slice(&result);
 }
 
 impl Decode for Header {
