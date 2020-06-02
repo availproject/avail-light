@@ -48,6 +48,10 @@ features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-asy
 [build-dependencies]
 prost-build = "0.6.1"
 
+[dev-dependencies]
+async-std = "~1.5.0"
+libp2p = { version = "0.19.1", default-features = false, features = ["secio"] }
+
 [profile.dev]
 opt-level = 1
 panic = "abort"

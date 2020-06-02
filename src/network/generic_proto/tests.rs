@@ -16,9 +16,9 @@
 
 #![cfg(test)]
 
-use crate::protocol::generic_proto::{GenericProto, GenericProtoOut};
-use crate::protocol::message::{generic::BlockResponse, Message};
-use codec::{Decode, Encode};
+use crate::network::generic_proto::{GenericProto, GenericProtoOut};
+use crate::network::legacy_message::{BlockResponse, Message};
+use parity_scale_codec::{Decode, Encode};
 use futures::{prelude::*, ready};
 use libp2p::core::connection::{ConnectionId, ListenerId};
 use libp2p::core::ConnectedPoint;
@@ -26,7 +26,6 @@ use libp2p::swarm::{IntoProtocolsHandler, ProtocolsHandler, Swarm};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
 use libp2p::{Multiaddr, PeerId, Transport};
 use rand::seq::SliceRandom;
-use sp_test_primitives::Block;
 use std::collections::HashSet;
 use std::{error, io, task::Context, task::Poll, time::Duration};
 
@@ -89,7 +88,7 @@ fn build_nodes() -> (Swarm<CustomProtoWithAddr>, Swarm<CustomProtoWithAddr>) {
         });
 
         let behaviour = CustomProtoWithAddr {
-            inner: GenericProto::new(local_peer_id, &b"test"[..], &[1], peerset, None),
+            inner: GenericProto::new(local_peer_id, &b"test"[..], &[1], peerset),
             addrs: addrs
                 .iter()
                 .enumerate()
@@ -258,7 +257,7 @@ fn two_nodes_transfer_lots_of_packets() {
                     for n in 0..NUM_PACKETS {
                         service1.send_packet(
                             &peer_id,
-                            Message::<Block>::BlockResponse(BlockResponse {
+                            Message::BlockResponse(BlockResponse {
                                 id: n as _,
                                 blocks: Vec::new(),
                             })
@@ -276,8 +275,8 @@ fn two_nodes_transfer_lots_of_packets() {
         match ready!(service2.poll_next_unpin(cx)) {
             Some(GenericProtoOut::CustomProtocolOpen { .. }) => {}
             Some(GenericProtoOut::LegacyMessage { message, .. }) => {
-                match Message::<Block>::decode(&mut &message[..]).unwrap() {
-                    Message::<Block>::BlockResponse(BlockResponse { id: _, blocks }) => {
+                match Message::decode(&mut &message[..]).unwrap() {
+                    Message::BlockResponse(BlockResponse { id: _, blocks }) => {
                         assert!(blocks.is_empty());
                         packet_counter += 1;
                         if packet_counter == NUM_PACKETS {
@@ -316,7 +315,7 @@ fn basic_two_nodes_requests_in_parallel() {
                 }
             };
 
-            to_send.push(Message::<Block>::BlockResponse(BlockResponse {
+            to_send.push(Message::BlockResponse(BlockResponse {
                 id: req_id,
                 blocks: Vec::new(),
             }));
