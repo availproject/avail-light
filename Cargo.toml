@@ -6,6 +6,7 @@ license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must b
 edition = "2018"
 
 [dependencies]
+ansi_term = "0.12.1"
 blake2 = "0.8.1"
 derive_more = "0.99.7"
 env_logger = "0.4"

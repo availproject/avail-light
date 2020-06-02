@@ -1,7 +1,11 @@
+use core::time::Duration;
+use futures::prelude::*;
+
 fn main() {
     futures::executor::block_on(async_main())
 }
 
+// TODO: list of RPCs
 /*
     account.nextIndex
     author.submitExtrinsic
@@ -40,13 +44,31 @@ async fn async_main() {
         .register_method(From::from("system_chain"))
         .unwrap();
 
+    let mut informant_timer = stream::unfold((), move |_| {
+        futures_timer::Delay::new(Duration::from_secs(5)).map(|_| Some(((), ())))
+    })
+    .map(|_| ());
+
     loop {
-        let next_server_event = service.next_event().await;
-        match next_server_event {
-            substrate_lite::service::Event::NewChainHead(num) => {
-                println!("new chain head: {}", num);
+        futures::select! {
+            informant = informant_timer.next() => {
+                // TODO: stub
+                println!("{}", substrate_lite::informant::InformantLine {
+                    num_connected_peers: 0,
+                    best_number: 0,
+                    finalized_number: 0,
+                    best_hash: "0x0",
+                    finalized_hash: "0x0",
+                });
             }
-            _ => {}
+            ev = service.next_event().fuse() => {
+                match ev {
+                    substrate_lite::service::Event::NewChainHead(num) => {
+                        println!("new chain head: {}", num);
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 }

@@ -25,7 +25,7 @@
 //! strictly enforce the distinction between the node.
 //!
 //! - A **peer ID**, or **node ID**, represented by the [`PeerId`] struct, is the identity of a
-//! node on the network (not necessarily a peer). It is the encoding of a public key. Whenever 
+//! node on the network (not necessarily a peer). It is the encoding of a public key. Whenever
 //! connection is established, an
 //! [ECDH](https://en.wikipedia.org/wiki/Elliptic-curve_Diffie%E2%80%93Hellman) handshake is
 //! performed and communications encrypted. It is therefore guaranteed that all communications
