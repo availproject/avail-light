@@ -33,8 +33,7 @@ use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollPa
 use libp2p::NetworkBehaviour;
 use log::debug;
 use parity_scale_codec::{DecodeAll, Encode};
-use primitive_types::{H256, U256};
-use smallvec::SmallVec;
+use primitive_types::H256;
 
 /// General behaviour of the network. Combines all protocols together.
 #[derive(NetworkBehaviour)]
@@ -168,7 +167,7 @@ impl Behaviour {
         };
 
         let (peerset, _) = sc_peerset::Peerset::from_config(peerset_config);
-        let mut legacy = generic_proto::GenericProto::new(
+        let legacy = generic_proto::GenericProto::new(
             local_public_key.clone().into_peer_id(),
             chain_spec_protocol_id.clone(),
             &[6, 5],
@@ -229,7 +228,7 @@ impl Behaviour {
                 fields
             },
             from: match config.start {
-                BlocksRequestConfigStart::Hash(h) => unimplemented!(),
+                BlocksRequestConfigStart::Hash(_h) => unimplemented!(),
                 BlocksRequestConfigStart::Number(n) => legacy_message::FromBlock::Number(n.get()),
             },
             to: None,
@@ -344,7 +343,7 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
 
                 self.legacy.send_packet(&peer_id, message.encode());
             }
-            generic_proto::GenericProtoOut::CustomProtocolClosed { peer_id, .. } => {}
+            generic_proto::GenericProtoOut::CustomProtocolClosed { peer_id: _, .. } => {}
             generic_proto::GenericProtoOut::LegacyMessage { peer_id, message } => {
                 match legacy_message::Message::decode_all(&message) {
                     Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
@@ -380,16 +379,16 @@ impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
                 self.legacy.add_discovered_nodes(iter::once(peer_id));
             }
             DiscoveryOut::RandomKademliaStarted(_) => {}
-            DiscoveryOut::ValueFound(results) => {
+            DiscoveryOut::ValueFound(_results) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValueFound(results))));
             }
-            DiscoveryOut::ValueNotFound(key) => {
+            DiscoveryOut::ValueNotFound(_key) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValueNotFound(key))));
             }
-            DiscoveryOut::ValuePut(key) => {
+            DiscoveryOut::ValuePut(_key) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValuePut(key))));
             }
-            DiscoveryOut::ValuePutFailed(key) => {
+            DiscoveryOut::ValuePutFailed(_key) => {
                 //self.events.push(BehaviourOut::Event(Event::Dht(DhtEvent::ValuePutFailed(key))));
             }
         }

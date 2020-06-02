@@ -22,9 +22,6 @@
 //
 // Most of the magic happens at initialization, as that is the moment when we spawn the tasks.
 
-use crate::{executor, network, storage};
-
-use core::num::NonZeroU64;
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 

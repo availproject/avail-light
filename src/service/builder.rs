@@ -1,10 +1,9 @@
 use super::{executor_task, keystore_task, network_task, sync_task, Service};
-use crate::{chain_spec::ChainSpec, executor, keystore, network, storage};
+use crate::{chain_spec::ChainSpec, keystore, network, storage};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin};
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
-use libp2p::Multiaddr;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
@@ -63,7 +62,7 @@ impl ServiceBuilder {
     }
 
     /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
-    pub fn with_chain_spec_protocol_id(mut self, id: impl AsRef<[u8]>) -> Self {
+    pub fn with_chain_spec_protocol_id(self, id: impl AsRef<[u8]>) -> Self {
         ServiceBuilder {
             storage: self.storage,
             tasks_executor: self.tasks_executor,
@@ -72,7 +71,7 @@ impl ServiceBuilder {
     }
 
     /// Builds the actual service, starting everything.
-    pub async fn build(mut self) -> Service {
+    pub async fn build(self) -> Service {
         // Start by building the function that will spawn tasks. Since the user is allowed to
         // not specify an executor, we also spawn a supporting threads pool if necessary.
         let (threads_pool, tasks_executor) = match self.tasks_executor {
@@ -101,7 +100,7 @@ impl ServiceBuilder {
         let (to_service_out, events_in) = mpsc::channel(16);
         let (to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_executor_tx, to_executor_rx) = mpsc::channel(256);
-        let (to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
+        let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
 
         // Now actually spawn all the tasks.
         tasks_executor(

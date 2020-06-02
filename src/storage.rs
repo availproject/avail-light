@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
-use parity_scale_codec::Decode as _;
+
 use primitive_types::H256;
 
 /// Main storage entry point for abstract data.
@@ -65,7 +65,7 @@ impl<'a> Block<'a> {
     }
 
     // TODO: should be &mut self normally
-    pub fn set_storage(mut self, block_storage: BlockStorage) -> Result<(), ()> {
+    pub fn set_storage(self, block_storage: BlockStorage) -> Result<(), ()> {
         // TODO: check proper hash of block_storage
 
         self.entry.or_insert_with(|| BlockState::default()).storage = Some(Arc::new(block_storage));

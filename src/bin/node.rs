@@ -1,5 +1,3 @@
-use core::convert::TryFrom;
-
 fn main() {
     futures::executor::block_on(async_main())
 }
@@ -38,7 +36,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let foo_method = rpc_server
+    let _foo_method = rpc_server
         .register_method(From::from("system_chain"))
         .unwrap();
 

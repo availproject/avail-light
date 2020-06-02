@@ -18,13 +18,13 @@
 
 use crate::network::generic_proto::{GenericProto, GenericProtoOut};
 use crate::network::legacy_message::{BlockResponse, Message};
-use parity_scale_codec::{Decode, Encode};
 use futures::{prelude::*, ready};
 use libp2p::core::connection::{ConnectionId, ListenerId};
 use libp2p::core::ConnectedPoint;
 use libp2p::swarm::{IntoProtocolsHandler, ProtocolsHandler, Swarm};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
 use libp2p::{Multiaddr, PeerId, Transport};
+use parity_scale_codec::{Decode, Encode};
 use rand::seq::SliceRandom;
 use std::collections::HashSet;
 use std::{error, io, task::Context, task::Poll, time::Duration};

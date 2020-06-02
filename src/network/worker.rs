@@ -2,13 +2,11 @@ use super::{behaviour, transport};
 
 use alloc::boxed::Box;
 use core::{future::Future, num::NonZeroUsize, pin::Pin};
-use fnv::FnvBuildHasher;
-use hashbrown::HashSet;
+
 use libp2p::{
     swarm::{SwarmBuilder, SwarmEvent},
     Multiaddr, PeerId, Swarm,
 };
-use smallvec::SmallVec;
 
 /// State machine representing the network currently running.
 pub struct Network {
@@ -107,7 +105,7 @@ impl Network {
                 SwarmEvent::NewListenAddr(_) => {}
                 SwarmEvent::ExpiredListenAddr(_) => {}
                 SwarmEvent::UnreachableAddr { .. } => {}
-                SwarmEvent::Dialing(peer_id) => {}
+                SwarmEvent::Dialing(_peer_id) => {}
                 SwarmEvent::IncomingConnection { .. } => {}
                 SwarmEvent::IncomingConnectionError { .. } => {}
                 SwarmEvent::BannedPeer { .. } => {}

@@ -7,7 +7,6 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use primitive_types::{H256, U256};
 
 /// Message that can be sent to the executors task by the other parts of the code.
 pub enum ToExecutor {
@@ -37,7 +36,7 @@ pub async fn run_executor_task(mut config: Config) {
         match event {
             ToExecutor::Execute {
                 to_execute,
-                send_back,
+                send_back: _,
             } => {
                 let parent = config
                     .storage
@@ -59,7 +58,7 @@ pub async fn run_executor_task(mut config: Config) {
                         match state {
                             executor::State::ReadyToRun(r) => state = r.run(),
                             executor::State::Finished(executor::Success::CoreExecuteBlock(
-                                result,
+                                _result,
                             )) => panic!("success"),
                             executor::State::Finished(_) => unreachable!(),
                             executor::State::ExternalStorageGet {
@@ -74,15 +73,15 @@ pub async fn run_executor_task(mut config: Config) {
                                     .run();
                             }
                             executor::State::ExternalStorageSet {
-                                storage_key,
-                                new_storage_value,
+                                storage_key: _,
+                                new_storage_value: _,
                                 resolve,
                             } => {
                                 // TODO: implement
                                 state = resolve.finish_call(()).run();
                             }
                             executor::State::ExternalStorageClear {
-                                storage_key,
+                                storage_key: _,
                                 resolve,
                             } => {
                                 // TODO: implement

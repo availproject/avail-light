@@ -1,10 +1,6 @@
 //! Data structure containing all blocks in the chain.
 
-use alloc::sync::Arc;
-use fnv::FnvBuildHasher;
-use hashbrown::HashMap;
 use parity_scale_codec::Decode as _;
-use primitive_types::H256;
 
 pub struct Database {
     inner: Option<parity_db::Db>,

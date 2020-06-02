@@ -117,7 +117,7 @@ use blake2::digest::{Input as _, VariableOutput as _};
 use parity_scale_codec::{
     Decode, Encode, EncodeAsRef, EncodeLike, Error, HasCompact, Input, Output,
 };
-use primitive_types::{H256, U256};
+use primitive_types::H256;
 
 /// Simple blob to hold an extrinsic without committing to its format and ensure it is serialized
 /// correctly.

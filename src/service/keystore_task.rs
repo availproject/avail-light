@@ -2,12 +2,7 @@
 
 use crate::keystore;
 
-use core::pin::Pin;
-use futures::{
-    channel::{mpsc, oneshot},
-    prelude::*,
-};
-use primitive_types::{H256, U256};
+use futures::{channel::mpsc, prelude::*};
 
 /// Message that can be sent to the keystore task by the other parts of the code.
 pub enum ToKeystore {
@@ -24,5 +19,5 @@ pub struct Config {
 
 /// Runs the task itself.
 pub async fn run_keystore_task(mut config: Config) {
-    while let Some(event) = config.to_keystore.next().await {}
+    while let Some(_event) = config.to_keystore.next().await {}
 }

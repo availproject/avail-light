@@ -34,11 +34,8 @@
 //!
 
 use fnv::FnvBuildHasher;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use libp2p::Multiaddr;
-use serde::{Deserialize, Serialize};
-
-use primitive_types::{H256, U256};
 
 mod structs;
 

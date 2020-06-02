@@ -270,7 +270,7 @@ impl ExternalsVm {
                 vm::RuntimeValue::I32(0),
                 vm::RuntimeValue::I32(i32::try_from(data.len()).unwrap()),
             ],
-            |mod_name, f_name, signature| {
+            |mod_name, f_name, _signature| {
                 if mod_name != "env" {
                     return Err(());
                 }
@@ -338,7 +338,7 @@ impl ExternalsVm {
                 new_storage_value: new_storage_value.clone(), // TODO: don't clone
                 resolve: StateWaitExternalResolve {
                     inner: self,
-                    resume: Box::new(|this, ()| None),
+                    resume: Box::new(|_this, ()| None),
                 },
             };
         }
@@ -348,7 +348,7 @@ impl ExternalsVm {
                 storage_key: storage_key.clone(), // TODO: don't clone
                 resolve: StateWaitExternalResolve {
                     inner: self,
-                    resume: Box::new(|this, ()| None),
+                    resume: Box::new(|_this, ()| None),
                 },
             };
         }
@@ -498,7 +498,7 @@ impl<'a, T> StateWaitExternalResolve<'a, T> {
 fn get_function(name: &str) -> RegisteredFunction {
     match name {
         "ext_storage_set_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, alloc| {
+            implementation: Box::new(|params, vm, _alloc| {
                 // TODO: check params count
                 let storage_key = expect_ptr_len(&params[0], vm);
                 let new_storage_value = expect_ptr_len(&params[1], vm);
@@ -509,7 +509,7 @@ fn get_function(name: &str) -> RegisteredFunction {
             }),
         },
         "ext_storage_get_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, alloc| {
+            implementation: Box::new(|params, vm, _alloc| {
                 let storage_key = expect_one_ptr_len(&params, vm);
                 StateInner::ExternalStorageGet { storage_key }
             }),
@@ -518,7 +518,7 @@ fn get_function(name: &str) -> RegisteredFunction {
             implementation: Box::new(|_, _, _| unimplemented!()),
         },
         "ext_storage_clear_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, alloc| {
+            implementation: Box::new(|params, vm, _alloc| {
                 let storage_key = expect_one_ptr_len(&params, vm);
                 StateInner::ExternalStorageClear { storage_key }
             }),

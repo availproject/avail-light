@@ -21,10 +21,10 @@
 
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
-use libp2p::Multiaddr;
+
 use serde::{Deserialize, Serialize};
 
-use primitive_types::{H256, U256};
+use primitive_types::H256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
