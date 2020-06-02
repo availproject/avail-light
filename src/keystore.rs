@@ -8,9 +8,7 @@
 //! wallet.
 
 /// Container for private keys.
-pub struct Keystore {
-
-}
+pub struct Keystore {}
 
 impl Keystore {
     /// Builds an empty collection.

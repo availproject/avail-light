@@ -24,6 +24,5 @@ pub struct Config {
 
 /// Runs the task itself.
 pub async fn run_keystore_task(mut config: Config) {
-    while let Some(event) = config.to_keystore.next().await {
-    }
+    while let Some(event) = config.to_keystore.next().await {}
 }
