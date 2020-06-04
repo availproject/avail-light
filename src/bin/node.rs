@@ -40,7 +40,7 @@ async fn async_main() {
         .await
         .unwrap();
 
-    let _foo_method = rpc_server
+    let mut _foo_method = rpc_server
         .register_method(From::from("system_chain"))
         .unwrap();
 
@@ -53,7 +53,7 @@ async fn async_main() {
         futures::select! {
             informant = informant_timer.next() => {
                 // TODO: stub
-                println!("{}", substrate_lite::informant::InformantLine {
+                eprintln!("{}", substrate_lite::informant::InformantLine {
                     num_connected_peers: 0,
                     best_number: 0,
                     finalized_number: 0,
@@ -63,8 +63,11 @@ async fn async_main() {
             }
             ev = service.next_event().fuse() => {
                 match ev {
-                    substrate_lite::service::Event::NewChainHead(num) => {
-                        println!("new chain head: {}", num);
+                    substrate_lite::service::Event::NewBlock { number, .. } => {
+                        println!("new block: {}", number);
+                    }
+                    substrate_lite::service::Event::NewNetworkExternalAddress { address } => {
+                        eprintln!("🔍 Discovered new external address for our node: {}", address);
                     }
                     _ => {}
                 }

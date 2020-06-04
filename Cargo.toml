@@ -56,50 +56,10 @@ libp2p = { version = "0.19.1", default-features = false, features = ["secio"] }
 [profile.dev]
 opt-level = 1
 panic = "abort"
-[profile.dev.package.curve25519-dalek]
-opt-level = 3
-[profile.dev.package.ed25519-dalek]
-opt-level = 3
-[profile.dev.package.hashbrown]
-opt-level = 3
-[profile.dev.package.keccak]
-opt-level = 3
-[profile.dev.package.libsecp256k1]
-opt-level = 3
-[profile.dev.package.mio]
-opt-level = 3
-[profile.dev.package.num-bigint]
-opt-level = 3
-[profile.dev.package.parity-db]
-opt-level = 3
-[profile.dev.package.parity-scale-codec]
-opt-level = 3
-[profile.dev.package.parking_lot]
-opt-level = 3
-[profile.dev.package.ring]
-opt-level = 3
-[profile.dev.package.rustls]
-opt-level = 3
-[profile.dev.package.sha2]
-opt-level = 3
-[profile.dev.package.sha3]
-opt-level = 3
-[profile.dev.package.smallvec]
-opt-level = 3
-[profile.dev.package.snow]
-opt-level = 3
-[profile.dev.package.soketto]
-opt-level = 3
-[profile.dev.package.twox-hash]
-opt-level = 3
-[profile.dev.package.uint]
-opt-level = 3
-[profile.dev.package.wasmi]
-opt-level = 3
-[profile.dev.package.x25519-dalek]
-opt-level = 3
-[profile.dev.package.yamux]
+
+[profile.dev.package."*"]
 opt-level = 3
 
 [profile.release]
 panic = "abort"
+lto = true

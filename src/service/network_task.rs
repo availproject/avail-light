@@ -40,11 +40,12 @@ pub async fn run_networking_task(mut config: Config) {
         futures::select! {
             ev = network.next_event().fuse() => {
                 match ev {
-                    network::Event::BlockAnnounce(_) => {},
+                    network::Event::BlockAnnounce(header) => {},
                     network::Event::BlocksRequestFinished { id, result } => {
                         let sender = pending_blocks_requests.remove(&id).unwrap();
                         let _ = sender.send(result);
                     }
+                    // TODO: send out `service::Event::NewNetworkExternalAddress`
                 }
             }
             ev = config.to_network.next() => {

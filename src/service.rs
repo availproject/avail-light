@@ -22,6 +22,7 @@
 //
 // Most of the magic happens at initialization, as that is the moment when we spawn the tasks.
 
+use crate::network;
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 
@@ -47,8 +48,12 @@ pub struct Service {
 /// Event that happened on the service.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Event {
-    /// Head of the chain has been updated.
-    NewChainHead(u64),
+    /// A new block is now part of the chain.
+    NewBlock {
+        number: u64,
+        hash: H256,
+        head_update: ChainHeadUpdate,
+    },
 
     /// The finalized block has been updated to a different one.
     NewFinalized {
@@ -57,6 +62,19 @@ pub enum Event {
         /// Hash of the finalized block.
         hash: H256,
     },
+
+    /// Networking has detected a new external address.
+    NewNetworkExternalAddress {
+        /// The address in question. Contains a `/p2p/` suffix.
+        address: network::Multiaddr,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ChainHeadUpdate {
+    NoUpdate,
+    FastForward,
+    Reorg,
 }
 
 impl Service {
