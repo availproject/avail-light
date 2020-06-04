@@ -94,6 +94,7 @@ enum RegisteredFunction {
                 + Send,
         >,
     },
+
     /// Function resolution requires an interruption of the virtual machine so that the user can
     /// handle the call.
     Interrupt {
@@ -107,7 +108,12 @@ enum RegisteredFunction {
                 + Send,
         >,
     },
+
     /// Function isn't known.
+    /// In theory we should reject at initialization any runtime code that tries to import a
+    /// function that is unknown to this code. In practice, however, it is not unheard to have
+    /// runtime code import unknown functions but without calling them. To handle this type of
+    /// situation, we accept unknown functions but return an error if they are called.
     Unresolved {
         /// Name of the function.
         name: String,
@@ -262,6 +268,8 @@ impl ExternalsVm {
             }
         };
 
+        // TODO: error if input data is too large?
+
         let mut registered_functions = Vec::new();
         let mut vm = vm::VirtualMachine::new(
             module,
@@ -280,24 +288,34 @@ impl ExternalsVm {
                 Ok(id)
             },
         )?;
-
-        // TODO: is 0 a correct offset?
-        // TODO: might conflict with the memory allocator
-        vm.write_memory(0, data).unwrap();
-
-        // In the runtime environment, Wasm blobs must export a global symbol named `__heap_base`
-        // indicating where the memory allocator is allowed to allocate memory.
-        // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
-        let heap_base = vm.global_value("__heap_base").unwrap(); // TODO: don't unwrap
-
         registered_functions.shrink_to_fit();
+
+        // Initialize the state of the memory allocator. This is the allocator that is later used
+        // when the Wasm code requests variable-length data.
+        let mut allocator = {
+            // In the runtime environment, Wasm blobs must export a global symbol named
+            // `__heap_base` indicating where the memory allocator is allowed to allocate memory.
+            // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
+            let mut heap_base = vm.global_value("__heap_base").unwrap(); // TODO: don't unwrap
+            allocator::FreeingBumpHeapAllocator::new(heap_base)
+        };
+
+        // Use that allocator to write the input data.
+        // This has the consequence that the user is allowed to free that input data. If this
+        // consequence is unwanted, this code can be changed to write the input data at `heap_base`
+        // then have the actual heap after the input data.
+        // TODO: don't unwrap
+        let input_data_location = allocator
+            .allocate(&mut MemAccess(&mut vm), u32::try_from(data.len()).unwrap())
+            .unwrap();
+        vm.write_memory(input_data_location, data).unwrap();
 
         Ok(ExternalsVm {
             vm,
             called_function,
             state: StateInner::Ready(None),
             registered_functions,
-            allocator: allocator::FreeingBumpHeapAllocator::new(heap_base),
+            allocator,
         })
     }
 
