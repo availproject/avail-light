@@ -62,98 +62,60 @@ pub struct Externality {
     name: &'static str,
 }
 
-trait InternalInterface {
-    fn read_memory(
-        &self,
-        pointer: u32,
-        size: u32,
-    ) -> Pin<Box<dyn Future<Output = Vec<u8>> + Send + Sync>>;
-    fn write_memory(
-        &self,
-        pointer: u32,
-        data: Vec<u8>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
-    fn allocate(&self, size: u32) -> Pin<Box<dyn Future<Output = u32> + Send + Sync>>;
-    fn free(&self, pointer: u32) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
+macro_rules! define_internal_interface {
+    ($($variant:ident => fn $name:ident($($param_name:ident: $param_ty:ty),*) -> $ret:ty;)*) => {
+        trait InternalInterface {
+            $(
+                fn $name(&self, $($param_name: $param_ty),*) -> Pin<Box<dyn Future<Output = $ret> + Send + Sync>>;
+            )*
+        }
+
+        impl InternalInterface for mpsc::Sender<CallStateInner> {
+            $(
+                fn $name(&self, $($param_name: $param_ty),*) -> Pin<Box<dyn Future<Output = $ret> + Send + Sync>> {
+                    let mut sender = self.clone();
+                    Box::pin(async move {
+                        let (tx, rx) = oneshot::channel();
+                        sender
+                            .send(CallStateInner::$variant {
+                                $($param_name,)*
+                                result: Some(tx),
+                            })
+                            .await
+                            .unwrap();
+                        rx.await.unwrap()
+                    })
+                }
+            )*
+        }
+
+        /// Actual implementation of [`CallState`].
+        enum CallStateInner {
+            Initial,
+            Finished {
+                return_value: Option<vm::RuntimeValue>,
+            },
+            Error(Error),
+            $($variant {
+                $($param_name: $param_ty,)*
+                result: Option<oneshot::Sender<$ret>>,
+            },)*
+        }
+    }
 }
 
-impl InternalInterface for mpsc::Sender<CallStateInner> {
-    fn read_memory(
-        &self,
-        pointer: u32,
-        size: u32,
-    ) -> Pin<Box<dyn Future<Output = Vec<u8>> + Send + Sync>> {
-        let mut sender = self.clone();
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            sender
-                .send(CallStateInner::MemoryRead {
-                    offset: pointer,
-                    size,
-                    result: Some(tx),
-                })
-                .await
-                .unwrap();
-            rx.await.unwrap()
-        })
-    }
-
-    fn write_memory(
-        &self,
-        pointer: u32,
-        data: Vec<u8>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let mut sender = self.clone();
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            sender
-                .send(CallStateInner::MemoryWrite {
-                    offset: pointer,
-                    data,
-                    result: Some(tx),
-                })
-                .await
-                .unwrap();
-            rx.await.unwrap()
-        })
-    }
-
-    fn allocate(&self, size: u32) -> Pin<Box<dyn Future<Output = u32> + Send + Sync>> {
-        let mut sender = self.clone();
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            sender
-                .send(CallStateInner::Allocation {
-                    size,
-                    result: Some(tx),
-                })
-                .await
-                .unwrap();
-            rx.await.unwrap()
-        })
-    }
-
-    fn free(&self, pointer: u32) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let mut sender = self.clone();
-        Box::pin(async move {
-            let (tx, rx) = oneshot::channel();
-            sender
-                .send(CallStateInner::Dealloc {
-                    pointer,
-                    result: Some(tx),
-                })
-                .await
-                .unwrap();
-            rx.await.unwrap()
-        })
-    }
+define_internal_interface! {
+    MemoryRead => fn read_memory(offset: u32, size: u32) -> Vec<u8>;
+    MemoryWrite => fn write_memory(offset: u32, data: Vec<u8>) -> ();
+    Allocation => fn allocate(size: u32) -> u32;
+    Dealloc => fn free(pointer: u32) -> ();
+    StorageSet => fn storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
 }
 
 impl Externality {
     /// Initialize a [`CallState`] that tracks a call to this externality.
     ///
     /// Must pass the parameters of the call.
-    // TODO: better param type
     pub fn start_call(&self, params: &[vm::RuntimeValue]) -> CallState {
         let (tx, rx) = mpsc::channel(3);
 
@@ -177,33 +139,6 @@ pub struct CallState {
     >,
     next_state: mpsc::Receiver<CallStateInner>,
     state: CallStateInner,
-}
-
-/// Actual implementation of [`CallState`].
-enum CallStateInner {
-    Initial,
-    Finished {
-        return_value: Option<vm::RuntimeValue>,
-    },
-    Error(Error),
-    MemoryRead {
-        offset: u32,
-        size: u32,
-        result: Option<oneshot::Sender<Vec<u8>>>,
-    },
-    MemoryWrite {
-        offset: u32,
-        data: Vec<u8>,
-        result: Option<oneshot::Sender<()>>,
-    },
-    Allocation {
-        size: u32,
-        result: Option<oneshot::Sender<u32>>,
-    },
-    Dealloc {
-        pointer: u32,
-        result: Option<oneshot::Sender<()>>,
-    },
 }
 
 impl CallState {
@@ -252,6 +187,11 @@ impl CallState {
             },
             CallStateInner::Dealloc { pointer, result } => State::UntrustedDealloc {
                 pointer: *pointer,
+                done: Resume { sender: result },
+            },
+            CallStateInner::StorageSet { key, value, result } => State::StorageSetNeeded {
+                key,
+                value: value.as_ref().map(|v| &**v),
                 done: Resume { sender: result },
             },
         }
@@ -309,6 +249,12 @@ pub enum State<'a> {
         /// Object to signal that this is done.
         done: Resume<'a, ()>,
     },
+
+    StorageSetNeeded {
+        key: &'a [u8],
+        value: Option<&'a [u8]>,
+        done: Resume<'a, ()>,
+    },
 }
 
 /// Object that allows injecting the result of an operation into the [`CallState`].
@@ -349,9 +295,15 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
     match name {
         "ext_storage_set_version_1" => Some(Externality {
             name: "ext_storage_set_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(2, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = expect_pointer_size(&params[1], &*interface).await?;
+                    interface.storage_set(key, Some(value)).await;
+                    Ok(None)
+                })
             },
         }),
         "ext_storage_get_version_1" => Some(Externality {
@@ -370,9 +322,14 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_clear_version_1" => Some(Externality {
             name: "ext_storage_clear_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    interface.storage_set(key, None).await;
+                    Ok(None)
+                })
             },
         }),
         "ext_storage_exists_version_1" => Some(Externality {

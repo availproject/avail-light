@@ -21,6 +21,7 @@ use crate::block::Block;
 
 use core::{convert::TryFrom as _, hash::Hasher as _, mem};
 use parity_scale_codec::{DecodeAll as _, Encode as _};
+use primitive_types::H256;
 
 pub use entry_points::{CoreVersionSuccess, FunctionToCall, Success};
 
@@ -141,82 +142,116 @@ impl ExternalsVm {
 
     /// Returns the current state of the virtual machine.
     pub fn state(&mut self) -> State {
-        // Note: the internal structure of this function is unfortunately very weird because we
-        // need to bypass limitations in the borrow checker.
+        // Note: the internal structure of this function is unfortunately a bit weird because we
+        // need to bypass limitations in the borrow checker. Ideally, we would use a single big
+        // match block inside of a loop.
 
-        loop {
-            if matches!(self.state, StateInner::Calling(_)) {
-                self.state = match mem::replace(&mut self.state, StateInner::Poisoned) {
-                    // The virtual machine is currently paused and calling an externality. We maintain
-                    // a `CallState` object in parallel of the call and run it.
-                    StateInner::Calling(mut calling) => match calling.run() {
-                        externalities::State::Finished { return_value } => {
-                            // The call has finished, meaning that we are ready to resume the
-                            // Wasm code.
-                            StateInner::Ready(return_value)
-                        }
-                        externalities::State::AllocationNeeded { size, inject_value } => {
-                            if let Ok(ptr) =
-                                self.allocator.allocate(&mut MemAccess(&mut self.vm), size)
-                            {
-                                inject_value.inject(ptr);
-                                StateInner::Calling(calling)
-                            } else {
-                                StateInner::Trapped
-                            }
-                        }
-                        externalities::State::UntrustedDealloc { pointer, done } => {
-                            if self
-                                .allocator
-                                .deallocate(&mut MemAccess(&mut self.vm), pointer)
-                                .is_ok()
-                            {
-                                done.inject(());
-                                StateInner::Calling(calling)
-                            } else {
-                                StateInner::Trapped
-                            }
-                        }
-                        externalities::State::MemoryReadNeeded {
-                            offset,
-                            size,
-                            inject_value,
-                        } => {
-                            if let Ok(data) = self.vm.read_memory(offset, size) {
-                                inject_value.inject(data);
-                                StateInner::Calling(calling)
-                            } else {
-                                StateInner::Trapped
-                            }
-                        }
-                        externalities::State::MemoryWriteNeeded { offset, data, done } => {
-                            if self.vm.write_memory(offset, data).is_ok() {
-                                done.inject(());
-                                StateInner::Calling(calling)
-                            } else {
-                                StateInner::Trapped
-                            }
-                        }
-                        v => unimplemented!("{:?}", v), // TODO:
-                    },
+        // First, let's make the internal state progress, if possible.
+        while matches!(self.state, StateInner::Calling(_)) {
+            // In order to satisfy the borrow checker, we extract the call state and replace it
+            // with `Poisoned`. Below, we put back a proper value.
+            let mut calling = match mem::replace(&mut self.state, StateInner::Poisoned) {
+                StateInner::Calling(mut calling) => calling,
+                _ => unreachable!(),
+            };
 
-                    _ => unreachable!(),
-                };
-            } else {
-                break;
+            match calling.run() {
+                externalities::State::Finished { return_value } => {
+                    // The call has finished, meaning that we are ready to resume the
+                    // Wasm code.
+                    self.state = StateInner::Ready(return_value)
+                }
+                externalities::State::Error(_) => unimplemented!(), // TODO:
+
+                // The variants below can be handled immediately, and then we continue looping.
+                externalities::State::AllocationNeeded { size, inject_value } => {
+                    self.state = if let Ok(ptr) =
+                        self.allocator.allocate(&mut MemAccess(&mut self.vm), size)
+                    {
+                        inject_value.inject(ptr);
+                        StateInner::Calling(calling)
+                    } else {
+                        StateInner::Trapped
+                    }
+                }
+                externalities::State::UntrustedDealloc { pointer, done } => {
+                    self.state = if self
+                        .allocator
+                        .deallocate(&mut MemAccess(&mut self.vm), pointer)
+                        .is_ok()
+                    {
+                        done.inject(());
+                        StateInner::Calling(calling)
+                    } else {
+                        StateInner::Trapped
+                    }
+                }
+                externalities::State::MemoryReadNeeded {
+                    offset,
+                    size,
+                    inject_value,
+                } => {
+                    self.state = if let Ok(data) = self.vm.read_memory(offset, size) {
+                        inject_value.inject(data);
+                        StateInner::Calling(calling)
+                    } else {
+                        StateInner::Trapped
+                    }
+                }
+                externalities::State::MemoryWriteNeeded { offset, data, done } => {
+                    self.state = if self.vm.write_memory(offset, data).is_ok() {
+                        done.inject(());
+                        StateInner::Calling(calling)
+                    } else {
+                        StateInner::Trapped
+                    }
+                }
+
+                // Other non-handled variants cannot be handled immediately and require a user
+                // intervention. We break from the loop and do that below.
+                _ => {
+                    self.state = StateInner::Calling(calling);
+                    break;
+                }
             }
         }
+
+        // Sanity check.
+        assert!(!matches!(self.state, StateInner::Poisoned));
+
+        // At this point of the function, the internal state cannot progress anymore without user
+        // intervention. All the paths below return a `State`.
 
         // We put this one separately because of borrowing issues.
         if let StateInner::Ready(_) = self.state {
             return State::ReadyToRun(ReadyToRun { inner: self });
         }
 
-        match &self.state {
+        match &mut self.state {
+            StateInner::Ready(_) | StateInner::Poisoned => unreachable!(),
             StateInner::NonConforming(err) => State::NonConforming(err.clone()),
             StateInner::Trapped => State::Trapped,
             StateInner::Finished(success) => State::Finished(success),
-            StateInner::Ready(_) | StateInner::Calling(_) | StateInner::Poisoned => unreachable!(),
+            StateInner::Calling(calling) => {
+                // TODO: we call run() again, is this a problem regarding perfs?
+                match calling.run() {
+                    externalities::State::StorageSetNeeded { key, value, done } => {
+                        return State::ExternalStorageSet {
+                            storage_key: key,
+                            new_storage_value: value,
+                            resolve: Resume { inner: done },
+                        }
+                    }
+
+                    // These variants are handled above.
+                    externalities::State::Finished { .. }
+                    | externalities::State::Error { .. }
+                    | externalities::State::AllocationNeeded { .. }
+                    | externalities::State::UntrustedDealloc { .. }
+                    | externalities::State::MemoryReadNeeded { .. }
+                    | externalities::State::MemoryWriteNeeded { .. } => unreachable!(),
+                }
+            }
         }
     }
 }
@@ -235,23 +270,42 @@ pub enum State<'a> {
     ExternalStorageGet {
         /// Which key is requested.
         storage_key: Vec<u8>,
+        /// Offset in the value where to start reading.
+        offset: u32,
+        /// Maximum size of the value to return.
+        max_size: u32,
         /// Object to use to inject the storage value back. Pass back `None` if key is missing
-        /// from storage.
+        /// from storage. Must never be longer than `max_size`.
         resolve: Resume<'a, Option<Vec<u8>>>,
     },
     ExternalStorageSet {
         /// Which key to change.
-        storage_key: Vec<u8>,
-        /// Which storage value to change.
-        new_storage_value: Vec<u8>,
+        storage_key: &'a [u8],
+        /// Which storage value to set. `None` if the value must be removed.
+        new_storage_value: Option<&'a [u8]>,
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,
     },
-    ExternalStorageClear {
+    ExternalStorageClearPrefix {
         /// Which key to clear.
-        storage_key: Vec<u8>,
+        storage_key: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,
+    },
+    ExternalStorageRoot {
+        /// Object to use to finish the call
+        resolve: Resume<'a, Vec<H256>>,
+    },
+    ExternalStorageChangesRoot {
+        parent_hash: H256,
+        /// Object to use to finish the call
+        resolve: Resume<'a, Vec<u8>>,
+    },
+    ExternalStorageNextKey {
+        /// Concerned key.
+        key: Vec<u8>,
+        /// Object to use to finish the call
+        resolve: Resume<'a, Vec<u8>>,
     },
 }
 

@@ -61,9 +61,12 @@ pub async fn run_executor_task(mut config: Config) {
                         executor::State::Finished(_) => unreachable!(),
                         executor::State::ExternalStorageGet {
                             storage_key,
+                            offset,
+                            max_size,
                             resolve,
                         } => {
                             // TODO: this clones the storage value, meh
+                            // TODO: no, doesn't respect constraints
                             resolve
                                 .finish_call(parent.get(&storage_key).map(|v| v.as_ref().to_vec()));
                         }
@@ -75,7 +78,7 @@ pub async fn run_executor_task(mut config: Config) {
                             // TODO: implement
                             resolve.finish_call(());
                         }
-                        executor::State::ExternalStorageClear {
+                        executor::State::ExternalStorageClearPrefix {
                             storage_key: _,
                             resolve,
                         } => {
