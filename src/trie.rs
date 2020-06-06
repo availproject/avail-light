@@ -134,7 +134,7 @@ impl Trie {
         for child in self.child_nodes(&combined_key) {
             debug_assert!(child.nibbles.starts_with(&combined_key.nibbles));
             let child_index = child.nibbles[combined_key.nibbles.len()].0;
-            children_bitmap |= 1 << (15u32.checked_sub(child_index.into()).unwrap());
+            children_bitmap |= 1 << u32::from(child_index);
 
             let child_partial_key = TrieNodeKey {
                 nibbles: child.nibbles[combined_key.nibbles.len()..].to_vec(),
@@ -149,13 +149,19 @@ impl Trie {
                 let has_stored_value = stored_value.is_some();
                 let has_children = children_bitmap != 0;
                 match (has_stored_value, has_children) {
-                    (false, false) => 0b00, // TODO: is that exact? specs say "Special case"?!?!
+                    (false, false) => {
+                        // This should only ever be reached if we compute the root node of an
+                        // empty trie.
+                        debug_assert!(combined_key.nibbles.is_empty());
+                        0b00
+                    }
                     (true, false) => 0b01,
                     (false, true) => 0b10,
                     (true, true) => 0b11,
                 }
             };
 
+            // Another weird algorithm to encode the partial key length into the header.
             let mut pk_len = partial_key.nibbles.len();
             if pk_len >= 63 {
                 pk_len -= 63;
@@ -173,15 +179,18 @@ impl Trie {
 
         // Compute the node subvalue.
         let node_subvalue = {
+            // TODO: SCALE-encoding clones the value; optimize that
             let encoded_stored_value = stored_value.unwrap_or(Vec::new()).encode();
 
             if children_bitmap == 0 {
                 encoded_stored_value
             } else {
-                // TODO: LE? specs don't say anything
+                // TODO: specs don't say anything about endianess or bits ordering of
+                // children_bitmap; had to look in Substrate code; report that to specs writers
                 let mut out = children_bitmap.to_le_bytes().to_vec();
                 for child in children_partial_keys {
                     let child_merkle_value = self.merkle_value(combined_key.clone(), child);
+                    // TODO: we encode the child merkle value as SCALE, which copies it again; opt  imize that
                     out.extend(child_merkle_value.encode());
                 }
                 out.extend(encoded_stored_value);
@@ -283,4 +292,34 @@ fn common_prefix<'a>(mut list: impl Iterator<Item = &'a [Nibble]>) -> Option<Vec
     }
 
     Some(longest_prefix)
+}
+
+// TODO: we test private methods below because the code doesn't work at the moment
+#[cfg(test)]
+mod tests {
+    use super::{common_prefix, Nibble};
+    use core::iter;
+
+    #[test]
+    fn common_prefix_works_trivial() {
+        let a = vec![Nibble(0)];
+
+        let obtained = common_prefix([&a[..]].iter().cloned());
+        assert_eq!(obtained, Some(a));
+    }
+
+    #[test]
+    fn common_prefix_works_empty() {
+        let obtained = common_prefix(iter::empty());
+        assert_eq!(obtained, None);
+    }
+
+    #[test]
+    fn common_prefix_works_basic() {
+        let a = vec![Nibble(5), Nibble(4), Nibble(6)];
+        let b = vec![Nibble(5), Nibble(4), Nibble(9), Nibble(12)];
+
+        let obtained = common_prefix([&a[..], &b[..]].iter().cloned());
+        assert_eq!(obtained, Some(vec![Nibble(5), Nibble(4)]));
+    }
 }
