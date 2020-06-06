@@ -8,7 +8,16 @@ use parity_scale_codec::Encode as _;
 
 /// Radix-16 Merkle-Patricia trie.
 pub struct Trie {
-    entries: BTreeMap<Vec<u8>, Vec<u8>>,
+    /// The entries in the tree.
+    ///
+    /// Since this is a binary tree, the elements are ordered lexicographically.
+    /// Example order: "a", "ab", "ac", "b".
+    ///
+    /// This list only contains the nodes that have an entry in the storage, and not the nodes
+    /// that are branches and don't have a storage entry.
+    ///
+    /// All the keys have an even number of nibbles.
+    entries: BTreeMap<TrieNodeKey, Vec<u8>>,
 }
 
 impl Trie {
@@ -20,8 +29,9 @@ impl Trie {
     }
 
     /// Inserts a new entry in the trie.
-    pub fn insert(&mut self, key: impl Into<Vec<u8>>, value: impl Into<Vec<u8>>) {
-        self.entries.insert(key.into(), value.into());
+    pub fn insert(&mut self, key: &[u8], value: impl Into<Vec<u8>>) {
+        self.entries
+            .insert(TrieNodeKey::from_bytes(key), value.into());
     }
 
     /// Returns true if the `Trie` is empty.
@@ -41,11 +51,10 @@ impl Trie {
             return;
         }
 
+        let prefix = TrieNodeKey::from_bytes(prefix);
         let to_remove = self
-            .entries
-            .range(prefix.to_vec()..) // TODO: the necessity of this to_vec() is weird
-            .take_while(|(k, _)| k.starts_with(prefix))
-            .map(|(k, _)| k.clone())
+            .descendant_storage_keys(&prefix)
+            .cloned()
             .collect::<Vec<_>>();
         for to_remove in to_remove {
             self.entries.remove(&to_remove);
@@ -54,14 +63,24 @@ impl Trie {
 
     /// Calculates the Merkle value of the root node.
     pub fn root_merkle_value(&self) -> [u8; 32] {
-        self.merkle_value(&[], None)
+        self.merkle_value(
+            TrieNodeKey {
+                nibbles: Vec::new(),
+            },
+            TrieNodeKey {
+                nibbles: Vec::new(),
+            },
+        )
     }
 
-    /// Calculates the Merkle value of the node with the given key.
-    pub fn merkle_value(&self, key: &[u8], key_extra_nibble: Option<u8>) -> [u8; 32] {
-        let node_value = self.node_value(key, key_extra_nibble);
+    /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`
+    /// and `partial_key`.
+    fn merkle_value(&self, parent_key: TrieNodeKey, partial_key: TrieNodeKey) -> [u8; 32] {
+        let is_root = parent_key.nibbles.is_empty() && partial_key.nibbles.is_empty();
 
-        if (key.is_empty() && key_extra_nibble.is_none()) || node_value.len() >= 32 {
+        let node_value = self.node_value(parent_key, partial_key);
+
+        if is_root || node_value.len() >= 32 {
             let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
             let mut out = [0; 32];
             out.copy_from_slice(blake2_hash.as_bytes());
@@ -76,124 +95,192 @@ impl Trie {
         }
     }
 
-    fn node_value(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        let partial_key_nibbles = self.node_partial_key_nibbles(key, key_extra_nibble);
-
-        let partial_key = if partial_key_nibbles.len() % 2 == 0 {
-            let mut pk = Vec::with_capacity(partial_key_nibbles.len() / 2);
-            for chunk in partial_key_nibbles.chunks(2) {
-                pk.push((chunk[0] << 4) | chunk[1]);
+    /// Calculates the node value of the node whose key is the concatenation of `parent_key`
+    /// and `partial_key`.
+    fn node_value(&self, parent_key: TrieNodeKey, partial_key: TrieNodeKey) -> Vec<u8> {
+        // Turn the `partial_key` into bytes with a weird encoding.
+        let partial_key_bytes = if partial_key.nibbles.len() % 2 == 0 {
+            let mut pk = Vec::with_capacity(partial_key.nibbles.len() / 2);
+            for chunk in partial_key.nibbles.chunks(2) {
+                pk.push((chunk[0].0 << 4) | chunk[1].0);
             }
             pk
         } else {
-            let mut pk = Vec::with_capacity(1 + partial_key_nibbles.len() / 2);
-            // What a weird encoding.
-            pk.push(partial_key_nibbles[0]);
-            for chunk in partial_key_nibbles[1..].chunks(2) {
-                pk.push((chunk[0] << 4) | chunk[1]);
+            let mut pk = Vec::with_capacity(1 + partial_key.nibbles.len() / 2);
+            pk.push(partial_key.nibbles[0].0);
+            for chunk in partial_key.nibbles[1..].chunks(2) {
+                pk.push((chunk[0].0 << 4) | chunk[1].0);
             }
             pk
         };
-        
-        let mut out = self.node_header(key, key_extra_nibble);
-        out.extend(partial_key);
-        out.extend(self.node_subvalue(key, key_extra_nibble));
-        out
-    }
 
-    fn node_header(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        let two_msb: u8 = {
-            let has_stored_value = key_extra_nibble.is_none() && self.entries.contains_key(key);
-            let has_children = self.node_has_children(key, key_extra_nibble);
-            match (has_stored_value, has_children) {
-                (false, false) => 0b00, // TODO: is that exact? specs say "Special case"?!?!
-                (true, false) => 0b01,
-                (false, true) => 0b10,
-                (true, true) => 0b11,
+        // The operations below require the actual key of the node.
+        let combined_key = {
+            let mut combined_key = parent_key;
+            combined_key.nibbles.extend(partial_key.nibbles.clone());
+            combined_key
+        };
+
+        // Load the stored value of this node.
+        let stored_value = self.entries.get(&combined_key).cloned();
+
+        // This "children bitmap" is filled below with bits if a child is present at the given
+        // index.
+        let mut children_bitmap = 0u16;
+        // Partial key from this node to its children.
+        let mut children_partial_keys = Vec::new();
+
+        // Now enumerate the children.
+        for child in self.child_nodes(&combined_key) {
+            debug_assert!(child.nibbles.starts_with(&combined_key.nibbles));
+            let child_index = child.nibbles[combined_key.nibbles.len()].0;
+            children_bitmap |= 1 << (15u32.checked_sub(child_index.into()).unwrap());
+
+            let child_partial_key = TrieNodeKey {
+                nibbles: child.nibbles[combined_key.nibbles.len()..].to_vec(),
+            };
+            children_partial_keys.push(child_partial_key);
+        }
+
+        // Now compute the header of the node.
+        let header = {
+            // The first two most significant bits of the header contain the type of node.
+            let two_msb: u8 = {
+                let has_stored_value = stored_value.is_some();
+                let has_children = children_bitmap != 0;
+                match (has_stored_value, has_children) {
+                    (false, false) => 0b00, // TODO: is that exact? specs say "Special case"?!?!
+                    (true, false) => 0b01,
+                    (false, true) => 0b10,
+                    (true, true) => 0b11,
+                }
+            };
+
+            let mut pk_len = partial_key.nibbles.len();
+            if pk_len >= 63 {
+                pk_len -= 63;
+                let mut header = vec![(two_msb << 6) + 63];
+                while pk_len > 255 {
+                    pk_len -= 255;
+                    header.push(255);
+                }
+                header.push(u8::try_from(pk_len).unwrap());
+                header
+            } else {
+                vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
             }
         };
 
-        let mut pk_len = self.node_partial_key_nibbles(key, key_extra_nibble).len();
+        // Compute the node subvalue.
+        let node_subvalue = {
+            let encoded_stored_value = stored_value.unwrap_or(Vec::new()).encode();
 
-        if pk_len >= 63 {
-            pk_len -= 63;
-            let mut out = vec![(two_msb << 6) + 63];
-            while pk_len > 255 {
-                pk_len -= 255;
-                out.push(255);
-            }
-            out.push(u8::try_from(pk_len).unwrap());
-            out
-
-        } else {
-            vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
-        }
-    }
-
-    fn node_partial_key_nibbles(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        Vec::new()  // TODO: FIXME: stub
-    }
-
-    fn node_subvalue(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        let encoded_stored_value = if key_extra_nibble.is_none() {
-            self.entries.get(key).cloned().unwrap_or(Vec::new())
-        } else {
-            Vec::new()
-        }
-        .encode();
-
-        let children_bitmap = self.node_children_bitmap(key, key_extra_nibble);
-        if children_bitmap == 0 {
-            return encoded_stored_value;
-        }
-
-        let mut out = children_bitmap.to_le_bytes().to_vec(); // TODO: LE? specs don't say anything, wtf
-
-        if let Some(extra) = key_extra_nibble {
-            for extra2 in 0..16 {
-                let mut subkey = key.to_vec();
-                subkey.push((extra << 4) | extra2);
-                let child_merkle_value = self.merkle_value(&subkey, None);
-                out.extend(child_merkle_value.encode());
-            }
-        } else {
-            for extra in 0..16 {
-                let child_merkle_value = self.merkle_value(key, Some(extra));
-                out.extend(child_merkle_value.encode());
-            }
-        }
-
-        out.extend(encoded_stored_value);
-        out
-    }
-
-    fn node_children_bitmap(&self, key: &[u8], key_extra_nibble: Option<u8>) -> u16 {
-        let mut out = 0u16;
-
-        if let Some(key_extra_nibble) = key_extra_nibble {
-            for n in 0..16 {
-                let mut subkey = key.to_vec();
-                subkey.push((key_extra_nibble << 4) | n);
-                if self.node_has_children(&subkey, None) {
-                    out |= 1 << (15 - n);
+            if children_bitmap == 0 {
+                encoded_stored_value
+            } else {
+                // TODO: LE? specs don't say anything
+                let mut out = children_bitmap.to_le_bytes().to_vec();
+                for child in children_partial_keys {
+                    let child_merkle_value = self.merkle_value(combined_key.clone(), child);
+                    out.extend(child_merkle_value.encode());
                 }
+                out.extend(encoded_stored_value);
+                out
             }
-        } else {
-            for n in 0..16 {
-                if self.node_has_children(key, Some(n)) {
-                    out |= 1 << (15 - n);
-                }
+        };
+
+        // Compute the final node value.
+        let mut node_value = header;
+        node_value.extend(partial_key_bytes);
+        node_value.extend(node_subvalue);
+        node_value
+    }
+
+    /// Returns all the keys of the nodes that descend from `key`, excluding `key` itself.
+    fn child_nodes(&self, key: &TrieNodeKey) -> impl Iterator<Item = TrieNodeKey> {
+        let mut key_clone = key.clone();
+        key_clone.nibbles.push(Nibble(0));
+
+        let mut out = Vec::new();
+        for n in 0..16 {
+            *key_clone.nibbles.last_mut().unwrap() = Nibble(n);
+            if let Some(prefix) = common_prefix(
+                self.descendant_storage_keys(&key_clone)
+                    .map(|k| &k.nibbles[..]),
+            ) {
+                out.push(TrieNodeKey { nibbles: prefix });
             }
         }
-
-        out
+        out.into_iter()
     }
 
-    fn node_has_children(&self, key: &[u8], key_extra_nibble: Option<u8>) -> bool {
-        let mut start = key.to_vec();
-        let mut end = key.to_vec();
-        start.push(0);
-        end.push(255);
-        self.entries.range(start..=end).next().is_some()
+    /// Returns all the keys that descend from `key` or equal to `key` that have a storage entry.
+    fn descendant_storage_keys<'a>(
+        &'a self,
+        key: &'a TrieNodeKey,
+    ) -> impl Iterator<Item = &'a TrieNodeKey> + 'a {
+        self.entries
+            .range(key..)
+            .take_while(move |(k, _)| key.is_ancestor_or_equal(&k.nibbles))
+            .map(|(k, _v)| k)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct TrieNodeKey {
+    nibbles: Vec<Nibble>,
+}
+
+impl TrieNodeKey {
+    fn from_bytes(bytes: &[u8]) -> Self {
+        let mut out = Vec::with_capacity(bytes.len() * 2);
+        for b in bytes {
+            out.push(Nibble(*b >> 4));
+            out.push(Nibble(*b & 0xf));
+        }
+        TrieNodeKey { nibbles: out }
+    }
+
+    fn is_ancestor_or_equal(&self, key: &[Nibble]) -> bool {
+        let mut my_nibbles = self.nibbles.iter();
+        let mut key_nibbles = key.iter();
+        loop {
+            match (my_nibbles.next(), key_nibbles.next()) {
+                (Some(a), Some(b)) if a == b => {}
+                (None, _) => return true,
+                _ => return false,
+            }
+        }
+    }
+}
+
+/// Four bits.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Nibble(u8);
+
+/// Given a list of `&[Nibble]`, returns the longest prefix that is shared by all the elements in
+/// the list.
+fn common_prefix<'a>(mut list: impl Iterator<Item = &'a [Nibble]>) -> Option<Vec<Nibble>> {
+    let mut longest_prefix = list.next()?.to_vec();
+
+    while let Some(elem) = list.next() {
+        if elem.len() < longest_prefix.len() {
+            longest_prefix.truncate(elem.len());
+        }
+
+        if let Some((diff_pos, _)) = longest_prefix
+            .iter()
+            .enumerate()
+            .find(|(idx, b)| elem[*idx] != **b)
+        {
+            longest_prefix.truncate(diff_pos);
+        }
+
+        if longest_prefix.is_empty() {
+            // No need to iterate further if the common prefix is already empty.
+            break;
+        }
+    }
+
+    Some(longest_prefix)
 }

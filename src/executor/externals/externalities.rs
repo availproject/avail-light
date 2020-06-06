@@ -841,7 +841,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let mut trie = crate::trie::Trie::new();
                     for (key, value) in elements {
-                        trie.insert(key, value);
+                        trie.insert(&key, value);
                     }
                     let out = trie.root_merkle_value();
 
@@ -864,7 +864,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     for (key, value) in elements.into_iter().enumerate() {
                         // TODO: specs say "fixed size integers" but doesn't mention which size
                         let key = key.to_le_bytes().to_vec();
-                        trie.insert(key, value);
+                        trie.insert(&key, value);
                     }
                     let out = trie.root_merkle_value();
 
