@@ -862,8 +862,9 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let mut trie = crate::trie::Trie::new();
                     for (key, value) in elements.into_iter().enumerate() {
-                        // TODO: specs say "fixed size integers" but doesn't mention which size
-                        let key = key.to_le_bytes().to_vec();
+                        // TODO: specs say "fixed size integers" but doesn't mention big endian 32bits;
+                        // had to look in the source code of paritytech/trie; report that to specs writers
+                        let key = u32::try_from(key).unwrap().to_be_bytes().to_vec();
                         trie.insert(&key, value);
                     }
                     let out = trie.root_merkle_value();
