@@ -19,12 +19,13 @@
 use super::{allocator, vm};
 use crate::block::Block;
 
-use core::{convert::TryFrom as _, hash::Hasher as _};
+use core::{convert::TryFrom as _, hash::Hasher as _, mem};
 use parity_scale_codec::{DecodeAll as _, Encode as _};
 
 pub use entry_points::{CoreVersionSuccess, FunctionToCall, Success};
 
 mod entry_points;
+mod externalities;
 
 /// A running virtual machine.
 pub struct ExternalsVm {
@@ -42,74 +43,31 @@ pub struct ExternalsVm {
     /// The keys of this `Vec` (i.e. the `usize` indices) have been passed to the virtual machine
     /// executor. Whenever the Wasm code invokes an external function, we obtain its index, and
     /// look within this `Vec` to know what to do.
-    registered_functions: Vec<RegisteredFunction>,
+    registered_functions: Vec<externalities::Externality>,
 
     /// Memory allocator in order to answer the calls to `malloc` and `free`.
     allocator: allocator::FreeingBumpHeapAllocator,
 }
 
-enum RegisteredFunction {
-    /// The external function performs some immediate action and returns.
-    Immediate {
-        /// How to execute this function.
-        implementation: Box<
-            dyn FnMut(
-                    &[vm::RuntimeValue],
-                    &mut vm::VirtualMachine,
-                    &mut allocator::FreeingBumpHeapAllocator,
-                ) -> Option<vm::RuntimeValue>
-                + Send,
-        >,
-    },
-
-    /// Function resolution requires an interruption of the virtual machine so that the user can
-    /// handle the call.
-    Interrupt {
-        /// How to execute this function.
-        implementation: Box<
-            dyn FnMut(
-                    &[vm::RuntimeValue],
-                    &mut vm::VirtualMachine,
-                    &mut allocator::FreeingBumpHeapAllocator,
-                ) -> StateInner
-                + Send,
-        >,
-    },
-
-    /// Function isn't known.
-    /// In theory we should reject at initialization any runtime code that tries to import a
-    /// function that is unknown to this code. In practice, however, it is not unheard to have
-    /// runtime code import unknown functions but without calling them. To handle this type of
-    /// situation, we accept unknown functions but return an error if they are called.
-    Unresolved {
-        /// Name of the function.
-        name: String,
-    },
-}
-
 enum StateInner {
     Ready(Option<vm::RuntimeValue>),
+    /// Currently calling an externality.
+    Calling(externalities::CallState),
     /// The Wasm blob did something that doesn't conform to the runtime environment.
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
     Trapped,
-    ExternalStorageGet {
-        storage_key: Vec<u8>,
-    },
-    ExternalStorageSet {
-        storage_key: Vec<u8>,
-        new_storage_value: Vec<u8>,
-    },
-    ExternalStorageClear {
-        storage_key: Vec<u8>,
-    },
     Finished(Success),
+    /// Temporary state to permit smoother state transitions.
+    Poisoned,
 }
 
 /// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
 /// state can't change.
 pub enum State<'a> {
-    ReadyToRun(StateReadyToRun<'a>),
+    /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
+    ReadyToRun(ReadyToRun<'a>),
+    /// Function execution has succeeded. Contains the return value of the call.
     Finished(&'a Success),
     /// The Wasm blob did something that doesn't conform to the runtime environment.
     NonConforming(NonConformingErr),
@@ -120,7 +78,7 @@ pub enum State<'a> {
         storage_key: Vec<u8>,
         /// Object to use to inject the storage value back. Pass back `None` if key is missing
         /// from storage.
-        resolve: StateWaitExternalResolve<'a, Option<Vec<u8>>>,
+        resolve: Resume<'a, Option<Vec<u8>>>,
     },
     ExternalStorageSet {
         /// Which key to change.
@@ -128,22 +86,31 @@ pub enum State<'a> {
         /// Which storage value to change.
         new_storage_value: Vec<u8>,
         /// Object to use to finish the call
-        resolve: StateWaitExternalResolve<'a, ()>,
+        resolve: Resume<'a, ()>,
     },
     ExternalStorageClear {
         /// Which key to clear.
         storage_key: Vec<u8>,
         /// Object to use to finish the call
-        resolve: StateWaitExternalResolve<'a, ()>,
+        resolve: Resume<'a, ()>,
     },
+}
+
+/// Error that can happen when initializing a VM.
+#[derive(Debug, derive_more::From, derive_more::Display)]
+pub enum NewErr {
+    /// Error while initializing the virtual machine.
+    #[display(fmt = "Error while initializing the virtual machine: {}", _0)]
+    VirtualMachine(vm::NewErr),
+    /// The size of the input data is too large.
+    DataSizeOverflow,
+    /// Couldn't find the `__heap_base` symbol in the Wasm code.
+    HeapBaseNotFound,
 }
 
 /// Reason why the Wasm blob isn't conforming to the runtime environment.
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum NonConformingErr {
-    /// An unknown function has been called.
-    #[display(fmt = "An unknown function has been called: {}", _0)]
-    UnknownFunction(String),
     /// A non-`i64` value has been returned.
     #[display(fmt = "A non-I64 value has been returned")]
     BadReturnValue, // TODO: indicate what got returned?
@@ -164,42 +131,46 @@ pub enum NonConformingErr {
     SuccessDecode(entry_points::SuccessDecodeErr),
 }
 
-pub struct StateReadyToRun<'a> {
+pub struct ReadyToRun<'a> {
     inner: &'a mut ExternalsVm,
 }
 
-pub struct StateWaitExternalResolve<'a, T: ?Sized> {
-    inner: &'a mut ExternalsVm,
-    resume: Box<dyn FnOnce(&mut ExternalsVm, T) -> Option<vm::RuntimeValue>>,
+pub struct Resume<'a, T> {
+    inner: externalities::Resume<'a, T>,
 }
 
 impl ExternalsVm {
     /// Creates a new state machine from the given module that executes the given function.
-    pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, vm::NewErr> {
+    pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, NewErr> {
         let (called_function, data) = to_call.into_function_and_param();
-
-        // TODO: error if input data is too large?
+        let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
 
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
         // array.
         let (mut vm, registered_functions) = {
+            let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
+
             let mut registered_functions = Vec::new();
             let vm = vm::VirtualMachine::new(
                 module,
                 called_function.symbol_name(),
                 &[
-                    vm::RuntimeValue::I32(0), // FIXME: no no no no no /!\
-                    vm::RuntimeValue::I32(i32::try_from(data.len()).unwrap()),
+                    vm::RuntimeValue::I32(0), // TODO: FIXME: no no no no no /!\
+                    vm::RuntimeValue::I32(data_len_i32),
                 ],
+                // This closure is called back for each function that the runtime imports.
                 |mod_name, f_name, _signature| {
                     if mod_name != "env" {
                         return Err(());
                     }
 
                     let id = registered_functions.len();
-                    registered_functions.push(get_function(f_name));
+                    registered_functions.push(match externalities::function_by_name(f_name) {
+                        Some(f) => f,
+                        None => return Err(()),
+                    });
                     Ok(id)
                 },
             )?;
@@ -213,7 +184,9 @@ impl ExternalsVm {
             // In the runtime environment, Wasm blobs must export a global symbol named
             // `__heap_base` indicating where the memory allocator is allowed to allocate memory.
             // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
-            let mut heap_base = vm.global_value("__heap_base").unwrap(); // TODO: don't unwrap
+            let heap_base = vm
+                .global_value("__heap_base")
+                .map_err(|_| NewErr::HeapBaseNotFound)?;
             allocator::FreeingBumpHeapAllocator::new(heap_base)
         };
 
@@ -221,10 +194,9 @@ impl ExternalsVm {
         // This has the consequence that the user is allowed to free that input data. If this
         // consequence is unwanted, this code can be changed to write the input data at `heap_base`
         // and start the actual heap after the input data.
-        // TODO: don't unwrap
         let input_data_location = allocator
-            .allocate(&mut MemAccess(&mut vm), u32::try_from(data.len()).unwrap())
-            .unwrap();
+            .allocate(&mut MemAccess(&mut vm), data_len_u32)
+            .map_err(|_| NewErr::DataSizeOverflow)?;
         vm.write_memory(input_data_location, &data).unwrap();
 
         Ok(ExternalsVm {
@@ -238,77 +210,92 @@ impl ExternalsVm {
 
     /// Returns the current state of the virtual machine.
     pub fn state(&mut self) -> State {
-        // We have to do that in multiple steps in order to satisfy the borrow checker.
+        // Note: the internal structure of this function is unfortunately very weird because we
+        // need to bypass limitations in the borrow checker.
+
+        loop {
+            if matches!(self.state, StateInner::Calling(_)) {
+                self.state = match mem::replace(&mut self.state, StateInner::Poisoned) {
+                    // The virtual machine is currently paused and calling an externality. We maintain
+                    // a `CallState` object in parallel of the call and run it.
+                    StateInner::Calling(mut calling) => match calling.run() {
+                        externalities::State::AllocationNeeded { size, inject_value } => {
+                            if let Ok(ptr) =
+                                self.allocator.allocate(&mut MemAccess(&mut self.vm), size)
+                            {
+                                inject_value.inject(ptr);
+                                StateInner::Calling(calling)
+                            } else {
+                                StateInner::Trapped
+                            }
+                        }
+                        externalities::State::UntrustedDealloc { pointer, done } => {
+                            if self
+                                .allocator
+                                .deallocate(&mut MemAccess(&mut self.vm), pointer)
+                                .is_ok()
+                            {
+                                done.inject(());
+                                StateInner::Calling(calling)
+                            } else {
+                                StateInner::Trapped
+                            }
+                        }
+                        externalities::State::MemoryReadNeeded {
+                            offset,
+                            size,
+                            inject_value,
+                        } => {
+                            if let Ok(data) = self.vm.read_memory(offset, size) {
+                                inject_value.inject(data);
+                                StateInner::Calling(calling)
+                            } else {
+                                StateInner::Trapped
+                            }
+                        }
+                        externalities::State::MemoryWriteNeeded { offset, data, done } => {
+                            if self.vm.write_memory(offset, data).is_ok() {
+                                done.inject(());
+                                StateInner::Calling(calling)
+                            } else {
+                                StateInner::Trapped
+                            }
+                        }
+                        _ => unimplemented!(), // TODO:
+                    },
+
+                    _ => unreachable!(),
+                };
+            } else {
+                break;
+            }
+        }
+
+        // We put this one separately because of borrowing issues.
         if let StateInner::Ready(_) = self.state {
-            return State::ReadyToRun(StateReadyToRun { inner: self });
-        }
-
-        if let StateInner::ExternalStorageGet { storage_key } = &self.state {
-            return State::ExternalStorageGet {
-                storage_key: storage_key.clone(), // TODO: don't clone
-                resolve: StateWaitExternalResolve {
-                    inner: self,
-                    resume: Box::new(|this, value| {
-                        let data = value.encode(); // TODO: clones the value
-                        let data_len_u32 = u32::try_from(data.len()).unwrap(); // TODO: don't unwrap
-                        let ret = this
-                            .allocator
-                            .allocate(&mut MemAccess(&mut this.vm), data_len_u32)
-                            .unwrap(); // TODO: don't unwrap
-                        this.vm.write_memory(ret, &data).unwrap();
-                        let ret = (u64::from(data_len_u32) << 32) | u64::from(ret);
-                        Some(vm::RuntimeValue::I64(i64::from_ne_bytes(ret.to_ne_bytes())))
-                    }),
-                },
-            };
-        }
-
-        if let StateInner::ExternalStorageSet {
-            storage_key,
-            new_storage_value,
-        } = &self.state
-        {
-            return State::ExternalStorageSet {
-                storage_key: storage_key.clone(),             // TODO: don't clone
-                new_storage_value: new_storage_value.clone(), // TODO: don't clone
-                resolve: StateWaitExternalResolve {
-                    inner: self,
-                    resume: Box::new(|_this, ()| None),
-                },
-            };
-        }
-
-        if let StateInner::ExternalStorageClear { storage_key } = &self.state {
-            return State::ExternalStorageClear {
-                storage_key: storage_key.clone(), // TODO: don't clone
-                resolve: StateWaitExternalResolve {
-                    inner: self,
-                    resume: Box::new(|_this, ()| None),
-                },
-            };
+            return State::ReadyToRun(ReadyToRun { inner: self });
         }
 
         match &self.state {
-            StateInner::Ready(_) => unreachable!(),
             StateInner::NonConforming(err) => State::NonConforming(err.clone()),
             StateInner::Trapped => State::Trapped,
-            StateInner::Finished(data) => State::Finished(data),
-            _ => unreachable!(),
+            StateInner::Finished(success) => State::Finished(success),
+            StateInner::Ready(_) | StateInner::Calling(_) | StateInner::Poisoned => unreachable!(),
         }
     }
 }
 
-impl<'a> From<StateReadyToRun<'a>> for State<'a> {
-    fn from(state: StateReadyToRun<'a>) -> State<'a> {
+impl<'a> From<ReadyToRun<'a>> for State<'a> {
+    fn from(state: ReadyToRun<'a>) -> State<'a> {
         State::ReadyToRun(state)
     }
 }
 
-impl<'a> StateReadyToRun<'a> {
+impl<'a> ReadyToRun<'a> {
     /// Runs the virtual machine until something important happens.
     ///
     /// > **Note**: This is when the actual CPU-heavy computation happens.
-    pub fn run(self) -> State<'a> {
+    pub fn run(self) {
         loop {
             let resume_value = match &mut self.inner.state {
                 StateInner::Ready(val) => val.take(),
@@ -353,35 +340,13 @@ impl<'a> StateReadyToRun<'a> {
                 }
 
                 Ok(vm::ExecOutcome::Interrupted { id, params }) => {
-                    match self.inner.registered_functions.get_mut(id) {
-                        Some(RegisteredFunction::Immediate { implementation }) => {
-                            let ret_val = implementation(
-                                &params,
-                                &mut self.inner.vm,
-                                &mut self.inner.allocator,
-                            );
-                            self.inner.state = StateInner::Ready(ret_val);
-                        }
-                        Some(RegisteredFunction::Interrupt { implementation }) => {
-                            let new_state = implementation(
-                                &params,
-                                &mut self.inner.vm,
-                                &mut self.inner.allocator,
-                            );
-                            self.inner.state = new_state;
-                            break;
-                        }
-                        Some(RegisteredFunction::Unresolved { name }) => {
-                            self.inner.state = StateInner::NonConforming(
-                                NonConformingErr::UnknownFunction(name.clone()),
-                            );
-                            break;
-                        }
+                    self.inner.state = match self.inner.registered_functions.get_mut(id) {
+                        Some(f) => StateInner::Calling(f.start_call(&params)),
 
                         // Internal error. We have been passed back an `id` that we didn't return
                         // during the imports resolution.
                         None => panic!(),
-                    }
+                    };
                 }
 
                 Ok(vm::ExecOutcome::Finished {
@@ -403,291 +368,16 @@ impl<'a> StateReadyToRun<'a> {
                 Err(err) => panic!("Internal error in Wasm virtual machine: {}", err),
             }
         }
-
-        self.inner.state()
     }
 }
 
-impl<'a, T> StateWaitExternalResolve<'a, T> {
+impl<'a, T> Resume<'a, T> {
     /// Injects the return value back into the virtual machine and prepares it for continuing to
     /// run.
     ///
     /// > **Note**: This function is lightweight and doesn't perform anything CPU-heavy.
-    pub fn finish_call(self, resolve: T) -> StateReadyToRun<'a> {
-        self.inner.state = StateInner::Ready((self.resume)(self.inner, resolve));
-        StateReadyToRun { inner: self.inner }
-    }
-}
-
-// TODO: should somehow filter out categories of functions, so that offchain worker functions
-// are for example forbidden for regular blocks
-fn get_function(name: &str) -> RegisteredFunction {
-    match name {
-        "ext_storage_set_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                // TODO: check params count
-                let storage_key = expect_ptr_len(&params[0], vm);
-                let new_storage_value = expect_ptr_len(&params[1], vm);
-                StateInner::ExternalStorageSet {
-                    storage_key,
-                    new_storage_value,
-                }
-            }),
-        },
-        "ext_storage_get_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                let storage_key = expect_one_ptr_len(&params, vm);
-                StateInner::ExternalStorageGet { storage_key }
-            }),
-        },
-        "ext_storage_read_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_clear_version_1" => RegisteredFunction::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                let storage_key = expect_one_ptr_len(&params, vm);
-                StateInner::ExternalStorageClear { storage_key }
-            }),
-        },
-        "ext_storage_exists_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_clear_prefix_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_root_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_changes_root_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_next_key_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_set_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_get_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_read_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_clear_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_storage_kill_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_exists_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_clear_prefix_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_root_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_storage_child_next_key_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_ed25519_public_keys_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_ed25519_generate_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_ed25519_sign_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_ed25519_verify_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_sr25519_public_keys_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_sr25519_generate_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_sr25519_sign_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_sr25519_verify_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_secp256k1_ecdsa_recover_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_crypto_secp256k1_ecdsa_recover_compressed_version_1" => {
-            RegisteredFunction::Immediate {
-                implementation: Box::new(|_, _, _| unimplemented!()),
-            }
-        }
-        "ext_hashing_keccak_256_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_hashing_sha2_256_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_hashing_blake2_128_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_hashing_blake2_256_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_hashing_twox_64_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
-
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                h0.write(&data);
-                let r0 = h0.finish();
-
-                let ret = alloc.allocate(&mut MemAccess(vm), 8).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
-        "ext_hashing_twox_128_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
-
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                let mut h1 = twox_hash::XxHash::with_seed(1);
-                h0.write(&data);
-                h1.write(&data);
-                let r0 = h0.finish();
-                let r1 = h1.finish();
-
-                let ret = alloc.allocate(&mut MemAccess(vm), 16).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
-        "ext_hashing_twox_256_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
-
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                let mut h1 = twox_hash::XxHash::with_seed(1);
-                let mut h2 = twox_hash::XxHash::with_seed(2);
-                let mut h3 = twox_hash::XxHash::with_seed(3);
-                h0.write(&data);
-                h1.write(&data);
-                h2.write(&data);
-                h3.write(&data);
-                let r0 = h0.finish();
-                let r1 = h1.finish();
-                let r2 = h2.finish();
-                let r3 = h3.finish();
-
-                let ret = alloc.allocate(&mut MemAccess(vm), 32).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 16, &r2.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 24, &r3.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
-        "ext_offchain_is_validator_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_submit_transaction_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_network_state_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_timestamp_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_sleep_until_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_random_seed_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_local_storage_set_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_local_storage_compare_and_set_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_local_storage_get_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_request_start_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_request_add_header_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_request_write_body_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_response_wait_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_response_headers_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_offchain_http_response_read_body_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_trie_blake2_256_root_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_trie_blake2_256_ordered_root_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_misc_chain_id_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_misc_print_num_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_misc_print_utf8_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_misc_print_hex_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_misc_runtime_version_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        "ext_allocator_malloc_version_1" => {
-            RegisteredFunction::Immediate {
-                implementation: Box::new(move |params, vm, alloc| {
-                    let param = match params[0] {
-                        vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
-                        _ => panic!(),                                         // TODO:
-                    };
-
-                    let ret = alloc.allocate(&mut MemAccess(vm), param).unwrap(); // TODO: don't unwrap
-                    Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-                }),
-            }
-        }
-        "ext_allocator_free_version_1" => {
-            RegisteredFunction::Immediate {
-                implementation: Box::new(move |params, vm, alloc| {
-                    let param = match params[0] {
-                        vm::RuntimeValue::I32(v) => u32::try_from(v).unwrap(), // TODO: don't unwrap
-                        _ => panic!(),                                         // TODO:
-                    };
-
-                    alloc.deallocate(&mut MemAccess(vm), param).unwrap(); // TODO: don't unwrap
-                    None
-                }),
-            }
-        }
-        "ext_logging_log_version_1" => RegisteredFunction::Immediate {
-            implementation: Box::new(|_, _, _| unimplemented!()),
-        },
-        _ => RegisteredFunction::Unresolved {
-            name: name.to_owned(),
-        },
+    pub fn finish_call(self, resolve: T) {
+        self.inner.inject(resolve);
     }
 }
 

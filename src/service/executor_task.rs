@@ -52,43 +52,37 @@ pub async fn run_executor_task(mut config: Config) {
                 )
                 .unwrap();
 
-                {
-                    let mut state = vm.state();
-                    loop {
-                        match state {
-                            executor::State::ReadyToRun(r) => state = r.run(),
-                            executor::State::Finished(executor::Success::CoreExecuteBlock(
-                                _result,
-                            )) => panic!("success"),
-                            executor::State::Finished(_) => unreachable!(),
-                            executor::State::ExternalStorageGet {
-                                storage_key,
-                                resolve,
-                            } => {
-                                // TODO: this clones the storage value, meh
-                                state = resolve
-                                    .finish_call(
-                                        parent.get(&storage_key).map(|v| v.as_ref().to_vec()),
-                                    )
-                                    .run();
-                            }
-                            executor::State::ExternalStorageSet {
-                                storage_key: _,
-                                new_storage_value: _,
-                                resolve,
-                            } => {
-                                // TODO: implement
-                                state = resolve.finish_call(()).run();
-                            }
-                            executor::State::ExternalStorageClear {
-                                storage_key: _,
-                                resolve,
-                            } => {
-                                // TODO: implement
-                                state = resolve.finish_call(()).run();
-                            }
-                            _ => unimplemented!(),
+                loop {
+                    match vm.state() {
+                        executor::State::ReadyToRun(r) => r.run(),
+                        executor::State::Finished(executor::Success::CoreExecuteBlock(_result)) => {
+                            panic!("success")
                         }
+                        executor::State::Finished(_) => unreachable!(),
+                        executor::State::ExternalStorageGet {
+                            storage_key,
+                            resolve,
+                        } => {
+                            // TODO: this clones the storage value, meh
+                            resolve
+                                .finish_call(parent.get(&storage_key).map(|v| v.as_ref().to_vec()));
+                        }
+                        executor::State::ExternalStorageSet {
+                            storage_key: _,
+                            new_storage_value: _,
+                            resolve,
+                        } => {
+                            // TODO: implement
+                            resolve.finish_call(());
+                        }
+                        executor::State::ExternalStorageClear {
+                            storage_key: _,
+                            resolve,
+                        } => {
+                            // TODO: implement
+                            resolve.finish_call(());
+                        }
+                        _ => unimplemented!(),
                     }
                 }
 

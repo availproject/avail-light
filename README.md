@@ -1,5 +1,6 @@
 # Coding rules
 
+- Correctness and proper code isolation is more important than performances.
 - No global variables. No thread-local variables. No global logger or anything similar.
 - No sleeping a thread. Everything asynchronous.
 - Panic as soon as something weird is detected. Don't try to continue running the program if we detect a state inconsistency.

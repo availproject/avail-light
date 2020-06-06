@@ -5,7 +5,7 @@ mod externals;
 mod vm;
 
 pub use externals::{
-    CoreVersionSuccess, ExternalsVm as WasmVm, FunctionToCall, NonConformingErr, State,
-    StateReadyToRun, StateWaitExternalResolve, Success,
+    CoreVersionSuccess, ExternalsVm as WasmVm, FunctionToCall, NonConformingErr, ReadyToRun,
+    Resume, State, Success,
 };
 pub use vm::WasmBlob;

@@ -58,6 +58,7 @@ pub enum Error {
     /// Allocator run out of space.
     //#[cfg_attr(feature = "std", display(fmt="Allocator ran out of space"))]
     AllocatorOutOfSpace,
+    // TODO: wtf is "Other"?
     Other(&'static str),
 }
 
