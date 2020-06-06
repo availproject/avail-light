@@ -2400,6 +2400,7 @@ dependencies = [
  "async-std",
  "bitflags",
  "blake2",
+ "blake2-rfc",
  "bytes",
  "derive_more",
  "env_logger",

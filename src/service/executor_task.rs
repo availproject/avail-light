@@ -59,6 +59,7 @@ pub async fn run_executor_task(mut config: Config) {
                             panic!("success")
                         }
                         executor::State::Finished(_) => unreachable!(),
+                        executor::State::Trapped => unreachable!(),
                         executor::State::ExternalStorageGet {
                             storage_key,
                             offset,
@@ -84,6 +85,13 @@ pub async fn run_executor_task(mut config: Config) {
                         } => {
                             // TODO: implement
                             resolve.finish_call(());
+                        }
+                        executor::State::ExternalStorageNextKey {
+                            storage_key: _,
+                            resolve,
+                        } => {
+                            // TODO: implement
+                            resolve.finish_call(None);
                         }
                         s => unimplemented!("unimplemented externality: {:?}", s),
                     }

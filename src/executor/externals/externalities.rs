@@ -216,6 +216,10 @@ impl CallState {
                 key,
                 done: Resume { sender: result },
             },
+            CallStateInner::StorageNextKey { key, result } => State::StorageNextKeyNeeded {
+                key,
+                done: Resume { sender: result },
+            },
             st => unimplemented!("unimplemented state: {:?}", st), // TODO:
         }
     }
@@ -435,9 +439,24 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_next_key_version_1" => Some(Externality {
             name: "ext_storage_next_key_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = interface.storage_next_key(key).await;
+                    // TODO: we SCALE-encode an option, meaning we just memcpy the value, this is
+                    // extremely stupid
+                    let value_encoded = parity_scale_codec::Encode::encode(&value);
+                    // TODO: don't unwrap?
+                    let value_len = u32::try_from(value_encoded.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(value_len).await;
+                    interface.write_memory(dest_ptr, value_encoded).await;
+
+                    let ret = build_pointer_size(dest_ptr, value_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_storage_child_set_version_1" => Some(Externality {
@@ -591,16 +610,38 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_hashing_blake2_128_version_1" => Some(Externality {
             name: "ext_hashing_blake2_128_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
+
+                    let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
+
+                    let dest_ptr = interface.allocate(16).await;
+                    interface
+                        .write_memory(dest_ptr, out.as_bytes().to_vec())
+                        .await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
         "ext_hashing_blake2_256_version_1" => Some(Externality {
             name: "ext_hashing_blake2_256_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
+
+                    let out = blake2_rfc::blake2b::blake2b(32, &[], &data);
+
+                    let dest_ptr = interface.allocate(32).await;
+                    interface
+                        .write_memory(dest_ptr, out.as_bytes().to_vec())
+                        .await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
         "ext_hashing_twox_64_version_1" => Some(Externality {
@@ -869,11 +910,16 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Box::pin(async move {
                     expect_num_params(3, &params)?;
                     let log_level = expect_u32(&params[0])?;
-                    let target = expect_pointer_size(&params[1], &*interface).await;
-                    let message = expect_pointer_size(&params[2], &*interface).await;
+                    let target = expect_pointer_size(&params[1], &*interface).await?;
+                    let message = expect_pointer_size(&params[2], &*interface).await?;
 
                     // TODO: properly print message
-                    println!("runtime log: {:?} {:?}", target, message);
+                    if let (Ok(target), Ok(message)) = (
+                        core::str::from_utf8(&target),
+                        core::str::from_utf8(&message),
+                    ) {
+                        println!("runtime log: {:?} {:?}", target, message);
+                    }
 
                     Ok(None)
                 })
