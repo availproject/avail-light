@@ -19,7 +19,7 @@
 use super::{allocator, vm};
 use crate::block::Block;
 
-use core::{convert::TryFrom as _, hash::Hasher as _, mem};
+use core::{convert::TryFrom as _, fmt, hash::Hasher as _, mem};
 use parity_scale_codec::{DecodeAll as _, Encode as _};
 use primitive_types::H256;
 
@@ -293,6 +293,7 @@ impl ExternalsVm {
 
 /// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
 /// state can't change.
+#[derive(Debug)]
 pub enum State<'a> {
     /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
     ReadyToRun(ReadyToRun<'a>),
@@ -329,7 +330,7 @@ pub enum State<'a> {
     },
     ExternalStorageRoot {
         /// Object to use to finish the call
-        resolve: Resume<'a, Vec<H256>>,
+        resolve: Resume<'a, H256>,
     },
     ExternalStorageChangesRoot {
         parent_hash: H256,
@@ -340,7 +341,7 @@ pub enum State<'a> {
         /// Concerned key.
         storage_key: &'a [u8],
         /// Object to use to finish the call
-        resolve: Resume<'a, Vec<u8>>,
+        resolve: Resume<'a, Option<Vec<u8>>>,
     },
 }
 
@@ -497,6 +498,14 @@ impl<'a> ReadyToRun<'a> {
     }
 }
 
+impl<'a> fmt::Debug for ReadyToRun<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("ReadyToRun").finish()
+    }
+}
+
+/// Returned as part of some variants of [`State`]. Allows injecting the result of the requested
+/// operation.
 pub struct Resume<'a, T> {
     inner: externalities::Resume<'a, T>,
 }
@@ -505,9 +514,15 @@ impl<'a, T> Resume<'a, T> {
     /// Injects the return value back into the virtual machine and prepares it for continuing to
     /// run.
     ///
-    /// > **Note**: This function is lightweight and doesn't perform anything CPU-heavy.
+    /// > **Note**: This function is lightweight and doesn't perform any CPU-heavy operation.
     pub fn finish_call(self, resolve: T) {
         self.inner.inject(resolve);
+    }
+}
+
+impl<'a, T> fmt::Debug for Resume<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Resume").finish()
     }
 }
 

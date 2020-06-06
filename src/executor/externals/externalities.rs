@@ -91,6 +91,7 @@ macro_rules! define_internal_interface {
         }
 
         /// Actual implementation of [`CallState`].
+        #[derive(Debug)]
         enum CallStateInner {
             Initial,
             Finished {
@@ -112,6 +113,10 @@ define_internal_interface! {
     Dealloc => fn free(pointer: u32) -> ();
     StorageSet => fn storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
     StorageGet => fn storage_get(key: Vec<u8>, offset: u32, max_size: u32) -> Option<Vec<u8>>;
+    StorageClearPrefix => fn storage_clear_prefix(key: Vec<u8>) -> ();
+    StorageRoot => fn storage_root() -> H256;
+    StorageChangesRoot => fn storage_changes_root(parent_hash: H256) -> Vec<u8>;
+    StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
 }
 
 impl Externality {
@@ -207,7 +212,11 @@ impl CallState {
                 value: value.as_ref().map(|v| &**v),
                 done: Resume { sender: result },
             },
-            _ => unimplemented!(), // TODO:
+            CallStateInner::StorageClearPrefix { key, result } => State::StorageClearPrefixNeeded {
+                key,
+                done: Resume { sender: result },
+            },
+            st => unimplemented!("unimplemented state: {:?}", st), // TODO:
         }
     }
 }
@@ -280,7 +289,7 @@ pub enum State<'a> {
         done: Resume<'a, ()>,
     },
     StorageRootNeeded {
-        done: Resume<'a, Vec<H256>>,
+        done: Resume<'a, H256>,
     },
     StorageChangesRootNeeded {
         parent_hash: H256,
@@ -288,7 +297,7 @@ pub enum State<'a> {
     },
     StorageNextKeyNeeded {
         key: &'a [u8],
-        done: Resume<'a, Vec<u8>>,
+        done: Resume<'a, Option<Vec<u8>>>,
     },
 }
 
@@ -357,7 +366,9 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(value_len).await;
                     interface.write_memory(dest_ptr, value_encoded).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+
+                    let ret = build_pointer_size(dest_ptr, value_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -398,9 +409,14 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_clear_prefix_version_1" => Some(Externality {
             name: "ext_storage_clear_prefix_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    interface.storage_clear_prefix(key).await;
+                    Ok(None)
+                })
             },
         }),
         "ext_storage_root_version_1" => Some(Externality {
@@ -909,10 +925,21 @@ async fn expect_pointer_size(
     Ok(interface.read_memory(ptr, len).await)
 }
 
+/// Builds a "pointer-size" value.
+fn build_pointer_size(pointer: u32, size: u32) -> u64 {
+    (u64::from(size) << 32) | u64::from(pointer)
+}
+
 /// Utility function that "reinterprets" a u32 into a i32. That is, the underlying bits stay the
 /// same.
 fn reinterpret_u32_i32(val: u32) -> i32 {
     i32::from_ne_bytes(val.to_ne_bytes())
+}
+
+/// Utility function that "reinterprets" a u64 into a i64. That is, the underlying bits stay the
+/// same.
+fn reinterpret_u64_i64(val: u64) -> i64 {
+    i64::from_ne_bytes(val.to_ne_bytes())
 }
 
 #[cfg(test)]
