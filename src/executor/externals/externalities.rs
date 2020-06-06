@@ -36,21 +36,117 @@
 //
 // The API provided by this module is designed to be easy to implement using generators.
 // Unfortunately, generators aren't a stable Rust feature as of the time of the writing of this
-// comment.
+// comment. We're instead using async/await, which works in the same way as generators, but does
+// not permit zero-cost abstractions in this situation.
 
 use super::vm;
 
 use alloc::sync::Arc;
-use core::fmt;
+use core::{convert::TryFrom as _, fmt, future::Future, pin::Pin};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+};
 
 /// Description of an externality.
 pub struct Externality {
     // Called by `start_call`.
-    start: fn(&[vm::RuntimeValue]) -> CallStateInner,
-    update: fn(CallStateInner) -> CallStateInner,
+    call: fn(
+        Box<dyn InternalInterface + Send + Sync>,
+        &[vm::RuntimeValue],
+    ) -> Pin<
+        Box<dyn Future<Output = Result<Option<vm::RuntimeValue>, Error>> + Send + Sync>,
+    >,
 
     /// Name of the function. Used for debugging purposes.
     name: &'static str,
+}
+
+trait InternalInterface {
+    fn read_memory(
+        &self,
+        pointer: u32,
+        size: u32,
+    ) -> Pin<Box<dyn Future<Output = Vec<u8>> + Send + Sync>>;
+    fn write_memory(
+        &self,
+        pointer: u32,
+        data: Vec<u8>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
+    fn allocate(&self, size: u32) -> Pin<Box<dyn Future<Output = u32> + Send + Sync>>;
+    fn free(&self, pointer: u32) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
+}
+
+impl InternalInterface for mpsc::Sender<CallStateInner> {
+    fn read_memory(
+        &self,
+        pointer: u32,
+        size: u32,
+    ) -> Pin<Box<dyn Future<Output = Vec<u8>> + Send + Sync>> {
+        let mut sender = self.clone();
+        Box::pin(async move {
+            let (tx, rx) = oneshot::channel();
+            sender
+                .send(CallStateInner::MemoryRead {
+                    offset: pointer,
+                    size,
+                    result: Some(tx),
+                })
+                .await
+                .unwrap();
+            rx.await.unwrap()
+        })
+    }
+
+    fn write_memory(
+        &self,
+        pointer: u32,
+        data: Vec<u8>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let mut sender = self.clone();
+        Box::pin(async move {
+            let (tx, rx) = oneshot::channel();
+            sender
+                .send(CallStateInner::MemoryWrite {
+                    offset: pointer,
+                    data,
+                    result: Some(tx),
+                })
+                .await
+                .unwrap();
+            rx.await.unwrap()
+        })
+    }
+
+    fn allocate(&self, size: u32) -> Pin<Box<dyn Future<Output = u32> + Send + Sync>> {
+        let mut sender = self.clone();
+        Box::pin(async move {
+            let (tx, rx) = oneshot::channel();
+            sender
+                .send(CallStateInner::Allocation {
+                    size,
+                    result: Some(tx),
+                })
+                .await
+                .unwrap();
+            rx.await.unwrap()
+        })
+    }
+
+    fn free(&self, pointer: u32) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
+        let mut sender = self.clone();
+        Box::pin(async move {
+            let (tx, rx) = oneshot::channel();
+            sender
+                .send(CallStateInner::Dealloc {
+                    pointer,
+                    result: Some(tx),
+                })
+                .await
+                .unwrap();
+            rx.await.unwrap()
+        })
+    }
 }
 
 impl Externality {
@@ -59,10 +155,12 @@ impl Externality {
     /// Must pass the parameters of the call.
     // TODO: better param type
     pub fn start_call(&self, params: &[vm::RuntimeValue]) -> CallState {
+        let (tx, rx) = mpsc::channel(3);
+
         CallState {
-            inner: Some((self.start)(params)),
-            update_needed: false,
-            update: self.update,
+            future: (self.call)(Box::new(tx), params).fuse(),
+            state: CallStateInner::Initial,
+            next_state: rx,
         }
     }
 }
@@ -71,6 +169,175 @@ impl fmt::Debug for Externality {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Externality").field(&self.name).finish()
     }
+}
+
+pub struct CallState {
+    future: future::Fuse<
+        Pin<Box<dyn Future<Output = Result<Option<vm::RuntimeValue>, Error>> + Send + Sync>>,
+    >,
+    next_state: mpsc::Receiver<CallStateInner>,
+    state: CallStateInner,
+}
+
+/// Actual implementation of [`CallState`].
+enum CallStateInner {
+    Initial,
+    Finished {
+        return_value: Option<vm::RuntimeValue>,
+    },
+    Error(Error),
+    MemoryRead {
+        offset: u32,
+        size: u32,
+        result: Option<oneshot::Sender<Vec<u8>>>,
+    },
+    MemoryWrite {
+        offset: u32,
+        data: Vec<u8>,
+        result: Option<oneshot::Sender<()>>,
+    },
+    Allocation {
+        size: u32,
+        result: Option<oneshot::Sender<u32>>,
+    },
+    Dealloc {
+        pointer: u32,
+        result: Option<oneshot::Sender<()>>,
+    },
+}
+
+impl CallState {
+    /// Progresses the call (if possible) and returns the state of the call afterwards. Calling
+    /// this function multiple times in a row will always return the same [`State`], unless you
+    /// use the [`Resume`] provided in some variants of [`State`] to make the state progress.
+    pub fn run(&mut self) -> State {
+        // TODO: does this work properly if we call `run` again after the future is finished?
+        match (&mut self.future).now_or_never() {
+            Some(Ok(val)) => self.state = CallStateInner::Finished { return_value: val },
+            Some(Err(err)) => self.state = CallStateInner::Error(err),
+            None => {
+                if let Some(next) = self.next_state.next().now_or_never() {
+                    self.state = next.unwrap();
+                }
+            }
+        }
+
+        match &mut self.state {
+            CallStateInner::Finished { return_value } => State::Finished {
+                return_value: *return_value,
+            },
+            CallStateInner::Error(err) => State::Error(err.clone()),
+            CallStateInner::MemoryRead {
+                offset,
+                size,
+                result,
+            } => State::MemoryReadNeeded {
+                offset: *offset,
+                size: *size,
+                inject_value: Resume { sender: result },
+            },
+            CallStateInner::MemoryWrite {
+                offset,
+                data,
+                result,
+            } => State::MemoryWriteNeeded {
+                offset: *offset,
+                data,
+                done: Resume { sender: result },
+            },
+            CallStateInner::Initial => unreachable!(),
+            CallStateInner::Allocation { size, result } => State::AllocationNeeded {
+                size: *size,
+                inject_value: Resume { sender: result },
+            },
+            CallStateInner::Dealloc { pointer, result } => State::UntrustedDealloc {
+                pointer: *pointer,
+                done: Resume { sender: result },
+            },
+        }
+    }
+}
+
+/// Current state of a [`CallState`].
+#[derive(Debug)]
+pub enum State<'a> {
+    /// The call is finished.
+    Finished {
+        /// Value that the externality must return.
+        return_value: Option<vm::RuntimeValue>,
+    },
+
+    /// A problem happened during the call.
+    Error(Error),
+
+    /// In order to progress, the [`CallState`] needs to know the content of the memory at the
+    /// given location.
+    // TODO: could have a more zero-cost API by not requiring a Vec allocation, but let's first
+    // implement everything in order to see when exactly do we need memory reads
+    MemoryReadNeeded {
+        /// Offset in memory where to read.
+        offset: u32,
+        /// Size to read.
+        size: u32,
+        /// Object to use to inject the memory content and update the state.
+        inject_value: Resume<'a, Vec<u8>>,
+    },
+
+    /// The [`CallState`] signals that memory needs to be written at the given location.
+    MemoryWriteNeeded {
+        /// Offset in memory where to write.
+        offset: u32,
+        /// Data to write.
+        data: &'a [u8],
+        /// Object to signal that this is done.
+        done: Resume<'a, ()>,
+    },
+
+    /// Request to allocate some memory in the Wasm virtual memory.
+    AllocationNeeded {
+        /// Requested size, in bytes, for the allocation.
+        size: u32,
+        /// Object to use to inject the allocated pointer and update the state.
+        inject_value: Resume<'a, u32>,
+    },
+
+    /// Free the memory allocated by the given pointer. The pointer might not necessarily be
+    /// valid. This can't cause any unsafety for the host.
+    UntrustedDealloc {
+        /// Pointer that was previously returned by an allocation request.
+        pointer: u32,
+        /// Object to signal that this is done.
+        done: Resume<'a, ()>,
+    },
+}
+
+/// Object that allows injecting the result of an operation into the [`CallState`].
+pub struct Resume<'a, T> {
+    sender: &'a mut Option<oneshot::Sender<T>>,
+}
+
+impl<'a, T> Resume<'a, T> {
+    /// Injects the value.
+    pub fn inject(self, value: T) {
+        match self.sender.take().unwrap().send(value) {
+            Ok(()) => {}
+            Err(_) => unreachable!(),
+        }
+    }
+}
+
+impl<'a, T> fmt::Debug for Resume<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Resume").finish()
+    }
+}
+
+#[derive(Debug, Clone, derive_more::Display)]
+pub enum Error {
+    /// Mismatch between the number of parameters expected and the actual number.
+    ParamsCountMismatch,
+    /// The type of one of the parameters is wrong.
+    WrongParamTy,
 }
 
 /// Returns the definition of a function by its name. Returns `None` if the function is unknown.
@@ -116,6 +383,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_storage_child_clear_prefix_version_1" => unimplemented!(),
         "ext_storage_child_root_version_1" => unimplemented!(),
         "ext_storage_child_next_key_version_1" => unimplemented!(),
+
         "ext_crypto_ed25519_public_keys_version_1" => unimplemented!(),
         "ext_crypto_ed25519_generate_version_1" => unimplemented!(),
         "ext_crypto_ed25519_sign_version_1" => unimplemented!(),
@@ -130,6 +398,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 implementation: Box::new(|_, _, _| unimplemented!()),
             }
         }
+
         "ext_hashing_keccak_256_version_1" => unimplemented!(),
         "ext_hashing_sha2_256_version_1" => unimplemented!(),
         "ext_hashing_blake2_128_version_1" => unimplemented!(),
@@ -189,6 +458,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
             }),
         },
+
         "ext_offchain_is_validator_version_1" => unimplemented!(),
         "ext_offchain_submit_transaction_version_1" => unimplemented!(),
         "ext_offchain_network_state_version_1" => unimplemented!(),
@@ -204,222 +474,97 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_offchain_http_response_wait_version_1" => unimplemented!(),
         "ext_offchain_http_response_headers_version_1" => unimplemented!(),
         "ext_offchain_http_response_read_body_version_1" => unimplemented!(),
+
         "ext_trie_blake2_256_root_version_1" => unimplemented!(),
         "ext_trie_blake2_256_ordered_root_version_1" => unimplemented!(),
+
         "ext_misc_chain_id_version_1" => unimplemented!(),
         "ext_misc_print_num_version_1" => unimplemented!(),
         "ext_misc_print_utf8_version_1" => unimplemented!(),
         "ext_misc_print_hex_version_1" => unimplemented!(),
         "ext_misc_runtime_version_version_1" => unimplemented!(),*/
+
         "ext_allocator_malloc_version_1" => Some(Externality {
             name: "ext_allocator_malloc_version_1",
-            start: |params| {
-                if params.len() != 1 {
-                    return CallStateInner::Error(Error::ParamsCountMismatch);
-                }
-                let size = match params[0] {
-                    vm::RuntimeValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                    _ => return CallStateInner::Error(Error::WrongParamTy),
-                };
-                CallStateInner::Allocation { size, result: None }
-            },
-            update: |state| match state {
-                CallStateInner::Allocation {
-                    result: Some(result),
-                    ..
-                } => {
-                    let result = i32::from_ne_bytes(result.to_ne_bytes());
-                    CallStateInner::Finished {
-                        return_value: Some(vm::RuntimeValue::I32(result)),
-                    }
-                }
-                _ => unreachable!(),
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let size = expect_u32(&params[0])?;
+                    let ptr = interface.allocate(size).await;
+                    let ptr_i32 = i32::from_ne_bytes(ptr.to_ne_bytes());
+                    Ok(Some(vm::RuntimeValue::I32(ptr_i32)))
+                })
             },
         }),
         "ext_allocator_free_version_1" => Some(Externality {
             name: "ext_allocator_free_version_1",
-            start: |params| {
-                if params.len() != 1 {
-                    return CallStateInner::Error(Error::ParamsCountMismatch);
-                }
-                let pointer = match params[0] {
-                    vm::RuntimeValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                    _ => return CallStateInner::Error(Error::WrongParamTy),
-                };
-                CallStateInner::Dealloc {
-                    pointer,
-                    result: None,
-                }
-            },
-            update: |state| match state {
-                CallStateInner::Dealloc {
-                    result: Some(()), ..
-                } => CallStateInner::Finished { return_value: None },
-                _ => unreachable!(),
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let pointer = expect_u32(&params[0])?;
+                    interface.free(pointer).await;
+                    Ok(None)
+                })
             },
         }),
-        /*"ext_logging_log_version_1" => unimplemented!(),*/
+
+        "ext_logging_log_version_1" => Some(Externality {
+            name: "ext_logging_log_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(3, &params)?;
+                    let log_level = expect_u32(&params[0])?;
+                    let target = expect_pointer_size(&params[1], &*interface).await;
+                    let message = expect_pointer_size(&params[2], &*interface).await;
+
+                    // TODO: properly print message
+                    println!("runtime log: {:?} {:?}", target, message);
+
+                    Ok(None)
+                })
+            },
+        }),
+
+        // All unknown functions.
         _ => None,
     }
 }
 
-pub struct CallState {
-    inner: Option<CallStateInner>,
-    update_needed: bool,
-    update: fn(CallStateInner) -> CallStateInner,
-}
-
-/// Actual implementation of [`CallState`].
-enum CallStateInner {
-    Finished {
-        return_value: Option<vm::RuntimeValue>,
-    },
-    Error(Error),
-    MemoryRead {
-        offset: u32,
-        size: u32,
-        result: Option<Vec<u8>>,
-    },
-    MemoryWrite {
-        offset: u32,
-        data: Vec<u8>,
-        result: Option<()>,
-    },
-    Allocation {
-        size: u32,
-        result: Option<u32>,
-    },
-    Dealloc {
-        pointer: u32,
-        result: Option<()>,
-    },
-    WriteBack,
-}
-
-impl CallState {
-    /// Progresses the call (if possible) and returns the state of the call afterwards. Calling
-    /// this function multiple times in a row will always return the same [`State`], unless you
-    /// use the [`Resume`] provided in some variants of [`State`] to make the state progress.
-    pub fn run(&mut self) -> State {
-        if self.update_needed {
-            self.update_needed = false;
-            self.inner = Some((self.update)(self.inner.take().unwrap()));
-        }
-
-        match self.inner.as_mut().unwrap() {
-            CallStateInner::Finished { return_value } => State::Finished {
-                return_value: *return_value,
-            },
-            CallStateInner::Error(err) => State::Error(err.clone()),
-            CallStateInner::MemoryRead {
-                offset,
-                size,
-                result,
-            } => State::MemoryReadNeeded {
-                offset: *offset,
-                size: *size,
-                inject_value: Resume {
-                    out: result,
-                    update_needed: &mut self.update_needed,
-                },
-            },
-            CallStateInner::MemoryWrite {
-                offset,
-                data,
-                result,
-            } => State::MemoryWriteNeeded {
-                offset: *offset,
-                data,
-                done: Resume {
-                    out: result,
-                    update_needed: &mut self.update_needed,
-                },
-            },
-            // TODO:
-            _ => unimplemented!(),
-        }
+/// Utility function that returns an error if `params.len()` is not equal to `expected_num`.
+fn expect_num_params(expected_num: usize, params: &[vm::RuntimeValue]) -> Result<(), Error> {
+    if expected_num == params.len() {
+        Ok(())
+    } else {
+        Err(Error::ParamsCountMismatch)
     }
 }
 
-/// Current state of a [`CallState`].
-#[derive(Debug)]
-pub enum State<'a> {
-    /// The call is finished.
-    Finished {
-        /// Value that the externality must return.
-        return_value: Option<vm::RuntimeValue>,
-    },
-
-    /// A problem happened during the call.
-    Error(Error),
-
-    /// In order to progress, the [`CallState`] needs to know the content of the memory at the
-    /// given location.
-    // TODO: could have a more zero-cost API by not requiring a Vec allocation, but let's first
-    // implement everything in order to see when exactly do we need memory reads
-    MemoryReadNeeded {
-        /// Offset in memory where to read.
-        offset: u32,
-        /// Size to read.
-        size: u32,
-        /// Object to use to inject the memory content and update the state.
-        inject_value: Resume<'a, Vec<u8>>,
-    },
-
-    /// The [`CallState`] signals that memory needs to be written at the given location.
-    MemoryWriteNeeded {
-        /// Offset in memory where to write.
-        offset: u32,
-        /// Data to write.
-        data: &'a [u8],
-        /// Object to signal that this is done.
-        done: Resume<'a, ()>,
-    },
-
-    /// Request to allocate some memory in the Wasm virtual memory.
-    AllocationNeeded {
-        /// Requested size, in bytes, for the allocation.
-        size: u32,
-        /// Object to use to inject the allocated pointer and update the state.
-        inject_value: Resume<'a, u32>,
-    },
-
-    /// Free the memory allocated by the given pointer. The pointer might not necessarily be
-    /// valid. This can't cause any unsafety for the host.
-    UntrustedDealloc {
-        /// Pointer that was previously returned by an allocation request.
-        pointer: u32,
-        /// Object to signal that this is done.
-        done: Resume<'a, ()>,
-    },
-}
-
-pub struct Resume<'a, T> {
-    out: &'a mut Option<T>,
-    update_needed: &'a mut bool,
-}
-
-impl<'a, T> Resume<'a, T> {
-    pub fn inject(self, value: T) {
-        debug_assert!(self.out.is_none());
-        debug_assert!(!*self.update_needed);
-        *self.out = Some(value);
-        *self.update_needed = true;
+/// Utility function that turns a parameter into a `u32`, or returns an error if it is impossible.
+fn expect_u32(param: &vm::RuntimeValue) -> Result<u32, Error> {
+    match param {
+        vm::RuntimeValue::I32(v) => Ok(u32::from_ne_bytes(v.to_ne_bytes())),
+        _ => Err(Error::WrongParamTy),
     }
 }
 
-impl<'a, T> fmt::Debug for Resume<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Resume").finish()
-    }
-}
+/// Utility function that turns a "pointer-size" parameter into the memory content, or returns an
+/// error if it is impossible.
+async fn expect_pointer_size(
+    param: &vm::RuntimeValue,
+    interface: &(dyn InternalInterface + Send + Sync),
+) -> Result<Vec<u8>, Error> {
+    let val = match param {
+        vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
+        _ => return Err(Error::WrongParamTy),
+    };
 
-#[derive(Debug, Clone, derive_more::Display)]
-pub enum Error {
-    /// Mismatch between the number of parameters expected and the actual number.
-    ParamsCountMismatch,
-    /// The type of one of the parameters is wrong.
-    WrongParamTy,
+    let len = u32::try_from(val >> 32).unwrap();
+    let ptr = u32::try_from(val & 0xffffffff).unwrap();
+
+    Ok(interface.read_memory(ptr, len).await)
 }
 
 #[cfg(test)]

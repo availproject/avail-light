@@ -412,29 +412,6 @@ impl<'a, T> Resume<'a, T> {
     }
 }
 
-// TODO: document and all
-// TODO: don't panic, return a result
-// TODO: should ideally not copy the data
-fn expect_one_ptr_len(params: &[vm::RuntimeValue], vm: &mut vm::VirtualMachine) -> Vec<u8> {
-    assert_eq!(params.len(), 1);
-    expect_ptr_len(&params[0], vm)
-}
-
-// TODO: document and all
-// TODO: don't panic, return a result
-// TODO: should ideally not copy the data
-fn expect_ptr_len(param: &vm::RuntimeValue, vm: &mut vm::VirtualMachine) -> Vec<u8> {
-    let val = match param {
-        vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
-        _ => panic!(),
-    };
-
-    let len = u32::try_from(val >> 32).unwrap();
-    let ptr = u32::try_from(val & 0xffffffff).unwrap();
-
-    vm.read_memory(ptr, len).unwrap()
-}
-
 // Glue between the `allocator` module and the `vm` module.
 struct MemAccess<'a>(&'a mut vm::VirtualMachine);
 impl<'a> allocator::Memory for MemAccess<'a> {
