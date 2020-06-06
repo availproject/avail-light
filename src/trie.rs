@@ -58,6 +58,11 @@ impl Trie {
             .insert(TrieNodeKey::from_bytes(key), value.into());
     }
 
+    /// Removes an entry from the trie.
+    pub fn remove(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        self.entries.remove(&TrieNodeKey::from_bytes(key))
+    }
+
     /// Returns true if the `Trie` is empty.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()

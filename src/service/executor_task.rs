@@ -8,6 +8,7 @@ use futures::{
     prelude::*,
 };
 use hashbrown::HashMap;
+use primitive_types::H256;
 
 /// Message that can be sent to the executors task by the other parts of the code.
 pub enum ToExecutor {
@@ -88,7 +89,6 @@ pub async fn run_executor_task(mut config: Config) {
                                 storage_key.to_vec(),
                                 new_storage_value.map(|v| v.to_vec()),
                             );
-                            // TODO: implement properly?
                             resolve.finish_call(());
                         }
                         executor::State::ExternalStorageAppend {
@@ -117,6 +117,23 @@ pub async fn run_executor_task(mut config: Config) {
                         } => {
                             // TODO: implement
                             resolve.finish_call(());
+                        }
+                        executor::State::ExternalStorageRoot { resolve } => {
+                            let mut trie = crate::trie::Trie::new();
+                            for key in parent.storage_keys() {
+                                let value =
+                                    parent.get(key.as_ref()).as_ref().unwrap().as_ref().to_vec();
+                                trie.insert(key.as_ref(), value);
+                            }
+                            for (key, value) in overlay_storage_changes.iter() {
+                                if let Some(value) = value.as_ref() {
+                                    trie.insert(key, value.clone())
+                                } else {
+                                    trie.remove(key);
+                                }
+                            }
+                            let hash = trie.root_merkle_value();
+                            resolve.finish_call(H256::from(hash));
                         }
                         executor::State::ExternalStorageNextKey {
                             storage_key,

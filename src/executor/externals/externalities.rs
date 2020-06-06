@@ -223,6 +223,9 @@ impl CallState {
                 key,
                 done: Resume { sender: result },
             },
+            CallStateInner::StorageRoot { result } => State::StorageRootNeeded {
+                done: Resume { sender: result },
+            },
             CallStateInner::StorageNextKey { key, result } => State::StorageNextKeyNeeded {
                 key,
                 done: Resume { sender: result },
@@ -463,9 +466,22 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_root_version_1" => Some(Externality {
             name: "ext_storage_root_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(0, &params)?;
+                    let hash = interface.storage_root().await;
+                    // TODO: that's some next-level inefficiency here
+                    let encoded_hash =
+                        parity_scale_codec::Encode::encode(&hash.as_bytes().to_vec());
+                    let value_len = u32::try_from(encoded_hash.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(value_len).await;
+                    interface.write_memory(dest_ptr, encoded_hash).await;
+
+                    let ret = build_pointer_size(dest_ptr, value_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_storage_changes_root_version_1" => Some(Externality {

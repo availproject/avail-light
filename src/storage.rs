@@ -97,6 +97,10 @@ impl BlockStorage {
             .insert(key.as_ref().to_owned(), value.as_ref().to_owned());
     }
 
+    pub fn storage_keys<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        self.top_trie.keys()
+    }
+
     pub fn get<'a>(&'a self, key: &[u8]) -> Option<impl AsRef<[u8]> + 'a> {
         self.top_trie.get(key)
     }
