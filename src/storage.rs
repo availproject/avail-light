@@ -101,6 +101,12 @@ impl BlockStorage {
         self.top_trie.get(key)
     }
 
+    /// Returns the key, in lexicographic order, following the one passed as parameter.
+    pub fn next_key<'a>(&'a self, key: &[u8]) -> Option<impl AsRef<[u8]> + 'a> {
+        // TODO: not optimized
+        self.top_trie.keys().filter(|k| &***k > key).min()
+    }
+
     /// Returns the value of the `:code` key, containing the Wasm code.
     pub fn code_key<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
         const CODE: &[u8] = b":code";

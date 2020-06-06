@@ -75,23 +75,18 @@ impl ExternalsVm {
     /// Creates a new state machine from the given module that executes the given function.
     pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, NewErr> {
         let (called_function, data) = to_call.into_function_and_param();
+
         let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
+        let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
 
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
         // array.
-        let (mut vm, registered_functions) = {
-            let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
-
+        let (mut vm_proto, registered_functions) = {
             let mut registered_functions = Vec::new();
-            let vm = vm::VirtualMachine::new(
+            let vm_proto = vm::VirtualMachinePrototype::new(
                 module,
-                called_function.symbol_name(),
-                &[
-                    vm::RuntimeValue::I32(0), // TODO: FIXME: no no no no no /!\
-                    vm::RuntimeValue::I32(data_len_i32),
-                ],
                 // This closure is called back for each function that the runtime imports.
                 |mod_name, f_name, _signature| {
                     if mod_name != "env" {
@@ -107,29 +102,30 @@ impl ExternalsVm {
                 },
             )?;
             registered_functions.shrink_to_fit();
-            (vm, registered_functions)
+            (vm_proto, registered_functions)
         };
+
+        // In the runtime environment, Wasm blobs must export a global symbol named
+        // `__heap_base` indicating where the memory allocator is allowed to allocate memory.
+        // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
+        let heap_base = vm_proto
+            .global_value("__heap_base")
+            .map_err(|_| NewErr::HeapBaseNotFound)?;
+
+        // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
+        // of the input data.
+        let mut vm = vm_proto.start(
+            called_function.symbol_name(),
+            &[
+                vm::RuntimeValue::I32(i32::from_ne_bytes(heap_base.to_ne_bytes())),
+                vm::RuntimeValue::I32(data_len_i32),
+            ],
+        )?;
+        vm.write_memory(heap_base, &data).unwrap();
 
         // Initialize the state of the memory allocator. This is the allocator that is later used
         // when the Wasm code requests variable-length data.
-        let mut allocator = {
-            // In the runtime environment, Wasm blobs must export a global symbol named
-            // `__heap_base` indicating where the memory allocator is allowed to allocate memory.
-            // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
-            let heap_base = vm
-                .global_value("__heap_base")
-                .map_err(|_| NewErr::HeapBaseNotFound)?;
-            allocator::FreeingBumpHeapAllocator::new(heap_base)
-        };
-
-        // Use that allocator to write the input data.
-        // This has the consequence that the user is allowed to free that input data. If this
-        // consequence is unwanted, this code can be changed to write the input data at `heap_base`
-        // and start the actual heap after the input data.
-        let input_data_location = allocator
-            .allocate(&mut MemAccess(&mut vm), data_len_u32)
-            .map_err(|_| NewErr::DataSizeOverflow)?;
-        vm.write_memory(input_data_location, &data).unwrap();
+        let allocator = allocator::FreeingBumpHeapAllocator::new(heap_base + data_len_u32);
 
         Ok(ExternalsVm {
             vm,
@@ -454,12 +450,8 @@ impl<'a> ReadyToRun<'a> {
                 Ok(vm::ExecOutcome::Interrupted { id, params }) => {
                     // The Wasm code has called an externality. The `id` is a value that we passed
                     // at initialization, and corresponds to an index in `registered_functions`.
-                    let call_state = self
-                        .inner
-                        .registered_functions
-                        .get_mut(id)
-                        .unwrap()
-                        .start_call(&params);
+                    let externality = self.inner.registered_functions.get_mut(id).unwrap();
+                    let call_state = externality.start_call(&params);
                     self.inner.state = StateInner::Calling(call_state);
                     break;
                 }

@@ -87,11 +87,12 @@ pub async fn run_executor_task(mut config: Config) {
                             resolve.finish_call(());
                         }
                         executor::State::ExternalStorageNextKey {
-                            storage_key: _,
+                            storage_key,
                             resolve,
                         } => {
-                            // TODO: implement
-                            resolve.finish_call(None);
+                            resolve.finish_call(
+                                parent.next_key(&storage_key).map(|v| v.as_ref().to_vec()),
+                            );
                         }
                         s => unimplemented!("unimplemented externality: {:?}", s),
                     }

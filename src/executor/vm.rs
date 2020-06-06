@@ -19,9 +19,12 @@ pub use wasmi::RuntimeValue;
 ///
 /// # Usage
 ///
-/// - Create an instance of [`VirtualMachine`] with [`VirtualMachine::new`]. This operation only
-/// initializes the machine but doesn't run it. As parameter, you must pass a list of external
-/// functions that are available to the code running in the virtual machine.
+/// - Create an instance of [`VirtualMachinePrototype`] with [`VirtualMachinePrototype::new`]. As
+/// parameter, you must pass a list of external functions that are available to the code running
+/// in the virtual machine.
+///
+/// - Call [`VirtualMachinePrototype::build`] to turn it into a [`VirtualMachine`]. This operation
+/// only initializes the machine but doesn't run it.
 ///
 /// - Call [`VirtualMachine::run`], passing `None` as parameter. This runs the Wasm virtual
 /// machine until either function finishes or calls an external function.
@@ -62,6 +65,25 @@ pub struct VirtualMachine {
 
     /// If true, the state machine is in a poisoned state and cannot run any code anymore.
     is_poisoned: bool,
+}
+
+/// Prototype for a [`VirtualMachine`].
+pub struct VirtualMachinePrototype {
+    /// Original module, with resolved imports.
+    module: wasmi::ModuleRef,
+
+    /// Memory of the module instantiation.
+    ///
+    /// Right now we only support one unique `Memory` object per process. This is it.
+    /// Contains `None` if the process doesn't export any memory object, which means it doesn't
+    /// use any memory.
+    memory: Option<wasmi::MemoryRef>,
+
+    /// Table of the indirect function calls.
+    ///
+    /// In Wasm, function pointers are in reality indices in a table called
+    /// `__indirect_function_table`. This is this table, if it exists.
+    indirect_table: Option<wasmi::TableRef>,
 }
 
 /// Outcome of the [`run`](VirtualMachine::run) function.
@@ -139,7 +161,7 @@ pub enum GlobalValueErr {
     Invalid,
 }
 
-impl VirtualMachine {
+impl VirtualMachinePrototype {
     /// Creates a new state machine from the given module that executes the given function.
     ///
     /// The closure is called for each function that the module imports. It must assign a number
@@ -149,8 +171,6 @@ impl VirtualMachine {
     // TODO: don't expose wasmi in API
     pub fn new(
         module: &WasmBlob,
-        function_name: &str,
-        params: &[wasmi::RuntimeValue],
         mut symbols: impl FnMut(&str, &str, &wasmi::Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         struct ImportResolve<'a> {
@@ -286,7 +306,40 @@ impl VirtualMachine {
             None
         };
 
-        let execution = match module.export_by_name(function_name) {
+        Ok(VirtualMachinePrototype {
+            module,
+            memory,
+            indirect_table,
+        })
+    }
+
+    /// Returns the value of a global that the module exports.
+    pub fn global_value(&self, name: &str) -> Result<u32, GlobalValueErr> {
+        let heap_base_val = self
+            .module
+            .export_by_name(name)
+            .ok_or_else(|| GlobalValueErr::NotFound)?
+            .as_global()
+            .ok_or_else(|| GlobalValueErr::Invalid)?
+            .get();
+
+        match heap_base_val {
+            wasmi::RuntimeValue::I32(v) => match u32::try_from(v) {
+                Ok(v) => Ok(v),
+                Err(_) => Err(GlobalValueErr::Invalid),
+            },
+            _ => Err(GlobalValueErr::Invalid),
+        }
+    }
+
+    /// Turns this prototype into an actual virtual machine. This requires choosing which function
+    /// to execute.
+    pub fn start(
+        self,
+        function_name: &str,
+        params: &[wasmi::RuntimeValue],
+    ) -> Result<VirtualMachine, NewErr> {
+        let execution = match self.module.export_by_name(function_name) {
             Some(wasmi::ExternVal::Func(f)) => {
                 match wasmi::FuncInstance::invoke_resumable(&f, params.to_vec()) {
                     Ok(e) => e,
@@ -298,15 +351,17 @@ impl VirtualMachine {
         };
 
         Ok(VirtualMachine {
-            module,
-            memory,
+            module: self.module,
+            memory: self.memory,
             execution: Some(execution),
             interrupted: false,
-            indirect_table,
+            indirect_table: self.indirect_table,
             is_poisoned: false,
         })
     }
+}
 
+impl VirtualMachine {
     /// Returns true if the state machine is in a poisoned state and cannot run anymore.
     pub fn is_poisoned(&self) -> bool {
         self.is_poisoned
@@ -406,25 +461,6 @@ impl VirtualMachine {
                     return_value: Err(()),
                 })
             }
-        }
-    }
-
-    /// Returns the value of a global that the module exports.
-    pub fn global_value(&self, name: &str) -> Result<u32, GlobalValueErr> {
-        let heap_base_val = self
-            .module
-            .export_by_name(name)
-            .ok_or_else(|| GlobalValueErr::NotFound)?
-            .as_global()
-            .ok_or_else(|| GlobalValueErr::Invalid)?
-            .get();
-
-        match heap_base_val {
-            wasmi::RuntimeValue::I32(v) => match u32::try_from(v) {
-                Ok(v) => Ok(v),
-                Err(_) => Err(GlobalValueErr::Invalid),
-            },
-            _ => Err(GlobalValueErr::Invalid),
         }
     }
 
