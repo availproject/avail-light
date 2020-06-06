@@ -249,6 +249,13 @@ impl ExternalsVm {
                             resolve: Resume { inner: done },
                         }
                     }
+                    externalities::State::StorageAppendNeeded { key, value, done } => {
+                        return State::ExternalStorageAppend {
+                            storage_key: key,
+                            value,
+                            resolve: Resume { inner: done },
+                        }
+                    }
                     externalities::State::StorageClearPrefixNeeded { key, done } => {
                         return State::ExternalStorageClearPrefix {
                             storage_key: key,
@@ -314,6 +321,14 @@ pub enum State<'a> {
         storage_key: &'a [u8],
         /// Which storage value to set. `None` if the value must be removed.
         new_storage_value: Option<&'a [u8]>,
+        /// Object to use to finish the call
+        resolve: Resume<'a, ()>,
+    },
+    ExternalStorageAppend {
+        /// Which key to change.
+        storage_key: &'a [u8],
+        /// Value to append to the storage value.
+        value: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,
     },

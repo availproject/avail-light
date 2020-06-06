@@ -113,6 +113,7 @@ define_internal_interface! {
     Allocation => fn allocate(size: u32) -> u32;
     Dealloc => fn free(pointer: u32) -> ();
     StorageSet => fn storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
+    StorageAppend => fn storage_append(key: Vec<u8>, value: Vec<u8>) -> ();
     StorageGet => fn storage_get(key: Vec<u8>, offset: u32, max_size: u32) -> Option<Vec<u8>>;
     StorageClearPrefix => fn storage_clear_prefix(key: Vec<u8>) -> ();
     StorageRoot => fn storage_root() -> H256;
@@ -213,6 +214,11 @@ impl CallState {
                 value: value.as_ref().map(|v| &**v),
                 done: Resume { sender: result },
             },
+            CallStateInner::StorageAppend { key, value, result } => State::StorageAppendNeeded {
+                key,
+                value: &**value,
+                done: Resume { sender: result },
+            },
             CallStateInner::StorageClearPrefix { key, result } => State::StorageClearPrefixNeeded {
                 key,
                 done: Resume { sender: result },
@@ -287,6 +293,11 @@ pub enum State<'a> {
     StorageSetNeeded {
         key: &'a [u8],
         value: Option<&'a [u8]>,
+        done: Resume<'a, ()>,
+    },
+    StorageAppendNeeded {
+        key: &'a [u8],
+        value: &'a [u8],
         done: Resume<'a, ()>,
     },
     StorageClearPrefixNeeded {
@@ -486,6 +497,21 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 })
             },
         }),
+        "ext_storage_append_version_1" => Some(Externality {
+            name: "ext_storage_append_version_1",
+            call: |interface, params| {
+                // TODO: Substrate docs mention something about a specific format but no idea what
+                // that is
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(2, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = expect_pointer_size(&params[1], &*interface).await?;
+                    interface.storage_append(key, value).await;
+                    Ok(None)
+                })
+            },
+        }),
         "ext_storage_child_set_version_1" => Some(Externality {
             name: "ext_storage_child_set_version_1",
             call: |_interface, params| {
@@ -544,6 +570,41 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_child_next_key_version_1" => Some(Externality {
             name: "ext_storage_child_next_key_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_default_child_storage_get_version_1" => Some(Externality {
+            name: "ext_default_child_storage_get_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_default_child_storage_storage_kill_version_1" => Some(Externality {
+            name: "ext_default_child_storage_storage_kill_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_default_child_storage_set_version_1" => Some(Externality {
+            name: "ext_default_child_storage_set_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_default_child_storage_clear_version_1" => Some(Externality {
+            name: "ext_default_child_storage_clear_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_default_child_storage_root_version_1" => Some(Externality {
+            name: "ext_default_child_storage_root_version_1",
             call: |_interface, params| {
                 let _params = params.to_vec();
                 Box::pin(async move { unimplemented!() })
@@ -1066,9 +1127,7 @@ fn expect_u32(param: &vm::RuntimeValue) -> Result<u32, Error> {
 
 /// Utility function that turns a parameter into a "pointer-size" parameter, or returns an error
 /// if it is impossible.
-fn expect_pointer_size_raw(
-    param: &vm::RuntimeValue,
-) -> Result<(u32, u32), Error> {
+fn expect_pointer_size_raw(param: &vm::RuntimeValue) -> Result<(u32, u32), Error> {
     let val = match param {
         vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
         _ => return Err(Error::WrongParamTy),

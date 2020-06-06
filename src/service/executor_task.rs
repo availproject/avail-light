@@ -91,6 +91,26 @@ pub async fn run_executor_task(mut config: Config) {
                             // TODO: implement properly?
                             resolve.finish_call(());
                         }
+                        executor::State::ExternalStorageAppend {
+                            storage_key,
+                            value,
+                            resolve,
+                        } => {
+                            let mut current_value =
+                                if let Some(overlay) = overlay_storage_changes.get(storage_key) {
+                                    overlay.clone().unwrap_or(Vec::new())
+                                } else {
+                                    parent
+                                        .get(&storage_key)
+                                        .map(|v| v.as_ref().to_vec())
+                                        .unwrap_or(Vec::new())
+                                };
+                            current_value.extend_from_slice(value);
+                            overlay_storage_changes
+                                .insert(storage_key.to_vec(), Some(current_value));
+                            // TODO: implement properly?
+                            resolve.finish_call(());
+                        }
                         executor::State::ExternalStorageClearPrefix {
                             storage_key: _,
                             resolve,
