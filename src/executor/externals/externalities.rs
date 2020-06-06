@@ -859,13 +859,14 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(1, &params)?;
                     let encoded = expect_pointer_size(&params[0], &*interface).await?;
                     let elements = Vec::<Vec<u8>>::decode_all(&encoded)?;
-                    println!("elements = {:?}", elements);
 
                     let mut trie = crate::trie::Trie::new();
                     for (idx, value) in elements.into_iter().enumerate() {
-                        // TODO: specs say "fixed size integers" but doesn't mention big endian 32bits;
-                        // had to look in the source code of paritytech/trie; report that to specs writers
-                        let key = u32::try_from(idx).unwrap().to_be_bytes();
+                        let idx = u32::try_from(idx).unwrap();
+                        // TODO: specs say "fixed size integers" but doesn't mention compact SCALE encoding;
+                        // had to look in the source code of Substrate; report that to specs writers
+                        let key =
+                            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(idx));
                         trie.insert(&key, value);
                     }
                     let out = trie.root_merkle_value();
@@ -983,10 +984,13 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         // TODO: since the specs aren't up-to-date with the list of functions, we just resolve
         // everything as valid, and panic if an unknown function is actually called
         //_ => None,
-        _ => Some(Externality {
-            name: "unknown",
-            call: |_, _| unimplemented!(),
-        }),
+        f => {
+            println!("unknown function: {}", f);
+            Some(Externality {
+                name: "unknown",
+                call: |_, _| unimplemented!(),
+            })
+        }
     }
 }
 

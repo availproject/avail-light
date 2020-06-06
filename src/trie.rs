@@ -123,7 +123,6 @@ impl Trie {
         let is_root = child_index.is_none();
 
         let node_value = self.node_value(parent_key, child_index, key_from_parent);
-        println!("node value = {:?}", node_value);
 
         if is_root || node_value.len() >= 32 {
             let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
@@ -358,7 +357,7 @@ fn common_prefix<'a>(mut list: impl Iterator<Item = &'a [Nibble]>) -> Option<Vec
     Some(longest_prefix)
 }
 
-// TODO: we test private methods below because the code doesn't work at the moment
+// TODO: remove testing private methods once we have better tests
 #[cfg(test)]
 mod tests {
     use super::{common_prefix, Nibble, Trie, TrieNodeKey};
