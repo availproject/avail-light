@@ -381,9 +381,33 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_read_version_1" => Some(Externality {
             name: "ext_storage_read_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(3, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let (value_out_ptr, value_out_size) = expect_pointer_size_raw(&params[1])?;
+                    // TODO: docs say this offset is a i32; that seems wrong, in Substrate it's an u32 too
+                    let offset = expect_u32(&params[2])?;
+
+                    let value = interface.storage_get(key, offset, value_out_size).await;
+                    let outcome = if let Some(value) = value {
+                        let written = u32::try_from(value.len()).unwrap();
+                        assert!(written < value_out_size);
+                        interface.write_memory(value_out_ptr, value).await;
+                        Some(written)
+                    } else {
+                        None
+                    };
+
+                    let outcome_encoded = parity_scale_codec::Encode::encode(&outcome);
+                    let outcome_encoded_len = u32::try_from(outcome_encoded.len()).unwrap();
+                    let dest_ptr = interface.allocate(outcome_encoded_len).await;
+                    interface.write_memory(dest_ptr, outcome_encoded).await;
+
+                    let ret = build_pointer_size(dest_ptr, outcome_encoded_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_storage_clear_version_1" => Some(Externality {
@@ -577,6 +601,13 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_crypto_sr25519_verify_version_1" => Some(Externality {
             name: "ext_crypto_sr25519_verify_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_sr25519_verify_version_2" => Some(Externality {
+            name: "ext_crypto_sr25519_verify_version_2",
             call: |_interface, params| {
                 let _params = params.to_vec();
                 Box::pin(async move { unimplemented!() })
@@ -1033,12 +1064,11 @@ fn expect_u32(param: &vm::RuntimeValue) -> Result<u32, Error> {
     }
 }
 
-/// Utility function that turns a "pointer-size" parameter into the memory content, or returns an
-/// error if it is impossible.
-async fn expect_pointer_size(
+/// Utility function that turns a parameter into a "pointer-size" parameter, or returns an error
+/// if it is impossible.
+fn expect_pointer_size_raw(
     param: &vm::RuntimeValue,
-    interface: &(dyn InternalInterface + Send + Sync),
-) -> Result<Vec<u8>, Error> {
+) -> Result<(u32, u32), Error> {
     let val = match param {
         vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
         _ => return Err(Error::WrongParamTy),
@@ -1046,7 +1076,16 @@ async fn expect_pointer_size(
 
     let len = u32::try_from(val >> 32).unwrap();
     let ptr = u32::try_from(val & 0xffffffff).unwrap();
+    Ok((ptr, len))
+}
 
+/// Utility function that turns a "pointer-size" parameter into the memory content, or returns an
+/// error if it is impossible.
+async fn expect_pointer_size(
+    param: &vm::RuntimeValue,
+    interface: &(dyn InternalInterface + Send + Sync),
+) -> Result<Vec<u8>, Error> {
+    let (ptr, len) = expect_pointer_size_raw(param)?;
     Ok(interface.read_memory(ptr, len).await)
 }
 
