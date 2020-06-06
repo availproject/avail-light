@@ -42,7 +42,7 @@
 use super::vm;
 
 use alloc::sync::Arc;
-use core::{convert::TryFrom as _, fmt, future::Future, pin::Pin};
+use core::{convert::TryFrom as _, fmt, future::Future, hash::Hasher as _, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
@@ -402,64 +402,94 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_hashing_keccak_256_version_1" => unimplemented!(),
         "ext_hashing_sha2_256_version_1" => unimplemented!(),
         "ext_hashing_blake2_128_version_1" => unimplemented!(),
-        "ext_hashing_blake2_256_version_1" => unimplemented!(),
-        "ext_hashing_twox_64_version_1" => Externality::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
+        "ext_hashing_blake2_256_version_1" => unimplemented!(),*/
+        "ext_hashing_twox_64_version_1" => Some(Externality {
+            name: "ext_hashing_twox_64_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
 
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                h0.write(&data);
-                let r0 = h0.finish();
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    h0.write(&data);
+                    let r0 = h0.finish();
 
-                let ret = alloc.allocate(&mut MemAccess(vm), 8).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
-        "ext_hashing_twox_128_version_1" => Externality::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
+                    let dest_ptr = interface.allocate(8).await;
+                    interface
+                        .write_memory(dest_ptr, r0.to_le_bytes().to_vec())
+                        .await;
 
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                let mut h1 = twox_hash::XxHash::with_seed(1);
-                h0.write(&data);
-                h1.write(&data);
-                let r0 = h0.finish();
-                let r1 = h1.finish();
+                    let ret = interface.allocate(8).await;
+                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                })
+            },
+        }),
+        "ext_hashing_twox_128_version_1" => Some(Externality {
+            name: "ext_hashing_twox_128_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
 
-                let ret = alloc.allocate(&mut MemAccess(vm), 16).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
-        "ext_hashing_twox_256_version_1" => Externality::Immediate {
-            implementation: Box::new(|params, vm, alloc| {
-                let data = expect_one_ptr_len(&params, vm);
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    let mut h1 = twox_hash::XxHash::with_seed(1);
+                    h0.write(&data);
+                    h1.write(&data);
+                    let r0 = h0.finish();
+                    let r1 = h1.finish();
 
-                let mut h0 = twox_hash::XxHash::with_seed(0);
-                let mut h1 = twox_hash::XxHash::with_seed(1);
-                let mut h2 = twox_hash::XxHash::with_seed(2);
-                let mut h3 = twox_hash::XxHash::with_seed(3);
-                h0.write(&data);
-                h1.write(&data);
-                h2.write(&data);
-                h3.write(&data);
-                let r0 = h0.finish();
-                let r1 = h1.finish();
-                let r2 = h2.finish();
-                let r3 = h3.finish();
+                    let mut out_value = r0.to_le_bytes().to_vec();
+                    out_value.extend(&r1.to_le_bytes());
 
-                let ret = alloc.allocate(&mut MemAccess(vm), 32).unwrap(); // TODO: don't unwrap
-                vm.write_memory(ret, &r0.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 8, &r1.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 16, &r2.to_le_bytes()).unwrap();
-                vm.write_memory(ret + 24, &r3.to_le_bytes()).unwrap();
-                Some(vm::RuntimeValue::I32(i32::try_from(ret).unwrap())) // TODO: don't unwrap
-            }),
-        },
+                    let dest_ptr = interface.allocate(16).await;
+                    interface.write_memory(dest_ptr, out_value).await;
 
-        "ext_offchain_is_validator_version_1" => unimplemented!(),
+                    let ret = interface.allocate(8).await;
+                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                })
+            },
+        }),
+        "ext_hashing_twox_256_version_1" => Some(Externality {
+            name: "ext_hashing_twox_256_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
+
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    let mut h1 = twox_hash::XxHash::with_seed(1);
+                    let mut h2 = twox_hash::XxHash::with_seed(2);
+                    let mut h3 = twox_hash::XxHash::with_seed(3);
+                    h0.write(&data);
+                    h1.write(&data);
+                    h2.write(&data);
+                    h3.write(&data);
+                    let r0 = h0.finish();
+                    let r1 = h1.finish();
+                    let r2 = h2.finish();
+                    let r3 = h3.finish();
+
+                    let mut out_value = r0.to_le_bytes().to_vec();
+                    out_value.extend(&r1.to_le_bytes());
+                    out_value.extend(&r2.to_le_bytes());
+                    out_value.extend(&r3.to_le_bytes());
+
+                    let dest_ptr = interface.allocate(32).await;
+                    interface.write_memory(dest_ptr, out_value).await;
+
+                    let ret = interface.allocate(8).await;
+                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                })
+            },
+        }),
+
+        /*"ext_offchain_is_validator_version_1" => unimplemented!(),
         "ext_offchain_submit_transaction_version_1" => unimplemented!(),
         "ext_offchain_network_state_version_1" => unimplemented!(),
         "ext_offchain_timestamp_version_1" => unimplemented!(),
@@ -483,7 +513,6 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_misc_print_utf8_version_1" => unimplemented!(),
         "ext_misc_print_hex_version_1" => unimplemented!(),
         "ext_misc_runtime_version_version_1" => unimplemented!(),*/
-
         "ext_allocator_malloc_version_1" => Some(Externality {
             name: "ext_allocator_malloc_version_1",
             call: |interface, params| {
@@ -565,6 +594,12 @@ async fn expect_pointer_size(
     let ptr = u32::try_from(val & 0xffffffff).unwrap();
 
     Ok(interface.read_memory(ptr, len).await)
+}
+
+/// Utility function that "reinterprets" a u32 into a i32. That is, the underlying bits stay the
+/// same.
+fn reinterpret_u32_i32(val: u32) -> i32 {
+    i32::from_ne_bytes(val.to_ne_bytes())
 }
 
 #[cfg(test)]
