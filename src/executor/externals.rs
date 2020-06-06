@@ -49,94 +49,25 @@ pub struct ExternalsVm {
     allocator: allocator::FreeingBumpHeapAllocator,
 }
 
+/// State of the virtual machine.
 enum StateInner {
+    /// Wasm virtual machine is ready to be run. Will pass the first parameter as the "resume"
+    /// value. This is either `None` at initialization, or, if the virtual machine was calling
+    /// an externality, the value returned by the externality.
     Ready(Option<vm::RuntimeValue>),
-    /// Currently calling an externality.
+    /// Currently calling an externality. The Wasm virtual machine is paused while we perform all
+    /// the outside-of-the-VM operations.
     Calling(externalities::CallState),
-    /// The Wasm blob did something that doesn't conform to the runtime environment.
+    /// The Wasm blob did something that doesn't conform to the runtime environment. This state
+    /// never changes to anything else.
     NonConforming(NonConformingErr),
-    /// The Wasm VM has encountered a trap (i.e. it has panicked).
+    /// The Wasm VM has encountered a trap (i.e. it has panicked). This state never changes to
+    /// anything else.
     Trapped,
+    /// Function call has successfully finished. This state never changes to anything else.
     Finished(Success),
-    /// Temporary state to permit smoother state transitions.
+    /// Temporary state to permit state transitions without running into borrowing issues.
     Poisoned,
-}
-
-/// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
-/// state can't change.
-pub enum State<'a> {
-    /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
-    ReadyToRun(ReadyToRun<'a>),
-    /// Function execution has succeeded. Contains the return value of the call.
-    Finished(&'a Success),
-    /// The Wasm blob did something that doesn't conform to the runtime environment.
-    NonConforming(NonConformingErr),
-    /// The Wasm VM has encountered a trap (i.e. it has panicked).
-    Trapped,
-    ExternalStorageGet {
-        /// Which key is requested.
-        storage_key: Vec<u8>,
-        /// Object to use to inject the storage value back. Pass back `None` if key is missing
-        /// from storage.
-        resolve: Resume<'a, Option<Vec<u8>>>,
-    },
-    ExternalStorageSet {
-        /// Which key to change.
-        storage_key: Vec<u8>,
-        /// Which storage value to change.
-        new_storage_value: Vec<u8>,
-        /// Object to use to finish the call
-        resolve: Resume<'a, ()>,
-    },
-    ExternalStorageClear {
-        /// Which key to clear.
-        storage_key: Vec<u8>,
-        /// Object to use to finish the call
-        resolve: Resume<'a, ()>,
-    },
-}
-
-/// Error that can happen when initializing a VM.
-#[derive(Debug, derive_more::From, derive_more::Display)]
-pub enum NewErr {
-    /// Error while initializing the virtual machine.
-    #[display(fmt = "Error while initializing the virtual machine: {}", _0)]
-    VirtualMachine(vm::NewErr),
-    /// The size of the input data is too large.
-    DataSizeOverflow,
-    /// Couldn't find the `__heap_base` symbol in the Wasm code.
-    HeapBaseNotFound,
-}
-
-/// Reason why the Wasm blob isn't conforming to the runtime environment.
-#[derive(Debug, Clone, derive_more::Display)]
-pub enum NonConformingErr {
-    /// A non-`i64` value has been returned.
-    #[display(fmt = "A non-I64 value has been returned")]
-    BadReturnValue, // TODO: indicate what got returned?
-    /// The pointer and size returned by the function are invalid.
-    #[display(fmt = "The pointer and size returned by the function are invalid")]
-    ReturnedPtrOutOfRange {
-        /// Pointer that got returned.
-        pointer: u32,
-        /// Size that got returned.
-        size: u32,
-        /// Size of the virtual memory.
-        memory_size: u32,
-    },
-    /// Failed to decode the structure returned by the function.
-    #[display(fmt = "Failed to decode the structure returned by the function")]
-    ReturnedValueDecodeFail(parity_scale_codec::Error),
-    /// Failed to decode the value returned by the function.
-    SuccessDecode(entry_points::SuccessDecodeErr),
-}
-
-pub struct ReadyToRun<'a> {
-    inner: &'a mut ExternalsVm,
-}
-
-pub struct Resume<'a, T> {
-    inner: externalities::Resume<'a, T>,
 }
 
 impl ExternalsVm {
@@ -285,10 +216,87 @@ impl ExternalsVm {
     }
 }
 
+/// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
+/// state can't change.
+pub enum State<'a> {
+    /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
+    ReadyToRun(ReadyToRun<'a>),
+    /// Function execution has succeeded. Contains the return value of the call.
+    Finished(&'a Success),
+    /// The Wasm blob did something that doesn't conform to the runtime environment.
+    NonConforming(NonConformingErr),
+    /// The Wasm VM has encountered a trap (i.e. it has panicked).
+    Trapped,
+    ExternalStorageGet {
+        /// Which key is requested.
+        storage_key: Vec<u8>,
+        /// Object to use to inject the storage value back. Pass back `None` if key is missing
+        /// from storage.
+        resolve: Resume<'a, Option<Vec<u8>>>,
+    },
+    ExternalStorageSet {
+        /// Which key to change.
+        storage_key: Vec<u8>,
+        /// Which storage value to change.
+        new_storage_value: Vec<u8>,
+        /// Object to use to finish the call
+        resolve: Resume<'a, ()>,
+    },
+    ExternalStorageClear {
+        /// Which key to clear.
+        storage_key: Vec<u8>,
+        /// Object to use to finish the call
+        resolve: Resume<'a, ()>,
+    },
+}
+
 impl<'a> From<ReadyToRun<'a>> for State<'a> {
     fn from(state: ReadyToRun<'a>) -> State<'a> {
         State::ReadyToRun(state)
     }
+}
+
+/// Error that can happen when initializing a VM.
+#[derive(Debug, derive_more::From, derive_more::Display)]
+pub enum NewErr {
+    /// Error while initializing the virtual machine.
+    #[display(fmt = "Error while initializing the virtual machine: {}", _0)]
+    VirtualMachine(vm::NewErr),
+    /// The size of the input data is too large.
+    DataSizeOverflow,
+    /// Couldn't find the `__heap_base` symbol in the Wasm code.
+    HeapBaseNotFound,
+}
+
+/// Reason why the Wasm blob isn't conforming to the runtime environment.
+#[derive(Debug, Clone, derive_more::Display)]
+pub enum NonConformingErr {
+    /// A non-`i64` value has been returned.
+    #[display(fmt = "A non-I64 value has been returned")]
+    BadReturnValue, // TODO: indicate what got returned?
+    /// The pointer and size returned by the function are invalid.
+    #[display(fmt = "The pointer and size returned by the function are invalid")]
+    ReturnedPtrOutOfRange {
+        /// Pointer that got returned.
+        pointer: u32,
+        /// Size that got returned.
+        size: u32,
+        /// Size of the virtual memory.
+        memory_size: u32,
+    },
+    /// Failed to decode the structure returned by the function.
+    #[display(fmt = "Failed to decode the structure returned by the function")]
+    ReturnedValueDecodeFail(parity_scale_codec::Error),
+    /// Failed to decode the value returned by the function.
+    SuccessDecode(entry_points::SuccessDecodeErr),
+    /// An externality wants to returns a certain value, but the Wasm code expects a different one.
+    ExternalityBadReturnValue,
+}
+
+/// Virtual machine is ready to run. This mutably borrows the [`ExternalsVm`] and allows making
+/// progress.
+pub struct ReadyToRun<'a> {
+    inner: &'a mut ExternalsVm,
 }
 
 impl<'a> ReadyToRun<'a> {
@@ -297,6 +305,8 @@ impl<'a> ReadyToRun<'a> {
     /// > **Note**: This is when the actual CPU-heavy computation happens.
     pub fn run(self) {
         loop {
+            // This object can only exist is the state is "ready". We extract the value inside to
+            // pass it to the inner state machine.
             let resume_value = match &mut self.inner.state {
                 StateInner::Ready(val) => val.take(),
                 _ => unreachable!(),
@@ -306,6 +316,9 @@ impl<'a> ReadyToRun<'a> {
                 Ok(vm::ExecOutcome::Finished {
                     return_value: Ok(Some(vm::RuntimeValue::I64(ret))),
                 }) => {
+                    // Wasm virtual machine has successfully returned.
+
+                    // TODO: rewrite this code to be cleaner.
                     // Turn the `i64` into a `u64`.
                     let ret = u64::from_ne_bytes(ret.to_ne_bytes());
 
@@ -340,13 +353,15 @@ impl<'a> ReadyToRun<'a> {
                 }
 
                 Ok(vm::ExecOutcome::Interrupted { id, params }) => {
-                    self.inner.state = match self.inner.registered_functions.get_mut(id) {
-                        Some(f) => StateInner::Calling(f.start_call(&params)),
-
-                        // Internal error. We have been passed back an `id` that we didn't return
-                        // during the imports resolution.
-                        None => panic!(),
-                    };
+                    // The Wasm code has called an externality. The `id` is a value that we passed
+                    // at initialization, and corresponds to an index in `registered_functions`.
+                    let call_state = self
+                        .inner
+                        .registered_functions
+                        .get_mut(id)
+                        .unwrap()
+                        .start_call(&params);
+                    self.inner.state = StateInner::Calling(call_state);
                 }
 
                 Ok(vm::ExecOutcome::Finished {
@@ -365,10 +380,26 @@ impl<'a> ReadyToRun<'a> {
                     break;
                 }
 
-                Err(err) => panic!("Internal error in Wasm virtual machine: {}", err),
+                Err(vm::RunErr::BadValueTy { .. }) => {
+                    // We tried to inject back the value returned by an externality, but it
+                    // doesn't match what the Wasm code expects.
+                    // TODO: check signatures at initialization instead?
+                    self.inner.state =
+                        StateInner::NonConforming(NonConformingErr::ExternalityBadReturnValue);
+                    break;
+                }
+
+                Err(vm::RunErr::Poisoned) => {
+                    // Can only happen if there's a bug somewhere.
+                    unreachable!()
+                }
             }
         }
     }
+}
+
+pub struct Resume<'a, T> {
+    inner: externalities::Resume<'a, T>,
 }
 
 impl<'a, T> Resume<'a, T> {
@@ -404,6 +435,7 @@ fn expect_ptr_len(param: &vm::RuntimeValue, vm: &mut vm::VirtualMachine) -> Vec<
     vm.read_memory(ptr, len).unwrap()
 }
 
+// Glue between the `allocator` module and the `vm` module.
 struct MemAccess<'a>(&'a mut vm::VirtualMachine);
 impl<'a> allocator::Memory for MemAccess<'a> {
     fn read_le_u64(&self, ptr: u32) -> Result<u64, allocator::Error> {
