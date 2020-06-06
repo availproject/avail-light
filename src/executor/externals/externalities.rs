@@ -596,6 +596,28 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Box::pin(async move { unimplemented!() })
             },
         }),
+        "ext_crypto_start_batch_verify_version_1" => Some(Externality {
+            name: "ext_crypto_start_batch_verify_version_1",
+            call: |_interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(0, &params)?;
+                    Ok(None)
+                })
+            },
+        }),
+        "ext_crypto_finish_batch_verify_version_1" => Some(Externality {
+            name: "ext_crypto_finish_batch_verify_version_1",
+            call: |_interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(0, &params)?;
+                    // TODO: wrong! this is a dummy implementation meaning that all signature
+                    // verifications are always successful
+                    Ok(Some(vm::RuntimeValue::I32(1)))
+                })
+            },
+        }),
 
         "ext_hashing_keccak_256_version_1" => Some(Externality {
             name: "ext_hashing_keccak_256_version_1",
