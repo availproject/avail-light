@@ -150,6 +150,11 @@ impl ExternalsVm {
                     // The virtual machine is currently paused and calling an externality. We maintain
                     // a `CallState` object in parallel of the call and run it.
                     StateInner::Calling(mut calling) => match calling.run() {
+                        externalities::State::Finished { return_value } => {
+                            // The call has finished, meaning that we are ready to resume the
+                            // Wasm code.
+                            StateInner::Ready(return_value)
+                        }
                         externalities::State::AllocationNeeded { size, inject_value } => {
                             if let Ok(ptr) =
                                 self.allocator.allocate(&mut MemAccess(&mut self.vm), size)
@@ -192,7 +197,7 @@ impl ExternalsVm {
                                 StateInner::Trapped
                             }
                         }
-                        _ => unimplemented!(), // TODO:
+                        v => unimplemented!("{:?}", v), // TODO:
                     },
 
                     _ => unreachable!(),
@@ -304,6 +309,10 @@ impl<'a> ReadyToRun<'a> {
     ///
     /// > **Note**: This is when the actual CPU-heavy computation happens.
     pub fn run(self) {
+        // TODO: the purpose of this loop is that the next time the user calls `state()`, they
+        // don't get a `ReadyToRun` again. However this will happen in practice if the Wasm code
+        // calls an externality that doesn't need any user intervention.
+        // TODO: at the moment, this loop never actually loops, all paths reach `break`
         loop {
             // This object can only exist is the state is "ready". We extract the value inside to
             // pass it to the inner state machine.
@@ -362,6 +371,7 @@ impl<'a> ReadyToRun<'a> {
                         .unwrap()
                         .start_call(&params);
                     self.inner.state = StateInner::Calling(call_state);
+                    break;
                 }
 
                 Ok(vm::ExecOutcome::Finished {

@@ -343,66 +343,236 @@ pub enum Error {
 /// Returns the definition of a function by its name. Returns `None` if the function is unknown.
 // TODO: should make it possible to filter categories of functions, so that offchain worker
 // functions are for example forbidden for regular blocks
+// TODO: are all these functions still relevant? have some been removed? the specs are quite old
+// in this regard
 pub(super) fn function_by_name(name: &str) -> Option<Externality> {
     match name {
-        /*"ext_storage_set_version_1" => Externality::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                // TODO: check params count
-                let storage_key = expect_ptr_len(&params[0], vm);
-                let new_storage_value = expect_ptr_len(&params[1], vm);
-                StateInner::ExternalStorageSet {
-                    storage_key,
-                    new_storage_value,
-                }
-            }),
-        },
-        "ext_storage_get_version_1" => Externality::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                let storage_key = expect_one_ptr_len(&params, vm);
-                StateInner::ExternalStorageGet { storage_key }
-            }),
-        },
-        "ext_storage_read_version_1" => unimplemented!(),
-        "ext_storage_clear_version_1" => Externality::Interrupt {
-            implementation: Box::new(|params, vm, _alloc| {
-                let storage_key = expect_one_ptr_len(&params, vm);
-                StateInner::ExternalStorageClear { storage_key }
-            }),
-        },
-        "ext_storage_exists_version_1" => unimplemented!(),
-        "ext_storage_clear_prefix_version_1" => unimplemented!(),
-        "ext_storage_root_version_1" => unimplemented!(),
-        "ext_storage_changes_root_version_1" => unimplemented!(),
-        "ext_storage_next_key_version_1" => unimplemented!(),
-        "ext_storage_child_set_version_1" => unimplemented!(),
-        "ext_storage_child_get_version_1" => unimplemented!(),
-        "ext_storage_child_read_version_1" => unimplemented!(),
-        "ext_storage_child_clear_version_1" => unimplemented!(),
-        "ext_storage_child_storage_kill_version_1" => unimplemented!(),
-        "ext_storage_child_exists_version_1" => unimplemented!(),
-        "ext_storage_child_clear_prefix_version_1" => unimplemented!(),
-        "ext_storage_child_root_version_1" => unimplemented!(),
-        "ext_storage_child_next_key_version_1" => unimplemented!(),
+        "ext_storage_set_version_1" => Some(Externality {
+            name: "ext_storage_set_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_get_version_1" => Some(Externality {
+            name: "ext_storage_get_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_read_version_1" => Some(Externality {
+            name: "ext_storage_read_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_clear_version_1" => Some(Externality {
+            name: "ext_storage_clear_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_exists_version_1" => Some(Externality {
+            name: "ext_storage_exists_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_clear_prefix_version_1" => Some(Externality {
+            name: "ext_storage_clear_prefix_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_root_version_1" => Some(Externality {
+            name: "ext_storage_root_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_changes_root_version_1" => Some(Externality {
+            name: "ext_storage_changes_root_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_next_key_version_1" => Some(Externality {
+            name: "ext_storage_next_key_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_set_version_1" => Some(Externality {
+            name: "ext_storage_child_set_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_get_version_1" => Some(Externality {
+            name: "ext_storage_child_get_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_read_version_1" => Some(Externality {
+            name: "ext_storage_child_read_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_clear_version_1" => Some(Externality {
+            name: "ext_storage_child_clear_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_storage_kill_version_1" => Some(Externality {
+            name: "ext_storage_child_storage_kill_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_exists_version_1" => Some(Externality {
+            name: "ext_storage_child_exists_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_clear_prefix_version_1" => Some(Externality {
+            name: "ext_storage_child_clear_prefix_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_root_version_1" => Some(Externality {
+            name: "ext_storage_child_root_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_storage_child_next_key_version_1" => Some(Externality {
+            name: "ext_storage_child_next_key_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
 
-        "ext_crypto_ed25519_public_keys_version_1" => unimplemented!(),
-        "ext_crypto_ed25519_generate_version_1" => unimplemented!(),
-        "ext_crypto_ed25519_sign_version_1" => unimplemented!(),
-        "ext_crypto_ed25519_verify_version_1" => unimplemented!(),
-        "ext_crypto_sr25519_public_keys_version_1" => unimplemented!(),
-        "ext_crypto_sr25519_generate_version_1" => unimplemented!(),
-        "ext_crypto_sr25519_sign_version_1" => unimplemented!(),
-        "ext_crypto_sr25519_verify_version_1" => unimplemented!(),
-        "ext_crypto_secp256k1_ecdsa_recover_version_1" => unimplemented!(),
-        "ext_crypto_secp256k1_ecdsa_recover_compressed_version_1" => {
-            Externality::Immediate {
-                implementation: Box::new(|_, _, _| unimplemented!()),
-            }
-        }
+        "ext_crypto_ed25519_public_keys_version_1" => Some(Externality {
+            name: "ext_crypto_ed25519_public_keys_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_ed25519_generate_version_1" => Some(Externality {
+            name: "ext_crypto_ed25519_generate_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_ed25519_sign_version_1" => Some(Externality {
+            name: "ext_crypto_ed25519_sign_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_ed25519_verify_version_1" => Some(Externality {
+            name: "ext_crypto_ed25519_verify_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_sr25519_public_keys_version_1" => Some(Externality {
+            name: "ext_crypto_sr25519_public_keys_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_sr25519_generate_version_1" => Some(Externality {
+            name: "ext_crypto_sr25519_generate_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_sr25519_sign_version_1" => Some(Externality {
+            name: "ext_crypto_sr25519_sign_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_sr25519_verify_version_1" => Some(Externality {
+            name: "ext_crypto_sr25519_verify_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_secp256k1_ecdsa_recover_version_1" => Some(Externality {
+            name: "ext_crypto_secp256k1_ecdsa_recover_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_crypto_secp256k1_ecdsa_recover_compressed_version_1" => Some(Externality {
+            name: "ext_crypto_secp256k1_ecdsa_recover_compressed_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
 
-        "ext_hashing_keccak_256_version_1" => unimplemented!(),
-        "ext_hashing_sha2_256_version_1" => unimplemented!(),
-        "ext_hashing_blake2_128_version_1" => unimplemented!(),
-        "ext_hashing_blake2_256_version_1" => unimplemented!(),*/
+        "ext_hashing_keccak_256_version_1" => Some(Externality {
+            name: "ext_hashing_keccak_256_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_hashing_sha2_256_version_1" => Some(Externality {
+            name: "ext_hashing_sha2_256_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_hashing_blake2_128_version_1" => Some(Externality {
+            name: "ext_hashing_blake2_128_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_hashing_blake2_256_version_1" => Some(Externality {
+            name: "ext_hashing_blake2_256_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
         "ext_hashing_twox_64_version_1" => Some(Externality {
             name: "ext_hashing_twox_64_version_1",
             call: |interface, params| {
@@ -489,30 +659,162 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
             },
         }),
 
-        /*"ext_offchain_is_validator_version_1" => unimplemented!(),
-        "ext_offchain_submit_transaction_version_1" => unimplemented!(),
-        "ext_offchain_network_state_version_1" => unimplemented!(),
-        "ext_offchain_timestamp_version_1" => unimplemented!(),
-        "ext_offchain_sleep_until_version_1" => unimplemented!(),
-        "ext_offchain_random_seed_version_1" => unimplemented!(),
-        "ext_offchain_local_storage_set_version_1" => unimplemented!(),
-        "ext_offchain_local_storage_compare_and_set_version_1" => unimplemented!(),
-        "ext_offchain_local_storage_get_version_1" => unimplemented!(),
-        "ext_offchain_http_request_start_version_1" => unimplemented!(),
-        "ext_offchain_http_request_add_header_version_1" => unimplemented!(),
-        "ext_offchain_http_request_write_body_version_1" => unimplemented!(),
-        "ext_offchain_http_response_wait_version_1" => unimplemented!(),
-        "ext_offchain_http_response_headers_version_1" => unimplemented!(),
-        "ext_offchain_http_response_read_body_version_1" => unimplemented!(),
+        "ext_offchain_is_validator_version_1" => Some(Externality {
+            name: "ext_offchain_is_validator_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_submit_transaction_version_1" => Some(Externality {
+            name: "ext_offchain_submit_transaction_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_network_state_version_1" => Some(Externality {
+            name: "ext_offchain_network_state_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_timestamp_version_1" => Some(Externality {
+            name: "ext_offchain_timestamp_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_sleep_until_version_1" => Some(Externality {
+            name: "ext_offchain_sleep_until_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_random_seed_version_1" => Some(Externality {
+            name: "ext_offchain_random_seed_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_local_storage_set_version_1" => Some(Externality {
+            name: "ext_offchain_local_storage_set_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_local_storage_compare_and_set_version_1" => Some(Externality {
+            name: "ext_offchain_local_storage_compare_and_set_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_local_storage_get_version_1" => Some(Externality {
+            name: "ext_offchain_local_storage_get_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_request_start_version_1" => Some(Externality {
+            name: "ext_offchain_http_request_start_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_request_add_header_version_1" => Some(Externality {
+            name: "ext_offchain_http_request_add_header_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_request_write_body_version_1" => Some(Externality {
+            name: "ext_offchain_http_request_write_body_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_response_wait_version_1" => Some(Externality {
+            name: "ext_offchain_http_response_wait_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_response_headers_version_1" => Some(Externality {
+            name: "ext_offchain_http_response_headers_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_offchain_http_response_read_body_version_1" => Some(Externality {
+            name: "ext_offchain_http_response_read_body_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
 
-        "ext_trie_blake2_256_root_version_1" => unimplemented!(),
-        "ext_trie_blake2_256_ordered_root_version_1" => unimplemented!(),
+        "ext_trie_blake2_256_root_version_1" => Some(Externality {
+            name: "ext_trie_blake2_256_root_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_trie_blake2_256_ordered_root_version_1" => Some(Externality {
+            name: "ext_trie_blake2_256_ordered_root_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
 
-        "ext_misc_chain_id_version_1" => unimplemented!(),
-        "ext_misc_print_num_version_1" => unimplemented!(),
-        "ext_misc_print_utf8_version_1" => unimplemented!(),
-        "ext_misc_print_hex_version_1" => unimplemented!(),
-        "ext_misc_runtime_version_version_1" => unimplemented!(),*/
+        "ext_misc_chain_id_version_1" => Some(Externality {
+            name: "ext_misc_chain_id_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_misc_print_num_version_1" => Some(Externality {
+            name: "ext_misc_print_num_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_misc_print_utf8_version_1" => Some(Externality {
+            name: "ext_misc_print_utf8_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_misc_print_hex_version_1" => Some(Externality {
+            name: "ext_misc_print_hex_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
+        "ext_misc_runtime_version_version_1" => Some(Externality {
+            name: "ext_misc_runtime_version_version_1",
+            call: |_interface, params| {
+                let _params = params.to_vec();
+                Box::pin(async move { unimplemented!() })
+            },
+        }),
         "ext_allocator_malloc_version_1" => Some(Externality {
             name: "ext_allocator_malloc_version_1",
             call: |interface, params| {
@@ -558,7 +860,13 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
 
         // All unknown functions.
-        _ => None,
+        // TODO: since the specs aren't up-to-date with the list of functions, we just resolve
+        // everything as valid, and panic if an unknown function is actually called
+        //_ => None,
+        _ => Some(Externality {
+            name: "unknown",
+            call: |_, _| unimplemented!(),
+        }),
     }
 }
 
