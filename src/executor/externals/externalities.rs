@@ -859,12 +859,13 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(1, &params)?;
                     let encoded = expect_pointer_size(&params[0], &*interface).await?;
                     let elements = Vec::<Vec<u8>>::decode_all(&encoded)?;
+                    println!("elements = {:?}", elements);
 
                     let mut trie = crate::trie::Trie::new();
-                    for (key, value) in elements.into_iter().enumerate() {
+                    for (idx, value) in elements.into_iter().enumerate() {
                         // TODO: specs say "fixed size integers" but doesn't mention big endian 32bits;
                         // had to look in the source code of paritytech/trie; report that to specs writers
-                        let key = u32::try_from(key).unwrap().to_be_bytes().to_vec();
+                        let key = u32::try_from(idx).unwrap().to_be_bytes();
                         trie.insert(&key, value);
                     }
                     let out = trie.root_merkle_value();

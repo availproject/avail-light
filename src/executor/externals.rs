@@ -74,8 +74,9 @@ enum StateInner {
 impl ExternalsVm {
     /// Creates a new state machine from the given module that executes the given function.
     pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, NewErr> {
+        println!("in data = {:?}", to_call);
         let (called_function, data) = to_call.into_function_and_param();
-
+        println!("in data = {:?}", data);
         let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
         let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
 

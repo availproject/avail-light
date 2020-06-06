@@ -1,5 +1,29 @@
 //! Radix-16 Merkle-Patricia trie.
-// TODO: write docs
+//!
+//! This Substrate/Polkadot-specific radix-16 Merkle-Patricia trie is a data structure that
+//! associates keys with values, and that allows efficient verification of the integrity of the
+//! data.
+//!
+//! This data structure is a tree composed of nodes, each node being identified by a key. A key
+//! consists in a sequence of 4-bits values called *nibbles*. Example key: `[3, 12, 7, 0]`.
+//!
+//! Some of these nodes contain a value. These values are inserted by calling [`Trie::insert`].
+//!
+//! A node A is an *ancestor* of another node B if the key of A is a prefix of the key of B. For
+//! example, the node whose key is `[3, 12]` is an ancestor of the node whose key is
+//! `[3, 12, 8, 9]`. B is a *descendant* of A.
+//!
+//! Nodes exist only either if they contain a value, or if their key is the longest shared prefix
+//! of two or more nodes that contain a value. For example, if nodes `[7, 2, 9, 11]` and
+//! `[7, 2, 14, 8]` contain a value, then node `[7, 2]` also exist, because it is the longest
+//! prefix shared between the two.
+//!
+//! The *Merkle value* of a node is composed, amongst other things, of its associated value and of
+//! the Merkle value of its descendants. As such, modifying a node modifies the Merkle value of
+//! all its ancestors. Note, however, that modifying a node modifies the Merkle value of *only*
+//! its ancestors. As such, the time spent calculating the Merkle value of the root node of a trie
+//! mostly depends on the number of modifications that are performed on it, and only a bit on the
+//! size of the trie.
 
 use alloc::collections::BTreeMap;
 use core::convert::TryFrom as _;
@@ -63,25 +87,43 @@ impl Trie {
 
     /// Calculates the Merkle value of the root node.
     pub fn root_merkle_value(&self) -> [u8; 32] {
+        // The root node is not necessarily the one with an empty key. Just like any other node,
+        // the root might have been merged with its lone children.
+
+        let key_from_root = common_prefix(
+            self.descendant_storage_keys(&TrieNodeKey {
+                nibbles: Vec::new(),
+            })
+            .map(|k| &k.nibbles[..]),
+        )
+        .unwrap_or(Vec::new());
+
         let mut out = [0; 32];
         let val_vec = self.merkle_value(
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
+            None,
             TrieNodeKey {
-                nibbles: Vec::new(),
+                nibbles: key_from_root,
             },
         );
         out.copy_from_slice(&val_vec);
         out
     }
 
-    /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`
-    /// and `key_from_parent`.
-    fn merkle_value(&self, parent_key: TrieNodeKey, key_from_parent: TrieNodeKey) -> Vec<u8> {
-        let is_root = parent_key.nibbles.is_empty() && key_from_parent.nibbles.is_empty();
+    /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
+    /// `child_index`, and `key_from_parent`.
+    fn merkle_value(
+        &self,
+        parent_key: TrieNodeKey,
+        child_index: Option<Nibble>,
+        key_from_parent: TrieNodeKey,
+    ) -> Vec<u8> {
+        let is_root = child_index.is_none();
 
-        let node_value = self.node_value(parent_key, key_from_parent);
+        let node_value = self.node_value(parent_key, child_index, key_from_parent);
+        println!("node value = {:?}", node_value);
 
         if is_root || node_value.len() >= 32 {
             let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
@@ -93,16 +135,17 @@ impl Trie {
         }
     }
 
-    /// Calculates the node value of the node whose key is the concatenation of `parent_key`
-    /// and `key_from_parent`.
-    fn node_value(&self, parent_key: TrieNodeKey, key_from_parent: TrieNodeKey) -> Vec<u8> {
+    /// Calculates the node value of the node whose key is the concatenation of `parent_key`,
+    /// `child_index`, and `key_from_parent`.
+    fn node_value(
+        &self,
+        parent_key: TrieNodeKey,
+        child_index: Option<Nibble>,
+        partial_key: TrieNodeKey,
+    ) -> Vec<u8> {
         // Turn the `partial_key` into bytes with a weird encoding.
         let partial_key_hex_encode = {
-            let partial_key = if key_from_parent.nibbles.is_empty() {
-                &key_from_parent.nibbles
-            } else {
-                &key_from_parent.nibbles[1..]
-            };
+            let partial_key = &partial_key.nibbles;
             if partial_key.len() % 2 == 0 {
                 let mut pk = Vec::with_capacity(partial_key.len() / 2);
                 for chunk in partial_key.chunks(2) {
@@ -122,7 +165,10 @@ impl Trie {
         // The operations below require the actual key of the node.
         let combined_key = {
             let mut combined_key = parent_key;
-            combined_key.nibbles.extend(key_from_parent.nibbles.clone());
+            if let Some(child_index) = &child_index {
+                combined_key.nibbles.push(child_index.clone());
+            }
+            combined_key.nibbles.extend(partial_key.nibbles.clone());
             combined_key
         };
 
@@ -133,18 +179,18 @@ impl Trie {
         // index.
         let mut children_bitmap = 0u16;
         // Keys from this node to its children.
-        let mut children_key_from_parent = Vec::new();
+        let mut children_partial_keys = Vec::<(Nibble, TrieNodeKey)>::new();
 
         // Now enumerate the children.
         for child in self.child_nodes(&combined_key) {
             debug_assert!(child.nibbles.starts_with(&combined_key.nibbles));
-            let child_index = child.nibbles[combined_key.nibbles.len()].0;
-            children_bitmap |= 1 << u32::from(child_index);
+            let child_index = child.nibbles[combined_key.nibbles.len()].clone();
+            children_bitmap |= 1 << u32::from(child_index.0);
 
             let child_partial_key = TrieNodeKey {
-                nibbles: child.nibbles[combined_key.nibbles.len()..].to_vec(),
+                nibbles: child.nibbles[combined_key.nibbles.len() + 1..].to_vec(),
             };
-            children_key_from_parent.push(child_partial_key);
+            children_partial_keys.push((child_index, child_partial_key));
         }
 
         // Now compute the header of the node.
@@ -167,8 +213,7 @@ impl Trie {
             };
 
             // Another weird algorithm to encode the partial key length into the header.
-            // Don't forget to remove `1` for the child index.
-            let mut pk_len = key_from_parent.nibbles.len().saturating_sub(1);
+            let mut pk_len = partial_key.nibbles.len();
             if pk_len >= 63 {
                 pk_len -= 63;
                 let mut header = vec![(two_msb << 6) + 63];
@@ -198,8 +243,12 @@ impl Trie {
                 // TODO: specs don't say anything about endianess or bits ordering of
                 // children_bitmap; had to look in Substrate code; report that to specs writers
                 let mut out = children_bitmap.to_le_bytes().to_vec();
-                for child in children_key_from_parent {
-                    let child_merkle_value = self.merkle_value(combined_key.clone(), child);
+                for (child_index, child_partial_key) in children_partial_keys {
+                    let child_merkle_value = self.merkle_value(
+                        combined_key.clone(),
+                        Some(child_index),
+                        child_partial_key,
+                    );
                     // TODO: we encode the child merkle value as SCALE, which copies it again; opt  imize that
                     out.extend(child_merkle_value.encode());
                 }
@@ -353,6 +402,7 @@ mod tests {
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
+            None,
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
@@ -368,9 +418,8 @@ mod tests {
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
+            None,
+            TrieNodeKey::from_bytes(&[0xaa]),
         );
 
         fn to_compact(n: u8) -> u8 {
@@ -399,6 +448,7 @@ mod tests {
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
+            None,
             TrieNodeKey {
                 nibbles: Vec::new(),
             },
