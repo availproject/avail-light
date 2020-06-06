@@ -12,6 +12,7 @@ pub mod keystore;
 pub mod network;
 pub mod service;
 pub mod storage;
+pub mod trie;
 
 pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Storage {
     let mut block0 = storage::BlockStorage::empty();

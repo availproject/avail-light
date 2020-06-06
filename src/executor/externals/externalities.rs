@@ -47,6 +47,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
+use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
 
 /// Description of an externality.
@@ -326,10 +327,12 @@ impl<'a, T> fmt::Debug for Resume<'a, T> {
     }
 }
 
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, Clone, derive_more::Display, derive_more::From)]
 pub enum Error {
     /// Mismatch between the number of parameters expected and the actual number.
     ParamsCountMismatch,
+    /// Failed to decode a SCALE-encoded parameter.
+    ParamDecodeError(parity_scale_codec::Error),
     /// The type of one of the parameters is wrong.
     WrongParamTy,
 }
@@ -829,16 +832,46 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
         "ext_trie_blake2_256_root_version_1" => Some(Externality {
             name: "ext_trie_blake2_256_root_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let encoded = expect_pointer_size(&params[0], &*interface).await?;
+                    let elements = Vec::<(Vec<u8>, Vec<u8>)>::decode_all(&encoded)?;
+
+                    let mut trie = crate::trie::Trie::new();
+                    for (key, value) in elements {
+                        trie.insert(key, value);
+                    }
+                    let out = trie.root_merkle_value();
+
+                    let dest_ptr = interface.allocate(32).await;
+                    interface.write_memory(dest_ptr, out.to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
         "ext_trie_blake2_256_ordered_root_version_1" => Some(Externality {
             name: "ext_trie_blake2_256_ordered_root_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let encoded = expect_pointer_size(&params[0], &*interface).await?;
+                    let elements = Vec::<Vec<u8>>::decode_all(&encoded)?;
+
+                    let mut trie = crate::trie::Trie::new();
+                    for (key, value) in elements.into_iter().enumerate() {
+                        // TODO: specs say "fixed size integers" but doesn't mention which size
+                        let key = key.to_le_bytes().to_vec();
+                        trie.insert(key, value);
+                    }
+                    let out = trie.root_merkle_value();
+
+                    let dest_ptr = interface.allocate(32).await;
+                    interface.write_memory(dest_ptr, out.to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
 
@@ -858,16 +891,34 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_misc_print_utf8_version_1" => Some(Externality {
             name: "ext_misc_print_utf8_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let message = expect_pointer_size(&params[0], &*interface).await?;
+
+                    // TODO: properly print message
+                    if let Ok(message) = core::str::from_utf8(&message) {
+                        println!("print_utf8: {:?}", message);
+                    }
+
+                    Ok(None)
+                })
             },
         }),
         "ext_misc_print_hex_version_1" => Some(Externality {
             name: "ext_misc_print_hex_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
+                    let message = hex::encode(&data);
+
+                    // TODO: properly print message
+                    println!("print_hex: {}", message);
+                    Ok(None)
+                })
             },
         }),
         "ext_misc_runtime_version_version_1" => Some(Externality {

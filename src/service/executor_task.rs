@@ -2,11 +2,12 @@
 
 use crate::{block, executor, storage};
 
-use core::pin::Pin;
+use core::{cmp, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
+use hashbrown::HashMap;
 
 /// Message that can be sent to the executors task by the other parts of the code.
 pub enum ToExecutor {
@@ -52,6 +53,8 @@ pub async fn run_executor_task(mut config: Config) {
                 )
                 .unwrap();
 
+                let mut overlay_storage_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
+
                 loop {
                     match vm.state() {
                         executor::State::ReadyToRun(r) => r.run(),
@@ -68,15 +71,24 @@ pub async fn run_executor_task(mut config: Config) {
                         } => {
                             // TODO: this clones the storage value, meh
                             // TODO: no, doesn't respect constraints
-                            resolve
-                                .finish_call(parent.get(&storage_key).map(|v| v.as_ref().to_vec()));
+                            if let Some(overlay) = overlay_storage_changes.get(storage_key) {
+                                resolve.finish_call(overlay.clone());
+                            } else {
+                                resolve.finish_call(
+                                    parent.get(&storage_key).map(|v| v.as_ref().to_vec()),
+                                );
+                            }
                         }
                         executor::State::ExternalStorageSet {
-                            storage_key: _,
-                            new_storage_value: _,
+                            storage_key,
+                            new_storage_value,
                             resolve,
                         } => {
-                            // TODO: implement
+                            overlay_storage_changes.insert(
+                                storage_key.to_vec(),
+                                new_storage_value.map(|v| v.to_vec()),
+                            );
+                            // TODO: implement properly?
                             resolve.finish_call(());
                         }
                         executor::State::ExternalStorageClearPrefix {
@@ -90,9 +102,20 @@ pub async fn run_executor_task(mut config: Config) {
                             storage_key,
                             resolve,
                         } => {
-                            resolve.finish_call(
-                                parent.next_key(&storage_key).map(|v| v.as_ref().to_vec()),
-                            );
+                            // TODO: not optimized regarding cloning
+                            let in_storage =
+                                parent.next_key(&storage_key).map(|v| v.as_ref().to_vec());
+                            let in_overlay = overlay_storage_changes
+                                .keys()
+                                .filter(|k| &***k > storage_key)
+                                .min();
+                            let outcome = match (in_storage, in_overlay) {
+                                (Some(a), Some(b)) => Some(cmp::min(a, b.clone())),
+                                (Some(a), None) => Some(a),
+                                (None, Some(b)) => Some(b.clone()),
+                                (None, None) => None,
+                            };
+                            resolve.finish_call(outcome);
                         }
                         s => unimplemented!("unimplemented externality: {:?}", s),
                     }
