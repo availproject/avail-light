@@ -47,6 +47,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
+use primitive_types::H256;
 
 /// Description of an externality.
 pub struct Externality {
@@ -110,6 +111,7 @@ define_internal_interface! {
     Allocation => fn allocate(size: u32) -> u32;
     Dealloc => fn free(pointer: u32) -> ();
     StorageSet => fn storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
+    StorageGet => fn storage_get(key: Vec<u8>, offset: u32, max_size: u32) -> Option<Vec<u8>>;
 }
 
 impl Externality {
@@ -146,7 +148,7 @@ impl CallState {
     /// this function multiple times in a row will always return the same [`State`], unless you
     /// use the [`Resume`] provided in some variants of [`State`] to make the state progress.
     pub fn run(&mut self) -> State {
-        // TODO: does this work properly if we call `run` again after the future is finished?
+        // TODO: make sure this work properly if we call `run` again after the future is finished
         match (&mut self.future).now_or_never() {
             Some(Ok(val)) => self.state = CallStateInner::Finished { return_value: val },
             Some(Err(err)) => self.state = CallStateInner::Error(err),
@@ -189,11 +191,23 @@ impl CallState {
                 pointer: *pointer,
                 done: Resume { sender: result },
             },
+            CallStateInner::StorageGet {
+                key,
+                offset,
+                max_size,
+                result,
+            } => State::StorageGetNeeded {
+                key: key,
+                offset: *offset,
+                max_size: *max_size,
+                done: Resume { sender: result },
+            },
             CallStateInner::StorageSet { key, value, result } => State::StorageSetNeeded {
                 key,
                 value: value.as_ref().map(|v| &**v),
                 done: Resume { sender: result },
             },
+            _ => unimplemented!(), // TODO:
         }
     }
 }
@@ -250,10 +264,31 @@ pub enum State<'a> {
         done: Resume<'a, ()>,
     },
 
+    StorageGetNeeded {
+        key: &'a [u8],
+        offset: u32,
+        max_size: u32,
+        done: Resume<'a, Option<Vec<u8>>>,
+    },
     StorageSetNeeded {
         key: &'a [u8],
         value: Option<&'a [u8]>,
         done: Resume<'a, ()>,
+    },
+    StorageClearPrefixNeeded {
+        key: &'a [u8],
+        done: Resume<'a, ()>,
+    },
+    StorageRootNeeded {
+        done: Resume<'a, Vec<H256>>,
+    },
+    StorageChangesRootNeeded {
+        parent_hash: H256,
+        done: Resume<'a, Vec<u8>>,
+    },
+    StorageNextKeyNeeded {
+        key: &'a [u8],
+        done: Resume<'a, Vec<u8>>,
     },
 }
 
@@ -308,9 +343,22 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_get_version_1" => Some(Externality {
             name: "ext_storage_get_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = interface.storage_get(key, 0, u32::max_value()).await;
+                    // TODO: we SCALE-encode an option, meaning we just memcpy the value, this is
+                    // extremely stupid
+                    let value_encoded = parity_scale_codec::Encode::encode(&value);
+                    // TODO: don't unwrap?
+                    let value_len = u32::try_from(value_encoded.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(value_len).await;
+                    interface.write_memory(dest_ptr, value_encoded).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
         "ext_storage_read_version_1" => Some(Externality {
@@ -334,9 +382,18 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_exists_version_1" => Some(Externality {
             name: "ext_storage_exists_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = interface.storage_get(key, 0, 0).await;
+                    if value.is_some() {
+                        Ok(Some(vm::RuntimeValue::I32(1)))
+                    } else {
+                        Ok(Some(vm::RuntimeValue::I32(0)))
+                    }
+                })
             },
         }),
         "ext_storage_clear_prefix_version_1" => Some(Externality {
@@ -546,10 +603,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface
                         .write_memory(dest_ptr, r0.to_le_bytes().to_vec())
                         .await;
-
-                    let ret = interface.allocate(8).await;
-                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -573,10 +627,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(16).await;
                     interface.write_memory(dest_ptr, out_value).await;
-
-                    let ret = interface.allocate(8).await;
-                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -608,10 +659,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out_value).await;
-
-                    let ret = interface.allocate(8).await;
-                    interface.write_memory(ret, r0.to_le_bytes().to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(ret))))
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),

@@ -424,7 +424,7 @@ impl NetworkBehaviour for BlockRequests {
         match node_event {
             NodeEvent::Request(request, mut stream, handling_start) => {
                 // TODO: happens very frequently and must be implemented at some point
-                unimplemented!()
+                unimplemented!("received block rq")
             }
             NodeEvent::Response(original_request, response) => {
                 log::trace!(

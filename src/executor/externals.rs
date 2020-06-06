@@ -233,12 +233,47 @@ impl ExternalsVm {
             StateInner::Trapped => State::Trapped,
             StateInner::Finished(success) => State::Finished(success),
             StateInner::Calling(calling) => {
-                // TODO: we call run() again, is this a problem regarding perfs?
                 match calling.run() {
+                    externalities::State::StorageGetNeeded {
+                        key,
+                        offset,
+                        max_size,
+                        done,
+                    } => {
+                        return State::ExternalStorageGet {
+                            storage_key: key,
+                            offset,
+                            max_size,
+                            resolve: Resume { inner: done },
+                        }
+                    }
                     externalities::State::StorageSetNeeded { key, value, done } => {
                         return State::ExternalStorageSet {
                             storage_key: key,
                             new_storage_value: value,
+                            resolve: Resume { inner: done },
+                        }
+                    }
+                    externalities::State::StorageClearPrefixNeeded { key, done } => {
+                        return State::ExternalStorageClearPrefix {
+                            storage_key: key,
+                            resolve: Resume { inner: done },
+                        }
+                    }
+                    externalities::State::StorageRootNeeded { done } => {
+                        return State::ExternalStorageRoot {
+                            resolve: Resume { inner: done },
+                        }
+                    }
+                    externalities::State::StorageChangesRootNeeded { parent_hash, done } => {
+                        return State::ExternalStorageChangesRoot {
+                            parent_hash,
+                            resolve: Resume { inner: done },
+                        }
+                    }
+                    externalities::State::StorageNextKeyNeeded { key, done } => {
+                        return State::ExternalStorageNextKey {
+                            storage_key: key,
                             resolve: Resume { inner: done },
                         }
                     }
@@ -269,7 +304,7 @@ pub enum State<'a> {
     Trapped,
     ExternalStorageGet {
         /// Which key is requested.
-        storage_key: Vec<u8>,
+        storage_key: &'a [u8],
         /// Offset in the value where to start reading.
         offset: u32,
         /// Maximum size of the value to return.
@@ -303,7 +338,7 @@ pub enum State<'a> {
     },
     ExternalStorageNextKey {
         /// Concerned key.
-        key: Vec<u8>,
+        storage_key: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, Vec<u8>>,
     },

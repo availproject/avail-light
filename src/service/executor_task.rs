@@ -85,7 +85,7 @@ pub async fn run_executor_task(mut config: Config) {
                             // TODO: implement
                             resolve.finish_call(());
                         }
-                        _ => unimplemented!(),
+                        _ => unimplemented!("unimplemented externality"),
                     }
                 }
 
