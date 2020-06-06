@@ -2,6 +2,7 @@
 // TODO: write docs
 
 use alloc::collections::BTreeMap;
+use core::convert::TryFrom as _;
 use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::Encode as _;
 
@@ -53,8 +54,7 @@ impl Trie {
 
     /// Calculates the Merkle value of the root node.
     pub fn root_merkle_value(&self) -> [u8; 32] {
-        [0; 32] // TODO: FIXME: code below panics, so we return a dummy value in the meanwhile
-                //self.merkle_value(&[], None)
+        self.merkle_value(&[], None)
     }
 
     /// Calculates the Merkle value of the node with the given key.
@@ -77,16 +77,34 @@ impl Trie {
     }
 
     fn node_value(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
+        let partial_key_nibbles = self.node_partial_key_nibbles(key, key_extra_nibble);
+
+        let partial_key = if partial_key_nibbles.len() % 2 == 0 {
+            let mut pk = Vec::with_capacity(partial_key_nibbles.len() / 2);
+            for chunk in partial_key_nibbles.chunks(2) {
+                pk.push((chunk[0] << 4) | chunk[1]);
+            }
+            pk
+        } else {
+            let mut pk = Vec::with_capacity(1 + partial_key_nibbles.len() / 2);
+            // What a weird encoding.
+            pk.push(partial_key_nibbles[0]);
+            for chunk in partial_key_nibbles[1..].chunks(2) {
+                pk.push((chunk[0] << 4) | chunk[1]);
+            }
+            pk
+        };
+        
         let mut out = self.node_header(key, key_extra_nibble);
-        out.extend(self.node_partial_key(key, key_extra_nibble));
+        out.extend(partial_key);
         out.extend(self.node_subvalue(key, key_extra_nibble));
         out
     }
 
     fn node_header(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        let two_msb = {
+        let two_msb: u8 = {
             let has_stored_value = key_extra_nibble.is_none() && self.entries.contains_key(key);
-            let has_children = self.node_children_bitmap(key, key_extra_nibble) != 0;
+            let has_children = self.node_has_children(key, key_extra_nibble);
             match (has_stored_value, has_children) {
                 (false, false) => 0b00, // TODO: is that exact? specs say "Special case"?!?!
                 (true, false) => 0b01,
@@ -95,13 +113,25 @@ impl Trie {
             }
         };
 
-        // TODO: note: the rest of the header is just the length of the partial key
+        let mut pk_len = self.node_partial_key_nibbles(key, key_extra_nibble).len();
 
-        unimplemented!()
+        if pk_len >= 63 {
+            pk_len -= 63;
+            let mut out = vec![(two_msb << 6) + 63];
+            while pk_len > 255 {
+                pk_len -= 255;
+                out.push(255);
+            }
+            out.push(u8::try_from(pk_len).unwrap());
+            out
+
+        } else {
+            vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
+        }
     }
 
-    fn node_partial_key(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
-        unimplemented!()
+    fn node_partial_key_nibbles(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
+        Vec::new()  // TODO: FIXME: stub
     }
 
     fn node_subvalue(&self, key: &[u8], key_extra_nibble: Option<u8>) -> Vec<u8> {
@@ -122,7 +152,7 @@ impl Trie {
         if let Some(extra) = key_extra_nibble {
             for extra2 in 0..16 {
                 let mut subkey = key.to_vec();
-                subkey.push((extra << 16) | extra2);
+                subkey.push((extra << 4) | extra2);
                 let child_merkle_value = self.merkle_value(&subkey, None);
                 out.extend(child_merkle_value.encode());
             }
@@ -138,6 +168,32 @@ impl Trie {
     }
 
     fn node_children_bitmap(&self, key: &[u8], key_extra_nibble: Option<u8>) -> u16 {
-        unimplemented!()
+        let mut out = 0u16;
+
+        if let Some(key_extra_nibble) = key_extra_nibble {
+            for n in 0..16 {
+                let mut subkey = key.to_vec();
+                subkey.push((key_extra_nibble << 4) | n);
+                if self.node_has_children(&subkey, None) {
+                    out |= 1 << (15 - n);
+                }
+            }
+        } else {
+            for n in 0..16 {
+                if self.node_has_children(key, Some(n)) {
+                    out |= 1 << (15 - n);
+                }
+            }
+        }
+
+        out
+    }
+
+    fn node_has_children(&self, key: &[u8], key_extra_nibble: Option<u8>) -> bool {
+        let mut start = key.to_vec();
+        let mut end = key.to_vec();
+        start.push(0);
+        end.push(255);
+        self.entries.range(start..=end).next().is_some()
     }
 }

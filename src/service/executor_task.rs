@@ -62,7 +62,7 @@ pub async fn run_executor_task(mut config: Config) {
                             panic!("success")
                         }
                         executor::State::Finished(_) => unreachable!(),
-                        executor::State::Trapped => unreachable!(),
+                        executor::State::Trapped => panic!("trapped"),
                         executor::State::ExternalStorageGet {
                             storage_key,
                             offset,
