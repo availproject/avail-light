@@ -32,6 +32,7 @@ use parity_scale_codec::{DecodeAll as _, Encode as _};
 pub enum FunctionToCall<'a> {
     CoreVersion,
     CoreExecuteBlock(&'a Block),
+    MetadataMetadata,
     BabeApiConfiguration,
     GrandpaApiGrandpaAuthorities,
     TaggedTransactionsQueueValidateTransaction(&'a [u8]),
@@ -46,6 +47,7 @@ impl<'a> FunctionToCall<'a> {
         let encoded = match self {
             FunctionToCall::CoreVersion => Vec::new(),
             FunctionToCall::CoreExecuteBlock(block) => block.encode(),
+            FunctionToCall::MetadataMetadata => Vec::new(),
             FunctionToCall::BabeApiConfiguration => Vec::new(),
             FunctionToCall::GrandpaApiGrandpaAuthorities => Vec::new(),
             FunctionToCall::TaggedTransactionsQueueValidateTransaction(extrinsic) => {
@@ -62,6 +64,7 @@ impl<'a> FunctionToCall<'a> {
 pub(super) enum CalledFunction {
     CoreVersion,
     CoreExecuteBlock,
+    MetadataMetadata,
     BabeApiConfiguration,
     GrandpaApiGrandpaAuthorities,
     TaggedTransactionsQueueValidateTransaction,
@@ -74,6 +77,7 @@ impl CalledFunction {
         match self {
             CalledFunction::CoreVersion => "Core_version",
             CalledFunction::CoreExecuteBlock => "Core_execute_block",
+            CalledFunction::MetadataMetadata => "Metadata_metadata",
             CalledFunction::BabeApiConfiguration => "BabeApi_configuration",
             CalledFunction::GrandpaApiGrandpaAuthorities => "GrandpaApi_grandpa_authorities",
             CalledFunction::TaggedTransactionsQueueValidateTransaction => {
@@ -88,6 +92,7 @@ impl<'a, 'b> From<&'a FunctionToCall<'b>> for CalledFunction {
         match c {
             FunctionToCall::CoreVersion => CalledFunction::CoreVersion,
             FunctionToCall::CoreExecuteBlock(_) => CalledFunction::CoreExecuteBlock,
+            FunctionToCall::MetadataMetadata => CalledFunction::MetadataMetadata,
             FunctionToCall::BabeApiConfiguration => CalledFunction::BabeApiConfiguration,
             FunctionToCall::GrandpaApiGrandpaAuthorities => {
                 CalledFunction::GrandpaApiGrandpaAuthorities
@@ -104,6 +109,9 @@ impl<'a, 'b> From<&'a FunctionToCall<'b>> for CalledFunction {
 pub enum Success {
     CoreVersion(CoreVersionSuccess),
     CoreExecuteBlock(bool),
+    /// The actual format of the metadata is opaque.
+    // TODO: explain what this metadata actually consists of? [I have no idea]
+    MetadataMetadata(Vec<u8>),
     // TODO: other functions
 }
 
@@ -120,6 +128,9 @@ impl Success {
             }
             CalledFunction::CoreExecuteBlock => {
                 Ok(Success::CoreExecuteBlock(bool::decode_all(data)?))
+            }
+            CalledFunction::MetadataMetadata => {
+                Ok(Success::MetadataMetadata(Vec::<u8>::decode_all(data)?))
             }
             _ => unimplemented!("return value for this function not implemented"), // TODO:
         }
