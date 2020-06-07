@@ -46,30 +46,34 @@ pub struct ChainSpec {
 }
 
 impl ChainSpec {
-    /// A list of bootnode addresses.
+    /// Parse JSON content into a [`ChainSpec`].
+    pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, serde_json::Error> {
+        let client_spec = serde_json::from_slice(json.as_ref())?;
+        Ok(ChainSpec { client_spec })
+    }
+
+    /// Name of the chain that is specified.
+    pub fn name(&self) -> &str {
+        &self.client_spec.name
+    }
+
+    /// Spec id. This is similar to the name, but a bit more "system-looking". For example, if the
+    /// name is "Flaming Fir 7", then the id could be "flamingfir7". To be used in file system
+    /// paths for example.
+    pub fn id(&self) -> &str {
+        &self.client_spec.id
+    }
+
+    /// Returns the list of bootnode addresses in the chain specs.
     // TODO: more strongly typed?
     pub fn boot_nodes(&self) -> &[String] {
         &self.client_spec.boot_nodes
     }
 
-    /// Spec name.
-    pub fn name(&self) -> &str {
-        &self.client_spec.name
-    }
-
-    /// Spec id.
-    pub fn id(&self) -> &str {
-        &self.client_spec.id
-    }
-
-    /// Network protocol id.
+    /// Network protocol id. Used to prevent nodes from multiple networks from connecting with each
+    /// other. Returns `None` if the chain specs don't specify any.
     pub fn protocol_id(&self) -> Option<&str> {
         self.client_spec.protocol_id.as_ref().map(String::as_str)
-    }
-
-    /// Add a bootnode to the list.
-    pub fn add_boot_node(&mut self, addr: Multiaddr) {
-        self.client_spec.boot_nodes.push(addr.to_string())
     }
 
     // TODO: bad API
@@ -87,86 +91,7 @@ impl ChainSpec {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         &genesis.children_default
     }
-
-    /*/// Create hardcoded spec.
-    pub fn from_genesis<F: Fn() -> G + 'static + Send + Sync>(
-        name: &str,
-        id: &str,
-        constructor: F,
-        boot_nodes: Vec<String>,
-        telemetry_endpoints: Option<TelemetryEndpoints>,
-        protocol_id: Option<&str>,
-        properties: Option<Properties>,
-    ) -> Self {
-        let client_spec = ClientSpec {
-            name: name.to_owned(),
-            id: id.to_owned(),
-            boot_nodes,
-            telemetry_endpoints,
-            protocol_id: protocol_id.map(str::to_owned),
-            properties,
-            extensions,
-            genesis: Default::default(),
-        };
-
-        ChainSpec {
-            client_spec,
-            genesis: GenesisSource::Factory(Arc::new(constructor)),
-        }
-    }*/
-
-    /// Parse json content into a `ChainSpec`
-    pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, String> {
-        let client_spec = serde_json::from_slice(json.as_ref())
-            .map_err(|e| format!("Error parsing spec file: {}", e))?;
-        Ok(ChainSpec { client_spec })
-    }
 }
-
-/*impl ChainSpec {
-    /// Dump to json string.
-    pub fn to_json(self, raw: bool) -> Result<String, String> {
-        #[derive(Serialize, Deserialize)]
-        struct Container<G, E> {
-            #[serde(flatten)]
-            client_spec: ClientSpec<E>,
-            genesis: Genesis<G>,
-        };
-
-        let genesis = match (raw, self.genesis.resolve()?) {
-            (true, Genesis::Runtime(g)) => {
-                let storage = g.build_storage()?;
-                let top = storage.top.into_iter()
-                    .map(|(k, v)| (StorageKey(k), StorageData(v)))
-                    .collect();
-                let children = storage.children.into_iter()
-                    .map(|(sk, child)| {
-                        let info = child.child_info.as_ref();
-                        let (info, ci_type) = info.info();
-                        (
-                            StorageKey(sk),
-                            ChildRawStorage {
-                                data: child.data.into_iter()
-                                    .map(|(k, v)| (StorageKey(k), StorageData(v)))
-                                    .collect(),
-                                child_info: info.to_vec(),
-                                child_type: ci_type,
-                            },
-                    )})
-                    .collect();
-
-                Genesis::Raw(RawGenesis { top, children })
-            },
-            (_, genesis) => genesis,
-        };
-        let container = Container {
-            client_spec: self.client_spec,
-            genesis,
-        };
-        serde_json::to_string_pretty(&container)
-            .map_err(|e| format!("Error generating spec json: {}", e))
-    }
-}*/
 
 #[cfg(test)]
 mod tests {
@@ -175,6 +100,7 @@ mod tests {
     #[test]
     fn can_decode_polkadot_genesis() {
         let spec = &include_bytes!("chain_spec/polkadot.json")[..];
-        ChainSpec::from_json_bytes(&spec).unwrap();
+        let specs = ChainSpec::from_json_bytes(&spec).unwrap();
+        assert_eq!(specs.id(), "polkadot");
     }
 }

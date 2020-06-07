@@ -37,6 +37,48 @@
 //!
 //! The Wasm execution is fully deterministic, and the outcome of the execution only depends on
 //! the inputs. There is, for example, no implicit injection of randomness or of the current time.
+//!
+//! # Example
+//!
+//! ```no_run
+//! // Create the `WasmBlob`.
+//! let wasm_binary: &[u8] = unimplemented!();
+//! let wasm_blob = substrate_lite::executor::WasmBlob::from_bytes(wasm_binary).unwrap();
+//!
+//! // Start executing a function.
+//! let vm = {
+//!     let to_call = substrate_lite::executor::FunctionToCall::CoreVersion;
+//!     substrate_lite::executor::WasmVm::new(&wasm_blob, to_call).unwrap()
+//! };
+//!
+//! // We need to answer the calls that the function might perform.
+//! loop {
+//!     match vm.state() {
+//!         // Calling `runner.run()` is what actually executes WebAssembly code and updates
+//!         // the state.
+//!         substrate_lite::executor::State::ReadyToRun(runner) => runner.run(),
+//!
+//!         substrate_lite::executor::State::Finished(value) => {
+//!             println!("Success! Returned value: {:?}", value);
+//!             break;
+//!         },
+//!
+//!         // Errors can happen if the WebAssembly code panics or does something wrong.
+//!         // In a real-life situation, the host should obviously not panic in these situations.
+//!         substrate_lite::executor::State::NonConforming(_) |
+//!         substrate_lite::executor::State::Trapped => panic!("Error while executing code"),
+//!
+//!         // All the other variants correspond to function calls that the runtime might perform.
+//!         // `ExternalStorageGet` is shown here as an example.
+//!         substrate_lite::executor::State::ExternalStorageGet { storage_key, resolve, .. } => {
+//!             println!("Runtime wants to read the storage at {:?}", storage_key);
+//!             // Injects the value into the virtual machine and updates the state.
+//!             resolve.finish_call(None); // Just a stub
+//!         }
+//!         _ => unimplemented!()
+//!     }
+//! }
+//! ```
 
 mod allocator;
 mod externals;

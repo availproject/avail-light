@@ -139,23 +139,11 @@ pub async fn run_executor_task(mut config: Config) {
                             parent_hash,
                             resolve,
                         } => {
-                            // TODO: this is a stub that assumes that parent_hash is the direct parent
-                            // TODO: I don't understand what this function is for and how it should work
-                            let mut trie = crate::trie::Trie::new();
-                            for key in parent.storage_keys() {
-                                let value =
-                                    parent.get(key.as_ref()).as_ref().unwrap().as_ref().to_vec();
-                                trie.insert(key.as_ref(), value);
-                            }
-                            for (key, value) in overlay_storage_changes.iter() {
-                                if let Some(value) = value.as_ref() {
-                                    trie.insert(key, value.clone())
-                                } else {
-                                    trie.remove(key);
-                                }
-                            }
-                            let hash = trie.root_merkle_value();
-                            resolve.finish_call(Some(hash.to_vec()));
+                            // TODO: ok lol, this is **completely** not in the specs
+                            // TODO: https://github.com/paritytech/substrate/blob/dbf2163250833e6ac898e7f6c3c8f89f08a7c19d/primitives/state-machine/src/changes_trie/mod.rs#L18
+                            println!("parent hash: {:?}", parent_hash);
+                            // TODO: stub
+                            resolve.finish_call(None);
                         }
                         executor::State::ExternalStorageNextKey {
                             storage_key,
