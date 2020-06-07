@@ -46,8 +46,8 @@
 //!
 
 pub use behaviour::{
-    BlockData, BlockHeader, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
-    BlocksRequestFields,
+    BlockData, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
+    BlocksRequestFields, ScaleBlockHeader,
 };
 pub use builder::builder;
 pub use libp2p::{Multiaddr, PeerId};

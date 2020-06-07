@@ -48,15 +48,9 @@ pub async fn run_sync_task(mut config: Config) {
             .to_executor
             .send(executor_task::ToExecutor::Execute {
                 to_execute: block::Block {
-                    header: block::Header {
-                        parent_hash: header.parent_hash,
-                        number: header.number,
-                        state_root: header.state_root,
-                        extrinsics_root: header.extrinsics_root,
-                        digest: block::Digest {
-                            logs: Vec::new(), // TODO:
-                        },
-                    },
+                    // TODO: don't unwrap
+                    header: <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0)
+                        .unwrap(),
                     extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
                 },
                 send_back: tx,

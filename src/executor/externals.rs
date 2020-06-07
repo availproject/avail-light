@@ -340,12 +340,12 @@ pub enum State<'a> {
     },
     ExternalStorageRoot {
         /// Object to use to finish the call
-        resolve: Resume<'a, H256>,
+        resolve: Resume<'a, Vec<u8>>,
     },
     ExternalStorageChangesRoot {
-        parent_hash: H256,
+        parent_hash: &'a [u8],
         /// Object to use to finish the call
-        resolve: Resume<'a, Vec<u8>>,
+        resolve: Resume<'a, Option<Vec<u8>>>,
     },
     ExternalStorageNextKey {
         /// Concerned key.

@@ -66,7 +66,7 @@ pub struct Behaviour {
 #[derive(Debug)]
 pub enum BehaviourOut {
     /// An announcement about a block has been gossiped to us.
-    BlockAnnounce(BlockHeader),
+    BlockAnnounce(ScaleBlockHeader),
     BlocksResponse {
         id: BlocksRequestId,
         // TODO: proper error type
@@ -74,26 +74,17 @@ pub enum BehaviourOut {
     },
 }
 
-/// Abstraction over a block header for a substrate chain.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BlockHeader {
-    /// The parent hash.
-    pub parent_hash: H256,
-    /// The block number.
-    pub number: u64,
-    /// The state trie merkle root
-    pub state_root: H256,
-    /// The merkle root of the extrinsics.
-    pub extrinsics_root: H256,
-}
+/// SCALE-encoded block header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScaleBlockHeader(pub Vec<u8>);
 
 /// Block data sent in the response.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BlockData {
     /// Block header hash.
     pub hash: H256,
-    /// Block header if requested.
-    pub header: Option<BlockHeader>,
+    /// SCALE-encoded block header if requested.
+    pub header: Option<ScaleBlockHeader>,
     /// Block body if requested.
     pub body: Option<Vec<Extrinsic>>,
     /// Justification if requested.
@@ -348,12 +339,9 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                 match legacy_message::Message::decode_all(&message) {
                     Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
                         self.events
-                            .push_back(BehaviourOut::BlockAnnounce(BlockHeader {
-                                parent_hash: announcement.header.parent_hash,
-                                number: announcement.header.number,
-                                state_root: announcement.header.state_root,
-                                extrinsics_root: announcement.header.extrinsics_root,
-                            }));
+                            .push_back(BehaviourOut::BlockAnnounce(ScaleBlockHeader(
+                                announcement.header.encode(),
+                            )));
                     }
                     Ok(legacy_message::Message::Status(_)) => {}
                     msg => println!("message from {:?} => {:?}", peer_id, msg),
@@ -416,12 +404,7 @@ impl NetworkBehaviourEventProcess<block_requests::Event> for Behaviour {
                         .into_iter()
                         .map(|data| BlockData {
                             hash: data.hash,
-                            header: data.header.map(|header| BlockHeader {
-                                parent_hash: header.parent_hash,
-                                number: header.number,
-                                state_root: header.state_root,
-                                extrinsics_root: header.extrinsics_root,
-                            }),
+                            header: data.header.map(|header| ScaleBlockHeader(header.encode())),
                             body: data
                                 .body
                                 .map(|body| body.into_iter().map(|ext| Extrinsic(ext.0)).collect()),

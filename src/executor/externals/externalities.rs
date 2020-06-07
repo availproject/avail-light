@@ -116,8 +116,8 @@ define_internal_interface! {
     StorageAppend => fn storage_append(key: Vec<u8>, value: Vec<u8>) -> ();
     StorageGet => fn storage_get(key: Vec<u8>, offset: u32, max_size: u32) -> Option<Vec<u8>>;
     StorageClearPrefix => fn storage_clear_prefix(key: Vec<u8>) -> ();
-    StorageRoot => fn storage_root() -> H256;
-    StorageChangesRoot => fn storage_changes_root(parent_hash: H256) -> Vec<u8>;
+    StorageRoot => fn storage_root() -> Vec<u8>;
+    StorageChangesRoot => fn storage_changes_root(parent_hash: Vec<u8>) -> Option<Vec<u8>>;
     StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
 }
 
@@ -226,6 +226,13 @@ impl CallState {
             CallStateInner::StorageRoot { result } => State::StorageRootNeeded {
                 done: Resume { sender: result },
             },
+            CallStateInner::StorageChangesRoot {
+                parent_hash,
+                result,
+            } => State::StorageChangesRootNeeded {
+                parent_hash: &**parent_hash,
+                done: Resume { sender: result },
+            },
             CallStateInner::StorageNextKey { key, result } => State::StorageNextKeyNeeded {
                 key,
                 done: Resume { sender: result },
@@ -308,11 +315,11 @@ pub enum State<'a> {
         done: Resume<'a, ()>,
     },
     StorageRootNeeded {
-        done: Resume<'a, H256>,
+        done: Resume<'a, Vec<u8>>,
     },
     StorageChangesRootNeeded {
-        parent_hash: H256,
-        done: Resume<'a, Vec<u8>>,
+        parent_hash: &'a [u8],
+        done: Resume<'a, Option<Vec<u8>>>,
     },
     StorageNextKeyNeeded {
         key: &'a [u8],
@@ -472,8 +479,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(0, &params)?;
                     let hash = interface.storage_root().await;
                     // TODO: that's some next-level inefficiency here
-                    let encoded_hash =
-                        parity_scale_codec::Encode::encode(&hash.as_bytes().to_vec());
+                    let encoded_hash = parity_scale_codec::Encode::encode(&hash);
                     let value_len = u32::try_from(encoded_hash.len()).unwrap();
 
                     let dest_ptr = interface.allocate(value_len).await;
@@ -486,9 +492,23 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_storage_changes_root_version_1" => Some(Externality {
             name: "ext_storage_changes_root_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let parent_hash = expect_pointer_size(&params[0], &*interface).await?;
+                    let hash = interface.storage_changes_root(parent_hash).await;
+
+                    // TODO: that's some next-level inefficiency here
+                    let encoded_hash = parity_scale_codec::Encode::encode(&hash);
+                    let value_len = u32::try_from(encoded_hash.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(value_len).await;
+                    interface.write_memory(dest_ptr, encoded_hash).await;
+
+                    let ret = build_pointer_size(dest_ptr, value_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_storage_next_key_version_1" => Some(Externality {

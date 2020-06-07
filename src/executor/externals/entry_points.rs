@@ -20,7 +20,7 @@
 //! Wasm virtual machine's memory, and the 32 most significant bits a length. This pointer and
 //! length designate a buffer containing the actual return value.
 
-// TODO: redefine `Block` locally
+// TODO: redefine `Block` locally as a SCALE-encoded opaque blob
 use crate::block::Block;
 
 use alloc::vec::Vec;

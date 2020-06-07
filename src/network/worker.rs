@@ -17,7 +17,7 @@ pub struct Network {
 #[derive(Debug)]
 pub enum Event {
     /// An announcement about a block has been gossiped to us.
-    BlockAnnounce(behaviour::BlockHeader),
+    BlockAnnounce(behaviour::ScaleBlockHeader),
 
     /// A blocks request started with [`Network::start_block_request`] has gotten a response.
     BlocksRequestFinished {
