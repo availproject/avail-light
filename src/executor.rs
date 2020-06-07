@@ -4,7 +4,7 @@
 //! each block in the chain has a special key named `:code` which contains the WebAssembly code
 //! of what we call *the runtime*.
 //!
-//! The runtime is a program (compiled in WebAssembly) that decides, amongst other things, whether
+//! The runtime is a program (in WebAssembly) that decides, amongst other things, whether
 //! transactions are valid and how to apply them on the storage.
 //!
 //! This module contains everything necessary to execute the runtime.
@@ -45,13 +45,15 @@
 //! let wasm_binary: &[u8] = unimplemented!();
 //! let wasm_blob = substrate_lite::executor::WasmBlob::from_bytes(wasm_binary).unwrap();
 //!
-//! // Start executing a function.
+//! // Start executing a function on the runtime.
 //! let vm = {
 //!     let to_call = substrate_lite::executor::FunctionToCall::CoreVersion;
+//!     // Errors can happen only if the Wasm code is wrong/non-conforming, or if the input data
+//!     // can't fit in the virtual machine (which usually means that it is blatently wrong).
 //!     substrate_lite::executor::WasmVm::new(&wasm_blob, to_call).unwrap()
 //! };
 //!
-//! // We need to answer the calls that the function might perform.
+//! // We need to answer the calls that the runtime might perform.
 //! loop {
 //!     match vm.state() {
 //!         // Calling `runner.run()` is what actually executes WebAssembly code and updates
@@ -59,7 +61,15 @@
 //!         substrate_lite::executor::State::ReadyToRun(runner) => runner.run(),
 //!
 //!         substrate_lite::executor::State::Finished(value) => {
-//!             println!("Success! Returned value: {:?}", value);
+//!             // `value` here is an enum of type `Success`, whose variant depends on which
+//!             // function has been called. Since we call `CoreVersion`, we know that this is
+//!             // a `CoreVersion` return value.
+//!             let info = match value {
+//!                 substrate_lite::executor::Success::CoreVersion(info) => info,
+//!                 _ => unreachable!()
+//!             };
+//!
+//!             println!("Success! Returned value: {:?}", info);
 //!             break;
 //!         },
 //!
@@ -79,6 +89,7 @@
 //!     }
 //! }
 //! ```
+// TODO: use an actual Wasm blob extracted from somewhere as an example ^
 
 mod allocator;
 mod externals;
