@@ -73,11 +73,20 @@ pub async fn run_executor_task(mut config: Config) {
                             // TODO: this clones the storage value, meh
                             // TODO: no, doesn't respect constraints
                             if let Some(overlay) = overlay_storage_changes.get(storage_key) {
+                                println!(
+                                    "Get {}={:?}",
+                                    hex::encode(storage_key),
+                                    overlay.as_ref().map(|v| hex::encode(v))
+                                );
                                 resolve.finish_call(overlay.clone());
                             } else {
-                                resolve.finish_call(
-                                    parent.get(&storage_key).map(|v| v.as_ref().to_vec()),
+                                let result = parent.get(&storage_key).map(|v| v.as_ref().to_vec());
+                                println!(
+                                    "Get {}={:?}",
+                                    hex::encode(storage_key),
+                                    result.as_ref().map(|v| hex::encode(v))
                                 );
+                                resolve.finish_call(result);
                             }
                         }
                         executor::State::ExternalStorageSet {
@@ -85,6 +94,11 @@ pub async fn run_executor_task(mut config: Config) {
                             new_storage_value,
                             resolve,
                         } => {
+                            println!(
+                                "Put {}={:?}",
+                                hex::encode(storage_key),
+                                new_storage_value.as_ref().map(|v| hex::encode(v))
+                            );
                             overlay_storage_changes.insert(
                                 storage_key.to_vec(),
                                 new_storage_value.map(|v| v.to_vec()),
@@ -105,17 +119,41 @@ pub async fn run_executor_task(mut config: Config) {
                                         .map(|v| v.as_ref().to_vec())
                                         .unwrap_or(Vec::new())
                                 };
-                            current_value.extend_from_slice(value);
-                            overlay_storage_changes
-                                .insert(storage_key.to_vec(), Some(current_value));
-                            // TODO: implement properly?
+                            let curr_len = <parity_scale_codec::Compact::<u64> as parity_scale_codec::Decode>::decode(&mut &current_value[..]);
+                            let new_value = if let Ok(mut curr_len) = curr_len {
+                                let len_size = <parity_scale_codec::Compact::<u64> as parity_scale_codec::CompactLen::<u64>>::compact_len(&curr_len.0);
+                                curr_len.0 += 1;
+                                let mut new_value = parity_scale_codec::Encode::encode(&curr_len);
+                                new_value.extend_from_slice(&current_value[len_size..]);
+                                new_value.extend_from_slice(value);
+                                new_value
+                            } else {
+                                let mut new_value = parity_scale_codec::Encode::encode(
+                                    &parity_scale_codec::Compact(1u64),
+                                );
+                                new_value.extend_from_slice(value);
+                                new_value
+                            };
+                            overlay_storage_changes.insert(storage_key.to_vec(), Some(new_value));
                             resolve.finish_call(());
                         }
                         executor::State::ExternalStorageClearPrefix {
-                            storage_key: _,
+                            storage_key,
                             resolve,
                         } => {
-                            // TODO: implement
+                            for key in parent.storage_keys() {
+                                let key = key.as_ref();
+                                if !key.starts_with(&storage_key) {
+                                    continue;
+                                }
+                                overlay_storage_changes.insert(key.to_vec(), None);
+                            }
+                            for (key, value) in overlay_storage_changes.iter_mut() {
+                                if !key.starts_with(&storage_key) {
+                                    continue;
+                                }
+                                *value = None;
+                            }
                             resolve.finish_call(());
                         }
                         executor::State::ExternalStorageRoot { resolve } => {
@@ -133,16 +171,16 @@ pub async fn run_executor_task(mut config: Config) {
                                 }
                             }
                             let hash = trie.root_merkle_value();
+                            println!("Root {}", hex::encode(hash));
                             resolve.finish_call(hash.to_vec());
                         }
                         executor::State::ExternalStorageChangesRoot {
                             parent_hash,
                             resolve,
                         } => {
-                            // TODO: ok lol, this is **completely** not in the specs
-                            // TODO: https://github.com/paritytech/substrate/blob/dbf2163250833e6ac898e7f6c3c8f89f08a7c19d/primitives/state-machine/src/changes_trie/mod.rs#L18
-                            println!("parent hash: {:?}", parent_hash);
-                            // TODO: stub
+                            // TODO: this is probably one of the most complicated things to
+                            // implement, but slava told me that it's ok to just return None on
+                            // flaming fir because the feature is disabled
                             resolve.finish_call(None);
                         }
                         executor::State::ExternalStorageNextKey {
@@ -162,6 +200,11 @@ pub async fn run_executor_task(mut config: Config) {
                                 (None, Some(b)) => Some(b.clone()),
                                 (None, None) => None,
                             };
+                            println!(
+                                "next key {} => {:?}",
+                                hex::encode(storage_key),
+                                outcome.as_ref().map(|v| hex::encode(v))
+                            );
                             resolve.finish_call(outcome);
                         }
                         s => unimplemented!("unimplemented externality: {:?}", s),

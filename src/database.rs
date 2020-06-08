@@ -85,7 +85,7 @@ impl Database {
     }
 
     /// Returns the hash of the genesis block.
-    pub fn genesis_hash(&self) -> Result<[u8; 32], AccessError> {
+    pub fn genesis_block_hash(&self) -> Result<[u8; 32], AccessError> {
         let genesis_hash = self
             .inner
             .get(columns::META, meta_keys::GENESIS_HASH)?
