@@ -26,7 +26,7 @@ pub async fn run_sync_task(mut config: Config) {
     let rq = network::BlocksRequestConfig {
         start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
         direction: network::BlocksRequestDirection::Ascending,
-        desired_count: 1,
+        desired_count: 128,
         fields: network::BlocksRequestFields {
             header: true,
             body: true,
@@ -41,7 +41,7 @@ pub async fn run_sync_task(mut config: Config) {
     let result = rx.await.unwrap().unwrap();
 
     for block in result {
-        let (tx, _rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel();
         let header = block.header.unwrap();
         let body = block.body.unwrap();
         config
@@ -57,6 +57,7 @@ pub async fn run_sync_task(mut config: Config) {
             })
             .await
             .unwrap();
+        rx.await;
     }
 
     // TODO: remove that; hack to not make the task stop

@@ -128,7 +128,7 @@ impl Success {
                 Ok(Success::CoreVersion(CoreVersionSuccess::decode_all(data)?))
             }
             CalledFunction::CoreExecuteBlock => {
-                Ok(Success::CoreExecuteBlock(bool::decode_all(data)?))
+                Ok(Success::CoreExecuteBlock)
             }
             CalledFunction::MetadataMetadata => {
                 Ok(Success::MetadataMetadata(Vec::<u8>::decode_all(data)?))

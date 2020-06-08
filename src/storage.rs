@@ -105,6 +105,10 @@ impl BlockStorage {
         self.top_trie.get(key)
     }
 
+    pub fn remove(&mut self, key: &[u8]) {
+        self.top_trie.remove(key);
+    }
+
     /// Returns the key, in lexicographic order, following the one passed as parameter.
     pub fn next_key<'a>(&'a self, key: &[u8]) -> Option<impl AsRef<[u8]> + 'a> {
         // TODO: not optimized

@@ -157,7 +157,7 @@ impl ExternalsVm {
                     // Wasm code.
                     self.state = StateInner::Ready(return_value)
                 }
-                externalities::State::Error(_) => unimplemented!(), // TODO:
+                externalities::State::Error(err) => unimplemented!("{:?}", err), // TODO:
 
                 // The variants below can be handled immediately, and then we continue looping.
                 externalities::State::AllocationNeeded { size, inject_value } => {

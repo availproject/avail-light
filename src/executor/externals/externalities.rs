@@ -706,8 +706,13 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_crypto_sr25519_verify_version_2" => Some(Externality {
             name: "ext_crypto_sr25519_verify_version_2",
             call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(3, &params)?;
+                    // TODO: wrong! this is a dummy implementation meaning that all signature
+                    // verifications are always successful
+                    Ok(Some(vm::RuntimeValue::I32(1)))
+                })
             },
         }),
         "ext_crypto_secp256k1_ecdsa_recover_version_1" => Some(Externality {

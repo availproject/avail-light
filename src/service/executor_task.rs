@@ -2,6 +2,7 @@
 
 use crate::{block, executor, storage};
 
+use alloc::sync::Arc;
 use core::{cmp, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
@@ -18,8 +19,14 @@ pub enum ToExecutor {
         to_execute: block::Block,
         /// Channel where to send back the outcome of the execution.
         // TODO: better return type
-        send_back: oneshot::Sender<Result<(), ()>>,
+        send_back: oneshot::Sender<Result<ExecuteSuccess, ()>>,
     },
+}
+
+pub struct ExecuteSuccess {
+    /// The block that was passed as parameter.
+    pub block: block::Block,
+    pub storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
 }
 
 /// Configuration for that task.
@@ -38,12 +45,16 @@ pub async fn run_executor_task(mut config: Config) {
         match event {
             ToExecutor::Execute {
                 mut to_execute,
-                send_back: _,
+                send_back,
             } => {
+                if send_back.is_canceled() {
+                    continue;
+                }
+
                 // Remove the seal
                 // TODO: obviously make this less hacky
                 // TODO: BABE appends a seal to each block that the runtime doesn't know about
-                to_execute.header.digest.logs.pop();
+                let mut seal_log = to_execute.header.digest.logs.pop().unwrap();
 
                 let parent = config
                     .storage
@@ -60,12 +71,33 @@ pub async fn run_executor_task(mut config: Config) {
                 .unwrap();
 
                 let mut overlay_storage_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
+                let start = std::time::Instant::now();
 
                 loop {
                     match vm.state() {
                         executor::State::ReadyToRun(r) => r.run(),
-                        executor::State::Finished(executor::Success::CoreExecuteBlock(_result)) => {
-                            panic!("success")
+                        executor::State::Finished(executor::Success::CoreExecuteBlock) => {
+                            println!("Block #{} ({}) imported!", to_execute.header.number, hex::encode(&to_execute.header.block_hash().0));
+                            println!("took {:?}", start.elapsed());
+
+                            let mut new_block_storage = (*parent).clone();
+                            for (key, value) in overlay_storage_changes.iter() {
+                                if let Some(value) = value.as_ref() {
+                                    new_block_storage.insert(key, value.clone())
+                                } else {
+                                    new_block_storage.remove(key);
+                                }
+                            }
+
+                            to_execute.header.digest.logs.push(seal_log);
+                            let new_hash = to_execute.header.block_hash();
+                            config.storage.block(&new_hash.0.into()).set_storage(new_block_storage);
+
+                            let _ = send_back.send(Ok(ExecuteSuccess {
+                                block: to_execute,
+                                storage_changes: overlay_storage_changes,
+                            }));
+                            break;
                         }
                         executor::State::Finished(_) => unreachable!(),
                         executor::State::Trapped => panic!("trapped"),
@@ -78,19 +110,9 @@ pub async fn run_executor_task(mut config: Config) {
                             // TODO: this clones the storage value, meh
                             // TODO: no, doesn't respect constraints
                             if let Some(overlay) = overlay_storage_changes.get(storage_key) {
-                                println!(
-                                    "Get {}={:?}",
-                                    hex::encode(storage_key),
-                                    overlay.as_ref().map(|v| hex::encode(v))
-                                );
                                 resolve.finish_call(overlay.clone());
                             } else {
                                 let result = parent.get(&storage_key).map(|v| v.as_ref().to_vec());
-                                println!(
-                                    "Get {}={:?}",
-                                    hex::encode(storage_key),
-                                    result.as_ref().map(|v| hex::encode(v))
-                                );
                                 resolve.finish_call(result);
                             }
                         }
@@ -99,11 +121,6 @@ pub async fn run_executor_task(mut config: Config) {
                             new_storage_value,
                             resolve,
                         } => {
-                            println!(
-                                "Put {}={:?}",
-                                hex::encode(storage_key),
-                                new_storage_value.as_ref().map(|v| hex::encode(v))
-                            );
                             overlay_storage_changes.insert(
                                 storage_key.to_vec(),
                                 new_storage_value.map(|v| v.to_vec()),
@@ -115,6 +132,7 @@ pub async fn run_executor_task(mut config: Config) {
                             value,
                             resolve,
                         } => {
+                            // TODO: report that behaviour to specs writers
                             let mut current_value =
                                 if let Some(overlay) = overlay_storage_changes.get(storage_key) {
                                     overlay.clone().unwrap_or(Vec::new())
@@ -176,7 +194,6 @@ pub async fn run_executor_task(mut config: Config) {
                                 }
                             }
                             let hash = trie.root_merkle_value();
-                            println!("Root {}", hex::encode(hash));
                             resolve.finish_call(hash);
                         }
                         executor::State::ExternalStorageChangesRoot {
@@ -205,18 +222,11 @@ pub async fn run_executor_task(mut config: Config) {
                                 (None, Some(b)) => Some(b.clone()),
                                 (None, None) => None,
                             };
-                            println!(
-                                "next key {} => {:?}",
-                                hex::encode(storage_key),
-                                outcome.as_ref().map(|v| hex::encode(v))
-                            );
                             resolve.finish_call(outcome);
                         }
                         s => unimplemented!("unimplemented externality: {:?}", s),
                     }
                 }
-
-                unimplemented!("executor")
             }
         }
     }
