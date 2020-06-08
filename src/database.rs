@@ -9,8 +9,6 @@ pub struct Database {
 
 /// Columns indices in the key-value store.
 ///
-/// Copy-pasted from upstream Substrate code.
-///
 /// > **Note**: Don't get fooled by the word "column". Each so-called column is similar to what
 /// >           one would call a "table" in a traditional database system. Each "column" is an
 /// >           individual key-value store.
@@ -41,24 +39,27 @@ mod columns {
 }
 
 /// Keys found in the `META` column.
-///
-/// Copy-pasted from upstream Substrate code.
 mod meta_keys {
     /// Type of storage ("full" or "light").
     pub const TYPE: &[u8; 4] = b"type";
-    /// Best block key.
+    /// Key (for indexing other columns) of the latest best block.
     pub const BEST_BLOCK: &[u8; 4] = b"best";
-    /// Last finalized block key.
+    /// Key (for indexing other columns) of the latest finalized block.
     pub const FINALIZED_BLOCK: &[u8; 5] = b"final";
     /// Meta information prefix for list-based caches.
+    // TODO: explain better ^
     pub const CACHE_META_PREFIX: &[u8; 5] = b"cache";
     /// Meta information for changes tries key.
+    // TODO: explain better ^
     pub const CHANGES_TRIES_META: &[u8; 5] = b"ctrie";
-    /// Genesis block hash.
+    /// 32 bytes of the hash of the genesis block. Note that the genesis block can be found in the
+    /// database as well.
     pub const GENESIS_HASH: &[u8; 3] = b"gen";
     /// Leaves prefix list key.
+    // TODO: explain better ^
     pub const LEAF_PREFIX: &[u8; 4] = b"leaf";
     /// Children prefix list key.
+    // TODO: explain better ^
     pub const CHILDREN_PREFIX: &[u8; 8] = b"children";
 }
 
@@ -72,36 +73,13 @@ impl Database {
                 ),
                 11,
             );
+            options.sync = true;
             let mut column_options = &mut options.columns[usize::from(columns::STATE)];
             column_options.ref_counted = true;
             column_options.preimage = true;
             column_options.uniform = true;
             parity_db::Db::open(&options).unwrap()
         };
-
-        let test = inner
-            .get(columns::KEY_LOOKUP, &0u32.to_be_bytes())
-            .unwrap()
-            .unwrap();
-        println!("test: {:?}", test);
-
-        let genesis_hash = inner
-            .get(columns::META, meta_keys::GENESIS_HASH)
-            .unwrap()
-            .unwrap();
-        let genesis_block_lookup = inner
-            .get(columns::KEY_LOOKUP, &genesis_hash)
-            .unwrap()
-            .unwrap();
-
-        let best_block_lookup = inner.get(columns::META, b"best").unwrap().unwrap();
-        println!("{:?}", genesis_block_lookup);
-        let best_block = inner
-            .get(columns::HEADER, &genesis_block_lookup)
-            .unwrap()
-            .unwrap();
-        let decoded = crate::block::Header::decode(&mut &best_block[..]).unwrap();
-        println!("genesis block header: {:?}", decoded);
 
         Database { inner }
     }
@@ -145,9 +123,41 @@ impl Database {
             lookup_key,
         }))
     }
+
+    /// Gives access to the current best block in the database.
+    pub fn best_block(&self) -> Result<BlockAccess, AccessError> {
+        let lookup_key = self
+            .inner
+            .get(columns::META, meta_keys::BEST_BLOCK)?
+            .ok_or(AccessError::Corrupted)?;
+        Ok(BlockAccess {
+            database: self,
+            lookup_key,
+        })
+    }
+
+    /// Gives access to the latest finalized best block in the database.
+    pub fn finalized_block(&self) -> Result<BlockAccess, AccessError> {
+        let lookup_key = self
+            .inner
+            .get(columns::META, meta_keys::FINALIZED_BLOCK)?
+            .ok_or(AccessError::Corrupted)?;
+        Ok(BlockAccess {
+            database: self,
+            lookup_key,
+        })
+    }
 }
 
 /// Access to the information about a block in the database.
+///
+/// This struct refers to a certain block with a specific hash. If for example this struct is
+/// obtained by calling [`Database::best_block`], then it will keep referring to the same block
+/// even if the best block is modified.
+///
+/// It is guaranteed that blocks don't get removed from the database as long as a [`BlockAccess`]
+/// referring to it is alive.
+// TODO: pin the block while this struct is alive so it doesn't get destroyed
 pub struct BlockAccess<'a> {
     /// Parent structure.
     database: &'a Database,
