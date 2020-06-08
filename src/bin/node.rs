@@ -32,7 +32,10 @@ async fn async_main() {
     )
     .unwrap();
 
+    let database = substrate_lite::database::Database::open();
+
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
+        .with_database(database)
         .build()
         .await;
 
