@@ -116,19 +116,6 @@ impl ServiceBuilder {
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
         let (to_database_tx, to_database_rx) = mpsc::channel(64);
 
-        // TODO: remove
-        println!(
-            "{:?}",
-            self.database
-                .as_ref()
-                .unwrap()
-                .block_by_number(1)
-                .unwrap()
-                .unwrap()
-                .header()
-                .unwrap()
-        );
-
         // Now actually spawn all the tasks.
         // The order of the tasks spawning doesn't matter.
         tasks_executor(
