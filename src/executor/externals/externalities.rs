@@ -116,8 +116,8 @@ define_internal_interface! {
     StorageAppend => fn storage_append(key: Vec<u8>, value: Vec<u8>) -> ();
     StorageGet => fn storage_get(key: Vec<u8>, offset: u32, max_size: u32) -> Option<Vec<u8>>;
     StorageClearPrefix => fn storage_clear_prefix(key: Vec<u8>) -> ();
-    StorageRoot => fn storage_root() -> Vec<u8>;
-    StorageChangesRoot => fn storage_changes_root(parent_hash: Vec<u8>) -> Option<Vec<u8>>;
+    StorageRoot => fn storage_root() -> [u8; 32];
+    StorageChangesRoot => fn storage_changes_root(parent_hash: Vec<u8>) -> Option<[u8; 32]>;
     StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
 }
 
@@ -315,11 +315,11 @@ pub enum State<'a> {
         done: Resume<'a, ()>,
     },
     StorageRootNeeded {
-        done: Resume<'a, Vec<u8>>,
+        done: Resume<'a, [u8; 32]>,
     },
     StorageChangesRootNeeded {
         parent_hash: &'a [u8],
-        done: Resume<'a, Option<Vec<u8>>>,
+        done: Resume<'a, Option<[u8; 32]>>,
     },
     StorageNextKeyNeeded {
         key: &'a [u8],

@@ -37,9 +37,14 @@ pub async fn run_executor_task(mut config: Config) {
     while let Some(event) = config.to_executor.next().await {
         match event {
             ToExecutor::Execute {
-                to_execute,
+                mut to_execute,
                 send_back: _,
             } => {
+                // Remove the seal
+                // TODO: obviously make this less hacky
+                // TODO: BABE appends a seal to each block that the runtime doesn't know about
+                to_execute.header.digest.logs.pop();
+
                 let parent = config
                     .storage
                     .block(&to_execute.header.parent_hash)
@@ -172,7 +177,7 @@ pub async fn run_executor_task(mut config: Config) {
                             }
                             let hash = trie.root_merkle_value();
                             println!("Root {}", hex::encode(hash));
-                            resolve.finish_call(hash.to_vec());
+                            resolve.finish_call(hash);
                         }
                         executor::State::ExternalStorageChangesRoot {
                             parent_hash,

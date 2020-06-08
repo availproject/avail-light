@@ -77,6 +77,7 @@ impl ExternalsVm {
         let (called_function, data) = to_call.into_function_and_param();
         let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
         let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
+        println!("input data = {}", hex::encode(&data));
 
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
@@ -340,12 +341,12 @@ pub enum State<'a> {
     },
     ExternalStorageRoot {
         /// Object to use to finish the call
-        resolve: Resume<'a, Vec<u8>>,
+        resolve: Resume<'a, [u8; 32]>,
     },
     ExternalStorageChangesRoot {
         parent_hash: &'a [u8],
         /// Object to use to finish the call
-        resolve: Resume<'a, Option<Vec<u8>>>,
+        resolve: Resume<'a, Option<[u8; 32]>>,
     },
     ExternalStorageNextKey {
         /// Concerned key.

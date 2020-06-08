@@ -108,7 +108,8 @@ impl<'a, 'b> From<&'a FunctionToCall<'b>> for CalledFunction {
 #[derive(Debug)]
 pub enum Success {
     CoreVersion(CoreVersionSuccess),
-    CoreExecuteBlock(bool),
+    // TODO: specs mention that this returns a bool; it's not true, failure is indicating by panicking
+    CoreExecuteBlock,
     /// The actual format of the metadata is opaque.
     // TODO: explain what this metadata actually consists of? [I have no idea]
     MetadataMetadata(Vec<u8>),
