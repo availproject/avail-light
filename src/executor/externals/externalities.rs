@@ -408,7 +408,6 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(3, &params)?;
                     let key = expect_pointer_size(&params[0], &*interface).await?;
                     let (value_out_ptr, value_out_size) = expect_pointer_size_raw(&params[1])?;
-                    // TODO: docs say this offset is a i32; that seems wrong, in Substrate it's an u32 too
                     let offset = expect_u32(&params[2])?;
 
                     let value = interface.storage_get(key, offset, value_out_size).await;
@@ -536,8 +535,6 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_storage_append_version_1" => Some(Externality {
             name: "ext_storage_append_version_1",
             call: |interface, params| {
-                // TODO: Substrate docs mention something about a specific format but no idea what
-                // that is
                 let params = params.to_vec();
                 Box::pin(async move {
                     expect_num_params(2, &params)?;
@@ -1018,8 +1015,6 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     let mut trie = crate::trie::Trie::new();
                     for (idx, value) in elements.into_iter().enumerate() {
                         let idx = u32::try_from(idx).unwrap();
-                        // TODO: specs say "fixed size integers" but doesn't mention compact SCALE encoding;
-                        // had to look in the source code of Substrate; report that to specs writers
                         let key =
                             parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(idx));
                         trie.insert(&key, value);

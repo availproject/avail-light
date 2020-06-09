@@ -324,10 +324,29 @@ pub enum State<'a> {
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,
     },
+    /// Must load a storage value, treat it as if it was a SCALE-encoded container, and put `value`
+    /// at the end of the container, increasing the number of elements.
+    ///
+    /// If there isn't any existing value of if the existing value isn't actually a SCALE-encoded
+    /// container, store a 1-size container with the `value`.
+    ///
+    /// # Details
+    ///
+    /// The SCALE encoding encodes containers as a SCALE-compact-encoded length followed with the
+    /// SCALE-encoded items one after the other. For example, a container of two elements is stored
+    /// as the number `2` followed with the two items.
+    ///
+    /// This change consists in taking an existing value and assuming that it is a SCALE-encoded
+    /// container. This can be done as decoding a SCALE-compact-encoded number at the start of
+    /// the existing encoded value. One most then increment that number and puting `value` at the
+    /// end of the encoded value.
+    ///
+    /// It is not necessary to decode `value` as is assumed that is already encoded in the same
+    /// way as the other items in the container.
     ExternalStorageAppend {
         /// Which key to change.
         storage_key: &'a [u8],
-        /// Value to append to the storage value.
+        /// Item to append to the storage value.
         value: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,

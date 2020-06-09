@@ -235,8 +235,6 @@ impl Trie {
         // Compute the node subvalue.
         let node_subvalue = {
             if children_bitmap == 0 {
-                // TODO: specs seem to imply that we should push a 0 (meaning "0 length") if there's
-                // no stored value, but that doesn't match Substrate
                 if let Some(stored_value) = stored_value {
                     // TODO: SCALE-encoding clones the value; optimize that
                     stored_value.encode()
@@ -244,8 +242,6 @@ impl Trie {
                     Vec::new()
                 }
             } else {
-                // TODO: specs don't say anything about endianess or bits ordering of
-                // children_bitmap; had to look in Substrate code; report that to specs writers
                 let mut out = children_bitmap.to_le_bytes().to_vec();
                 for (child_index, child_partial_key) in children_partial_keys {
                     let child_merkle_value = self.merkle_value(
@@ -256,8 +252,6 @@ impl Trie {
                     // TODO: we encode the child merkle value as SCALE, which copies it again; opt  imize that
                     out.extend(child_merkle_value.encode());
                 }
-                // TODO: specs seem to imply that we should push a 0 (meaning "0 length") if there's
-                // no stored value, but that doesn't match Substrate
                 if let Some(stored_value) = stored_value {
                     // TODO: SCALE-encoding clones the value; optimize that
                     out.extend(stored_value.encode())

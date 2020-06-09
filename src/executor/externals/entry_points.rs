@@ -108,7 +108,6 @@ impl<'a, 'b> From<&'a FunctionToCall<'b>> for CalledFunction {
 #[derive(Debug)]
 pub enum Success {
     CoreVersion(CoreVersionSuccess),
-    // TODO: specs mention that this returns a bool; it's not true, failure is indicating by panicking
     CoreExecuteBlock,
     /// The actual format of the metadata is opaque.
     // TODO: explain what this metadata actually consists of? [I have no idea]
@@ -127,9 +126,7 @@ impl Success {
             CalledFunction::CoreVersion => {
                 Ok(Success::CoreVersion(CoreVersionSuccess::decode_all(data)?))
             }
-            CalledFunction::CoreExecuteBlock => {
-                Ok(Success::CoreExecuteBlock)
-            }
+            CalledFunction::CoreExecuteBlock => Ok(Success::CoreExecuteBlock),
             CalledFunction::MetadataMetadata => {
                 Ok(Success::MetadataMetadata(Vec::<u8>::decode_all(data)?))
             }
@@ -153,9 +150,7 @@ pub struct CoreVersionSuccess {
     pub authoring_version: u32,
     pub spec_version: u32,
     pub impl_version: u32,
-    // TODO: specs document this as an unexplained `ApisVec`; report that to specs writer
     // TODO: stronger typing
     pub apis: Vec<([u8; 8], u32)>,
-    // TODO: this field has been introduced recently and isn't mention in the specs; report that to specs writer
     pub transaction_version: u32,
 }
