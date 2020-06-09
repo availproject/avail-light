@@ -42,6 +42,18 @@ pub struct Service {
     /// process events. This is an intended behaviour.
     events_in: mpsc::Receiver<Event>,
 
+    /// Number of the best known block. Only updated by receiving events.
+    best_block_number: u64,
+
+    /// Hash of the best known block. Only updated by receiving events.
+    best_block_hash: [u8; 32],
+
+    /// Number of the latest finalized block. Only updated by receiving events.
+    finalized_block_number: u64,
+
+    /// Hash of the latest finalized block. Only updated by receiving events.
+    finalized_block_hash: [u8; 32],
+
     /// Optional threads pool that is used to dispatch tasks and that we keep alive.
     _threads_pool: Option<ThreadPool>,
 }
@@ -83,53 +95,39 @@ impl Service {
     pub async fn next_event(&mut self) -> Event {
         // The events channel is never closed unless the background tasks have all closed as well,
         // in which case it is totally appropriate to panic.
-        self.events_in.next().await.unwrap()
-    }
-    /*
-        // TODO: block0's hash is not 0
-        let block0 = "0000000000000000000000000000000000000000000000000000000000000000"
-            .parse()
-            .unwrap();
-        let wasm_runtime = executor::WasmBlob::from_bytes(
-            self.storage
-                .block(&block0)
-                .storage()
-                .unwrap()
-                .code_key()
-                .unwrap(),
-        )
-        .unwrap();
-        self.wasm_vms
-            .execute((), &wasm_runtime, executor::FunctionToCall::CoreVersion);
+        let event = self.events_in.next().await.unwrap();
 
-        // TODO: don't put that here
-        self.network
-            .start_block_request(network::BlocksRequestConfig {
-                start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
-                direction: network::BlocksRequestDirection::Ascending,
-                desired_count: 1,
-                fields: network::BlocksRequestFields {
-                    header: true,
-                    body: true,
-                    justification: false,
-                },
-            })
-            .await;
-
-        loop {
-            futures::select! {
-                event = self.network.next_event().fuse() => {
-                    match event {
-                        network::Event::BlockAnnounce(header) => {
-                            //self.network.start_block_request(header.number).await;
-                            return Event::NewChainHead(header.number); // TODO: not necessarily the head
-                        }
-                        network::Event::BlocksRequestFinished { id, result } => {
-                            println!("{:?}", result);
-                        }
-                    }
-                }
-            }
+        // Update the local state.
+        match &event {
+            Event::NewBlock { number, .. } => self.best_block_number = *number,
+            Event::NewFinalized { number, .. } => self.finalized_block_number = *number,
+            _ => {}
         }
-    }*/
+
+        event
+    }
+
+    /// Returns the number of the best known block. Only updated when calling
+    /// [`Service::next_event`].
+    pub fn best_block_number(&self) -> u64 {
+        self.best_block_number
+    }
+
+    /// Returns the hash of the best known block. Only updated when calling
+    /// [`Service::next_event`].
+    pub fn best_block_hash(&self) -> [u8; 32] {
+        self.best_block_hash
+    }
+
+    /// Returns the number of the latest finalized block. Only updated when calling
+    /// [`Service::next_event`].
+    pub fn finalized_block_number(&self) -> u64 {
+        self.finalized_block_number
+    }
+
+    /// Returns the hash of the latest finalized block. Only updated when calling
+    /// [`Service::next_event`].
+    pub fn finalized_block_hash(&self) -> [u8; 32] {
+        self.finalized_block_hash
+    }
 }

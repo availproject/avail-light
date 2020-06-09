@@ -175,6 +175,10 @@ impl ServiceBuilder {
 
         Service {
             events_in,
+            best_block_number: 0,      // TODO: wrong
+            best_block_hash: [0; 32],  // TODO: wrong
+            finalized_block_number: 0, // TODO: wrong
+            finalized_block_hash: [0; 32],
             _threads_pool: threads_pool,
         }
     }

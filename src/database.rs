@@ -1,6 +1,7 @@
 //! Filesystem-backed database containing all the information about a chain.
 
 use parity_scale_codec::Decode as _;
+use std::path::Path;
 
 /// An open database. Holds file descriptors.
 pub struct Database {
@@ -16,6 +17,7 @@ pub struct Database {
 mod columns {
     /// Holds a predefined list of keys. See the `meta_keys` module below.
     pub const META: u8 = 0;
+    /// Storage of the best block. The keys and values are the same as for the storage itself.
     pub const STATE: u8 = 1;
     pub const STATE_META: u8 = 2;
     /// Maps block numbers or block hashes to keys used to index into other columns.
@@ -31,6 +33,10 @@ mod columns {
     /// is a `Vec<Vec<u8>>` where each inner `Vec` is an opaque extrinsic.
     /// Look into [`KEY_LOOKUP`] to find the key corresponding to a certain block.
     pub const BODY: u8 = 5;
+    /// Each finalized block in database has a record. Values are an opaque proof of the finality
+    /// of the block.
+    /// Look into [`KEY_LOOKUP`] to find the key corresponding to a certain block.
+    // TODO: what is the exact format of a justification?
     pub const JUSTIFICATION: u8 = 6;
     pub const CHANGES_TRIE: u8 = 7;
     pub const AUX: u8 = 8;
@@ -55,8 +61,11 @@ mod meta_keys {
     /// 32 bytes of the hash of the genesis block. Note that the genesis block can be found in the
     /// database as well.
     pub const GENESIS_HASH: &[u8; 3] = b"gen";
-    /// Leaves prefix list key.
-    // TODO: explain better ^
+    /// A SCALE-encoded `Vec<(u32, Vec<[u8; 32]>)>`. Contains a list of tuples of block number and
+    /// list of block hashes with that number. All the blocks in this list are leaves, in other
+    /// words they have no children. Only includes blocks who descend from the latest finalized
+    /// block.
+    // TODO: not actually sure of the exact data type
     pub const LEAF_PREFIX: &[u8; 4] = b"leaf";
     /// Children prefix list key.
     // TODO: explain better ^
@@ -64,15 +73,10 @@ mod meta_keys {
 }
 
 impl Database {
-    pub fn open() -> Self {
+    pub fn open(path: impl AsRef<Path>) -> Self {
         // TODO:
         let inner = {
-            let mut options = parity_db::Options::with_columns(
-                std::path::Path::new(
-                    "/home/pierre/.local/share/substrate/chains/flamingfir7/paritydb",
-                ),
-                11,
-            );
+            let mut options = parity_db::Options::with_columns(path.as_ref(), 11);
             options.sync = true;
             let mut column_options = &mut options.columns[usize::from(columns::STATE)];
             column_options.ref_counted = true;

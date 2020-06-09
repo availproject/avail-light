@@ -32,7 +32,9 @@ async fn async_main() {
     )
     .unwrap();
 
-    let database = substrate_lite::database::Database::open();
+    let database = substrate_lite::database::Database::open(
+        "/home/pierre/.local/share/substrate/chains/flamingfir7/paritydb",
+    );
 
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_database(database)
@@ -55,13 +57,12 @@ async fn async_main() {
     loop {
         futures::select! {
             informant = informant_timer.next() => {
-                // TODO: stub
                 eprintln!("{}", substrate_lite::informant::InformantLine {
-                    num_connected_peers: 0,
-                    best_number: 0,
-                    finalized_number: 0,
-                    best_hash: &"e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39".parse().unwrap(),
-                    finalized_hash: &"e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39".parse().unwrap(),
+                    num_connected_peers: 0,  // TODO:
+                    best_number: service.best_block_number(),
+                    finalized_number: service.finalized_block_number(),
+                    best_hash: &service.best_block_hash(),
+                    finalized_hash: &service.finalized_block_hash(),
                 });
             }
             ev = service.next_event().fuse() => {
