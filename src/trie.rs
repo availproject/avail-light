@@ -118,16 +118,16 @@ impl Trie {
     }
 
     /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
-    /// `child_index`, and `key_from_parent`.
+    /// `child_index`, and `partial_key`.
     fn merkle_value(
         &self,
         parent_key: TrieNodeKey,
         child_index: Option<Nibble>,
-        key_from_parent: TrieNodeKey,
+        partial_key: TrieNodeKey,
     ) -> Vec<u8> {
         let is_root = child_index.is_none();
 
-        let node_value = self.node_value(parent_key, child_index, key_from_parent);
+        let node_value = self.node_value(parent_key, child_index, partial_key);
 
         if is_root || node_value.len() >= 32 {
             let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
@@ -140,7 +140,7 @@ impl Trie {
     }
 
     /// Calculates the node value of the node whose key is the concatenation of `parent_key`,
-    /// `child_index`, and `key_from_parent`.
+    /// `child_index`, and `partial_key`.
     fn node_value(
         &self,
         parent_key: TrieNodeKey,

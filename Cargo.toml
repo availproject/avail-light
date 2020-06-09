@@ -68,3 +68,4 @@ opt-level = 3
 [profile.release]
 panic = "abort"
 lto = true
+#strip = "symbols"      # TODO: uncomment once stable
