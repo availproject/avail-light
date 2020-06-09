@@ -99,8 +99,14 @@ impl Service {
 
         // Update the local state.
         match &event {
-            Event::NewBlock { number, .. } => self.best_block_number = *number,
-            Event::NewFinalized { number, .. } => self.finalized_block_number = *number,
+            Event::NewBlock { number, hash, .. } => {
+                self.best_block_number = *number;
+                self.best_block_hash = (*hash).into();
+            },
+            Event::NewFinalized { number, hash } => {
+                self.finalized_block_number = *number;
+                self.finalized_block_hash = (*hash).into();
+            },
             _ => {}
         }
 

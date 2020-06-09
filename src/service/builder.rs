@@ -121,7 +121,7 @@ impl ServiceBuilder {
         tasks_executor(
             network_task::run_networking_task(network_task::Config {
                 to_network: to_network_rx,
-                to_service_out,
+                to_service_out: to_service_out.clone(),
                 network_builder: self.network.with_executor({
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| (*tasks_executor)(task))
@@ -148,6 +148,7 @@ impl ServiceBuilder {
             sync_task::run_sync_task(sync_task::Config {
                 to_executor: to_executor_tx,
                 to_network: to_network_tx,
+                to_service_out,
             })
             .boxed(),
         );

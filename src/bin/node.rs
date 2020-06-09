@@ -67,9 +67,6 @@ async fn async_main() {
             }
             ev = service.next_event().fuse() => {
                 match ev {
-                    substrate_lite::service::Event::NewBlock { number, .. } => {
-                        println!("new block: {}", number);
-                    }
                     substrate_lite::service::Event::NewNetworkExternalAddress { address } => {
                         eprintln!("🔍 Discovered new external address for our node: {}", address);
                     }

@@ -1135,7 +1135,8 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         // everything as valid, and panic if an unknown function is actually called
         //_ => None,
         f => {
-            println!("unknown function: {}", f);
+            // TODO: this println is a bit too verbose
+            //println!("unknown function: {}", f);
             Some(Externality {
                 name: "unknown",
                 call: |_, _| unimplemented!(),

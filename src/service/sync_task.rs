@@ -15,6 +15,8 @@ pub struct Config {
     pub to_network: mpsc::Sender<network_task::ToNetwork>,
     /// Channel to send instructions to the executor task.
     pub to_executor: mpsc::Sender<executor_task::ToExecutor>,
+    /// Sender that reports messages to the outside of the service.
+    pub to_service_out: mpsc::Sender<super::Event>,
 }
 
 /// Runs the sync task.
@@ -44,13 +46,14 @@ pub async fn run_sync_task(mut config: Config) {
         let (tx, rx) = oneshot::channel();
         let header = block.header.unwrap();
         let body = block.body.unwrap();
+        // TODO: don't unwrap
+        let decoded_header = <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
+
         config
             .to_executor
             .send(executor_task::ToExecutor::Execute {
                 to_execute: block::Block {
-                    // TODO: don't unwrap
-                    header: <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0)
-                        .unwrap(),
+                    header: decoded_header.clone(), // TODO: ideally don't clone? dunno
                     extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
                 },
                 send_back: tx,
@@ -58,6 +61,12 @@ pub async fn run_sync_task(mut config: Config) {
             .await
             .unwrap();
         rx.await;
+
+        config.to_service_out.send(super::Event::NewBlock {
+            number: decoded_header.number,
+            hash: decoded_header.block_hash().0.into(),
+            head_update: super::ChainHeadUpdate::FastForward,   // TODO: dummy
+        }).await;
     }
 
     // TODO: remove that; hack to not make the task stop

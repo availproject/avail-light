@@ -77,13 +77,6 @@ pub async fn run_executor_task(mut config: Config) {
                     match vm.state() {
                         executor::State::ReadyToRun(r) => r.run(),
                         executor::State::Finished(executor::Success::CoreExecuteBlock) => {
-                            println!(
-                                "Block #{} ({}) imported!",
-                                to_execute.header.number,
-                                hex::encode(&to_execute.header.block_hash().0)
-                            );
-                            println!("took {:?}", start.elapsed());
-
                             let mut new_block_storage = (*parent).clone();
                             for (key, value) in overlay_storage_changes.iter() {
                                 if let Some(value) = value.as_ref() {
