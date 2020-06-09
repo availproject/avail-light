@@ -102,11 +102,11 @@ impl Service {
             Event::NewBlock { number, hash, .. } => {
                 self.best_block_number = *number;
                 self.best_block_hash = (*hash).into();
-            },
+            }
             Event::NewFinalized { number, hash } => {
                 self.finalized_block_number = *number;
                 self.finalized_block_hash = (*hash).into();
-            },
+            }
             _ => {}
         }
 

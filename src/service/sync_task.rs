@@ -47,7 +47,8 @@ pub async fn run_sync_task(mut config: Config) {
         let header = block.header.unwrap();
         let body = block.body.unwrap();
         // TODO: don't unwrap
-        let decoded_header = <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
+        let decoded_header =
+            <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
 
         config
             .to_executor
@@ -62,11 +63,14 @@ pub async fn run_sync_task(mut config: Config) {
             .unwrap();
         rx.await;
 
-        config.to_service_out.send(super::Event::NewBlock {
-            number: decoded_header.number,
-            hash: decoded_header.block_hash().0.into(),
-            head_update: super::ChainHeadUpdate::FastForward,   // TODO: dummy
-        }).await;
+        config
+            .to_service_out
+            .send(super::Event::NewBlock {
+                number: decoded_header.number,
+                hash: decoded_header.block_hash().0.into(),
+                head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
+            })
+            .await;
     }
 
     // TODO: remove that; hack to not make the task stop
