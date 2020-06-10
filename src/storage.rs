@@ -52,6 +52,11 @@ impl Storage {
             entry: self.blocks.entry(hash.clone()),
         }
     }
+
+    // TODO: temporary hack to free some memory
+    pub fn remove_storage(&mut self, block: &H256) {
+        self.blocks.remove(block);
+    }
 }
 
 impl<'a> Block<'a> {
