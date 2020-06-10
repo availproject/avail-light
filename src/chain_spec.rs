@@ -76,12 +76,10 @@ impl ChainSpec {
         self.client_spec.protocol_id.as_ref().map(String::as_str)
     }
 
-    // TODO: bad API
-    pub(crate) fn genesis_top(
-        &self,
-    ) -> &HashMap<structs::StorageKey, structs::StorageData, FnvBuildHasher> {
+    /// Returns the list of storage keys and values of the genesis block.
+    pub fn genesis_storage(&self) -> impl ExactSizeIterator<Item = (&[u8], &[u8])> {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
-        &genesis.top
+        genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }
 
     // TODO: bad API
