@@ -3,7 +3,7 @@
 use crate::{block, executor, storage};
 
 use alloc::sync::Arc;
-use core::{cmp, pin::Pin};
+use core::{cmp, convert::TryFrom as _, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
@@ -108,13 +108,24 @@ pub async fn run_executor_task(mut config: Config) {
                             resolve,
                         } => {
                             // TODO: this clones the storage value, meh
-                            // TODO: no, doesn't respect constraints
-                            if let Some(overlay) = overlay_storage_changes.get(storage_key) {
-                                resolve.finish_call(overlay.clone());
-                            } else {
-                                let result = parent.get(&storage_key).map(|v| v.as_ref().to_vec());
-                                resolve.finish_call(result);
+                            let mut value =
+                                if let Some(overlay) = overlay_storage_changes.get(storage_key) {
+                                    overlay.clone()
+                                } else {
+                                    parent.get(&storage_key).map(|v| v.as_ref().to_vec())
+                                };
+                            if let Some(value) = &mut value {
+                                if usize::try_from(offset).unwrap() < value.len() {
+                                    *value = value[usize::try_from(offset).unwrap()..].to_vec();
+                                    if usize::try_from(max_size).unwrap() < value.len() {
+                                        *value =
+                                            value[..usize::try_from(max_size).unwrap()].to_vec();
+                                    }
+                                } else {
+                                    *value = Vec::new();
+                                }
                             }
+                            resolve.finish_call(value);
                         }
                         executor::State::ExternalStorageSet {
                             storage_key,

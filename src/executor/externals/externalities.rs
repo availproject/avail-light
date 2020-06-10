@@ -413,7 +413,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     let value = interface.storage_get(key, offset, value_out_size).await;
                     let outcome = if let Some(value) = value {
                         let written = u32::try_from(value.len()).unwrap();
-                        assert!(written < value_out_size);
+                        assert!(written <= value_out_size);
                         interface.write_memory(value_out_ptr, value).await;
                         Some(written)
                     } else {

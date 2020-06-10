@@ -61,7 +61,10 @@ async fn async_main() {
     loop {
         futures::select! {
             informant = informant_timer.next() => {
-                eprint!("{}\r", substrate_lite::informant::InformantLine {
+                // TODO: right now we put \n to avoid the informant line being overwritten by
+                // panic messages, so that we know at which block we were
+                // TODO: put back \r instead
+                eprint!("{}\n", substrate_lite::informant::InformantLine {
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: service.num_network_connections(),
                     best_number: service.best_block_number(),

@@ -24,53 +24,59 @@ pub async fn run_sync_task(mut config: Config) {
     // TODO: we cheat, to wait to be connected to nodes
     futures_timer::Delay::new(core::time::Duration::from_secs(5)).await;
 
-    let (tx, rx) = oneshot::channel();
-    let rq = network::BlocksRequestConfig {
-        start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
-        direction: network::BlocksRequestDirection::Ascending,
-        desired_count: 128,
-        fields: network::BlocksRequestFields {
-            header: true,
-            body: true,
-            justification: false,
-        },
-    };
-    config
-        .to_network
-        .send(network_task::ToNetwork::BlocksRequest(rq, tx))
-        .await
-        .unwrap();
-    let result = rx.await.unwrap().unwrap();
+    let mut next_block = 1;
 
-    for block in result {
+    loop {
         let (tx, rx) = oneshot::channel();
-        let header = block.header.unwrap();
-        let body = block.body.unwrap();
-        // TODO: don't unwrap
-        let decoded_header =
-            <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
-
+        let rq = network::BlocksRequestConfig {
+            start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(next_block).unwrap()),
+            direction: network::BlocksRequestDirection::Ascending,
+            desired_count: 128,
+            fields: network::BlocksRequestFields {
+                header: true,
+                body: true,
+                justification: false,
+            },
+        };
         config
-            .to_executor
-            .send(executor_task::ToExecutor::Execute {
-                to_execute: block::Block {
-                    header: decoded_header.clone(), // TODO: ideally don't clone? dunno
-                    extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
-                },
-                send_back: tx,
-            })
+            .to_network
+            .send(network_task::ToNetwork::BlocksRequest(rq, tx))
             .await
             .unwrap();
-        rx.await;
+        let result = rx.await.unwrap().unwrap();
 
-        config
-            .to_service_out
-            .send(super::Event::NewChainHead {
-                number: decoded_header.number,
-                hash: decoded_header.block_hash().0.into(),
-                head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
-            })
-            .await;
+        for block in result {
+            let (tx, rx) = oneshot::channel();
+            let header = block.header.unwrap();
+            let body = block.body.unwrap();
+            // TODO: don't unwrap
+            let decoded_header =
+                <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
+
+            config
+                .to_executor
+                .send(executor_task::ToExecutor::Execute {
+                    to_execute: block::Block {
+                        header: decoded_header.clone(), // TODO: ideally don't clone? dunno
+                        extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
+                    },
+                    send_back: tx,
+                })
+                .await
+                .unwrap();
+            rx.await;
+
+            config
+                .to_service_out
+                .send(super::Event::NewChainHead {
+                    number: decoded_header.number,
+                    hash: decoded_header.block_hash().0.into(),
+                    head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
+                })
+                .await;
+
+            next_block += 1;
+        }
     }
 
     // TODO: remove that; hack to not make the task stop
