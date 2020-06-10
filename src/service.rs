@@ -71,8 +71,8 @@ pub struct Service {
 /// Event that happened on the service.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Event {
-    /// A new block is now part of the chain.
-    NewBlock {
+    /// Database state has been updated for the given block.
+    NewChainHead {
         number: u64,
         hash: H256,
         head_update: ChainHeadUpdate,
@@ -83,6 +83,14 @@ pub enum Event {
         /// Number of the finalized block.
         number: u64,
         /// Hash of the finalized block.
+        hash: H256,
+    },
+
+    /// Received a block announce from the network.
+    BlockAnnounceReceived {
+        /// Block number.
+        number: u64,
+        /// Block hash.
         hash: H256,
     },
 
@@ -111,7 +119,7 @@ impl Service {
 
         // Update the local state.
         match &event {
-            Event::NewBlock { number, hash, .. } => {
+            Event::NewChainHead { number, hash, .. } => {
                 self.best_block_number = *number;
                 self.best_block_hash = (*hash).into();
             }

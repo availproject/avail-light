@@ -1,6 +1,6 @@
 #![recursion_limit = "256"]
 
-use core::time::Duration;
+use core::{cmp, time::Duration};
 use futures::prelude::*;
 
 fn main() {
@@ -56,6 +56,8 @@ async fn async_main() {
     })
     .map(|_| ());
 
+    let mut network_known_best = 0;
+
     loop {
         futures::select! {
             informant = informant_timer.next() => {
@@ -66,7 +68,7 @@ async fn async_main() {
                     finalized_number: service.finalized_block_number(),
                     best_hash: &service.best_block_hash(),
                     finalized_hash: &service.finalized_block_hash(),
-                    network_known_best: 128, // TODO:
+                    network_known_best,
                 });
             }
             ev = service.next_event().fuse() => {
@@ -74,6 +76,9 @@ async fn async_main() {
                     substrate_lite::service::Event::NewNetworkExternalAddress { address } => {
                         eprintln!("🔍 Discovered new external address for our node: {}", address);
                     }
+                    substrate_lite::service::Event::BlockAnnounceReceived { number, .. } => {
+                        network_known_best = cmp::max(network_known_best, number);
+                    },
                     _ => {}
                 }
             }

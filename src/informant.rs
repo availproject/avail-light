@@ -51,7 +51,7 @@ impl<'a> fmt::Display for InformantLine<'a> {
                 .paint(&format!("{:<7}", self.best_number)),
         );
 
-        let header = format!("  {:>12} [", header_unaligned);
+        let header = format!("  {} [", header_unaligned);
         let header_len = 16; // TODO: ? it's easier to do that than deal with unicode
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
@@ -77,14 +77,13 @@ impl<'a> fmt::Display for InformantLine<'a> {
             .saturating_sub(u32::try_from(trailer_len).unwrap());
 
         let actual_network_best = cmp::max(self.network_known_best, self.best_number);
-        let bar_done_width = u32::try_from(
-            u128::from(self.best_number)
-                .checked_mul(u128::from(bar_width))
-                .unwrap()
-                .checked_div(u128::from(actual_network_best))
-                .unwrap(),
-        )
-        .unwrap();
+        assert!(self.best_number <= actual_network_best);
+        let bar_done_width = u128::from(self.best_number)
+            .checked_mul(u128::from(bar_width))
+            .unwrap()
+            .checked_div(u128::from(actual_network_best))
+            .unwrap_or(0); // TODO: hack to not panic
+        let bar_done_width = u32::try_from(bar_done_width).unwrap();
 
         let done_bar1 = iter::repeat('=')
             .take(usize::try_from(bar_done_width.saturating_sub(1)).unwrap())

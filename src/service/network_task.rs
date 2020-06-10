@@ -3,7 +3,7 @@
 //! Contrary to the [crate::network] module, this module is aware of the other tasks of the
 //! service.
 
-use crate::network;
+use crate::{block, network};
 
 use alloc::sync::Arc;
 use core::sync::atomic;
@@ -45,7 +45,19 @@ pub async fn run_networking_task(mut config: Config) {
         futures::select! {
             ev = network.next_event().fuse() => {
                 match ev {
-                    network::Event::BlockAnnounce(header) => {},
+                    network::Event::BlockAnnounce(header) => {
+                        // TOOD: don't unwrap
+                        let decoded_header =
+                            <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
+                        let ev_out = super::Event::BlockAnnounceReceived {
+                            number: decoded_header.number,
+                            hash: decoded_header.block_hash().0.into(),
+                        };
+
+                        if config.to_service_out.send(ev_out).await.is_err() {
+                            return;
+                        }
+                    },
                     network::Event::BlocksRequestFinished { id, result } => {
                         let sender = pending_blocks_requests.remove(&id).unwrap();
                         let _ = sender.send(result);

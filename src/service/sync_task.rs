@@ -65,7 +65,7 @@ pub async fn run_sync_task(mut config: Config) {
 
         config
             .to_service_out
-            .send(super::Event::NewBlock {
+            .send(super::Event::NewChainHead {
                 number: decoded_header.number,
                 hash: decoded_header.block_hash().0.into(),
                 head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
