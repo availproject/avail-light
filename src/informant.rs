@@ -54,17 +54,20 @@ impl<'a> fmt::Display for InformantLine<'a> {
         let header = format!("  {:>12} [", header_unaligned);
         let header_len = 16; // TODO: ? it's easier to do that than deal with unicode
 
+        // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(
-            "] #{network_best} (🌐{connec})",
-            network_best = self.network_known_best,
+            "] #{network_best} (🌐{connec}) ",
+            network_best = Colour::White
+                .bold()
+                .paint(&self.network_known_best.to_string()),
             connec = Colour::White
                 .bold()
-                .paint(format!("{:>4}", self.num_network_connections)),
+                .paint(format!("{:>3}", self.num_network_connections)),
         );
         let trailer_len = format!(
-            "] #{network_best} ( {connec})",
+            "] #{network_best} ({connec}) ",
             network_best = self.network_known_best,
-            connec = format!("{:>4}", self.num_network_connections),
+            connec = format!("{:>3}", self.num_network_connections),
         )
         .len();
 
@@ -92,8 +95,19 @@ impl<'a> fmt::Display for InformantLine<'a> {
             '>'
         };
         let todo_bar = iter::repeat(' ')
-            .take(usize::try_from(bar_width.checked_sub(bar_done_width).unwrap()).unwrap())
+            .take(
+                usize::try_from(
+                    bar_width
+                        .checked_sub(bar_done_width.saturating_sub(1).saturating_add(1))
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
             .collect::<String>();
+        assert_eq!(
+            done_bar1.len() + 1 + todo_bar.len(),
+            usize::try_from(bar_width).unwrap()
+        );
 
         write!(
             f,
