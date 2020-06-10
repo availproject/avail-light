@@ -54,7 +54,6 @@ pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Sto
     }
 
     let genesis_block_hash = calculate_genesis_block_hash(specs.genesis_storage());
-    println!("{:?}", hex::encode(&genesis_block_hash));
 
     let mut storage = storage::Storage::empty();
     storage
