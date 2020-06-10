@@ -23,6 +23,9 @@
 // Most of the magic happens at initialization, as that is the moment when we spawn the tasks.
 
 use crate::network;
+
+use alloc::sync::Arc;
+use core::sync::atomic;
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 use primitive_types::H256;
 
@@ -41,6 +44,13 @@ pub struct Service {
     /// Remember that this channel is bounded, and tasks will back-pressure if the user doesn't
     /// process events. This is an intended behaviour.
     events_in: mpsc::Receiver<Event>,
+
+    /// Number of transport-level (e.g. TCP/IP) network connections. Only updated by receiving
+    /// events.
+    num_network_connections: u64,
+    /// `Arc` whose content is updated by the network task. Used to update
+    /// [`Service::num_network_connections`].
+    num_connections_store: Arc<atomic::AtomicU64>,
 
     /// Number of the best known block. Only updated by receiving events.
     best_block_number: u64,
@@ -97,6 +107,8 @@ impl Service {
         // in which case it is totally appropriate to panic.
         let event = self.events_in.next().await.unwrap();
 
+        self.num_network_connections = self.num_connections_store.load(atomic::Ordering::Relaxed);
+
         // Update the local state.
         match &event {
             Event::NewBlock { number, hash, .. } => {
@@ -111,6 +123,12 @@ impl Service {
         }
 
         event
+    }
+
+    /// Returns the number of transport-level (e.g. TCP/IP) connections of the network. Only
+    /// updated when calling [`Service::next_event`].
+    pub fn num_network_connections(&self) -> u64 {
+        self.num_network_connections
     }
 
     /// Returns the number of the best known block. Only updated when calling

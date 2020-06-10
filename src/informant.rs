@@ -2,6 +2,8 @@
 //!
 //! The so-called informant is a line of text typically printed at a regular interval on stdout.
 //!
+//! You can make the informant overwrite itself by printing only a `\r` at the end.
+//!
 //! This code intentionally doesn't perform any printing and only provides some helping code to
 //! make the printing straight-forward.
 //!
@@ -11,7 +13,7 @@
 //!
 //! ```
 //! use substrate_lite::informant::InformantLine;
-//! eprintln!("{}", InformantLine {
+//! eprint!("{}", InformantLine {
 //!     num_connected_peers: 12,
 //!     best_number: 220,
 //!     finalized_number: 217,
@@ -21,36 +23,86 @@
 //! ```
 
 use ansi_term::Colour; // TODO: this crate isn't no_std
-use core::{convert::TryFrom as _, fmt};
+use core::{cmp, convert::TryFrom as _, fmt, iter};
 
-/// Values shown on the informant line. Implements the [`core::fmt::Display`] trait.
+/// Values used to build the informant line. Implements the [`core::fmt::Display`] trait.
 #[derive(Debug)]
 pub struct InformantLine<'a> {
     // TODO: pub enable_colors: bool,
-    pub num_connected_peers: u32,
+    /// Maximum number of characters of the informant line.
+    pub max_line_width: u32,
+    pub num_network_connections: u64,
     pub best_number: u64,
     pub finalized_number: u64,
     pub best_hash: &'a [u8],
     pub finalized_hash: &'a [u8],
+    pub network_known_best: u64,
 }
 
 impl<'a> fmt::Display for InformantLine<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let status = Colour::White.bold().paint("💤 Idle");
+        // TODO: lots of allocations in here
+        // TODO: this bar is actually harder to implement than expected
+
+        let header_unaligned = format!(
+            "🗄️ #{local_best}",
+            local_best = Colour::White
+                .bold()
+                .paint(&format!("{:<7}", self.best_number)),
+        );
+
+        let header = format!("  {:>12} [", header_unaligned);
+        let header_len = 16; // TODO: ? it's easier to do that than deal with unicode
+
+        let trailer = format!(
+            "] #{network_best} (🌐{connec})",
+            network_best = self.network_known_best,
+            connec = Colour::White
+                .bold()
+                .paint(format!("{:>4}", self.num_network_connections)),
+        );
+        let trailer_len = format!(
+            "] #{network_best} ( {connec})",
+            network_best = self.network_known_best,
+            connec = format!("{:>4}", self.num_network_connections),
+        )
+        .len();
+
+        let bar_width = self
+            .max_line_width
+            .saturating_sub(u32::try_from(header_len).unwrap())
+            .saturating_sub(u32::try_from(trailer_len).unwrap());
+
+        let actual_network_best = cmp::max(self.network_known_best, self.best_number);
+        let bar_done_width = u32::try_from(
+            u128::from(self.best_number)
+                .checked_mul(u128::from(bar_width))
+                .unwrap()
+                .checked_div(u128::from(actual_network_best))
+                .unwrap(),
+        )
+        .unwrap();
+
+        let done_bar1 = iter::repeat('=')
+            .take(usize::try_from(bar_done_width.saturating_sub(1)).unwrap())
+            .collect::<String>();
+        let done_bar2 = if bar_done_width == bar_width {
+            '='
+        } else {
+            '>'
+        };
+        let todo_bar = iter::repeat(' ')
+            .take(usize::try_from(bar_width.checked_sub(bar_done_width).unwrap()).unwrap())
+            .collect::<String>();
 
         write!(
             f,
-            "{} ({} peers), best: #{} ({}), finalized #{} ({})",
-            status,
-            Colour::White
-                .bold()
-                .paint(self.num_connected_peers.to_string()), // TODO: pretty printing
-            Colour::White.bold().paint(&self.best_number.to_string()),
-            HashDisplay(self.best_hash),
-            Colour::White
-                .bold()
-                .paint(&self.finalized_number.to_string()), // TODO: pretty printing
-            HashDisplay(self.finalized_hash),
+            "{header}{done_bar1}{done_bar2}{todo_bar}{trailer}",
+            header = header,
+            done_bar1 = done_bar1,
+            done_bar2 = done_bar2,
+            todo_bar = todo_bar,
+            trailer = trailer
         )
     }
 }

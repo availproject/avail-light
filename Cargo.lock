@@ -2433,6 +2433,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec 0.6.13",
+ "terminal_size",
  "twox-hash",
  "unsigned-varint",
  "void",
@@ -2486,6 +2487,16 @@ dependencies = [
  "rand",
  "redox_syscall",
  "remove_dir_all",
+ "winapi 0.3.8",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8038f95fc7a6f351163f4b964af631bd26c9e828f7db085f2a84aca56f70d13b"
+dependencies = [
+ "libc",
  "winapi 0.3.8",
 ]
 

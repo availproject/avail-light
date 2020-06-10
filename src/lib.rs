@@ -1,5 +1,6 @@
 // TODO: fix all the compilation errors caused by the copy-pasted code
 //#![cfg_attr(not(test), no_std)]
+#![recursion_limit = "512"]
 
 extern crate alloc;
 

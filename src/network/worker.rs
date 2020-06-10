@@ -24,6 +24,11 @@ pub enum Event {
         id: behaviour::BlocksRequestId,
         result: Result<Vec<behaviour::BlockData>, ()>,
     },
+
+    /// Established at least one connection with the given peer.
+    Connected(PeerId),
+    /// No longer have any connection with the given peer.
+    Disconnected(PeerId),
 }
 
 /// Configuration for starting the network.
@@ -100,7 +105,21 @@ impl Network {
                     return Event::BlocksRequestFinished { id, result };
                 }
 
+                SwarmEvent::ConnectionEstablished {
+                    peer_id,
+                    num_established,
+                    ..
+                } if num_established.get() == 1 => {
+                    return Event::Connected(peer_id);
+                }
                 SwarmEvent::ConnectionEstablished { .. } => {}
+                SwarmEvent::ConnectionClosed {
+                    peer_id,
+                    num_established: 0,
+                    ..
+                } => {
+                    return Event::Disconnected(peer_id);
+                }
                 SwarmEvent::ConnectionClosed { .. } => {}
                 SwarmEvent::NewListenAddr(_) => {}
                 SwarmEvent::ExpiredListenAddr(_) => {}

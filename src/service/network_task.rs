@@ -5,6 +5,8 @@
 
 use crate::network;
 
+use alloc::sync::Arc;
+use core::sync::atomic;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
@@ -27,6 +29,9 @@ pub struct Config {
     pub to_service_out: mpsc::Sender<super::Event>,
     /// Receiver to receive messages that the networking task will process.
     pub to_network: mpsc::Receiver<super::network_task::ToNetwork>,
+    /// `Arc` where to store the number of transport-level connections. Incremented whenever we
+    /// open a new transport-level connection and decremented whenever we close one.
+    pub num_connections_store: Arc<atomic::AtomicU64>,
 }
 
 /// Runs the task.
@@ -45,6 +50,12 @@ pub async fn run_networking_task(mut config: Config) {
                         let sender = pending_blocks_requests.remove(&id).unwrap();
                         let _ = sender.send(result);
                     }
+                    network::Event::Connected(peer_id) => {
+                        config.num_connections_store.fetch_add(1, atomic::Ordering::Relaxed);
+                    },
+                    network::Event::Disconnected(peer_id) => {
+                        config.num_connections_store.fetch_sub(1, atomic::Ordering::Relaxed);
+                    },
                     // TODO: send out `service::Event::NewNetworkExternalAddress`
                 }
             }

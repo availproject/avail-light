@@ -2,7 +2,7 @@ use super::{database_task, executor_task, keystore_task, network_task, sync_task
 use crate::{chain_spec::ChainSpec, database, keystore, network, storage};
 
 use alloc::sync::Arc;
-use core::{future::Future, pin::Pin};
+use core::{future::Future, pin::Pin, sync::atomic};
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
 
 /// Prototype for a service.
@@ -116,6 +116,8 @@ impl ServiceBuilder {
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
         let (to_database_tx, to_database_rx) = mpsc::channel(64);
 
+        let num_connections_store = Arc::new(atomic::AtomicU64::new(0));
+
         // Now actually spawn all the tasks.
         // The order of the tasks spawning doesn't matter.
         tasks_executor(
@@ -126,6 +128,7 @@ impl ServiceBuilder {
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| (*tasks_executor)(task))
                 }),
+                num_connections_store: num_connections_store.clone(),
             })
             .boxed(),
         );
@@ -176,6 +179,8 @@ impl ServiceBuilder {
 
         Service {
             events_in,
+            num_network_connections: 0,
+            num_connections_store,
             best_block_number: 0,      // TODO: wrong
             best_block_hash: [0; 32],  // TODO: wrong
             finalized_block_number: 0, // TODO: wrong

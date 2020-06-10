@@ -29,6 +29,7 @@ rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 smallvec = "0.6.10"
+terminal_size = "0.1.12"
 twox-hash = "1.5.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"

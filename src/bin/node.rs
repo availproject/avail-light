@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use core::time::Duration;
 use futures::prelude::*;
 
@@ -50,19 +52,21 @@ async fn async_main() {
         .unwrap();
 
     let mut informant_timer = stream::unfold((), move |_| {
-        futures_timer::Delay::new(Duration::from_secs(5)).map(|_| Some(((), ())))
+        futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
     })
     .map(|_| ());
 
     loop {
         futures::select! {
             informant = informant_timer.next() => {
-                eprintln!("{}", substrate_lite::informant::InformantLine {
-                    num_connected_peers: 0,  // TODO:
+                eprint!("{}\r", substrate_lite::informant::InformantLine {
+                    max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
+                    num_network_connections: service.num_network_connections(),
                     best_number: service.best_block_number(),
                     finalized_number: service.finalized_block_number(),
                     best_hash: &service.best_block_hash(),
                     finalized_hash: &service.finalized_block_hash(),
+                    network_known_best: 128, // TODO:
                 });
             }
             ev = service.next_event().fuse() => {
