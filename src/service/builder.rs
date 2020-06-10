@@ -54,6 +54,9 @@ impl ServiceBuilder {
 
         self.network
             .set_chain_spec_protocol_id(specs.protocol_id().unwrap());
+
+        self.network
+            .set_genesis_hash(crate::calculate_genesis_block_hash(specs.genesis_storage()).into());
     }
 
     /// Sets how the service should spawn background tasks.

@@ -58,6 +58,11 @@ pub struct Behaviour {
     #[behaviour(ignore)]
     next_block_request_id: BlocksRequestId,
 
+    #[behaviour(ignore)]
+    local_best_hash: H256,
+    #[behaviour(ignore)]
+    local_genesis_hash: H256,
+
     /// Queue of events to produce for the outside.
     #[behaviour(ignore)]
     events: VecDeque<BehaviourOut>,
@@ -148,6 +153,8 @@ impl Behaviour {
         enable_mdns: bool,
         allow_private_ipv4: bool,
         discovery_only_if_under_num: u64,
+        local_best_hash: H256,
+        local_genesis_hash: H256,
     ) -> Self {
         let peerset_config = sc_peerset::PeersetConfig {
             in_peers: 25,
@@ -184,6 +191,8 @@ impl Behaviour {
             },
             pending_block_requests: Default::default(),
             next_block_request_id: BlocksRequestId(0),
+            local_best_hash,
+            local_genesis_hash,
             events: VecDeque::new(),
         }
     }
@@ -321,14 +330,8 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                     min_supported_version: 6,
                     roles: legacy_message::Roles::LIGHT,
                     best_number: 0,
-                    // TODO: proper hash
-                    best_hash: "e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39"
-                        .parse()
-                        .unwrap(),
-                    genesis_hash:
-                        "e40fbca707deed85dd9075522047d3b729aa261cc5775642b0ba43702d75ed39"
-                            .parse()
-                            .unwrap(),
+                    best_hash: self.local_best_hash,
+                    genesis_hash: self.local_genesis_hash,
                     chain_status: Vec::new(),
                 });
 

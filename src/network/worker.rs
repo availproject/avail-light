@@ -43,6 +43,8 @@ pub(super) struct Config {
     /// How to spawn libp2p background tasks. If `None`, then a threads pool will be used by
     /// default.
     pub(super) executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+    /// Hash of the genesis block of the local node.
+    pub(super) local_genesis_hash: [u8; 32],
 }
 
 impl Network {
@@ -59,6 +61,9 @@ impl Network {
             true,
             true,
             50,
+            // TODO: best hash != genesis_hash
+            config.local_genesis_hash.clone().into(),
+            config.local_genesis_hash.clone().into(),
         )
         .await;
 

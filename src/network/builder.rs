@@ -79,11 +79,11 @@ impl NetworkBuilder {
 
     /// Starts the networking.
     pub async fn build(self) -> worker::Network {
-        // TODO: use genesis_hash
         worker::Network::start(worker::Config {
             known_addresses: self.boot_nodes,
             chain_spec_protocol_id: self.chain_spec_protocol_id,
             executor: self.executor,
+            local_genesis_hash: self.genesis_hash.into(),
         })
         .await
     }
