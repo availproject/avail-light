@@ -347,7 +347,7 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                             )));
                     }
                     Ok(legacy_message::Message::Status(_)) => {}
-                    msg => println!("message from {:?} => {:?}", peer_id, msg),
+                    msg => {} // TODO: for debugging println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }
             generic_proto::GenericProtoOut::Clogged { .. } => {}

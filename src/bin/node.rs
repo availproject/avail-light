@@ -61,10 +61,10 @@ async fn async_main() {
     loop {
         futures::select! {
             informant = informant_timer.next() => {
-                // TODO: right now we put \n to avoid the informant line being overwritten by
-                // panic messages, so that we know at which block we were
-                // TODO: put back \r instead
-                eprint!("{}\n", substrate_lite::informant::InformantLine {
+                // We end the informant line with a `\r` so that it overwrites itself every time.
+                // If any other line gets printed, it will overwrite the informant, and the
+                // informant will then print itself below, which is a fine behaviour.
+                eprint!("{}\r", substrate_lite::informant::InformantLine {
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: service.num_network_connections(),
                     best_number: service.best_block_number(),
