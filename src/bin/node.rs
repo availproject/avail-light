@@ -65,6 +65,7 @@ async fn async_main() {
                 // If any other line gets printed, it will overwrite the informant, and the
                 // informant will then print itself below, which is a fine behaviour.
                 eprint!("{}\r", substrate_lite::informant::InformantLine {
+                    chain_name: chain_spec.name(),
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: service.num_network_connections(),
                     best_number: service.best_block_number(),

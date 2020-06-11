@@ -13,6 +13,7 @@ pub mod keystore;
 pub mod network;
 pub mod service;
 pub mod storage;
+//pub mod storage_cache;
 pub mod trie;
 
 /// Calculates the hash of the genesis block from the storage.

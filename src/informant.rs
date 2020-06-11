@@ -29,6 +29,8 @@ use core::{cmp, convert::TryFrom as _, fmt, iter};
 #[derive(Debug)]
 pub struct InformantLine<'a> {
     // TODO: pub enable_colors: bool,
+    /// Name of the chain.
+    pub chain_name: &'a str,
     /// Maximum number of characters of the informant line.
     pub max_line_width: u32,
     pub num_network_connections: u64,
@@ -45,14 +47,15 @@ impl<'a> fmt::Display for InformantLine<'a> {
         // TODO: this bar is actually harder to implement than expected
 
         let header_unaligned = format!(
-            "🗄️ #{local_best}",
+            "{chain_name}   #{local_best}",
+            chain_name = Colour::Cyan.paint(self.chain_name),
             local_best = Colour::White
                 .bold()
                 .paint(&format!("{:<7}", self.best_number)),
         );
 
         let header = format!("  {} [", header_unaligned);
-        let header_len = 16; // TODO: ? it's easier to do that than deal with unicode
+        let header_len = self.chain_name.chars().count() + 16; // TODO: ? it's easier to do that than deal with unicode
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(
@@ -62,12 +65,12 @@ impl<'a> fmt::Display for InformantLine<'a> {
                 .paint(&self.network_known_best.to_string()),
             connec = Colour::White
                 .bold()
-                .paint(format!("{:>3}", self.num_network_connections)),
+                .paint(format!("{:>4}", self.num_network_connections)),
         );
         let trailer_len = format!(
             "] #{network_best} ({connec}) ",
             network_best = self.network_known_best,
-            connec = format!("{:>3}", self.num_network_connections),
+            connec = format!("{:>4}", self.num_network_connections),
         )
         .len();
 
