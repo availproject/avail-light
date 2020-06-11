@@ -60,20 +60,25 @@ pub async fn run_executor_task(mut config: Config) {
                     .block(&to_execute.header.parent_hash)
                     .storage()
                     .unwrap();
-                let code = parent.code_key().unwrap();
 
-                if wasm_blob_cache
-                    .as_ref()
-                    .map(|(c, _)| *c != code.as_ref())
-                    .unwrap_or(true)
-                {
-                    let wasm_blob = executor::WasmBlob::from_bytes(code.as_ref()).unwrap();
-                    wasm_blob_cache = Some((code.as_ref().to_vec(), wasm_blob));
-                }
+                // In order to avoid parsing/compiling the runtime code every single time, we
+                // maintain a cache of the `WasmBlob` of the head of the chain.
+                let runtime_wasm_blob = {
+                    let code = parent.code_key().unwrap();
+                    if wasm_blob_cache
+                        .as_ref()
+                        .map(|(c, _)| *c != code.as_ref())
+                        .unwrap_or(true)
+                    {
+                        let wasm_blob = executor::WasmBlob::from_bytes(code.as_ref()).unwrap();
+                        wasm_blob_cache = Some((code.as_ref().to_vec(), wasm_blob));
+                    }
+                    &wasm_blob_cache.as_ref().unwrap().1
+                };
 
                 let import_result =
                     crate::block_import::verify_block(crate::block_import::Config {
-                        runtime: &wasm_blob_cache.as_ref().unwrap().1,
+                        runtime: runtime_wasm_blob,
                         block_header: &to_execute.header,
                         block_body: &to_execute.extrinsics,
                         parent_storage_get: {
