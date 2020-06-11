@@ -193,7 +193,6 @@ where
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageRoot { resolve } => {
-                // TODO: optimize
                 let mut trie = crate::trie::Trie::new();
                 for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
                     let value = (config.parent_storage_get)(key.to_vec())

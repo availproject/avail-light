@@ -41,6 +41,10 @@ pub struct Config {
 
 /// Runs the task itself.
 pub async fn run_executor_task(mut config: Config) {
+    // Tuple of the runtime code of the chain head and its corresponding `WasmBlob`.
+    // Used to avoid recompiling it every single time.
+    let mut wasm_blob_cache: Option<(Vec<u8>, executor::WasmBlob)> = None;
+
     while let Some(event) = config.to_executor.next().await {
         match event {
             ToExecutor::Execute {
@@ -57,11 +61,19 @@ pub async fn run_executor_task(mut config: Config) {
                     .storage()
                     .unwrap();
                 let code = parent.code_key().unwrap();
-                let wasm_blob = executor::WasmBlob::from_bytes(code).unwrap(); // TODO: have a cache of that
+
+                if wasm_blob_cache
+                    .as_ref()
+                    .map(|(c, _)| *c != code.as_ref())
+                    .unwrap_or(true)
+                {
+                    let wasm_blob = executor::WasmBlob::from_bytes(code.as_ref()).unwrap();
+                    wasm_blob_cache = Some((code.as_ref().to_vec(), wasm_blob));
+                }
 
                 let import_result =
                     crate::block_import::verify_block(crate::block_import::Config {
-                        runtime: &wasm_blob,
+                        runtime: &wasm_blob_cache.as_ref().unwrap().1,
                         block_header: &to_execute.header,
                         block_body: &to_execute.extrinsics,
                         parent_storage_get: {
@@ -94,6 +106,10 @@ pub async fn run_executor_task(mut config: Config) {
 
                 match import_result {
                     Ok(success) => {
+                        if success.storage_top_trie_changes.contains_key(&b":code"[..]) {
+                            wasm_blob_cache = None;
+                        }
+
                         let mut new_block_storage = (*parent).clone();
                         for (key, value) in success.storage_top_trie_changes.iter() {
                             if let Some(value) = value.as_ref() {
