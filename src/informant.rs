@@ -55,7 +55,7 @@ impl<'a> fmt::Display for InformantLine<'a> {
         );
 
         let header = format!("  {} [", header_unaligned);
-        let header_len = self.chain_name.chars().count() + 16; // TODO: ? it's easier to do that than deal with unicode
+        let header_len = self.chain_name.chars().count() + 15; // TODO: ? it's easier to do that than deal with unicode
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(
@@ -68,7 +68,7 @@ impl<'a> fmt::Display for InformantLine<'a> {
                 .paint(format!("{:>4}", self.num_network_connections)),
         );
         let trailer_len = format!(
-            "] #{network_best} ({connec}) ",
+            "] #{network_best} (  {connec}) ",
             network_best = self.network_known_best,
             connec = format!("{:>4}", self.num_network_connections),
         )
