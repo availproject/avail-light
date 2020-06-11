@@ -51,11 +51,6 @@ pub async fn run_executor_task(mut config: Config) {
                     continue;
                 }
 
-                // Remove the seal
-                // TODO: obviously make this less hacky
-                // TODO: BABE appends a seal to each block that the runtime doesn't know about
-                let mut seal_log = to_execute.header.digest.logs.pop().unwrap();
-
                 let parent = config
                     .storage
                     .block(&to_execute.header.parent_hash)
@@ -64,182 +59,65 @@ pub async fn run_executor_task(mut config: Config) {
                 let code = parent.code_key().unwrap();
                 let wasm_blob = executor::WasmBlob::from_bytes(code).unwrap(); // TODO: have a cache of that
 
-                let mut vm = executor::WasmVm::new(
-                    &wasm_blob,
-                    executor::FunctionToCall::CoreExecuteBlock(&to_execute),
-                )
-                .unwrap();
-
-                let mut overlay_storage_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
-                let start = std::time::Instant::now();
-
-                loop {
-                    match vm.state() {
-                        executor::State::ReadyToRun(r) => r.run(),
-                        executor::State::Finished(executor::Success::CoreExecuteBlock) => {
-                            let mut new_block_storage = (*parent).clone();
-                            for (key, value) in overlay_storage_changes.iter() {
-                                if let Some(value) = value.as_ref() {
-                                    new_block_storage.insert(key, value.clone())
-                                } else {
-                                    new_block_storage.remove(key);
-                                }
+                let import_result =
+                    crate::block_import::verify_block(crate::block_import::Config {
+                        runtime: &wasm_blob,
+                        block_header: &to_execute.header,
+                        block_body: &to_execute.extrinsics,
+                        parent_storage_get: {
+                            let parent = parent.clone();
+                            move |key: Vec<u8>| {
+                                let ret: Option<Vec<u8>> =
+                                    parent.get(&key).map(|v| v.as_ref().to_vec());
+                                async move { ret }
                             }
-                            to_execute.header.digest.logs.push(seal_log);
-                            let new_hash = to_execute.header.block_hash();
-                            // TODO: hack because our storage story is bad regarding memory
-                            config
-                                .storage
-                                .remove_storage(&to_execute.header.parent_hash);
-                            config
-                                .storage
-                                .block(&new_hash.0.into())
-                                .set_storage(new_block_storage);
-
-                            let _ = send_back.send(Ok(ExecuteSuccess {
-                                block: to_execute,
-                                storage_changes: overlay_storage_changes,
-                            }));
-                            break;
-                        }
-                        executor::State::Finished(_) => unreachable!(),
-                        executor::State::Trapped => panic!("trapped"),
-                        executor::State::ExternalStorageGet {
-                            storage_key,
-                            offset,
-                            max_size,
-                            resolve,
-                        } => {
-                            // TODO: this clones the storage value, meh
-                            let mut value =
-                                if let Some(overlay) = overlay_storage_changes.get(storage_key) {
-                                    overlay.clone()
-                                } else {
-                                    parent.get(&storage_key).map(|v| v.as_ref().to_vec())
-                                };
-                            if let Some(value) = &mut value {
-                                if usize::try_from(offset).unwrap() < value.len() {
-                                    *value = value[usize::try_from(offset).unwrap()..].to_vec();
-                                    if usize::try_from(max_size).unwrap() < value.len() {
-                                        *value =
-                                            value[..usize::try_from(max_size).unwrap()].to_vec();
-                                    }
-                                } else {
-                                    *value = Vec::new();
-                                }
+                        },
+                        parent_storage_keys_prefix: {
+                            let parent = parent.clone();
+                            move |prefix: Vec<u8>| {
+                                assert!(prefix.is_empty()); // TODO: not implemented
+                                let ret: Vec<Vec<u8>> =
+                                    parent.storage_keys().map(|v| v.as_ref().to_vec()).collect();
+                                async move { ret }
                             }
-                            resolve.finish_call(value);
-                        }
-                        executor::State::ExternalStorageSet {
-                            storage_key,
-                            new_storage_value,
-                            resolve,
-                        } => {
-                            overlay_storage_changes.insert(
-                                storage_key.to_vec(),
-                                new_storage_value.map(|v| v.to_vec()),
-                            );
-                            resolve.finish_call(());
-                        }
-                        executor::State::ExternalStorageAppend {
-                            storage_key,
-                            value,
-                            resolve,
-                        } => {
-                            // TODO: report that behaviour to specs writers
-                            let mut current_value =
-                                if let Some(overlay) = overlay_storage_changes.get(storage_key) {
-                                    overlay.clone().unwrap_or(Vec::new())
-                                } else {
-                                    parent
-                                        .get(&storage_key)
-                                        .map(|v| v.as_ref().to_vec())
-                                        .unwrap_or(Vec::new())
-                                };
-                            let curr_len = <parity_scale_codec::Compact::<u64> as parity_scale_codec::Decode>::decode(&mut &current_value[..]);
-                            let new_value = if let Ok(mut curr_len) = curr_len {
-                                let len_size = <parity_scale_codec::Compact::<u64> as parity_scale_codec::CompactLen::<u64>>::compact_len(&curr_len.0);
-                                curr_len.0 += 1;
-                                let mut new_value = parity_scale_codec::Encode::encode(&curr_len);
-                                new_value.extend_from_slice(&current_value[len_size..]);
-                                new_value.extend_from_slice(value);
-                                new_value
+                        },
+                        parent_storage_next_key: {
+                            let parent = parent.clone();
+                            move |key: Vec<u8>| {
+                                let ret: Option<Vec<u8>> =
+                                    parent.next_key(&key).map(|v| v.as_ref().to_vec());
+                                async move { ret }
+                            }
+                        },
+                    })
+                    .await;
+
+                match import_result {
+                    Ok(success) => {
+                        let mut new_block_storage = (*parent).clone();
+                        for (key, value) in success.storage_top_trie_changes.iter() {
+                            if let Some(value) = value.as_ref() {
+                                new_block_storage.insert(key, value.clone())
                             } else {
-                                let mut new_value = parity_scale_codec::Encode::encode(
-                                    &parity_scale_codec::Compact(1u64),
-                                );
-                                new_value.extend_from_slice(value);
-                                new_value
-                            };
-                            overlay_storage_changes.insert(storage_key.to_vec(), Some(new_value));
-                            resolve.finish_call(());
-                        }
-                        executor::State::ExternalStorageClearPrefix {
-                            storage_key,
-                            resolve,
-                        } => {
-                            for key in parent.storage_keys() {
-                                let key = key.as_ref();
-                                if !key.starts_with(&storage_key) {
-                                    continue;
-                                }
-                                overlay_storage_changes.insert(key.to_vec(), None);
+                                new_block_storage.remove(key);
                             }
-                            for (key, value) in overlay_storage_changes.iter_mut() {
-                                if !key.starts_with(&storage_key) {
-                                    continue;
-                                }
-                                *value = None;
-                            }
-                            resolve.finish_call(());
                         }
-                        executor::State::ExternalStorageRoot { resolve } => {
-                            let mut trie = crate::trie::Trie::new();
-                            for key in parent.storage_keys() {
-                                let value =
-                                    parent.get(key.as_ref()).as_ref().unwrap().as_ref().to_vec();
-                                trie.insert(key.as_ref(), value);
-                            }
-                            for (key, value) in overlay_storage_changes.iter() {
-                                if let Some(value) = value.as_ref() {
-                                    trie.insert(key, value.clone())
-                                } else {
-                                    trie.remove(key);
-                                }
-                            }
-                            let hash = trie.root_merkle_value();
-                            resolve.finish_call(hash);
-                        }
-                        executor::State::ExternalStorageChangesRoot {
-                            parent_hash,
-                            resolve,
-                        } => {
-                            // TODO: this is probably one of the most complicated things to
-                            // implement, but slava told me that it's ok to just return None on
-                            // flaming fir because the feature is disabled
-                            resolve.finish_call(None);
-                        }
-                        executor::State::ExternalStorageNextKey {
-                            storage_key,
-                            resolve,
-                        } => {
-                            // TODO: not optimized regarding cloning
-                            let in_storage =
-                                parent.next_key(&storage_key).map(|v| v.as_ref().to_vec());
-                            let in_overlay = overlay_storage_changes
-                                .keys()
-                                .filter(|k| &***k > storage_key)
-                                .min();
-                            let outcome = match (in_storage, in_overlay) {
-                                (Some(a), Some(b)) => Some(cmp::min(a, b.clone())),
-                                (Some(a), None) => Some(a),
-                                (None, Some(b)) => Some(b.clone()),
-                                (None, None) => None,
-                            };
-                            resolve.finish_call(outcome);
-                        }
-                        s => unimplemented!("unimplemented externality: {:?}", s),
+                        let new_hash = to_execute.header.block_hash();
+                        // TODO: hack because our storage story is bad regarding memory
+                        config
+                            .storage
+                            .remove_storage(&to_execute.header.parent_hash);
+                        config
+                            .storage
+                            .block(&new_hash.0.into())
+                            .set_storage(new_block_storage);
+
+                        let _ = send_back.send(Ok(ExecuteSuccess {
+                            block: to_execute,
+                            storage_changes: success.storage_top_trie_changes,
+                        }));
                     }
+                    Err(_) => panic!(), // TODO:
                 }
             }
         }

@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod block;
+pub mod block_import;
 pub mod chain_spec;
 pub mod database;
 pub mod executor;
