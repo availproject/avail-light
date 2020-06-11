@@ -43,7 +43,10 @@ pub async fn run_sync_task(mut config: Config) {
             .send(network_task::ToNetwork::BlocksRequest(rq, tx))
             .await
             .unwrap();
-        let result = rx.await.unwrap().unwrap();
+        let result = match rx.await.unwrap() {
+            Ok(r) => r,
+            Err(_) => continue, // Try the request again
+        };
 
         for block in result {
             let (tx, rx) = oneshot::channel();

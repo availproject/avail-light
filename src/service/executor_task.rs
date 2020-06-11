@@ -85,11 +85,12 @@ pub async fn run_executor_task(mut config: Config) {
                                     new_block_storage.remove(key);
                                 }
                             }
-
                             to_execute.header.digest.logs.push(seal_log);
                             let new_hash = to_execute.header.block_hash();
                             // TODO: hack because our storage story is bad regarding memory
-                            config.storage.remove_storage(&to_execute.header.parent_hash);
+                            config
+                                .storage
+                                .remove_storage(&to_execute.header.parent_hash);
                             config
                                 .storage
                                 .block(&new_hash.0.into())

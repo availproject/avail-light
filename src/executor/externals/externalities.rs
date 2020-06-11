@@ -49,6 +49,7 @@ use futures::{
 };
 use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
+use tiny_keccak::Hasher as _;
 
 /// Description of an externality.
 pub struct Externality {
@@ -751,9 +752,21 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
         "ext_hashing_keccak_256_version_1" => Some(Externality {
             name: "ext_hashing_keccak_256_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let data = expect_pointer_size(&params[0], &*interface).await?;
+
+                    let mut keccak = tiny_keccak::Keccak::v256();
+                    keccak.update(&data);
+                    let mut out = [0u8; 32];
+                    keccak.finalize(&mut out);
+
+                    let dest_ptr = interface.allocate(32).await;
+                    interface.write_memory(dest_ptr, out.to_vec()).await;
+                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
             },
         }),
         "ext_hashing_sha2_256_version_1" => Some(Externality {
