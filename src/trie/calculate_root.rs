@@ -23,7 +23,6 @@ pub struct Config<'a, 'b> {
     /// All the keys returned must start with the given prefix. It is an error to omit a key
     /// from the result.
     pub prefix_keys: &'a dyn Fn(&[u8]) -> Vec<Cow<'b, [u8]>>,
-
     // TODO: add an optional calculation cache parameter
 }
 
@@ -34,7 +33,9 @@ pub fn root_merkle_value(config: &Config) -> [u8; 32] {
 
     // TODO: probably very slow, as we enumerate every single key in the storage
     let keys = (config.prefix_keys)(&[]);
-    let key_from_root = common_prefix(keys.iter().map(|k| &**k)).unwrap_or(TrieNodeKey { nibbles: Vec::new() });
+    let key_from_root = common_prefix(keys.iter().map(|k| &**k)).unwrap_or(TrieNodeKey {
+        nibbles: Vec::new(),
+    });
 
     let val_vec = merkle_value(
         config,
@@ -215,8 +216,14 @@ fn child_nodes(config: &Config, key: &TrieNodeKey) -> impl Iterator<Item = TrieN
     for n in 0..16 {
         *key_clone.nibbles.last_mut().unwrap() = Nibble(n);
         let descendants = descendant_storage_keys(config, &key_clone).collect::<Vec<_>>();
-        debug_assert!(descendants.iter().all(|k| TrieNodeKey::from_bytes(k).nibbles.starts_with(&key_clone.nibbles)),
-            "{:?} vs {:?}", descendants, key_clone);  // TODO: remove that extra debug once we're confident
+        debug_assert!(
+            descendants.iter().all(|k| TrieNodeKey::from_bytes(k)
+                .nibbles
+                .starts_with(&key_clone.nibbles)),
+            "{:?} vs {:?}",
+            descendants,
+            key_clone
+        ); // TODO: remove that extra debug once we're confident
         if let Some(prefix) = common_prefix(descendants.iter().map(|k| &**k)) {
             debug_assert_ne!(prefix, *key);
             out.push(prefix);
