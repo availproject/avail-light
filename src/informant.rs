@@ -14,11 +14,14 @@
 //! ```
 //! use substrate_lite::informant::InformantLine;
 //! eprint!("{}", InformantLine {
-//!     num_connected_peers: 12,
+//!     chain_name: "My chain",
+//!     max_line_width: 80,
+//!     num_network_connections: 12,
 //!     best_number: 220,
 //!     finalized_number: 217,
 //!     best_hash: &[0x12, 0x34, 0x56, 0x76],
 //!     finalized_hash: &[0xaa, 0xbb, 0xcc, 0xdd],
+//!     network_known_best: 224,
 //! });
 //! ```
 

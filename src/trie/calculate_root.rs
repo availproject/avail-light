@@ -1,8 +1,35 @@
 //! Freestanding function that calculates the root of a radix-16 Merkle-Patricia trie.
 //!
 //! See the parent module documentation for an explanation of what the trie is.
-
-// TODO: add usage example
+//!
+//! # Usage
+//!
+//! ```
+//! use std::collections::BTreeMap;
+//! use substrate_lite::trie::calculate_root;
+//!
+//! // In this example, the storage consists in a binary tree map. Binary trees allow for an
+//! // efficient implementation of `prefix_keys`.
+//! let mut storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+//! storage.insert(b"foo".to_vec(), b"bar".to_vec());
+//!
+//! let trie_root = calculate_root::root_merkle_value(&calculate_root::Config {
+//!     get_value: &|key: &[u8]| storage.get(key).map(|v| &v[..]),
+//!     prefix_keys: &|prefix: &[u8]| {
+//!         storage
+//!             .range(prefix.to_vec()..)
+//!             .take_while(|(k, _)| k.starts_with(prefix))
+//!             .map(|(k, _)| From::from(&k[..]))
+//!             .collect()
+//!     },
+//! });
+//!
+//! assert_eq!(
+//!     trie_root,
+//!     [204, 86, 28, 213, 155, 206, 247, 145, 28, 169, 212, 146, 182, 159, 224, 82,
+//!      116, 162, 143, 156, 19, 43, 183, 8, 41, 178, 204, 69, 41, 37, 224, 91]
+//! );
+//! ```
 
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::convert::TryFrom as _;
@@ -10,7 +37,7 @@ use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::Encode as _;
 
 /// How to access the trie.
-// TODO: make async
+// TODO: make async; hard because recursivity is forbidden in async functions
 pub struct Config<'a, 'b> {
     /// Function that returns the value associated to a key. Returns `None` if there is no
     /// storage value.
