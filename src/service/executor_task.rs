@@ -2,13 +2,14 @@
 
 use crate::{block, executor, storage, trie::calculate_root};
 
-use alloc::sync::Arc;
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::{cmp, convert::TryFrom as _, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use hashbrown::HashMap;
+use parking_lot::Mutex;
 use primitive_types::H256;
 
 /// Message that can be sent to the executors task by the other parts of the code.
@@ -26,13 +27,13 @@ pub enum ToExecutor {
 pub struct ExecuteSuccess {
     /// The block that was passed as parameter.
     pub block: block::Block,
-    pub storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
 }
 
 /// Configuration for that task.
 pub struct Config {
-    /// Access to all the data of the blockchain.
-    pub storage: storage::Storage,
+    /// State of the storage at the genesis block.
+    // TODO: hack, remove in favour of accessing the database task
+    pub genesis_storage_trie: HashMap<Vec<u8>, Vec<u8>>,
     /// How to spawn other background tasks.
     pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
     /// Receiver for messages that the executor task will process.
@@ -51,6 +52,12 @@ pub async fn run_executor_task(mut config: Config) {
     // version of this cache, suitable to be passed to verifying a direct child.
     let mut top_trie_root_calculation_cache = Some(calculate_root::CalculationCache::empty());
 
+    // Cache of the storage at the head of the chain.
+    let mut local_storage_cache = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+    for (key, value) in config.genesis_storage_trie {
+        local_storage_cache.insert(key, value);
+    }
+
     while let Some(event) = config.to_executor.next().await {
         match event {
             ToExecutor::Execute {
@@ -61,60 +68,73 @@ pub async fn run_executor_task(mut config: Config) {
                     continue;
                 }
 
-                let parent = config
-                    .storage
-                    .block(&to_execute.header.parent_hash)
-                    .storage()
-                    .unwrap();
-
                 // In order to avoid parsing/compiling the runtime code every single time, we
                 // maintain a cache of the `WasmBlob` of the head of the chain.
                 let runtime_wasm_blob = {
-                    let code = parent.code_key().unwrap();
+                    let code = local_storage_cache.get(&b":code"[..]).unwrap();
                     if wasm_blob_cache
                         .as_ref()
-                        .map(|(c, _)| *c != code.as_ref())
+                        .map(|(c, _)| *c != *code)
                         .unwrap_or(true)
                     {
-                        let wasm_blob = executor::WasmBlob::from_bytes(code.as_ref()).unwrap();
-                        wasm_blob_cache = Some((code.as_ref().to_vec(), wasm_blob));
+                        let wasm_blob = executor::WasmBlob::from_bytes(&code).unwrap();
+                        wasm_blob_cache = Some((code.to_vec(), wasm_blob));
                     }
                     &wasm_blob_cache.as_ref().unwrap().1
                 };
 
-                let import_result =
+                // TODO: this is stupid, I should just pass a trait to block import
+                let import_result = {
+                    let local_storage_cache = Arc::new(Mutex::new(&mut local_storage_cache));
+
                     crate::block_import::verify_block(crate::block_import::Config {
                         runtime: runtime_wasm_blob,
                         block_header: &to_execute.header,
                         block_body: &to_execute.extrinsics,
                         parent_storage_get: {
-                            let parent = parent.clone();
+                            let local_storage_cache = local_storage_cache.clone();
                             move |key: Vec<u8>| {
                                 let ret: Option<Vec<u8>> =
-                                    parent.get(&key).map(|v| v.as_ref().to_vec());
+                                    local_storage_cache.lock().get(&key).cloned();
                                 async move { ret }
                             }
                         },
                         parent_storage_keys_prefix: {
-                            let parent = parent.clone();
+                            let local_storage_cache = local_storage_cache.clone();
                             move |prefix: Vec<u8>| {
-                                assert!(prefix.is_empty()); // TODO: not implemented
-                                let ret: Vec<Vec<u8>> =
-                                    parent.storage_keys().map(|v| v.as_ref().to_vec()).collect();
+                                let ret = local_storage_cache
+                                    .lock()
+                                    .range(prefix.clone()..)
+                                    .take_while(|(k, _)| k.starts_with(&prefix))
+                                    .map(|(k, _)| k.to_vec())
+                                    .collect();
                                 async move { ret }
                             }
                         },
                         parent_storage_next_key: {
-                            let parent = parent.clone();
+                            let local_storage_cache = local_storage_cache.clone();
                             move |key: Vec<u8>| {
-                                let ret: Option<Vec<u8>> =
-                                    parent.next_key(&key).map(|v| v.as_ref().to_vec());
+                                struct CustomBound(Vec<u8>);
+                                impl core::ops::RangeBounds<Vec<u8>> for CustomBound {
+                                    fn start_bound(&self) -> core::ops::Bound<&Vec<u8>> {
+                                        core::ops::Bound::Excluded(&self.0)
+                                    }
+                                    fn end_bound(&self) -> core::ops::Bound<&Vec<u8>> {
+                                        core::ops::Bound::Unbounded
+                                    }
+                                }
+                                let ret = local_storage_cache
+                                    .lock()
+                                    .range(CustomBound(key))
+                                    .next()
+                                    .map(|(k, _)| k.to_vec());
                                 async move { ret }
                             }
                         },
                         top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
                     })
-                    .await;
+                    .await
+                };
 
                 match import_result {
                     Ok(success) => {
@@ -125,28 +145,15 @@ pub async fn run_executor_task(mut config: Config) {
                             wasm_blob_cache = None;
                         }
 
-                        let mut new_block_storage = (*parent).clone();
-                        for (key, value) in success.storage_top_trie_changes.iter() {
-                            if let Some(value) = value.as_ref() {
-                                new_block_storage.insert(key, value.clone())
+                        for (key, value) in success.storage_top_trie_changes {
+                            if let Some(value) = value {
+                                local_storage_cache.insert(key, value);
                             } else {
-                                new_block_storage.remove(key);
+                                local_storage_cache.remove(&key);
                             }
                         }
-                        let new_hash = to_execute.header.block_hash();
-                        // TODO: hack because our storage story is bad regarding memory
-                        config
-                            .storage
-                            .remove_storage(&to_execute.header.parent_hash);
-                        config
-                            .storage
-                            .block(&new_hash.0.into())
-                            .set_storage(new_block_storage);
 
-                        let _ = send_back.send(Ok(ExecuteSuccess {
-                            block: to_execute,
-                            storage_changes: success.storage_top_trie_changes,
-                        }));
+                        let _ = send_back.send(Ok(ExecuteSuccess { block: to_execute }));
                     }
                     Err(_) => panic!(), // TODO:
                 }

@@ -20,6 +20,7 @@ hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
 log = "0.4"
+parking_lot = "0.10.2"
 parity-db = "0.1.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 parity-wasm = "0.41.0"

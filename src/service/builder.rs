@@ -4,11 +4,12 @@ use crate::{chain_spec::ChainSpec, database, keystore, network, storage};
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
+use hashbrown::HashMap;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
-    /// Storage for the state of all blocks.
-    storage: storage::Storage,
+    /// State of the storage at the genesis block.
+    genesis_storage_trie: HashMap<Vec<u8>, Vec<u8>>,
 
     /// Database where the chain data is stored. If `None`, data is kept in memory.
     database: Option<database::Database>,
@@ -24,7 +25,7 @@ pub struct ServiceBuilder {
 /// Creates a new prototype of the service.
 pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
-        storage: storage::Storage::empty(),
+        genesis_storage_trie: Default::default(),
         database: None,
         tasks_executor: None,
         network: network::builder(),
@@ -42,7 +43,10 @@ impl<'a> From<&'a ChainSpec> for ServiceBuilder {
 impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
     pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
-        self.storage = crate::storage_from_genesis_block(specs);
+        self.genesis_storage_trie = specs
+            .genesis_storage()
+            .map(|(k, v)| (k.to_vec(), v.to_vec()))
+            .collect();
 
         // TODO: chain specs should use stronger typing
         self.network.set_boot_nodes(
@@ -71,7 +75,7 @@ impl ServiceBuilder {
     /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
     pub fn with_chain_spec_protocol_id(self, id: impl AsRef<[u8]>) -> Self {
         ServiceBuilder {
-            storage: self.storage,
+            genesis_storage_trie: self.genesis_storage_trie,
             database: self.database,
             tasks_executor: self.tasks_executor,
             network: self.network.with_chain_spec_protocol_id(id),
@@ -175,7 +179,7 @@ impl ServiceBuilder {
                     Box::new(move |task| tasks_executor(task))
                 }),
                 to_executor: to_executor_rx,
-                storage: self.storage,
+                genesis_storage_trie: self.genesis_storage_trie,
             })
             .boxed(),
         );

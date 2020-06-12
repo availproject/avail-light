@@ -320,14 +320,9 @@ fn child_nodes(config: &mut Config, key: &TrieNodeKey) -> impl Iterator<Item = T
     for n in 0..16 {
         *key_clone.nibbles.last_mut().unwrap() = Nibble(n);
         let descendants = descendant_storage_keys(config, &key_clone).collect::<Vec<_>>();
-        debug_assert!(
-            descendants.iter().all(|k| TrieNodeKey::from_bytes(k)
-                .nibbles
-                .starts_with(&key_clone.nibbles)),
-            "{:?} vs {:?}",
-            descendants,
-            key_clone
-        ); // TODO: remove that extra debug once we're confident
+        debug_assert!(descendants.iter().all(|k| TrieNodeKey::from_bytes(k)
+            .nibbles
+            .starts_with(&key_clone.nibbles)),);
         if let Some(prefix) = common_prefix(descendants.iter().map(|k| &**k)) {
             debug_assert_ne!(prefix, *key);
             out.push(prefix);

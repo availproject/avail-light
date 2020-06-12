@@ -2424,6 +2424,7 @@ dependencies = [
  "parity-db",
  "parity-scale-codec",
  "parity-wasm",
+ "parking_lot 0.10.2",
  "pin-project",
  "primitive-types",
  "prost",
