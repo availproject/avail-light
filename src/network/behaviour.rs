@@ -338,7 +338,10 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                 self.legacy.send_packet(&peer_id, message.encode());
             }
             generic_proto::GenericProtoOut::CustomProtocolClosed { peer_id: _, .. } => {}
-            generic_proto::GenericProtoOut::LegacyMessage { peer_id, message } => {
+            generic_proto::GenericProtoOut::LegacyMessage {
+                peer_id: _,
+                message,
+            } => {
                 match legacy_message::Message::decode_all(&message) {
                     Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
                         self.events
@@ -347,7 +350,7 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
                             )));
                     }
                     Ok(legacy_message::Message::Status(_)) => {}
-                    msg => {} // TODO: for debugging println!("message from {:?} => {:?}", peer_id, msg),
+                    _msg => {} // TODO: for debugging println!("message from {:?} => {:?}", peer_id, msg),
                 }
             }
             generic_proto::GenericProtoOut::Clogged { .. } => {}

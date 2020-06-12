@@ -45,7 +45,7 @@
 
 use alloc::{borrow::Cow, collections::BTreeMap};
 use core::{convert::TryFrom as _, fmt};
-use hashbrown::{hash_map::Entry, HashMap};
+
 use parity_scale_codec::Encode as _;
 
 /// How to access the trie.
@@ -99,7 +99,7 @@ impl CalculationCache {
 
     /// Notify the cache that all the values whose key starts with the given prefix have been
     /// modified or have been removed.
-    pub fn invalidate_prefix(&mut self, prefix: &[u8]) {
+    pub fn invalidate_prefix(&mut self, _prefix: &[u8]) {
         // TODO: actually implement
         self.node_values.clear();
     }

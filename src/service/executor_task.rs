@@ -3,14 +3,13 @@
 use crate::{block, executor, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
-use core::{cmp, convert::TryFrom as _, pin::Pin};
+use core::pin::Pin;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use hashbrown::HashMap;
 use parking_lot::Mutex;
-use primitive_types::H256;
 
 /// Message that can be sent to the executors task by the other parts of the code.
 pub enum ToExecutor {
@@ -61,7 +60,7 @@ pub async fn run_executor_task(mut config: Config) {
     while let Some(event) = config.to_executor.next().await {
         match event {
             ToExecutor::Execute {
-                mut to_execute,
+                to_execute,
                 send_back,
             } => {
                 if send_back.is_canceled() {

@@ -7,16 +7,11 @@
 //! But before doing so, we must first verify whether the block is correct. In other words, that
 //! all the extrinsics in the block can indeed be applied on top of its parent.
 
-use crate::{block, executor, trie::calculate_root};
+use crate::{executor, trie::calculate_root};
 
-use alloc::sync::Arc;
-use core::{cmp, convert::TryFrom as _, pin::Pin};
-use futures::{
-    channel::{mpsc, oneshot},
-    prelude::*,
-};
+use core::{cmp, convert::TryFrom as _};
+use futures::prelude::*;
 use hashbrown::HashMap;
-use primitive_types::H256;
 
 /// Configuration for a block verification.
 pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
@@ -86,7 +81,7 @@ where
     // TODO: obviously make this less hacky
     // TODO: BABE appends a seal to each block that the runtime doesn't know about
     let mut block_header = config.block_header.clone();
-    let mut seal_log = block_header.digest.logs.pop().unwrap();
+    let _seal_log = block_header.digest.logs.pop().unwrap();
 
     let mut vm = executor::WasmVm::new(
         config.runtime,
@@ -159,7 +154,7 @@ where
             } => {
                 top_trie_root_calculation_cache.invalidate_node(storage_key);
 
-                let mut current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
+                let current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone().unwrap_or(Vec::new())
                 } else {
                     (config.parent_storage_get)(storage_key.to_vec())
@@ -227,7 +222,7 @@ where
                 resolve.finish_call(hash);
             }
             executor::State::ExternalStorageChangesRoot {
-                parent_hash,
+                parent_hash: _,
                 resolve,
             } => {
                 // TODO: this is probably one of the most complicated things to

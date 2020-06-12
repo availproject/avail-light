@@ -121,7 +121,7 @@ impl ServiceBuilder {
         let (to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_executor_tx, to_executor_rx) = mpsc::channel(256);
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
-        let (to_database_tx, to_database_rx) = mpsc::channel(64);
+        let (_to_database_tx, to_database_rx) = mpsc::channel(64);
 
         let num_connections_store = Arc::new(atomic::AtomicU64::new(0));
 

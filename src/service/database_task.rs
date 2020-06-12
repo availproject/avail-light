@@ -102,8 +102,8 @@ fn handle_single_event(
         }
 
         ToDatabase::StorageGet {
-            block_hash,
-            key,
+            block_hash: _,
+            key: _,
             send_back,
         } => {
             if send_back.is_canceled() {

@@ -35,7 +35,6 @@
 
 use fnv::FnvBuildHasher;
 use hashbrown::HashMap;
-use libp2p::Multiaddr;
 
 mod structs;
 

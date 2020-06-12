@@ -26,9 +26,6 @@
 //! size of the trie.
 
 use alloc::collections::BTreeMap;
-use core::convert::TryFrom as _;
-use hashbrown::{hash_map::Entry, HashMap};
-use parity_scale_codec::Encode as _;
 
 pub mod calculate_root;
 
@@ -99,7 +96,6 @@ impl Trie {
 #[cfg(test)]
 mod tests {
     use super::Trie;
-    use core::iter;
 
     #[test]
     fn trie_root_one_node() {

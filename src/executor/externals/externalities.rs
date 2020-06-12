@@ -41,14 +41,13 @@
 
 use super::vm;
 
-use alloc::sync::Arc;
 use core::{convert::TryFrom as _, fmt, future::Future, hash::Hasher as _, pin::Pin};
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
 use parity_scale_codec::DecodeAll as _;
-use primitive_types::H256;
+
 use tiny_keccak::Hasher as _;
 
 /// Description of an externality.
@@ -1126,7 +1125,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 let params = params.to_vec();
                 Box::pin(async move {
                     expect_num_params(3, &params)?;
-                    let log_level = expect_u32(&params[0])?;
+                    let _log_level = expect_u32(&params[0])?;
                     let target = expect_pointer_size(&params[1], &*interface).await?;
                     let message = expect_pointer_size(&params[2], &*interface).await?;
 
@@ -1147,7 +1146,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         // TODO: since the specs aren't up-to-date with the list of functions, we just resolve
         // everything as valid, and panic if an unknown function is actually called
         //_ => None,
-        f => {
+        _f => {
             // TODO: this println is a bit too verbose
             //println!("unknown function: {}", f);
             Some(Externality {
@@ -1217,12 +1216,12 @@ fn reinterpret_u64_i64(val: u64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{function_by_name, CallState, Externality, Resume, State};
+    use super::function_by_name;
 
     #[test]
     fn usage_example() {
         let function = function_by_name("ext_hashing_sha2_256_version_1").unwrap();
-        let call_state = function.start_call(&[]);
+        let _call_state = function.start_call(&[]);
         // TODO: finish writing this test
     }
 }

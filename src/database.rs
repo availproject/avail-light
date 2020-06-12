@@ -1,6 +1,5 @@
 //! Filesystem-backed database containing all the information about a chain.
 
-use parity_scale_codec::Decode as _;
 use std::path::Path;
 
 /// An open database. Holds file descriptors.
