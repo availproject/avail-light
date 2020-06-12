@@ -13,7 +13,6 @@ pub mod informant;
 pub mod keystore;
 pub mod network;
 pub mod service;
-pub mod storage;
 //pub mod storage_cache;
 pub mod trie;
 
@@ -47,20 +46,4 @@ pub fn calculate_genesis_block_hash<'a>(
     };
 
     genesis_block_header.block_hash().0
-}
-
-pub fn storage_from_genesis_block(specs: &chain_spec::ChainSpec) -> storage::Storage {
-    let mut block0 = storage::BlockStorage::empty();
-    for (key, value) in specs.genesis_storage() {
-        block0.insert(&key, &value);
-    }
-
-    let genesis_block_hash = calculate_genesis_block_hash(specs.genesis_storage());
-
-    let mut storage = storage::Storage::empty();
-    storage
-        .block(&genesis_block_hash.into())
-        .set_storage(block0)
-        .unwrap();
-    storage
 }

@@ -1,6 +1,6 @@
 //! Service task that processes Wasm executions requests.
 
-use crate::{block, executor, storage, trie::calculate_root};
+use crate::{block, executor, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{cmp, convert::TryFrom as _, pin::Pin};

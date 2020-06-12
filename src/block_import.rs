@@ -7,7 +7,7 @@
 //! But before doing so, we must first verify whether the block is correct. In other words, that
 //! all the extrinsics in the block can indeed be applied on top of its parent.
 
-use crate::{block, executor, storage, trie::calculate_root};
+use crate::{block, executor, trie::calculate_root};
 
 use alloc::sync::Arc;
 use core::{cmp, convert::TryFrom as _, pin::Pin};
