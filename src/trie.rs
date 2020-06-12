@@ -30,7 +30,10 @@ use core::convert::TryFrom as _;
 use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::Encode as _;
 
+pub mod calculate_root;
+
 /// Radix-16 Merkle-Patricia trie.
+// TODO: probably useless, remove
 pub struct Trie {
     /// The entries in the tree.
     ///
@@ -92,7 +95,21 @@ impl Trie {
 
     /// Calculates the Merkle value of the root node.
     pub fn root_merkle_value(&self) -> [u8; 32] {
-        // The root node is not necessarily the one with an empty key. Just like any other node,
+        calculate_root::root_merkle_value(&calculate_root::Config {
+            get_value: &|key: &[u8]| {
+                self.entries.get(&TrieNodeKey::from_bytes(key)).map(|v| &v[..])
+            },
+            prefix_keys: &|prefix: &[u8]| {
+                let prefix = TrieNodeKey::from_bytes(prefix);
+                self.entries
+                    .range(&prefix..)
+                    .take_while(|(k, _)| k.nibbles.starts_with(&prefix.nibbles))
+                    .map(|(k, _)| k.to_bytes_truncate().into())
+                    .collect()
+            },
+        })
+    }
+        /*// The root node is not necessarily the one with an empty key. Just like any other node,
         // the root might have been merged with its lone children.
 
         let key_from_root = common_prefix(
@@ -115,7 +132,7 @@ impl Trie {
         );
         out.copy_from_slice(&val_vec);
         out
-    }
+    }*/
 
     /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
     /// `child_index`, and `partial_key`.
@@ -310,6 +327,15 @@ impl TrieNodeKey {
             out.push(Nibble(*b & 0xf));
         }
         TrieNodeKey { nibbles: out }
+    }
+
+    fn to_bytes_truncate(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.nibbles.len() / 2);
+        for n in self.nibbles.chunks(2) {
+            let byte = (n[0].0 << 4) | n[1].0;
+            out.push(byte);
+        }
+        out
     }
 
     fn is_ancestor_or_equal(&self, key: &[Nibble]) -> bool {

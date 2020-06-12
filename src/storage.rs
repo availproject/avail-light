@@ -7,6 +7,7 @@ use hashbrown::HashMap;
 use primitive_types::H256;
 
 /// Main storage entry point for abstract data.
+// TODO: probably useless, remove
 pub struct Storage {
     /// For each block hash, stores its state.
     blocks: HashMap<H256, BlockState, FnvBuildHasher>,
