@@ -41,8 +41,8 @@ pub fn calculate_genesis_block_hash<'a>(
     let genesis_block_header = block::Header {
         parent_hash: [0; 32].into(),
         number: 0,
-        state_root: state_trie.root_merkle_value().into(),
-        extrinsics_root: trie::Trie::new().root_merkle_value().into(),
+        state_root: state_trie.root_merkle_value(None).into(),
+        extrinsics_root: trie::Trie::new().root_merkle_value(None).into(),
         digest: block::Digest { logs: Vec::new() },
     };
 

@@ -4,6 +4,8 @@
 //!
 //! # Usage
 //!
+//! Example:
+//!
 //! ```
 //! use std::collections::BTreeMap;
 //! use substrate_lite::trie::calculate_root;
@@ -13,7 +15,7 @@
 //! let mut storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();
 //! storage.insert(b"foo".to_vec(), b"bar".to_vec());
 //!
-//! let trie_root = calculate_root::root_merkle_value(&calculate_root::Config {
+//! let trie_root = calculate_root::root_merkle_value(calculate_root::Config {
 //!     get_value: &|key: &[u8]| storage.get(key).map(|v| &v[..]),
 //!     prefix_keys: &|prefix: &[u8]| {
 //!         storage
@@ -22,6 +24,7 @@
 //!             .map(|(k, _)| From::from(&k[..]))
 //!             .collect()
 //!     },
+//!     cache: None,
 //! });
 //!
 //! assert_eq!(
@@ -30,9 +33,18 @@
 //!      116, 162, 143, 156, 19, 43, 183, 8, 41, 178, 204, 69, 41, 37, 224, 91]
 //! );
 //! ```
+//!
+//! You have the possibility to pass a [`CalculationCache`] to the calculation. This cache will
+//! be filled with intermediary calculations and can later be passed again to calculate the root
+//! in a more efficient way.
+//!
+//! When using a cache, be careful to properly invalidate cache entries whenever you perform
+//! modifications on the trie associated to it.
+
+// TODO: while the API is clean, the implementation in this entire module should be made cleaner
 
 use alloc::{borrow::Cow, collections::BTreeMap};
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, fmt};
 use hashbrown::{hash_map::Entry, HashMap};
 use parity_scale_codec::Encode as _;
 
@@ -50,11 +62,63 @@ pub struct Config<'a, 'b> {
     /// All the keys returned must start with the given prefix. It is an error to omit a key
     /// from the result.
     pub prefix_keys: &'a dyn Fn(&[u8]) -> Vec<Cow<'b, [u8]>>,
-    // TODO: add an optional calculation cache parameter
+
+    /// Optional cache object that contains intermediate calculations. The cache is read and
+    /// updated.
+    ///
+    /// > **Important**: If you use a cache, make sure to properly invalidate its content when
+    /// >                the storage is updated.
+    pub cache: Option<&'a mut CalculationCache>,
+}
+
+/// Cache containing intermediate calculation steps.
+///
+/// If the storage's content is modified, you **must** call the appropriate methods to invalidate
+/// entries. Otherwise, the trie root calculation will yield an incorrect result.
+pub struct CalculationCache {
+    /// Cache of node values of known nodes.
+    // TODO: is the node value not too big? it will include the full storage values
+    node_values: BTreeMap<TrieNodeKey, Vec<u8>>,
+}
+
+impl CalculationCache {
+    /// Builds a new empty cache.
+    pub fn empty() -> Self {
+        CalculationCache {
+            node_values: BTreeMap::new(),
+        }
+    }
+
+    /// Notify the cache that the value at the given key has been modified or has been removed.
+    pub fn invalidate_node(&mut self, key: &[u8]) {
+        // Considering the the node value of the direct children of `key` depends on the location
+        // of their parent, we have to invalidate them as well. We just take a shortcut and use
+        // `invalidate_prefix`.
+        self.invalidate_prefix(key);
+    }
+
+    /// Notify the cache that all the values whose key starts with the given prefix have been
+    /// modified or have been removed.
+    pub fn invalidate_prefix(&mut self, prefix: &[u8]) {
+        // TODO: actually implement
+        self.node_values.clear();
+    }
+}
+
+impl Default for CalculationCache {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl fmt::Debug for CalculationCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("CalculationCache").finish()
+    }
 }
 
 /// Calculates the Merkle value of the root node.
-pub fn root_merkle_value(config: &Config) -> [u8; 32] {
+pub fn root_merkle_value(mut config: Config) -> [u8; 32] {
     // The root node is not necessarily the one with an empty key. Just like any other node,
     // the root might have been merged with its lone children.
 
@@ -65,7 +129,7 @@ pub fn root_merkle_value(config: &Config) -> [u8; 32] {
     });
 
     let val_vec = merkle_value(
-        config,
+        &mut config,
         TrieNodeKey {
             nibbles: Vec::new(),
         },
@@ -81,7 +145,7 @@ pub fn root_merkle_value(config: &Config) -> [u8; 32] {
 /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
 /// `child_index`, and `partial_key`.
 fn merkle_value(
-    config: &Config,
+    config: &mut Config,
     parent_key: TrieNodeKey,
     child_index: Option<Nibble>,
     partial_key: TrieNodeKey,
@@ -103,11 +167,28 @@ fn merkle_value(
 /// Calculates the node value of the node whose key is the concatenation of `parent_key`,
 /// `child_index`, and `partial_key`.
 fn node_value(
-    config: &Config,
+    config: &mut Config,
     parent_key: TrieNodeKey,
     child_index: Option<Nibble>,
     partial_key: TrieNodeKey,
 ) -> Vec<u8> {
+    // The operations below require the actual key of the node.
+    let combined_key = {
+        let mut combined_key = parent_key.clone();
+        if let Some(child_index) = &child_index {
+            combined_key.nibbles.push(child_index.clone());
+        }
+        combined_key.nibbles.extend(partial_key.nibbles.clone());
+        combined_key
+    };
+
+    // Look in the cache, if any.
+    if let Some(cache) = &mut config.cache {
+        if let Some(value) = cache.node_values.get(&combined_key) {
+            return value.clone();
+        }
+    }
+
     // Turn the `partial_key` into bytes with a weird encoding.
     let partial_key_hex_encode = {
         let partial_key = &partial_key.nibbles;
@@ -125,16 +206,6 @@ fn node_value(
             }
             pk
         }
-    };
-
-    // The operations below require the actual key of the node.
-    let combined_key = {
-        let mut combined_key = parent_key;
-        if let Some(child_index) = &child_index {
-            combined_key.nibbles.push(child_index.clone());
-        }
-        combined_key.nibbles.extend(partial_key.nibbles.clone());
-        combined_key
     };
 
     // Load the stored value of this node.
@@ -231,11 +302,17 @@ fn node_value(
     let mut node_value = header;
     node_value.extend(partial_key_hex_encode);
     node_value.extend(node_subvalue);
+
+    // Store in cache, for next time.
+    if let Some(cache) = &mut config.cache {
+        cache.node_values.insert(combined_key, node_value.clone());
+    }
+
     node_value
 }
 
 /// Returns all the keys of the nodes that descend from `key`, excluding `key` itself.
-fn child_nodes(config: &Config, key: &TrieNodeKey) -> impl Iterator<Item = TrieNodeKey> {
+fn child_nodes(config: &mut Config, key: &TrieNodeKey) -> impl Iterator<Item = TrieNodeKey> {
     let mut key_clone = key.clone();
     key_clone.nibbles.push(Nibble(0));
 
@@ -350,3 +427,7 @@ fn common_prefix<'a>(mut list: impl Iterator<Item = &'a [u8]>) -> Option<TrieNod
 }
 
 // TODO: tests
+
+// TODO: add a test that generates a random trie, calculates its root using a cache, modifies it
+// randomly, invalidating the cache in the process, then calculates the root again, once with
+// cache and once without cache, and compares the two values

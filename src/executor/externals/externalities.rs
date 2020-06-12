@@ -1008,7 +1008,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     for (key, value) in elements {
                         trie.insert(&key, value);
                     }
-                    let out = trie.root_merkle_value();
+                    let out = trie.root_merkle_value(None);
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out.to_vec()).await;
@@ -1032,7 +1032,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                             parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(idx));
                         trie.insert(&key, value);
                     }
-                    let out = trie.root_merkle_value();
+                    let out = trie.root_merkle_value(None);
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out.to_vec()).await;

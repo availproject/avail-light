@@ -1,6 +1,6 @@
 //! Service task that processes Wasm executions requests.
 
-use crate::{block, executor, storage};
+use crate::{block, executor, storage, trie::calculate_root};
 
 use alloc::sync::Arc;
 use core::{cmp, convert::TryFrom as _, pin::Pin};
@@ -44,6 +44,12 @@ pub async fn run_executor_task(mut config: Config) {
     // Tuple of the runtime code of the chain head and its corresponding `WasmBlob`.
     // Used to avoid recompiling it every single time.
     let mut wasm_blob_cache: Option<(Vec<u8>, executor::WasmBlob)> = None;
+
+    // Cache used to calculate the storage trie root.
+    // This cache has to be kept up to date with the actual state of the storage.
+    // We pass this value whenever we verify a block. The verification process returns an updated
+    // version of this cache, suitable to be passed to verifying a direct child.
+    let mut top_trie_root_calculation_cache = Some(calculate_root::CalculationCache::empty());
 
     while let Some(event) = config.to_executor.next().await {
         match event {
@@ -106,11 +112,15 @@ pub async fn run_executor_task(mut config: Config) {
                                 async move { ret }
                             }
                         },
+                        top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
                     })
                     .await;
 
                 match import_result {
                     Ok(success) => {
+                        top_trie_root_calculation_cache =
+                            Some(success.top_trie_root_calculation_cache);
+
                         if success.storage_top_trie_changes.contains_key(&b":code"[..]) {
                             wasm_blob_cache = None;
                         }

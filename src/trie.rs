@@ -76,8 +76,13 @@ impl Trie {
     }
 
     /// Calculates the Merkle value of the root node.
-    pub fn root_merkle_value(&self) -> [u8; 32] {
-        calculate_root::root_merkle_value(&calculate_root::Config {
+    ///
+    /// Passes an optional cache.
+    pub fn root_merkle_value(
+        &self,
+        cache: Option<&mut calculate_root::CalculationCache>,
+    ) -> [u8; 32] {
+        calculate_root::root_merkle_value(calculate_root::Config {
             get_value: &|key: &[u8]| self.entries.get(key).map(|v| &v[..]),
             prefix_keys: &|prefix: &[u8]| {
                 self.entries
@@ -86,105 +91,65 @@ impl Trie {
                     .map(|(k, _)| From::from(&k[..]))
                     .collect()
             },
+            cache,
         })
     }
 }
 
-// TODO: remove testing private methods once we have better tests
 #[cfg(test)]
 mod tests {
-    use super::{common_prefix, Nibble, Trie, TrieNodeKey};
+    use super::Trie;
     use core::iter;
-
-    #[test]
-    fn common_prefix_works_trivial() {
-        let a = vec![Nibble(0)];
-
-        let obtained = common_prefix([&a[..]].iter().cloned());
-        assert_eq!(obtained, Some(a));
-    }
-
-    #[test]
-    fn common_prefix_works_empty() {
-        let obtained = common_prefix(iter::empty());
-        assert_eq!(obtained, None);
-    }
-
-    #[test]
-    fn common_prefix_works_basic() {
-        let a = vec![Nibble(5), Nibble(4), Nibble(6)];
-        let b = vec![Nibble(5), Nibble(4), Nibble(9), Nibble(12)];
-
-        let obtained = common_prefix([&a[..], &b[..]].iter().cloned());
-        assert_eq!(obtained, Some(vec![Nibble(5), Nibble(4)]));
-    }
 
     #[test]
     fn trie_root_one_node() {
         let mut trie = Trie::new();
         trie.insert(b"abcd", b"hello world".to_vec());
-        let hash = trie.root_merkle_value();
-        // TODO: compare against expected
+
+        let expected = [
+            122, 177, 134, 89, 211, 178, 120, 158, 242, 64, 13, 16, 113, 4, 199, 212, 251, 147,
+            208, 109, 154, 182, 168, 182, 65, 165, 222, 124, 63, 236, 200, 81,
+        ];
+
+        assert_eq!(trie.root_merkle_value(None), &expected[..]);
     }
 
     #[test]
-    fn trie_root_unhashed_empty() {
+    fn trie_root_empty() {
         let trie = Trie::new();
-        let obtained = trie.node_value(
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
-            None,
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
-        );
-        assert_eq!(obtained, vec![0x0]);
+        let expected = blake2_rfc::blake2b::blake2b(32, &[], &[0x0]);
+        assert_eq!(trie.root_merkle_value(None), expected.as_bytes());
     }
 
     #[test]
-    fn trie_root_unhashed_single_tuple() {
+    fn trie_root_single_tuple() {
         let mut trie = Trie::new();
         trie.insert(&[0xaa], [0xbb].to_vec());
-        let obtained = trie.node_value(
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
-            None,
-            TrieNodeKey::from_bytes(&[0xaa]),
-        );
 
         fn to_compact(n: u8) -> u8 {
             use parity_scale_codec::Encode as _;
             parity_scale_codec::Compact(n).encode()[0]
         }
 
-        assert_eq!(
-            obtained,
-            vec![
+        let expected = blake2_rfc::blake2b::blake2b(
+            32,
+            &[],
+            &[
                 0x42,          // leaf 0x40 (2^6) with (+) key of 2 nibbles (0x02)
                 0xaa,          // key data
                 to_compact(1), // length of value in bytes as Compact
-                0xbb           // value data
-            ]
+                0xbb,          // value data
+            ],
         );
+
+        assert_eq!(trie.root_merkle_value(None), expected.as_bytes());
     }
 
     #[test]
-    fn trie_root_unhashed() {
+    fn trie_root() {
         let mut trie = Trie::new();
         trie.insert(&[0x48, 0x19], [0xfe].to_vec());
         trie.insert(&[0x13, 0x14], [0xff].to_vec());
-
-        let obtained = trie.node_value(
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
-            None,
-            TrieNodeKey {
-                nibbles: Vec::new(),
-            },
-        );
 
         fn to_compact(n: u8) -> u8 {
             use parity_scale_codec::Encode as _;
@@ -208,6 +173,7 @@ mod tests {
         ex.push(to_compact(0x01)); // 1 byte data
         ex.push(0xfe); // value data
 
-        assert_eq!(obtained, ex);
+        let expected = blake2_rfc::blake2b::blake2b(32, &[], &ex);
+        assert_eq!(trie.root_merkle_value(None), expected.as_bytes());
     }
 }

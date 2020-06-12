@@ -7,7 +7,7 @@
 //! But before doing so, we must first verify whether the block is correct. In other words, that
 //! all the extrinsics in the block can indeed be applied on top of its parent.
 
-use crate::{block, executor, storage};
+use crate::{block, executor, storage, trie::calculate_root};
 
 use alloc::sync::Arc;
 use core::{cmp, convert::TryFrom as _, pin::Pin};
@@ -46,12 +46,17 @@ pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
     /// Function that returns the key in the parent's storage that immediately follows the one
     /// passed as parameter. Returns `None` if this is the last key.
     pub parent_storage_next_key: TPaNe,
+
+    /// Optional cache corresponding to the storage trie root hash calculation.
+    pub top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
 }
 
 /// Block successfully verified.
 pub struct Success {
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    /// Cache used for calculating the top trie root.
+    pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
     // TOOD: logs written by the runtime
 }
 
@@ -92,8 +97,12 @@ where
     )
     .unwrap();
 
-    /// Pending changes to the top storage trie that this block performs.
+    // Pending changes to the top storage trie that this block performs.
     let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
+    // Cache passed as part of the configuration. Initially guaranteed to match the storage or the
+    // parent, then updated to match the changes made during the verification.
+    let mut top_trie_root_calculation_cache =
+        config.top_trie_root_calculation_cache.unwrap_or_default();
 
     loop {
         match vm.state() {
@@ -101,6 +110,7 @@ where
             executor::State::Finished(executor::Success::CoreExecuteBlock) => {
                 return Ok(Success {
                     storage_top_trie_changes: top_trie_changes,
+                    top_trie_root_calculation_cache,
                 })
             }
             executor::State::Finished(_) => unreachable!(),
@@ -137,6 +147,7 @@ where
                 new_storage_value,
                 resolve,
             } => {
+                top_trie_root_calculation_cache.invalidate_node(storage_key);
                 top_trie_changes
                     .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
                 resolve.finish_call(());
@@ -146,6 +157,8 @@ where
                 value,
                 resolve,
             } => {
+                top_trie_root_calculation_cache.invalidate_node(storage_key);
+
                 let mut current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone().unwrap_or(Vec::new())
                 } else {
@@ -178,6 +191,8 @@ where
                 storage_key,
                 resolve,
             } => {
+                top_trie_root_calculation_cache.invalidate_prefix(storage_key);
+
                 for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
                     if !key.starts_with(&storage_key) {
                         continue;
@@ -208,7 +223,7 @@ where
                         trie.remove(key);
                     }
                 }
-                let hash = trie.root_merkle_value();
+                let hash = trie.root_merkle_value(Some(&mut top_trie_root_calculation_cache));
                 resolve.finish_call(hash);
             }
             executor::State::ExternalStorageChangesRoot {
