@@ -207,6 +207,10 @@ where
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageRoot { resolve } => {
+                /*struct TrieAccess<'a>(&'a );
+
+                calculate_root::root_merkle_value(trie_access, Some(&mut top_trie_root_calculation_cache));*/
+
                 let mut trie = crate::trie::Trie::new();
                 for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
                     let value = (config.parent_storage_get)(key.to_vec())

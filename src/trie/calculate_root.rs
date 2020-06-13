@@ -30,8 +30,6 @@
 //! When using a cache, be careful to properly invalidate cache entries whenever you perform
 //! modifications on the trie associated to it.
 
-// TODO: while the API is clean, the implementation in this entire module should be made cleaner
-
 use alloc::{
     borrow::Cow,
     collections::{btree_map::Entry, BTreeMap},
@@ -71,9 +69,22 @@ impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
     }
 
     fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
-        let prefix = prefix.to_vec(); // TODO: see lifetime comment on the trait
+        let prefix = prefix.to_vec(); // TODO: see comment about lifetime on the trait definition
         let iter = self
-            .range(prefix.to_vec()..) // TODO: this to_vec() is annoying
+            .range({
+                // We have to use a custom implementation of `std::ops::RangeBounds` because the
+                // existing ones can't be used without passing a `Vec<u8>` by value.
+                struct CustomRange<'a>(&'a [u8]);
+                impl<'a> core::ops::RangeBounds<[u8]> for CustomRange<'a> {
+                    fn start_bound(&self) -> core::ops::Bound<&[u8]> {
+                        core::ops::Bound::Included(self.0)
+                    }
+                    fn end_bound(&self) -> core::ops::Bound<&[u8]> {
+                        core::ops::Bound::Unbounded
+                    }
+                }
+                CustomRange(&prefix)
+            })
             .take_while(move |(k, _)| k.starts_with(&prefix))
             .map(|(k, _)| From::from(&k[..]));
         Box::new(iter)
@@ -84,6 +95,7 @@ impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
 ///
 /// If the storage's content is modified, you **must** call the appropriate methods to invalidate
 /// entries. Otherwise, the trie root calculation will yield an incorrect result.
+#[derive(Debug)]
 pub struct CalculationCache {
     /// Root node of the trie, if known.
     root_node: Option<TrieNodeKey>,
@@ -155,12 +167,6 @@ impl CalculationCache {
 impl Default for CalculationCache {
     fn default() -> Self {
         Self::empty()
-    }
-}
-
-impl fmt::Debug for CalculationCache {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("CalculationCache").finish()
     }
 }
 
