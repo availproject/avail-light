@@ -659,16 +659,28 @@ impl TrieNodeKey {
     }
 
     fn is_ancestor_or_equal(&self, key: &[u8]) -> bool {
-        // TODO: make this code clearer
-        let this = self.to_bytes_truncate();
-        if self.nibbles.len() % 2 == 0 {
-            // Truncation is actually not truncating.
-            key.starts_with(&this)
-        } else {
-            // A nibble has been removed.
-            let last_nibble = self.nibbles.last().unwrap().0;
-            key.starts_with(&this) && key != &this[..] && (key[this.len()] >> 4) == last_nibble
+        let mut key_iter = key.iter();
+
+        for my_nibbles in self.nibbles.chunks(2) {
+            let mut key_byte = match key_iter.next() {
+                Some(b) => *b,
+                None => return false,
+            };
+
+            if my_nibbles.len() == 1 {
+                // This is the last element.
+                return (key_byte >> 4) == my_nibbles[0].0;
+            } else {
+                debug_assert_eq!(my_nibbles.len(), 2);
+
+                let my_byte = (my_nibbles[0].0 << 4) | my_nibbles[1].0;
+                if my_byte != key_byte {
+                    return false;
+                }
+            }
         }
+
+        true
     }
 }
 
