@@ -11,6 +11,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
+use hashbrown::HashMap;
 
 /// Message that can be sent to the database task by the other parts of the code.
 pub enum ToDatabase {

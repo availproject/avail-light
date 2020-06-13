@@ -384,8 +384,12 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
                     .get(&child_combined_key)
                     .and_then(|e| e.merkle_value.as_ref())
                 {
-                    // TODO: this encode() is probably expensive
-                    children_merkle_value_concat.extend_from_slice(&merkle_value.encode());
+                    // Doing `children_merkle_value_concat.extend(merkle_value.encode());` would
+                    // be expensive because we would duplicate the merkle value. Instead, we do
+                    // the encoding manually by pushing the length then the value.
+                    parity_scale_codec::Compact(u64::try_from(merkle_value.len()).unwrap())
+                        .encode_to(&mut children_merkle_value_concat);
+                    children_merkle_value_concat.extend_from_slice(&merkle_value);
                 } else {
                     missing_children.push((
                         combined_key.clone(),
@@ -487,8 +491,12 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
                 let mut out = children_bitmap.to_le_bytes().to_vec();
                 out.extend(children_merkle_value_concat);
                 if let Some(stored_value) = stored_value {
-                    // TODO: SCALE-encoding clones the value; optimize that
-                    out.extend(stored_value.encode())
+                    // Doing `out.extend(stored_value.encode());` would be quite expensive because
+                    // we would duplicate the storage value. Instead, we do the encoding manually
+                    // by pushing the length then the value.
+                    parity_scale_codec::Compact(u64::try_from(stored_value.len()).unwrap())
+                        .encode_to(&mut out);
+                    out.extend_from_slice(&stored_value);
                 }
                 out
             }
