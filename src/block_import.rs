@@ -142,7 +142,11 @@ where
                 new_storage_value,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.invalidate_node(storage_key);
+                if new_storage_value.is_some() {
+                    top_trie_root_calculation_cache.invalidate_storage_value(storage_key);
+                } else {
+                    top_trie_root_calculation_cache.invalidate_node(storage_key);
+                }
                 top_trie_changes
                     .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
                 resolve.finish_call(());
@@ -152,7 +156,7 @@ where
                 value,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.invalidate_node(storage_key);
+                top_trie_root_calculation_cache.invalidate_storage_value(storage_key);
 
                 let current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone().unwrap_or(Vec::new())

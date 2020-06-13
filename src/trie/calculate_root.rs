@@ -32,7 +32,10 @@
 
 // TODO: while the API is clean, the implementation in this entire module should be made cleaner
 
-use alloc::{borrow::Cow, collections::BTreeMap};
+use alloc::{
+    borrow::Cow,
+    collections::{btree_map::Entry, BTreeMap},
+};
 use core::{convert::TryFrom as _, fmt};
 
 use parity_scale_codec::Encode as _;
@@ -82,16 +85,54 @@ impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
 /// If the storage's content is modified, you **must** call the appropriate methods to invalidate
 /// entries. Otherwise, the trie root calculation will yield an incorrect result.
 pub struct CalculationCache {
+    /// Root node of the trie, if known.
+    root_node: Option<TrieNodeKey>,
+
     /// Cache of node values of known nodes.
-    // TODO: is the node value not too big? it will include the full storage values
-    node_values: BTreeMap<TrieNodeKey, Vec<u8>>,
+    entries: BTreeMap<TrieNodeKey, CacheEntry>,
+}
+
+/// Entry in the [`CalculationCache`].
+#[derive(Debug, Clone)]
+struct CacheEntry {
+    /// Merkle value of this node. `None` if it needs to be recalculated.
+    ///
+    /// When the user invalidates a specific storage value, we only need to refresh the merkle
+    /// value of the corresponding node while the parent and children remain the same.
+    merkle_value: Option<Vec<u8>>,
+    /// If this is the root node, length of the key. Otherwise, number of nibbles between this node
+    /// and its parent, minus one.
+    partial_key_length: u32,
+    /// How to reach the chidren of this node.
+    children: Vec<(Nibble, TrieNodeKey)>,
 }
 
 impl CalculationCache {
     /// Builds a new empty cache.
     pub fn empty() -> Self {
         CalculationCache {
-            node_values: BTreeMap::new(),
+            root_node: None,
+            entries: BTreeMap::new(),
+        }
+    }
+
+    /// Notify the cache that the value at the given key has been modified.
+    ///
+    /// > **Note**: If the value has been entirely removed, you must call
+    // >            [`CalculationCache::invalidate_node`] instead.
+    pub fn invalidate_storage_value(&mut self, key: &[u8]) {
+        // We invalidate the `merkle_value` of `key` and `key`'s ancestors.
+        let mut next_to_invalidate = Some(TrieNodeKey::from_bytes(key));
+
+        while let Some(mut to_invalidate) = next_to_invalidate.take() {
+            if let Some(entry) = self.entries.get_mut(&to_invalidate) {
+                entry.merkle_value = None;
+
+                let parent_key_len = to_invalidate.nibbles.len()
+                    - usize::try_from(entry.partial_key_length).unwrap();
+                to_invalidate.nibbles.truncate(parent_key_len);
+                next_to_invalidate = Some(to_invalidate);
+            }
         }
     }
 
@@ -107,7 +148,7 @@ impl CalculationCache {
     /// modified or have been removed.
     pub fn invalidate_prefix(&mut self, _prefix: &[u8]) {
         // TODO: actually implement
-        self.node_values.clear();
+        self.entries.clear();
     }
 }
 
@@ -128,213 +169,288 @@ pub fn root_merkle_value<'a>(
     trie_access: impl TrieRef<'a>,
     mut cache: Option<&mut CalculationCache>,
 ) -> [u8; 32] {
-    // The root node is not necessarily the one with an empty key. Just like any other node,
-    // the root might have been merged with its lone children.
-
-    // TODO: probably very slow, as we enumerate every single key in the storage
-    let key_from_root = {
-        // TODO: clusterfuck of lifetimes
-        let list = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
-        common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey {
-            nibbles: Vec::new(),
-        })
+    // The calculation that we perform relies on storing values in the cache and reloading them
+    // afterwards. If the user didn't pass any cache, we create a temporary one.
+    let mut temporary_cache = CalculationCache::empty();
+    let cache_or_temporary = if let Some(cache) = cache {
+        cache
+    } else {
+        &mut temporary_cache
     };
 
-    let val_vec = merkle_value(
-        trie_access,
-        &mut cache,
-        TrieNodeKey {
-            nibbles: Vec::new(),
-        },
-        None,
-        key_from_root,
-    );
+    fill_cache(trie_access, cache_or_temporary);
 
+    // The `fill_cache` function guarantees to have filled the cache with at least the root node's
+    // information.
+    let root_node = cache_or_temporary.root_node.as_ref().unwrap();
+    let root_merkle = cache_or_temporary
+        .entries
+        .get(root_node)
+        .unwrap()
+        .merkle_value
+        .as_ref()
+        .unwrap();
+
+    // The root node's merkle value is guaranteed to be a hash, and therefore exactly 32 bytes.
     let mut out = [0; 32];
-    out.copy_from_slice(&val_vec);
+    out.copy_from_slice(&root_merkle);
     out
 }
 
-/// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
-/// `child_index`, and `partial_key`.
-fn merkle_value<'a>(
-    trie_access: impl TrieRef<'a>,
-    cache: &mut Option<&mut CalculationCache>,
-    parent_key: TrieNodeKey,
-    child_index: Option<Nibble>,
-    partial_key: TrieNodeKey,
-) -> Vec<u8> {
-    let is_root = child_index.is_none();
-
-    let node_value = node_value(trie_access, cache, parent_key, child_index, partial_key);
-
-    if is_root || node_value.len() >= 32 {
-        let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
-        debug_assert_eq!(blake2_hash.as_bytes().len(), 32);
-        blake2_hash.as_bytes().to_vec()
+/// Fills the cache given as parameter with at least the root node and the root node's merkle
+/// value.
+fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCache) {
+    // Start by figuring out the key of the root node, possibly with the help of the cache.
+    // The root node is not necessarily the one with an empty key. Just like any other node,
+    // the root might have been merged with its lone children.
+    let root_node = if let Some(root_node) = &cache.root_node {
+        root_node.clone()
     } else {
-        debug_assert!(node_value.len() < 32);
-        node_value
-    }
-}
-
-/// Calculates the node value of the node whose key is the concatenation of `parent_key`,
-/// `child_index`, and `partial_key`.
-fn node_value<'a>(
-    trie_access: impl TrieRef<'a>,
-    cache: &mut Option<&mut CalculationCache>,
-    parent_key: TrieNodeKey,
-    child_index: Option<Nibble>,
-    partial_key: TrieNodeKey,
-) -> Vec<u8> {
-    // The operations below require the actual key of the node.
-    let combined_key = {
-        let mut combined_key = parent_key.clone();
-        if let Some(child_index) = &child_index {
-            combined_key.nibbles.push(child_index.clone());
-        }
-        combined_key.nibbles.extend(partial_key.nibbles.clone());
-        combined_key
+        // Recomputing this is very expensive, since we enumerate every single key in the
+        // storage.
+        // TODO: clusterfuck of lifetimes
+        let list = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
+        let root_node = common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey {
+            nibbles: Vec::new(),
+        });
+        cache.root_node = Some(root_node.clone());
+        root_node
     };
 
-    // Look in the cache, if any.
-    if let Some(cache) = cache {
-        if let Some(value) = cache.node_values.get(&combined_key) {
-            return value.clone();
-        }
-    }
+    // The code below pops the last element of this queue, fills it in the cache, and optionally
+    // pushes new element to the queue. When the queue is empty, the function returns.
+    //
+    // Each element in the queue is a tuple with:
+    // - The key of the immediate parent of the node to process.
+    // - The next nibble from the parent towards the direction of the node to process. `None` if
+    //   the node to process is the root node.
+    // - The partial key of the node to process.
+    let mut queue_to_process: Vec<(TrieNodeKey, Option<Nibble>, TrieNodeKey)> =
+        vec![(TrieNodeKey::empty(), None, root_node)];
 
-    // Turn the `partial_key` into bytes with a weird encoding.
-    let partial_key_hex_encode = {
-        let partial_key = &partial_key.nibbles;
-        if partial_key.len() % 2 == 0 {
-            let mut pk = Vec::with_capacity(partial_key.len() / 2);
-            for chunk in partial_key.chunks(2) {
-                pk.push((chunk[0].0 << 4) | chunk[1].0);
-            }
-            pk
-        } else {
-            let mut pk = Vec::with_capacity(1 + partial_key.len() / 2);
-            pk.push(partial_key[0].0);
-            for chunk in partial_key[1..].chunks(2) {
-                pk.push((chunk[0].0 << 4) | chunk[1].0);
-            }
-            pk
-        }
-    };
-
-    // Load the stored value of this node.
-    let stored_value = if combined_key.nibbles.len() % 2 == 0 {
-        trie_access
-            .clone()
-            .get(&combined_key.to_bytes_truncate())
-            .map(|v| v.as_ref().to_vec())
-    } else {
-        None
-    };
-
-    // This "children bitmap" is filled below with bits if a child is present at the given
-    // index.
-    let mut children_bitmap = 0u16;
-    // Keys from this node to its children.
-    let mut children_partial_keys = Vec::<(Nibble, TrieNodeKey)>::new();
-
-    // Now enumerate the children.
-    for child in child_nodes(trie_access.clone(), &combined_key) {
-        debug_assert_ne!(child, combined_key);
-        debug_assert!(child.nibbles.starts_with(&combined_key.nibbles));
-        let child_index = child.nibbles[combined_key.nibbles.len()].clone();
-        children_bitmap |= 1 << u32::from(child_index.0);
-
-        let child_partial_key = TrieNodeKey {
-            nibbles: child.nibbles[combined_key.nibbles.len() + 1..].to_vec(),
+    loop {
+        let (parent_key, child_index, partial_key) = match queue_to_process.pop() {
+            Some(p) => p,
+            None => return,
         };
-        children_partial_keys.push((child_index, child_partial_key));
-    }
 
-    // Now compute the header of the node.
-    let header = {
-        // The first two most significant bits of the header contain the type of node.
-        let two_msb: u8 = {
-            let has_stored_value = stored_value.is_some();
-            let has_children = children_bitmap != 0;
-            match (has_stored_value, has_children) {
-                (false, false) => {
-                    // This should only ever be reached if we compute the root node of an
-                    // empty trie.
-                    debug_assert!(combined_key.nibbles.is_empty());
-                    0b00
+        // Complete key of the node to process. Combines the three components we just poped.
+        let combined_key = {
+            let mut combined_key = parent_key.clone();
+            if let Some(child_index) = &child_index {
+                combined_key.nibbles.push(child_index.clone());
+            }
+            combined_key.nibbles.extend(partial_key.nibbles.clone());
+            combined_key
+        };
+
+        // Grab the existing cache entry, or insert a new one if necessary.
+        let cache_entry_copy = match cache.entries.entry(combined_key.clone()) {
+            Entry::Occupied(e) => {
+                // If the merkle value is already in the cache, then our job is done and we can
+                // process the next node.
+                if e.get().merkle_value.is_some() {
+                    continue;
                 }
-                (true, false) => 0b01,
-                (false, true) => 0b10,
-                (true, true) => 0b11,
+                e.get().clone()
+            }
+            Entry::Vacant(e) => e
+                .insert(CacheEntry {
+                    merkle_value: None,
+                    partial_key_length: u32::try_from(partial_key.nibbles.len()).unwrap(),
+                    children: child_nodes(trie_access.clone(), &combined_key).collect(),
+                })
+                .clone(),
+        };
+
+        // Build the `children_bitmap`, which is a `u16` where each bit is set if there exists
+        // a child there, and `children_merkle_value_concat`, the concatenation of the merkle
+        // values of all of our children.
+        //
+        // We do this first, because we might have to interrupt the processing of this node if
+        // one of the children doesn't have a cache entry.
+        let (children_bitmap, children_merkle_value_concat) = {
+            // TODO: unstable, see https://github.com/rust-lang/rust/issues/53485
+            //debug_assert!(cache_entry.children.iter().map(|(n, _)| n).is_sorted());
+
+            // TODO: shouldn't we first check whether all the children are in cache to speed
+            // things up and avoid extra copies? should benchmark this
+
+            // TODO: review this code below for unnecessary allocations
+
+            let mut children_bitmap = 0u16;
+            let mut children_merkle_value_concat =
+                Vec::with_capacity(cache_entry_copy.children.len() * 33);
+
+            // Will be set to the children whose merkle value of a child is missing from the cache.
+            let mut missing_children = Vec::with_capacity(16);
+
+            for (child_index, child_partial_key) in &cache_entry_copy.children {
+                children_bitmap |= 1 << u32::from(child_index.0);
+
+                let child_combined_key = {
+                    let mut k = combined_key.clone();
+                    k.nibbles.push(child_index.clone());
+                    k.nibbles.extend(child_partial_key.nibbles.iter().cloned());
+                    k
+                };
+
+                if let Some(merkle_value) = cache
+                    .entries
+                    .get(&child_combined_key)
+                    .and_then(|e| e.merkle_value.as_ref())
+                {
+                    // TODO: this encode() is probably expensive
+                    children_merkle_value_concat.extend_from_slice(&merkle_value.encode());
+                } else {
+                    missing_children.push((
+                        combined_key.clone(),
+                        Some(child_index.clone()),
+                        child_partial_key.clone(),
+                    ));
+                }
+            }
+
+            // We can't process further. Push back the current node on the queue, plus each of its
+            // children.
+            if !missing_children.is_empty() {
+                queue_to_process.push((parent_key, child_index, partial_key));
+                queue_to_process.extend(missing_children);
+                continue;
+            }
+
+            (children_bitmap, children_merkle_value_concat)
+        };
+
+        // Starting from here, we are guaranteed to have all the information needed to finish the
+        // computation of the merkle value.
+
+        // Turn the `partial_key` into bytes with a weird encoding.
+        let partial_key_hex_encode = {
+            let partial_key = &partial_key.nibbles;
+            if partial_key.len() % 2 == 0 {
+                let mut pk = Vec::with_capacity(partial_key.len() / 2);
+                for chunk in partial_key.chunks(2) {
+                    pk.push((chunk[0].0 << 4) | chunk[1].0);
+                }
+                pk
+            } else {
+                let mut pk = Vec::with_capacity(1 + partial_key.len() / 2);
+                pk.push(partial_key[0].0);
+                for chunk in partial_key[1..].chunks(2) {
+                    pk.push((chunk[0].0 << 4) | chunk[1].0);
+                }
+                pk
             }
         };
 
-        // Another weird algorithm to encode the partial key length into the header.
-        let mut pk_len = partial_key.nibbles.len();
-        if pk_len >= 63 {
-            pk_len -= 63;
-            let mut header = vec![(two_msb << 6) + 63];
-            while pk_len > 255 {
-                pk_len -= 255;
-                header.push(255);
-            }
-            header.push(u8::try_from(pk_len).unwrap());
-            header
+        // Load the stored value of this node.
+        // TODO: do this in a more elegant way
+        let stored_value = if combined_key.nibbles.len() % 2 == 0 {
+            trie_access
+                .clone()
+                .get(&combined_key.to_bytes_truncate())
+                .map(|v| v.as_ref().to_vec())
         } else {
-            vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
-        }
-    };
+            None
+        };
 
-    // Compute the node subvalue.
-    let node_subvalue = {
-        if children_bitmap == 0 {
-            if let Some(stored_value) = stored_value {
-                // TODO: SCALE-encoding clones the value; optimize that
-                stored_value.encode()
+        // Compute the header of the node.
+        let header = {
+            // The first two most significant bits of the header contain the type of node.
+            let two_msb: u8 = {
+                let has_stored_value = stored_value.is_some();
+                let has_children = children_bitmap != 0;
+                match (has_stored_value, has_children) {
+                    (false, false) => {
+                        // This should only ever be reached if we compute the root node of an
+                        // empty trie.
+                        debug_assert!(combined_key.nibbles.is_empty());
+                        0b00
+                    }
+                    (true, false) => 0b01,
+                    (false, true) => 0b10,
+                    (true, true) => 0b11,
+                }
+            };
+
+            // Another weird algorithm to encode the partial key length into the header.
+            let mut pk_len = partial_key.nibbles.len();
+            if pk_len >= 63 {
+                pk_len -= 63;
+                let mut header = vec![(two_msb << 6) + 63];
+                while pk_len > 255 {
+                    pk_len -= 255;
+                    header.push(255);
+                }
+                header.push(u8::try_from(pk_len).unwrap());
+                header
             } else {
-                Vec::new()
+                vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
             }
-        } else {
-            let mut out = children_bitmap.to_le_bytes().to_vec();
-            for (child_index, child_partial_key) in children_partial_keys {
-                let child_merkle_value = merkle_value(
-                    trie_access.clone(),
-                    cache,
-                    combined_key.clone(),
-                    Some(child_index),
-                    child_partial_key,
-                );
-                // TODO: we encode the child merkle value as SCALE, which copies it again; opt  imize that
-                out.extend(child_merkle_value.encode());
-            }
-            if let Some(stored_value) = stored_value {
-                // TODO: SCALE-encoding clones the value; optimize that
-                out.extend(stored_value.encode())
-            }
-            out
-        }
-    };
+        };
 
-    // Compute the final node value.
-    let mut node_value = header;
-    node_value.extend(partial_key_hex_encode);
-    node_value.extend(node_subvalue);
+        // Compute the node subvalue.
+        let node_subvalue = {
+            if children_bitmap == 0 {
+                if let Some(stored_value) = stored_value {
+                    // TODO: SCALE-encoding clones the value; optimize that
+                    stored_value.encode()
+                } else {
+                    Vec::new()
+                }
+            } else {
+                let mut out = children_bitmap.to_le_bytes().to_vec();
+                out.extend(children_merkle_value_concat);
+                if let Some(stored_value) = stored_value {
+                    // TODO: SCALE-encoding clones the value; optimize that
+                    out.extend(stored_value.encode())
+                }
+                out
+            }
+        };
 
-    // Store in cache, for next time.
-    if let Some(cache) = cache.as_mut() {
-        cache.node_values.insert(combined_key, node_value.clone());
+        // The node value is the concatenation of all these elements.
+        let mut node_value = header;
+        node_value.extend(partial_key_hex_encode);
+        node_value.extend(node_subvalue);
+
+        // The merkle value is either directly the node value, or a hash of the node value.
+        let merkle_value = {
+            if child_index.is_none() || node_value.len() >= 32 {
+                let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
+                debug_assert_eq!(blake2_hash.as_bytes().len(), 32);
+                blake2_hash.as_bytes().to_vec()
+            } else {
+                debug_assert!(node_value.len() < 32);
+                node_value
+            }
+        };
+
+        // Insert the result in the cache.
+        cache.entries.get_mut(&combined_key).unwrap().merkle_value = Some(merkle_value);
     }
 
-    node_value
+    // Some sanity check.
+    debug_assert!(cache
+        .entries
+        .contains_key(cache.root_node.as_ref().unwrap()));
+    debug_assert!(cache
+        .entries
+        .get(cache.root_node.as_ref().unwrap())
+        .unwrap()
+        .merkle_value
+        .is_some());
 }
 
 /// Returns all the keys of the nodes that descend from `key`, excluding `key` itself.
+///
+/// Always returns the children in order.
+// TODO: implement in a cleaner way
 fn child_nodes<'a>(
     trie_access: impl TrieRef<'a>,
     key: &TrieNodeKey,
-) -> impl Iterator<Item = TrieNodeKey> {
+) -> impl ExactSizeIterator<Item = (Nibble, TrieNodeKey)> {
     let mut key_clone = key.clone();
     key_clone.nibbles.push(Nibble(0));
 
@@ -347,10 +463,15 @@ fn child_nodes<'a>(
             .iter()
             .all(|k| TrieNodeKey::from_bytes(k.as_ref())
                 .nibbles
-                .starts_with(&key_clone.nibbles)),);
+                .starts_with(&key_clone.nibbles)));
         if let Some(prefix) = common_prefix(descendants.iter().map(|k| k.as_ref())) {
             debug_assert_ne!(prefix, *key);
-            out.push(prefix);
+            debug_assert!(prefix.nibbles.starts_with(&key.nibbles));
+            let nibble = prefix.nibbles[key.nibbles.len()].clone();
+            let partial_key = TrieNodeKey {
+                nibbles: prefix.nibbles[(key.nibbles.len() + 1)..].to_vec(),
+            };
+            out.push((nibble, partial_key));
         }
     }
     out.into_iter()
@@ -382,6 +503,12 @@ struct TrieNodeKey {
 }
 
 impl TrieNodeKey {
+    fn empty() -> Self {
+        TrieNodeKey {
+            nibbles: Vec::new(),
+        }
+    }
+
     fn from_bytes(bytes: &[u8]) -> Self {
         let mut out = Vec::with_capacity(bytes.len() * 2);
         for b in bytes {
