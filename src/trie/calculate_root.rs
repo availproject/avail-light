@@ -412,24 +412,11 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
 
         // Starting from here, we are guaranteed to have all the information needed to finish the
         // computation of the merkle value.
-
-        // Turn the `partial_key` into bytes with a weird encoding.
-        let partial_key_hex_encode = {
-            let partial_key = &partial_key.nibbles;
-            if partial_key.len() % 2 == 0 {
-                let mut pk = Vec::with_capacity(partial_key.len() / 2);
-                for chunk in partial_key.chunks(2) {
-                    pk.push((chunk[0].0 << 4) | chunk[1].0);
-                }
-                pk
-            } else {
-                let mut pk = Vec::with_capacity(1 + partial_key.len() / 2);
-                pk.push(partial_key[0].0);
-                for chunk in partial_key[1..].chunks(2) {
-                    pk.push((chunk[0].0 << 4) | chunk[1].0);
-                }
-                pk
-            }
+        // This value will be used as the sink for all the components of the merkle value.
+        let mut merkle_value_sink = if child_index.is_none() {
+            HashOrInline::Hasher(blake2_rfc::blake2b::Blake2b::new(32))
+        } else {
+            HashOrInline::Inline(Vec::with_capacity(31))
         };
 
         // Load the stored value of this node.
@@ -443,8 +430,8 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             None
         };
 
-        // Compute the header of the node.
-        let header = {
+        // Push the header of the node to `merkle_value_sink`.
+        {
             // The first two most significant bits of the header contain the type of node.
             let two_msb: u8 = {
                 let has_stored_value = stored_value.is_some();
@@ -466,61 +453,62 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             let mut pk_len = partial_key.nibbles.len();
             if pk_len >= 63 {
                 pk_len -= 63;
-                let mut header = vec![(two_msb << 6) + 63];
+                merkle_value_sink.update(&[(two_msb << 6) + 63]);
                 while pk_len > 255 {
                     pk_len -= 255;
-                    header.push(255);
+                    merkle_value_sink.update(&[255]);
                 }
-                header.push(u8::try_from(pk_len).unwrap());
-                header
+                merkle_value_sink.update(&[u8::try_from(pk_len).unwrap()]);
             } else {
-                vec![(two_msb << 6) + u8::try_from(pk_len).unwrap()]
+                merkle_value_sink.update(&[(two_msb << 6) + u8::try_from(pk_len).unwrap()]);
+            }
+        }
+
+        // Turn the `partial_key` into bytes with a weird encoding and push it to
+        // `merkle_value_sink`.
+        {
+            let partial_key = &partial_key.nibbles;
+            if partial_key.len() % 2 == 0 {
+                for chunk in partial_key.chunks(2) {
+                    merkle_value_sink.update(&[(chunk[0].0 << 4) | chunk[1].0]);
+                }
+            } else {
+                merkle_value_sink.update(&[partial_key[0].0]);
+                for chunk in partial_key[1..].chunks(2) {
+                    merkle_value_sink.update(&[(chunk[0].0 << 4) | chunk[1].0]);
+                }
             }
         };
 
-        // Compute the node subvalue.
-        let node_subvalue = {
+        // Compute the node subvalue and push it to `merkle_value_sink`.
+        {
             if children_bitmap == 0 {
-                if let Some(stored_value) = stored_value {
-                    // TODO: SCALE-encoding clones the value; optimize that
-                    stored_value.encode()
-                } else {
-                    Vec::new()
-                }
-            } else {
-                let mut out = children_bitmap.to_le_bytes().to_vec();
-                out.extend(children_merkle_value_concat);
                 if let Some(stored_value) = stored_value {
                     // Doing `out.extend(stored_value.encode());` would be quite expensive because
                     // we would duplicate the storage value. Instead, we do the encoding manually
                     // by pushing the length then the value.
                     parity_scale_codec::Compact(u64::try_from(stored_value.len()).unwrap())
-                        .encode_to(&mut out);
-                    out.extend_from_slice(&stored_value);
+                        .encode_to(&mut merkle_value_sink);
+                    merkle_value_sink.update(&stored_value);
                 }
-                out
-            }
-        };
-
-        // The node value is the concatenation of all these elements.
-        let mut node_value = header;
-        node_value.extend(partial_key_hex_encode);
-        node_value.extend(node_subvalue);
-
-        // The merkle value is either directly the node value, or a hash of the node value.
-        let merkle_value = {
-            if child_index.is_none() || node_value.len() >= 32 {
-                let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
-                debug_assert_eq!(blake2_hash.as_bytes().len(), 32);
-                blake2_hash.as_bytes().to_vec()
             } else {
-                debug_assert!(node_value.len() < 32);
-                node_value
+                merkle_value_sink.update(&children_bitmap.to_le_bytes()[..]);
+                // TODO: maybe it is best to get the children value here instead of concatting above
+                merkle_value_sink.update(&children_merkle_value_concat);
+                if let Some(stored_value) = stored_value {
+                    // Doing `out.extend(stored_value.encode());` would be quite expensive because
+                    // we would duplicate the storage value. Instead, we do the encoding manually
+                    // by pushing the length then the value.
+                    parity_scale_codec::Compact(u64::try_from(stored_value.len()).unwrap())
+                        .encode_to(&mut merkle_value_sink);
+                    merkle_value_sink.update(&stored_value);
+                }
             }
         };
 
         // Insert the result in the cache.
-        cache.entries.get_mut(&combined_key).unwrap().merkle_value = Some(merkle_value);
+        cache.entries.get_mut(&combined_key).unwrap().merkle_value =
+            Some(merkle_value_sink.finalize());
     }
 
     // Some sanity check.
@@ -587,6 +575,52 @@ fn descendant_storage_keys<'a>(
     };
 
     list.into_iter()
+}
+
+/// The merkle value of a node is defined as either the hash of the node value, or the node value
+/// itself if it is shorted than 32 bytes (or if we are the root).
+///
+/// This struct serves as a helper to handle these situations. Rather than putting intermediary
+/// values in buffers then hashing the node value as a whole, we push the elements of the node
+/// value to this struct which automatically switches to hashing if the value exceeds 32 bytes.
+enum HashOrInline {
+    Inline(Vec<u8>),
+    Hasher(blake2_rfc::blake2b::Blake2b),
+}
+
+impl HashOrInline {
+    /// Adds data to the node value. If this is a [`HashOrInline::Inline`] and the total size would
+    /// go above 32 bytes, then we switch to a hasher.
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            HashOrInline::Inline(curr) => {
+                if curr.len() + data.len() >= 32 {
+                    let mut hasher = blake2_rfc::blake2b::Blake2b::new(32);
+                    hasher.update(&curr);
+                    hasher.update(data);
+                    *self = HashOrInline::Hasher(hasher);
+                } else {
+                    curr.extend_from_slice(data);
+                }
+            }
+            HashOrInline::Hasher(hasher) => {
+                hasher.update(data);
+            }
+        }
+    }
+
+    fn finalize(self) -> Vec<u8> {
+        match self {
+            HashOrInline::Inline(b) => b,
+            HashOrInline::Hasher(h) => h.finalize().as_bytes().to_vec(),
+        }
+    }
+}
+
+impl parity_scale_codec::Output for HashOrInline {
+    fn write(&mut self, bytes: &[u8]) {
+        self.update(bytes);
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
