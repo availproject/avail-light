@@ -258,15 +258,11 @@ where
 
                     fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
                         // TODO: optimize
-                        let mut result = Vec::new();
-                        for key in (self.config.parent_storage_keys_prefix)(prefix.to_vec())
+                        let mut result = (self.config.parent_storage_keys_prefix)(prefix.to_vec())
                             .now_or_never()
-                            .unwrap()
-                        {
-                            if self.overlay_changes.get(&key).map_or(true, |v| v.is_some()) {
-                                result.push(key);
-                            }
-                        }
+                            .unwrap();
+                        result
+                            .retain(|v| self.overlay_changes.get(v).map_or(true, |v| v.is_some()));
                         // TODO: slow to iterate over everything?
                         for (key, value) in self.overlay_changes.iter() {
                             if value.is_none() || !key.starts_with(&prefix) {
