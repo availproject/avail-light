@@ -294,15 +294,15 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         // storage.
         // TODO: clusterfuck of lifetimes
         let list = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
-        let root_node = common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey {
-            nibbles: Vec::new(),
-        });
+        let root_node =
+            common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey::empty());
         cache.root_node = Some(root_node.clone());
         root_node
     };
 
-    // The code below pops the last element of this queue, fills it in the cache, and optionally
-    // pushes new element to the queue. When the queue is empty, the function returns.
+    // Each iteration in the code below pops the last element of this queue, fills it in the cache,
+    // and optionally pushes new elements to the queue. Once the queue is empty, the function
+    // returns.
     //
     // Each element in the queue is a tuple with:
     // - The key of the immediate parent of the node to process.
@@ -694,8 +694,14 @@ impl fmt::Debug for TrieNodeKey {
 }
 
 /// Four bits.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Nibble(u8);
+
+impl fmt::Debug for Nibble {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
 
 /// Given a list of `&[u8]`, returns the longest prefix that is shared by all the elements in the
 /// list.
