@@ -86,12 +86,7 @@ fn handle_single_event(
                 return Ok(());
             }
 
-            let value = match database.block_by_number(block_number)? {
-                Some(b) => Some(b.scale_encoded_header()?),
-                None => None,
-            };
-
-            let _ = send_back.send(value);
+            unimplemented!()
         }
 
         ToDatabase::BlockBodyGet { block, send_back } => {
@@ -99,17 +94,7 @@ fn handle_single_event(
                 return Ok(());
             }
 
-            let block = match block {
-                BlockNumberOrHash::Hash(hash) => database.block_by_hash(&hash),
-                BlockNumberOrHash::Number(number) => database.block_by_number(number),
-            };
-
-            let value = match block? {
-                Some(b) => Some(b.body()?),
-                None => None,
-            };
-
-            let _ = send_back.send(value);
+            unimplemented!()
         }
 
         ToDatabase::StorageGet {

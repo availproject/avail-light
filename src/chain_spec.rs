@@ -76,7 +76,7 @@ impl ChainSpec {
     }
 
     /// Returns the list of storage keys and values of the genesis block.
-    pub fn genesis_storage(&self) -> impl ExactSizeIterator<Item = (&[u8], &[u8])> {
+    pub fn genesis_storage(&self) -> impl ExactSizeIterator<Item = (&[u8], &[u8])> + Clone {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }

@@ -27,16 +27,23 @@ fn main() {
 */
 
 async fn async_main() {
-    env_logger::init().unwrap();
-
     let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(
         &include_bytes!("../../polkadot.json")[..],
     )
     .unwrap();
 
-    let database = substrate_lite::database::Database::open(
-        "/home/pierre/.local/share/substrate/chains/flamingfir7/paritydb",
-    );
+    const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
+        name: "substrate-lite",
+        author: "tomaka17",
+    };
+
+    let db_path =
+        app_dirs::app_dir(app_dirs::AppDataType::UserData, &APP_INFO, "database").unwrap();
+    let database = substrate_lite::database::open(substrate_lite::database::Config {
+        path: &db_path.join(chain_spec.id()),
+    })
+    .unwrap();
+    let database = substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap();
 
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_database(database)

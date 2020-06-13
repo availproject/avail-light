@@ -16,6 +16,8 @@ pub mod service;
 //pub mod storage_cache;
 pub mod trie;
 
+use parity_scale_codec::Encode as _;
+
 /// Calculates the hash of the genesis block from the storage.
 ///
 /// # Context
@@ -46,4 +48,37 @@ pub fn calculate_genesis_block_hash<'a>(
     };
 
     genesis_block_header.block_hash().0
+}
+
+/// Turns a [`database::DatabaseOpen`] into a [`database::Database`], either by inserting the
+/// genesis block into a newly-created database, or by checking when the existing database matches
+/// the chain specs.
+pub fn database_open_match_chain_specs(
+    database: database::DatabaseOpen,
+    chain_spec: &chain_spec::ChainSpec,
+) -> Result<database::Database, database::AccessError> {
+    match database {
+        database::DatabaseOpen::Open(database) => {
+            // TODO: verify that the database matches the chain spec
+            Ok(database)
+        }
+        database::DatabaseOpen::Empty(empty) => {
+            // TODO: quite a bit of code duplication here
+            let mut state_trie = trie::Trie::new();
+            for (key, value) in chain_spec.genesis_storage() {
+                state_trie.insert(key, value.to_vec());
+            }
+
+            let genesis_block_header = block::Header {
+                parent_hash: [0; 32].into(),
+                number: 0,
+                state_root: state_trie.root_merkle_value(None).into(),
+                extrinsics_root: trie::Trie::new().root_merkle_value(None).into(),
+                digest: block::Digest { logs: Vec::new() },
+            }
+            .encode();
+
+            empty.insert_genesis_block(&genesis_block_header, chain_spec.genesis_storage())
+        }
+    }
 }

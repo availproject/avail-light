@@ -7,10 +7,9 @@ edition = "2018"
 
 [dependencies]
 ansi_term = "0.12.1"
-blake2 = "0.8.1"
+app_dirs = "1.2.1"
 blake2-rfc = { version = "0.2.18", default-features = false }
 derive_more = "0.99.7"
-env_logger = "0.4"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures_codec = "0.3.3"
@@ -19,16 +18,14 @@ hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] 
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
-log = "0.4"
 parking_lot = "0.10.2"
-parity-db = "0.1.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
-parity-wasm = "0.41.0"
 pin-project = "0.4"
 prost = "0.6.1"
 rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
+sled = "0.31.0"
 smallvec = "0.6.10"
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
@@ -40,8 +37,10 @@ wasm-timer = "0.2.4"
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
 bitflags = "1.2.1"  # TODO: I hate bitflags
+blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
+log = "0.4"  # TODO: we don't need logging
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
 sc-peerset = "2.0.0-alpha.3"
 void = "1.0"    # TODO: remove
