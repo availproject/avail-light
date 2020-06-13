@@ -9,6 +9,7 @@
 
 use crate::{executor, trie::calculate_root};
 
+use alloc::borrow::Cow;
 use core::{cmp, convert::TryFrom as _};
 use futures::prelude::*;
 use hashbrown::HashMap;
@@ -66,7 +67,7 @@ pub enum Error {
 /// Verifies whether a block is valid.
 // TODO: Aura/BABE
 pub async fn verify_block<'a, TPaAcc, TPaAccOut, TPaPref, TPaPrefOut, TPaNe, TPaNeOut>(
-    config: Config<'a, TPaAcc, TPaPref, TPaNe>,
+    mut config: Config<'a, TPaAcc, TPaPref, TPaNe>,
 ) -> Result<Success, Error>
 where
     // TODO: ugh, we pass Vecs because of lifetime clusterfuck
@@ -96,8 +97,11 @@ where
     let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
     // Cache passed as part of the configuration. Initially guaranteed to match the storage or the
     // parent, then updated to match the changes made during the verification.
-    let mut top_trie_root_calculation_cache =
-        config.top_trie_root_calculation_cache.unwrap_or_default();
+    // TODO: we use `take()` as a work-around because we use `config` below, but it could be fixed
+    let mut top_trie_root_calculation_cache = config
+        .top_trie_root_calculation_cache
+        .take()
+        .unwrap_or_default();
 
     loop {
         match vm.state() {
@@ -207,26 +211,80 @@ where
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageRoot { resolve } => {
-                /*struct TrieAccess<'a>(&'a );
-
-                calculate_root::root_merkle_value(trie_access, Some(&mut top_trie_root_calculation_cache));*/
-
-                let mut trie = crate::trie::Trie::new();
-                for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
-                    let value = (config.parent_storage_get)(key.to_vec())
-                        .await
-                        .unwrap()
-                        .to_vec();
-                    trie.insert(key.as_ref(), value);
+                // TODO: clean this code so that it's more readable
+                struct TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {
+                    config: &'a Config<'a, TPaAcc, TPaPref, TPaNe>,
+                    overlay_changes: &'a HashMap<Vec<u8>, Option<Vec<u8>>>,
                 }
-                for (key, value) in top_trie_changes.iter() {
-                    if let Some(value) = value.as_ref() {
-                        trie.insert(key, value.clone())
-                    } else {
-                        trie.remove(key);
+
+                impl<'a, TPaAcc, TPaPref, TPaNe> Copy for TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {}
+                impl<'a, TPaAcc, TPaPref, TPaNe> Clone for TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {
+                    fn clone(&self) -> Self {
+                        Self {
+                            config: self.config,
+                            overlay_changes: self.overlay_changes,
+                        }
                     }
                 }
-                let hash = trie.root_merkle_value(Some(&mut top_trie_root_calculation_cache));
+
+                impl<'a, TPaAcc, TPaAccOut, TPaPref, TPaPrefOut, TPaNe, TPaNeOut>
+                    calculate_root::TrieRef<'a> for TrieAccess<'a, TPaAcc, TPaPref, TPaNe>
+                where
+                    // TODO: ugh, we pass Vecs because of lifetime clusterfuck
+                    TPaAcc: Fn(Vec<u8>) -> TPaAccOut,
+                    TPaAccOut: Future<Output = Option<Vec<u8>>>,
+                    TPaPref: Fn(Vec<u8>) -> TPaPrefOut,
+                    TPaPrefOut: Future<Output = Vec<Vec<u8>>>,
+                    TPaNe: Fn(Vec<u8>) -> TPaNeOut,
+                    TPaNeOut: Future<Output = Option<Vec<u8>>>,
+                {
+                    type Key = Vec<u8>;
+                    type Value = Cow<'a, [u8]>;
+                    type PrefixKeysIter = Box<dyn Iterator<Item = Self::Key> + 'a>;
+
+                    /// Loads the value associated to the given key. Returns `None` if no value is present.
+                    ///
+                    /// Must always return the same value if called multiple times with the same key.
+                    fn get(self, key: &[u8]) -> Option<Self::Value> {
+                        if let Some(overlay) = self.overlay_changes.get(key) {
+                            overlay.as_ref().map(|v| Cow::Borrowed(&v[..]))
+                        } else {
+                            (self.config.parent_storage_get)(key.to_vec())
+                                .now_or_never() // TODO: hack because `TrieRef` isn't async-friendly yet
+                                .unwrap()
+                                .map(|v| Cow::Owned(v))
+                        }
+                    }
+
+                    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
+                        // TODO: optimize
+                        let mut result = Vec::new();
+                        for key in (self.config.parent_storage_keys_prefix)(prefix.to_vec())
+                            .now_or_never()
+                            .unwrap()
+                        {
+                            if self.overlay_changes.get(&key).map_or(true, |v| v.is_some()) {
+                                result.push(key);
+                            }
+                        }
+                        // TODO: slow to iterate over everything?
+                        for (key, value) in self.overlay_changes.iter() {
+                            if value.is_none() || !key.starts_with(&prefix) {
+                                continue;
+                            }
+                            result.push(key.clone());
+                        }
+                        Box::new(result.into_iter())
+                    }
+                }
+
+                let hash = calculate_root::root_merkle_value(
+                    TrieAccess {
+                        config: &config,
+                        overlay_changes: &top_trie_changes,
+                    },
+                    Some(&mut top_trie_root_calculation_cache),
+                );
                 resolve.finish_call(hash);
             }
             executor::State::ExternalStorageChangesRoot {

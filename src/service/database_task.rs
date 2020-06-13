@@ -37,6 +37,16 @@ pub enum ToDatabase {
         /// Channel to send back the result.
         send_back: oneshot::Sender<Option<Vec<u8>>>,
     },
+    /// Store a new block in the database.
+    StoreBlock {
+        /// Parent of the block to add to the database.
+        parent_block_hash: [u8; 32],
+        /// Hash of the block to add to the database.
+        new_block_hash: [u8; 32],
+        /// Changes to the storage top trie that this block performs.
+        storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        // TODO: other fields
+    },
 }
 
 /// Either a block number or a block hash.
@@ -112,6 +122,8 @@ fn handle_single_event(
 
             unimplemented!()
         }
+
+        ToDatabase::StoreBlock { .. } => unimplemented!(),
     }
 
     Ok(())

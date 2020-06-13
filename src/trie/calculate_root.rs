@@ -40,6 +40,7 @@ use parity_scale_codec::Encode as _;
 
 /// Trait passed to [`root_merkle_value`] that allows the function to access the content of the
 /// trie.
+// TODO: remove this trait and rewrite the calculation below as a coroutine-like state machine
 pub trait TrieRef<'a>: Clone {
     type Key: AsRef<[u8]> + 'a;
     type Value: AsRef<[u8]> + 'a;
@@ -95,7 +96,6 @@ impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
 ///
 /// If the storage's content is modified, you **must** call the appropriate methods to invalidate
 /// entries. Otherwise, the trie root calculation will yield an incorrect result.
-#[derive(Debug)]
 pub struct CalculationCache {
     /// Root node of the trie, if known.
     root_node: Option<TrieNodeKey>,
@@ -133,8 +133,12 @@ impl CalculationCache {
     /// > **Note**: If the value has been entirely removed, you must call
     // >            [`CalculationCache::invalidate_node`] instead.
     pub fn invalidate_storage_value(&mut self, key: &[u8]) {
+        self.invalidate_node_merkle_value(TrieNodeKey::from_bytes(key));
+    }
+
+    fn invalidate_node_merkle_value(&mut self, key: TrieNodeKey) {
         // We invalidate the `merkle_value` of `key` and `key`'s ancestors.
-        let mut next_to_invalidate = Some(TrieNodeKey::from_bytes(key));
+        let mut next_to_invalidate = Some(key);
 
         while let Some(mut to_invalidate) = next_to_invalidate.take() {
             if let Some(entry) = self.entries.get_mut(&to_invalidate) {
@@ -146,6 +150,8 @@ impl CalculationCache {
                 next_to_invalidate = Some(to_invalidate);
             }
         }
+
+        // TODO: if node didn't exist, we have to invalidate more things.
     }
 
     /// Notify the cache that the value at the given key has been modified or has been removed.
@@ -153,20 +159,92 @@ impl CalculationCache {
         // Considering the the node value of the direct children of `key` depends on the location
         // of their parent, we have to invalidate them as well. We just take a shortcut and use
         // `invalidate_prefix`.
+        // TODO: do better?
         self.invalidate_prefix(key);
     }
 
     /// Notify the cache that all the values whose key starts with the given prefix have been
     /// modified or have been removed.
-    pub fn invalidate_prefix(&mut self, _prefix: &[u8]) {
-        // TODO: actually implement
+    pub fn invalidate_prefix(&mut self, prefix: &[u8]) {
+        // TODO: seems incorrect in general, sometimes the trie root is wrong
         self.entries.clear();
+
+        let mut to_remove = self
+            .entries
+            .range(TrieNodeKey::from_bytes(prefix)..)
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<_>>();
+
+        // TODO: is that correct? shouldn't we find the parent through other means?
+        if to_remove.is_empty() {
+            return;
+        }
+
+        // We determine who the parent of this prefix is by grabbing the first element to remove
+        // (since it is the first, we know that its parent is outside of this prefix).
+        let parent = {
+            let mut key = to_remove.remove(0);
+            let cache_entry = self.entries.remove(&key).unwrap();
+            // We use `saturating_sub` in case this is the root node.
+            let new_len = key
+                .nibbles
+                .len()
+                .saturating_sub(1)
+                .saturating_sub(usize::try_from(cache_entry.partial_key_length).unwrap());
+            key.nibbles.truncate(new_len);
+            key
+        };
+
+        for to_remove in to_remove {
+            self.entries.remove(&to_remove);
+        }
+
+        // We remove the parent from the cache, but it is important to realize that the parent
+        // node itself might entirely disappear because of a merge.
+
+        self.invalidate_node_merkle_value(parent.clone());
+
+        let parent_entry = self.entries.remove(&parent);
+        if let Some(parent_entry) = parent_entry {
+            // We also have to remove the parent's parent, because its `children` entry will be
+            // wrong.
+            let parent_parent = {
+                let mut key = parent.clone();
+                // We use `saturating_sub` in case this is the root node.
+                let new_len = key
+                    .nibbles
+                    .len()
+                    .saturating_sub(1)
+                    .saturating_sub(usize::try_from(parent_entry.partial_key_length).unwrap());
+                key.nibbles.truncate(new_len);
+                key
+            };
+            self.entries.remove(&parent_parent);
+
+            // Remove the parent's other direct children (so, the siblings of the prefix) as well.
+            for (child_index, child_partial_key) in parent_entry.children {
+                let mut key = parent.clone();
+                key.nibbles.push(child_index);
+                key.nibbles.extend(child_partial_key.nibbles);
+
+                self.entries.remove(&key);
+            }
+        }
     }
 }
 
 impl Default for CalculationCache {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl fmt::Debug for CalculationCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The calculation cache is so large that printing its content is basically useless.
+        f.debug_struct("CalculationCache")
+            .field("entries", &self.entries.len())
+            .finish()
     }
 }
 
@@ -503,7 +581,7 @@ fn descendant_storage_keys<'a>(
     list.into_iter()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct TrieNodeKey {
     nibbles: Vec<Nibble>,
 }
@@ -549,6 +627,15 @@ impl TrieNodeKey {
             let last_nibble = self.nibbles.last().unwrap().0;
             key.starts_with(&this) && key != &this[..] && (key[this.len()] >> 4) == last_nibble
         }
+    }
+}
+
+impl fmt::Debug for TrieNodeKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for nibble in &self.nibbles {
+            write!(f, "{:x}", nibble.0)?;
+        }
+        Ok(())
     }
 }
 
