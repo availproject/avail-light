@@ -79,17 +79,7 @@ impl Trie {
         &self,
         cache: Option<&mut calculate_root::CalculationCache>,
     ) -> [u8; 32] {
-        calculate_root::root_merkle_value(calculate_root::Config {
-            get_value: &|key: &[u8]| self.entries.get(key).map(|v| &v[..]),
-            prefix_keys: &|prefix: &[u8]| {
-                self.entries
-                    .range(prefix.to_vec()..) // TODO: this to_vec() is annoying
-                    .take_while(|(k, _)| k.starts_with(prefix))
-                    .map(|(k, _)| From::from(&k[..]))
-                    .collect()
-            },
-            cache,
-        })
+        calculate_root::root_merkle_value(&self.entries, cache)
     }
 }
 

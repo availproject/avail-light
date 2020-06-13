@@ -15,18 +15,7 @@
 //! let mut storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();
 //! storage.insert(b"foo".to_vec(), b"bar".to_vec());
 //!
-//! let trie_root = calculate_root::root_merkle_value(calculate_root::Config {
-//!     get_value: &|key: &[u8]| storage.get(key).map(|v| &v[..]),
-//!     prefix_keys: &|prefix: &[u8]| {
-//!         storage
-//!             .range(prefix.to_vec()..)
-//!             .take_while(|(k, _)| k.starts_with(prefix))
-//!             .map(|(k, _)| From::from(&k[..]))
-//!             .collect()
-//!     },
-//!     cache: None,
-//! });
-//!
+//! let trie_root = calculate_root::root_merkle_value(&storage, None);
 //! assert_eq!(
 //!     trie_root,
 //!     [204, 86, 28, 213, 155, 206, 247, 145, 28, 169, 212, 146, 182, 159, 224, 82,
@@ -48,27 +37,44 @@ use core::{convert::TryFrom as _, fmt};
 
 use parity_scale_codec::Encode as _;
 
-/// How to access the trie.
-// TODO: make async; hard because recursivity is forbidden in async functions
-pub struct Config<'a, 'b> {
-    /// Function that returns the value associated to a key. Returns `None` if there is no
-    /// storage value.
+/// Trait passed to [`root_merkle_value`] that allows the function to access the content of the
+/// trie.
+pub trait TrieRef<'a>: Clone {
+    type Key: AsRef<[u8]> + 'a;
+    type Value: AsRef<[u8]> + 'a;
+    type PrefixKeysIter: Iterator<Item = Self::Key> + 'a;
+
+    /// Loads the value associated to the given key. Returns `None` if no value is present.
     ///
     /// Must always return the same value if called multiple times with the same key.
-    pub get_value: &'a dyn Fn(&[u8]) -> Option<&'b [u8]>,
+    fn get(self, key: &[u8]) -> Option<Self::Value>;
 
-    /// Function that returns the list of keys with values that start with the given prefix.
+    /// Returns the list of keys with values that start with the given prefix.
     ///
     /// All the keys returned must start with the given prefix. It is an error to omit a key
     /// from the result.
-    pub prefix_keys: &'a dyn Fn(&[u8]) -> Vec<Cow<'b, [u8]>>,
+    // TODO: `prefix` should have a lifetime too that ties it to the iterator, but I can't figure
+    // out how to make this work
+    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter;
+}
 
-    /// Optional cache object that contains intermediate calculations. The cache is read and
-    /// updated.
-    ///
-    /// > **Important**: If you use a cache, make sure to properly invalidate its content when
-    /// >                the storage is updated.
-    pub cache: Option<&'a mut CalculationCache>,
+impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
+    type Key = &'a [u8];
+    type Value = &'a [u8];
+    type PrefixKeysIter = Box<dyn Iterator<Item = Self::Key> + 'a>;
+
+    fn get(self, key: &[u8]) -> Option<Self::Value> {
+        BTreeMap::get(self, key).map(|v| &v[..])
+    }
+
+    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
+        let prefix = prefix.to_vec(); // TODO: see lifetime comment on the trait
+        let iter = self
+            .range(prefix.to_vec()..) // TODO: this to_vec() is annoying
+            .take_while(move |(k, _)| k.starts_with(&prefix))
+            .map(|(k, _)| From::from(&k[..]));
+        Box::new(iter)
+    }
 }
 
 /// Cache containing intermediate calculation steps.
@@ -118,18 +124,25 @@ impl fmt::Debug for CalculationCache {
 }
 
 /// Calculates the Merkle value of the root node.
-pub fn root_merkle_value(mut config: Config) -> [u8; 32] {
+pub fn root_merkle_value<'a>(
+    trie_access: impl TrieRef<'a>,
+    mut cache: Option<&mut CalculationCache>,
+) -> [u8; 32] {
     // The root node is not necessarily the one with an empty key. Just like any other node,
     // the root might have been merged with its lone children.
 
     // TODO: probably very slow, as we enumerate every single key in the storage
-    let keys = (config.prefix_keys)(&[]);
-    let key_from_root = common_prefix(keys.iter().map(|k| &**k)).unwrap_or(TrieNodeKey {
-        nibbles: Vec::new(),
-    });
+    let key_from_root = {
+        // TODO: clusterfuck of lifetimes
+        let list = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
+        common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey {
+            nibbles: Vec::new(),
+        })
+    };
 
     let val_vec = merkle_value(
-        &mut config,
+        trie_access,
+        &mut cache,
         TrieNodeKey {
             nibbles: Vec::new(),
         },
@@ -144,15 +157,16 @@ pub fn root_merkle_value(mut config: Config) -> [u8; 32] {
 
 /// Calculates the Merkle value of the node whose key is the concatenation of `parent_key`,
 /// `child_index`, and `partial_key`.
-fn merkle_value(
-    config: &mut Config,
+fn merkle_value<'a>(
+    trie_access: impl TrieRef<'a>,
+    cache: &mut Option<&mut CalculationCache>,
     parent_key: TrieNodeKey,
     child_index: Option<Nibble>,
     partial_key: TrieNodeKey,
 ) -> Vec<u8> {
     let is_root = child_index.is_none();
 
-    let node_value = node_value(config, parent_key, child_index, partial_key);
+    let node_value = node_value(trie_access, cache, parent_key, child_index, partial_key);
 
     if is_root || node_value.len() >= 32 {
         let blake2_hash = blake2_rfc::blake2b::blake2b(32, &[], &node_value);
@@ -166,8 +180,9 @@ fn merkle_value(
 
 /// Calculates the node value of the node whose key is the concatenation of `parent_key`,
 /// `child_index`, and `partial_key`.
-fn node_value(
-    config: &mut Config,
+fn node_value<'a>(
+    trie_access: impl TrieRef<'a>,
+    cache: &mut Option<&mut CalculationCache>,
     parent_key: TrieNodeKey,
     child_index: Option<Nibble>,
     partial_key: TrieNodeKey,
@@ -183,7 +198,7 @@ fn node_value(
     };
 
     // Look in the cache, if any.
-    if let Some(cache) = &mut config.cache {
+    if let Some(cache) = cache {
         if let Some(value) = cache.node_values.get(&combined_key) {
             return value.clone();
         }
@@ -210,7 +225,10 @@ fn node_value(
 
     // Load the stored value of this node.
     let stored_value = if combined_key.nibbles.len() % 2 == 0 {
-        (config.get_value)(&combined_key.to_bytes_truncate()).map(|v| v.to_vec())
+        trie_access
+            .clone()
+            .get(&combined_key.to_bytes_truncate())
+            .map(|v| v.as_ref().to_vec())
     } else {
         None
     };
@@ -222,7 +240,7 @@ fn node_value(
     let mut children_partial_keys = Vec::<(Nibble, TrieNodeKey)>::new();
 
     // Now enumerate the children.
-    for child in child_nodes(config, &combined_key) {
+    for child in child_nodes(trie_access.clone(), &combined_key) {
         debug_assert_ne!(child, combined_key);
         debug_assert!(child.nibbles.starts_with(&combined_key.nibbles));
         let child_index = child.nibbles[combined_key.nibbles.len()].clone();
@@ -282,7 +300,8 @@ fn node_value(
             let mut out = children_bitmap.to_le_bytes().to_vec();
             for (child_index, child_partial_key) in children_partial_keys {
                 let child_merkle_value = merkle_value(
-                    config,
+                    trie_access.clone(),
+                    cache,
                     combined_key.clone(),
                     Some(child_index),
                     child_partial_key,
@@ -304,7 +323,7 @@ fn node_value(
     node_value.extend(node_subvalue);
 
     // Store in cache, for next time.
-    if let Some(cache) = &mut config.cache {
+    if let Some(cache) = cache.as_mut() {
         cache.node_values.insert(combined_key, node_value.clone());
     }
 
@@ -312,18 +331,24 @@ fn node_value(
 }
 
 /// Returns all the keys of the nodes that descend from `key`, excluding `key` itself.
-fn child_nodes(config: &mut Config, key: &TrieNodeKey) -> impl Iterator<Item = TrieNodeKey> {
+fn child_nodes<'a>(
+    trie_access: impl TrieRef<'a>,
+    key: &TrieNodeKey,
+) -> impl Iterator<Item = TrieNodeKey> {
     let mut key_clone = key.clone();
     key_clone.nibbles.push(Nibble(0));
 
     let mut out = Vec::new();
     for n in 0..16 {
         *key_clone.nibbles.last_mut().unwrap() = Nibble(n);
-        let descendants = descendant_storage_keys(config, &key_clone).collect::<Vec<_>>();
-        debug_assert!(descendants.iter().all(|k| TrieNodeKey::from_bytes(k)
-            .nibbles
-            .starts_with(&key_clone.nibbles)),);
-        if let Some(prefix) = common_prefix(descendants.iter().map(|k| &**k)) {
+        let descendants =
+            descendant_storage_keys(trie_access.clone(), &key_clone).collect::<Vec<_>>();
+        debug_assert!(descendants
+            .iter()
+            .all(|k| TrieNodeKey::from_bytes(k.as_ref())
+                .nibbles
+                .starts_with(&key_clone.nibbles)),);
+        if let Some(prefix) = common_prefix(descendants.iter().map(|k| k.as_ref())) {
             debug_assert_ne!(prefix, *key);
             out.push(prefix);
         }
@@ -332,16 +357,23 @@ fn child_nodes(config: &mut Config, key: &TrieNodeKey) -> impl Iterator<Item = T
 }
 
 /// Returns all the keys that descend from `key` or equal to `key` that have a storage entry.
+// TODO: ugh, these lifetimes
 fn descendant_storage_keys<'a>(
-    config: &'a Config,
-    key: &'a TrieNodeKey,
-) -> impl Iterator<Item = Cow<'a, [u8]>> + 'a {
-    // Because `config.prefix_keys` accepts only `&[u8]`, we pass a truncated version of the key
+    trie_access: impl TrieRef<'a>,
+    key: &TrieNodeKey,
+) -> impl Iterator<Item = Vec<u8>> {
+    // Because `prefix_keys` accepts only `&[u8]`, we pass a truncated version of the key
     // and filter out the returned elements that are not actually descendants.
-    let equiv_full_bytes = key.to_bytes_truncate();
-    (config.prefix_keys)(&equiv_full_bytes)
-        .into_iter()
-        .filter(move |k| key.is_ancestor_or_equal(&k))
+    let list = {
+        let equiv_full_bytes = key.to_bytes_truncate();
+        trie_access
+            .prefix_keys(&equiv_full_bytes)
+            .filter(move |k| key.is_ancestor_or_equal(k.as_ref()))
+            .map(|k| k.as_ref().to_vec())
+            .collect::<Vec<Vec<u8>>>()
+    };
+
+    list.into_iter()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
