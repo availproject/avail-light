@@ -15,8 +15,8 @@ use std::path::Path;
 // TODO: hide inner error type?
 pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
     let database = sled::Config::default()
-        // TODO: put a version number behind the path, for migrations in case the format changes?
-        .path(config.path)
+        // We put a `/v1/` behind the path in case we change the schema.
+        .path(config.path.join("v1"))
         .open()?;
 
     let meta_tree = database.open_tree(b"meta")?;

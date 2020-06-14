@@ -57,13 +57,16 @@ prost-build = "0.6.1"
 async-std = "~1.5.0"
 libp2p = { version = "0.19.1", default-features = false, features = ["secio"] }
 
-[profile.dev]
-opt-level = 1
-panic = "abort"
 
+[profile.dev]
+opt-level = 2
+panic = "abort"
 [profile.dev.package."*"]
 opt-level = 3
 
+# The `test` profile mimics the `dev` profile to avoid recompilations.
+[profile.test]
+opt-level = 2
 [profile.test.package."*"]
 opt-level = 3
 

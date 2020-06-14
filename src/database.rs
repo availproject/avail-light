@@ -5,7 +5,8 @@
 // TODO: gate this module in no_std contexts
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::ops;
+use core::{convert::TryFrom as _, ops};
+use parity_scale_codec::DecodeAll as _;
 use sled::Transactional as _;
 use std::path::Path;
 
@@ -58,6 +59,19 @@ impl Database {
         }
     }
 
+    /// Returns the number of the block in the database whose storage is currently accessible.
+    pub fn best_block_number(&self) -> Result<u64, AccessError> {
+        let header = self
+            .block_scale_encoded_header(&self.best_block_hash()?)?
+            .ok_or(AccessError::Corrupted(
+                CorruptedError::BestBlockHeaderNotInDatabase,
+            ))?;
+        // TODO: ideally we wouldn't use this `crate::block` module
+        let decoded = crate::block::Header::decode_all(header.as_ref())
+            .map_err(|err| AccessError::Corrupted(CorruptedError::BestBlockHeaderCorrupted(err)))?;
+        Ok(decoded.number)
+    }
+
     /// Returns the SCALE-encoded header of the given block, or `None` if the block is unknown.
     pub fn block_scale_encoded_header(
         &self,
@@ -99,7 +113,7 @@ impl Database {
             &self.meta_tree,
         )
             .transaction(move |(block_headers, storage_top_trie, meta)| {
-                if meta.get(b"best")?.map_or(false, |v| v == &current_best[..]) {
+                if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
                     return Err(sled::ConflictableTransactionError::Abort(()));
                 }
 
@@ -127,6 +141,26 @@ impl Database {
             }
             Err(_) => unimplemented!(),
         }
+    }
+
+    pub fn storage_top_trie_keys(&self, block: [u8; 32]) -> Result<Vec<VarLenBytes>, AccessError> {
+        // TODO: is this atomic? probably not :-/
+        // TODO: block isn't checked
+        Ok(self
+            .storage_top_trie_tree
+            .iter()
+            .keys()
+            .map(|v| v.map(VarLenBytes))
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn storage_top_trie_get(
+        &self,
+        block: [u8; 32],
+        key: &[u8],
+    ) -> Result<Option<VarLenBytes>, AccessError> {
+        // TODO: block isn't checked
+        Ok(self.storage_top_trie_tree.get(key)?.map(VarLenBytes))
     }
 }
 
@@ -168,4 +202,6 @@ pub enum InsertNewBestError {
 pub enum CorruptedError {
     BestBlockHashNotFound,
     BestBlockHashBadLength,
+    BestBlockHeaderNotInDatabase,
+    BestBlockHeaderCorrupted(parity_scale_codec::Error),
 }

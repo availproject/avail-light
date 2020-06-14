@@ -31,10 +31,9 @@ use primitive_types::H256;
 
 pub use builder::{builder, ServiceBuilder};
 
+mod block_import_task;
 mod builder;
 mod database_task;
-mod executor_task;
-mod import_queue_task;
 mod keystore_task;
 mod network_task;
 mod sync_task;

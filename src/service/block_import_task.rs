@@ -1,6 +1,6 @@
-//! Service task that processes Wasm executions requests.
+//! Service task that tries to import blocks from the network into the database.
 
-use crate::{block, executor, trie::calculate_root};
+use crate::{block, database, executor, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -9,38 +9,43 @@ use futures::{
     prelude::*,
 };
 use hashbrown::HashMap;
+use parity_scale_codec::Encode as _;
 use parking_lot::Mutex;
 
-/// Message that can be sent to the executors task by the other parts of the code.
-pub enum ToExecutor {
+/// Message that can be sent to the block import task by the other parts of the code.
+pub enum ToBlockImport {
+    /// Ask the block import task what the best block number is.
+    BestBlockNumber {
+        /// Channel where to send back the answer.
+        send_back: oneshot::Sender<u64>,
+    },
     /// Call the runtime to apply a block on the state.
-    Execute {
+    Import {
         /// Block to try execute.
         to_execute: block::Block,
         /// Channel where to send back the outcome of the execution.
         // TODO: better return type
-        send_back: oneshot::Sender<Result<ExecuteSuccess, ()>>,
+        send_back: oneshot::Sender<Result<ImportSuccess, ()>>,
     },
 }
 
-pub struct ExecuteSuccess {
+pub struct ImportSuccess {
     /// The block that was passed as parameter.
     pub block: block::Block,
 }
 
 /// Configuration for that task.
 pub struct Config {
-    /// State of the storage at the genesis block.
-    // TODO: hack, remove in favour of accessing the database task
-    pub genesis_storage_trie: HashMap<Vec<u8>, Vec<u8>>,
+    /// Database where to import blocks to.
+    pub database: Arc<database::Database>,
     /// How to spawn other background tasks.
     pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
     /// Receiver for messages that the executor task will process.
-    pub to_executor: mpsc::Receiver<ToExecutor>,
+    pub to_block_import: mpsc::Receiver<ToBlockImport>,
 }
 
 /// Runs the task itself.
-pub async fn run_executor_task(mut config: Config) {
+pub async fn run_block_import_task(mut config: Config) {
     // Tuple of the runtime code of the chain head and its corresponding `WasmBlob`.
     // Used to avoid recompiling it every single time.
     let mut wasm_blob_cache: Option<(Vec<u8>, executor::WasmBlob)> = None;
@@ -52,20 +57,44 @@ pub async fn run_executor_task(mut config: Config) {
     let mut top_trie_root_calculation_cache = Some(calculate_root::CalculationCache::empty());
 
     // Cache of the storage at the head of the chain.
-    let mut local_storage_cache = BTreeMap::<Vec<u8>, Vec<u8>>::new();
-    for (key, value) in config.genesis_storage_trie {
-        local_storage_cache.insert(key, value);
-    }
+    let mut local_storage_cache = {
+        let mut cache = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+        let best_block = config.database.best_block_hash().unwrap();
+        let storage_keys = config.database.storage_top_trie_keys(best_block).unwrap();
+        for key in storage_keys {
+            let value = config
+                .database
+                .storage_top_trie_get(best_block, &key)
+                .unwrap()
+                .unwrap();
+            cache.insert(key.as_ref().to_vec(), value.as_ref().to_vec());
+        }
+        cache
+    };
 
-    while let Some(event) = config.to_executor.next().await {
+    while let Some(event) = config.to_block_import.next().await {
         match event {
-            ToExecutor::Execute {
-                to_execute,
-                send_back,
-            } => {
+            ToBlockImport::BestBlockNumber { send_back } => {
                 if send_back.is_canceled() {
                     continue;
                 }
+
+                let num = config.database.best_block_number().unwrap();
+                let _ = send_back.send(num);
+            }
+
+            ToBlockImport::Import {
+                to_execute,
+                send_back,
+            } => {
+                //  TODO:
+                if config.database.best_block_hash().unwrap()
+                    != <[u8; 32]>::from(to_execute.header.parent_hash)
+                {
+                    unimplemented!("import a block whose parent isn't the best block isn't supported: {:?} vs {:?}", config.database.best_block_hash().unwrap(), to_execute.header.parent_hash);
+                }
+
+                println!("trying to import block #{}", to_execute.header.number);
 
                 // In order to avoid parsing/compiling the runtime code every single time, we
                 // maintain a cache of the `WasmBlob` of the head of the chain.
@@ -82,7 +111,8 @@ pub async fn run_executor_task(mut config: Config) {
                     &wasm_blob_cache.as_ref().unwrap().1
                 };
 
-                // TODO: this is stupid, I should just pass a trait to block import
+                // TODO: this mutex is stupid, the `crate::block_import` module should be reworked
+                // to be coroutine-like
                 let import_result = {
                     let local_storage_cache = Arc::new(Mutex::new(&mut local_storage_cache));
 
@@ -140,9 +170,28 @@ pub async fn run_executor_task(mut config: Config) {
                         top_trie_root_calculation_cache =
                             Some(success.top_trie_root_calculation_cache);
 
+                        // Invalidate the `wasm_blob_cache` if some changes have been made
+                        // to `:code`.
                         if success.storage_top_trie_changes.contains_key(&b":code"[..]) {
                             wasm_blob_cache = None;
                         }
+
+                        // TODO: it seems that importing the block takes less than 1ms, which
+                        // makes it ok in an asynchronous context, but eventually make sure that
+                        // this remains cheap even with big blocks
+                        // TODO: handle the `ObsoleteBestBlock` database error
+                        config
+                            .database
+                            .insert_new_best(
+                                to_execute.header.parent_hash.into(),
+                                &to_execute.header.encode(),
+                                to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
+                                success
+                                    .storage_top_trie_changes
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), v.clone())),
+                            )
+                            .unwrap();
 
                         for (key, value) in success.storage_top_trie_changes {
                             if let Some(value) = value {
@@ -152,7 +201,7 @@ pub async fn run_executor_task(mut config: Config) {
                             }
                         }
 
-                        let _ = send_back.send(Ok(ExecuteSuccess { block: to_execute }));
+                        let _ = send_back.send(Ok(ImportSuccess { block: to_execute }));
                     }
                     Err(_) => panic!(), // TODO:
                 }

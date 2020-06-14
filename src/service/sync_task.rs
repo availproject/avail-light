@@ -1,6 +1,6 @@
 //! Service task that tries to download blocks from the network.
 
-use super::{executor_task, network_task};
+use super::{block_import_task, network_task};
 use crate::{block, network};
 
 use core::num::NonZeroU64;
@@ -14,7 +14,7 @@ pub struct Config {
     /// Channel to send instructions to the networking task.
     pub to_network: mpsc::Sender<network_task::ToNetwork>,
     /// Channel to send instructions to the executor task.
-    pub to_executor: mpsc::Sender<executor_task::ToExecutor>,
+    pub to_block_import: mpsc::Sender<block_import_task::ToBlockImport>,
     /// Sender that reports messages to the outside of the service.
     pub to_service_out: mpsc::Sender<super::Event>,
 }
@@ -24,7 +24,15 @@ pub async fn run_sync_task(mut config: Config) {
     // TODO: we cheat, to wait to be connected to nodes
     futures_timer::Delay::new(core::time::Duration::from_secs(5)).await;
 
-    let mut next_block = 1;
+    let mut next_block = 1 + {
+        let (tx, rx) = oneshot::channel();
+        config
+            .to_block_import
+            .send(block_import_task::ToBlockImport::BestBlockNumber { send_back: tx })
+            .await
+            .unwrap();
+        rx.await.unwrap()
+    };
 
     loop {
         let (tx, rx) = oneshot::channel();
@@ -57,8 +65,8 @@ pub async fn run_sync_task(mut config: Config) {
                 <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
 
             config
-                .to_executor
-                .send(executor_task::ToExecutor::Execute {
+                .to_block_import
+                .send(block_import_task::ToBlockImport::Import {
                     to_execute: block::Block {
                         header: decoded_header.clone(), // TODO: ideally don't clone? dunno
                         extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
@@ -80,10 +88,5 @@ pub async fn run_sync_task(mut config: Config) {
 
             next_block += 1;
         }
-    }
-
-    // TODO: remove that; hack to not make the task stop
-    loop {
-        futures::pending!()
     }
 }

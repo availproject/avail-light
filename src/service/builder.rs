@@ -1,4 +1,4 @@
-use super::{database_task, executor_task, keystore_task, network_task, sync_task, Service};
+use super::{block_import_task, database_task, keystore_task, network_task, sync_task, Service};
 use crate::{chain_spec::ChainSpec, database, keystore, network};
 
 use alloc::sync::Arc;
@@ -8,9 +8,6 @@ use hashbrown::HashMap;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
-    /// State of the storage at the genesis block.
-    genesis_storage_trie: HashMap<Vec<u8>, Vec<u8>>,
-
     /// Database where the chain data is stored. If `None`, data is kept in memory.
     database: Option<database::Database>,
 
@@ -25,7 +22,6 @@ pub struct ServiceBuilder {
 /// Creates a new prototype of the service.
 pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
-        genesis_storage_trie: Default::default(),
         database: None,
         tasks_executor: None,
         network: network::builder(),
@@ -43,12 +39,7 @@ impl<'a> From<&'a ChainSpec> for ServiceBuilder {
 impl ServiceBuilder {
     /// Overwrites the current configuration with values from the given chain specs.
     pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
-        self.genesis_storage_trie = specs
-            .genesis_storage()
-            .map(|(k, v)| (k.to_vec(), v.to_vec()))
-            .collect();
-
-        // TODO: chain specs should use stronger typing
+        // TODO: chain specs should use stronger typing for bootnodes
         self.network.set_boot_nodes(
             specs
                 .boot_nodes()
@@ -75,7 +66,6 @@ impl ServiceBuilder {
     /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
     pub fn with_chain_spec_protocol_id(self, id: impl AsRef<[u8]>) -> Self {
         ServiceBuilder {
-            genesis_storage_trie: self.genesis_storage_trie,
             database: self.database,
             tasks_executor: self.tasks_executor,
             network: self.network.with_chain_spec_protocol_id(id),
@@ -119,7 +109,7 @@ impl ServiceBuilder {
         // TODO: eventually this should be tweaked so that we are able to measure the congestion
         let (to_service_out, events_in) = mpsc::channel(16);
         let (to_network_tx, to_network_rx) = mpsc::channel(256);
-        let (to_executor_tx, to_executor_rx) = mpsc::channel(256);
+        let (to_block_import_tx, to_block_import_rx) = mpsc::channel(16);
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
         let (_to_database_tx, to_database_rx) = mpsc::channel(64);
 
@@ -145,10 +135,11 @@ impl ServiceBuilder {
             self.database
                 .expect("in-memory db not implemented, please use ServiceBuilder::with_database"),
         );
+        // TODO: is this task necessary?
         tasks_executor(
             // TODO: the database task should be in its own thread because it's potentially blocking
             database_task::run_database_task(database_task::Config {
-                database,
+                database: database.clone(),
                 to_database: to_database_rx,
             })
             .boxed(),
@@ -156,7 +147,7 @@ impl ServiceBuilder {
 
         tasks_executor(
             sync_task::run_sync_task(sync_task::Config {
-                to_executor: to_executor_tx,
+                to_block_import: to_block_import_tx,
                 to_network: to_network_tx,
                 to_service_out,
             })
@@ -173,13 +164,13 @@ impl ServiceBuilder {
         );
 
         tasks_executor(
-            executor_task::run_executor_task(executor_task::Config {
+            block_import_task::run_block_import_task(block_import_task::Config {
+                database: database.clone(),
                 tasks_executor: Box::new({
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| tasks_executor(task))
                 }),
-                to_executor: to_executor_rx,
-                genesis_storage_trie: self.genesis_storage_trie,
+                to_block_import: to_block_import_rx,
             })
             .boxed(),
         );

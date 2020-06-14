@@ -45,6 +45,12 @@ async fn async_main() {
     .unwrap();
     let database = substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap();
 
+    // TODO: nicer formatting
+    println!(
+        "Database best block: #{}",
+        database.best_block_number().unwrap()
+    );
+
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_database(database)
         .build()
