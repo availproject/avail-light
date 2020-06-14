@@ -21,7 +21,7 @@
 //!     finalized_number: 217,
 //!     best_hash: &[0x12, 0x34, 0x56, 0x76],
 //!     finalized_hash: &[0xaa, 0xbb, 0xcc, 0xdd],
-//!     network_known_best: 224,
+//!     network_known_best: Some(224),
 //! });
 //! ```
 
@@ -36,12 +36,18 @@ pub struct InformantLine<'a> {
     pub chain_name: &'a str,
     /// Maximum number of characters of the informant line.
     pub max_line_width: u32,
+    /// Number of network connections we are having with the rest of the peer-to-peer network.
     pub num_network_connections: u64,
+    /// Best block currently being propagated on the peer-to-peer. `None` if unknown.
+    pub network_known_best: Option<u64>,
+    /// Number of the best block that we have locally.
     pub best_number: u64,
-    pub finalized_number: u64,
+    /// Hash of the best block that we have locally.
     pub best_hash: &'a [u8],
+    /// Number of the latest finalized block we have locally.
+    pub finalized_number: u64,
+    /// Hash of the latest finalized block we have locally.
     pub finalized_hash: &'a [u8],
-    pub network_known_best: u64,
 }
 
 impl<'a> fmt::Display for InformantLine<'a> {
@@ -65,14 +71,14 @@ impl<'a> fmt::Display for InformantLine<'a> {
             "] #{network_best} (🌐{connec}) ",
             network_best = Colour::White
                 .bold()
-                .paint(&self.network_known_best.to_string()),
+                .paint(&self.network_known_best.unwrap_or(0).to_string()),
             connec = Colour::White
                 .bold()
                 .paint(format!("{:>4}", self.num_network_connections)),
         );
         let trailer_len = format!(
             "] #{network_best} (  {connec}) ",
-            network_best = self.network_known_best,
+            network_best = self.network_known_best.unwrap_or(0),
             connec = format!("{:>4}", self.num_network_connections),
         )
         .len();
@@ -82,7 +88,7 @@ impl<'a> fmt::Display for InformantLine<'a> {
             .saturating_sub(u32::try_from(header_len).unwrap())
             .saturating_sub(u32::try_from(trailer_len).unwrap());
 
-        let actual_network_best = cmp::max(self.network_known_best, self.best_number);
+        let actual_network_best = cmp::max(self.network_known_best.unwrap_or(0), self.best_number);
         assert!(self.best_number <= actual_network_best);
         let bar_done_width = u128::from(self.best_number)
             .checked_mul(u128::from(bar_width))

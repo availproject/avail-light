@@ -179,10 +179,10 @@ impl ServiceBuilder {
             events_in,
             num_network_connections: 0,
             num_connections_store,
-            best_block_number: 0,      // TODO: wrong
-            best_block_hash: [0; 32],  // TODO: wrong
-            finalized_block_number: 0, // TODO: wrong
-            finalized_block_hash: [0; 32],
+            best_block_number: database.best_block_number().unwrap(),
+            best_block_hash: database.best_block_hash().unwrap(),
+            finalized_block_number: 0,     // TODO: wrong
+            finalized_block_hash: [0; 32], // TODO:
             _threads_pool: threads_pool,
         }
     }

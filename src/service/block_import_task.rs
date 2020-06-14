@@ -94,8 +94,6 @@ pub async fn run_block_import_task(mut config: Config) {
                     unimplemented!("import a block whose parent isn't the best block isn't supported: {:?} vs {:?}", config.database.best_block_hash().unwrap(), to_execute.header.parent_hash);
                 }
 
-                println!("trying to import block #{}", to_execute.header.number);
-
                 // In order to avoid parsing/compiling the runtime code every single time, we
                 // maintain a cache of the `WasmBlob` of the head of the chain.
                 let runtime_wasm_blob = {

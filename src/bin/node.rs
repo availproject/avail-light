@@ -69,7 +69,7 @@ async fn async_main() {
     })
     .map(|_| ());
 
-    let mut network_known_best = 0;
+    let mut network_known_best = None;
 
     loop {
         futures::select! {
@@ -94,7 +94,11 @@ async fn async_main() {
                         eprintln!("🔍 Discovered new external address for our node: {}", address);
                     }
                     substrate_lite::service::Event::BlockAnnounceReceived { number, .. } => {
-                        network_known_best = cmp::max(network_known_best, number);
+                        if let Some(curr_best) = network_known_best {
+                            network_known_best = Some(cmp::max(curr_best, number));
+                        } else {
+                            network_known_best = Some(number);
+                        }
                     },
                     _ => {}
                 }
