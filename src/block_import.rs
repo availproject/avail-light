@@ -312,6 +312,45 @@ where
                 };
                 resolve.finish_call(outcome);
             }
+
+            executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
+                // TODO: is there maybe a better way to handle that?
+                let wasm_blob = match executor::WasmBlob::from_bytes(wasm_blob) {
+                    Ok(w) => w,
+                    Err(_) => {
+                        resolve.finish_call(Err(()));
+                        continue;
+                    }
+                };
+                let mut inner_vm = match executor::WasmVm::new(
+                    &wasm_blob,
+                    executor::FunctionToCall::CoreVersion,
+                ) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        resolve.finish_call(Err(()));
+                        continue;
+                    }
+                };
+
+                let outcome = loop {
+                    match inner_vm.state() {
+                        executor::State::ReadyToRun(r) => r.run(),
+                        executor::State::Finished(executor::Success::CoreVersion(version)) => {
+                            break Ok(parity_scale_codec::Encode::encode(&version));
+                        }
+                        executor::State::Finished(_) => unreachable!(),
+                        executor::State::Trapped => break Err(()),
+
+                        // Since there are potential ambiguities we don't allow any storage access
+                        // or anything similar. The last thing we want is to have an infinite
+                        // recursion of runtime calls.
+                        _ => break Err(()),
+                    }
+                };
+
+                resolve.finish_call(outcome);
+            }
             s => unimplemented!("unimplemented externality: {:?}", s),
         }
     }

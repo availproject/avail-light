@@ -276,6 +276,12 @@ impl ExternalsVm {
                             resolve: Resume { inner: done },
                         }
                     }
+                    externalities::State::CallRuntimeVersionNeeded { wasm_blob, done } => {
+                        return State::CallRuntimeVersion {
+                            wasm_blob,
+                            resolve: Resume { inner: done },
+                        }
+                    }
 
                     // These variants are handled above.
                     externalities::State::Finished { .. }
@@ -368,6 +374,14 @@ pub enum State<'a> {
         storage_key: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, Option<Vec<u8>>>,
+    },
+    /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
+    /// still SCALE-encoded), or an error if the call has failed.
+    CallRuntimeVersion {
+        /// Wasm blob to compile and run.
+        wasm_blob: &'a [u8],
+        /// Object to use to finish the call.
+        resolve: Resume<'a, Result<Vec<u8>, ()>>,
     },
 }
 

@@ -119,6 +119,7 @@ define_internal_interface! {
     StorageRoot => fn storage_root() -> [u8; 32];
     StorageChangesRoot => fn storage_changes_root(parent_hash: Vec<u8>) -> Option<[u8; 32]>;
     StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
+    CallRuntimeVersion => fn call_runtime_version(wasm_blob: Vec<u8>) -> Result<Vec<u8>, ()>;
 }
 
 impl Externality {
@@ -237,6 +238,12 @@ impl CallState {
                 key,
                 done: Resume { sender: result },
             },
+            CallStateInner::CallRuntimeVersion { wasm_blob, result } => {
+                State::CallRuntimeVersionNeeded {
+                    wasm_blob,
+                    done: Resume { sender: result },
+                }
+            }
             st => unimplemented!("unimplemented state: {:?}", st), // TODO:
         }
     }
@@ -324,6 +331,13 @@ pub enum State<'a> {
     StorageNextKeyNeeded {
         key: &'a [u8],
         done: Resume<'a, Option<Vec<u8>>>,
+    },
+
+    /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
+    /// still SCALE-encoded) or an error if the call has failed.
+    CallRuntimeVersionNeeded {
+        wasm_blob: &'a [u8],
+        done: Resume<'a, Result<Vec<u8>, ()>>,
     },
 }
 
@@ -1147,9 +1161,23 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_misc_runtime_version_version_1" => Some(Externality {
             name: "ext_misc_runtime_version_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let wasm_blob = expect_pointer_size(&params[0], &*interface).await?;
+                    let outcome = interface.call_runtime_version(wasm_blob).await.ok();
+                    // TODO: optimize
+                    let value_encoded = parity_scale_codec::Encode::encode(&outcome);
+                    // TODO: don't unwrap?
+                    let value_len = u32::try_from(value_encoded.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(value_len).await;
+                    interface.write_memory(dest_ptr, value_encoded).await;
+
+                    let ret = build_pointer_size(dest_ptr, value_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_allocator_malloc_version_1" => Some(Externality {
@@ -1204,6 +1232,12 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         // All unknown functions.
         // TODO: since the specs aren't up-to-date with the list of functions, we just resolve
         // everything as valid, and panic if an unknown function is actually called
+        // TODO: this is not entirely true; the `ext_misc_runtime_version_version_1` requires
+        // calling the runtime and informing the runtime of whether it has succeeded; we do not
+        // want this call to fail if the host (i.e. this code) is missing some functions and
+        // succeed if it is not missing functions, as this makes the resolution dependant on the
+        // version of the host. Instead, we should succeed even if functions are missing. Anyway,
+        // this TODO is already quite long, and we should just report what to do
         //_ => None,
         _f => {
             // TODO: this println is a bit too verbose
