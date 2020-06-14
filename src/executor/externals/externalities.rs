@@ -1082,15 +1082,25 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         "ext_misc_chain_id_version_1" => Some(Externality {
             name: "ext_misc_chain_id_version_1",
             call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(0, &params)?;
+                    // TODO: seems to be hardcoded to 42 for some reason?!
+                    Ok(Some(vm::RuntimeValue::I64(42)))
+                })
             },
         }),
         "ext_misc_print_num_version_1" => Some(Externality {
             name: "ext_misc_print_num_version_1",
             call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let num = expect_u64(&params[0])?;
+                    // TODO: properly print message
+                    println!("print_num: {}", num);
+                    Ok(None)
+                })
             },
         }),
         "ext_misc_print_utf8_version_1" => Some(Externality {
@@ -1209,6 +1219,14 @@ fn expect_num_params(expected_num: usize, params: &[vm::RuntimeValue]) -> Result
 fn expect_u32(param: &vm::RuntimeValue) -> Result<u32, Error> {
     match param {
         vm::RuntimeValue::I32(v) => Ok(u32::from_ne_bytes(v.to_ne_bytes())),
+        _ => Err(Error::WrongParamTy),
+    }
+}
+
+/// Utility function that turns a parameter into a `u64`, or returns an error if it is impossible.
+fn expect_u64(param: &vm::RuntimeValue) -> Result<u64, Error> {
+    match param {
+        vm::RuntimeValue::I64(v) => Ok(u64::from_ne_bytes(v.to_ne_bytes())),
         _ => Err(Error::WrongParamTy),
     }
 }
