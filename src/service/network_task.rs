@@ -15,6 +15,12 @@ use hashbrown::HashMap;
 
 /// Message that can be sent to the network task by the other parts of the code.
 pub enum ToNetwork {
+    /// Ask to perform a request from blocks from a peer on the network.
+    ///
+    /// The received blocks are expected to the same whoever the target of the request is, and
+    /// that target is therefore chosen based on some internal logic that distributes the load
+    /// amongst the network.
+    // TODO: add a variant that requests from a specific target, for fork-aware stuff
     BlocksRequest(
         network::BlocksRequestConfig,
         oneshot::Sender<Result<Vec<network::BlockData>, ()>>,
@@ -25,12 +31,16 @@ pub enum ToNetwork {
 pub struct Config {
     /// Prototype for the network worker.
     pub network_builder: network::builder::NetworkBuilder,
+
     /// Sender that reports messages to the outside of the service.
     pub to_service_out: mpsc::Sender<super::Event>,
+
     /// Receiver to receive messages that the networking task will process.
     pub to_network: mpsc::Receiver<super::network_task::ToNetwork>,
-    /// `Arc` where to store the number of transport-level connections. Incremented whenever we
-    /// open a new transport-level connection and decremented whenever we close one.
+
+    /// `Arc` where to store the number of transport-level connections. Incremented by the network
+    /// task whenever we a new transport-level connection is opened, and decremented whenever one
+    /// is closed.
     pub num_connections_store: Arc<atomic::AtomicU64>,
 }
 

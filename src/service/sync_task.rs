@@ -21,9 +21,6 @@ pub struct Config {
 
 /// Runs the sync task.
 pub async fn run_sync_task(mut config: Config) {
-    // TODO: we cheat, to wait to be connected to nodes
-    futures_timer::Delay::new(core::time::Duration::from_secs(5)).await;
-
     let mut next_block = 1 + {
         let (tx, rx) = oneshot::channel();
         config
@@ -46,14 +43,20 @@ pub async fn run_sync_task(mut config: Config) {
                 justification: false,
             },
         };
+
         config
             .to_network
             .send(network_task::ToNetwork::BlocksRequest(rq, tx))
             .await
             .unwrap();
+
         let result = match rx.await.unwrap() {
             Ok(r) => r,
-            Err(_) => continue, // Try the request again
+            Err(_) => {
+                // TODO: dispatch depending on exact error and remove this wait
+                futures_timer::Delay::new(core::time::Duration::from_millis(200)).await;
+                continue
+            },
         };
 
         for block in result {

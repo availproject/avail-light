@@ -8,7 +8,7 @@
 //! if so appends them to the head of the chain. Only blocks whose parent is the current head of
 //! the chain are considered, and the others discarded.
 
-use crate::{block, database, executor, trie::calculate_root};
+use crate::{block, block_import, database, executor, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -32,14 +32,27 @@ pub enum ToBlockImport {
         /// Block to try execute.
         to_execute: block::Block,
         /// Channel where to send back the outcome of the execution.
-        // TODO: better return type
-        send_back: oneshot::Sender<Result<ImportSuccess, ()>>,
+        send_back: oneshot::Sender<Result<ImportSuccess, ImportError>>,
     },
 }
 
 pub struct ImportSuccess {
     /// The block that was passed as parameter.
+    // TODO: do we really need to pass it back?
     pub block: block::Block,
+}
+
+/// Error that can happen when importing a block.
+#[derive(Debug, derive_more::Display)]
+pub enum ImportError {
+    /// The parent of the block isn't the current best block.
+    #[display(fmt = "The parent of the block isn't the current best block.")]
+    ParentIsntBest {
+        /// Hash of the current best block.
+        current_best_hash: [u8; 32],
+    },
+    /// The block verification has failed.
+    VerificationFailed(block_import::Error),
 }
 
 /// Configuration for that task.
@@ -54,9 +67,10 @@ pub struct Config {
 
 /// Runs the task itself.
 pub async fn run_block_import_task(mut config: Config) {
-    // Tuple of the runtime code of the chain head and its corresponding `WasmBlob`.
+    // The `WasmBlob` object corresponding to the head of the chain. Set to `None` if the runtime
+    // code is modified.
     // Used to avoid recompiling it every single time.
-    let mut wasm_blob_cache: Option<(Vec<u8>, executor::WasmBlob)> = None;
+    let mut wasm_blob_cache: Option<executor::WasmBlob> = None;
 
     // Cache used to calculate the storage trie root.
     // This cache has to be kept up to date with the actual state of the storage.
@@ -80,6 +94,7 @@ pub async fn run_block_import_task(mut config: Config) {
         cache
     };
 
+    // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
         match event {
             ToBlockImport::BestBlockNumber { send_back } => {
@@ -95,34 +110,34 @@ pub async fn run_block_import_task(mut config: Config) {
                 to_execute,
                 send_back,
             } => {
-                //  TODO: return error on the channel
-                if config.database.best_block_hash().unwrap()
-                    != <[u8; 32]>::from(to_execute.header.parent_hash)
-                {
-                    unimplemented!("import a block whose parent isn't the best block isn't supported: {:?} vs {:?}", config.database.best_block_hash().unwrap(), to_execute.header.parent_hash);
+                // We only accept blocks whose parent is the current best block.
+                let current_best_hash = config.database.best_block_hash().unwrap();
+                if current_best_hash != <[u8; 32]>::from(to_execute.header.parent_hash) {
+                    let _ = send_back.send(Err(ImportError::ParentIsntBest {
+                        current_best_hash,
+                    }));
+                    continue;
                 }
 
                 // In order to avoid parsing/compiling the runtime code every single time, we
                 // maintain a cache of the `WasmBlob` of the head of the chain.
                 let runtime_wasm_blob = {
-                    let code = local_storage_cache.get(&b":code"[..]).unwrap();
-                    if wasm_blob_cache
-                        .as_ref()
-                        .map(|(c, _)| *c != *code)
-                        .unwrap_or(true)
-                    {
+                    if wasm_blob_cache.is_none() {
+                        let code = local_storage_cache.get(&b":code"[..]).unwrap();
                         let wasm_blob = executor::WasmBlob::from_bytes(&code).unwrap();
-                        wasm_blob_cache = Some((code.to_vec(), wasm_blob));
+                        wasm_blob_cache = Some(wasm_blob);
                     }
-                    &wasm_blob_cache.as_ref().unwrap().1
+                    wasm_blob_cache.as_ref().unwrap()
                 };
 
-                // TODO: this mutex is stupid, the `crate::block_import` module should be reworked
-                // to be coroutine-like
+                // Now perform the actual block verification.
+                // Note that this does **not** modify `local_storage_cache`.
                 let import_result = {
+                    // TODO: this mutex is stupid, the `crate::block_import` module should be reworked
+                    // to be coroutine-like
                     let local_storage_cache = Arc::new(Mutex::new(&mut local_storage_cache));
 
-                    crate::block_import::verify_block(crate::block_import::Config {
+                    block_import::verify_block(block_import::Config {
                         runtime: runtime_wasm_blob,
                         block_header: &to_execute.header,
                         block_body: &to_execute.extrinsics,
@@ -171,45 +186,64 @@ pub async fn run_block_import_task(mut config: Config) {
                     .await
                 };
 
-                match import_result {
-                    Ok(success) => {
-                        top_trie_root_calculation_cache =
-                            Some(success.top_trie_root_calculation_cache);
-
-                        // Invalidate the `wasm_blob_cache` if some changes have been made
-                        // to `:code`.
-                        if success.storage_top_trie_changes.contains_key(&b":code"[..]) {
-                            wasm_blob_cache = None;
-                        }
-
-                        // TODO: it seems that importing the block takes less than 1ms, which
-                        // makes it ok in an asynchronous context, but eventually make sure that
-                        // this remains cheap even with big blocks
-                        // TODO: handle the `ObsoleteBestBlock` database error
-                        config
-                            .database
-                            .insert_new_best(
-                                to_execute.header.parent_hash.into(),
-                                &to_execute.header.encode(),
-                                to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
-                                success
-                                    .storage_top_trie_changes
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone())),
-                            )
-                            .unwrap();
-
-                        for (key, value) in success.storage_top_trie_changes {
-                            if let Some(value) = value {
-                                local_storage_cache.insert(key, value);
-                            } else {
-                                local_storage_cache.remove(&key);
-                            }
-                        }
-
-                        let _ = send_back.send(Ok(ImportSuccess { block: to_execute }));
+                // If the block verification failed, we can just discard everything as nothing
+                // has been committed yet.
+                let import_result = match import_result {
+                    Ok(r) => r,
+                    Err(err) => {
+                        let _ = send_back.send(Err(ImportError::VerificationFailed(err)));
+                        continue;
                     }
-                    Err(_) => panic!(), // TODO:
+                };
+
+                // The block is correct. Now import it into the database.
+                // TODO: it seems that importing the block takes less than 1ms, which
+                // makes it ok in an asynchronous context, but eventually make sure that
+                // this remains cheap even with big blocks
+                let db_import_result = config
+                    .database
+                    .insert_new_best(
+                        current_best_hash,
+                        &to_execute.header.encode(),
+                        to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
+                        import_result
+                            .storage_top_trie_changes
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone())),
+                    );
+
+                match db_import_result {
+                    Ok(()) => {},
+                    Err(database::InsertNewBestError::ObsoleteCurrentHead) => {
+                        // We have already checked above whether the parent of the block to import
+                        // was indeed the best block in the database. However the import can still
+                        // fail if something else has modified the database's best block while we
+                        // were busy verifying the block.
+                        let _ = send_back.send(Err(ImportError::ParentIsntBest {
+                            current_best_hash,
+                        }));
+                        continue;
+                    }
+                    Err(database::InsertNewBestError::Access(err)) => {
+                        panic!("Database internal error: {}", err);
+                    }
+                }
+
+                // Block has been successfully imported! 🎉
+                let _ = send_back.send(Ok(ImportSuccess { block: to_execute }));
+
+                // We now have to update the local values for the next iteration.
+                // Invalidate the `wasm_blob_cache` if some changes have been made to `:code`.
+                top_trie_root_calculation_cache = Some(import_result.top_trie_root_calculation_cache);
+                if import_result.storage_top_trie_changes.contains_key(&b":code"[..]) {
+                    wasm_blob_cache = None;
+                }
+                for (key, value) in import_result.storage_top_trie_changes {
+                    if let Some(value) = value {
+                        local_storage_cache.insert(key, value);
+                    } else {
+                        local_storage_cache.remove(&key);
+                    }
                 }
             }
         }
