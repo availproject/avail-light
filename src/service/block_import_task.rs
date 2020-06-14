@@ -51,7 +51,7 @@ pub enum ImportError {
         /// Hash of the current best block.
         current_best_hash: [u8; 32],
     },
-    /// The block verification has failed.
+    /// The block verification has failed. The block is invalid and should be thrown away.
     VerificationFailed(block_import::Error),
 }
 
@@ -113,9 +113,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 // We only accept blocks whose parent is the current best block.
                 let current_best_hash = config.database.best_block_hash().unwrap();
                 if current_best_hash != <[u8; 32]>::from(to_execute.header.parent_hash) {
-                    let _ = send_back.send(Err(ImportError::ParentIsntBest {
-                        current_best_hash,
-                    }));
+                    let _ = send_back.send(Err(ImportError::ParentIsntBest { current_best_hash }));
                     continue;
                 }
 
@@ -200,28 +198,25 @@ pub async fn run_block_import_task(mut config: Config) {
                 // TODO: it seems that importing the block takes less than 1ms, which
                 // makes it ok in an asynchronous context, but eventually make sure that
                 // this remains cheap even with big blocks
-                let db_import_result = config
-                    .database
-                    .insert_new_best(
-                        current_best_hash,
-                        &to_execute.header.encode(),
-                        to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
-                        import_result
-                            .storage_top_trie_changes
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone())),
-                    );
+                let db_import_result = config.database.insert_new_best(
+                    current_best_hash,
+                    &to_execute.header.encode(),
+                    to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
+                    import_result
+                        .storage_top_trie_changes
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone())),
+                );
 
                 match db_import_result {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(database::InsertNewBestError::ObsoleteCurrentHead) => {
                         // We have already checked above whether the parent of the block to import
                         // was indeed the best block in the database. However the import can still
                         // fail if something else has modified the database's best block while we
                         // were busy verifying the block.
-                        let _ = send_back.send(Err(ImportError::ParentIsntBest {
-                            current_best_hash,
-                        }));
+                        let _ =
+                            send_back.send(Err(ImportError::ParentIsntBest { current_best_hash }));
                         continue;
                     }
                     Err(database::InsertNewBestError::Access(err)) => {
@@ -234,8 +229,12 @@ pub async fn run_block_import_task(mut config: Config) {
 
                 // We now have to update the local values for the next iteration.
                 // Invalidate the `wasm_blob_cache` if some changes have been made to `:code`.
-                top_trie_root_calculation_cache = Some(import_result.top_trie_root_calculation_cache);
-                if import_result.storage_top_trie_changes.contains_key(&b":code"[..]) {
+                top_trie_root_calculation_cache =
+                    Some(import_result.top_trie_root_calculation_cache);
+                if import_result
+                    .storage_top_trie_changes
+                    .contains_key(&b":code"[..])
+                {
                     wasm_blob_cache = None;
                 }
                 for (key, value) in import_result.storage_top_trie_changes {

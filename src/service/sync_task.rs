@@ -55,8 +55,8 @@ pub async fn run_sync_task(mut config: Config) {
             Err(_) => {
                 // TODO: dispatch depending on exact error and remove this wait
                 futures_timer::Delay::new(core::time::Duration::from_millis(200)).await;
-                continue
-            },
+                continue;
+            }
         };
 
         for block in result {
