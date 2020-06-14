@@ -1,4 +1,12 @@
 //! Service task that tries to import blocks from the network into the database.
+//!
+//! The role of the block import task is to verify and append blocks to the head of the chain
+//! stored in the database passed through [`Config::database`].
+//!
+//! The block import task receives blocks from other parts of the code (most likely the network)
+//! through [`ToBlockImport::Import`] messages, verifies if they are correct by executing them, and
+//! if so appends them to the head of the chain. Only blocks whose parent is the current head of
+//! the chain are considered, and the others discarded.
 
 use crate::{block, database, executor, trie::calculate_root};
 
@@ -19,7 +27,7 @@ pub enum ToBlockImport {
         /// Channel where to send back the answer.
         send_back: oneshot::Sender<u64>,
     },
-    /// Call the runtime to apply a block on the state.
+    /// Verify the correctness of a block and apply it on the storage.
     Import {
         /// Block to try execute.
         to_execute: block::Block,
@@ -87,7 +95,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 to_execute,
                 send_back,
             } => {
-                //  TODO:
+                //  TODO: return error on the channel
                 if config.database.best_block_hash().unwrap()
                     != <[u8; 32]>::from(to_execute.header.parent_hash)
                 {

@@ -18,6 +18,7 @@ hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] 
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
+libsecp256k1 = "0.3.5"
 parking_lot = "0.10.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 pin-project = "0.4"

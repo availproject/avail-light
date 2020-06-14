@@ -714,9 +714,48 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_crypto_secp256k1_ecdsa_recover_version_1" => Some(Externality {
             name: "ext_crypto_secp256k1_ecdsa_recover_version_1",
-            call: |_interface, params| {
-                let _params = params.to_vec();
-                Box::pin(async move { unimplemented!() })
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    #[derive(parity_scale_codec::Encode)]
+                    enum EcdsaVerifyError {
+                        BadRS,
+                        BadV,
+                        BadSignature,
+                    }
+
+                    expect_num_params(2, &params)?;
+                    let sig = expect_constant_size_pointer(&params[0], 65, &*interface).await?;
+                    let msg = expect_constant_size_pointer(&params[1], 32, &*interface).await?;
+
+                    let result = (|| -> Result<_, EcdsaVerifyError> {
+                        let rs = secp256k1::Signature::parse_slice(&sig[0..64])
+                            .map_err(|_| EcdsaVerifyError::BadRS)?;
+                        let v = secp256k1::RecoveryId::parse(if sig[64] > 26 {
+                            sig[64] - 27
+                        } else {
+                            sig[64]
+                        } as u8)
+                        .map_err(|_| EcdsaVerifyError::BadV)?;
+                        let pubkey = secp256k1::recover(
+                            &secp256k1::Message::parse_slice(&msg).unwrap(),
+                            &rs,
+                            &v,
+                        )
+                        .map_err(|_| EcdsaVerifyError::BadSignature)?;
+                        let mut res = [0u8; 64];
+                        res.copy_from_slice(&pubkey.serialize()[1..65]);
+                        Ok(res)
+                    })();
+                    let result_encoded = parity_scale_codec::Encode::encode(&result);
+                    let result_encoded_len = u32::try_from(result_encoded.len()).unwrap();
+
+                    let dest_ptr = interface.allocate(result_encoded_len).await;
+                    interface.write_memory(dest_ptr, result_encoded).await;
+
+                    let ret = build_pointer_size(dest_ptr, result_encoded_len);
+                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                })
             },
         }),
         "ext_crypto_secp256k1_ecdsa_recover_compressed_version_1" => Some(Externality {
@@ -1195,6 +1234,17 @@ async fn expect_pointer_size(
 ) -> Result<Vec<u8>, Error> {
     let (ptr, len) = expect_pointer_size_raw(param)?;
     Ok(interface.read_memory(ptr, len).await)
+}
+
+/// Utility function that turns a pointer parameter into the memory content, or returns an error
+/// if it is impossible.
+async fn expect_constant_size_pointer(
+    param: &vm::RuntimeValue,
+    memory_size: u32,
+    interface: &(dyn InternalInterface + Send + Sync),
+) -> Result<Vec<u8>, Error> {
+    let ptr = expect_u32(param)?;
+    Ok(interface.read_memory(ptr, memory_size).await)
 }
 
 /// Builds a "pointer-size" value.

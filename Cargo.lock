@@ -2413,6 +2413,7 @@ dependencies = [
  "ip_network",
  "jsonrpsee",
  "libp2p",
+ "libsecp256k1",
  "log",
  "parity-scale-codec",
  "parking_lot 0.10.2",
