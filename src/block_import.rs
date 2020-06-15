@@ -287,9 +287,8 @@ where
                 parent_hash: _,
                 resolve,
             } => {
-                // TODO: this is probably one of the most complicated things to
-                // implement, but slava told me that it's ok to just return None on
-                // flaming fir because the feature is disabled
+                // TODO: this is probably one of the most complicated things to implement
+                // TODO: must return None iff `state_at(parent_block).exists_storage(&well_known_keys::CHANGES_TRIE_CONFIG).unwrap() == false`
                 resolve.finish_call(None);
             }
             executor::State::ExternalStorageNextKey {
