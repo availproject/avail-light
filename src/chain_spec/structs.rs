@@ -16,89 +16,41 @@
 
 //! Type definitions that implement the [`serde::Serialize`] and [`serde::Deserialize`] traits and
 //! that match the chain specs JSON file structure.
+//!
+//! The main type is [`ClientSpec`].
 
 // TODO: change visibility to pub(super) everywhere, once we no longer leak types
 
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
-
+use primitive_types::H256;
 use serde::{Deserialize, Serialize};
 
-use primitive_types::H256;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChildRawStorage {
-    pub(crate) child_info: Vec<u8>,
-    pub(crate) child_type: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-/// Storage content for genesis block.
-pub(crate) struct RawGenesis {
-    pub(crate) top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
-    pub(crate) children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-pub(crate) enum Genesis {
-    Raw(RawGenesis),
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
-
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct StorageChangeSet<Hash> {
-    /// Block hash
-    pub(crate) block: Hash,
-    /// A list of changes
-    pub(crate) changes: Vec<(StorageKey, Option<StorageData>)>,
-}
-
-/// A configuration of a client. Does not include runtime storage initialization.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ClientSpec {
-    pub(crate) name: String,
-    pub(crate) id: String,
+pub(super) struct ClientSpec {
+    pub(super) name: String,
+    pub(super) id: String,
     #[serde(default)]
-    pub(crate) chain_type: ChainType,
-    pub(crate) boot_nodes: Vec<String>,
-    pub(crate) telemetry_endpoints: Option<TelemetryEndpoints>,
-    pub(crate) protocol_id: Option<String>,
-    pub(crate) properties: Option<Properties>,
-    pub(crate) fork_blocks: Option<Vec<(u64, H256)>>,
-    pub(crate) bad_blocks: Option<HashSet<H256>>,
+    pub(super) chain_type: ChainType,
+    pub(super) boot_nodes: Vec<String>,
+    pub(super) telemetry_endpoints: Option<TelemetryEndpoints>,
+    pub(super) protocol_id: Option<String>,
+    pub(super) properties: Option<Properties>,
+    pub(super) fork_blocks: Option<Vec<(u64, H256)>>,
+    pub(super) bad_blocks: Option<HashSet<H256>>,
     // Unused but for some reason still part of the chain specs.
-    pub(crate) consensus_engine: (),
+    pub(super) consensus_engine: (),
     // TODO: looks deprecated?
-    pub(crate) genesis: Genesis,
+    pub(super) genesis: Genesis,
 }
 
-/// The type of a chain.
-///
-/// This can be used by tools to determine the type of a chain for displaying
-/// additional information or enabling additional features.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum ChainType {
-    /// A development chain that runs mainly on one node.
+pub(super) enum ChainType {
     Development,
-    /// A local chain that runs locally on multiple nodes for testing purposes.
     Local,
-    /// A live chain.
     Live,
-    /// Some custom chain type.
     Custom(String),
 }
 
@@ -108,12 +60,36 @@ impl Default for ChainType {
     }
 }
 
-/// List of telemetry servers we want to talk to. Contains the URL of the server, and the
-/// maximum verbosity level.
-///
-/// The URL string can be either a URL or a multiaddress.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct TelemetryEndpoints(Vec<(String, u8)>);
+pub(super) struct TelemetryEndpoints(Vec<(String, u8)>);
 
-/// Arbitrary properties defined in chain spec as a JSON object
-pub(crate) type Properties = serde_json::map::Map<String, serde_json::Value>;
+pub(super) type Properties = serde_json::map::Map<String, serde_json::Value>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(super) enum Genesis {
+    Raw(RawGenesis),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawGenesis {
+    pub(crate) top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
+    pub(crate) children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ChildRawStorage {
+    pub(crate) child_info: Vec<u8>,
+    pub(crate) child_type: u32,
+}
