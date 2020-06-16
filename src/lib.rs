@@ -12,8 +12,8 @@ pub mod executor;
 pub mod informant;
 pub mod keystore;
 pub mod network;
+// TODO: pub mod rpc_server;
 pub mod service;
-//pub mod storage_cache;
 pub mod trie;
 
 use parity_scale_codec::Encode as _;
