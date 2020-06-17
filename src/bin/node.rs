@@ -56,13 +56,14 @@ async fn async_main() {
         .build()
         .await;
 
-    let rpc_server = jsonrpsee::http_server(&"0.0.0.0:9933".parse().unwrap())
-        .await
-        .unwrap();
-
-    let mut _foo_method = rpc_server
-        .register_method(From::from("system_chain"))
-        .unwrap();
+    let mut rpc_server = {
+        let mut server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
+        server
+            .spawn_ws("0.0.0.0:9944".parse().unwrap())
+            .await
+            .unwrap();
+        server
+    };
 
     let mut informant_timer = stream::unfold((), move |_| {
         futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
@@ -87,6 +88,9 @@ async fn async_main() {
                     finalized_hash: &service.finalized_block_hash(),
                     network_known_best,
                 });
+            }
+            rpc_rq = rpc_server.next_event().fuse() => {
+                todo!()
             }
             ev = service.next_event().fuse() => {
                 match ev {

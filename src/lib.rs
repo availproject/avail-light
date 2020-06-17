@@ -12,7 +12,7 @@ pub mod executor;
 pub mod informant;
 pub mod keystore;
 pub mod network;
-// TODO: pub mod rpc_server;
+pub mod rpc_server;
 pub mod service;
 pub mod trie;
 

@@ -89,7 +89,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 .storage_top_trie_get(best_block, &key)
                 .unwrap()
                 .unwrap();
-            cache.insert(key.as_ref().to_vec(), value.as_ref().to_vec());
+            cache.insert(key.to_vec(), value.to_vec());
         }
         cache
     };
