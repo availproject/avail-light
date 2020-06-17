@@ -57,11 +57,12 @@ async fn async_main() {
         .await;
 
     let mut rpc_server = {
-        let mut server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
-        server
-            .spawn_ws("0.0.0.0:9944".parse().unwrap())
-            .await
-            .unwrap();
+        let server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
+        // TODO:
+        /*server
+        .spawn_ws("0.0.0.0:9944".parse().unwrap())
+        .await
+        .unwrap();*/
         server
     };
 

@@ -19,8 +19,6 @@
 //!
 //! The main type is [`ClientSpec`].
 
-// TODO: change visibility to pub(super) everywhere, once we no longer leak types
-
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
 use primitive_types::H256;
@@ -38,7 +36,9 @@ pub(super) struct ClientSpec {
     pub(super) telemetry_endpoints: Option<TelemetryEndpoints>,
     pub(super) protocol_id: Option<String>,
     pub(super) properties: Option<Properties>,
+    // TODO: make use of this
     pub(super) fork_blocks: Option<Vec<(u64, H256)>>,
+    // TODO: make use of this
     pub(super) bad_blocks: Option<HashSet<H256>>,
     // Unused but for some reason still part of the chain specs.
     pub(super) consensus_engine: (),
@@ -75,21 +75,21 @@ pub(super) enum Genesis {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RawGenesis {
-    pub(crate) top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
-    pub(crate) children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
+pub(super) struct RawGenesis {
+    pub(super) top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
+    pub(super) children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
+pub(super) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(super) Vec<u8>);
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(crate) Vec<u8>);
+pub(super) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(super) Vec<u8>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ChildRawStorage {
-    pub(crate) child_info: Vec<u8>,
-    pub(crate) child_type: u32,
+pub(super) struct ChildRawStorage {
+    pub(super) child_info: Vec<u8>,
+    pub(super) child_type: u32,
 }

@@ -47,7 +47,12 @@ pub struct ChainSpec {
 impl ChainSpec {
     /// Parse JSON content into a [`ChainSpec`].
     pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, serde_json::Error> {
-        let client_spec = serde_json::from_slice(json.as_ref())?;
+        let client_spec: structs::ClientSpec = serde_json::from_slice(json.as_ref())?;
+        // TODO: we don't support child tries in the genesis block
+        assert!({
+            let structs::Genesis::Raw(genesis) = &client_spec.genesis;
+            genesis.children_default.is_empty()
+        });
         Ok(ChainSpec { client_spec })
     }
 
@@ -79,14 +84,6 @@ impl ChainSpec {
     pub fn genesis_storage(&self) -> impl ExactSizeIterator<Item = (&[u8], &[u8])> + Clone {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
-    }
-
-    // TODO: bad API
-    pub(crate) fn genesis_children(
-        &self,
-    ) -> &HashMap<structs::StorageKey, structs::ChildRawStorage, FnvBuildHasher> {
-        let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
-        &genesis.children_default
     }
 }
 
