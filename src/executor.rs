@@ -19,7 +19,7 @@
 //! To start calling the runtime, create a [`WasmVm`] object, passing the [`WasmBlob`] and a
 //! [`FunctionToCall`].
 //!
-//! While the Wasm runtime cide has side-effects (such as storing values in the storage), the
+//! While the Wasm runtime code has side-effects (such as storing values in the storage), the
 //! [`WasmVm`] itself is a pure state machine with no side effects.
 //!
 //! At any given point, you can call [`WasmVm::state`] in order to know in which state the

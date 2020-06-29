@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL; can probably be removed if we remove all of Substrate's code
 edition = "2018"
+default-run = "node"
 
 [dependencies]
 ansi_term = "0.12.1"
