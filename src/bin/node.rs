@@ -4,6 +4,7 @@ use core::{cmp, time::Duration};
 use futures::prelude::*;
 
 fn main() {
+    env_logger::init();
     futures::executor::block_on(async_main())
 }
 
@@ -57,12 +58,11 @@ async fn async_main() {
         .await;
 
     let mut rpc_server = {
-        let server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
-        // TODO:
-        /*server
-        .spawn_ws("0.0.0.0:9944".parse().unwrap())
-        .await
-        .unwrap();*/
+        let mut server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
+        server
+            .spawn_ws("0.0.0.0:9944".parse().unwrap())
+            .await
+            .unwrap();
         server
     };
 
@@ -91,7 +91,7 @@ async fn async_main() {
                 });
             }
             rpc_rq = rpc_server.next_event().fuse() => {
-                todo!()
+                todo!("{:?}", rpc_rq);
             }
             ev = service.next_event().fuse() => {
                 match ev {

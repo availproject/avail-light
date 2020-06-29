@@ -48,7 +48,9 @@ impl<TFId, TSubId> RpcServers<TFId, TSubId> {
         let server = jsonrpsee::transport::ws::WsTransportServer::builder(addr.into())
             .build()
             .await?;
-        todo!() //self.servers.push(jsonrpsee::raw::RawServer::new(server).into());
+        self.servers
+            .push(jsonrpsee::raw::RawServer::new(server).into());
+        Ok(())
     }
 
     /// Returns the next event that happened on one of the servers.
@@ -63,6 +65,7 @@ impl<TFId, TSubId> RpcServers<TFId, TSubId> {
     }
 }
 
+#[derive(Debug)]
 pub enum Event<'a, TFId, TSubId> {
     IncomingRequest {
         local_id: RequestId,
