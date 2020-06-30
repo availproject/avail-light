@@ -1045,7 +1045,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee"
 version = "1.0.0"
-source = "git+https://github.com/paritytech/jsonrpsee#dc56d058b57e25010786f7ee3daf9f196674d57e"
+source = "git+https://github.com/paritytech/jsonrpsee#5aba7daab06facc08f310da4d73fbba1f7808b40"
 dependencies = [
  "async-std",
  "async-tls",
@@ -1077,7 +1077,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-proc-macros"
 version = "1.0.0"
-source = "git+https://github.com/paritytech/jsonrpsee#dc56d058b57e25010786f7ee3daf9f196674d57e"
+source = "git+https://github.com/paritytech/jsonrpsee#5aba7daab06facc08f310da4d73fbba1f7808b40"
 dependencies = [
  "Inflector",
  "proc-macro2",

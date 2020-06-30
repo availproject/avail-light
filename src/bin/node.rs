@@ -8,25 +8,6 @@ fn main() {
     futures::executor::block_on(async_main())
 }
 
-// TODO: list of RPCs
-/*
-    account.nextIndex
-    author.submitExtrinsic
-    author.submitAndWatchExtrinsic
-    chain.getBlock
-    chain.getHeader
-    chain.subscribeNewHeads
-    chain.getBlockHash
-    chain.subscribeFinalizedHeads
-    state.getStorage
-    state.subscribeStorage
-    state.getMetadata
-    state.getRuntimeVersion
-    system.chain
-    system.properties
-    system.health
-*/
-
 async fn async_main() {
     let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(
         &include_bytes!("../../polkadot.json")[..],
@@ -58,7 +39,7 @@ async fn async_main() {
         .await;
 
     let mut rpc_server = {
-        let mut server = substrate_lite::rpc_server::RpcServers::<(), ()>::new(Default::default());
+        let mut server = substrate_lite::rpc_server::RpcServers::new();
         server
             .spawn_ws("0.0.0.0:9944".parse().unwrap())
             .await

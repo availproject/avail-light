@@ -4,7 +4,6 @@ use crate::{chain_spec::ChainSpec, database, keystore, network};
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
 use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
-use hashbrown::HashMap;
 
 /// Prototype for a service.
 pub struct ServiceBuilder {

@@ -37,7 +37,7 @@ pub use wasmi::RuntimeValue;
 ///
 pub struct VirtualMachine {
     /// Original module, with resolved imports.
-    module: wasmi::ModuleRef,
+    _module: wasmi::ModuleRef,
 
     /// Memory of the module instantiation.
     ///
@@ -351,7 +351,7 @@ impl VirtualMachinePrototype {
         };
 
         Ok(VirtualMachine {
-            module: self.module,
+            _module: self.module,
             memory: self.memory,
             execution: Some(execution),
             interrupted: false,

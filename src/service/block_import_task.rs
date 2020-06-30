@@ -16,7 +16,6 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use hashbrown::HashMap;
 use parity_scale_codec::Encode as _;
 use parking_lot::Mutex;
 

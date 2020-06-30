@@ -30,10 +30,7 @@
 //! When using a cache, be careful to properly invalidate cache entries whenever you perform
 //! modifications on the trie associated to it.
 
-use alloc::{
-    borrow::Cow,
-    collections::{btree_map::Entry, BTreeMap},
-};
+use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::{convert::TryFrom as _, fmt};
 
 use parity_scale_codec::Encode as _;

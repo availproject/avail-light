@@ -5,10 +5,9 @@
 // TODO: gate this module in no_std contexts
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::{convert::TryFrom as _, ops};
+use core::ops;
 use parity_scale_codec::DecodeAll as _;
 use sled::Transactional as _;
-use std::path::Path;
 
 pub use open::{open, Config, DatabaseOpen};
 
@@ -119,14 +118,14 @@ impl Database {
 
                 for (key, value) in storage_top_trie_changes.clone() {
                     if let Some(value) = value {
-                        storage_top_trie.insert(key, value);
+                        storage_top_trie.insert(key, value)?;
                     } else {
-                        storage_top_trie.remove(key);
+                        storage_top_trie.remove(key)?;
                     }
                 }
 
-                block_headers.insert(&new_best_hash[..], new_best_scale_header);
-                meta.insert(b"best", &new_best_hash[..]);
+                block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
+                meta.insert(b"best", &new_best_hash[..])?;
                 Ok(())
             });
 
@@ -139,7 +138,6 @@ impl Database {
             Err(sled::TransactionError::Storage(err)) => {
                 Err(InsertNewBestError::Access(AccessError::Database(err)))
             }
-            Err(_) => unimplemented!(),
         }
     }
 

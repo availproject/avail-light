@@ -18,7 +18,7 @@
 
 use super::{allocator, vm};
 
-use core::{convert::TryFrom as _, fmt, hash::Hasher as _, mem};
+use core::{convert::TryFrom as _, fmt, mem};
 
 pub use entry_points::{CoreVersionSuccess, FunctionToCall, Success};
 

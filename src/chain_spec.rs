@@ -33,9 +33,6 @@
 //! - Multiple other miscellaneous information.
 //!
 
-use fnv::FnvBuildHasher;
-use hashbrown::HashMap;
-
 mod structs;
 
 /// A configuration of a chain. Can be used to build a genesis block.
