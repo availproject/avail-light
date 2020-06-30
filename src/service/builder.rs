@@ -110,7 +110,7 @@ impl ServiceBuilder {
         let (to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_block_import_tx, to_block_import_rx) = mpsc::channel(16);
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
-        let (_to_database_tx, to_database_rx) = mpsc::channel(64);
+        let (to_database_tx, to_database_rx) = mpsc::channel(64);
 
         let num_connections_store = Arc::new(atomic::AtomicU64::new(0));
 
@@ -176,6 +176,7 @@ impl ServiceBuilder {
 
         Service {
             events_in,
+            to_database: to_database_tx,
             num_network_connections: 0,
             num_connections_store,
             best_block_number: database.best_block_number().unwrap(),

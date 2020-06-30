@@ -44,6 +44,9 @@ pub struct Service {
     /// process events. This is an intended behaviour.
     events_in: mpsc::Receiver<Event>,
 
+    /// Sender for messages towards the database task.
+    to_database: mpsc::Sender<database_task::ToDatabase>,
+
     /// Number of transport-level (e.g. TCP/IP) network connections. Only updated by receiving
     /// events.
     num_network_connections: u64,
@@ -160,5 +163,9 @@ impl Service {
     /// [`Service::next_event`].
     pub fn finalized_block_hash(&self) -> [u8; 32] {
         self.finalized_block_hash
+    }
+
+    pub fn best_effort_block_number(&self, num: u64) -> Option<[u8; 32]> {
+        todo!()
     }
 }
