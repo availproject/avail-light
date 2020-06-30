@@ -82,6 +82,18 @@ impl ChainSpec {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }
+
+    /// The chain specs contain a list of arbitrary properties.
+    /// The values of these properties is never interpreted by the local node, but they are
+    /// usually served through the RPC node.
+    pub fn properties(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+        self.client_spec
+            .properties
+            .as_ref()
+            .map(|p| p.iter().map(|(k, v)| (k.as_ref(), v)))
+            .into_iter()
+            .flatten()
+    }
 }
 
 #[cfg(test)]
