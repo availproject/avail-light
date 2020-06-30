@@ -83,7 +83,8 @@ impl ChainSpec {
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }
 
-    /// The chain specs contain a list of arbitrary properties.
+    /// The chain specs contain a list of arbitrary properties, such as the name of the token
+    /// of the number of decimals.
     /// The values of these properties is never interpreted by the local node, but they are
     /// usually served through the RPC node.
     pub fn properties(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
