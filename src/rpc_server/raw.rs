@@ -1,8 +1,9 @@
 //! Collection of RPC servers.
 
+use core::{fmt, pin::Pin};
 use futures::prelude::*;
 use hashbrown::HashMap;
-use std::{io, net::SocketAddr, pin::Pin};
+use std::{io, net::SocketAddr};
 
 #[derive(Debug, Default)]
 #[non_exhaustive]
@@ -91,6 +92,15 @@ impl<TFId, TSubId> RpcServers<TFId, TSubId> {
         let (jsonrpsee_request, function_index) = self.pending_requests.get(&local_id)?;
 
         todo!();
+    }
+}
+
+impl<TFId, TSubId> fmt::Debug for RpcServers<TFId, TSubId> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: print list of listened IP addresses
+        f.debug_struct("RpcServers")
+            .field("pending_requests", &self.pending_requests.keys().collect::<Vec<_>>())
+            .finish()
     }
 }
 

@@ -38,7 +38,7 @@ async fn async_main() {
         .build()
         .await;
 
-    let mut rpc_server = {
+    let mut rpc_server_task = {
         let mut server = substrate_lite::rpc_server::RpcServers::new();
         server
             .spawn_ws("0.0.0.0:9944".parse().unwrap())

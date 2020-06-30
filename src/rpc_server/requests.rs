@@ -1,7 +1,7 @@
 //! List of requests and how to answer them.
 
 #[derive(Debug)]
-pub enum Request {
+pub enum Method {
     account_nextIndex,
     author_hasKey,
     author_hasSessionKeys,

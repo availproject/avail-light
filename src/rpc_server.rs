@@ -3,6 +3,7 @@
 // TODO: write docs
 
 use crate::service;
+use core::fmt;
 use std::{io, net::SocketAddr};
 
 /*
@@ -121,9 +122,21 @@ impl RpcServers {
 
     /// Returns the next event that happened on one of the servers.
     pub async fn next_event<'a>(&'a mut self) -> Event<'a> {
-        loop {
-            self.inner.next_event().await;
+        match self.inner.next_event().await {
+            raw::Event::IncomingRequest { local_id, function_id } => Event::Request(IncomingRequest {
+                parent: self,
+                inner: local_id,
+            }),
+            raw::Event::RequestedCancelled(local_id) => todo!(),
+            raw::Event::NewSubscription { local_id, subscription_id } => todo!(),
+            raw::Event::SubscriptionClosed(locla_id) => todo!(),
         }
+    }
+}
+
+impl fmt::Debug for RpcServers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
 
@@ -137,7 +150,8 @@ pub enum Event<'a> {
 /// A request from a connected node.
 #[derive(Debug)]
 pub struct IncomingRequest<'a> {
-    foo: &'a (),
+    parent: &'a mut RpcServers,
+    inner: raw::RequestId,
 }
 
 impl<'a> IncomingRequest<'a> {
