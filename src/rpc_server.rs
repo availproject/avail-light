@@ -100,10 +100,24 @@ impl RpcServers {
     /// Creates a new empty collection.
     pub fn new() -> Self {
         let config = raw::Config {
-            functions: vec![raw::ConfigFunction {
-                name: "chain_getBlockHash".into(),
-                id: (),
-            }],
+            functions: vec![
+                raw::ConfigFunction {
+                    name: "chain_getBlockHash".into(),
+                    id: (),
+                },
+                raw::ConfigFunction {
+                    name: "state_getRuntimeVersion".into(),
+                    id: (),
+                },
+                raw::ConfigFunction {
+                    name: "system_chain".into(),
+                    id: (),
+                },
+                raw::ConfigFunction {
+                    name: "system_properties".into(),
+                    id: (),
+                },
+            ],
             subscriptions: vec![raw::ConfigSubscription {
                 subscribe: "state_subscribeRuntimeVersion".into(),
                 unsubscribe: "state_unsubscribeRuntimeVersion".into(),
@@ -136,14 +150,18 @@ impl RpcServers {
         match self.inner.next_event().await {
             raw::Event::IncomingRequest(inner) => Event::Request(IncomingRequest { inner }),
             raw::Event::RequestedCancelled(local_id) => todo!(),
+            // TODO: we don't care about subscription events, but there are
+            // annoying borrowing errors if we just do nothing
             raw::Event::NewSubscription { .. } => todo!(),
             raw::Event::SubscriptionClosed(_) => todo!(),
         }
     }
 
     /// Returns a pending request by its identifier.
-    pub fn request_by_id(&mut self, id: &RequestId) -> Option<IncomingRequest> {
-        todo!()
+    pub fn request_by_id(&mut self, id: RequestId) -> Option<IncomingRequest> {
+        Some(IncomingRequest {
+            inner: self.inner.request_by_id(id)?,
+        })
     }
 }
 
@@ -173,9 +191,13 @@ impl<'a> IncomingRequest<'a> {
     }
 
     /// Answers the request using the given [`service::Service`].
-    pub fn answer(mut self, service: &service::Service) {
+    pub async fn answer(mut self, service: &service::Service) {
         match self.inner.function_id() {
-            _ => todo!(),
+            _ => {
+                self.inner
+                    .respond(Ok(jsonrpsee::common::JsonValue::String("foo".into())))
+                    .await
+            }
         }
     }
 }

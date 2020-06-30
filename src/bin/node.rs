@@ -27,35 +27,19 @@ async fn async_main() {
     .unwrap();
     let database = substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap();
 
-    // TODO: nicer formatting
-    println!(
-        "Database best block: #{}",
-        database.best_block_number().unwrap()
-    );
-
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_database(database)
         .build()
         .await;
 
-    let mut rpc_server_task = {
-        //let service = &service;
-
+    let mut rpc_server = {
         let mut server = substrate_lite::rpc_server::RpcServers::new();
         server
             .spawn_ws("0.0.0.0:9944".parse().unwrap())
             .await
             .unwrap();
-
-        async move {
-            loop {
-                let substrate_lite::rpc_server::Event::Request(rq) = server.next_event().await;
-                //rq.answer(service);
-            }
-        }
-        .fuse()
+        server
     };
-    futures::pin_mut!(rpc_server_task);
 
     let mut informant_timer = stream::unfold((), move |_| {
         futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
@@ -81,11 +65,15 @@ async fn async_main() {
                     network_known_best,
                 });
             }
-            _ = &mut rpc_server_task => {
-                unreachable!()
+            rpc_rq = rpc_server.next_event().fuse() => {
+                match rpc_rq {
+                    substrate_lite::rpc_server::Event::Request(rq) => {
+                        rq.answer(&service).await;
+                    }
+                }
             }
-            ev = service.next_event().fuse() => {
-                match ev {
+            service_event = service.next_event().fuse() => {
+                match service_event {
                     substrate_lite::service::Event::NewNetworkExternalAddress { address } => {
                         eprintln!("🔍 Discovered new external address for our node: {}", address);
                     }

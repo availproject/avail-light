@@ -151,6 +151,15 @@ impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
     pub fn function_id(&mut self) -> &mut TFId {
         &mut self.parent.config.functions[self.function_index].id
     }
+
+    /// Sends the given value as the answer to the request.
+    pub async fn respond(
+        self,
+        value: Result<jsonrpsee::common::JsonValue, jsonrpsee::common::Error>,
+    ) {
+        let (rq, _) = self.parent.pending_requests.remove(&self.local_id).unwrap();
+        rq.respond(value).await;
+    }
 }
 
 /// Internal method. Applies the [`Config`] to a `jsonrpsee` server.
