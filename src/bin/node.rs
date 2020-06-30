@@ -39,13 +39,23 @@ async fn async_main() {
         .await;
 
     let mut rpc_server_task = {
+        //let service = &service;
+
         let mut server = substrate_lite::rpc_server::RpcServers::new();
         server
             .spawn_ws("0.0.0.0:9944".parse().unwrap())
             .await
             .unwrap();
-        server
+
+        async move {
+            loop {
+                let substrate_lite::rpc_server::Event::Request(rq) = server.next_event().await;
+                //rq.answer(service);
+            }
+        }
+        .fuse()
     };
+    futures::pin_mut!(rpc_server_task);
 
     let mut informant_timer = stream::unfold((), move |_| {
         futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
@@ -71,8 +81,8 @@ async fn async_main() {
                     network_known_best,
                 });
             }
-            rpc_rq = rpc_server.next_event().fuse() => {
-                todo!("{:?}", rpc_rq);
+            _ = &mut rpc_server_task => {
+                unreachable!()
             }
             ev = service.next_event().fuse() => {
                 match ev {

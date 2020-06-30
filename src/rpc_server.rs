@@ -6,6 +6,8 @@ use crate::service;
 use core::fmt;
 use std::{io, net::SocketAddr};
 
+pub use raw::RequestId;
+
 /*
 list of methods (temporary, for reference)
 
@@ -102,7 +104,11 @@ impl RpcServers {
                 name: "chain_getBlockHash".into(),
                 id: (),
             }],
-            subscriptions: Vec::new(),
+            subscriptions: vec![raw::ConfigSubscription {
+                subscribe: "state_subscribeRuntimeVersion".into(),
+                unsubscribe: "state_unsubscribeRuntimeVersion".into(),
+                id: (),
+            }],
         };
 
         RpcServers {
@@ -120,17 +126,24 @@ impl RpcServers {
         self.inner.spawn_ws(addr).await
     }
 
+    // TODO: this is an example example of how subscriptions would be handled
+    /*pub fn notify_new_chain_head(&mut self, hash: [u8; 32]) {
+        ...
+    }*/
+
     /// Returns the next event that happened on one of the servers.
     pub async fn next_event<'a>(&'a mut self) -> Event<'a> {
         match self.inner.next_event().await {
-            raw::Event::IncomingRequest { local_id, function_id } => Event::Request(IncomingRequest {
-                parent: self,
-                inner: local_id,
-            }),
+            raw::Event::IncomingRequest(inner) => Event::Request(IncomingRequest { inner }),
             raw::Event::RequestedCancelled(local_id) => todo!(),
-            raw::Event::NewSubscription { local_id, subscription_id } => todo!(),
-            raw::Event::SubscriptionClosed(locla_id) => todo!(),
+            raw::Event::NewSubscription { .. } => todo!(),
+            raw::Event::SubscriptionClosed(_) => todo!(),
         }
+    }
+
+    /// Returns a pending request by its identifier.
+    pub fn request_by_id(&mut self, id: &RequestId) -> Option<IncomingRequest> {
+        todo!()
     }
 }
 
@@ -150,13 +163,19 @@ pub enum Event<'a> {
 /// A request from a connected node.
 #[derive(Debug)]
 pub struct IncomingRequest<'a> {
-    parent: &'a mut RpcServers,
-    inner: raw::RequestId,
+    inner: raw::IncomingRequest<'a, (), ()>,
 }
 
 impl<'a> IncomingRequest<'a> {
+    /// Returns the identifier of this request, for later processing.
+    pub fn id(&self) -> RequestId {
+        self.inner.id()
+    }
+
     /// Answers the request using the given [`service::Service`].
-    pub fn answer(self, service: &service::Service) {
-        todo!()
+    pub fn answer(mut self, service: &service::Service) {
+        match self.inner.function_id() {
+            _ => todo!(),
+        }
     }
 }

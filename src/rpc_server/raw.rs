@@ -11,7 +11,7 @@ pub struct Config<TFId, TSubId> {
     /// List of functions that the server supports that a client can call.
     pub functions: Vec<ConfigFunction<TFId>>,
     /// List of subscription functions that the server supports that a client can subscribe to.
-    pub subscriptions: Vec<TSubId>, // TODO:
+    pub subscriptions: Vec<ConfigSubscription<TSubId>>,
 }
 
 #[derive(Debug)]
@@ -22,13 +22,24 @@ pub struct ConfigFunction<TFId> {
     pub id: TFId,
 }
 
+#[derive(Debug)]
+pub struct ConfigSubscription<TSubId> {
+    /// Name of the method that starts the subscription.
+    pub subscribe: String,
+    /// Name of the method that ends the subscription.
+    pub unsubscribe: String,
+    /// Opaque identifier for this subscription.
+    pub id: TSubId,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RequestId(u64);
 
 /// Active RPC servers and their management.
 pub struct RpcServers<TFId, TSubId> {
     servers: Vec<jsonrpsee::Server>,
-    tasks: stream::SelectAll<Pin<Box<dyn Stream<Item = (jsonrpsee::server::IncomingRequest, usize)>>>>,
+    tasks:
+        stream::SelectAll<Pin<Box<dyn Stream<Item = (jsonrpsee::server::IncomingRequest, usize)>>>>,
     /// Configuration passed at initialization.
     config: Config<TFId, TSubId>,
     /// [`RequestId`] to assign to the next incoming request.
@@ -79,19 +90,23 @@ impl<TFId, TSubId> RpcServers<TFId, TSubId> {
         let (jsonrpsee_request, function_index) = self.tasks.next().await.unwrap();
         let local_id = self.next_request_id.clone();
         self.next_request_id.0 = self.next_request_id.0.checked_add(1).unwrap();
-        let _was_in = self.pending_requests.insert(local_id, (jsonrpsee_request, function_index));
+        let _was_in = self
+            .pending_requests
+            .insert(local_id, (jsonrpsee_request, function_index));
         debug_assert!(_was_in.is_none());
 
-        Event::IncomingRequest {
-            local_id,
-            function_id: &mut self.config.functions[function_index].id,
-        }
+        Event::IncomingRequest(self.request_by_id(local_id).unwrap())
     }
 
-    pub fn request_by_id(&mut self, local_id: RequestId) -> Option<()> {
-        let (jsonrpsee_request, function_index) = self.pending_requests.get(&local_id)?;
+    /// Returns the request with the given identifier.
+    pub fn request_by_id(&mut self, local_id: RequestId) -> Option<IncomingRequest<TFId, TSubId>> {
+        let function_index = self.pending_requests.get(&local_id)?.1.clone();
 
-        todo!();
+        Some(IncomingRequest {
+            parent: self,
+            local_id,
+            function_index,
+        })
     }
 }
 
@@ -99,17 +114,17 @@ impl<TFId, TSubId> fmt::Debug for RpcServers<TFId, TSubId> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: print list of listened IP addresses
         f.debug_struct("RpcServers")
-            .field("pending_requests", &self.pending_requests.keys().collect::<Vec<_>>())
+            .field(
+                "pending_requests",
+                &self.pending_requests.keys().collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
 
 #[derive(Debug)]
 pub enum Event<'a, TFId, TSubId> {
-    IncomingRequest {
-        local_id: RequestId,
-        function_id: &'a mut TFId,
-    },
+    IncomingRequest(IncomingRequest<'a, TFId, TSubId>),
     RequestedCancelled(RequestId),
     NewSubscription {
         local_id: RequestId,
@@ -118,11 +133,33 @@ pub enum Event<'a, TFId, TSubId> {
     SubscriptionClosed(RequestId),
 }
 
+/// A request from a connected node.
+#[derive(Debug)]
+pub struct IncomingRequest<'a, TFId, TSubId> {
+    parent: &'a mut RpcServers<TFId, TSubId>,
+    local_id: RequestId,
+    function_index: usize,
+}
+
+impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
+    /// Returns the identifier of this request, for later processing.
+    pub fn id(&self) -> RequestId {
+        self.local_id
+    }
+
+    /// Returns the identifier of the JSONRPC method that has been called.
+    pub fn function_id(&mut self) -> &mut TFId {
+        &mut self.parent.config.functions[self.function_index].id
+    }
+}
+
 /// Internal method. Applies the [`Config`] to a `jsonrpsee` server.
 fn apply_config<TFId, TSubId>(
     config: &Config<TFId, TSubId>,
     server: &jsonrpsee::Server,
-    executor: &mut stream::SelectAll<Pin<Box<dyn Stream<Item = (jsonrpsee::server::IncomingRequest, usize)>>>>,
+    executor: &mut stream::SelectAll<
+        Pin<Box<dyn Stream<Item = (jsonrpsee::server::IncomingRequest, usize)>>>,
+    >,
 ) {
     for (index, method) in config.functions.iter().enumerate() {
         let registration = match server.register_method(method.name.clone()) {
@@ -138,5 +175,23 @@ fn apply_config<TFId, TSubId>(
                 Some((next, registration))
             },
         )));
+    }
+
+    for (index, sub) in config.subscriptions.iter().enumerate() {
+        let registration =
+            match server.register_subscription(sub.subscribe.clone(), sub.unsubscribe.clone()) {
+                Ok(r) => r,
+                // Errors happen in case of duplicate.
+                Err(_) => continue,
+            };
+
+        // TODO: ???
+        /*executor.push(Box::pin(stream::unfold(
+            registration,
+            move |mut registration| async move {
+                let next = (registration.next().await, index);
+                Some((next, registration))
+            },
+        )));*/
     }
 }
