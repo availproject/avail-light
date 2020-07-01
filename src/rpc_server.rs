@@ -240,6 +240,7 @@ impl<'a> IncomingRequest<'a> {
                     return;
                 }
 
+                // FIXME: needs to return the subscription-related functions as well
                 let methods: Vec<_> = methods::Method::list()
                     .map(|m| raw::JsonValue::String(m.name().to_owned()))
                     .collect();
@@ -446,7 +447,94 @@ impl<'a> IncomingRequest<'a> {
             }
 
             methods::Method::state_queryStorageAt => {
-                todo!();
+                let params = match self.inner.params() {
+                    raw::Params::Array(p) => p,
+                    _ => {
+                        self.inner
+                            .respond(Err(raw::Error::invalid_params(String::new())))
+                            .await;
+                        return;
+                    }
+                };
+
+                let keys_encoded = match params.get(0) {
+                    Some(raw::JsonValue::Array(p))  => p,
+                    _ => {
+                        self.inner
+                            .respond(Err(raw::Error::invalid_params(String::new())))
+                            .await;
+                        return;
+                    }
+                };
+
+                let keys = {
+                    let mut keys = Vec::with_capacity(keys_encoded.len());
+                    for key in keys_encoded {
+                        let s = match key {
+                            raw::JsonValue::String(k) if k.starts_with("0x") => {
+                                match hex::decode(&k[2..]) {
+                                    Ok(sk) => sk,
+                                    Err(_) => {
+                                        self.inner
+                                            .respond(Err(raw::Error::invalid_params(String::new())))
+                                            .await;
+                                        return;
+                                    }
+                                }
+                            },
+                            _ => {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                        };
+                        keys.push(s);
+                    }
+                    keys
+                };
+
+                let block = match params.get(1) {
+                    Some(raw::JsonValue::String(p)) if p.starts_with("0x") => {
+                        match hex::decode(&p[2..]) {
+                            Ok(sk) => sk,
+                            Err(_) => {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                        }
+                    }
+                    _ => service.best_block_hash().to_vec(),
+                };
+
+                let block_hash_encoded = format!("0x{}", hex::encode(&block));
+
+                let values = {
+                    let mut values = Vec::with_capacity(keys.len());
+                    for key in keys {
+                        // TODO: block isn't used
+                        // TODO: we discard values not in storage, is that correct?
+                        if let Some(value) = service.storage_get(&key).await {
+                            values.push(raw::JsonValue::String(format!("0x{}", hex::encode(value))));
+                        }
+                    }
+                    values
+                };
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::Array(vec![
+                        raw::JsonValue::Object(
+                            [
+                                ("block".to_owned(), raw::JsonValue::String(block_hash_encoded)),
+                                ("changes".to_owned(), raw::JsonValue::Array(values)),
+                            ]
+                            .iter()
+                            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+                            .collect()
+                        )])))
+                    .await;
             }
 
             methods::Method::system_chain => {
