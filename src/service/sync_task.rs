@@ -79,9 +79,13 @@ pub async fn run_sync_task(mut config: Config) {
                 .await
                 .unwrap();
 
-            let success = rx.await.unwrap().unwrap();
+            let success = match rx.await {
+                Ok(Ok(s)) => s,
+                Ok(Err(_)) => todo!(), // TODO:
+                Err(_) => panic!("Import task closed"),
+            };
 
-            config
+            let result = config
                 .to_service_out
                 .send(super::Event::NewChainHead {
                     number: decoded_header.number,
@@ -90,6 +94,12 @@ pub async fn run_sync_task(mut config: Config) {
                     modified_keys: success.modified_keys,
                 })
                 .await;
+
+            // If the channel to the main service is closed, we also shut
+            // down the sync task.
+            if result.is_err() {
+                return;
+            }
 
             next_block += 1;
         }
