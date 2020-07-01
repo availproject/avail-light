@@ -75,10 +75,19 @@ impl RpcServers {
         self.inner.spawn_ws(addr).await
     }
 
-    // TODO: this is an example example of how subscriptions would be handled
-    /*pub fn notify_new_chain_head(&mut self, hash: [u8; 32]) {
-        ...
-    }*/
+    /// Notifies the clients that the head of the chain has been changed.
+    ///
+    /// Must pass the hash of the new block and the list of storage keys that have been modified
+    /// as a result of the chain head update.
+    ///
+    /// > **Note**: You can either call this function for each block, or group all the
+    /// >           `modified_keys` together.
+    pub fn notify_new_chain_head<'a>(
+        &mut self,
+        new_head_hash: [u8; 32],
+        modified_keys: impl Iterator<Item = &'a [u8]> + Clone,
+    ) {
+    }
 
     /// Returns the next event that happened on one of the servers.
     pub async fn next_event<'a>(&'a mut self) -> Event<'a> {

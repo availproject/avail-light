@@ -39,6 +39,9 @@ pub struct ImportSuccess {
     /// The block that was passed as parameter.
     // TODO: do we really need to pass it back?
     pub block: block::Block,
+    /// List of keys that have appeared, disappeared, or whose value has been modified during the
+    /// execution of the block.
+    pub modified_keys: Vec<Vec<u8>>,
 }
 
 /// Error that can happen when importing a block.
@@ -224,7 +227,14 @@ pub async fn run_block_import_task(mut config: Config) {
                 }
 
                 // Block has been successfully imported! 🎉
-                let _ = send_back.send(Ok(ImportSuccess { block: to_execute }));
+                let _ = send_back.send(Ok(ImportSuccess {
+                    block: to_execute,
+                    modified_keys: import_result
+                        .storage_top_trie_changes
+                        .keys()
+                        .cloned()
+                        .collect(),
+                }));
 
                 // We now have to update the local values for the next iteration.
                 // Invalidate the `wasm_blob_cache` if some changes have been made to `:code`.

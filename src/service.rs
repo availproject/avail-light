@@ -88,6 +88,9 @@ pub enum Event {
         number: u64,
         hash: H256,
         head_update: ChainHeadUpdate,
+        /// List of keys whose values has been added, removed, or has changed in the storage as a
+        /// result of the chain head update.
+        modified_keys: Vec<Vec<u8>>,
     },
 
     /// The finalized block has been updated to a different one.

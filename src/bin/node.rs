@@ -111,6 +111,9 @@ async fn async_main() {
                             network_known_best = Some(number);
                         }
                     },
+                    substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
+                        rpc_server.notify_new_chain_head(hash.into(), modified_keys.iter().map(|k| &k[..]));
+                    },
                     _ => {}
                 }
             }

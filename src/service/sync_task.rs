@@ -78,7 +78,8 @@ pub async fn run_sync_task(mut config: Config) {
                 })
                 .await
                 .unwrap();
-            rx.await;
+
+            let success = rx.await.unwrap().unwrap();
 
             config
                 .to_service_out
@@ -86,6 +87,7 @@ pub async fn run_sync_task(mut config: Config) {
                     number: decoded_header.number,
                     hash: decoded_header.block_hash().0.into(),
                     head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
+                    modified_keys: success.modified_keys,
                 })
                 .await;
 
