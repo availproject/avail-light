@@ -88,18 +88,19 @@ impl Database {
 
     /// Returns the hash of the block given its number.
     // TODO: comment about reorgs
-    pub fn block_hash_by_number(
-        &self,
-        block_number: u64,
-    ) -> Result<Option<[u8; 32]>, AccessError> {
-        let hash = self.block_hashes_by_number_tree.get(&u64::to_be_bytes(block_number)[..])?;
+    pub fn block_hash_by_number(&self, block_number: u64) -> Result<Option<[u8; 32]>, AccessError> {
+        let hash = self
+            .block_hashes_by_number_tree
+            .get(&u64::to_be_bytes(block_number)[..])?;
         let hash = match hash {
             Some(h) => h,
             None => return Ok(None),
         };
 
         if hash.len() != 32 {
-            return Err(AccessError::Corrupted(CorruptedError::BlockHashLenInHashNumberMapping));
+            return Err(AccessError::Corrupted(
+                CorruptedError::BlockHashLenInHashNumberMapping,
+            ));
         }
 
         let mut out = [0u8; 32];
@@ -146,27 +147,30 @@ impl Database {
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
-            .transaction(move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
-                if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
-                    return Err(sled::ConflictableTransactionError::Abort(()));
-                }
-
-                for (key, value) in storage_top_trie_changes.clone() {
-                    if let Some(value) = value {
-                        storage_top_trie.insert(key, value)?;
-                    } else {
-                        storage_top_trie.remove(key)?;
+            .transaction(
+                move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
+                    if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
+                        return Err(sled::ConflictableTransactionError::Abort(()));
                     }
-                }
 
-                // TODO: insert body
+                    for (key, value) in storage_top_trie_changes.clone() {
+                        if let Some(value) = value {
+                            storage_top_trie.insert(key, value)?;
+                        } else {
+                            storage_top_trie.remove(key)?;
+                        }
+                    }
 
-                block_hashes_by_number.insert(&u64::to_be_bytes(new_block_number)[..], &new_best_hash[..])?;
+                    // TODO: insert body
 
-                block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
-                meta.insert(b"best", &new_best_hash[..])?;
-                Ok(())
-            });
+                    block_hashes_by_number
+                        .insert(&u64::to_be_bytes(new_block_number)[..], &new_best_hash[..])?;
+
+                    block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
+                    meta.insert(b"best", &new_best_hash[..])?;
+                    Ok(())
+                },
+            );
 
         match result {
             Ok(()) => Ok(()),

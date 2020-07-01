@@ -26,7 +26,11 @@ use crate::network;
 
 use alloc::sync::Arc;
 use core::sync::atomic;
-use futures::{channel::{mpsc, oneshot}, executor::ThreadPool, prelude::*};
+use futures::{
+    channel::{mpsc, oneshot},
+    executor::ThreadPool,
+    prelude::*,
+};
 use network::PeerId;
 use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
@@ -179,10 +183,14 @@ impl Service {
         let (tx, rx) = oneshot::channel();
 
         // TODO: don't clone the channel, it reserves an extra slot
-        self.to_database.clone().send(database_task::ToDatabase::BlockHashGet {
-            block_number: num,
-            send_back: tx,
-        }).await.unwrap();
+        self.to_database
+            .clone()
+            .send(database_task::ToDatabase::BlockHashGet {
+                block_number: num,
+                send_back: tx,
+            })
+            .await
+            .unwrap();
 
         rx.await.unwrap()
     }

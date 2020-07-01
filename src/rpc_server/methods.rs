@@ -7,7 +7,7 @@ macro_rules! define_methods {
         pub enum Method {
             $($name,)*
         }
-        
+
         impl Method {
             /// Returns the list of supported methods.
             pub fn list() -> impl ExactSizeIterator<Item = Self> {
@@ -23,11 +23,11 @@ macro_rules! define_methods {
                 }
             }
         }
-        
+
     };
 }
 
-define_methods!{
+define_methods! {
     account_nextIndex,
     author_hasKey,
     author_hasSessionKeys,

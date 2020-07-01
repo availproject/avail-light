@@ -3,7 +3,11 @@ use crate::{chain_spec::ChainSpec, database, keystore, network};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
-use futures::{channel::{mpsc, oneshot}, executor::ThreadPool, prelude::*};
+use futures::{
+    channel::{mpsc, oneshot},
+    executor::ThreadPool,
+    prelude::*,
+};
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
@@ -176,7 +180,10 @@ impl ServiceBuilder {
 
         let local_peer_id = {
             let (tx, rx) = oneshot::channel();
-            to_network_tx.send(network_task::ToNetwork::LocalPeerId(tx)).await.unwrap();
+            to_network_tx
+                .send(network_task::ToNetwork::LocalPeerId(tx))
+                .await
+                .unwrap();
             rx.await.unwrap()
         };
 

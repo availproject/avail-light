@@ -199,12 +199,10 @@ impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
     /// about invalid parameters that can be passed to [`IncomingRequest::respond`].
     pub fn expect_one_string(&self) -> Result<&str, Error> {
         match self.params() {
-            Params::Array(l) if l.len() == 1 => {
-                match &l[0] {
-                    JsonValue::String(s) => return Ok(s),
-                    _ => {}
-                }
-            }
+            Params::Array(l) if l.len() == 1 => match &l[0] {
+                JsonValue::String(s) => return Ok(s),
+                _ => {}
+            },
             _ => {}
         }
 
@@ -215,16 +213,14 @@ impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
     /// an error about invalid parameters that can be passed to [`IncomingRequest::respond`].
     pub fn expect_one_u64(&self) -> Result<u64, Error> {
         match self.params() {
-            Params::Array(l) if l.len() == 1 => {
-                match &l[0] {
-                    JsonValue::Number(n) => {
-                        if let Some(n) = n.as_u64() {
-                            return Ok(n)
-                        }
+            Params::Array(l) if l.len() == 1 => match &l[0] {
+                JsonValue::Number(n) => {
+                    if let Some(n) = n.as_u64() {
+                        return Ok(n);
                     }
-                    _ => {}
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
 
@@ -233,12 +229,9 @@ impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
 
     /// Sends the given value as the answer to the request.
     ///
-    /// After this method returns, the request is now considered done. Calling 
+    /// After this method returns, the request is now considered done. Calling
     /// [`RpcServers::request_by_id`] with this request's id would return `None`.
-    pub async fn respond(
-        self,
-        value: Result<JsonValue, Error>,
-    ) {
+    pub async fn respond(self, value: Result<JsonValue, Error>) {
         let (rq, _) = self.parent.pending_requests.remove(&self.local_id).unwrap();
         rq.respond(value).await;
     }

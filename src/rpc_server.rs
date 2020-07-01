@@ -101,12 +101,12 @@ impl RpcServers {
     /// Creates a new empty collection.
     pub fn new() -> Self {
         let config = raw::Config {
-            functions: methods::Method::list().map(|method| {
-                raw::ConfigFunction {
+            functions: methods::Method::list()
+                .map(|method| raw::ConfigFunction {
                     name: method.name().to_owned(),
                     id: method,
-                }
-            }).collect(),
+                })
+                .collect(),
             subscriptions: vec![raw::ConfigSubscription {
                 subscribe: "state_subscribeRuntimeVersion".into(),
                 unsubscribe: "state_unsubscribeRuntimeVersion".into(),
@@ -188,7 +188,7 @@ impl<'a> IncomingRequest<'a> {
                     Err(err) => {
                         self.inner.respond(Err(err)).await;
                         return;
-                    },
+                    }
                 };
 
                 let rep = if let Some(hash) = service.best_effort_block_hash(block_num).await {
@@ -198,9 +198,7 @@ impl<'a> IncomingRequest<'a> {
                     Err(raw::Error::invalid_params("Unknown block"))
                 };
 
-                self.inner
-                    .respond(rep)
-                    .await;
+                self.inner.respond(rep).await;
             }
             methods::Method::system_chain => {
                 if let Err(err) = self.inner.expect_no_params() {
@@ -209,7 +207,9 @@ impl<'a> IncomingRequest<'a> {
                 }
 
                 // TODO: dummy
-                self.inner.respond(Ok(raw::JsonValue::String("polkadot".into()))).await;
+                self.inner
+                    .respond(Ok(raw::JsonValue::String("polkadot".into())))
+                    .await;
             }
             // TODO: implement everything
             m => todo!("{:?}", m),

@@ -107,17 +107,19 @@ impl DatabaseEmpty {
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
-            .transaction(move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
-                for (key, value) in storage_top_trie_entries.clone() {
-                    storage_top_trie.insert(key, value)?;
-                }
+            .transaction(
+                move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
+                    for (key, value) in storage_top_trie_entries.clone() {
+                        storage_top_trie.insert(key, value)?;
+                    }
 
-                block_hashes_by_number.insert(&0u64.to_be_bytes()[..], &block_hash[..])?;
+                    block_hashes_by_number.insert(&0u64.to_be_bytes()[..], &block_hash[..])?;
 
-                block_headers.insert(&block_hash[..], genesis_block_header)?;
-                meta.insert(b"best", &block_hash[..])?;
-                Ok(())
-            });
+                    block_headers.insert(&block_hash[..], genesis_block_header)?;
+                    meta.insert(b"best", &block_hash[..])?;
+                    Ok(())
+                },
+            );
 
         match result {
             Ok(()) => Ok(Database {
