@@ -15,12 +15,12 @@ use hashbrown::HashMap;
 
 /// Message that can be sent to the database task by the other parts of the code.
 pub enum ToDatabase {
-    /// Loads the SCALE-encoded header of a block.
-    BlockScaleEncodedHeaderGet {
+    /// Loads the hash of a block, given its number.
+    BlockHashGet {
         /// Which block to load the header of.
-        block_number: u32,
+        block_number: u64,
         /// Channel to send back the result. Sends back `None` if the block isn't in the database.
-        send_back: oneshot::Sender<Option<Vec<u8>>>,
+        send_back: oneshot::Sender<Option<[u8; 32]>>,
     },
     /// Loads the body of a block.
     BlockBodyGet {
@@ -78,7 +78,7 @@ fn handle_single_event(
     database: &database::Database,
 ) -> Result<(), database::AccessError> {
     match event {
-        ToDatabase::BlockScaleEncodedHeaderGet {
+        ToDatabase::BlockHashGet {
             block_number,
             send_back,
         } => {
@@ -86,7 +86,8 @@ fn handle_single_event(
                 return Ok(());
             }
 
-            unimplemented!()
+            let hash = database.block_hash_by_number(block_number).unwrap();
+            let _ = send_back.send(hash);
         }
 
         ToDatabase::BlockBodyGet { block, send_back } => {

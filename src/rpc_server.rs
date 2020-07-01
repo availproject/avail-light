@@ -194,9 +194,24 @@ impl<'a> IncomingRequest<'a> {
     pub async fn answer(mut self, service: &service::Service) {
         match self.inner.function_id() {
             _ => {
+                let block_num = match self.inner.expect_one_u64() {
+                    Ok(n) => n,
+                    Err(err) => {
+                        self.inner.respond(Err(err)).await;
+                        return;
+                    },
+                };
+
+                let rep = if let Some(hash) = service.best_effort_block_hash(block_num).await {
+                    Ok(raw::JsonValue::String(format!("0x{}", hex::encode(hash))))
+                } else {
+                    // TODO: correct error?
+                    Err(raw::Error::invalid_params("Unknown block"))
+                };
+
                 self.inner
-                    .respond(Ok(jsonrpsee::common::JsonValue::String("foo".into())))
-                    .await
+                    .respond(rep)
+                    .await;
             }
         }
     }

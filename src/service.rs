@@ -26,7 +26,8 @@ use crate::network;
 
 use alloc::sync::Arc;
 use core::sync::atomic;
-use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
+use futures::{channel::{mpsc, oneshot}, executor::ThreadPool, prelude::*};
+use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
 
 pub use builder::{builder, ServiceBuilder};
@@ -165,7 +166,16 @@ impl Service {
         self.finalized_block_hash
     }
 
-    pub fn best_effort_block_number(&self, num: u64) -> Option<[u8; 32]> {
-        todo!()
+    // TODO: crap API
+    pub async fn best_effort_block_hash(&self, num: u64) -> Option<[u8; 32]> {
+        let (tx, rx) = oneshot::channel();
+
+        // TODO: don't clone the channel, it reserves an extra slot
+        self.to_database.clone().send(database_task::ToDatabase::BlockHashGet {
+            block_number: num,
+            send_back: tx,
+        }).await.unwrap();
+
+        rx.await.unwrap()
     }
 }

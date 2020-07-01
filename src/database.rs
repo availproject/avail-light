@@ -26,6 +26,13 @@ pub struct Database {
     ///
     meta_tree: sled::Tree,
 
+    /// Tree named "block_hashes_by_number" in the database.
+    /// Contains all the meta-information about the content.
+    ///
+    /// Keys in that tree are 64-bits-big-endian block numbers, and values are 32-bytes block
+    /// hashes (without any encoding).
+    block_hashes_by_number_tree: sled::Tree,
+
     /// Tree named "block_headers" in the database.
     ///
     /// Keys are block hashes, and values are SCALE-encoded block headers.
@@ -79,6 +86,27 @@ impl Database {
         Ok(self.block_headers_tree.get(block_hash)?.map(VarLenBytes))
     }
 
+    /// Returns the hash of the block given its number.
+    // TODO: comment about reorgs
+    pub fn block_hash_by_number(
+        &self,
+        block_number: u64,
+    ) -> Result<Option<[u8; 32]>, AccessError> {
+        let hash = self.block_hashes_by_number_tree.get(&u64::to_be_bytes(block_number)[..])?;
+        let hash = match hash {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+
+        if hash.len() != 32 {
+            return Err(AccessError::Corrupted(CorruptedError::BlockHashLenInHashNumberMapping));
+        }
+
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&hash);
+        Ok(Some(out))
+    }
+
     /// Insert a new best block in the database.
     ///
     /// `current_best` will be atomically compared with the current best block header. If there
@@ -105,13 +133,20 @@ impl Database {
             out
         };
 
+        let new_block_number = {
+            // TODO: weird way to get the block number
+            let header = crate::block::Header::decode_all(&new_best_scale_header).unwrap();
+            header.number
+        };
+
         // Try to apply changes. This is done atomically through a transaction.
         let result = (
+            &self.block_hashes_by_number_tree,
             &self.block_headers_tree,
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
-            .transaction(move |(block_headers, storage_top_trie, meta)| {
+            .transaction(move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
                 if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
                     return Err(sled::ConflictableTransactionError::Abort(()));
                 }
@@ -123,6 +158,10 @@ impl Database {
                         storage_top_trie.remove(key)?;
                     }
                 }
+
+                // TODO: insert body
+
+                block_hashes_by_number.insert(&u64::to_be_bytes(new_block_number)[..], &new_best_hash[..])?;
 
                 block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
                 meta.insert(b"best", &new_best_hash[..])?;
@@ -202,4 +241,5 @@ pub enum CorruptedError {
     BestBlockHashBadLength,
     BestBlockHeaderNotInDatabase,
     BestBlockHeaderCorrupted(parity_scale_codec::Error),
+    BlockHashLenInHashNumberMapping,
 }

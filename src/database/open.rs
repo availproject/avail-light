@@ -5,7 +5,6 @@
 use super::{AccessError, Database};
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::ops;
 use sled::Transactional as _;
 use std::path::Path;
 
@@ -20,12 +19,14 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
         .open()?;
 
     let meta_tree = database.open_tree(b"meta")?;
+    let block_hashes_by_number_tree = database.open_tree(b"block_hashes_by_number")?;
     let block_headers_tree = database.open_tree(b"block_headers")?;
     let storage_top_trie_tree = database.open_tree(b"storage_top_trie")?;
 
     Ok(if meta_tree.get(b"best")?.is_some() {
         DatabaseOpen::Open(Database {
             database,
+            block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
             storage_top_trie_tree,
@@ -33,6 +34,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
     } else {
         DatabaseOpen::Empty(DatabaseEmpty {
             database,
+            block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
             storage_top_trie_tree,
@@ -69,6 +71,9 @@ pub struct DatabaseEmpty {
     meta_tree: sled::Tree,
 
     /// See the similar field in [`Database`].
+    block_hashes_by_number_tree: sled::Tree,
+
+    /// See the similar field in [`Database`].
     block_headers_tree: sled::Tree,
 
     /// See the similar field in [`Database`].
@@ -97,23 +102,27 @@ impl DatabaseEmpty {
 
         // Try to apply changes. This is done atomically through a transaction.
         let result = (
+            &self.block_hashes_by_number_tree,
             &self.block_headers_tree,
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
-            .transaction(move |(block_headers, storage_top_trie, meta)| {
+            .transaction(move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
                 for (key, value) in storage_top_trie_entries.clone() {
-                    storage_top_trie.insert(key, value);
+                    storage_top_trie.insert(key, value)?;
                 }
 
-                block_headers.insert(&block_hash[..], genesis_block_header);
-                meta.insert(b"best", &block_hash[..]);
+                block_hashes_by_number.insert(&0u64.to_be_bytes()[..], &block_hash[..])?;
+
+                block_headers.insert(&block_hash[..], genesis_block_header)?;
+                meta.insert(b"best", &block_hash[..])?;
                 Ok(())
             });
 
         match result {
             Ok(()) => Ok(Database {
                 database: self.database,
+                block_hashes_by_number_tree: self.block_hashes_by_number_tree,
                 meta_tree: self.meta_tree,
                 block_headers_tree: self.block_headers_tree,
                 storage_top_trie_tree: self.storage_top_trie_tree,
