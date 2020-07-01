@@ -1,5 +1,7 @@
 //! List of requests and how to answer them.
 
+// TODO: some of these methods have aliases
+
 macro_rules! define_methods {
     ($($name:ident,)*) => {
         #[allow(non_camel_case_types)]

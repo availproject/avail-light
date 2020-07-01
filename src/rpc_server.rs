@@ -3,7 +3,7 @@
 // TODO: write docs
 
 use crate::{executor, service};
-use core::fmt;
+use core::{convert::TryFrom as _, fmt};
 use std::{io, net::SocketAddr};
 
 pub use raw::RequestId;
@@ -232,6 +232,8 @@ impl<'a> IncomingRequest<'a> {
                 self.inner.respond(rep).await;
             }
 
+            methods::Method::chain_getHeader => todo!(),
+
             methods::Method::rpc_methods => {
                 if let Err(err) = self.inner.expect_no_params() {
                     self.inner.respond(Err(err)).await;
@@ -252,6 +254,108 @@ impl<'a> IncomingRequest<'a> {
                         .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
                         .collect(),
                     )))
+                    .await;
+            }
+
+            methods::Method::state_getKeysPaged => {
+                let params = match self.inner.params() {
+                    raw::Params::Array(p) => p,
+                    _ => {
+                        self.inner
+                            .respond(Err(raw::Error::invalid_params(String::new())))
+                            .await;
+                        return;
+                    }
+                };
+
+                let prefix = match params.get(0) {
+                    Some(raw::JsonValue::String(p)) if p.starts_with("0x") => {
+                        match hex::decode(&p[2..]) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                        }
+                    }
+                    _ => {
+                        self.inner
+                            .respond(Err(raw::Error::invalid_params(String::new())))
+                            .await;
+                        return;
+                    }
+                };
+
+                let count = match params.get(1) {
+                    Some(raw::JsonValue::Number(n)) => {
+                        if let Some(n) = n.as_u64() {
+                            if n > 1000 {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                            n
+                        } else {
+                            self.inner
+                                .respond(Err(raw::Error::invalid_params(String::new())))
+                                .await;
+                            return;
+                        }
+                    }
+                    _ => {
+                        self.inner
+                            .respond(Err(raw::Error::invalid_params(String::new())))
+                            .await;
+                        return;
+                    }
+                };
+
+                let start_key = match params.get(2) {
+                    Some(raw::JsonValue::String(p)) if p.starts_with("0x") => {
+                        match hex::decode(&p[2..]) {
+                            Ok(sk) => Some(sk),
+                            Err(_) => {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                        }
+                    }
+                    _ => None,
+                };
+
+                let block = match params.get(3) {
+                    Some(raw::JsonValue::String(p)) if p.starts_with("0x") => {
+                        match hex::decode(&p[2..]) {
+                            Ok(sk) => sk,
+                            Err(_) => {
+                                self.inner
+                                    .respond(Err(raw::Error::invalid_params(String::new())))
+                                    .await;
+                                return;
+                            }
+                        }
+                    }
+                    _ => service.best_block_hash().to_vec(),
+                };
+
+                let mut keys = service.storage_keys(&prefix).await;
+                if let Some(start_key) = start_key {
+                    // `start_key` is non-inclusive.
+                    keys.retain(|k| *k > start_key);
+                }
+                keys.truncate(usize::try_from(count).unwrap());
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::Array({
+                        keys.iter()
+                            .map(|k| raw::JsonValue::String(format!("0x{}", hex::encode(&k))))
+                            .collect()
+                    })))
                     .await;
             }
 
@@ -341,6 +445,10 @@ impl<'a> IncomingRequest<'a> {
                     .await;
             }
 
+            methods::Method::state_queryStorageAt => {
+                todo!();
+            }
+
             methods::Method::system_chain => {
                 if let Err(err) = self.inner.expect_no_params() {
                     self.inner.respond(Err(err)).await;
@@ -360,6 +468,28 @@ impl<'a> IncomingRequest<'a> {
 
                 self.inner
                     .respond(Ok(raw::JsonValue::String(self.config.chain_type.clone())))
+                    .await;
+            }
+
+            methods::Method::system_health => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                let num_peers = service.num_network_connections();
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::Object(
+                        [
+                            ("isSyncing".to_owned(), raw::JsonValue::Bool(true)), // TODO:
+                            ("peers".to_owned(), raw::JsonValue::Number(num_peers.into())),
+                            ("shouldHavePeers".to_owned(), raw::JsonValue::Bool(true)),
+                        ]
+                        .iter()
+                        .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+                        .collect(),
+                    )))
                     .await;
             }
 

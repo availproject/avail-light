@@ -56,7 +56,7 @@ async fn async_main() {
                     Some((name.to_owned(), prop))
                 })
                 .collect(),
-            client_name: "Polkadot ✨ lite ✨ by tomaka".to_owned(),
+            client_name: "Polkadot ✨ lite ✨".to_owned(),
             client_version: "dev".to_owned(),
         };
 

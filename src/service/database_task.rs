@@ -38,6 +38,17 @@ pub enum ToDatabase {
         /// Channel to send back the result.
         send_back: oneshot::Sender<Option<Vec<u8>>>,
     },
+    /// Returns the list of keys in the storage.
+    StorageKeys {
+        /// Hash of the block whose state is to be queried.
+        block_hash: [u8; 32],
+        /// Prefix of the keys. Only keys that start with this prefix will be
+        /// returned.
+        prefix: Vec<u8>,
+        /// Channel to send back the result.
+        /// Sends back `None` iff the block is unknown.
+        send_back: oneshot::Sender<Option<Vec<Vec<u8>>>>,
+    },
     /// Store a new block in the database.
     StoreBlock {
         /// Parent of the block to add to the database.
@@ -109,6 +120,22 @@ fn handle_single_event(
 
             let value = database.storage_top_trie_get(block_hash, &key).unwrap();
             let _ = send_back.send(value.map(|v| v.to_vec()));
+        }
+
+        ToDatabase::StorageKeys {
+            block_hash,
+            prefix,
+            send_back,
+        } => {
+            if send_back.is_canceled() {
+                return Ok(());
+            }
+
+            // TODO: make the database query more precise
+            // TODO: block isn't checked
+            let mut all_keys = database.storage_top_trie_keys(block_hash).unwrap();
+            all_keys.retain(|k| k.starts_with(&prefix));
+            let _ = send_back.send(Some(all_keys.into_iter().map(|k| k.to_vec()).collect()));
         }
 
         ToDatabase::StoreBlock { .. } => unimplemented!(),

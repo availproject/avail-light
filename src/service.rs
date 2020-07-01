@@ -198,6 +198,24 @@ impl Service {
     }
 
     // TODO: crap API
+    pub async fn storage_keys(&self, prefix: &[u8]) -> Vec<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+
+        // TODO: don't clone the channel, it reserves an extra slot
+        self.to_database
+            .clone()
+            .send(database_task::ToDatabase::StorageKeys {
+                block_hash: self.best_block_hash,
+                prefix: prefix.to_owned(),
+                send_back: tx,
+            })
+            .await
+            .unwrap();
+
+        rx.await.unwrap().unwrap()
+    }
+
+    // TODO: crap API
     pub async fn storage_get(&self, key: &[u8]) -> Option<Vec<u8>> {
         let (tx, rx) = oneshot::channel();
 
