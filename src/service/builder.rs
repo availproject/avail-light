@@ -3,7 +3,7 @@ use crate::{chain_spec::ChainSpec, database, keystore, network};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
-use futures::{channel::mpsc, executor::ThreadPool, prelude::*};
+use futures::{channel::{mpsc, oneshot}, executor::ThreadPool, prelude::*};
 
 /// Prototype for a service.
 pub struct ServiceBuilder {
@@ -107,7 +107,7 @@ impl ServiceBuilder {
         // This is when we actually create all the channels between the various tasks.
         // TODO: eventually this should be tweaked so that we are able to measure the congestion
         let (to_service_out, events_in) = mpsc::channel(16);
-        let (to_network_tx, to_network_rx) = mpsc::channel(256);
+        let (mut to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_block_import_tx, to_block_import_rx) = mpsc::channel(16);
         let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
         let (to_database_tx, to_database_rx) = mpsc::channel(64);
@@ -147,7 +147,7 @@ impl ServiceBuilder {
         tasks_executor(
             sync_task::run_sync_task(sync_task::Config {
                 to_block_import: to_block_import_tx,
-                to_network: to_network_tx,
+                to_network: to_network_tx.clone(),
                 to_service_out,
             })
             .boxed(),
@@ -174,11 +174,18 @@ impl ServiceBuilder {
             .boxed(),
         );
 
+        let local_peer_id = {
+            let (tx, rx) = oneshot::channel();
+            to_network_tx.send(network_task::ToNetwork::LocalPeerId(tx)).await.unwrap();
+            rx.await.unwrap()
+        };
+
         Service {
             events_in,
             to_database: to_database_tx,
             num_network_connections: 0,
             num_connections_store,
+            local_peer_id,
             best_block_number: database.best_block_number().unwrap(),
             best_block_hash: database.best_block_hash().unwrap(),
             finalized_block_number: 0,     // TODO: wrong

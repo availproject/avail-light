@@ -12,6 +12,7 @@ use futures::{
     prelude::*,
 };
 use hashbrown::HashMap;
+use network::PeerId;
 
 /// Message that can be sent to the network task by the other parts of the code.
 pub enum ToNetwork {
@@ -25,6 +26,9 @@ pub enum ToNetwork {
         network::BlocksRequestConfig,
         oneshot::Sender<Result<Vec<network::BlockData>, ()>>,
     ),
+
+    /// Returns the [`PeerId`] of the local node.
+    LocalPeerId(oneshot::Sender<PeerId>),
 }
 
 /// Configuration for that task.
@@ -87,6 +91,10 @@ pub async fn run_networking_task(mut config: Config) {
                     Some(ToNetwork::BlocksRequest(rq, send_back)) => {
                         let id = network.start_block_request(rq).await;
                         pending_blocks_requests.insert(id, send_back);
+                    }
+                    Some(ToNetwork::LocalPeerId(send_back)) => {
+                        let peer_id = network.local_peer_id().clone();
+                        let _ = send_back.send(peer_id);
                     }
                 }
             }

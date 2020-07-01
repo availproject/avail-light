@@ -183,6 +183,18 @@ impl<'a, TFId, TSubId> IncomingRequest<'a, TFId, TSubId> {
         rq.params()
     }
 
+    /// Utility method. If the parameters are empty, returns `Ok(())`. Otherwise, returns an error
+    /// about invalid parameters that can be passed to [`IncomingRequest::respond`].
+    pub fn expect_no_params(&self) -> Result<(), Error> {
+        match self.params() {
+            Params::None => return Ok(()),
+            Params::Array(l) if l.is_empty() => return Ok(()),
+            _ => {}
+        }
+
+        Err(Error::invalid_params("Expected no parameters"))
+    }
+
     /// Utility method. If the parameters contain one string, returns it. If not, returns an error
     /// about invalid parameters that can be passed to [`IncomingRequest::respond`].
     pub fn expect_one_string(&self) -> Result<&str, Error> {

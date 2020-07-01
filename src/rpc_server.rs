@@ -90,34 +90,23 @@ list of methods (temporary, for reference)
     unsubscribe_newHead
 */
 
+mod methods;
 mod raw;
 
 pub struct RpcServers {
-    inner: raw::RpcServers<(), ()>,
+    inner: raw::RpcServers<methods::Method, ()>,
 }
 
 impl RpcServers {
     /// Creates a new empty collection.
     pub fn new() -> Self {
         let config = raw::Config {
-            functions: vec![
+            functions: methods::Method::list().map(|method| {
                 raw::ConfigFunction {
-                    name: "chain_getBlockHash".into(),
-                    id: (),
-                },
-                raw::ConfigFunction {
-                    name: "state_getRuntimeVersion".into(),
-                    id: (),
-                },
-                raw::ConfigFunction {
-                    name: "system_chain".into(),
-                    id: (),
-                },
-                raw::ConfigFunction {
-                    name: "system_properties".into(),
-                    id: (),
-                },
-            ],
+                    name: method.name().to_owned(),
+                    id: method,
+                }
+            }).collect(),
             subscriptions: vec![raw::ConfigSubscription {
                 subscribe: "state_subscribeRuntimeVersion".into(),
                 unsubscribe: "state_unsubscribeRuntimeVersion".into(),
@@ -181,7 +170,7 @@ pub enum Event<'a> {
 /// A request from a connected node.
 #[derive(Debug)]
 pub struct IncomingRequest<'a> {
-    inner: raw::IncomingRequest<'a, (), ()>,
+    inner: raw::IncomingRequest<'a, methods::Method, ()>,
 }
 
 impl<'a> IncomingRequest<'a> {
@@ -193,7 +182,7 @@ impl<'a> IncomingRequest<'a> {
     /// Answers the request using the given [`service::Service`].
     pub async fn answer(mut self, service: &service::Service) {
         match self.inner.function_id() {
-            _ => {
+            methods::Method::chain_getBlockHash => {
                 let block_num = match self.inner.expect_one_u64() {
                     Ok(n) => n,
                     Err(err) => {
@@ -205,7 +194,7 @@ impl<'a> IncomingRequest<'a> {
                 let rep = if let Some(hash) = service.best_effort_block_hash(block_num).await {
                     Ok(raw::JsonValue::String(format!("0x{}", hex::encode(hash))))
                 } else {
-                    // TODO: correct error?
+                    // TODO: is this the correct error?
                     Err(raw::Error::invalid_params("Unknown block"))
                 };
 
@@ -213,6 +202,17 @@ impl<'a> IncomingRequest<'a> {
                     .respond(rep)
                     .await;
             }
+            methods::Method::system_chain => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                // TODO: dummy
+                self.inner.respond(Ok(raw::JsonValue::String("polkadot".into()))).await;
+            }
+            // TODO: implement everything
+            m => todo!("{:?}", m),
         }
     }
 }

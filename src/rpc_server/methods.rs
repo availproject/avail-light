@@ -1,7 +1,33 @@
 //! List of requests and how to answer them.
 
-#[derive(Debug)]
-pub enum Method {
+macro_rules! define_methods {
+    ($($name:ident,)*) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Copy, Clone)]
+        pub enum Method {
+            $($name,)*
+        }
+        
+        impl Method {
+            /// Returns the list of supported methods.
+            pub fn list() -> impl ExactSizeIterator<Item = Self> {
+                [$(Self::$name),*].iter().cloned()
+            }
+
+            /// Returns the name of the RPC query.
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(
+                        Self::$name => stringify!($name),
+                    )*
+                }
+            }
+        }
+        
+    };
+}
+
+define_methods!{
     account_nextIndex,
     author_hasKey,
     author_hasSessionKeys,
@@ -61,13 +87,4 @@ pub enum Method {
     system_properties,
     system_removeReservedPeer,
     system_version,
-}
-
-impl Request {
-    /// Name of the RPC query.
-    pub fn name(&self) -> &'static str {
-        match self {
-            
-        }
-    }
 }

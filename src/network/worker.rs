@@ -87,6 +87,11 @@ impl Network {
         Network { swarm }
     }
 
+    /// Returns the [`PeerId`] of the local node.
+    pub fn local_peer_id(&self) -> &PeerId {
+        Swarm::local_peer_id(&self.swarm)
+    }
+
     /// Sends out an announcement about the given block.
     pub async fn announce_block(&mut self) {
         unimplemented!()

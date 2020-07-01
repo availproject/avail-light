@@ -27,6 +27,7 @@ use crate::network;
 use alloc::sync::Arc;
 use core::sync::atomic;
 use futures::{channel::{mpsc, oneshot}, executor::ThreadPool, prelude::*};
+use network::PeerId;
 use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
 
@@ -54,6 +55,8 @@ pub struct Service {
     /// `Arc` whose content is updated by the network task. Used to update
     /// [`Service::num_network_connections`].
     num_connections_store: Arc<atomic::AtomicU64>,
+    /// [`PeerId`] of the local node. Never changes.
+    local_peer_id: PeerId,
 
     /// Number of the best known block. Only updated by receiving events.
     best_block_number: u64,
@@ -140,6 +143,11 @@ impl Service {
     /// updated when calling [`Service::next_event`].
     pub fn num_network_connections(&self) -> u64 {
         self.num_network_connections
+    }
+
+    /// Returns the [`PeerId`] of the local node.
+    pub fn local_peer_id(&self) -> &PeerId {
+        &self.local_peer_id
     }
 
     /// Returns the number of the best known block. Only updated when calling
