@@ -57,7 +57,7 @@ async fn async_main() {
                 })
                 .collect(),
             client_name: "Polkadot ✨ lite ✨".to_owned(),
-            client_version: "dev".to_owned(),
+            client_version: "??".to_owned(),
         };
 
         let mut server = substrate_lite::rpc_server::RpcServers::new(rpc_config);

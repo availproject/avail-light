@@ -84,9 +84,10 @@ impl RpcServers {
     /// >           `modified_keys` together.
     pub fn notify_new_chain_head<'a>(
         &mut self,
-        new_head_hash: [u8; 32],
-        modified_keys: impl Iterator<Item = &'a [u8]> + Clone,
+        _new_head_hash: [u8; 32],
+        _modified_keys: impl Iterator<Item = &'a [u8]> + Clone,
     ) {
+        // TODO: notify subscribers
     }
 
     /// Returns the next event that happened on one of the servers.
