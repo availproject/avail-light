@@ -99,15 +99,16 @@ fn handle_single_event(
         }
 
         ToDatabase::StorageGet {
-            block_hash: _,
-            key: _,
+            block_hash,
+            key,
             send_back,
         } => {
             if send_back.is_canceled() {
                 return Ok(());
             }
 
-            unimplemented!()
+            let value = database.storage_top_trie_get(block_hash, &key).unwrap();
+            let _ = send_back.send(value.map(|v| v.to_vec()));
         }
 
         ToDatabase::StoreBlock { .. } => unimplemented!(),

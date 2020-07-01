@@ -2,7 +2,7 @@
 
 // TODO: write docs
 
-use crate::service;
+use crate::{executor, service};
 use core::fmt;
 use std::{io, net::SocketAddr};
 
@@ -93,14 +93,39 @@ list of methods (temporary, for reference)
 mod methods;
 mod raw;
 
+#[derive(Debug)]
+pub struct Config {
+    /// Name of the chain being run. Found in the chain specs.
+    /// Example: "Polkadot CC1"
+    pub chain_name: String,
+    /// Type of the chain being run. Found in the chain specs.
+    /// Example: "live"
+    pub chain_type: String,
+    /// Opaque properties of the chain being run. Found in the chain specs.
+    pub chain_properties: Vec<(String, ChainProperty)>,
+    /// Name of this software to report to the JSON-RPC clients.
+    pub client_name: String,
+    /// Version of this software to report to the JSON-RPC clients.
+    /// Example: "0.8.12-03067290-x86_64-linux-gnu"
+    pub client_version: String,
+}
+
+#[derive(Debug)]
+pub enum ChainProperty {
+    String(String),
+    Number(u64),
+}
+
 pub struct RpcServers {
     inner: raw::RpcServers<methods::Method, ()>,
+    /// Configuration of the RPC servers.
+    config: Config,
 }
 
 impl RpcServers {
     /// Creates a new empty collection.
-    pub fn new() -> Self {
-        let config = raw::Config {
+    pub fn new(config: Config) -> Self {
+        let raw_config = raw::Config {
             functions: methods::Method::list()
                 .map(|method| raw::ConfigFunction {
                     name: method.name().to_owned(),
@@ -115,7 +140,8 @@ impl RpcServers {
         };
 
         RpcServers {
-            inner: raw::RpcServers::new(config),
+            inner: raw::RpcServers::new(raw_config),
+            config,
         }
     }
 
@@ -137,7 +163,10 @@ impl RpcServers {
     /// Returns the next event that happened on one of the servers.
     pub async fn next_event<'a>(&'a mut self) -> Event<'a> {
         match self.inner.next_event().await {
-            raw::Event::IncomingRequest(inner) => Event::Request(IncomingRequest { inner }),
+            raw::Event::IncomingRequest(inner) => Event::Request(IncomingRequest {
+                inner,
+                config: &self.config,
+            }),
             raw::Event::RequestedCancelled(local_id) => todo!(),
             // TODO: we don't care about subscription events, but there are
             // annoying borrowing errors if we just do nothing
@@ -150,6 +179,7 @@ impl RpcServers {
     pub fn request_by_id(&mut self, id: RequestId) -> Option<IncomingRequest> {
         Some(IncomingRequest {
             inner: self.inner.request_by_id(id)?,
+            config: &self.config,
         })
     }
 }
@@ -171,6 +201,7 @@ pub enum Event<'a> {
 #[derive(Debug)]
 pub struct IncomingRequest<'a> {
     inner: raw::IncomingRequest<'a, methods::Method, ()>,
+    config: &'a Config,
 }
 
 impl<'a> IncomingRequest<'a> {
@@ -200,19 +231,258 @@ impl<'a> IncomingRequest<'a> {
 
                 self.inner.respond(rep).await;
             }
+
+            methods::Method::rpc_methods => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                let methods: Vec<_> = methods::Method::list()
+                    .map(|m| raw::JsonValue::String(m.name().to_owned()))
+                    .collect();
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::Object(
+                        [
+                            ("version".to_owned(), raw::JsonValue::Number(1u64.into())),
+                            ("methods".to_owned(), raw::JsonValue::Array(methods)),
+                        ]
+                        .iter()
+                        .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+                        .collect(),
+                    )))
+                    .await;
+            }
+
+            methods::Method::state_getMetadata => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                let wasm_blob: Vec<u8> = match service.storage_get(b":code").await {
+                    Some(w) => w,
+                    None => {
+                        self.inner.respond(Err(raw::Error::internal_error())).await;
+                        return;
+                    }
+                };
+
+                let metadata = match metadata(&wasm_blob) {
+                    Ok(rv) => rv,
+                    Err(()) => {
+                        self.inner.respond(Err(raw::Error::internal_error())).await;
+                        return;
+                    }
+                };
+
+                let metadata = format!("0x{}", hex::encode(&metadata));
+                self.inner
+                    .respond(Ok(raw::JsonValue::String(metadata)))
+                    .await;
+            }
+
+            methods::Method::state_getRuntimeVersion => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                let wasm_blob: Vec<u8> = match service.storage_get(b":code").await {
+                    Some(w) => w,
+                    None => {
+                        self.inner.respond(Err(raw::Error::internal_error())).await;
+                        return;
+                    }
+                };
+
+                let runtime_version = match runtime_version(&wasm_blob) {
+                    Ok(rv) => rv,
+                    Err(()) => {
+                        self.inner.respond(Err(raw::Error::internal_error())).await;
+                        return;
+                    }
+                };
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::Object(
+                        [
+                            (
+                                "spec_name".to_owned(),
+                                raw::JsonValue::String(runtime_version.spec_name),
+                            ),
+                            (
+                                "impl_name".to_owned(),
+                                raw::JsonValue::String(runtime_version.impl_name),
+                            ),
+                            (
+                                "authoring_version".to_owned(),
+                                raw::JsonValue::Number(runtime_version.authoring_version.into()),
+                            ),
+                            (
+                                "spec_version".to_owned(),
+                                raw::JsonValue::Number(runtime_version.spec_version.into()),
+                            ),
+                            (
+                                "impl_version".to_owned(),
+                                raw::JsonValue::Number(runtime_version.impl_version.into()),
+                            ),
+                            // TODO: ("apis".to_owned(), runtime_version.apis),
+                            (
+                                "transaction_version".to_owned(),
+                                raw::JsonValue::Number(runtime_version.transaction_version.into()),
+                            ),
+                        ]
+                        .iter()
+                        .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+                        .collect(),
+                    )))
+                    .await;
+            }
+
             methods::Method::system_chain => {
                 if let Err(err) = self.inner.expect_no_params() {
                     self.inner.respond(Err(err)).await;
                     return;
                 }
 
-                // TODO: dummy
                 self.inner
-                    .respond(Ok(raw::JsonValue::String("polkadot".into())))
+                    .respond(Ok(raw::JsonValue::String(self.config.chain_name.clone())))
                     .await;
             }
+
+            methods::Method::system_chainType => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::String(self.config.chain_type.clone())))
+                    .await;
+            }
+
+            methods::Method::system_properties => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                let response = raw::JsonValue::Object(
+                    self.config
+                        .chain_properties
+                        .iter()
+                        .map(|(k, v)| {
+                            let v = match v {
+                                ChainProperty::String(s) => raw::JsonValue::String(s.clone()),
+                                ChainProperty::Number(n) => raw::JsonValue::Number((*n).into()),
+                            };
+
+                            (k.clone(), v)
+                        })
+                        .collect(),
+                );
+
+                self.inner.respond(Ok(response)).await;
+            }
+
+            methods::Method::system_name => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::String(self.config.client_name.clone())))
+                    .await;
+            }
+
+            methods::Method::system_version => {
+                if let Err(err) = self.inner.expect_no_params() {
+                    self.inner.respond(Err(err)).await;
+                    return;
+                }
+
+                self.inner
+                    .respond(Ok(raw::JsonValue::String(
+                        self.config.client_version.clone(),
+                    )))
+                    .await;
+            }
+
             // TODO: implement everything
             m => todo!("{:?}", m),
+        }
+    }
+}
+
+/// Obtains the metadata generated by the given Wasm runtime blob.
+fn metadata(wasm_blob: &[u8]) -> Result<Vec<u8>, ()> {
+    // TODO: is there maybe a better way to handle that?
+    let wasm_blob = match executor::WasmBlob::from_bytes(wasm_blob) {
+        Ok(w) => w,
+        Err(_) => {
+            return Err(());
+        }
+    };
+
+    let mut inner_vm =
+        match executor::WasmVm::new(&wasm_blob, executor::FunctionToCall::MetadataMetadata) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(());
+            }
+        };
+
+    loop {
+        match inner_vm.state() {
+            executor::State::ReadyToRun(r) => r.run(),
+            executor::State::Finished(executor::Success::MetadataMetadata(version)) => {
+                break Ok(version.clone());
+            }
+            executor::State::Finished(_) => unreachable!(),
+            executor::State::Trapped => break Err(()),
+
+            // Since there are potential ambiguities we don't allow any storage access
+            // or anything similar. The last thing we want is to have an infinite
+            // recursion of runtime calls.
+            _ => break Err(()),
+        }
+    }
+}
+
+/// Obtains the `RuntimeVersion` struct corresponding to the given Wasm runtime blob.
+fn runtime_version(wasm_blob: &[u8]) -> Result<executor::CoreVersionSuccess, ()> {
+    // TODO: is there maybe a better way to handle that?
+    let wasm_blob = match executor::WasmBlob::from_bytes(wasm_blob) {
+        Ok(w) => w,
+        Err(_) => {
+            return Err(());
+        }
+    };
+
+    let mut inner_vm =
+        match executor::WasmVm::new(&wasm_blob, executor::FunctionToCall::CoreVersion) {
+            Ok(v) => v,
+            Err(_) => {
+                return Err(());
+            }
+        };
+
+    loop {
+        match inner_vm.state() {
+            executor::State::ReadyToRun(r) => r.run(),
+            executor::State::Finished(executor::Success::CoreVersion(version)) => {
+                break Ok(version.clone());
+            }
+            executor::State::Finished(_) => unreachable!(),
+            executor::State::Trapped => break Err(()),
+
+            // Since there are potential ambiguities we don't allow any storage access
+            // or anything similar. The last thing we want is to have an infinite
+            // recursion of runtime calls.
+            _ => break Err(()),
         }
     }
 }

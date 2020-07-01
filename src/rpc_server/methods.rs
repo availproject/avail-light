@@ -54,6 +54,7 @@ define_methods! {
     offchain_localStorageGet,
     offchain_localStorageSet,
     payment_queryInfo,
+    rpc_methods,
     state_call,
     state_callAt,
     state_getKeys,

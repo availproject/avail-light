@@ -33,7 +33,34 @@ async fn async_main() {
         .await;
 
     let mut rpc_server = {
-        let mut server = substrate_lite::rpc_server::RpcServers::new();
+        let rpc_config = substrate_lite::rpc_server::Config {
+            chain_name: chain_spec.name().to_owned(),
+            chain_type: "Live".into(), // TODO: temporary
+            chain_properties: chain_spec
+                .properties()
+                .filter_map(|(name, prop)| {
+                    let prop = match prop {
+                        serde_json::Value::String(s) => {
+                            substrate_lite::rpc_server::ChainProperty::String(s.clone())
+                        }
+                        serde_json::Value::Number(n) => {
+                            if let Some(n) = n.as_u64() {
+                                substrate_lite::rpc_server::ChainProperty::Number(n)
+                            } else {
+                                return None;
+                            }
+                        }
+                        _ => return None,
+                    };
+
+                    Some((name.to_owned(), prop))
+                })
+                .collect(),
+            client_name: "Polkadot ✨ lite ✨ by tomaka".to_owned(),
+            client_version: "dev".to_owned(),
+        };
+
+        let mut server = substrate_lite::rpc_server::RpcServers::new(rpc_config);
         server
             .spawn_ws("0.0.0.0:9944".parse().unwrap())
             .await

@@ -1,6 +1,9 @@
 //! Collection of RPC servers.
 //!
-//! This module allows you to spawn JSON-RPC servers and process incoming queries.
+//! This module allows you to spawn JSON-RPC servers and process incoming queries. It provides the
+//! concepts of methods and subscriptions, but has no knowledge of *which* methods and
+//! subscriptions are supported. Support for particular methods/subscriptions is performed by
+//! higher layers.
 
 use core::{fmt, pin::Pin};
 use futures::prelude::*;

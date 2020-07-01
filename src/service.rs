@@ -56,9 +56,11 @@ pub struct Service {
     /// Number of transport-level (e.g. TCP/IP) network connections. Only updated by receiving
     /// events.
     num_network_connections: u64,
+
     /// `Arc` whose content is updated by the network task. Used to update
     /// [`Service::num_network_connections`].
     num_connections_store: Arc<atomic::AtomicU64>,
+
     /// [`PeerId`] of the local node. Never changes.
     local_peer_id: PeerId,
 
@@ -187,6 +189,24 @@ impl Service {
             .clone()
             .send(database_task::ToDatabase::BlockHashGet {
                 block_number: num,
+                send_back: tx,
+            })
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
+
+    // TODO: crap API
+    pub async fn storage_get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let (tx, rx) = oneshot::channel();
+
+        // TODO: don't clone the channel, it reserves an extra slot
+        self.to_database
+            .clone()
+            .send(database_task::ToDatabase::StorageGet {
+                block_hash: self.best_block_hash,
+                key: key.to_owned(),
                 send_back: tx,
             })
             .await
