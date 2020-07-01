@@ -8,88 +8,6 @@ use std::{io, net::SocketAddr};
 
 pub use raw::RequestId;
 
-/*
-list of methods (temporary, for reference)
-
-    account_nextIndex,
-    author_hasKey,
-    author_hasSessionKeys,
-    author_insertKey,
-    author_pendingExtrinsics,
-    author_removeExtrinsic,
-    author_rotateKeys,
-    author_submitAndWatchExtrinsic,
-    author_submitExtrinsic,
-    author_unwatchExtrinsic,
-    babe_epochAuthorship,
-    chain_getBlock,
-    chain_getBlockHash,
-    chain_getFinalisedHead,
-    chain_getFinalizedHead,
-    chain_getHead,
-    chain_getHeader,
-    chain_getRuntimeVersion,
-    chain_subscribeAllHeads,
-    chain_subscribeFinalisedHeads,
-    chain_subscribeFinalizedHeads,
-    chain_subscribeNewHead,
-    chain_subscribeNewHeads,
-    chain_subscribeRuntimeVersion,
-    chain_unsubscribeAllHeads,
-    chain_unsubscribeFinalisedHeads,
-    chain_unsubscribeFinalizedHeads,
-    chain_unsubscribeNewHead,
-    chain_unsubscribeNewHeads,
-    chain_unsubscribeRuntimeVersion,
-    childstate_getKeys,
-    childstate_getStorage,
-    childstate_getStorageHash,
-    childstate_getStorageSize,
-    grandpa_roundState,
-    offchain_localStorageGet,
-    offchain_localStorageSet,
-    payment_queryInfo,
-    state_call,
-    state_callAt,
-    state_getKeys,
-    state_getKeysPaged,
-    state_getKeysPagedAt,
-    state_getMetadata,
-    state_getPairs,
-    state_getReadProof,
-    state_getRuntimeVersion,
-    state_getStorage,
-    state_getStorageAt,
-    state_getStorageHash,
-    state_getStorageHashAt,
-    state_getStorageSize,
-    state_getStorageSizeAt,
-    state_queryStorage,
-    state_queryStorageAt,
-    state_subscribeRuntimeVersion,
-    state_subscribeStorage,
-    state_unsubscribeRuntimeVersion,
-    state_unsubscribeStorage,
-    subscribe_newHead,
-    system_accountNextIndex,
-    system_addReservedPeer,
-    system_chain,
-    system_chainType,
-    system_dryRun,
-    system_dryRunAt,
-    system_health,
-    system_localListenAddresses,
-    system_localPeerId,
-    system_name,
-    system_networkState,
-    system_nodeRoles,
-    system_peers,
-    system_properties,
-    system_removeReservedPeer,
-    system_version,
-    unsubscribe_newHead
-*/
-
 mod methods;
 mod raw;
 
@@ -117,7 +35,7 @@ pub enum ChainProperty {
 }
 
 pub struct RpcServers {
-    inner: raw::RpcServers<methods::Method, ()>,
+    inner: raw::RpcServers<methods::Method, methods::Subscription>,
     /// Configuration of the RPC servers.
     config: Config,
 }
@@ -132,11 +50,13 @@ impl RpcServers {
                     id: method,
                 })
                 .collect(),
-            subscriptions: vec![raw::ConfigSubscription {
-                subscribe: "state_subscribeRuntimeVersion".into(),
-                unsubscribe: "state_unsubscribeRuntimeVersion".into(),
-                id: (),
-            }],
+            subscriptions: methods::Subscription::list()
+                .map(|method| raw::ConfigSubscription {
+                    subscribe: method.subscribe_method().to_owned(),
+                    unsubscribe: method.unsubscribe_method().to_owned(),
+                    id: method,
+                })
+                .collect(),
         };
 
         RpcServers {
@@ -200,7 +120,7 @@ pub enum Event<'a> {
 /// A request from a connected node.
 #[derive(Debug)]
 pub struct IncomingRequest<'a> {
-    inner: raw::IncomingRequest<'a, methods::Method, ()>,
+    inner: raw::IncomingRequest<'a, methods::Method, methods::Subscription>,
     config: &'a Config,
 }
 
@@ -240,9 +160,11 @@ impl<'a> IncomingRequest<'a> {
                     return;
                 }
 
-                // FIXME: needs to return the subscription-related functions as well
                 let methods: Vec<_> = methods::Method::list()
-                    .map(|m| raw::JsonValue::String(m.name().to_owned()))
+                    .map(|m| m.name())
+                    .chain(methods::Subscription::list().map(|m| m.subscribe_method()))
+                    .chain(methods::Subscription::list().map(|m| m.unsubscribe_method()))
+                    .map(|m| raw::JsonValue::String(m.to_owned()))
                     .collect();
 
                 self.inner
@@ -458,7 +380,7 @@ impl<'a> IncomingRequest<'a> {
                 };
 
                 let keys_encoded = match params.get(0) {
-                    Some(raw::JsonValue::Array(p))  => p,
+                    Some(raw::JsonValue::Array(p)) => p,
                     _ => {
                         self.inner
                             .respond(Err(raw::Error::invalid_params(String::new())))
@@ -481,7 +403,7 @@ impl<'a> IncomingRequest<'a> {
                                         return;
                                     }
                                 }
-                            },
+                            }
                             _ => {
                                 self.inner
                                     .respond(Err(raw::Error::invalid_params(String::new())))
@@ -517,23 +439,26 @@ impl<'a> IncomingRequest<'a> {
                         // TODO: block isn't used
                         // TODO: we discard values not in storage, is that correct?
                         if let Some(value) = service.storage_get(&key).await {
-                            values.push(raw::JsonValue::String(format!("0x{}", hex::encode(value))));
+                            values
+                                .push(raw::JsonValue::String(format!("0x{}", hex::encode(value))));
                         }
                     }
                     values
                 };
 
                 self.inner
-                    .respond(Ok(raw::JsonValue::Array(vec![
-                        raw::JsonValue::Object(
-                            [
-                                ("block".to_owned(), raw::JsonValue::String(block_hash_encoded)),
-                                ("changes".to_owned(), raw::JsonValue::Array(values)),
-                            ]
-                            .iter()
-                            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
-                            .collect()
-                        )])))
+                    .respond(Ok(raw::JsonValue::Array(vec![raw::JsonValue::Object(
+                        [
+                            (
+                                "block".to_owned(),
+                                raw::JsonValue::String(block_hash_encoded),
+                            ),
+                            ("changes".to_owned(), raw::JsonValue::Array(values)),
+                        ]
+                        .iter()
+                        .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+                        .collect(),
+                    )])))
                     .await;
             }
 

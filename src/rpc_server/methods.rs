@@ -25,7 +25,6 @@ macro_rules! define_methods {
                 }
             }
         }
-
     };
 }
 
@@ -90,4 +89,51 @@ define_methods! {
     system_properties,
     system_removeReservedPeer,
     system_version,
+}
+
+macro_rules! define_subscriptions {
+    ($($sub:ident => $unsub:ident,)*) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Copy, Clone)]
+        pub enum Subscription {
+            $($sub,)*
+        }
+
+        impl Subscription {
+            /// Returns the list of supported subscription.
+            pub fn list() -> impl ExactSizeIterator<Item = Self> {
+                [$(Self::$sub),*].iter().cloned()
+            }
+
+            /// Returns the name of the RPC method that lets you subscribe.
+            pub fn subscribe_method(&self) -> &'static str {
+                match self {
+                    $(
+                        Self::$sub => stringify!($sub),
+                    )*
+                }
+            }
+
+            /// Returns the name of the RPC method that lets you unsubscribe.
+            pub fn unsubscribe_method(&self) -> &'static str {
+                match self {
+                    $(
+                        Self::$sub => stringify!($unsub),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+define_subscriptions! {
+    chain_subscribeAllHeads => chain_unsubscribeAllHeads,
+    chain_subscribeFinalisedHeads => chain_unsubscribeFinalisedHeads,
+    chain_subscribeFinalizedHeads => chain_unsubscribeFinalizedHeads,
+    chain_subscribeNewHead => chain_unsubscribeNewHead,
+    chain_subscribeNewHeads => chain_unsubscribeNewHeads,
+    chain_subscribeRuntimeVersion => chain_unsubscribeRuntimeVersion,
+    state_subscribeRuntimeVersion => state_unsubscribeRuntimeVersion,
+    state_subscribeStorage => state_unsubscribeStorage,
+    subscribe_newHead => unsubscribe_newHead,
 }
