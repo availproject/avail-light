@@ -29,7 +29,7 @@ use alloc::collections::BTreeMap;
 
 mod nibble;
 mod node_value;
-//mod trie_structure;
+mod trie_structure;
 
 pub mod calculate_root;
 
