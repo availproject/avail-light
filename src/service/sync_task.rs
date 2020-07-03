@@ -81,7 +81,7 @@ pub async fn run_sync_task(mut config: Config) {
 
             let success = match rx.await {
                 Ok(Ok(s)) => s,
-                Ok(Err(_)) => todo!(), // TODO:
+                Ok(Err(err)) => todo!("block import error: {:?}", err), // TODO:
                 Err(_) => panic!("Import task closed"),
             };
 

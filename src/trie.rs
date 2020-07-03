@@ -27,6 +27,8 @@
 
 use alloc::collections::BTreeMap;
 
+mod node_value;
+
 pub mod calculate_root;
 
 /// Radix-16 Merkle-Patricia trie.

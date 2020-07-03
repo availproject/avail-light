@@ -726,19 +726,6 @@ mod tests {
     }
 
     #[test]
-    fn should_read_and_write_u64_correctly() {
-        // given
-        let mut mem = [0u8; PAGE_SIZE as usize];
-
-        // when
-        Memory::write_le_u64(mem.as_mut(), 40, 4480113).unwrap();
-
-        // then
-        let value = Memory::read_le_u64(mem.as_mut(), 40).unwrap();
-        assert_eq!(value, 4480113);
-    }
-
-    #[test]
     fn should_get_item_size_from_order() {
         // given
         let raw_order = 0;

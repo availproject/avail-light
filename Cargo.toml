@@ -9,6 +9,7 @@ default-run = "node"
 [dependencies]
 ansi_term = "0.12.1"
 app_dirs = "1.2.1"
+arrayvec = "0.5.1"
 blake2-rfc = { version = "0.2.18", default-features = false }
 derive_more = "0.99.7"
 env_logger = "0.7.1"
