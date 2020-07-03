@@ -30,29 +30,41 @@ struct Node<TUd> {
 
 impl<TUd> TrieStructure<TUd> {
     /// Builds a new empty trie.
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         TrieStructure {
             nodes: Slab::new(),
             root_index: None,
         }
     }
 
+    /// Builds a new empty trie with a capacity for the given number of nodes.
+    pub fn with_capacity(capacity: usize) -> Self {
+        TrieStructure {
+            nodes: Slab::with_capacity(capacity),
+            root_index: None,
+        }
+    }
+
     /// Returns a [`Entry`] with the given node.
     pub fn node<'a>(&'a mut self, key: &'a [Nibble]) -> Entry<'a, TUd> {
-        if let Some((index, storage_value)) = self.existing_node_inner(key.iter().cloned()) {
-            Entry::Occupied(if storage_value {
-                NodeAccess::Storage(StorageNodeAccess {
-                    trie: self,
-                    node_index: index,
-                })
-            } else {
-                NodeAccess::Branch(BranchNodeAccess {
-                    trie: self,
-                    node_index: index,
-                })
-            })
-        } else {
-            Entry::Vacant(Vacant { trie: self, key })
+        match self.existing_node_inner(key.iter().cloned()) {
+            ExistingNodeInnerResult::Found {
+                node_index,
+                has_storage_value: true,
+            } => Entry::Occupied(NodeAccess::Storage(StorageNodeAccess {
+                trie: self,
+                node_index,
+            })),
+            ExistingNodeInnerResult::Found {
+                node_index,
+                has_storage_value: false,
+            } => Entry::Occupied(NodeAccess::Branch(BranchNodeAccess {
+                trie: self,
+                node_index,
+            })),
+            ExistingNodeInnerResult::NotFound { closest_ancestor } => {
+                Entry::Vacant(Vacant { trie: self, key })
+            }
         }
     }
 
@@ -61,16 +73,20 @@ impl<TUd> TrieStructure<TUd> {
         &mut self,
         mut key: impl Iterator<Item = Nibble>,
     ) -> Option<NodeAccess<TUd>> {
-        if let Some((index, storage_value)) = self.existing_node_inner(key) {
-            Some(if storage_value {
+        if let ExistingNodeInnerResult::Found {
+            node_index,
+            has_storage_value,
+        } = self.existing_node_inner(key)
+        {
+            Some(if has_storage_value {
                 NodeAccess::Storage(StorageNodeAccess {
                     trie: self,
-                    node_index: index,
+                    node_index,
                 })
             } else {
                 NodeAccess::Branch(BranchNodeAccess {
                     trie: self,
-                    node_index: index,
+                    node_index,
                 })
             })
         } else {
@@ -83,11 +99,17 @@ impl<TUd> TrieStructure<TUd> {
     fn existing_node_inner(
         &mut self,
         mut key: impl Iterator<Item = Nibble>,
-    ) -> Option<(usize, bool)> {
+    ) -> ExistingNodeInnerResult {
         let mut current_index = match self.root_index {
-            None => return None,
             Some(ri) => ri,
+            None => {
+                return ExistingNodeInnerResult::NotFound {
+                    closest_ancestor: None,
+                }
+            }
         };
+
+        let mut closest_ancestor = None;
 
         loop {
             let current = self.nodes.get(current_index).unwrap();
@@ -96,23 +118,43 @@ impl<TUd> TrieStructure<TUd> {
             // match.
             for nibble in current.partial_key.iter().cloned() {
                 if key.next() != Some(nibble) {
-                    return None;
+                    return ExistingNodeInnerResult::NotFound { closest_ancestor };
                 }
             }
 
+            // At this point, the tree traversal cursor (the `key` iterator) exactly matches
+            // `current`.
             // If `key.next()` is `Some`, put it in `child_index`, otherwise return successfully.
             let child_index = match key.next() {
                 Some(n) => n,
-                None => return Some((current_index, current.has_storage_value)),
+                None => {
+                    return ExistingNodeInnerResult::Found {
+                        node_index: current_index,
+                        has_storage_value: current.has_storage_value,
+                    }
+                }
             };
+
+            closest_ancestor = Some(current_index);
 
             if let Some(next_index) = current.children[usize::from(u8::from(child_index))] {
                 current_index = next_index;
             } else {
-                return None;
+                return ExistingNodeInnerResult::NotFound { closest_ancestor };
             }
         }
     }
+}
+
+enum ExistingNodeInnerResult {
+    Found {
+        node_index: usize,
+        has_storage_value: bool,
+    },
+    NotFound {
+        /// Closest ancestor that actually exists.
+        closest_ancestor: Option<usize>,
+    },
 }
 
 /// Access to a entry for a potential node within the [`TrieStructure`].
@@ -443,6 +485,9 @@ impl<'a, TUd> Vacant<'a, TUd> {
     }
 }
 
+/// Preparation for a new node insertion.
+///
+/// The trie hasn't been modified yet and you can safely drop this object.
 #[must_use]
 pub enum PrepareInsert<'a, TUd> {
     One(PrepareInsertOne<'a, TUd>),
@@ -454,7 +499,25 @@ pub struct PrepareInsertOne<'a, TUd> {
     key: &'a [u8],
 }
 
+impl<'a, TUd> PrepareInsertOne<'a, TUd> {
+    /// Insert the new node.
+    pub fn insert(self, user_data: TUd) -> StorageNodeAccess<'a, TUd> {
+        todo!()
+    }
+}
+
 pub struct PrepareInsertTwo<'a, TUd> {
     trie: &'a mut TrieStructure<TUd>,
     key: &'a [u8],
+}
+
+impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
+    /// Insert the new node.
+    pub fn insert(
+        self,
+        storage_node_user_data: TUd,
+        branch_node_user_data: TUd,
+    ) -> StorageNodeAccess<'a, TUd> {
+        todo!()
+    }
 }
