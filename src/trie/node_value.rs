@@ -17,11 +17,14 @@ pub struct Config<'a, TPKey, TVal> {
 
     /// Partial key of the node, as an iterator of nibbles.
     ///
-    /// The key of each node is made of three parts:
+    /// If `is_root` is true, this is the entire key of the node.
+    ///
+    /// For reminder, the key of non-root nodes is made of three parts:
     ///
     /// - The parent's key.
     /// - The child index, one single nibble indicating which child we are relative to the parent.
     /// - The partial key.
+    ///
     pub partial_key: TPKey,
 
     /// Value of the node in the storage.
