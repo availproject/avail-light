@@ -377,7 +377,8 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
                     .get(&child_combined_key)
                     .and_then(|e| e.merkle_value.as_ref())
                 {
-                    children[usize::from(child_index.0)] = Some(node_value::Output::from_bytes(&merkle_value[..]));
+                    children[usize::from(child_index.0)] =
+                        Some(node_value::Output::from_bytes(&merkle_value[..]));
                 } else {
                     missing_children.push((
                         combined_key.clone(),

@@ -36,7 +36,7 @@ pub struct Config<'a, TPKey, TVal> {
 /// Panics if any entry in `partial_key` is >= 16.
 ///
 pub fn calculate_merke_root<TPKey, TVal>(mut config: Config<TPKey, TVal>) -> Output
-where 
+where
     TPKey: ExactSizeIterator<Item = u8>,
     TVal: AsRef<[u8]>,
 {
@@ -141,7 +141,7 @@ where
         // Doing something like `merkle_value_sink.update(child_merkle_value.encode());` would be
         // expensive because we would duplicate the merkle value. Instead, we do the encoding
         // manually by pushing the length then the value.
-            parity_scale_codec::Compact(u64::try_from(child_merkle_value.as_ref().len()).unwrap())
+        parity_scale_codec::Compact(u64::try_from(child_merkle_value.as_ref().len()).unwrap())
             .encode_to(&mut merkle_value_sink);
         merkle_value_sink.update(child_merkle_value.as_ref());
     }
@@ -186,7 +186,7 @@ impl Output {
                 let mut v = ArrayVec::new();
                 v.try_extend_from_slice(bytes).unwrap();
                 v
-            })
+            }),
         }
     }
 }
@@ -242,7 +242,7 @@ impl HashOrInline {
             inner: match self {
                 HashOrInline::Inline(b) => OutputInner::Inline(b),
                 HashOrInline::Hasher(h) => OutputInner::Hasher(h.finalize()),
-            }
+            },
         }
     }
 }
@@ -250,5 +250,83 @@ impl HashOrInline {
 impl parity_scale_codec::Output for HashOrInline {
     fn write(&mut self, bytes: &[u8]) {
         self.update(bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::iter;
+
+    #[test]
+    fn empty_root() {
+        let obtained = super::calculate_merke_root(super::Config {
+            is_root: true,
+            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            partial_key: iter::empty(),
+            stored_value: None::<Vec<u8>>,
+        });
+
+        assert_eq!(
+            obtained.as_ref(),
+            &[
+                3, 23, 10, 46, 117, 151, 183, 183, 227, 216, 76, 5, 57, 29, 19, 154, 98, 177, 87,
+                231, 135, 134, 216, 192, 130, 242, 157, 207, 76, 17, 19, 20
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_node() {
+        let obtained = super::calculate_merke_root(super::Config {
+            is_root: false,
+            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            partial_key: iter::empty(),
+            stored_value: None::<Vec<u8>>,
+        });
+
+        assert_eq!(obtained.as_ref(), &[0u8]);
+    }
+
+    #[test]
+    fn basic_test() {
+        let obtained = super::calculate_merke_root(super::Config {
+            is_root: false,
+            children: &{
+                let mut children = Vec::new();
+                for _ in 0..2 {
+                    children.push(None);
+                }
+                children.push(Some(super::Output::from_bytes(b"foo")));
+                for _ in 0..7 {
+                    children.push(None);
+                }
+                children.push(Some(super::Output::from_bytes(b"bar")));
+                for _ in 0..5 {
+                    children.push(None);
+                }
+                children
+            },
+            partial_key: [8, 12, 1].iter().cloned(),
+            stored_value: Some(b"hello world"),
+        });
+
+        assert_eq!(
+            obtained.as_ref(),
+            &[
+                195, 8, 193, 4, 4, 12, 102, 111, 111, 12, 98, 97, 114, 44, 104, 101, 108, 108, 111,
+                32, 119, 111, 114, 108, 100
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_children_len() {
+        super::calculate_merke_root(super::Config {
+            is_root: false,
+            children: &[],
+            partial_key: iter::empty(),
+            stored_value: None::<Vec<u8>>,
+        });
     }
 }
