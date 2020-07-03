@@ -2447,6 +2447,7 @@ dependencies = [
  "sc-peerset",
  "serde",
  "serde_json",
+ "slab",
  "sled",
  "smallvec 0.6.13",
  "terminal_size",

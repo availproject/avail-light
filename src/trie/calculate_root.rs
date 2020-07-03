@@ -30,7 +30,7 @@
 //! When using a cache, be careful to properly invalidate cache entries whenever you perform
 //! modifications on the trie associated to it.
 
-use super::node_value;
+use super::{nibble::Nibble, node_value};
 
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::{convert::TryFrom as _, fmt};
@@ -377,7 +377,7 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
                     .get(&child_combined_key)
                     .and_then(|e| e.merkle_value.as_ref())
                 {
-                    children[usize::from(child_index.0)] =
+                    children[usize::from(u8::from(*child_index))] =
                         Some(node_value::Output::from_bytes(&merkle_value[..]));
                 } else {
                     missing_children.push((
@@ -414,7 +414,7 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         let merkle_value = node_value::calculate_merke_root(node_value::Config {
             is_root: child_index.is_none(),
             children: &children,
-            partial_key: partial_key.nibbles.iter().map(|n| n.0),
+            partial_key: partial_key.nibbles.iter().cloned(),
             stored_value,
         });
 
@@ -444,11 +444,11 @@ fn child_nodes<'a>(
     key: &TrieNodeKey,
 ) -> impl ExactSizeIterator<Item = (Nibble, TrieNodeKey)> {
     let mut key_clone = key.clone();
-    key_clone.nibbles.push(Nibble(0));
+    key_clone.nibbles.push(Nibble::try_from(0).unwrap());
 
     let mut out = Vec::new();
     for n in 0..16 {
-        *key_clone.nibbles.last_mut().unwrap() = Nibble(n);
+        *key_clone.nibbles.last_mut().unwrap() = Nibble::try_from(n).unwrap();
         let descendants =
             descendant_storage_keys(trie_access.clone(), &key_clone).collect::<Vec<_>>();
         debug_assert!(descendants
@@ -504,8 +504,8 @@ impl TrieNodeKey {
     fn from_bytes(bytes: &[u8]) -> Self {
         let mut out = Vec::with_capacity(bytes.len() * 2);
         for b in bytes {
-            out.push(Nibble(*b >> 4));
-            out.push(Nibble(*b & 0xf));
+            out.push(Nibble::try_from(*b >> 4).unwrap());
+            out.push(Nibble::try_from(*b & 0xf).unwrap());
         }
         TrieNodeKey { nibbles: out }
     }
@@ -518,7 +518,7 @@ impl TrieNodeKey {
                 debug_assert_eq!(n.len(), 1);
                 continue;
             }
-            let byte = (n[0].0 << 4) | n[1].0;
+            let byte = (u8::from(n[0]) << 4) | u8::from(n[1]);
             out.push(byte);
         }
         out
@@ -535,11 +535,11 @@ impl TrieNodeKey {
 
             if my_nibbles.len() == 1 {
                 // This is the last element.
-                return (key_byte >> 4) == my_nibbles[0].0;
+                return (key_byte >> 4) == u8::from(my_nibbles[0]);
             } else {
                 debug_assert_eq!(my_nibbles.len(), 2);
 
-                let my_byte = (my_nibbles[0].0 << 4) | my_nibbles[1].0;
+                let my_byte = (u8::from(my_nibbles[0]) << 4) | u8::from(my_nibbles[1]);
                 if my_byte != key_byte {
                     return false;
                 }
@@ -553,19 +553,9 @@ impl TrieNodeKey {
 impl fmt::Debug for TrieNodeKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for nibble in &self.nibbles {
-            write!(f, "{:x}", nibble.0)?;
+            write!(f, "{:?}", nibble)?;
         }
         Ok(())
-    }
-}
-
-/// Four bits.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Nibble(u8);
-
-impl fmt::Debug for Nibble {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:x}", self.0)
     }
 }
 

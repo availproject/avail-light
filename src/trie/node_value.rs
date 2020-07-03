@@ -1,5 +1,7 @@
 //! Calculation of the Merkle value of a node given the information about it.
 
+use super::nibble::Nibble;
+
 use arrayvec::ArrayVec;
 use core::{convert::TryFrom as _, fmt};
 use parity_scale_codec::Encode as _;
@@ -36,11 +38,10 @@ pub struct Config<'a, TPKey, TVal> {
 /// # Panic
 ///
 /// Panics if `config.children.len() != 16`.
-/// Panics if any entry in `partial_key` is >= 16.
 ///
 pub fn calculate_merke_root<TPKey, TVal>(mut config: Config<TPKey, TVal>) -> Output
 where
-    TPKey: ExactSizeIterator<Item = u8>,
+    TPKey: ExactSizeIterator<Item = Nibble>,
     TVal: AsRef<[u8]>,
 {
     assert_eq!(config.children.len(), 16);
@@ -90,14 +91,13 @@ where
     // `merkle_value_sink`.
     if config.partial_key.len() % 2 != 0 {
         // next().unwrap() can't panic, otherwise `len() % 2` would have returned 0.
-        merkle_value_sink.update(&[config.partial_key.next().unwrap()]);
+        merkle_value_sink.update(&[u8::from(config.partial_key.next().unwrap())]);
     }
     {
         let mut previous = None;
         for nibble in config.partial_key {
-            assert!(nibble < 16);
             if let Some(prev) = previous.take() {
-                let val = (prev << 4) | nibble;
+                let val = (u8::from(prev) << 4) | u8::from(nibble);
                 merkle_value_sink.update(&[val]);
             } else {
                 previous = Some(nibble);
@@ -258,7 +258,8 @@ impl parity_scale_codec::Output for HashOrInline {
 
 #[cfg(test)]
 mod tests {
-    use core::iter;
+    use super::Nibble;
+    use core::{convert::TryFrom as _, iter};
 
     #[test]
     fn empty_root() {
@@ -309,7 +310,13 @@ mod tests {
                 }
                 children
             },
-            partial_key: [8, 12, 1].iter().cloned(),
+            partial_key: [
+                Nibble::try_from(8).unwrap(),
+                Nibble::try_from(12).unwrap(),
+                Nibble::try_from(1).unwrap(),
+            ]
+            .iter()
+            .cloned(),
             stored_value: Some(b"hello world"),
         });
 

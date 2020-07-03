@@ -29,6 +29,7 @@ prost = "0.6.1"
 rand = "0.7"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
+slab = "0.4.2"
 sled = "0.31.0"
 smallvec = "0.6.10"
 terminal_size = "0.1.12"
