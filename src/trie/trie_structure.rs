@@ -383,6 +383,14 @@ impl<'a, TUd> NodeAccess<'a, TUd> {
         }
     }
 
+    /// Returns the child of this node at the given index.
+    pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
+        match self {
+            NodeAccess::Storage(n) => n.child(index),
+            NodeAccess::Branch(n) => n.child(index),
+        }
+    }
+
     /// Returns the child of this node given the given index.
     ///
     /// Returns back `self` if there is no such child at this index.
@@ -390,6 +398,26 @@ impl<'a, TUd> NodeAccess<'a, TUd> {
         match self {
             NodeAccess::Storage(n) => n.into_child(index).map_err(NodeAccess::Storage),
             NodeAccess::Branch(n) => n.into_child(index).map_err(NodeAccess::Branch),
+        }
+    }
+
+    /// Returns the first child of this node.
+    ///
+    /// Returns back `self` if this node doesn't have any children.
+    pub fn into_first_child(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        match self {
+            NodeAccess::Storage(n) => n.into_first_child().map_err(NodeAccess::Storage),
+            NodeAccess::Branch(n) => n.into_first_child().map_err(NodeAccess::Branch),
+        }
+    }
+
+    /// Returns the next sibling of this node.
+    ///
+    /// Returns back `self` if this node is the last child of its parent.
+    pub fn into_next_sibling(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        match self {
+            NodeAccess::Storage(n) => n.into_next_sibling().map_err(NodeAccess::Storage),
+            NodeAccess::Branch(n) => n.into_next_sibling().map_err(NodeAccess::Branch),
         }
     }
 
@@ -452,6 +480,47 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
     pub fn parent(&mut self) -> Option<NodeAccess<TUd>> {
         let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
         Some(self.trie.node_by_index(parent_idx).unwrap())
+    }
+
+    /// Returns the first child of this node.
+    ///
+    /// Returns back `self` if this node doesn't have any children.
+    pub fn into_first_child(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        let first_child_idx = self
+            .trie
+            .nodes
+            .get(self.node_index)
+            .unwrap()
+            .children
+            .iter()
+            .filter_map(|c| *c)
+            .next();
+
+        let first_child_idx = match first_child_idx {
+            Some(fc) => fc,
+            None => return Err(self),
+        };
+
+        Ok(self.trie.node_by_index(first_child_idx).unwrap())
+    }
+
+    /// Returns the next sibling of this node.
+    ///
+    /// Returns back `self` if this node is the last child of its parent.
+    pub fn into_next_sibling(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        let next_sibling_idx = match self.trie.next_sibling(self.node_index) {
+            Some(ns) => ns,
+            None => return Err(self),
+        };
+
+        Ok(self.trie.node_by_index(next_sibling_idx).unwrap())
+    }
+
+    /// Returns the child of this node given the given index.
+    pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
+        let child_idx =
+            self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
+        Some(self.trie.node_by_index(child_idx).unwrap())
     }
 
     /// Returns the child of this node given the given index.
@@ -758,6 +827,47 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
     pub fn parent(&mut self) -> Option<NodeAccess<TUd>> {
         let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
         Some(self.trie.node_by_index(parent_idx).unwrap())
+    }
+
+    /// Returns the first child of this node.
+    ///
+    /// Returns back `self` if this node doesn't have any children.
+    pub fn into_first_child(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        let first_child_idx = self
+            .trie
+            .nodes
+            .get(self.node_index)
+            .unwrap()
+            .children
+            .iter()
+            .filter_map(|c| *c)
+            .next();
+
+        let first_child_idx = match first_child_idx {
+            Some(fc) => fc,
+            None => return Err(self),
+        };
+
+        Ok(self.trie.node_by_index(first_child_idx).unwrap())
+    }
+
+    /// Returns the next sibling of this node.
+    ///
+    /// Returns back `self` if this node is the last child of its parent.
+    pub fn into_next_sibling(self) -> Result<NodeAccess<'a, TUd>, Self> {
+        let next_sibling_idx = match self.trie.next_sibling(self.node_index) {
+            Some(ns) => ns,
+            None => return Err(self),
+        };
+
+        Ok(self.trie.node_by_index(next_sibling_idx).unwrap())
+    }
+
+    /// Returns the child of this node given the given index.
+    pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
+        let child_idx =
+            self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
+        Some(self.trie.node_by_index(child_idx).unwrap())
     }
 
     /// Returns the child of this node given the given index.

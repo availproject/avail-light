@@ -274,74 +274,66 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
     let trie_structure = cache.structure.as_mut().unwrap();
     trie_structure.shrink_to_fit();
 
-    // TODO: traverse the trie instead of this queue system
+    // We now traverse the trie in attempt to find missing Merkle values.
+    // We start with the root node. For each node, if its Merkle value is absent, we continue
+    // iterating with its first child. If its Merkle value is present, we continue iterating with
+    // the next sibling or, if it is the last sibling, the parent. In that situation where we jump
+    // from last sibling to parent, we also calculate the parent's Merkle value in the process.
+    // Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
+    // the Merkle value is calculated the second time.
+    let mut current = match trie_structure.root_node() {
+        Some(c) => c,
+        None => return,
+    };
 
-    // Each iteration in the code below pops the last element of this queue, fills it in the cache,
-    // and optionally pushes new elements to the queue. Once the queue is empty, the function
-    // returns.
-    //
-    // Each element in the queue contains the node's key.
-    let mut queue_to_process: Vec<Vec<Nibble>> = Vec::new();
-    if let Some(mut root_node) = trie_structure.root_node() {
-        if root_node.user_data().merkle_value.is_none() {
-            queue_to_process.push(root_node.full_key().collect());
-        }
-    }
+    // `coming_from_child` is used to differentiate whether the previous iteration was the
+    // previous sibling of `current` or the last child of `current`.
+    let mut coming_from_child = false;
 
     loop {
-        let node_key = match queue_to_process.pop() {
-            Some(p) => p,
-            None => return,
-        };
-
-        // Build the Merkle value of all the children of the node. Necessary for the computation
-        // of the Merkle value of the node itself.
-        //
-        // We do this first, because we might have to interrupt the processing of this node if
-        // one of the children doesn't have a cache entry.
-        let children = {
-            // TODO: shouldn't we first check whether all the children are in cache to speed
-            // things up and avoid extra copies? should benchmark this
-
-            // TODO: review this code below for unnecessary allocations
-
-            // TODO: ArrayVec
-            let mut children = vec![None; 16];
-
-            // Will be set to the children whose merkle value of a child is missing from the cache.
-            // TODO: ArrayVec
-            let mut missing_children = Vec::with_capacity(16);
-
-            for child_index in 0..16u8 {
-                // TODO: a bit annoying that we traverse the trie all the time
-                let node = trie_structure
-                    .existing_node(node_key.iter().cloned())
-                    .unwrap();
-                let mut child = match node.into_child(Nibble::try_from(child_index).unwrap()) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-
-                if let Some(merkle_value) = &child.user_data().merkle_value {
-                    children[usize::from(child_index)] = Some(merkle_value.clone());
-                } else {
-                    missing_children.push(child.full_key().collect());
+        // If we already have a Merkle value, jump either to the next sibling (if any), or back
+        // to the parent.
+        if current.user_data().merkle_value.is_some() {
+            debug_assert!(!coming_from_child);
+            match current.into_next_sibling() {
+                Ok(sibling) => {
+                    current = sibling;
+                    coming_from_child = false;
+                    continue;
+                }
+                Err(curr) => {
+                    if let Some(parent) = curr.into_parent() {
+                        current = parent;
+                        coming_from_child = true;
+                        continue;
+                    } else {
+                        // No next sibling nor parent. We have finished traversing the tree.
+                        return;
+                    }
                 }
             }
+        }
 
-            // We can't process further. Push back the current node on the queue, plus each of its
-            // children.
-            if !missing_children.is_empty() {
-                queue_to_process.push(node_key);
-                queue_to_process.extend(missing_children);
-                continue;
+        debug_assert!(current.user_data().merkle_value.is_none());
+
+        // If previous iteration is from `current`'s previous sibling, we jump down to
+        // `current`'s children.
+        if !coming_from_child {
+            match current.into_first_child() {
+                Err(c) => current = c,
+                Ok(first_child) => {
+                    current = first_child;
+                    coming_from_child = false;
+                    continue;
+                }
             }
+        }
 
-            children
-        };
+        // If we reach this, we are ready to calculate `current`'s Merkle value.
 
         // Load the stored value of this node.
-        // TODO: do this in a more elegant way
+        // TODO: do this in a better way, without allocating
+        let node_key = current.full_key().collect::<Vec<_>>();
         let stored_value = if node_key.len() % 2 == 0 {
             let key_bytes = node_key
                 .chunks(2)
@@ -357,16 +349,27 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         };
 
         // Now calculate the Merkle value.
-        let mut node = trie_structure
-            .existing_node(node_key.iter().cloned())
-            .unwrap();
         let merkle_value = node_value::calculate_merke_root(node_value::Config {
-            is_root: node.is_root_node(),
-            children: &children,
-            partial_key: node.partial_key(),
+            is_root: current.is_root_node(),
+            // TODO: don't allocate a Vec here
+            children: &(0..16u8)
+                .map(|child_idx| {
+                    if let Some(mut child) = current.child(Nibble::try_from(child_idx).unwrap()) {
+                        Some(child.user_data().merkle_value.clone().unwrap())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
+            partial_key: current.partial_key(),
             stored_value,
         });
-        node.user_data().merkle_value = Some(merkle_value);
+
+        current.user_data().merkle_value = Some(merkle_value);
+
+        // We keep `current` as it is and iterate again. Since `merkle_value` is now `Some`, we
+        // will jump to the next node.
+        coming_from_child = false;
     }
 }
 
