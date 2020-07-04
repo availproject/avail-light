@@ -526,12 +526,11 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
         if let Some(child_node_index) = child_node_index {
             let child = self.trie.nodes.get_mut(child_node_index).unwrap();
             debug_assert_eq!(child.parent.as_ref().unwrap().0, self.node_index);
-            child.partial_key = {
-                let mut nk = removed_node.partial_key;
-                nk.push(child.parent.unwrap().1);
-                nk.extend_from_slice(&child.partial_key);
-                nk
-            };
+            insert_front(
+                &mut child.partial_key,
+                removed_node.partial_key,
+                child.parent.unwrap().1,
+            );
             child.parent = removed_node.parent;
         }
 
@@ -594,12 +593,11 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
         {
             let sibling = self.trie.nodes.get_mut(sibling_node_index).unwrap();
             debug_assert_eq!(sibling.parent.as_ref().unwrap().0, parent_index);
-            sibling.partial_key = {
-                let mut nk = removed_branch.partial_key;
-                nk.push(sibling.parent.unwrap().1);
-                nk.extend_from_slice(&sibling.partial_key);
-                nk
-            };
+            insert_front(
+                &mut sibling.partial_key,
+                removed_branch.partial_key,
+                sibling.parent.unwrap().1,
+            );
             sibling.parent = removed_branch.parent;
         }
 
@@ -1129,7 +1127,7 @@ impl<'a, TUd> PrepareInsertOne<'a, TUd> {
 
             let child_index = Nibble::try_from(u8::try_from(child_index).unwrap()).unwrap();
             child.parent = Some((new_node_index, child_index));
-            child.partial_key = child.partial_key[new_node_partial_key_len + 1..].to_vec();
+            truncate_first_elems(&mut child.partial_key, new_node_partial_key_len + 1);
         }
 
         // Update the parent to point to its new child.
@@ -1227,7 +1225,7 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
 
             let child_index = Nibble::try_from(u8::try_from(child_index).unwrap()).unwrap();
             child.parent = Some((new_branch_node_index, child_index));
-            child.partial_key = child.partial_key[new_branch_node_partial_key_len + 1..].to_vec();
+            truncate_first_elems(&mut child.partial_key, new_branch_node_partial_key_len + 1);
         }
 
         // Update the branch node's parent to point to its new child.
@@ -1244,6 +1242,26 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
             node_index: new_storage_node_index,
         }
     }
+}
+
+/// Inserts `first` and `second` at the beginning of `vec`.
+fn insert_front(vec: &mut Vec<Nibble>, first: Vec<Nibble>, next: Nibble) {
+    let shift = first.len() + 1;
+    vec.resize(vec.len() + shift, Nibble::try_from(0).unwrap());
+    for n in 0..shift {
+        vec[n + shift] = vec[n];
+    }
+    vec[0..first.len()].copy_from_slice(&first);
+    vec[first.len()] = next;
+}
+
+/// Removes the first `num` elements of `vec`.
+fn truncate_first_elems(vec: &mut Vec<Nibble>, num: usize) {
+    debug_assert!(num <= vec.len());
+    for n in num..vec.len() {
+        vec[n - num] = vec[n];
+    }
+    vec.truncate(vec.len() - num);
 }
 
 #[cfg(test)]
