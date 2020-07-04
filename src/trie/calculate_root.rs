@@ -115,7 +115,7 @@ impl CalculationCache {
     ///
     /// `has_value` must be true if there is now a storage value at the given key.
     pub fn storage_value_update(&mut self, key: &[u8], has_value: bool) {
-        /*let structure = match &mut self.structure {
+        let structure = match &mut self.structure {
             Some(s) => s,
             None => return,
         };
@@ -129,27 +129,67 @@ impl CalculationCache {
 
         match (structure.node(&bytes_to_nibbles(key)), has_value) {
             (trie_structure::Entry::Vacant(entry), true) => {
-                match entry.insert_storage_value()
-            }
-            (trie_structure::Entry::Vacant(_), false) => {}
-            (trie_structure::Entry::Occupied(entry), true) => {
-
-            }
-            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)), false) => {}
-            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(entry)), false) => {
-                match entry.remove() {
-                    trie_structure::Remove::StorageToBranch(_) => {}
-                    trie_structure::Remove::BranchAlsoRemoved { sibling, .. } => {
-                        sibling.user_data().merkle_value = None;
-                    }
-                    trie_structure::Remove::SingleRemove { child: Some(child), .. } => {
-                        child
-                    }
-                    trie_structure::Remove::SingleRemove { child: None, .. } => {}
+                match entry.insert_storage_value() {
+                    _ => todo!()
                 }
             }
-        }*/
-        self.structure = None; // TODO:
+            (trie_structure::Entry::Vacant(_), false) => {}
+            (trie_structure::Entry::Occupied(mut entry), true) => {
+                // Changing the storage value of a node changes its Merkle value and its ancestors'
+                // Merkle values.
+                entry.user_data().merkle_value = None;
+                let mut parent = entry.into_parent();
+                while let Some(mut p) = parent.take() {
+                    p.user_data().merkle_value = None;
+                    parent = p.into_parent();
+                }
+            }
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)), false) => {}
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(mut entry)), false) => {
+                // TODO: dedup
+                match entry.remove() {
+                    trie_structure::Remove::StorageToBranch(mut node) => {
+                        // The node hasn't been removed, but since it changed its storage entry,
+                        // we invalidate its Merkle value and its ancestors' Merkle values;
+                        node.user_data().merkle_value = None;
+                        let mut parent = node.into_parent();
+                        while let Some(mut p) = parent.take() {
+                            p.user_data().merkle_value = None;
+                            parent = p.into_parent();
+                        }
+                    }
+                    trie_structure::Remove::BranchAlsoRemoved { mut sibling, .. } => {
+                        sibling.user_data().merkle_value = None;
+                        let mut parent = sibling.into_parent();
+                        while let Some(mut p) = parent.take() {
+                            p.user_data().merkle_value = None;
+                            parent = p.into_parent();
+                        }
+                    }
+                    trie_structure::Remove::SingleRemoveChild { mut child, .. } => {
+                        child.user_data().merkle_value = None;
+
+                        // Going up all ancestors to invalidate Merkle values.
+                        let mut parent = child.into_parent();
+                        while let Some(mut p) = parent.take() {
+                            p.user_data().merkle_value = None;
+                            parent = p.into_parent();
+                        }
+                    }
+                    trie_structure::Remove::SingleRemoveNoChild { mut parent, .. } => {
+                        parent.user_data().merkle_value = None;
+
+                        // Going up all ancestors to invalidate Merkle values.
+                        let mut parent = parent.into_parent();
+                        while let Some(mut p) = parent.take() {
+                            p.user_data().merkle_value = None;
+                            parent = p.into_parent();
+                        }
+                    }
+                    trie_structure::Remove::TrieNowEmpty { .. } => {}
+                }
+            }
+        }
     }
 
     /// Notify the cache that all the storage values whose key start with the given prefix have
@@ -279,7 +319,7 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
                 let node = trie_structure
                     .existing_node(node_key.iter().cloned())
                     .unwrap();
-                let mut child = match node.child(Nibble::try_from(child_index).unwrap()) {
+                let mut child = match node.into_child(Nibble::try_from(child_index).unwrap()) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };

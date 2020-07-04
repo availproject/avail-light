@@ -263,8 +263,16 @@ pub enum NodeAccess<'a, TUd> {
 }
 
 impl<'a, TUd> NodeAccess<'a, TUd> {
-    /// Returns true if the node has a storage value associated to it.
-    pub fn parent(self) -> Option<NodeAccess<'a, TUd>> {
+    /// Returns the parent of this node, or `None` if this is the root node.
+    pub fn into_parent(self) -> Option<NodeAccess<'a, TUd>> {
+        match self {
+            NodeAccess::Storage(n) => n.into_parent(),
+            NodeAccess::Branch(n) => n.into_parent(),
+        }
+    }
+
+    /// Returns the parent of this node, or `None` if this is the root node.
+    pub fn parent(&mut self) -> Option<NodeAccess<TUd>> {
         match self {
             NodeAccess::Storage(n) => n.parent(),
             NodeAccess::Branch(n) => n.parent(),
@@ -274,10 +282,10 @@ impl<'a, TUd> NodeAccess<'a, TUd> {
     /// Returns the child of this node given the given index.
     ///
     /// Returns back `self` if there is no such child at this index.
-    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+    pub fn into_child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
         match self {
-            NodeAccess::Storage(n) => n.child(index).map_err(NodeAccess::Storage),
-            NodeAccess::Branch(n) => n.child(index).map_err(NodeAccess::Branch),
+            NodeAccess::Storage(n) => n.into_child(index).map_err(NodeAccess::Storage),
+            NodeAccess::Branch(n) => n.into_child(index).map_err(NodeAccess::Branch),
         }
     }
 
@@ -331,25 +339,21 @@ pub struct StorageNodeAccess<'a, TUd> {
 
 impl<'a, TUd> StorageNodeAccess<'a, TUd> {
     /// Returns the parent of this node, or `None` if this is the root node.
-    pub fn parent(self) -> Option<NodeAccess<'a, TUd>> {
+    pub fn into_parent(self) -> Option<NodeAccess<'a, TUd>> {
         let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
-        if self.trie.nodes.get(parent_idx).unwrap().has_storage_value {
-            Some(NodeAccess::Storage(StorageNodeAccess {
-                trie: self.trie,
-                node_index: parent_idx,
-            }))
-        } else {
-            Some(NodeAccess::Branch(BranchNodeAccess {
-                trie: self.trie,
-                node_index: parent_idx,
-            }))
-        }
+        Some(self.trie.node_by_index(parent_idx).unwrap())
+    }
+
+    /// Returns the parent of this node, or `None` if this is the root node.
+    pub fn parent(&mut self) -> Option<NodeAccess<TUd>> {
+        let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
+        Some(self.trie.node_by_index(parent_idx).unwrap())
     }
 
     /// Returns the child of this node given the given index.
     ///
     /// Returns back `self` if there is no such child at this index.
-    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+    pub fn into_child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
         let child_idx = match self.trie.nodes.get(self.node_index).unwrap().children
             [usize::from(u8::from(index))]
         {
@@ -357,17 +361,7 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
             None => return Err(self),
         };
 
-        if self.trie.nodes.get(child_idx).unwrap().has_storage_value {
-            Ok(NodeAccess::Storage(StorageNodeAccess {
-                trie: self.trie,
-                node_index: child_idx,
-            }))
-        } else {
-            Ok(NodeAccess::Branch(BranchNodeAccess {
-                trie: self.trie,
-                node_index: child_idx,
-            }))
-        }
+        Ok(self.trie.node_by_index(child_idx).unwrap())
     }
 
     /// Returns true if this node is the root node of the trie.
@@ -460,30 +454,21 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
 
         // If we keep the parent in the trie, return early with a `SingleRemove`.
         if single_remove {
-            return Remove::SingleRemove {
-                user_data: removed_node.user_data,
-                child: if let Some(child_node_index) = child_node_index {
-                    let child_has_storage = self
-                        .trie
-                        .nodes
-                        .get(child_node_index)
-                        .unwrap()
-                        .has_storage_value;
-                    Some(if child_has_storage {
-                        NodeAccess::Storage(StorageNodeAccess {
-                            trie: self.trie,
-                            node_index: child_node_index,
-                        })
-                    } else {
-                        NodeAccess::Branch(BranchNodeAccess {
-                            trie: self.trie,
-                            node_index: child_node_index,
-                        })
-                    })
-                } else {
-                    None
-                },
-            };
+            if let Some(child_node_index) = child_node_index {
+                return Remove::SingleRemoveChild {
+                    user_data: removed_node.user_data,
+                    child: self.trie.node_by_index(child_node_index).unwrap(),
+                }
+            } else if let Some((parent_index, _)) = removed_node.parent {
+                return Remove::SingleRemoveNoChild {
+                    user_data: removed_node.user_data,
+                    parent: self.trie.node_by_index(parent_index).unwrap(),
+                }
+            } else {
+                return Remove::TrieNowEmpty {
+                    user_data: removed_node.user_data,
+                }
+            }
         };
 
         // If we reach here, then parent has to be removed from the trie as well.
@@ -529,25 +514,7 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
 
         // Success!
         Remove::BranchAlsoRemoved {
-            sibling: {
-                let sibling_has_storage = self
-                    .trie
-                    .nodes
-                    .get(sibling_node_index)
-                    .unwrap()
-                    .has_storage_value;
-                if sibling_has_storage {
-                    NodeAccess::Storage(StorageNodeAccess {
-                        trie: self.trie,
-                        node_index: sibling_node_index,
-                    })
-                } else {
-                    NodeAccess::Branch(BranchNodeAccess {
-                        trie: self.trie,
-                        node_index: sibling_node_index,
-                    })
-                }
-            },
+            sibling: self.trie.node_by_index(sibling_node_index).unwrap(),
             storage_user_data: removed_node.user_data,
             branch_user_data: removed_branch.user_data,
         }
@@ -564,57 +531,71 @@ pub enum Remove<'a, TUd> {
     /// Removing the storage value removed the node that contained the storage value. Apart from
     /// this removal, the structure of the trie didn't change.
     ///
-    /// If it possible that the node that got removed had one single child, in which case this
-    /// child's parent becomes the parent that the former node had.
-    ///
-    /// If `child` is `None`, then what happened is:
+    /// The node that got removed had one single child. This child's parent becomes the parent
+    /// that the former node had.
     ///
     /// ```ignore
     ///
-    ///       Before                               After
     ///
+    ///                +-+                                         +-+
+    ///           +--> +-+ <--+                         +--------> +-+ <--+
+    ///           |           |                         |                 |
+    ///           |           +                         |                 +
+    ///           |     (0 or more other children)      |           (0 or more other children)
+    ///           |                                     |
+    ///          +-+                                    |
+    ///     +--> +-+ removed node                       |
+    ///     |                                           |
+    ///     |                                           |
+    ///     |                                           |
+    ///     |                                           |
+    ///    +-+                                         +-+
+    ///    +-+                                         +-+  `child`
+    ///     ^                                           ^
+    ///     ++ (0 or more other children)               ++ (0 or more other children)
     ///
-    ///                +-+                         +-+
-    ///           +--> +-+                         +-+
-    ///           |
-    ///           |
-    ///           |
+    /// ```
+    ///
+    SingleRemoveChild {
+        /// Unique child that the removed node had. The parent and partial key of this child has
+        /// been modified.
+        child: NodeAccess<'a, TUd>,
+
+        /// User data that was in the removed node.
+        user_data: TUd,
+    },
+
+    /// Removing the storage value removed the node that contained the storage value. Apart from
+    /// this removal, the structure of the trie didn't change.
+    ///
+    /// The node that got removed didn't have any children.
+    ///
+    /// ```ignore
+    ///
+    ///       Before                                       After
+    ///
+    ///                                                        `parent`
+    ///                +-+                                 +-+
+    ///           +--> +-+ <--+                            +-+ <--+
+    ///           |           |                                   |
+    ///           |           +                                   +
+    ///           |       (0 or more other children)          (0 or more other children)
     ///           |
     ///          +-+
     ///          +-+ removed node
     ///
     /// ```
     ///
-    ///
-    /// If `child` is `Some`, then what happened is:
-    ///
-    /// ```ignore
-    ///
-    ///       Before                               After
-    ///
-    ///
-    ///                +-+                                 +-+
-    ///           +--> +-+                      +--------> +-+
-    ///           |                             |
-    ///           |                             |
-    ///           |                             |
-    ///           |                             |
-    ///          +-+                            |
-    ///     +--> +-+ removed node               |
-    ///     |                                   |
-    ///     |                                   |
-    ///     |                                   |
-    ///     |                                   |
-    ///    +-+                                 +-+
-    ///    +-+                                 +-+  `child`
-    ///
-    /// ```
-    ///
-    SingleRemove {
-        /// Unique child that the removed node had. The parent and partial key of this child has
-        /// been modified.
-        child: Option<NodeAccess<'a, TUd>>,
+    SingleRemoveNoChild {
+        /// Parent that the removed node had.
+        parent: NodeAccess<'a, TUd>,
 
+        /// User data that was in the removed node.
+        user_data: TUd,
+    },
+
+    /// The trie was empty apart from this node. It is now completely empty.
+    TrieNowEmpty {
         /// User data that was in the removed node.
         user_data: TUd,
     },
@@ -629,16 +610,18 @@ pub enum Remove<'a, TUd> {
     ///             Before                        After
     ///
     ///
-    ///               |                             |
+    ///               +                             +
     ///               |                             |
     ///              +-+                            |
     ///         +--> +-+ <--+                       +-----+
     ///         |           |                             |
     ///         |           |                             |
     ///        +-+         +-+                           +-+
-    ///        +-+         +-+                           +-+
-    ///
-    ///  removed node                                 `sibling`
+    ///        +-+         +-+                           +-+ `sibling`
+    ///                     ^                             ^
+    ///  removed node       |                             |
+    ///                     +                             +
+    ///                (0 or more other nodes)       (0 or more other nodes)
     ///
     /// ```
     ///
@@ -664,25 +647,21 @@ pub struct BranchNodeAccess<'a, TUd> {
 
 impl<'a, TUd> BranchNodeAccess<'a, TUd> {
     /// Returns the parent of this node, or `None` if this is the root node.
-    pub fn parent(self) -> Option<NodeAccess<'a, TUd>> {
+    pub fn into_parent(self) -> Option<NodeAccess<'a, TUd>> {
         let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
-        if self.trie.nodes.get(parent_idx).unwrap().has_storage_value {
-            Some(NodeAccess::Storage(StorageNodeAccess {
-                trie: self.trie,
-                node_index: parent_idx,
-            }))
-        } else {
-            Some(NodeAccess::Branch(BranchNodeAccess {
-                trie: self.trie,
-                node_index: parent_idx,
-            }))
-        }
+        Some(self.trie.node_by_index(parent_idx).unwrap())
+    }
+
+    /// Returns the parent of this node, or `None` if this is the root node.
+    pub fn parent(&mut self) -> Option<NodeAccess<TUd>> {
+        let parent_idx = self.trie.nodes.get(self.node_index).unwrap().parent?.0;
+        Some(self.trie.node_by_index(parent_idx).unwrap())
     }
 
     /// Returns the child of this node given the given index.
     ///
     /// Returns back `self` if there is no such child at this index.
-    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+    pub fn into_child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
         let child_idx = match self.trie.nodes.get(self.node_index).unwrap().children
             [usize::from(u8::from(index))]
         {
@@ -690,17 +669,7 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
             None => return Err(self),
         };
 
-        if self.trie.nodes.get(child_idx).unwrap().has_storage_value {
-            Ok(NodeAccess::Storage(StorageNodeAccess {
-                trie: self.trie,
-                node_index: child_idx,
-            }))
-        } else {
-            Ok(NodeAccess::Branch(BranchNodeAccess {
-                trie: self.trie,
-                node_index: child_idx,
-            }))
-        }
+        Ok(self.trie.node_by_index(child_idx).unwrap())
     }
 
     /// Returns true if this node is the root node of the trie.
