@@ -161,6 +161,45 @@ impl<TUd> TrieStructure<TUd> {
         }
     }
 
+    /// Removes all nodes whose key starts with the given prefix.
+    ///
+    /// Returns the closest ancestors to the nodes that have been removed, or `None` if that
+    /// closest ancestor is not a descendant of the new trie root.
+    pub fn remove_prefix(
+        &mut self,
+        prefix: impl Iterator<Item = Nibble> + Clone,
+    ) -> Option<NodeAccess<TUd>> {
+        todo!()
+        /*// `ancestor` is the node that will stay in the tree and the common ancestor of all the
+        // nodes to remove.
+        let ancestor = match self.existing_node_inner(prefix.clone()) {
+            ExistingNodeInnerResult::Found { node_index, .. } => {
+                self.nodes.get(node_index).unwrap().parent
+            }
+            ExistingNodeInnerResult::NotFound {
+                closest_ancestor: None,
+            } => None,
+            ExistingNodeInnerResult::NotFound {
+                closest_ancestor: Some(ancestor),
+            } => {
+                let key_len = self.node_full_key(ancestor).count();
+                let child_index = prefix.skip(key_len).next().unwrap();
+                Some((ancestor, child_index))
+            }
+        };
+
+        // If `ancestor` is `None`, .
+
+        if let Some((ancestor_index, child_index)) = ancestor {
+            let to_drop = self.nodes.get_mut(ancestor_index).unwrap().children
+                [usize::from(u8::from(child_index))]
+            .take();
+            if let Some(to_drop) = to_drop {
+                // TODO: ! we leak if we don't do anything here
+            }
+        }*/
+    }
+
     /// Internal function. Returns the [`NodeAccess`] of the node at the given index.
     fn node_by_index(&mut self, node_index: usize) -> Option<NodeAccess<TUd>> {
         if self.nodes.get(node_index)?.has_storage_value {
@@ -177,6 +216,10 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Returns the full key of the node with the given index.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `target` is not a valid index.
     fn node_full_key<'b>(&'b self, target: usize) -> impl Iterator<Item = Nibble> + 'b {
         self.node_path(target)
             .chain(iter::once(target))
@@ -191,6 +234,10 @@ impl<TUd> TrieStructure<TUd> {
     /// Returns the indices of the nodes to traverse to reach `target`. The returned iterator
     /// does *not* include `target`. In other words, if `target` is the root node, this returns
     /// an empty iterator.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `target` is not a valid index.
     fn node_path<'b>(&'b self, target: usize) -> impl Iterator<Item = usize> + 'b {
         debug_assert!(self.nodes.get(usize::max_value()).is_none());
         // First element is an invalid key, each successor is the last element of
@@ -209,6 +256,10 @@ impl<TUd> TrieStructure<TUd> {
     /// Returns the indices of the nodes starting from `target` towards the root node. The returned
     /// iterator does *not* include `target` but does include the root node if it is different
     /// from `target`. If `target` is the root node, this returns an empty iterator.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `target` is not a valid index.
     fn reverse_node_path<'b>(&'b self, target: usize) -> impl Iterator<Item = usize> + 'b {
         // First element is `target`, each successor is `current.parent`.
         // Since `target` must explicitly not be included, we skip the first element.
@@ -216,6 +267,45 @@ impl<TUd> TrieStructure<TUd> {
             Some(self.nodes.get(*current).unwrap().parent?.0)
         })
         .skip(1)
+    }
+
+    /// Returns the indices of all the descendants (direct or indirect) of `node_index`, not
+    /// including `node_index` itself.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `node_index` is not a valid index.
+    fn descendants<'b>(&'b self, node_index: usize) -> impl Iterator<Item = usize> + 'b {
+        // First element is `node_index`. Each successor is the first child of `current` or,
+        // if `current` doesn't have any children, the next sibling of `current`.
+        // Since `node_index` must explicitly not be included, we skip the first element.
+        iter::successors(Some(node_index), move |current| {
+            let first_child = self.nodes.get(*current).unwrap().children.iter().filter_map(|c| *c).next();
+            if let Some(first_child) = first_child {
+                Some(first_child)
+            } else {
+                self.next_sibling(*current)
+            }
+        })
+        .skip(1)
+    }
+
+    /// Returns the next sibling of the given node.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `node_index` is not a valid index.
+    fn next_sibling(&self, node_index: usize) -> Option<usize> {
+        let (parent_index, child_index) = self.nodes.get(node_index).unwrap().parent?;
+        let parent = self.nodes.get(parent_index).unwrap();
+
+        for idx in (u8::from(child_index) + 1)..16 {
+            if let Some(child) = parent.children[usize::from(idx)] {
+                return Some(child);
+            }
+        }
+
+        None
     }
 }
 
@@ -458,16 +548,16 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
                 return Remove::SingleRemoveChild {
                     user_data: removed_node.user_data,
                     child: self.trie.node_by_index(child_node_index).unwrap(),
-                }
+                };
             } else if let Some((parent_index, _)) = removed_node.parent {
                 return Remove::SingleRemoveNoChild {
                     user_data: removed_node.user_data,
                     parent: self.trie.node_by_index(parent_index).unwrap(),
-                }
+                };
             } else {
                 return Remove::TrieNowEmpty {
                     user_data: removed_node.user_data,
-                }
+                };
             }
         };
 
@@ -1060,7 +1150,9 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
     pub fn branch_node_key<'b>(&'b self) -> impl Iterator<Item = Nibble> + 'b {
         if let Some((parent_index, child_index)) = self.branch_parent {
             let parent = self.trie.node_full_key(parent_index);
-            let iter = parent.chain(iter::once(child_index)).chain(self.branch_partial_key.iter().cloned());
+            let iter = parent
+                .chain(iter::once(child_index))
+                .chain(self.branch_partial_key.iter().cloned());
             Either::Left(iter)
         } else {
             Either::Right(self.branch_partial_key.iter().cloned())

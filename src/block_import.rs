@@ -146,7 +146,8 @@ where
                 new_storage_value,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.storage_value_update(storage_key, new_storage_value.is_some());
+                top_trie_root_calculation_cache
+                    .storage_value_update(storage_key, new_storage_value.is_some());
                 top_trie_changes
                     .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
                 resolve.finish_call(());
