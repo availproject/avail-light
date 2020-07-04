@@ -12,7 +12,7 @@ use crate::{executor, trie::calculate_root};
 use alloc::borrow::Cow;
 use core::{cmp, convert::TryFrom as _};
 use futures::prelude::*;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 /// Configuration for a block verification.
 pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
@@ -257,15 +257,16 @@ where
                         // TODO: optimize
                         let mut result = (self.config.parent_storage_keys_prefix)(prefix.to_vec())
                             .now_or_never()
-                            .unwrap();
-                        result
-                            .retain(|v| self.overlay_changes.get(v).map_or(true, |v| v.is_some()));
+                            .unwrap()
+                            .into_iter()
+                            .filter(|v| self.overlay_changes.get(v).map_or(true, |v| v.is_some()))
+                            .collect::<HashSet<_>>();
                         // TODO: slow to iterate over everything?
                         for (key, value) in self.overlay_changes.iter() {
                             if value.is_none() || !key.starts_with(&prefix) {
                                 continue;
                             }
-                            result.push(key.clone());
+                            result.insert(key.clone());
                         }
                         Box::new(result.into_iter())
                     }

@@ -50,6 +50,8 @@ pub trait TrieRef<'a>: Clone {
 
     /// Returns the list of keys with values that start with the given prefix.
     ///
+    /// Must not return any duplicate.
+    ///
     /// All the keys returned must start with the given prefix. It is an error to omit a key
     /// from the result.
     // TODO: `prefix` should have a lifetime too that ties it to the iterator, but I can't figure
@@ -124,7 +126,11 @@ impl CalculationCache {
         fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
             bytes
                 .iter()
-                .map(|b| Nibble::try_from(*b).unwrap())
+                .flat_map(|b| {
+                    let n1 = Nibble::try_from((*b) >> 4).unwrap();
+                    let n2 = Nibble::try_from((*b) & 0xf).unwrap();
+                    iter::once(n1).chain(iter::once(n2))
+                })
                 .collect()
         }
 
@@ -191,10 +197,15 @@ impl CalculationCache {
         self.structure = None;
 
         /*// TODO: meh
+        // TODO: meh
         fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
             bytes
                 .iter()
-                .map(|b| Nibble::try_from(*b).unwrap())
+                .flat_map(|b| {
+                    let n1 = Nibble::try_from((*b) >> 4).unwrap();
+                    let n2 = Nibble::try_from((*b) & 0xf).unwrap();
+                    iter::once(n1).chain(iter::once(n2))
+                })
                 .collect()
         }
 
@@ -286,9 +297,12 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         });
     }
 
-    // `trie_structure` is guaranteed to match the trie, but its Merkle values might be missing.
+    // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
+    // be missing and need to be filled.
     let trie_structure = cache.structure.as_mut().unwrap();
     trie_structure.shrink_to_fit();
+
+    // TODO: traverse the trie instead of this queue system
 
     // Each iteration in the code below pops the last element of this queue, fills it in the cache,
     // and optionally pushes new elements to the queue. Once the queue is empty, the function

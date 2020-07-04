@@ -12,20 +12,24 @@ use slab::Slab;
 /// the storage values have to be maintained in parallel of this.
 #[derive(Debug)]
 pub struct TrieStructure<TUd> {
-    /// List of nodes. Using a [`Slab`] guarantees that the node indices don't change.
+    /// List of nodes. Using a [`Slab`] guarantees that the node indices never change.
     nodes: Slab<Node<TUd>>,
     /// Index of the root node within [`nodes`]. `None` if the trie is empty.
     root_index: Option<usize>,
 }
 
+/// Entry in the structure.
 #[derive(Debug)]
 struct Node<TUd> {
     /// Index of the parent within [`TrieStructure::nodes`]. `None` if this is the root.
     parent: Option<(usize, Nibble)>,
     /// Partial key of the node. Portion to add to the values in `parent` to obtain the full key.
-    partial_key: Vec<Nibble>, // TODO: SmallVec?
+    partial_key: Vec<Nibble>,
     /// Indices of the children within [`TrieStructure::nodes`].
     children: [Option<usize>; 16],
+    /// If true, this node is a so-called "storage node" with a storage value associated to it. If
+    /// false, then it is a so-called "branch node". Branch nodes are automatically removed from
+    /// the trie if their number of children is inferior to 2.
     has_storage_value: bool,
     /// User data associated to the node.
     user_data: TUd,
@@ -280,7 +284,14 @@ impl<TUd> TrieStructure<TUd> {
         // if `current` doesn't have any children, the next sibling of `current`.
         // Since `node_index` must explicitly not be included, we skip the first element.
         iter::successors(Some(node_index), move |current| {
-            let first_child = self.nodes.get(*current).unwrap().children.iter().filter_map(|c| *c).next();
+            let first_child = self
+                .nodes
+                .get(*current)
+                .unwrap()
+                .children
+                .iter()
+                .filter_map(|c| *c)
+                .next();
             if let Some(first_child) = first_child {
                 Some(first_child)
             } else {
