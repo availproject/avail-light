@@ -30,7 +30,10 @@
 //! When using a cache, be careful to properly invalidate cache entries whenever you perform
 //! modifications on the trie associated to it.
 
-use super::{nibble::Nibble, node_value, trie_structure};
+use super::{
+    nibble::{bytes_to_nibbles, Nibble},
+    node_value, trie_structure,
+};
 
 use alloc::collections::BTreeMap;
 use core::{convert::TryFrom as _, fmt, iter};
@@ -122,19 +125,10 @@ impl CalculationCache {
             None => return,
         };
 
-        // TODO: meh
-        fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
-            bytes
-                .iter()
-                .flat_map(|b| {
-                    let n1 = Nibble::try_from((*b) >> 4).unwrap();
-                    let n2 = Nibble::try_from((*b) & 0xf).unwrap();
-                    iter::once(n1).chain(iter::once(n2))
-                })
-                .collect()
-        }
-
-        match (structure.node(&bytes_to_nibbles(key)), has_value) {
+        match (
+            structure.node(bytes_to_nibbles(key.iter().cloned())),
+            has_value,
+        ) {
             (trie_structure::Entry::Vacant(entry), true) => {
                 let inserted = entry
                     .insert_storage_value()
@@ -196,19 +190,7 @@ impl CalculationCache {
         // TODO: implement correctly
         self.structure = None;
 
-        /*// TODO: meh
-        // TODO: meh
-        fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
-            bytes
-                .iter()
-                .flat_map(|b| {
-                    let n1 = Nibble::try_from((*b) >> 4).unwrap();
-                    let n2 = Nibble::try_from((*b) & 0xf).unwrap();
-                    iter::once(n1).chain(iter::once(n2))
-                })
-                .collect()
-        }
-
+        /*
         if let Some(mut node) = structure.remove_prefix(bytes_to_nibbles(prefix).iter().cloned()) {
             node.user_data().merkle_value = None;
             let mut parent = node.into_parent();
@@ -276,18 +258,8 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             let mut structure = trie_structure::TrieStructure::new();
             let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
             for key in keys {
-                let key = key
-                    .as_ref()
-                    .iter()
-                    .flat_map(|byte| {
-                        let n1 = Nibble::try_from(byte >> 4).unwrap();
-                        let n2 = Nibble::try_from(byte & 0xf).unwrap();
-                        iter::once(n1).chain(iter::once(n2))
-                    })
-                    .collect::<Vec<_>>();
-                // TODO: ideally we'd pass an iterator to `node()` so that we don't allocate a Vec here
                 structure
-                    .node(&key)
+                    .node(bytes_to_nibbles(key.as_ref().iter().cloned()))
                     .into_vacant()
                     .unwrap()
                     .insert_storage_value()

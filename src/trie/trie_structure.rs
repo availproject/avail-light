@@ -63,8 +63,11 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Returns a [`Entry`] with the given node.
-    pub fn node<'a>(&'a mut self, key: &'a [Nibble]) -> Entry<'a, TUd> {
-        match self.existing_node_inner(key.iter().cloned()) {
+    pub fn node<'a, TKIter>(&'a mut self, key: TKIter) -> Entry<'a, TUd, TKIter>
+    where
+        TKIter: Iterator<Item = Nibble> + Clone,
+    {
+        match self.existing_node_inner(key.clone()) {
             ExistingNodeInnerResult::Found {
                 node_index,
                 has_storage_value: true,
@@ -173,35 +176,35 @@ impl<TUd> TrieStructure<TUd> {
         &mut self,
         prefix: impl Iterator<Item = Nibble> + Clone,
     ) -> Option<NodeAccess<TUd>> {
-        todo!()
-        /*// `ancestor` is the node that will stay in the tree and the common ancestor of all the
-        // nodes to remove.
-        let ancestor = match self.existing_node_inner(prefix.clone()) {
-            ExistingNodeInnerResult::Found { node_index, .. } => {
-                self.nodes.get(node_index).unwrap().parent
-            }
-            ExistingNodeInnerResult::NotFound {
-                closest_ancestor: None,
-            } => None,
-            ExistingNodeInnerResult::NotFound {
-                closest_ancestor: Some(ancestor),
-            } => {
-                let key_len = self.node_full_key(ancestor).count();
-                let child_index = prefix.skip(key_len).next().unwrap();
-                Some((ancestor, child_index))
-            }
-        };
+        todo!() // TODO: implement
+                /*// `ancestor` is the node that will stay in the tree and the common ancestor of all the
+                // nodes to remove.
+                let ancestor = match self.existing_node_inner(prefix.clone()) {
+                    ExistingNodeInnerResult::Found { node_index, .. } => {
+                        self.nodes.get(node_index).unwrap().parent
+                    }
+                    ExistingNodeInnerResult::NotFound {
+                        closest_ancestor: None,
+                    } => None,
+                    ExistingNodeInnerResult::NotFound {
+                        closest_ancestor: Some(ancestor),
+                    } => {
+                        let key_len = self.node_full_key(ancestor).count();
+                        let child_index = prefix.skip(key_len).next().unwrap();
+                        Some((ancestor, child_index))
+                    }
+                };
 
-        // If `ancestor` is `None`, .
+                // If `ancestor` is `None`, .
 
-        if let Some((ancestor_index, child_index)) = ancestor {
-            let to_drop = self.nodes.get_mut(ancestor_index).unwrap().children
-                [usize::from(u8::from(child_index))]
-            .take();
-            if let Some(to_drop) = to_drop {
-                // TODO: ! we leak if we don't do anything here
-            }
-        }*/
+                if let Some((ancestor_index, child_index)) = ancestor {
+                    let to_drop = self.nodes.get_mut(ancestor_index).unwrap().children
+                        [usize::from(u8::from(child_index))]
+                    .take();
+                    if let Some(to_drop) = to_drop {
+                        // TODO: ! we leak if we don't do anything here
+                    }
+                }*/
     }
 
     /// Internal function. Returns the [`NodeAccess`] of the node at the given index.
@@ -332,16 +335,16 @@ enum ExistingNodeInnerResult {
 }
 
 /// Access to a entry for a potential node within the [`TrieStructure`].
-pub enum Entry<'a, TUd> {
+pub enum Entry<'a, TUd, TKIter> {
     /// There exists a node with this key.
     Occupied(NodeAccess<'a, TUd>),
     /// This entry is vacant.
-    Vacant(Vacant<'a, TUd>),
+    Vacant(Vacant<'a, TUd, TKIter>),
 }
 
-impl<'a, TUd> Entry<'a, TUd> {
+impl<'a, TUd, TKIter> Entry<'a, TUd, TKIter> {
     /// Returns `Some` if `self` is an [`Entry::Vacant`].
-    pub fn into_vacant(self) -> Option<Vacant<'a, TUd>> {
+    pub fn into_vacant(self) -> Option<Vacant<'a, TUd, TKIter>> {
         match self {
             Entry::Vacant(e) => Some(e),
             _ => None,
@@ -817,20 +820,24 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
 }
 
 /// Access to a non-existing node within the [`TrieStructure`].
-pub struct Vacant<'a, TUd> {
+pub struct Vacant<'a, TUd, TKIter> {
     trie: &'a mut TrieStructure<TUd>,
-    key: &'a [Nibble],
+    /// Full key of the node to insert.
+    key: TKIter,
     /// Known closest ancestor that is in `trie`. Will become the parent of any newly-inserted
     /// node.
     closest_ancestor: Option<usize>,
 }
 
-impl<'a, TUd> Vacant<'a, TUd> {
+impl<'a, TUd, TKIter> Vacant<'a, TUd, TKIter>
+where
+    TKIter: Iterator<Item = Nibble> + Clone,
+{
     /// Prepare the operation of creating the node in question.
     ///
     /// This method analyzes the trie to prepare for the operation, but doesn't actually perform
     /// any insertion. To perform the insertion, use the returned [`PrepareInsert`].
-    pub fn insert_storage_value(self) -> PrepareInsert<'a, TUd> {
+    pub fn insert_storage_value(mut self) -> PrepareInsert<'a, TUd> {
         // Retrieve what will be the parent after we insert the new node, not taking branching
         // into account yet.
         // If `Some`, contains its index and number of nibbles in its key.
@@ -838,7 +845,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
             (Some(_), None) => unreachable!(),
             (Some(ancestor), Some(_)) => {
                 let key_len = self.trie.node_full_key(ancestor).count();
-                debug_assert!(self.key.len() > key_len);
+                debug_assert!(self.key.clone().count() > key_len);
                 Some((ancestor, key_len))
             }
             (None, Some(_)) => None,
@@ -848,7 +855,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
                 return PrepareInsert::One(PrepareInsertOne {
                     trie: self.trie,
                     parent: None,
-                    partial_key: self.key.to_owned(),
+                    partial_key: self.key.collect(),
                     children: [None; 16],
                 });
             }
@@ -858,7 +865,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
         // or a successful early-return if none.
         let existing_node_index =
             if let Some((future_parent_index, future_parent_key_len)) = future_parent {
-                let new_child_index = self.key[future_parent_key_len];
+                let new_child_index = self.key.clone().nth(future_parent_key_len).unwrap();
                 let future_parent = self.trie.nodes.get(future_parent_index).unwrap();
                 match future_parent.children[usize::from(u8::from(new_child_index))] {
                     Some(i) => {
@@ -885,7 +892,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
                         return PrepareInsert::One(PrepareInsertOne {
                             trie: self.trie,
                             parent: Some((future_parent_index, new_child_index)),
-                            partial_key: self.key[future_parent_key_len + 1..].to_owned(),
+                            partial_key: self.key.skip(future_parent_key_len + 1).collect(),
                             children: [None; 16],
                         });
                     }
@@ -902,8 +909,12 @@ impl<'a, TUd> Vacant<'a, TUd> {
             .get(existing_node_index)
             .unwrap()
             .partial_key;
-        let new_node_partial_key = &self.key[future_parent.map_or(0, |(_, n)| n + 1)..];
-        debug_assert_ne!(&**existing_node_partial_key, new_node_partial_key);
+        let new_node_partial_key = self
+            .key
+            .clone()
+            .skip(future_parent.map_or(0, |(_, n)| n + 1))
+            .collect::<Vec<_>>();
+        debug_assert_ne!(*existing_node_partial_key, new_node_partial_key);
         debug_assert!(!new_node_partial_key.starts_with(existing_node_partial_key));
 
         // If `new_node_partial_key` starts with `existing_node_partial_key`, then the new node
@@ -956,7 +967,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
             return PrepareInsert::One(PrepareInsertOne {
                 trie: self.trie,
                 parent: if let Some((future_parent_index, future_parent_key_len)) = future_parent {
-                    let new_child_index = self.key[future_parent_key_len];
+                    let new_child_index = self.key.nth(future_parent_key_len).unwrap();
                     Some((future_parent_index, new_child_index))
                 } else {
                     None
@@ -1046,7 +1057,7 @@ impl<'a, TUd> Vacant<'a, TUd> {
 
             branch_parent: if let Some((future_parent_index, future_parent_key_len)) = future_parent
             {
-                let new_child_index = self.key[future_parent_key_len];
+                let new_child_index = self.key.nth(future_parent_key_len).unwrap();
                 Some((future_parent_index, new_child_index))
             } else {
                 None

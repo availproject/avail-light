@@ -33,7 +33,7 @@ pub mod calculate_root;
 pub mod node_value;
 pub mod trie_structure;
 
-pub use nibble::{Nibble, NibbleFromU8Error};
+pub use nibble::{bytes_to_nibbles, BytesToNibbles, Nibble, NibbleFromU8Error};
 
 /// Radix-16 Merkle-Patricia trie.
 // TODO: probably useless, remove
