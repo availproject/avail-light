@@ -30,10 +30,10 @@
 //! When using a cache, be careful to properly invalidate cache entries whenever you perform
 //! modifications on the trie associated to it.
 
-use super::{nibble::Nibble, node_value};
+use super::{nibble::Nibble, node_value, trie_structure};
 
-use alloc::collections::{btree_map::Entry, BTreeMap};
-use core::{convert::TryFrom as _, fmt};
+use alloc::collections::BTreeMap;
+use core::{convert::TryFrom as _, fmt, iter};
 
 /// Trait passed to [`root_merkle_value`] that allows the function to access the content of the
 /// trie.
@@ -94,139 +94,68 @@ impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
 /// If the storage's content is modified, you **must** call the appropriate methods to invalidate
 /// entries. Otherwise, the trie root calculation will yield an incorrect result.
 pub struct CalculationCache {
-    /// Root node of the trie, if known.
-    root_node: Option<TrieNodeKey>,
-
-    /// Cache of node values of known nodes.
-    entries: BTreeMap<TrieNodeKey, CacheEntry>,
+    /// Structure of the trie.
+    /// If `Some`, the structure is either fully conforming to the trie.
+    structure: Option<trie_structure::TrieStructure<CacheEntry>>,
 }
 
-/// Entry in the [`CalculationCache`].
-#[derive(Debug, Clone)]
+/// Custom data stored in each node in [`CalculationCache::structure`].
+#[derive(Default)]
 struct CacheEntry {
-    /// Merkle value of this node. `None` if it needs to be recalculated.
-    ///
-    /// When the user invalidates a specific storage value, we only need to refresh the merkle
-    /// value of the corresponding node while the parent and children remain the same.
-    merkle_value: Option<Vec<u8>>,
-    /// If this is the root node, length of the key. Otherwise, number of nibbles between this node
-    /// and its parent, minus one.
-    partial_key_length: u32,
-    /// How to reach the chidren of this node.
-    children: Vec<(Nibble, TrieNodeKey)>,
+    merkle_value: Option<node_value::Output>,
 }
 
 impl CalculationCache {
     /// Builds a new empty cache.
     pub fn empty() -> Self {
-        CalculationCache {
-            root_node: None,
-            entries: BTreeMap::new(),
-        }
+        CalculationCache { structure: None }
     }
 
-    /// Notify the cache that the value at the given key has been modified.
+    /// Notify the cache that a storage value at the given key has been added, modified or removed.
     ///
-    /// > **Note**: If the value has been entirely removed, you must call
-    // >            [`CalculationCache::invalidate_node`] instead.
-    pub fn invalidate_storage_value(&mut self, key: &[u8]) {
-        self.invalidate_node_merkle_value(TrieNodeKey::from_bytes(key));
-    }
-
-    fn invalidate_node_merkle_value(&mut self, key: TrieNodeKey) {
-        // We invalidate the `merkle_value` of `key` and `key`'s ancestors.
-        let mut next_to_invalidate = Some(key);
-
-        while let Some(mut to_invalidate) = next_to_invalidate.take() {
-            if let Some(entry) = self.entries.get_mut(&to_invalidate) {
-                entry.merkle_value = None;
-
-                let parent_key_len = to_invalidate.nibbles.len()
-                    - usize::try_from(entry.partial_key_length).unwrap();
-                to_invalidate.nibbles.truncate(parent_key_len);
-                next_to_invalidate = Some(to_invalidate);
-            }
-        }
-
-        // TODO: if node didn't exist, we have to invalidate more things.
-    }
-
-    /// Notify the cache that the value at the given key has been modified or has been removed.
-    pub fn invalidate_node(&mut self, key: &[u8]) {
-        // Considering the the node value of the direct children of `key` depends on the location
-        // of their parent, we have to invalidate them as well. We just take a shortcut and use
-        // `invalidate_prefix`.
-        // TODO: do better?
-        self.invalidate_prefix(key);
-    }
-
-    /// Notify the cache that all the values whose key starts with the given prefix have been
-    /// modified or have been removed.
-    pub fn invalidate_prefix(&mut self, prefix: &[u8]) {
-        // TODO: seems incorrect in general, sometimes the trie root is wrong
-        self.entries.clear();
-
-        let mut to_remove = self
-            .entries
-            .range(TrieNodeKey::from_bytes(prefix)..)
-            .map(|(k, _)| k.clone())
-            .collect::<Vec<_>>();
-
-        // TODO: is that correct? shouldn't we find the parent through other means?
-        if to_remove.is_empty() {
-            return;
-        }
-
-        // We determine who the parent of this prefix is by grabbing the first element to remove
-        // (since it is the first, we know that its parent is outside of this prefix).
-        let parent = {
-            let mut key = to_remove.remove(0);
-            let cache_entry = self.entries.remove(&key).unwrap();
-            // We use `saturating_sub` in case this is the root node.
-            let new_len = key
-                .nibbles
-                .len()
-                .saturating_sub(1)
-                .saturating_sub(usize::try_from(cache_entry.partial_key_length).unwrap());
-            key.nibbles.truncate(new_len);
-            key
+    /// `has_value` must be true if there is now a storage value at the given key.
+    pub fn storage_value_update(&mut self, key: &[u8], has_value: bool) {
+        /*let structure = match &mut self.structure {
+            Some(s) => s,
+            None => return,
         };
 
-        for to_remove in to_remove {
-            self.entries.remove(&to_remove);
+        fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
+            bytes
+                .iter()
+                .map(|b| Nibble::try_from(*b).unwrap())
+                .collect()
         }
 
-        // We remove the parent from the cache, but it is important to realize that the parent
-        // node itself might entirely disappear because of a merge.
-
-        self.invalidate_node_merkle_value(parent.clone());
-
-        let parent_entry = self.entries.remove(&parent);
-        if let Some(parent_entry) = parent_entry {
-            // We also have to remove the parent's parent, because its `children` entry will be
-            // wrong.
-            let parent_parent = {
-                let mut key = parent.clone();
-                // We use `saturating_sub` in case this is the root node.
-                let new_len = key
-                    .nibbles
-                    .len()
-                    .saturating_sub(1)
-                    .saturating_sub(usize::try_from(parent_entry.partial_key_length).unwrap());
-                key.nibbles.truncate(new_len);
-                key
-            };
-            self.entries.remove(&parent_parent);
-
-            // Remove the parent's other direct children (so, the siblings of the prefix) as well.
-            for (child_index, child_partial_key) in parent_entry.children {
-                let mut key = parent.clone();
-                key.nibbles.push(child_index);
-                key.nibbles.extend(child_partial_key.nibbles);
-
-                self.entries.remove(&key);
+        match (structure.node(&bytes_to_nibbles(key)), has_value) {
+            (trie_structure::Entry::Vacant(entry), true) => {
+                match entry.insert_storage_value()
             }
-        }
+            (trie_structure::Entry::Vacant(_), false) => {}
+            (trie_structure::Entry::Occupied(entry), true) => {
+
+            }
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)), false) => {}
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(entry)), false) => {
+                match entry.remove() {
+                    trie_structure::Remove::StorageToBranch(_) => {}
+                    trie_structure::Remove::BranchAlsoRemoved { sibling, .. } => {
+                        sibling.user_data().merkle_value = None;
+                    }
+                    trie_structure::Remove::SingleRemove { child: Some(child), .. } => {
+                        child
+                    }
+                    trie_structure::Remove::SingleRemove { child: None, .. } => {}
+                }
+            }
+        }*/
+        self.structure = None; // TODO:
+    }
+
+    /// Notify the cache that all the storage values whose key start with the given prefix have
+    /// been removed.
+    pub fn prefix_remove_update(&mut self, prefix: &[u8]) {
+        self.structure = None; // TODO:
     }
 }
 
@@ -239,9 +168,7 @@ impl Default for CalculationCache {
 impl fmt::Debug for CalculationCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // The calculation cache is so large that printing its content is basically useless.
-        f.debug_struct("CalculationCache")
-            .field("entries", &self.entries.len())
-            .finish()
+        f.debug_tuple("CalculationCache").finish()
     }
 }
 
@@ -261,87 +188,72 @@ pub fn root_merkle_value<'a>(
 
     fill_cache(trie_access, cache_or_temporary);
 
-    // The `fill_cache` function guarantees to have filled the cache with at least the root node's
+    // The `fill_cache` function guarantees to have filled the cache with the root node's
     // information.
-    let root_node = cache_or_temporary.root_node.as_ref().unwrap();
-    let root_merkle = cache_or_temporary
-        .entries
-        .get(root_node)
-        .unwrap()
-        .merkle_value
-        .as_ref()
-        .unwrap();
-
-    // The root node's merkle value is guaranteed to be a hash, and therefore exactly 32 bytes.
-    let mut out = [0; 32];
-    out.copy_from_slice(&root_merkle);
-    out
+    let mut root_node = cache_or_temporary.structure.as_mut().unwrap().root_node();
+    if let Some(mut root_node) = root_node {
+        root_node.user_data().merkle_value.clone().unwrap().into()
+    } else {
+        node_value::calculate_merke_root(node_value::Config {
+            is_root: true,
+            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            partial_key: iter::empty(),
+            stored_value: None::<Vec<u8>>,
+        })
+        .into()
+    }
 }
 
 /// Fills the cache given as parameter with at least the root node and the root node's merkle
 /// value.
 fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCache) {
-    // Start by figuring out the key of the root node, possibly with the help of the cache.
-    // The root node is not necessarily the one with an empty key. Just like any other node,
-    // the root might have been merged with its lone children.
-    let root_node = if let Some(root_node) = &cache.root_node {
-        root_node.clone()
-    } else {
-        // Recomputing this is very expensive, since we enumerate every single key in the
-        // storage.
-        // TODO: clusterfuck of lifetimes
-        let list = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
-        let root_node =
-            common_prefix(list.iter().map(|k| k.as_ref())).unwrap_or(TrieNodeKey::empty());
-        cache.root_node = Some(root_node.clone());
-        root_node
-    };
+    // Make sure that `cache.structure` contains a trie structure that matches the trie.
+    if cache.structure.is_none() {
+        cache.structure = Some({
+            let mut structure = trie_structure::TrieStructure::new();
+            let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
+            for key in keys {
+                let key = key
+                    .as_ref()
+                    .iter()
+                    .flat_map(|byte| {
+                        let n1 = Nibble::try_from(byte >> 4).unwrap();
+                        let n2 = Nibble::try_from(byte & 0xf).unwrap();
+                        iter::once(n1).chain(iter::once(n2))
+                    })
+                    .collect::<Vec<_>>();
+                // TODO: ideally we'd pass an iterator to `node()` so that we don't allocate a Vec here
+                structure
+                    .node(&key)
+                    .into_vacant()
+                    .unwrap()
+                    .insert_storage_value()
+                    .insert(Default::default(), Default::default());
+            }
+            structure
+        });
+    }
+
+    // `trie_structure` is guaranteed to match the trie, but its Merkle values might be missing.
+    let trie_structure = cache.structure.as_mut().unwrap();
+    trie_structure.shrink_to_fit();
 
     // Each iteration in the code below pops the last element of this queue, fills it in the cache,
     // and optionally pushes new elements to the queue. Once the queue is empty, the function
     // returns.
     //
-    // Each element in the queue is a tuple with:
-    // - The key of the immediate parent of the node to process.
-    // - The next nibble from the parent towards the direction of the node to process. `None` if
-    //   the node to process is the root node.
-    // - The partial key of the node to process.
-    let mut queue_to_process: Vec<(TrieNodeKey, Option<Nibble>, TrieNodeKey)> =
-        vec![(TrieNodeKey::empty(), None, root_node)];
+    // Each element in the queue contains the node's key.
+    let mut queue_to_process: Vec<Vec<Nibble>> = Vec::new();
+    if let Some(mut root_node) = trie_structure.root_node() {
+        if root_node.user_data().merkle_value.is_none() {
+            queue_to_process.push(root_node.full_key().collect());
+        }
+    }
 
     loop {
-        let (parent_key, child_index, partial_key) = match queue_to_process.pop() {
+        let node_key = match queue_to_process.pop() {
             Some(p) => p,
             None => return,
-        };
-
-        // Complete key of the node to process. Combines the three components we just poped.
-        let combined_key = {
-            let mut combined_key = parent_key.clone();
-            if let Some(child_index) = &child_index {
-                combined_key.nibbles.push(child_index.clone());
-            }
-            combined_key.nibbles.extend(partial_key.nibbles.clone());
-            combined_key
-        };
-
-        // Grab the existing cache entry, or insert a new one if necessary.
-        let cache_entry_copy = match cache.entries.entry(combined_key.clone()) {
-            Entry::Occupied(e) => {
-                // If the merkle value is already in the cache, then our job is done and we can
-                // process the next node.
-                if e.get().merkle_value.is_some() {
-                    continue;
-                }
-                e.get().clone()
-            }
-            Entry::Vacant(e) => e
-                .insert(CacheEntry {
-                    merkle_value: None,
-                    partial_key_length: u32::try_from(partial_key.nibbles.len()).unwrap(),
-                    children: child_nodes(trie_access.clone(), &combined_key).collect(),
-                })
-                .clone(),
         };
 
         // Build the Merkle value of all the children of the node. Necessary for the computation
@@ -350,48 +262,39 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         // We do this first, because we might have to interrupt the processing of this node if
         // one of the children doesn't have a cache entry.
         let children = {
-            // TODO: unstable, see https://github.com/rust-lang/rust/issues/53485
-            //debug_assert!(cache_entry.children.iter().map(|(n, _)| n).is_sorted());
-
             // TODO: shouldn't we first check whether all the children are in cache to speed
             // things up and avoid extra copies? should benchmark this
 
             // TODO: review this code below for unnecessary allocations
 
+            // TODO: ArrayVec
             let mut children = vec![None; 16];
 
             // Will be set to the children whose merkle value of a child is missing from the cache.
             // TODO: ArrayVec
             let mut missing_children = Vec::with_capacity(16);
 
-            for (child_index, child_partial_key) in &cache_entry_copy.children {
-                let child_combined_key = {
-                    let mut k = combined_key.clone();
-                    k.nibbles.push(child_index.clone());
-                    k.nibbles.extend(child_partial_key.nibbles.iter().cloned());
-                    k
+            for child_index in 0..16u8 {
+                // TODO: a bit annoying that we traverse the trie all the time
+                let node = trie_structure
+                    .existing_node(node_key.iter().cloned())
+                    .unwrap();
+                let mut child = match node.child(Nibble::try_from(child_index).unwrap()) {
+                    Ok(c) => c,
+                    Err(_) => continue,
                 };
 
-                if let Some(merkle_value) = cache
-                    .entries
-                    .get(&child_combined_key)
-                    .and_then(|e| e.merkle_value.as_ref())
-                {
-                    children[usize::from(u8::from(*child_index))] =
-                        Some(node_value::Output::from_bytes(&merkle_value[..]));
+                if let Some(merkle_value) = &child.user_data().merkle_value {
+                    children[usize::from(child_index)] = Some(merkle_value.clone());
                 } else {
-                    missing_children.push((
-                        combined_key.clone(),
-                        Some(child_index.clone()),
-                        child_partial_key.clone(),
-                    ));
+                    missing_children.push(child.full_key().collect());
                 }
             }
 
             // We can't process further. Push back the current node on the queue, plus each of its
             // children.
             if !missing_children.is_empty() {
-                queue_to_process.push((parent_key, child_index, partial_key));
+                queue_to_process.push(node_key);
                 queue_to_process.extend(missing_children);
                 continue;
             }
@@ -401,192 +304,32 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
 
         // Load the stored value of this node.
         // TODO: do this in a more elegant way
-        let stored_value = if combined_key.nibbles.len() % 2 == 0 {
+        let stored_value = if node_key.len() % 2 == 0 {
+            let key_bytes = node_key
+                .chunks(2)
+                .map(|chunk| (u8::from(chunk[0]) << 4) | u8::from(chunk[1]))
+                .collect::<Vec<_>>();
+
             trie_access
                 .clone()
-                .get(&combined_key.to_bytes_truncate())
+                .get(&key_bytes)
                 .map(|v| v.as_ref().to_vec())
         } else {
             None
         };
 
         // Now calculate the Merkle value.
+        let mut node = trie_structure
+            .existing_node(node_key.iter().cloned())
+            .unwrap();
         let merkle_value = node_value::calculate_merke_root(node_value::Config {
-            is_root: child_index.is_none(),
+            is_root: node.is_root_node(),
             children: &children,
-            partial_key: partial_key.nibbles.iter().cloned(),
+            partial_key: node.partial_key(),
             stored_value,
         });
-
-        // Insert the result in the cache.
-        cache.entries.get_mut(&combined_key).unwrap().merkle_value =
-            Some(merkle_value.as_ref().to_vec());
+        node.user_data().merkle_value = Some(merkle_value);
     }
-
-    // Some sanity check.
-    debug_assert!(cache
-        .entries
-        .contains_key(cache.root_node.as_ref().unwrap()));
-    debug_assert!(cache
-        .entries
-        .get(cache.root_node.as_ref().unwrap())
-        .unwrap()
-        .merkle_value
-        .is_some());
-}
-
-/// Returns all the keys of the nodes that descend from `key`, excluding `key` itself.
-///
-/// Always returns the children in order.
-// TODO: implement in a cleaner way
-fn child_nodes<'a>(
-    trie_access: impl TrieRef<'a>,
-    key: &TrieNodeKey,
-) -> impl ExactSizeIterator<Item = (Nibble, TrieNodeKey)> {
-    let mut key_clone = key.clone();
-    key_clone.nibbles.push(Nibble::try_from(0).unwrap());
-
-    let mut out = Vec::new();
-    for n in 0..16 {
-        *key_clone.nibbles.last_mut().unwrap() = Nibble::try_from(n).unwrap();
-        let descendants =
-            descendant_storage_keys(trie_access.clone(), &key_clone).collect::<Vec<_>>();
-        debug_assert!(descendants
-            .iter()
-            .all(|k| TrieNodeKey::from_bytes(k.as_ref())
-                .nibbles
-                .starts_with(&key_clone.nibbles)));
-        if let Some(prefix) = common_prefix(descendants.iter().map(|k| k.as_ref())) {
-            debug_assert_ne!(prefix, *key);
-            debug_assert!(prefix.nibbles.starts_with(&key.nibbles));
-            let nibble = prefix.nibbles[key.nibbles.len()].clone();
-            let partial_key = TrieNodeKey {
-                nibbles: prefix.nibbles[(key.nibbles.len() + 1)..].to_vec(),
-            };
-            out.push((nibble, partial_key));
-        }
-    }
-    out.into_iter()
-}
-
-/// Returns all the keys that descend from `key` or equal to `key` that have a storage entry.
-// TODO: ugh, these lifetimes
-fn descendant_storage_keys<'a>(
-    trie_access: impl TrieRef<'a>,
-    key: &TrieNodeKey,
-) -> impl Iterator<Item = Vec<u8>> {
-    // Because `prefix_keys` accepts only `&[u8]`, we pass a truncated version of the key
-    // and filter out the returned elements that are not actually descendants.
-    let list = {
-        let equiv_full_bytes = key.to_bytes_truncate();
-        trie_access
-            .prefix_keys(&equiv_full_bytes)
-            .filter(move |k| key.is_ancestor_or_equal(k.as_ref()))
-            .map(|k| k.as_ref().to_vec())
-            .collect::<Vec<Vec<u8>>>()
-    };
-
-    list.into_iter()
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct TrieNodeKey {
-    nibbles: Vec<Nibble>,
-}
-
-impl TrieNodeKey {
-    fn empty() -> Self {
-        TrieNodeKey {
-            nibbles: Vec::new(),
-        }
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Self {
-        let mut out = Vec::with_capacity(bytes.len() * 2);
-        for b in bytes {
-            out.push(Nibble::try_from(*b >> 4).unwrap());
-            out.push(Nibble::try_from(*b & 0xf).unwrap());
-        }
-        TrieNodeKey { nibbles: out }
-    }
-
-    fn to_bytes_truncate(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(self.nibbles.len() / 2);
-        for n in self.nibbles.chunks(2) {
-            debug_assert!(!n.is_empty());
-            if n.len() < 2 {
-                debug_assert_eq!(n.len(), 1);
-                continue;
-            }
-            let byte = (u8::from(n[0]) << 4) | u8::from(n[1]);
-            out.push(byte);
-        }
-        out
-    }
-
-    fn is_ancestor_or_equal(&self, key: &[u8]) -> bool {
-        let mut key_iter = key.iter();
-
-        for my_nibbles in self.nibbles.chunks(2) {
-            let mut key_byte = match key_iter.next() {
-                Some(b) => *b,
-                None => return false,
-            };
-
-            if my_nibbles.len() == 1 {
-                // This is the last element.
-                return (key_byte >> 4) == u8::from(my_nibbles[0]);
-            } else {
-                debug_assert_eq!(my_nibbles.len(), 2);
-
-                let my_byte = (u8::from(my_nibbles[0]) << 4) | u8::from(my_nibbles[1]);
-                if my_byte != key_byte {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-}
-
-impl fmt::Debug for TrieNodeKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for nibble in &self.nibbles {
-            write!(f, "{:?}", nibble)?;
-        }
-        Ok(())
-    }
-}
-
-/// Given a list of `&[u8]`, returns the longest prefix that is shared by all the elements in the
-/// list.
-fn common_prefix<'a>(mut list: impl Iterator<Item = &'a [u8]>) -> Option<TrieNodeKey> {
-    let mut longest_prefix = TrieNodeKey::from_bytes(list.next()?);
-
-    while let Some(elem) = list.next() {
-        let elem = TrieNodeKey::from_bytes(elem);
-
-        if elem.nibbles.len() < longest_prefix.nibbles.len() {
-            longest_prefix.nibbles.truncate(elem.nibbles.len());
-        }
-
-        if let Some((diff_pos, _)) = longest_prefix
-            .nibbles
-            .iter()
-            .enumerate()
-            .find(|(idx, b)| elem.nibbles[*idx] != **b)
-        {
-            longest_prefix.nibbles.truncate(diff_pos);
-        }
-
-        if longest_prefix.nibbles.is_empty() {
-            // No need to iterate further if the common prefix is already empty.
-            break;
-        }
-    }
-
-    Some(longest_prefix)
 }
 
 // TODO: tests

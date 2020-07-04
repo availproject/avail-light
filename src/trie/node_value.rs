@@ -204,6 +204,14 @@ impl AsRef<[u8]> for Output {
     }
 }
 
+impl From<Output> for [u8; 32] {
+    fn from(output: Output) -> Self {
+        let mut out = [0; 32];
+        out.copy_from_slice(output.as_ref());
+        out
+    }
+}
+
 impl fmt::Debug for Output {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self.as_ref(), f)

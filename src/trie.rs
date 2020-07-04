@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn trie_root() {
+    fn trie_root_example() {
         let mut trie = Trie::new();
         trie.insert(&[0x48, 0x19], [0xfe].to_vec());
         trie.insert(&[0x13, 0x14], [0xff].to_vec());

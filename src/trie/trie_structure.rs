@@ -1,6 +1,7 @@
 use super::nibble::Nibble;
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, iter};
+use either::Either;
 use slab::Slab;
 
 /// Stores the structure of a trie, including branch nodes that have no storage value.
@@ -54,18 +55,7 @@ impl<TUd> TrieStructure<TUd> {
 
     /// Returns the root node of the trie, or `None` if the trie is empty.
     pub fn root_node(&mut self) -> Option<NodeAccess<TUd>> {
-        let root_index = self.root_index?;
-        if self.nodes.get(root_index).unwrap().has_storage_value {
-            Some(NodeAccess::Storage(StorageNodeAccess {
-                trie: self,
-                node_index: root_index,
-            }))
-        } else {
-            Some(NodeAccess::Branch(BranchNodeAccess {
-                trie: self,
-                node_index: root_index,
-            }))
-        }
+        Some(self.node_by_index(self.root_index?).unwrap())
     }
 
     /// Returns a [`Entry`] with the given node.
@@ -133,6 +123,7 @@ impl<TUd> TrieStructure<TUd> {
                 }
             }
         };
+        debug_assert!(self.nodes.get(current_index).unwrap().parent.is_none());
 
         let mut closest_ancestor = None;
 
@@ -168,6 +159,63 @@ impl<TUd> TrieStructure<TUd> {
                 return ExistingNodeInnerResult::NotFound { closest_ancestor };
             }
         }
+    }
+
+    /// Internal function. Returns the [`NodeAccess`] of the node at the given index.
+    fn node_by_index(&mut self, node_index: usize) -> Option<NodeAccess<TUd>> {
+        if self.nodes.get(node_index)?.has_storage_value {
+            Some(NodeAccess::Storage(StorageNodeAccess {
+                trie: self,
+                node_index,
+            }))
+        } else {
+            Some(NodeAccess::Branch(BranchNodeAccess {
+                trie: self,
+                node_index,
+            }))
+        }
+    }
+
+    /// Returns the full key of the node with the given index.
+    fn node_full_key<'b>(&'b self, target: usize) -> impl Iterator<Item = Nibble> + 'b {
+        self.node_path(target)
+            .chain(iter::once(target))
+            .flat_map(move |n| {
+                let node = self.nodes.get(n).unwrap();
+                let child_index = node.parent.into_iter().map(|p| p.1);
+                let partial_key = node.partial_key.iter().cloned();
+                child_index.chain(partial_key)
+            })
+    }
+
+    /// Returns the indices of the nodes to traverse to reach `target`. The returned iterator
+    /// does *not* include `target`. In other words, if `target` is the root node, this returns
+    /// an empty iterator.
+    fn node_path<'b>(&'b self, target: usize) -> impl Iterator<Item = usize> + 'b {
+        debug_assert!(self.nodes.get(usize::max_value()).is_none());
+        // First element is an invalid key, each successor is the last element of
+        // `reverse_node_path(target)` that isn't equal to `current`.
+        // Since the first element is invalid, we skip it.
+        // Since `reverse_node_path` never produces `target`, we know that it also won't be
+        // produced here.
+        iter::successors(Some(usize::max_value()), move |&current| {
+            self.reverse_node_path(target)
+                .take_while(move |n| *n != current)
+                .last()
+        })
+        .skip(1)
+    }
+
+    /// Returns the indices of the nodes starting from `target` towards the root node. The returned
+    /// iterator does *not* include `target` but does include the root node if it is different
+    /// from `target`. If `target` is the root node, this returns an empty iterator.
+    fn reverse_node_path<'b>(&'b self, target: usize) -> impl Iterator<Item = usize> + 'b {
+        // First element is `target`, each successor is `current.parent`.
+        // Since `target` must explicitly not be included, we skip the first element.
+        iter::successors(Some(target), move |current| {
+            Some(self.nodes.get(*current).unwrap().parent?.0)
+        })
+        .skip(1)
     }
 }
 
@@ -223,6 +271,48 @@ impl<'a, TUd> NodeAccess<'a, TUd> {
         }
     }
 
+    /// Returns the child of this node given the given index.
+    ///
+    /// Returns back `self` if there is no such child at this index.
+    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+        match self {
+            NodeAccess::Storage(n) => n.child(index).map_err(NodeAccess::Storage),
+            NodeAccess::Branch(n) => n.child(index).map_err(NodeAccess::Branch),
+        }
+    }
+
+    /// Returns true if this node is the root node of the trie.
+    pub fn is_root_node(&self) -> bool {
+        match self {
+            NodeAccess::Storage(n) => n.is_root_node(),
+            NodeAccess::Branch(n) => n.is_root_node(),
+        }
+    }
+
+    /// Returns the full key of the node.
+    pub fn full_key<'b>(&'b self) -> impl Iterator<Item = Nibble> + 'b {
+        match self {
+            NodeAccess::Storage(n) => Either::Left(n.full_key()),
+            NodeAccess::Branch(n) => Either::Right(n.full_key()),
+        }
+    }
+
+    /// Returns the partial key of the node.
+    pub fn partial_key<'b>(&'b self) -> impl ExactSizeIterator<Item = Nibble> + 'b {
+        match self {
+            NodeAccess::Storage(n) => Either::Left(n.partial_key()),
+            NodeAccess::Branch(n) => Either::Right(n.partial_key()),
+        }
+    }
+
+    /// Returns the user data stored in the node.
+    pub fn user_data(&mut self) -> &mut TUd {
+        match self {
+            NodeAccess::Storage(n) => n.user_data(),
+            NodeAccess::Branch(n) => n.user_data(),
+        }
+    }
+
     /// Returns true if the node has a storage value associated to it.
     pub fn has_storage_value(&self) -> bool {
         match self {
@@ -254,6 +344,51 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
                 node_index: parent_idx,
             }))
         }
+    }
+
+    /// Returns the child of this node given the given index.
+    ///
+    /// Returns back `self` if there is no such child at this index.
+    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+        let child_idx = match self.trie.nodes.get(self.node_index).unwrap().children
+            [usize::from(u8::from(index))]
+        {
+            Some(c) => c,
+            None => return Err(self),
+        };
+
+        if self.trie.nodes.get(child_idx).unwrap().has_storage_value {
+            Ok(NodeAccess::Storage(StorageNodeAccess {
+                trie: self.trie,
+                node_index: child_idx,
+            }))
+        } else {
+            Ok(NodeAccess::Branch(BranchNodeAccess {
+                trie: self.trie,
+                node_index: child_idx,
+            }))
+        }
+    }
+
+    /// Returns true if this node is the root node of the trie.
+    pub fn is_root_node(&self) -> bool {
+        self.trie.root_index == Some(self.node_index)
+    }
+
+    /// Returns the full key of the node.
+    pub fn full_key<'b>(&'b self) -> impl Iterator<Item = Nibble> + 'b {
+        self.trie.node_full_key(self.node_index)
+    }
+
+    /// Returns the partial key of the node.
+    pub fn partial_key<'b>(&'b self) -> impl ExactSizeIterator<Item = Nibble> + 'b {
+        self.trie
+            .nodes
+            .get(self.node_index)
+            .unwrap()
+            .partial_key
+            .iter()
+            .cloned()
     }
 
     /// Returns the user data associated to this node.
@@ -435,6 +570,7 @@ pub enum Remove<'a, TUd> {
     /// If `child` is `None`, then what happened is:
     ///
     /// ```ignore
+    ///
     ///       Before                               After
     ///
     ///
@@ -446,12 +582,14 @@ pub enum Remove<'a, TUd> {
     ///           |
     ///          +-+
     ///          +-+ removed node
+    ///
     /// ```
     ///
     ///
     /// If `child` is `Some`, then what happened is:
     ///
     /// ```ignore
+    ///
     ///       Before                               After
     ///
     ///
@@ -469,6 +607,7 @@ pub enum Remove<'a, TUd> {
     ///     |                                   |
     ///    +-+                                 +-+
     ///    +-+                                 +-+  `child`
+    ///
     /// ```
     ///
     SingleRemove {
@@ -485,8 +624,8 @@ pub enum Remove<'a, TUd> {
     ///
     /// This can only happen if the removed node had no children and only one sibling.
     ///
-    ///
     /// ```ignore
+    ///
     ///             Before                        After
     ///
     ///
@@ -500,6 +639,7 @@ pub enum Remove<'a, TUd> {
     ///        +-+         +-+                           +-+
     ///
     ///  removed node                                 `sibling`
+    ///
     /// ```
     ///
     BranchAlsoRemoved {
@@ -539,6 +679,51 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
         }
     }
 
+    /// Returns the child of this node given the given index.
+    ///
+    /// Returns back `self` if there is no such child at this index.
+    pub fn child(self, index: Nibble) -> Result<NodeAccess<'a, TUd>, Self> {
+        let child_idx = match self.trie.nodes.get(self.node_index).unwrap().children
+            [usize::from(u8::from(index))]
+        {
+            Some(c) => c,
+            None => return Err(self),
+        };
+
+        if self.trie.nodes.get(child_idx).unwrap().has_storage_value {
+            Ok(NodeAccess::Storage(StorageNodeAccess {
+                trie: self.trie,
+                node_index: child_idx,
+            }))
+        } else {
+            Ok(NodeAccess::Branch(BranchNodeAccess {
+                trie: self.trie,
+                node_index: child_idx,
+            }))
+        }
+    }
+
+    /// Returns true if this node is the root node of the trie.
+    pub fn is_root_node(&self) -> bool {
+        self.trie.root_index == Some(self.node_index)
+    }
+
+    /// Returns the full key of the node.
+    pub fn full_key<'b>(&'b self) -> impl Iterator<Item = Nibble> + 'b {
+        self.trie.node_full_key(self.node_index)
+    }
+
+    /// Returns the partial key of the node.
+    pub fn partial_key<'b>(&'b self) -> impl ExactSizeIterator<Item = Nibble> + 'b {
+        self.trie
+            .nodes
+            .get(self.node_index)
+            .unwrap()
+            .partial_key
+            .iter()
+            .cloned()
+    }
+
     /// Adds a storage value to this node, turning it into a [`StorageNodeAccess`].
     ///
     /// The trie structure doesn't change.
@@ -572,13 +757,21 @@ pub struct Vacant<'a, TUd> {
 
 impl<'a, TUd> Vacant<'a, TUd> {
     /// Prepare the operation of creating the node in question.
+    ///
+    /// This method analyzes the trie to prepare for the operation, but doesn't actually perform
+    /// any insertion. To perform the insertion, use the returned [`PrepareInsert`].
     pub fn insert_storage_value(self) -> PrepareInsert<'a, TUd> {
-        // Retrieve what would be the parent if we inserted the new node, not taking branching
+        // Retrieve what will be the parent after we insert the new node, not taking branching
         // into account yet.
-        let future_parent_index = match (self.closest_ancestor, self.trie.root_index) {
+        // If `Some`, contains its index and number of nibbles in its key.
+        let future_parent = match (self.closest_ancestor, self.trie.root_index) {
             (Some(_), None) => unreachable!(),
-            (Some(ancestor), Some(_)) => ancestor,
-            (None, Some(root)) => root,
+            (Some(ancestor), Some(_)) => {
+                let key_len = self.trie.node_full_key(ancestor).count();
+                debug_assert!(self.key.len() > key_len);
+                Some((ancestor, key_len))
+            }
+            (None, Some(_)) => None,
             (None, None) => {
                 // Situation where the trie is empty. This is kind of a special case that we
                 // handle by returning early.
@@ -591,64 +784,206 @@ impl<'a, TUd> Vacant<'a, TUd> {
             }
         };
 
-        // Number of nibbles in `future_parent`'s key.
-        let future_parent_key_len = {
-            let mut total = 0;
-            let mut curr_idx = future_parent_index;
-            loop {
-                let curr = self.trie.nodes.get(curr_idx).unwrap();
-                total += curr.partial_key.len();
-                if let Some((parent_idx, _)) = curr.parent {
-                    total += 1;
-                    curr_idx = parent_idx;
-                } else {
-                    break total;
-                }
-            }
-        };
-        debug_assert!(self.key.len() > future_parent_key_len);
-
         // Get the existing child of `future_parent` that points towards the newly-inserted node,
-        // or an early-return if none.
-        let existing_node_idx = {
-            let new_child_index = self.key[future_parent_key_len];
-            let future_parent = self.trie.nodes.get(future_parent_index).unwrap();
-            match future_parent.children[usize::from(u8::from(new_child_index))] {
-                Some(i) => i,
-                None => {
-                    return PrepareInsert::One(PrepareInsertOne {
-                        trie: self.trie,
-                        parent: Some((future_parent_index, new_child_index)),
-                        partial_key: self.key[future_parent_key_len + 1..].to_owned(),
-                        children: [None; 16],
-                    })
+        // or a successful early-return if none.
+        let existing_node_index =
+            if let Some((future_parent_index, future_parent_key_len)) = future_parent {
+                let new_child_index = self.key[future_parent_key_len];
+                let future_parent = self.trie.nodes.get(future_parent_index).unwrap();
+                match future_parent.children[usize::from(u8::from(new_child_index))] {
+                    Some(i) => {
+                        debug_assert_eq!(
+                            self.trie.nodes.get(i).unwrap().parent.unwrap().0,
+                            future_parent_index
+                        );
+                        i
+                    }
+                    None => {
+                        // There is an empty slot in `future_parent` for our new node.
+                        //
+                        //
+                        //           `future_parent`
+                        //                 +-+
+                        //             +-> +-+  <---------+
+                        //             |        <----+    |
+                        //             |     ^       |    |
+                        //            +-+    |       |    |
+                        //   New node +-+    +-+-+  +-+  +-+  0 or more existing children
+                        //                     +-+  +-+  +-+
+                        //
+                        //
+                        return PrepareInsert::One(PrepareInsertOne {
+                            trie: self.trie,
+                            parent: Some((future_parent_index, new_child_index)),
+                            partial_key: self.key[future_parent_key_len + 1..].to_owned(),
+                            children: [None; 16],
+                        });
+                    }
                 }
-            }
-        };
+            } else {
+                self.trie.root_index.unwrap()
+            };
 
-        // `existing_node_idx` and the new node have the same parent and the same child index,
-        // now let's compare their partial key.
-        let existing_node_partial_key =
-            &self.trie.nodes.get(existing_node_idx).unwrap().partial_key;
-        let new_node_partial_key = &self.key[future_parent_key_len + 1..];
+        // `existing_node_idx` and the new node are known to either have the same parent and the
+        // same child index, or to both have no parent. Now let's compare their partial key.
+        let existing_node_partial_key = &self
+            .trie
+            .nodes
+            .get(existing_node_index)
+            .unwrap()
+            .partial_key;
+        let new_node_partial_key = &self.key[future_parent.map_or(0, |(_, n)| n + 1)..];
         debug_assert_ne!(&**existing_node_partial_key, new_node_partial_key);
         debug_assert!(!new_node_partial_key.starts_with(existing_node_partial_key));
 
         // If `new_node_partial_key` starts with `existing_node_partial_key`, then the new node
         // will be inserted in-between the parent and the existing node.
         if new_node_partial_key.starts_with(existing_node_partial_key) {
-            todo!() /*PrepareInsert::One(PrepareInsertOne {
-                        trie: self.trie,
-                        key: self.key,
-                    })*/
-        } else {
-            // Otherwise, we will need to create a branch.
-            PrepareInsert::Two(PrepareInsertTwo {
+            // The new node is to be inserted in-between `future_parent` and
+            // `existing_node_index`.
+            //
+            // If `future_parent` is `Some`:
+            //
+            //
+            //                         +-+
+            //        `future_parent`  +-+ <---------+
+            //                          ^            |
+            //                          |            +
+            //                         +-+         (0 or more existing children)
+            //               New node  +-+
+            //                          ^
+            //                          |
+            //                         +-+
+            //  `existing_node_index`  +-+
+            //                          ^
+            //                          |
+            //                          +
+            //                    (0 or more existing children)
+            //
+            //
+            //
+            // If `future_parent` is `None`:
+            //
+            //
+            //            New node    +-+
+            //    (becomes the root)  +-+
+            //                         ^
+            //                         |
+            // `existing_node_index`  +-+
+            //     (current root)     +-+
+            //                         ^
+            //                         |
+            //                         +
+            //                   (0 or more existing children)
+            //
+
+            let mut new_node_children = [None; 16];
+            let existing_node_new_child_index =
+                existing_node_partial_key[new_node_partial_key.len()];
+            new_node_children[usize::from(u8::from(existing_node_new_child_index))] =
+                Some(existing_node_index);
+
+            return PrepareInsert::One(PrepareInsertOne {
                 trie: self.trie,
-                key: self.key,
-                branch_parent_index: future_parent_index,
-            })
+                parent: if let Some((future_parent_index, future_parent_key_len)) = future_parent {
+                    let new_child_index = self.key[future_parent_key_len];
+                    Some((future_parent_index, new_child_index))
+                } else {
+                    None
+                },
+                partial_key: new_node_partial_key.to_owned(),
+                children: new_node_children,
+            });
         }
+
+        // If we reach here, we know that we will need to create a new branch node in addition to
+        // the new storage node.
+        //
+        // If `future_parent` is `Some`:
+        //
+        //
+        //                  `future_parent`
+        //
+        //                        +-+
+        //                        +-+ <--------+  (0 or more existing children)
+        //                         ^
+        //                         |
+        //       New branch node  +-+
+        //                        +-+ <-------+
+        //                         ^          |
+        //                         |          |
+        //                        +-+        +-+
+        // `existing_node_index`  +-+        +-+  New storage node
+        //                         ^
+        //                         |
+        //
+        //                 (0 or more existing children)
+        //
+        //
+        //
+        // If `future_parent` is `None`:
+        //
+        //
+        //     New branch node    +-+
+        //     (becomes root)     +-+ <-------+
+        //                         ^          |
+        //                         |          |
+        // `existing_node_index`  +-+        +-+
+        //     (current root)     +-+        +-+  New storage node
+        //                         ^
+        //                         |
+        //
+        //                 (0 or more existing children)
+        //
+        //
+
+        // Find the common ancestor between `new_node_partial_key` and `existing_node_partial_key`.
+        let branch_partial_key_len = {
+            debug_assert_ne!(new_node_partial_key, &**existing_node_partial_key);
+            let mut len = 0;
+            let mut k1 = new_node_partial_key.iter();
+            let mut k2 = existing_node_partial_key.iter();
+            // Since `new_node_partial_key` is different from `existing_node_partial_key`, we know
+            // that `k1.next()` and `k2.next()` won't both be `None`.
+            while k1.next() == k2.next() {
+                len += 1;
+            }
+            debug_assert!(len < new_node_partial_key.len());
+            debug_assert!(len < existing_node_partial_key.len());
+            len
+        };
+
+        // Table of children for the new branch node, not including the new storage node.
+        // It therefore contains only one entry: `existing_node_index`.
+        let branch_children = {
+            let mut branch_children = [None; 16];
+            let existing_node_new_child_index = existing_node_partial_key[branch_partial_key_len];
+            debug_assert_ne!(
+                existing_node_new_child_index,
+                new_node_partial_key[branch_partial_key_len]
+            );
+            branch_children[usize::from(u8::from(existing_node_new_child_index))] =
+                Some(existing_node_index);
+            branch_children
+        };
+
+        // Success!
+        PrepareInsert::Two(PrepareInsertTwo {
+            trie: self.trie,
+
+            storage_child_index: new_node_partial_key[branch_partial_key_len],
+            storage_partial_key: new_node_partial_key[branch_partial_key_len + 1..].to_owned(),
+
+            branch_parent: if let Some((future_parent_index, future_parent_key_len)) = future_parent
+            {
+                let new_child_index = self.key[future_parent_key_len];
+                Some((future_parent_index, new_child_index))
+            } else {
+                None
+            },
+            branch_partial_key: new_node_partial_key[..branch_partial_key_len].to_owned(),
+            branch_children,
+        })
     }
 }
 
@@ -683,6 +1018,7 @@ pub struct PrepareInsertOne<'a, TUd> {
     trie: &'a mut TrieStructure<TUd>,
 
     /// Value of [`Node::parent`] for the newly-created node.
+    /// If `None`, we also set the root of the trie to the new node.
     parent: Option<(usize, Nibble)>,
     /// Value of [`Node::partial_key`] for the newly-created node.
     partial_key: Vec<Nibble>,
@@ -719,7 +1055,7 @@ impl<'a, TUd> PrepareInsertOne<'a, TUd> {
         if let Some((parent_index, child_index)) = self.parent {
             let mut parent = self.trie.nodes.get_mut(parent_index).unwrap();
             parent.children[usize::from(u8::from(child_index))] = Some(new_node_index);
-        } else if self.trie.root_index.is_none() {
+        } else {
             self.trie.root_index = Some(new_node_index);
         }
 
@@ -734,15 +1070,32 @@ impl<'a, TUd> PrepareInsertOne<'a, TUd> {
 /// Two nodes will be inserted in the trie.
 pub struct PrepareInsertTwo<'a, TUd> {
     trie: &'a mut TrieStructure<TUd>,
-    key: &'a [Nibble],
-    /// Index of the node that will become the parent of the new branch node.
-    branch_parent_index: usize,
+
+    /// Value of the child index in [`Node::parent`] for the newly-created storage node.
+    storage_child_index: Nibble,
+    /// Value of [`Node::partial_key`] for the newly-created storage node.
+    storage_partial_key: Vec<Nibble>,
+
+    /// Value of [`Node::parent`] for the newly-created branch node.
+    /// If `None`, we also set the root of the trie to the new branch node.
+    branch_parent: Option<(usize, Nibble)>,
+    /// Value of [`Node::partial_key`] for the newly-created branch node.
+    branch_partial_key: Vec<Nibble>,
+    /// Value of [`Node::children`] for the newly-created branch node. Does not include the entry
+    /// that must be filled with the new storage node.
+    branch_children: [Option<usize>; 16],
 }
 
 impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
     /// Key of the branch node that will be inserted.
-    pub fn branch_node_key(&self) -> &[Nibble] {
-        todo!()
+    pub fn branch_node_key<'b>(&'b self) -> impl Iterator<Item = Nibble> + 'b {
+        if let Some((parent_index, child_index)) = self.branch_parent {
+            let parent = self.trie.node_full_key(parent_index);
+            let iter = parent.chain(iter::once(child_index)).chain(self.branch_partial_key.iter().cloned());
+            Either::Left(iter)
+        } else {
+            Either::Right(self.branch_partial_key.iter().cloned())
+        }
     }
 
     /// Insert the new node.
@@ -751,16 +1104,62 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
         storage_node_user_data: TUd,
         branch_node_user_data: TUd,
     ) -> StorageNodeAccess<'a, TUd> {
-        /*// Insert the branch node.
-        let branch_node = self.trie.nodes.insert(Node {
-            parent: Option<(usize, Nibble)>,
-            partial_key: Vec<Nibble>,
-            children: [Option<usize>; 16],
+        let new_storage_node_partial_key_len = self.storage_partial_key.len();
+        let new_branch_node_partial_key_len = self.branch_partial_key.len();
+
+        debug_assert_eq!(
+            self.branch_children.iter().filter(|c| c.is_some()).count(),
+            1
+        );
+
+        let new_branch_node_index = self.trie.nodes.insert(Node {
+            parent: self.branch_parent,
+            partial_key: self.branch_partial_key,
+            children: self.branch_children.clone(),
             has_storage_value: false,
             user_data: branch_node_user_data,
-        });*/
+        });
 
-        todo!()
+        let new_storage_node_index = self.trie.nodes.insert(Node {
+            parent: Some((new_branch_node_index, self.storage_child_index)),
+            partial_key: self.storage_partial_key,
+            children: [None; 16],
+            has_storage_value: true,
+            user_data: storage_node_user_data,
+        });
+
+        self.trie
+            .nodes
+            .get_mut(new_branch_node_index)
+            .unwrap()
+            .children[usize::from(u8::from(self.storage_child_index))] =
+            Some(new_storage_node_index);
+
+        // Update the branch node's children to point to their new parent.
+        for (child_index, child) in self.branch_children.iter().enumerate() {
+            let mut child = match child {
+                Some(c) => self.trie.nodes.get_mut(*c).unwrap(),
+                None => continue,
+            };
+
+            let child_index = Nibble::try_from(u8::try_from(child_index).unwrap()).unwrap();
+            child.parent = Some((new_branch_node_index, child_index));
+            child.partial_key = child.partial_key[new_branch_node_partial_key_len + 1..].to_vec();
+        }
+
+        // Update the branch node's parent to point to its new child.
+        if let Some((parent_index, child_index)) = self.branch_parent {
+            let mut parent = self.trie.nodes.get_mut(parent_index).unwrap();
+            parent.children[usize::from(u8::from(child_index))] = Some(new_branch_node_index);
+        } else {
+            self.trie.root_index = Some(new_branch_node_index);
+        }
+
+        // Success!
+        StorageNodeAccess {
+            trie: self.trie,
+            node_index: new_storage_node_index,
+        }
     }
 }
 
@@ -775,6 +1174,8 @@ mod tests {
             .map(|b| Nibble::try_from(*b).unwrap())
             .collect()
     }
+
+    // TODO: fuzzing test
 
     #[test]
     fn basic() {

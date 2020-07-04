@@ -146,11 +146,7 @@ where
                 new_storage_value,
                 resolve,
             } => {
-                if new_storage_value.is_some() {
-                    top_trie_root_calculation_cache.invalidate_storage_value(storage_key);
-                } else {
-                    top_trie_root_calculation_cache.invalidate_node(storage_key);
-                }
+                top_trie_root_calculation_cache.storage_value_update(storage_key, new_storage_value.is_some());
                 top_trie_changes
                     .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
                 resolve.finish_call(());
@@ -160,7 +156,7 @@ where
                 value,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.invalidate_storage_value(storage_key);
+                top_trie_root_calculation_cache.storage_value_update(storage_key, true);
 
                 let current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone().unwrap_or(Vec::new())
@@ -194,7 +190,7 @@ where
                 storage_key,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.invalidate_prefix(storage_key);
+                top_trie_root_calculation_cache.prefix_remove_update(storage_key);
 
                 for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
                     if !key.starts_with(&storage_key) {
