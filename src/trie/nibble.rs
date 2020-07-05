@@ -1,4 +1,4 @@
-use core::{convert::TryFrom, fmt, iter};
+use core::{convert::TryFrom, fmt};
 
 /// A single nibble with four bits.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

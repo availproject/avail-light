@@ -92,10 +92,7 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Returns the node with the given key, or `None` if no such node exists.
-    pub fn existing_node(
-        &mut self,
-        mut key: impl Iterator<Item = Nibble>,
-    ) -> Option<NodeAccess<TUd>> {
+    pub fn existing_node(&mut self, key: impl Iterator<Item = Nibble>) -> Option<NodeAccess<TUd>> {
         if let ExistingNodeInnerResult::Found {
             node_index,
             has_storage_value,
@@ -175,7 +172,7 @@ impl<TUd> TrieStructure<TUd> {
     /// closest ancestor is not a descendant of the new trie root.
     pub fn remove_prefix(
         &mut self,
-        prefix: impl Iterator<Item = Nibble> + Clone,
+        _prefix: impl Iterator<Item = Nibble> + Clone,
     ) -> Option<NodeAccess<TUd>> {
         todo!() // TODO: implement
                 /*// `ancestor` is the node that will stay in the tree and the common ancestor of all the
@@ -1407,7 +1404,6 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
         storage_node_user_data: TUd,
         branch_node_user_data: TUd,
     ) -> StorageNodeAccess<'a, TUd> {
-        let new_storage_node_partial_key_len = self.storage_partial_key.len();
         let new_branch_node_partial_key_len = self.branch_partial_key.len();
 
         debug_assert_eq!(

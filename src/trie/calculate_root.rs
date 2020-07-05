@@ -175,15 +175,15 @@ impl CalculationCache {
                 return
             }
             (
-                trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(mut entry)),
+                trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(entry)),
                 false,
             ) => match entry.remove() {
-                trie_structure::Remove::StorageToBranch(mut node) => {
+                trie_structure::Remove::StorageToBranch(node) => {
                     trie_structure::NodeAccess::Branch(node)
                 }
-                trie_structure::Remove::BranchAlsoRemoved { mut sibling, .. } => sibling,
-                trie_structure::Remove::SingleRemoveChild { mut child, .. } => child,
-                trie_structure::Remove::SingleRemoveNoChild { mut parent, .. } => parent,
+                trie_structure::Remove::BranchAlsoRemoved { sibling, .. } => sibling,
+                trie_structure::Remove::SingleRemoveChild { child, .. } => child,
+                trie_structure::Remove::SingleRemoveNoChild { parent, .. } => parent,
                 trie_structure::Remove::TrieNowEmpty { .. } => return,
             },
         };
@@ -199,8 +199,8 @@ impl CalculationCache {
 
     /// Notify the cache that all the storage values whose key start with the given prefix have
     /// been removed.
-    pub fn prefix_remove_update(&mut self, prefix: &[u8]) {
-        let structure = match &mut self.structure {
+    pub fn prefix_remove_update(&mut self, _prefix: &[u8]) {
+        let _structure = match &mut self.structure {
             Some(s) => s,
             None => return,
         };
@@ -238,7 +238,7 @@ impl fmt::Debug for CalculationCache {
 /// Calculates the Merkle value of the root node.
 pub fn root_merkle_value<'a>(
     trie_access: impl TrieRef<'a>,
-    mut cache: Option<&mut CalculationCache>,
+    cache: Option<&mut CalculationCache>,
 ) -> [u8; 32] {
     // The calculation that we perform relies on storing values in the cache and reloading them
     // afterwards. If the user didn't pass any cache, we create a temporary one.
@@ -253,7 +253,7 @@ pub fn root_merkle_value<'a>(
 
     // The `fill_cache` function guarantees to have filled the cache with the root node's
     // information.
-    let mut root_node = cache_or_temporary.structure.as_mut().unwrap().root_node();
+    let root_node = cache_or_temporary.structure.as_mut().unwrap().root_node();
     if let Some(mut root_node) = root_node {
         root_node.user_data().merkle_value.clone().unwrap().into()
     } else {
