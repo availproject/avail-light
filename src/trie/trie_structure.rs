@@ -212,13 +212,9 @@ impl<TUd> TrieStructure<TUd> {
     ///
     /// Everything is compared for equality except the user datas.
     pub fn structure_equal<T>(&self, other: &TrieStructure<T>) -> bool {
-        // TODO: remove the debug printlns
         if self.nodes.len() != other.nodes.len() {
-            println!("num nodes different");
             return false;
         }
-
-        let mut bad = false;
 
         let mut me_iter = self.all_nodes_ordered();
         let mut other_iter = other.all_nodes_ordered();
@@ -226,42 +222,25 @@ impl<TUd> TrieStructure<TUd> {
         loop {
             let (me_node_idx, other_node_idx) = match (me_iter.next(), other_iter.next()) {
                 (Some(a), Some(b)) => (a, b),
-                (None, None) => return !bad,
-                _ => {
-                    println!("diff in iteration");
-                    return false;
-                }
+                (None, None) => return true,
+                _ => return false,
             };
 
             let me_node = self.nodes.get(me_node_idx).unwrap();
             let other_node = other.nodes.get(other_node_idx).unwrap();
 
             if me_node.has_storage_value != other_node.has_storage_value {
-                println!(
-                    "has storage value diff: {:?} vs {:?}: {:?} vs {:?}",
-                    me_node.has_storage_value,
-                    other_node.has_storage_value,
-                    self.node_full_key(me_node_idx).collect::<Vec<_>>(),
-                    other.node_full_key(other_node_idx).collect::<Vec<_>>()
-                );
-                bad = true;
+                return false;
             }
 
             match (me_node.parent, other_node.parent) {
                 (Some((_, i)), Some((_, j))) if i == j => {}
                 (None, None) => {}
-                _ => {
-                    println!("index diff");
-                    bad = true
-                }
+                _ => return false,
             }
 
             if me_node.partial_key != other_node.partial_key {
-                println!(
-                    "diff: {:?} vs {:?}",
-                    me_node.partial_key, other_node.partial_key
-                );
-                bad = true;
+                return false;
             }
         }
     }
@@ -1489,31 +1468,21 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
 
 /// Inserts `first` and `second` at the beginning of `vec`.
 fn insert_front(vec: &mut Vec<Nibble>, first: Vec<Nibble>, next: Nibble) {
-    let mut new_vec = first;
-    new_vec.push(next);
-    new_vec.extend_from_slice(&**vec);
-    *vec = new_vec;
-    // TODO: restore optimized version after things are known to be working
-    /*let shift = first.len() + 1;
+    let shift = first.len() + 1;
     let previous_len = vec.len();
     vec.resize(vec.len() + shift, Nibble::try_from(0).unwrap());
     for n in (0..previous_len).rev() {
         vec[n + shift] = vec[n];
     }
     vec[0..first.len()].copy_from_slice(&first);
-    vec[first.len()] = next;*/
+    vec[first.len()] = next;
 }
 
 /// Removes the first `num` elements of `vec`.
 fn truncate_first_elems(vec: &mut Vec<Nibble>, num: usize) {
-    for _ in 0..num {
-        vec.remove(0);
-    }
-
-    // TODO: restore optimized version after things are known to be working
-    /*debug_assert!(num <= vec.len());
+    debug_assert!(num <= vec.len());
     for n in num..vec.len() {
         vec[n - num] = vec[n];
     }
-    vec.truncate(vec.len() - num);*/
+    vec.truncate(vec.len() - num);
 }
