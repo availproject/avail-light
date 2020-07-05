@@ -125,7 +125,11 @@ impl CalculationCache {
             None => return,
         };
 
-        match (
+        // Update the existing structure to account for the change.
+        // The trie structure will report exactly how the trie is modified, which makes it
+        // possible to know which nodes' Merkle values need to be invalidated.
+
+        let mut node_to_invalidate = match (
             structure.node(bytes_to_nibbles(key.iter().cloned())),
             has_value,
         ) {
@@ -135,47 +139,42 @@ impl CalculationCache {
                     .insert(Default::default(), Default::default());
 
                 // We have to invalidate the Merkle values of all the ancestors of the new node.
-                let mut parent = inserted.into_parent();
-                while let Some(mut p) = parent.take() {
-                    p.user_data().merkle_value = None;
-                    parent = p.into_parent();
+                match inserted.into_parent() {
+                    Some(p) => p,
+                    None => return,
                 }
             }
-            (trie_structure::Entry::Vacant(_), false) => {}
-            (trie_structure::Entry::Occupied(mut entry), true) => {
-                // Changing the storage value of a node changes its Merkle value and its ancestors'
-                // Merkle values.
-                entry.user_data().merkle_value = None;
-                let mut parent = entry.into_parent();
-                while let Some(mut p) = parent.take() {
-                    p.user_data().merkle_value = None;
-                    parent = p.into_parent();
-                }
+            (trie_structure::Entry::Vacant(_), false) => return,
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(entry)), true) => {
+                let entry = entry.insert_storage_value();
+                trie_structure::NodeAccess::Storage(entry)
             }
-            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)), false) => {}
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(entry)), true) => {
+                trie_structure::NodeAccess::Storage(entry)
+            }
+            (trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)), false) => {
+                return
+            }
             (
                 trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(mut entry)),
                 false,
-            ) => {
-                // All these situations are handled the same: we have to invalidate a certain
-                // node's Merkle value and all of its ancestors' Merkle values.
-                let mut node = match entry.remove() {
-                    trie_structure::Remove::StorageToBranch(mut node) => {
-                        trie_structure::NodeAccess::Branch(node)
-                    }
-                    trie_structure::Remove::BranchAlsoRemoved { mut sibling, .. } => sibling,
-                    trie_structure::Remove::SingleRemoveChild { mut child, .. } => child,
-                    trie_structure::Remove::SingleRemoveNoChild { mut parent, .. } => parent,
-                    trie_structure::Remove::TrieNowEmpty { .. } => return,
-                };
-
-                node.user_data().merkle_value = None;
-                let mut parent = node.into_parent();
-                while let Some(mut p) = parent.take() {
-                    p.user_data().merkle_value = None;
-                    parent = p.into_parent();
+            ) => match entry.remove() {
+                trie_structure::Remove::StorageToBranch(mut node) => {
+                    trie_structure::NodeAccess::Branch(node)
                 }
-            }
+                trie_structure::Remove::BranchAlsoRemoved { mut sibling, .. } => sibling,
+                trie_structure::Remove::SingleRemoveChild { mut child, .. } => child,
+                trie_structure::Remove::SingleRemoveNoChild { mut parent, .. } => parent,
+                trie_structure::Remove::TrieNowEmpty { .. } => return,
+            },
+        };
+
+        // We invalidate the Merkle value of `node_to_invalidate` and all its ancestors.
+        node_to_invalidate.user_data().merkle_value = None;
+        let mut parent = node_to_invalidate.into_parent();
+        while let Some(mut p) = parent.take() {
+            p.user_data().merkle_value = None;
+            parent = p.into_parent();
         }
     }
 

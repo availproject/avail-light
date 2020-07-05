@@ -1404,23 +1404,33 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
 
 /// Inserts `first` and `second` at the beginning of `vec`.
 fn insert_front(vec: &mut Vec<Nibble>, first: Vec<Nibble>, next: Nibble) {
-    let shift = first.len() + 1;
+    let mut new_vec = first;
+    new_vec.push(next);
+    new_vec.extend_from_slice(&**vec);
+    *vec = new_vec;
+    // TODO: restore optimized version after things are known to be working
+    /*let shift = first.len() + 1;
     let previous_len = vec.len();
     vec.resize(vec.len() + shift, Nibble::try_from(0).unwrap());
     for n in (0..previous_len).rev() {
         vec[n + shift] = vec[n];
     }
     vec[0..first.len()].copy_from_slice(&first);
-    vec[first.len()] = next;
+    vec[first.len()] = next;*/
 }
 
 /// Removes the first `num` elements of `vec`.
 fn truncate_first_elems(vec: &mut Vec<Nibble>, num: usize) {
-    debug_assert!(num <= vec.len());
+    for _ in 0..num {
+        vec.remove(0);
+    }
+
+    // TODO: restore optimized version after things are known to be working
+    /*debug_assert!(num <= vec.len());
     for n in num..vec.len() {
         vec[n - num] = vec[n];
     }
-    vec.truncate(vec.len() - num);
+    vec.truncate(vec.len() - num);*/
 }
 
 #[cfg(test)]
