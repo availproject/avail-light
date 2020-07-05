@@ -9,13 +9,13 @@ use parity_scale_codec::Encode as _;
 /// Information about a node whose Merkle value is to be calculated.
 ///
 /// The documentation here assumes that you already know how the trie works.
-pub struct Config<TChiter, TPKey, TVal> {
+pub struct Config<TChIter, TPKey, TVal> {
     /// True if this is the root node of the trie.
     pub is_root: bool,
 
     /// Iterator to the Merkle values of the 16 possible children of the node. `None` if there is
     /// no child at this index.
-    pub children: TChiter,
+    pub children: TChIter,
 
     /// Partial key of the node, as an iterator of nibbles.
     ///
@@ -39,11 +39,11 @@ pub struct Config<TChiter, TPKey, TVal> {
 ///
 /// Panics if `config.children.len() != 16`.
 ///
-pub fn calculate_merke_root<'a, TChiter, TPKey, TVal>(
-    mut config: Config<TChiter, TPKey, TVal>,
+pub fn calculate_merke_root<'a, TChIter, TPKey, TVal>(
+    mut config: Config<TChIter, TPKey, TVal>,
 ) -> Output
 where
-    TChiter: ExactSizeIterator<Item = Option<&'a Output>> + Clone,
+    TChIter: ExactSizeIterator<Item = Option<&'a Output>> + Clone,
     TPKey: ExactSizeIterator<Item = Nibble>,
     TVal: AsRef<[u8]>,
 {
