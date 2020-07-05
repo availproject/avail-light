@@ -566,21 +566,15 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
     /// Removes the storage value and returns what this changes in the trie structure.
     pub fn remove(self) -> Remove<'a, TUd> {
         // If the removed node has 2 or more children, then the node continues as a branch node.
-        if self
-            .trie
-            .nodes
-            .get(self.node_index)
-            .unwrap()
-            .children
-            .iter()
-            .filter(|c| c.is_some())
-            .count()
-            >= 2
         {
-            return Remove::StorageToBranch(BranchNodeAccess {
-                trie: self.trie,
-                node_index: self.node_index,
-            });
+            let mut node = self.trie.nodes.get_mut(self.node_index).unwrap();
+            if node.children.iter().filter(|c| c.is_some()).count() >= 2 {
+                node.has_storage_value = false;
+                return Remove::StorageToBranch(BranchNodeAccess {
+                    trie: self.trie,
+                    node_index: self.node_index,
+                });
+            }
         }
 
         let removed_node = self.trie.nodes.remove(self.node_index);
@@ -607,41 +601,48 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
         // there is potentially another change to make: maybe `parent` has to be removed from the
         // trie as well.
 
+        // Update `parent`'s child to point to `child_node_index`.
         // `single_remove` is true if we can keep `parent` in the trie.
-        let single_remove = if let Some((parent_index, child_index)) = removed_node.parent {
+        let single_remove = if let Some((parent_index, parent_to_removed_child_index)) =
+            removed_node.parent
+        {
             // Update `removed_node`'s parent to point to the child.
             let parent = self.trie.nodes.get_mut(parent_index).unwrap();
             debug_assert_eq!(
-                parent.children[usize::from(u8::from(child_index))],
+                parent.children[usize::from(u8::from(parent_to_removed_child_index))],
                 Some(self.node_index)
             );
-            parent.children[usize::from(u8::from(child_index))] = child_node_index;
+            parent.children[usize::from(u8::from(parent_to_removed_child_index))] =
+                child_node_index;
 
             // If `parent` does *not* need to be removed, we can return early.
             parent.has_storage_value || parent.children.iter().filter(|c| c.is_some()).count() >= 2
         } else {
+            debug_assert_eq!(self.trie.root_index, Some(self.node_index));
             self.trie.root_index = child_node_index;
             true
         };
 
         // If we keep the parent in the trie, return early with a `SingleRemove`.
         if single_remove {
-            if let Some(child_node_index) = child_node_index {
-                return Remove::SingleRemoveChild {
+            return if let Some(child_node_index) = child_node_index {
+                Remove::SingleRemoveChild {
                     user_data: removed_node.user_data,
                     child: self.trie.node_by_index(child_node_index).unwrap(),
-                };
+                }
             } else if let Some((parent_index, _)) = removed_node.parent {
-                return Remove::SingleRemoveNoChild {
+                Remove::SingleRemoveNoChild {
                     user_data: removed_node.user_data,
                     parent: self.trie.node_by_index(parent_index).unwrap(),
-                };
+                }
             } else {
-                return Remove::TrieNowEmpty {
+                debug_assert!(self.trie.nodes.is_empty());
+                debug_assert!(self.trie.root_index.is_none());
+                Remove::TrieNowEmpty {
                     user_data: removed_node.user_data,
-                };
-            }
-        };
+                }
+            };
+        }
 
         // If we reach here, then parent has to be removed from the trie as well.
         let parent_index = removed_node.parent.unwrap().0;
@@ -651,6 +652,14 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
 
         // We already know from above that the removed branch has exactly 1 sibling. Let's
         // determine which.
+        debug_assert_eq!(
+            removed_branch
+                .children
+                .iter()
+                .filter(|c| c.is_some())
+                .count(),
+            1
+        );
         let sibling_node_index: usize = removed_branch
             .children
             .iter()
@@ -671,15 +680,17 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
         }
 
         // Update the parent's parent to point to the sibling.
-        if let Some((parent_parent_index, sibling_index)) = removed_branch.parent {
+        if let Some((parent_parent_index, parent_to_sibling_index)) = removed_branch.parent {
             // Update the parent's parent to point to the sibling.
             let parent_parent = self.trie.nodes.get_mut(parent_parent_index).unwrap();
             debug_assert_eq!(
-                parent_parent.children[usize::from(u8::from(sibling_index))],
+                parent_parent.children[usize::from(u8::from(parent_to_sibling_index))],
                 Some(parent_index)
             );
-            parent_parent.children[usize::from(u8::from(sibling_index))] = Some(sibling_node_index);
+            parent_parent.children[usize::from(u8::from(parent_to_sibling_index))] =
+                Some(sibling_node_index);
         } else {
+            debug_assert_eq!(self.trie.root_index, Some(parent_index));
             self.trie.root_index = Some(sibling_node_index);
         }
 
@@ -1357,8 +1368,9 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
 /// Inserts `first` and `second` at the beginning of `vec`.
 fn insert_front(vec: &mut Vec<Nibble>, first: Vec<Nibble>, next: Nibble) {
     let shift = first.len() + 1;
+    let previous_len = vec.len();
     vec.resize(vec.len() + shift, Nibble::try_from(0).unwrap());
-    for n in 0..shift {
+    for n in (0..previous_len).rev() {
         vec[n + shift] = vec[n];
     }
     vec[0..first.len()].copy_from_slice(&first);
@@ -1376,22 +1388,15 @@ fn truncate_first_elems(vec: &mut Vec<Nibble>, num: usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Nibble, TrieStructure};
+    use super::{super::bytes_to_nibbles, Nibble, TrieStructure};
     use core::convert::TryFrom as _;
-
-    fn bytes_to_nibbles(bytes: &[u8]) -> Vec<Nibble> {
-        bytes
-            .iter()
-            .map(|b| Nibble::try_from(*b).unwrap())
-            .collect()
-    }
 
     // TODO: fuzzing test
 
     #[test]
     fn basic() {
         let mut trie = TrieStructure::new();
-        trie.node(&bytes_to_nibbles(&[1, 2, 3]))
+        trie.node(bytes_to_nibbles([1, 2, 3].iter().cloned()))
             .into_vacant()
             .unwrap()
             .insert_storage_value()
