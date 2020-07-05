@@ -276,7 +276,7 @@ mod tests {
     fn empty_root() {
         let obtained = super::calculate_merke_root(super::Config {
             is_root: true,
-            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            children: (0..16).map(|_| None),
             partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });
@@ -294,7 +294,7 @@ mod tests {
     fn empty_node() {
         let obtained = super::calculate_merke_root(super::Config {
             is_root: false,
-            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            children: (0..16).map(|_| None),
             partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });
@@ -304,23 +304,25 @@ mod tests {
 
     #[test]
     fn basic_test() {
+        let children = {
+            let mut children = Vec::new();
+            for _ in 0..2 {
+                children.push(None);
+            }
+            children.push(Some(super::Output::from_bytes(b"foo")));
+            for _ in 0..7 {
+                children.push(None);
+            }
+            children.push(Some(super::Output::from_bytes(b"bar")));
+            for _ in 0..5 {
+                children.push(None);
+            }
+            children
+        };
+
         let obtained = super::calculate_merke_root(super::Config {
             is_root: false,
-            children: &{
-                let mut children = Vec::new();
-                for _ in 0..2 {
-                    children.push(None);
-                }
-                children.push(Some(super::Output::from_bytes(b"foo")));
-                for _ in 0..7 {
-                    children.push(None);
-                }
-                children.push(Some(super::Output::from_bytes(b"bar")));
-                for _ in 0..5 {
-                    children.push(None);
-                }
-                children
-            },
+            children: children.iter().map(|opt| opt.as_ref()),
             partial_key: [
                 Nibble::try_from(8).unwrap(),
                 Nibble::try_from(12).unwrap(),
@@ -345,7 +347,7 @@ mod tests {
     fn bad_children_len() {
         super::calculate_merke_root(super::Config {
             is_root: false,
-            children: &[],
+            children: iter::empty(),
             partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });

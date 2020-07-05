@@ -1,8 +1,10 @@
 use super::nibble::Nibble;
 
-use core::{convert::TryFrom as _, iter};
+use core::{convert::TryFrom as _, fmt, iter};
 use either::Either;
 use slab::Slab;
+
+mod tests;
 
 /// Stores the structure of a trie, including branch nodes that have no storage value.
 ///
@@ -10,7 +12,6 @@ use slab::Slab;
 ///
 /// This struct doesn't represent a complete trie. It only manages the structure of the trie, and
 /// the storage values have to be maintained in parallel of this.
-#[derive(Debug)]
 pub struct TrieStructure<TUd> {
     /// List of nodes. Using a [`Slab`] guarantees that the node indices never change.
     nodes: Slab<Node<TUd>>,
@@ -207,6 +208,73 @@ impl<TUd> TrieStructure<TUd> {
                 }*/
     }
 
+    /// Returns true if the structure of this trie is equal to the structure of `other`.
+    ///
+    /// Everything is compared for equality except the user datas.
+    pub fn structure_equal<T>(&self, other: &TrieStructure<T>) -> bool {
+        // TODO: remove the debug printlns
+        if self.nodes.len() != other.nodes.len() {
+            println!("num nodes different");
+            return false;
+        }
+
+        let mut bad = false;
+
+        let mut me_iter = self.all_nodes_ordered();
+        let mut other_iter = other.all_nodes_ordered();
+
+        loop {
+            let (me_node_idx, other_node_idx) = match (me_iter.next(), other_iter.next()) {
+                (Some(a), Some(b)) => (a, b),
+                (None, None) => return !bad,
+                _ => {
+                    println!("diff in iteration");
+                    return false;
+                }
+            };
+
+            let me_node = self.nodes.get(me_node_idx).unwrap();
+            let other_node = other.nodes.get(other_node_idx).unwrap();
+
+            if me_node.has_storage_value != other_node.has_storage_value {
+                println!(
+                    "has storage value diff: {:?} vs {:?}: {:?} vs {:?}",
+                    me_node.has_storage_value,
+                    other_node.has_storage_value,
+                    self.node_full_key(me_node_idx).collect::<Vec<_>>(),
+                    other.node_full_key(other_node_idx).collect::<Vec<_>>()
+                );
+                bad = true;
+            }
+
+            match (me_node.parent, other_node.parent) {
+                (Some((_, i)), Some((_, j))) if i == j => {}
+                (None, None) => {}
+                _ => {
+                    println!("index diff");
+                    bad = true
+                }
+            }
+
+            if me_node.partial_key != other_node.partial_key {
+                println!(
+                    "diff: {:?} vs {:?}",
+                    me_node.partial_key, other_node.partial_key
+                );
+                bad = true;
+            }
+        }
+    }
+
+    /// Iterates over all nodes of the trie, in a specific order.
+    fn all_nodes_ordered<'b>(&'b self) -> impl Iterator<Item = usize> + 'b {
+        if let Some(root_index) = self.root_index {
+            either::Either::Left(iter::once(root_index).chain(self.descendants(root_index)))
+        } else {
+            either::Either::Right(iter::empty())
+        }
+    }
+
     /// Internal function. Returns the [`NodeAccess`] of the node at the given index.
     fn node_by_index(&mut self, node_index: usize) -> Option<NodeAccess<TUd>> {
         if self.nodes.get(node_index)?.has_storage_value {
@@ -323,6 +391,17 @@ impl<TUd> TrieStructure<TUd> {
     }
 }
 
+impl<TUd: fmt::Debug> fmt::Debug for TrieStructure<TUd> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list()
+            .entries(
+                self.all_nodes_ordered()
+                    .map(|idx| (idx, self.nodes.get(idx).unwrap())),
+            )
+            .finish()
+    }
+}
+
 enum ExistingNodeInnerResult {
     Found {
         node_index: usize,
@@ -367,6 +446,14 @@ pub enum NodeAccess<'a, TUd> {
 }
 
 impl<'a, TUd> NodeAccess<'a, TUd> {
+    /// Returns `Some` if `self` is an [`NodeAccess::Storage`].
+    pub fn into_storage(self) -> Option<StorageNodeAccess<'a, TUd>> {
+        match self {
+            NodeAccess::Storage(e) => Some(e),
+            _ => None,
+        }
+    }
+
     /// Returns the parent of this node, or `None` if this is the root node.
     pub fn into_parent(self) -> Option<NodeAccess<'a, TUd>> {
         match self {
@@ -957,11 +1044,9 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
     ///
     /// The trie structure doesn't change.
     pub fn insert_storage_value(self) -> StorageNodeAccess<'a, TUd> {
-        self.trie
-            .nodes
-            .get_mut(self.node_index)
-            .unwrap()
-            .has_storage_value = true;
+        let mut node = self.trie.nodes.get_mut(self.node_index).unwrap();
+        debug_assert!(!node.has_storage_value);
+        node.has_storage_value = true;
 
         StorageNodeAccess {
             trie: self.trie,
@@ -1073,9 +1158,9 @@ where
         debug_assert_ne!(*existing_node_partial_key, new_node_partial_key);
         debug_assert!(!new_node_partial_key.starts_with(existing_node_partial_key));
 
-        // If `new_node_partial_key` starts with `existing_node_partial_key`, then the new node
+        // If `existing_node_partial_key` starts with `new_node_partial_key`, then the new node
         // will be inserted in-between the parent and the existing node.
-        if new_node_partial_key.starts_with(existing_node_partial_key) {
+        if existing_node_partial_key.starts_with(&new_node_partial_key) {
             // The new node is to be inserted in-between `future_parent` and
             // `existing_node_index`.
             //
@@ -1431,22 +1516,4 @@ fn truncate_first_elems(vec: &mut Vec<Nibble>, num: usize) {
         vec[n - num] = vec[n];
     }
     vec.truncate(vec.len() - num);*/
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{super::bytes_to_nibbles, Nibble, TrieStructure};
-    use core::convert::TryFrom as _;
-
-    // TODO: fuzzing test
-
-    #[test]
-    fn basic() {
-        let mut trie = TrieStructure::new();
-        trie.node(bytes_to_nibbles([1, 2, 3].iter().cloned()))
-            .into_vacant()
-            .unwrap()
-            .insert_storage_value()
-            .insert((), ());
-    }
 }

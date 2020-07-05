@@ -138,7 +138,6 @@ impl CalculationCache {
                     .insert_storage_value()
                     .insert(Default::default(), Default::default());
 
-                // We have to invalidate the Merkle values of all the ancestors of the new node.
                 match inserted.into_parent() {
                     Some(p) => p,
                     None => return,
@@ -267,6 +266,25 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             structure
         });
     }
+
+    let reference = {
+        let mut structure = trie_structure::TrieStructure::<()>::new();
+        let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
+        for key in keys {
+            structure
+                .node(bytes_to_nibbles(key.as_ref().iter().cloned()))
+                .into_vacant()
+                .unwrap()
+                .insert_storage_value()
+                .insert(Default::default(), Default::default());
+        }
+        structure
+    };
+    assert!(cache
+        .structure
+        .as_ref()
+        .unwrap()
+        .structure_equal(&reference));
 
     // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
     // be missing and need to be filled.
