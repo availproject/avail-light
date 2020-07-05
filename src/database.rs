@@ -38,6 +38,12 @@ pub struct Database {
     /// Keys are block hashes, and values are SCALE-encoded block headers.
     block_headers_tree: sled::Tree,
 
+    /// Tree named "block_bodies" in the database.
+    ///
+    /// Keys are block hashes, and values are SCALE-encoded `Vec`s containing the extrinsics. Each
+    /// extrinsic is itself a SCALE-encoded `Vec<u8>`.
+    block_bodies_tree: sled::Tree,
+
     /// Tree named "storage_top_trie" in the database.
     ///
     /// Keys are storage keys, and values are storage values.
@@ -84,6 +90,21 @@ impl Database {
         block_hash: &[u8; 32],
     ) -> Result<Option<VarLenBytes>, AccessError> {
         Ok(self.block_headers_tree.get(block_hash)?.map(VarLenBytes))
+    }
+
+    /// Returns the list of extrinsics of the given block, or `None` if the block is unknown.
+    pub fn block_extrinsics(
+        &self,
+        block_hash: &[u8; 32],
+    ) -> Result<Option<impl ExactSizeIterator<Item = Vec<u8>>>, AccessError> {
+        let body = match self.block_bodies_tree.get(block_hash)? {
+            Some(b) => b,
+            None => return Ok(None),
+        };
+
+        let decoded = <Vec<Vec<u8>> as parity_scale_codec::DecodeAll>::decode_all(body.as_ref())
+            .map_err(|err| AccessError::Corrupted(CorruptedError::BlockBodyCorrupted(err)))?;
+        Ok(Some(decoded.into_iter()))
     }
 
     /// Returns the hash of the block given its number.
@@ -140,15 +161,28 @@ impl Database {
             header.number
         };
 
+        let encoded_body = {
+            // TODO: optimize by not building an intermediary `Vec`
+            let body = new_best_body.collect::<Vec<_>>();
+            parity_scale_codec::Encode::encode(&body)
+        };
+
         // Try to apply changes. This is done atomically through a transaction.
         let result = (
             &self.block_hashes_by_number_tree,
             &self.block_headers_tree,
+            &self.block_bodies_tree,
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
             .transaction(
-                move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
+                move |(
+                    block_hashes_by_number,
+                    block_headers,
+                    block_bodies,
+                    storage_top_trie,
+                    meta,
+                )| {
                     if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
                         return Err(sled::ConflictableTransactionError::Abort(()));
                     }
@@ -161,12 +195,12 @@ impl Database {
                         }
                     }
 
-                    // TODO: insert body
-
                     block_hashes_by_number
                         .insert(&u64::to_be_bytes(new_block_number)[..], &new_best_hash[..])?;
 
                     block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
+                    block_bodies.insert(&new_best_hash[..], &encoded_body[..])?;
+
                     meta.insert(b"best", &new_best_hash[..])?;
                     Ok(())
                 },
@@ -246,4 +280,5 @@ pub enum CorruptedError {
     BestBlockHeaderNotInDatabase,
     BestBlockHeaderCorrupted(parity_scale_codec::Error),
     BlockHashLenInHashNumberMapping,
+    BlockBodyCorrupted(parity_scale_codec::Error),
 }

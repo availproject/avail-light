@@ -21,6 +21,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
     let meta_tree = database.open_tree(b"meta")?;
     let block_hashes_by_number_tree = database.open_tree(b"block_hashes_by_number")?;
     let block_headers_tree = database.open_tree(b"block_headers")?;
+    let block_bodies_tree = database.open_tree(b"block_bodies")?;
     let storage_top_trie_tree = database.open_tree(b"storage_top_trie")?;
 
     Ok(if meta_tree.get(b"best")?.is_some() {
@@ -29,6 +30,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
             block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
+            block_bodies_tree,
             storage_top_trie_tree,
         })
     } else {
@@ -37,6 +39,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
             block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
+            block_bodies_tree,
             storage_top_trie_tree,
         })
     })
@@ -77,6 +80,9 @@ pub struct DatabaseEmpty {
     block_headers_tree: sled::Tree,
 
     /// See the similar field in [`Database`].
+    block_bodies_tree: sled::Tree,
+
+    /// See the similar field in [`Database`].
     storage_top_trie_tree: sled::Tree,
 }
 
@@ -104,11 +110,18 @@ impl DatabaseEmpty {
         let result = (
             &self.block_hashes_by_number_tree,
             &self.block_headers_tree,
+            &self.block_bodies_tree,
             &self.storage_top_trie_tree,
             &self.meta_tree,
         )
             .transaction(
-                move |(block_hashes_by_number, block_headers, storage_top_trie, meta)| {
+                move |(
+                    block_hashes_by_number,
+                    block_headers,
+                    block_bodies,
+                    storage_top_trie,
+                    meta,
+                )| {
                     for (key, value) in storage_top_trie_entries.clone() {
                         storage_top_trie.insert(key, value)?;
                     }
@@ -116,6 +129,10 @@ impl DatabaseEmpty {
                     block_hashes_by_number.insert(&0u64.to_be_bytes()[..], &block_hash[..])?;
 
                     block_headers.insert(&block_hash[..], genesis_block_header)?;
+                    block_bodies.insert(
+                        &block_hash[..],
+                        parity_scale_codec::Encode::encode(&Vec::<Vec<u8>>::new()),
+                    )?;
                     meta.insert(b"best", &block_hash[..])?;
                     Ok(())
                 },
@@ -127,6 +144,7 @@ impl DatabaseEmpty {
                 block_hashes_by_number_tree: self.block_hashes_by_number_tree,
                 meta_tree: self.meta_tree,
                 block_headers_tree: self.block_headers_tree,
+                block_bodies_tree: self.block_bodies_tree,
                 storage_top_trie_tree: self.storage_top_trie_tree,
             }),
             Err(sled::TransactionError::Abort(())) => unreachable!(),
