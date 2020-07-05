@@ -78,8 +78,6 @@ pub async fn run_block_import_task(mut config: Config) {
     // This cache has to be kept up to date with the actual state of the storage.
     // We pass this value whenever we verify a block. The verification process returns an updated
     // version of this cache, suitable to be passed to verifying a direct child.
-    // TODO: for better predictability, fill cache here with the existing storage, rather than
-    // doing this in a lazy way at the first block import
     let mut top_trie_root_calculation_cache = Some(calculate_root::CalculationCache::empty());
 
     // Cache of the storage at the head of the chain.
@@ -193,6 +191,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 let import_result = match import_result {
                     Ok(r) => r,
                     Err(err) => {
+                        assert!(top_trie_root_calculation_cache.is_none());
                         let _ = send_back.send(Err(ImportError::VerificationFailed(err)));
                         continue;
                     }

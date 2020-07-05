@@ -134,13 +134,33 @@ impl CalculationCache {
             has_value,
         ) {
             (trie_structure::Entry::Vacant(entry), true) => {
-                let inserted = entry
-                    .insert_storage_value()
-                    .insert(Default::default(), Default::default());
+                match entry.insert_storage_value() {
+                    trie_structure::PrepareInsert::One(insert) => {
+                        let inserted = insert.insert(Default::default());
+                        match inserted.into_parent() {
+                            Some(p) => p,
+                            None => return,
+                        }
+                    }
+                    trie_structure::PrepareInsert::Two(insert) => {
+                        let inserted = insert.insert(Default::default(), Default::default());
 
-                match inserted.into_parent() {
-                    Some(p) => p,
-                    None => return,
+                        // We additionally have to invalidate the Merkle value of the children of
+                        // the newly-inserted branch node.
+                        let mut inserted_branch = inserted.into_parent().unwrap();
+                        for idx in 0..16u8 {
+                            if let Some(mut child) =
+                                inserted_branch.child(Nibble::try_from(idx).unwrap())
+                            {
+                                child.user_data().merkle_value = None;
+                            }
+                        }
+
+                        match inserted_branch.into_parent() {
+                            Some(p) => p,
+                            None => return,
+                        }
+                    }
                 }
             }
             (trie_structure::Entry::Vacant(_), false) => return,
@@ -266,26 +286,6 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             structure
         });
     }
-
-    // TODO: remove this check
-    let reference = {
-        let mut structure = trie_structure::TrieStructure::<()>::new();
-        let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
-        for key in keys {
-            structure
-                .node(bytes_to_nibbles(key.as_ref().iter().cloned()))
-                .into_vacant()
-                .unwrap()
-                .insert_storage_value()
-                .insert(Default::default(), Default::default());
-        }
-        structure
-    };
-    assert!(cache
-        .structure
-        .as_ref()
-        .unwrap()
-        .structure_equal(&reference));
 
     // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
     // be missing and need to be filled.
