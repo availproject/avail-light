@@ -9,13 +9,13 @@ use parity_scale_codec::Encode as _;
 /// Information about a node whose Merkle value is to be calculated.
 ///
 /// The documentation here assumes that you already know how the trie works.
-pub struct Config<'a, TPKey, TVal> {
+pub struct Config<TChiter, TPKey, TVal> {
     /// True if this is the root node of the trie.
     pub is_root: bool,
 
-    /// Merkle values of the 16 possible children of the node. `None` if there is no child at this
-    /// index.
-    pub children: &'a [Option<Output>],
+    /// Iterator to the Merkle values of the 16 possible children of the node. `None` if there is
+    /// no child at this index.
+    pub children: TChiter,
 
     /// Partial key of the node, as an iterator of nibbles.
     ///
@@ -39,14 +39,17 @@ pub struct Config<'a, TPKey, TVal> {
 ///
 /// Panics if `config.children.len() != 16`.
 ///
-pub fn calculate_merke_root<TPKey, TVal>(mut config: Config<TPKey, TVal>) -> Output
+pub fn calculate_merke_root<'a, TChiter, TPKey, TVal>(
+    mut config: Config<TChiter, TPKey, TVal>,
+) -> Output
 where
+    TChiter: ExactSizeIterator<Item = Option<&'a Output>> + Clone,
     TPKey: ExactSizeIterator<Item = Nibble>,
     TVal: AsRef<[u8]>,
 {
     assert_eq!(config.children.len(), 16);
 
-    let has_children = config.children.iter().any(|c| c.is_some());
+    let has_children = config.children.clone().any(|c| c.is_some());
 
     // This value will be used as the sink for all the components of the merkle value.
     let mut merkle_value_sink = if config.is_root {
@@ -126,7 +129,7 @@ where
     // If there is any child, we a `u16` where each bit is `1` if there exists a child there.
     merkle_value_sink.update({
         let mut children_bitmap = 0u16;
-        for (child_index, child) in config.children.iter().enumerate() {
+        for (child_index, child) in config.children.clone().enumerate() {
             if child.is_some() {
                 children_bitmap |= 1 << u32::try_from(child_index).unwrap();
             }
@@ -135,7 +138,7 @@ where
     });
 
     // Push the merkle values of all the children.
-    for child in config.children.iter() {
+    for child in config.children.clone() {
         let child_merkle_value = match child {
             Some(v) => v,
             None => continue,

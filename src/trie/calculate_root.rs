@@ -241,7 +241,7 @@ pub fn root_merkle_value<'a>(
     } else {
         node_value::calculate_merke_root(node_value::Config {
             is_root: true,
-            children: &(0..16).map(|_| None).collect::<Vec<_>>(),
+            children: (0..16).map(|_| None),
             partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         })
@@ -351,16 +351,13 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         // Now calculate the Merkle value.
         let merkle_value = node_value::calculate_merke_root(node_value::Config {
             is_root: current.is_root_node(),
-            // TODO: don't allocate a Vec here
-            children: &(0..16u8)
-                .map(|child_idx| {
-                    if let Some(mut child) = current.child(Nibble::try_from(child_idx).unwrap()) {
-                        Some(child.user_data().merkle_value.clone().unwrap())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>(),
+            children: (0..16u8).map(|child_idx| {
+                if let Some(child) = current.child_user_data(Nibble::try_from(child_idx).unwrap()) {
+                    Some(child.merkle_value.as_ref().unwrap())
+                } else {
+                    None
+                }
+            }),
             partial_key: current.partial_key(),
             stored_value,
         });

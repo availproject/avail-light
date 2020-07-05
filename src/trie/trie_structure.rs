@@ -383,6 +383,19 @@ impl<'a, TUd> NodeAccess<'a, TUd> {
         }
     }
 
+    /// Returns the user data of the child at the given index.
+    ///
+    /// > **Note**: This method exists because it accepts `&self` rather than `&mut self`. A
+    /// >           cleaner alternative would be to split the [`NodeAccess`] struct into
+    /// >           `NodeAccessRef` and `NodeAccessMut`, but that's a lot of efforts compare to
+    /// >           this single method.
+    pub fn child_user_data(&self, index: Nibble) -> Option<&TUd> {
+        match self {
+            NodeAccess::Storage(n) => n.child_user_data(index),
+            NodeAccess::Branch(n) => n.child_user_data(index),
+        }
+    }
+
     /// Returns the child of this node at the given index.
     pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
         match self {
@@ -516,11 +529,23 @@ impl<'a, TUd> StorageNodeAccess<'a, TUd> {
         Ok(self.trie.node_by_index(next_sibling_idx).unwrap())
     }
 
-    /// Returns the child of this node given the given index.
+    /// Returns the child of this node at the given index.
     pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
         let child_idx =
             self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
         Some(self.trie.node_by_index(child_idx).unwrap())
+    }
+
+    /// Returns the user data of the child at the given index.
+    ///
+    /// > **Note**: This method exists because it accepts `&self` rather than `&mut self`. A
+    /// >           cleaner alternative would be to split the [`NodeAccess`] struct into
+    /// >           `NodeAccessRef` and `NodeAccessMut`, but that's a lot of efforts compare to
+    /// >           this single method.
+    pub fn child_user_data(&self, index: Nibble) -> Option<&TUd> {
+        let child_idx =
+            self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
+        Some(&self.trie.nodes.get(child_idx).unwrap().user_data)
     }
 
     /// Returns the child of this node given the given index.
@@ -874,11 +899,23 @@ impl<'a, TUd> BranchNodeAccess<'a, TUd> {
         Ok(self.trie.node_by_index(next_sibling_idx).unwrap())
     }
 
-    /// Returns the child of this node given the given index.
+    /// Returns the child of this node at the given index.
     pub fn child(&mut self, index: Nibble) -> Option<NodeAccess<TUd>> {
         let child_idx =
             self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
         Some(self.trie.node_by_index(child_idx).unwrap())
+    }
+
+    /// Returns the user data of the child at the given index.
+    ///
+    /// > **Note**: This method exists because it accepts `&self` rather than `&mut self`. A
+    /// >           cleaner alternative would be to split the [`NodeAccess`] struct into
+    /// >           `NodeAccessRef` and `NodeAccessMut`, but that's a lot of efforts compare to
+    /// >           this single method.
+    pub fn child_user_data(&self, index: Nibble) -> Option<&TUd> {
+        let child_idx =
+            self.trie.nodes.get(self.node_index).unwrap().children[usize::from(u8::from(index))]?;
+        Some(&self.trie.nodes.get(child_idx).unwrap().user_data)
     }
 
     /// Returns the child of this node given the given index.

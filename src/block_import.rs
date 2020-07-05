@@ -191,21 +191,20 @@ where
                 storage_key,
                 resolve,
             } => {
-                // TODO: use prefix_remove_update once optimized
-                //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
+                top_trie_root_calculation_cache.prefix_remove_update(storage_key);
 
                 for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
                     if !key.starts_with(&storage_key) {
                         continue;
                     }
-                    top_trie_root_calculation_cache.storage_value_update(&key, false);
+                    //top_trie_root_calculation_cache.storage_value_update(&key, false);
                     top_trie_changes.insert(key, None);
                 }
                 for (key, value) in top_trie_changes.iter_mut() {
                     if !key.starts_with(&storage_key) {
                         continue;
                     }
-                    top_trie_root_calculation_cache.storage_value_update(key, false);
+                    //top_trie_root_calculation_cache.storage_value_update(key, false);
                     *value = None;
                 }
                 resolve.finish_call(());
