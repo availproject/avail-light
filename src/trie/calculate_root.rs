@@ -267,6 +267,7 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         });
     }
 
+    // TODO: remove this check
     let reference = {
         let mut structure = trie_structure::TrieStructure::<()>::new();
         let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
