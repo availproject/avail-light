@@ -26,7 +26,6 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
 
     Ok(if meta_tree.get(b"best")?.is_some() {
         DatabaseOpen::Open(Database {
-            database,
             block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
@@ -35,7 +34,6 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
         })
     } else {
         DatabaseOpen::Empty(DatabaseEmpty {
-            database,
             block_hashes_by_number_tree,
             meta_tree,
             block_headers_tree,
@@ -67,9 +65,6 @@ pub enum DatabaseOpen {
 
 /// An open database. Holds file descriptors.
 pub struct DatabaseEmpty {
-    /// Inner database object.
-    database: sled::Db,
-
     /// See the similar field in [`Database`].
     meta_tree: sled::Tree,
 
@@ -140,7 +135,6 @@ impl DatabaseEmpty {
 
         match result {
             Ok(()) => Ok(Database {
-                database: self.database,
                 block_hashes_by_number_tree: self.block_hashes_by_number_tree,
                 meta_tree: self.meta_tree,
                 block_headers_tree: self.block_headers_tree,
@@ -149,7 +143,6 @@ impl DatabaseEmpty {
             }),
             Err(sled::TransactionError::Abort(())) => unreachable!(),
             Err(sled::TransactionError::Storage(err)) => Err(AccessError::Database(err)),
-            Err(_) => unimplemented!(),
         }
     }
 }

@@ -32,7 +32,6 @@ use futures::{
     prelude::*,
 };
 use network::PeerId;
-use parity_scale_codec::DecodeAll as _;
 use primitive_types::H256;
 
 pub use builder::{builder, ServiceBuilder};

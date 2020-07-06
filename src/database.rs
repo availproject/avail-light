@@ -15,8 +15,6 @@ mod open;
 
 /// An open database. Holds file descriptors.
 pub struct Database {
-    database: sled::Db,
-
     /// Tree named "meta" in the database.
     /// Contains all the meta-information about the content.
     ///
