@@ -217,17 +217,21 @@ pub fn root_merkle_value<'a>(cache: Option<&mut CalculationCache>) -> RootMerkle
 }
 
 /// Pending calculation of the Merkle value of a trie root node.
+//
+// # Implementation notes
+//
+// We traverse the trie in attempt to find missing Merkle values.
+// We start with the root node. For each node, if its Merkle value is absent, we continue
+// iterating with its first child. If its Merkle value is present, we continue iterating with
+// the next sibling or, if it is the last sibling, the parent. In that situation where we jump
+// from last sibling to parent, we also calculate the parent's Merkle value in the process.
+// Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
+// the Merkle value is calculated that second time.
 pub struct RootMerkleValueCalculation<'a> {
     /// Either a `CalculationCache` or a `&'a mut CalculationCache`. Implements `DerefMut`.
     cache: CowMut<'a>,
 
-    // We traverse the trie in attempt to find missing Merkle values.
-    // We start with the root node. For each node, if its Merkle value is absent, we continue
-    // iterating with its first child. If its Merkle value is present, we continue iterating with
-    // the next sibling or, if it is the last sibling, the parent. In that situation where we jump
-    // from last sibling to parent, we also calculate the parent's Merkle value in the process.
-    // Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
-    // the Merkle value is calculated the second time.
+    /// Index within `cache` of the node currently being iterated.
     current: Option<trie_structure::NodeIndex>,
 
     // `coming_from_child` is used to differentiate whether the previous iteration was the
@@ -243,8 +247,8 @@ impl<'a> RootMerkleValueCalculation<'a> {
             return Next::AllKeys(AllKeys { calculation: self });
         }
 
-        // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
-        // be missing and need to be filled.
+        // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values
+        // might be missing and need to be filled.
         let trie_structure = self.cache.structure.as_mut().unwrap();
 
         // Node currently being iterated.
@@ -253,13 +257,15 @@ impl<'a> RootMerkleValueCalculation<'a> {
                 self.current = match trie_structure.root_node() {
                     Some(c) => Some(c.node_index()),
                     None => {
+                        // Trie is empty.
                         let merkle_value = node_value::calculate_merke_root(node_value::Config {
                             is_root: true,
                             children: (0..16).map(|_| None),
                             partial_key: iter::empty(),
                             stored_value: None::<Vec<u8>>,
                         });
-                        return Next::Finished(merkle_value.into());
+
+                        return merkle_value.into();
                     }
                 };
             }
@@ -339,17 +345,28 @@ impl<'a> RootMerkleValueCalculation<'a> {
     }
 }
 
+/// Current state of the [`RootMerkleValueCalculation`] and how to continue.
+#[must_use]
 pub enum Next<'a, 'b> {
+    /// The claculation is finished. Contains the root hash.
     Finished([u8; 32]),
+    /// Request to return the list of all the keys in the trie. Call [`AllKeys::inject`] to
+    /// indicate this list.
     AllKeys(AllKeys<'a, 'b>),
+    /// Request the value of the node with a specific key. Call [`StorageValue::inject`] to
+    /// indicate the value.
     StorageValue(StorageValue<'a, 'b>),
 }
 
+/// Request to return the list of all the keys in the storage. Call [`AllKeys::inject`] to indicate
+/// this list.
+#[must_use]
 pub struct AllKeys<'a, 'b> {
     calculation: &'b mut RootMerkleValueCalculation<'a>,
 }
 
 impl<'a, 'b> AllKeys<'a, 'b> {
+    /// Indicate the list of all keys of the trie.
     pub fn inject(self, keys: impl Iterator<Item = impl Iterator<Item = u8> + Clone>) {
         debug_assert!(self.calculation.cache.structure.is_none());
         self.calculation.cache.structure = Some({
@@ -367,11 +384,15 @@ impl<'a, 'b> AllKeys<'a, 'b> {
     }
 }
 
+/// Request the value of the node with a specific key. Call [`StorageValue::inject`] to indicate
+/// the value.
+#[must_use]
 pub struct StorageValue<'a, 'b> {
     calculation: &'b mut RootMerkleValueCalculation<'a>,
 }
 
 impl<'a, 'b> StorageValue<'a, 'b> {
+    /// Returns the key whose value is being requested.
     pub fn key<'c>(&'c self) -> impl Iterator<Item = u8> + 'c {
         let trie_structure = self.calculation.cache.structure.as_ref().unwrap();
         let mut full_key = trie_structure
@@ -385,6 +406,7 @@ impl<'a, 'b> StorageValue<'a, 'b> {
         })
     }
 
+    /// Indicate the storage value.
     pub fn inject(self, stored_value: Option<impl AsRef<[u8]>>) {
         assert!(stored_value.is_some());
 
