@@ -4,18 +4,36 @@
 //!
 //! # Usage
 //!
+//! Calling the [`root_merkle_value`] function creates a [`RootMerkleValueCalculation`] object
+//! which you have to drive to completion by repeatedly calling
+//! [`RootMerkleValueCalculation::next`] until [`Next::Finished`] is returned.
+//!
 //! Example:
 //!
 //! ```
 //! use std::collections::BTreeMap;
 //! use substrate_lite::trie::calculate_root;
 //!
-//! // In this example, the storage consists in a binary tree map. Binary trees allow for an
-//! // efficient implementation of `prefix_keys`.
+//! // In this example, the storage consists in a binary tree map.
 //! let mut storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();
 //! storage.insert(b"foo".to_vec(), b"bar".to_vec());
 //!
-//! let trie_root = calculate_root::root_merkle_value(&storage, None);
+//! let trie_root = {
+//!     let mut calculation = calculate_root::root_merkle_value(None);
+//!     loop {
+//!         match calculation.next() {
+//!             calculate_root::Next::Finished(hash) => break hash,
+//!             calculate_root::Next::AllKeys(keys) => {
+//!                 keys.inject(storage.keys().map(|k| k.iter().cloned()))
+//!             }
+//!             calculate_root::Next::StorageValue(value_request) => {
+//!                 let key = value_request.key().collect::<Vec<u8>>();
+//!                 value_request.inject(storage.get(&key));
+//!             }
+//!         }
+//!     }
+//! };
+//!
 //! assert_eq!(
 //!     trie_root,
 //!     [204, 86, 28, 213, 155, 206, 247, 145, 28, 169, 212, 146, 182, 159, 224, 82,
@@ -35,64 +53,7 @@ use super::{
     node_value, trie_structure,
 };
 
-use alloc::collections::BTreeMap;
-use core::{convert::TryFrom as _, fmt, iter};
-
-/// Trait passed to [`root_merkle_value`] that allows the function to access the content of the
-/// trie.
-// TODO: remove this trait and rewrite the calculation below as a coroutine-like state machine
-pub trait TrieRef<'a>: Clone {
-    type Key: AsRef<[u8]> + 'a;
-    type Value: AsRef<[u8]> + 'a;
-    type PrefixKeysIter: Iterator<Item = Self::Key> + 'a;
-
-    /// Loads the value associated to the given key. Returns `None` if no value is present.
-    ///
-    /// Must always return the same value if called multiple times with the same key.
-    fn get(self, key: &[u8]) -> Option<Self::Value>;
-
-    /// Returns the list of keys with values that start with the given prefix.
-    ///
-    /// Must not return any duplicate.
-    ///
-    /// All the keys returned must start with the given prefix. It is an error to omit a key
-    /// from the result.
-    // TODO: `prefix` should have a lifetime too that ties it to the iterator, but I can't figure
-    // out how to make this work
-    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter;
-}
-
-impl<'a> TrieRef<'a> for &'a BTreeMap<Vec<u8>, Vec<u8>> {
-    type Key = &'a [u8];
-    type Value = &'a [u8];
-    type PrefixKeysIter = Box<dyn Iterator<Item = Self::Key> + 'a>;
-
-    fn get(self, key: &[u8]) -> Option<Self::Value> {
-        BTreeMap::get(self, key).map(|v| &v[..])
-    }
-
-    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
-        let prefix = prefix.to_vec(); // TODO: see comment about lifetime on the trait definition
-        let iter = self
-            .range({
-                // We have to use a custom implementation of `std::ops::RangeBounds` because the
-                // existing ones can't be used without passing a `Vec<u8>` by value.
-                struct CustomRange<'a>(&'a [u8]);
-                impl<'a> core::ops::RangeBounds<[u8]> for CustomRange<'a> {
-                    fn start_bound(&self) -> core::ops::Bound<&[u8]> {
-                        core::ops::Bound::Included(self.0)
-                    }
-                    fn end_bound(&self) -> core::ops::Bound<&[u8]> {
-                        core::ops::Bound::Unbounded
-                    }
-                }
-                CustomRange(&prefix)
-            })
-            .take_while(move |(k, _)| k.starts_with(&prefix))
-            .map(|(k, _)| From::from(&k[..]));
-        Box::new(iter)
-    }
-}
+use core::{convert::TryFrom as _, fmt, iter, ops};
 
 /// Cache containing intermediate calculation steps.
 ///
@@ -235,49 +196,167 @@ impl fmt::Debug for CalculationCache {
     }
 }
 
-/// Calculates the Merkle value of the root node.
-pub fn root_merkle_value<'a>(
-    trie_access: impl TrieRef<'a>,
-    cache: Option<&mut CalculationCache>,
-) -> [u8; 32] {
+/// Start calculating the Merkle value of the root node.
+pub fn root_merkle_value<'a>(cache: Option<&mut CalculationCache>) -> RootMerkleValueCalculation {
     // The calculation that we perform relies on storing values in the cache and reloading them
     // afterwards. If the user didn't pass any cache, we create a temporary one.
-    let mut temporary_cache = CalculationCache::empty();
     let cache_or_temporary = if let Some(cache) = cache {
-        cache
+        if let Some(structure) = &mut cache.structure {
+            structure.shrink_to_fit();
+        }
+        CowMut::Borrowed(cache)
     } else {
-        &mut temporary_cache
+        CowMut::Owned(CalculationCache::empty())
     };
 
-    fill_cache(trie_access, cache_or_temporary);
-
-    // The `fill_cache` function guarantees to have filled the cache with the root node's
-    // information.
-    let root_node = cache_or_temporary.structure.as_mut().unwrap().root_node();
-    if let Some(mut root_node) = root_node {
-        root_node.user_data().merkle_value.clone().unwrap().into()
-    } else {
-        node_value::calculate_merke_root(node_value::Config {
-            is_root: true,
-            children: (0..16).map(|_| None),
-            partial_key: iter::empty(),
-            stored_value: None::<Vec<u8>>,
-        })
-        .into()
+    RootMerkleValueCalculation {
+        cache: cache_or_temporary,
+        current: None,
+        coming_from_child: false,
     }
 }
 
-/// Fills the cache given as parameter with at least the root node and the root node's merkle
-/// value.
-fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCache) {
-    // Make sure that `cache.structure` contains a trie structure that matches the trie.
-    if cache.structure.is_none() {
-        cache.structure = Some({
+/// Pending calculation of the Merkle value of a trie root node.
+pub struct RootMerkleValueCalculation<'a> {
+    /// Either a `CalculationCache` or a `&'a mut CalculationCache`. Implements `DerefMut`.
+    cache: CowMut<'a>,
+
+    // We traverse the trie in attempt to find missing Merkle values.
+    // We start with the root node. For each node, if its Merkle value is absent, we continue
+    // iterating with its first child. If its Merkle value is present, we continue iterating with
+    // the next sibling or, if it is the last sibling, the parent. In that situation where we jump
+    // from last sibling to parent, we also calculate the parent's Merkle value in the process.
+    // Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
+    // the Merkle value is calculated the second time.
+    current: Option<trie_structure::NodeIndex>,
+
+    // `coming_from_child` is used to differentiate whether the previous iteration was the
+    // previous sibling of `current` or the last child of `current`.
+    coming_from_child: bool,
+}
+
+impl<'a> RootMerkleValueCalculation<'a> {
+    /// Advance the calculation to the next step.
+    pub fn next<'b>(&'b mut self) -> Next<'a, 'b> {
+        // Make sure that `cache.structure` contains a trie structure that matches the trie.
+        if self.cache.structure.is_none() {
+            return Next::AllKeys(AllKeys { calculation: self });
+        }
+
+        // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
+        // be missing and need to be filled.
+        let trie_structure = self.cache.structure.as_mut().unwrap();
+
+        // Node currently being iterated.
+        let mut current: trie_structure::NodeAccess<_> = {
+            if self.current.is_none() {
+                self.current = match trie_structure.root_node() {
+                    Some(c) => Some(c.node_index()),
+                    None => {
+                        let merkle_value = node_value::calculate_merke_root(node_value::Config {
+                            is_root: true,
+                            children: (0..16).map(|_| None),
+                            partial_key: iter::empty(),
+                            stored_value: None::<Vec<u8>>,
+                        });
+                        return Next::Finished(merkle_value.into());
+                    }
+                };
+            }
+
+            trie_structure.node_by_index(self.current.unwrap()).unwrap()
+        };
+
+        loop {
+            // If we already have a Merkle value, jump either to the next sibling (if any), or back
+            // to the parent.
+            if current.user_data().merkle_value.is_some() {
+                match current.into_next_sibling() {
+                    Ok(sibling) => {
+                        current = sibling;
+                        self.current = Some(current.node_index());
+                        self.coming_from_child = false;
+                        continue;
+                    }
+                    Err(curr) => {
+                        if let Some(parent) = curr.into_parent() {
+                            current = parent;
+                            self.current = Some(current.node_index());
+                            self.coming_from_child = true;
+                            continue;
+                        } else {
+                            // No next sibling nor parent. We have finished traversing the tree.
+                            let mut root_node = trie_structure.root_node().unwrap();
+                            let merkle_value = root_node.user_data().merkle_value.clone().unwrap();
+                            return Next::Finished(merkle_value.into());
+                        }
+                    }
+                }
+            }
+
+            debug_assert!(current.user_data().merkle_value.is_none());
+
+            // If previous iteration is from `current`'s previous sibling, we jump down to
+            // `current`'s children.
+            if !self.coming_from_child {
+                match current.into_first_child() {
+                    Err(c) => current = c,
+                    Ok(first_child) => {
+                        current = first_child;
+                        self.current = Some(current.node_index());
+                        self.coming_from_child = false;
+                        continue;
+                    }
+                }
+            }
+
+            // If we reach this, we are ready to calculate `current`'s Merkle value.
+            self.coming_from_child = true;
+
+            if !current.has_storage_value() {
+                // Calculate the Merkle value of the node.
+                let merkle_value = node_value::calculate_merke_root(node_value::Config {
+                    is_root: current.is_root_node(),
+                    children: (0..16u8).map(|child_idx| {
+                        if let Some(child) =
+                            current.child_user_data(Nibble::try_from(child_idx).unwrap())
+                        {
+                            Some(child.merkle_value.as_ref().unwrap())
+                        } else {
+                            None
+                        }
+                    }),
+                    partial_key: current.partial_key(),
+                    stored_value: None::<Vec<u8>>,
+                });
+
+                current.user_data().merkle_value = Some(merkle_value);
+                continue;
+            }
+
+            return Next::StorageValue(StorageValue { calculation: self });
+        }
+    }
+}
+
+pub enum Next<'a, 'b> {
+    Finished([u8; 32]),
+    AllKeys(AllKeys<'a, 'b>),
+    StorageValue(StorageValue<'a, 'b>),
+}
+
+pub struct AllKeys<'a, 'b> {
+    calculation: &'b mut RootMerkleValueCalculation<'a>,
+}
+
+impl<'a, 'b> AllKeys<'a, 'b> {
+    pub fn inject(self, keys: impl Iterator<Item = impl Iterator<Item = u8> + Clone>) {
+        debug_assert!(self.calculation.cache.structure.is_none());
+        self.calculation.cache.structure = Some({
             let mut structure = trie_structure::TrieStructure::new();
-            let keys = trie_access.clone().prefix_keys(&[]).collect::<Vec<_>>();
             for key in keys {
                 structure
-                    .node(bytes_to_nibbles(key.as_ref().iter().cloned()))
+                    .node(bytes_to_nibbles(key))
                     .into_vacant()
                     .unwrap()
                     .insert_storage_value()
@@ -286,87 +365,35 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
             structure
         });
     }
+}
 
-    // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values might
-    // be missing and need to be filled.
-    let trie_structure = cache.structure.as_mut().unwrap();
-    trie_structure.shrink_to_fit();
+pub struct StorageValue<'a, 'b> {
+    calculation: &'b mut RootMerkleValueCalculation<'a>,
+}
 
-    // We now traverse the trie in attempt to find missing Merkle values.
-    // We start with the root node. For each node, if its Merkle value is absent, we continue
-    // iterating with its first child. If its Merkle value is present, we continue iterating with
-    // the next sibling or, if it is the last sibling, the parent. In that situation where we jump
-    // from last sibling to parent, we also calculate the parent's Merkle value in the process.
-    // Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
-    // the Merkle value is calculated the second time.
-    let mut current = match trie_structure.root_node() {
-        Some(c) => c,
-        None => return,
-    };
+impl<'a, 'b> StorageValue<'a, 'b> {
+    pub fn key<'c>(&'c self) -> impl Iterator<Item = u8> + 'c {
+        let trie_structure = self.calculation.cache.structure.as_ref().unwrap();
+        let mut full_key = trie_structure
+            .node_full_key_by_index(self.calculation.current.unwrap())
+            .unwrap();
+        iter::from_fn(move || {
+            let nibble1 = full_key.next()?;
+            let nibble2 = full_key.next().unwrap();
+            let val = (u8::from(nibble1) << 4) | u8::from(nibble2);
+            Some(val)
+        })
+    }
 
-    // `coming_from_child` is used to differentiate whether the previous iteration was the
-    // previous sibling of `current` or the last child of `current`.
-    let mut coming_from_child = false;
+    pub fn inject(self, stored_value: Option<impl AsRef<[u8]>>) {
+        assert!(stored_value.is_some());
 
-    loop {
-        // If we already have a Merkle value, jump either to the next sibling (if any), or back
-        // to the parent.
-        if current.user_data().merkle_value.is_some() {
-            debug_assert!(!coming_from_child);
-            match current.into_next_sibling() {
-                Ok(sibling) => {
-                    current = sibling;
-                    coming_from_child = false;
-                    continue;
-                }
-                Err(curr) => {
-                    if let Some(parent) = curr.into_parent() {
-                        current = parent;
-                        coming_from_child = true;
-                        continue;
-                    } else {
-                        // No next sibling nor parent. We have finished traversing the tree.
-                        return;
-                    }
-                }
-            }
-        }
+        let trie_structure = self.calculation.cache.structure.as_mut().unwrap();
+        let mut current: trie_structure::NodeAccess<_> = trie_structure
+            .node_by_index(self.calculation.current.unwrap())
+            .unwrap();
 
-        debug_assert!(current.user_data().merkle_value.is_none());
-
-        // If previous iteration is from `current`'s previous sibling, we jump down to
-        // `current`'s children.
-        if !coming_from_child {
-            match current.into_first_child() {
-                Err(c) => current = c,
-                Ok(first_child) => {
-                    current = first_child;
-                    coming_from_child = false;
-                    continue;
-                }
-            }
-        }
-
-        // If we reach this, we are ready to calculate `current`'s Merkle value.
-
-        // Load the stored value of this node.
-        // TODO: do this in a better way, without allocating
-        let node_key = current.full_key().collect::<Vec<_>>();
-        let stored_value = if node_key.len() % 2 == 0 {
-            let key_bytes = node_key
-                .chunks(2)
-                .map(|chunk| (u8::from(chunk[0]) << 4) | u8::from(chunk[1]))
-                .collect::<Vec<_>>();
-
-            trie_access
-                .clone()
-                .get(&key_bytes)
-                .map(|v| v.as_ref().to_vec())
-        } else {
-            None
-        };
-
-        // Now calculate the Merkle value.
+        // Calculate the Merkle value of the node.
         let merkle_value = node_value::calculate_merke_root(node_value::Config {
             is_root: current.is_root_node(),
             children: (0..16u8).map(|child_idx| {
@@ -381,10 +408,33 @@ fn fill_cache<'a>(trie_access: impl TrieRef<'a>, mut cache: &mut CalculationCach
         });
 
         current.user_data().merkle_value = Some(merkle_value);
+    }
+}
 
-        // We keep `current` as it is and iterate again. Since `merkle_value` is now `Some`, we
-        // will jump to the next node.
-        coming_from_child = false;
+/// Utility type. Contains either a `CalculationCache` or a `&mut CalculationCache` and implements
+/// `Deref`/`DerefMut`.
+enum CowMut<'a> {
+    Owned(CalculationCache),
+    Borrowed(&'a mut CalculationCache),
+}
+
+impl<'a> ops::Deref for CowMut<'a> {
+    type Target = CalculationCache;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CowMut::Owned(c) => c,
+            CowMut::Borrowed(c) => c,
+        }
+    }
+}
+
+impl<'a> ops::DerefMut for CowMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            CowMut::Owned(c) => c,
+            CowMut::Borrowed(c) => c,
+        }
     }
 }
 

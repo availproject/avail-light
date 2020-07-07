@@ -85,7 +85,19 @@ impl Trie {
         &self,
         cache: Option<&mut calculate_root::CalculationCache>,
     ) -> [u8; 32] {
-        calculate_root::root_merkle_value(&self.entries, cache)
+        let mut calculation = calculate_root::root_merkle_value(cache);
+        loop {
+            match calculation.next() {
+                calculate_root::Next::Finished(value) => return value,
+                calculate_root::Next::AllKeys(keys) => {
+                    keys.inject(self.entries.keys().map(|k| k.iter().cloned()))
+                }
+                calculate_root::Next::StorageValue(value) => {
+                    let key = value.key().collect::<Vec<u8>>();
+                    value.inject(self.entries.get(&key));
+                }
+            }
+        }
     }
 }
 

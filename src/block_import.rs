@@ -15,6 +15,7 @@ use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 
 /// Configuration for a block verification.
+// TODO: don't pass functions to the Config; instead, have a state-machine-like API
 pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
@@ -211,78 +212,44 @@ where
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageRoot { resolve } => {
-                // TODO: clean this code so that it's more readable
-                struct TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {
-                    config: &'a Config<'a, TPaAcc, TPaPref, TPaNe>,
-                    overlay_changes: &'a HashMap<Vec<u8>, Option<Vec<u8>>>,
-                }
+                let mut calculation =
+                    calculate_root::root_merkle_value(Some(&mut top_trie_root_calculation_cache));
 
-                impl<'a, TPaAcc, TPaPref, TPaNe> Copy for TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {}
-                impl<'a, TPaAcc, TPaPref, TPaNe> Clone for TrieAccess<'a, TPaAcc, TPaPref, TPaNe> {
-                    fn clone(&self) -> Self {
-                        Self {
-                            config: self.config,
-                            overlay_changes: self.overlay_changes,
+                loop {
+                    match calculation.next() {
+                        calculate_root::Next::Finished(value) => {
+                            resolve.finish_call(value);
+                            break;
                         }
-                    }
-                }
-
-                impl<'a, TPaAcc, TPaAccOut, TPaPref, TPaPrefOut, TPaNe, TPaNeOut>
-                    calculate_root::TrieRef<'a> for TrieAccess<'a, TPaAcc, TPaPref, TPaNe>
-                where
-                    // TODO: ugh, we pass Vecs because of lifetime clusterfuck
-                    TPaAcc: Fn(Vec<u8>) -> TPaAccOut,
-                    TPaAccOut: Future<Output = Option<Vec<u8>>>,
-                    TPaPref: Fn(Vec<u8>) -> TPaPrefOut,
-                    TPaPrefOut: Future<Output = Vec<Vec<u8>>>,
-                    TPaNe: Fn(Vec<u8>) -> TPaNeOut,
-                    TPaNeOut: Future<Output = Option<Vec<u8>>>,
-                {
-                    type Key = Vec<u8>;
-                    type Value = Cow<'a, [u8]>;
-                    type PrefixKeysIter = Box<dyn Iterator<Item = Self::Key> + 'a>;
-
-                    /// Loads the value associated to the given key. Returns `None` if no value is present.
-                    ///
-                    /// Must always return the same value if called multiple times with the same key.
-                    fn get(self, key: &[u8]) -> Option<Self::Value> {
-                        if let Some(overlay) = self.overlay_changes.get(key) {
-                            overlay.as_ref().map(|v| Cow::Borrowed(&v[..]))
-                        } else {
-                            (self.config.parent_storage_get)(key.to_vec())
-                                .now_or_never() // TODO: hack because `TrieRef` isn't async-friendly yet
+                        calculate_root::Next::AllKeys(keys) => {
+                            let mut result = (config.parent_storage_keys_prefix)(Vec::new())
+                                .now_or_never()
                                 .unwrap()
-                                .map(|v| Cow::Owned(v))
-                        }
-                    }
-
-                    fn prefix_keys(self, prefix: &[u8]) -> Self::PrefixKeysIter {
-                        // TODO: optimize
-                        let mut result = (self.config.parent_storage_keys_prefix)(prefix.to_vec())
-                            .now_or_never()
-                            .unwrap()
-                            .into_iter()
-                            .filter(|v| self.overlay_changes.get(v).map_or(true, |v| v.is_some()))
-                            .collect::<HashSet<_>>();
-                        // TODO: slow to iterate over everything?
-                        for (key, value) in self.overlay_changes.iter() {
-                            if value.is_none() || !key.starts_with(&prefix) {
-                                continue;
+                                .into_iter()
+                                .filter(|v| top_trie_changes.get(v).map_or(true, |v| v.is_some()))
+                                .collect::<HashSet<_>>();
+                            // TODO: slow to iterate over everything?
+                            for (key, value) in top_trie_changes.iter() {
+                                if value.is_none() {
+                                    continue;
+                                }
+                                result.insert(key.clone());
                             }
-                            result.insert(key.clone());
+                            keys.inject(result.into_iter().map(|k| k.into_iter()))
                         }
-                        Box::new(result.into_iter())
+                        calculate_root::Next::StorageValue(value_request) => {
+                            let key = value_request.key().collect::<Vec<u8>>();
+                            if let Some(overlay) = top_trie_changes.get(&key) {
+                                value_request.inject(overlay.as_ref());
+                            } else {
+                                let val = (config.parent_storage_get)(key.to_vec())
+                                    .now_or_never() // TODO: hack because `TrieRef` isn't async-friendly yet
+                                    .unwrap();
+                                value_request.inject(val.as_ref());
+                            }
+                        }
                     }
                 }
-
-                let hash = calculate_root::root_merkle_value(
-                    TrieAccess {
-                        config: &config,
-                        overlay_changes: &top_trie_changes,
-                    },
-                    Some(&mut top_trie_root_calculation_cache),
-                );
-                resolve.finish_call(hash);
             }
             executor::State::ExternalStorageChangesRoot {
                 parent_hash: _,
