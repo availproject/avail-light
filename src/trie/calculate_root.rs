@@ -265,7 +265,7 @@ impl<'a> RootMerkleValueCalculation<'a> {
                             stored_value: None::<Vec<u8>>,
                         });
 
-                        return merkle_value.into();
+                        return Next::Finished(merkle_value.into());
                     }
                 };
             }

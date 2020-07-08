@@ -1,7 +1,7 @@
 #![recursion_limit = "256"]
 
-use core::{cmp, time::Duration};
-use futures::prelude::*;
+use futures::{channel::oneshot, prelude::*};
+use std::{cmp, path::PathBuf, thread, time::Duration};
 
 fn main() {
     env_logger::init();
@@ -19,13 +19,12 @@ async fn async_main() {
         author: "tomaka17",
     };
 
-    let db_path =
-        app_dirs::app_dir(app_dirs::AppDataType::UserData, &APP_INFO, "database").unwrap();
-    let database = substrate_lite::database::open(substrate_lite::database::Config {
-        path: &db_path.join(chain_spec.id()),
-    })
-    .unwrap();
-    let database = substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap();
+    let database = {
+        let db_path =
+            app_dirs::app_dir(app_dirs::AppDataType::UserData, &APP_INFO, "database").unwrap();
+        let database = open_database(db_path.join(chain_spec.id())).await.unwrap();
+        substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap()
+    };
 
     let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
         .with_database(database)
@@ -116,6 +115,45 @@ async fn async_main() {
                     },
                     _ => {}
                 }
+            }
+        }
+    }
+}
+
+/// Since opening the database can take a long time, this utility function performs this operation
+/// in the background while showing a small progress bar to the user.
+// TODO: shouldn't expose `sled`
+async fn open_database(
+    path: PathBuf,
+) -> Result<substrate_lite::database::DatabaseOpen, sled::Error> {
+    let (tx, rx) = oneshot::channel();
+    let mut rx = rx.fuse();
+
+    let thread_spawn_result = thread::Builder::new().name("database-open".into()).spawn({
+        let path = path.clone();
+        move || {
+            let result =
+                substrate_lite::database::open(substrate_lite::database::Config { path: &path });
+            let _ = tx.send(result);
+        }
+    });
+
+    if thread_spawn_result.is_err() {
+        return substrate_lite::database::open(substrate_lite::database::Config { path: &path });
+    }
+
+    let mut progress_timer = stream::unfold((), move |_| {
+        futures_timer::Delay::new(Duration::from_millis(200)).map(|_| Some(((), ())))
+    })
+    .map(|_| ());
+
+    let mut next_progress_icon = ['-', '\\', '|', '/'].iter().cloned().cycle();
+
+    loop {
+        futures::select! {
+            res = rx => return res.unwrap(),
+            _ = progress_timer.next() => {
+                eprint!("  Opening database... {}\r", next_progress_icon.next().unwrap());
             }
         }
     }

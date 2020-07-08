@@ -9,7 +9,6 @@
 
 use crate::{executor, trie::calculate_root};
 
-use alloc::borrow::Cow;
 use core::{cmp, convert::TryFrom as _};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
