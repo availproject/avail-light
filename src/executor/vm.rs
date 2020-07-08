@@ -1,5 +1,7 @@
 mod interpreter;
+//mod jit;
 
+use core::fmt;
 use smallvec::SmallVec;
 
 pub use interpreter::*;
@@ -9,27 +11,6 @@ pub use interpreter::*;
 pub struct Signature {
     params: SmallVec<[ValueType; 2]>,
     ret_ty: Option<ValueType>,
-}
-
-/// Easy way to generate a [`Signature`](crate::primitives::Signature).
-///
-/// # Example
-///
-/// ```
-/// let _sig: redshirt_core::primitives::Signature = redshirt_core::sig!((I32, I64) -> I32);
-/// ```
-#[macro_export]
-macro_rules! sig {
-    (($($p:ident),*)) => {{
-        let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
-        $crate::primitives::Signature::new(params, None)
-    }};
-    (($($p:ident),*) -> $ret:ident) => {{
-        let params = core::iter::empty();
-        $(let params = params.chain(core::iter::once($crate::ValueType::$p));)*
-        $crate::primitives::Signature::new(params, Some($crate::ValueType::$ret))
-    }};
 }
 
 impl Signature {
@@ -219,3 +200,127 @@ impl From<wasmi::ValueType> for ValueType {
         }
     }
 }*/
+
+/// Outcome of the [`run`](VirtualMachine::run) function.
+#[derive(Debug)]
+pub enum ExecOutcome {
+    /// The execution has finished.
+    ///
+    /// The state machine is now in a poisoned state, and calling
+    /// [`is_poisoned`](VirtualMachine::is_poisoned) will return true.
+    Finished {
+        /// Return value of the function.
+        // TODO: error type should change here
+        return_value: Result<Option<WasmValue>, ()>,
+    },
+
+    /// The virtual machine has been paused due to a call to an external function.
+    ///
+    /// This variant contains the identifier of the external function that is expected to be
+    /// called, and its parameters. When you call [`run`](VirtualMachine::run) again, you must
+    /// pass back the outcome of calling that function.
+    ///
+    /// > **Note**: The type of the return value of the function is called is not specified, as the
+    /// >           user is supposed to know it based on the identifier. It is an error to call
+    /// >           [`run`](VirtualMachine::run) with a value of the wrong type.
+    Interrupted {
+        /// Identifier of the function to call. Corresponds to the value provided at
+        /// initialization when resolving imports.
+        id: usize,
+
+        /// Parameters of the function call.
+        params: Vec<WasmValue>,
+    },
+}
+/// Error that can happen when initializing a VM.
+#[derive(Debug)]
+pub enum NewErr {
+    /// Error in the interpreter.
+    // TODO: don't expose wasmi in API
+    Interpreter(wasmi::Error),
+    /// If a "memory" symbol is provided, it must be a memory.
+    MemoryIsntMemory,
+    /// If a "__indirect_function_table" symbol is provided, it must be a table.
+    IndirectTableIsntTable,
+    /// Couldn't find the requested function.
+    FunctionNotFound,
+    /// The requested function has been found in the list of exports, but it is not a function.
+    NotAFunction,
+}
+
+impl fmt::Display for NewErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NewErr::Interpreter(_) => write!(f, "Error in the interpreter"),
+            NewErr::MemoryIsntMemory => {
+                write!(f, "If a \"memory\" symbol is provided, it must be a memory")
+            }
+            NewErr::IndirectTableIsntTable => write!(
+                f,
+                "If a \"__indirect_function_table\" symbol is provided, it must be a table"
+            ),
+            NewErr::FunctionNotFound => write!(f, "Function to start was not found"),
+            NewErr::NotAFunction => write!(f, "Symbol to start is not a function"),
+        }
+    }
+}
+
+/// Error that can happen when starting a new thread.
+#[derive(Debug)]
+pub enum StartErr {
+    /// The state machine is poisoned and cannot run anymore.
+    Poisoned,
+    /// Couldn't find the requested function.
+    FunctionNotFound,
+    /// The requested function has been found in the list of exports, but it is not a function.
+    NotAFunction,
+}
+
+impl fmt::Display for StartErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StartErr::Poisoned => write!(f, "State machine is in a poisoned state"),
+            StartErr::FunctionNotFound => write!(f, "Function to start was not found"),
+            StartErr::NotAFunction => write!(f, "Symbol to start is not a function"),
+        }
+    }
+}
+
+/// Error that can happen when resuming the execution of a function.
+#[derive(Debug)]
+pub enum RunErr {
+    /// The state machine is poisoned.
+    Poisoned,
+    /// Passed a wrong value back.
+    BadValueTy {
+        /// Type of the value that was expected.
+        expected: Option<ValueType>,
+        /// Type of the value that was actually passed.
+        obtained: Option<ValueType>,
+    },
+}
+
+impl fmt::Display for RunErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RunErr::Poisoned => write!(f, "State machine is poisoned"),
+            RunErr::BadValueTy { expected, obtained } => write!(
+                f,
+                "Expected value of type {:?} but got {:?} instead",
+                expected, obtained
+            ),
+        }
+    }
+}
+
+/// Error that can happen when calling [`VirtualMachine::global_value`].
+#[derive(Debug, derive_more::Display)]
+pub enum GlobalValueErr {
+    NotFound,
+    Invalid,
+}
+
+#[cfg(test)]
+mod tests {
+    // TODO:
+}

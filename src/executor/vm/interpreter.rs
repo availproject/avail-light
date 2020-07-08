@@ -4,7 +4,7 @@
 //! Substrate/Polkadot (such as the external functions available to the Wasm code) are not handled
 //! by this module and must instead be built on top.
 
-use super::{Signature, ValueType, WasmValue};
+use super::{ExecOutcome, GlobalValueErr, NewErr, RunErr, Signature, ValueType, WasmValue};
 
 use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
 use core::{
@@ -85,79 +85,10 @@ pub struct VirtualMachinePrototype {
     indirect_table: Option<wasmi::TableRef>,
 }
 
-/// Outcome of the [`run`](VirtualMachine::run) function.
-#[derive(Debug)]
-pub enum ExecOutcome {
-    /// The execution has finished.
-    ///
-    /// The state machine is now in a poisoned state, and calling
-    /// [`is_poisoned`](VirtualMachine::is_poisoned) will return true.
-    Finished {
-        /// Return value of the function.
-        // TODO: error type should change here
-        return_value: Result<Option<WasmValue>, ()>,
-    },
-
-    /// The virtual machine has been paused due to a call to an external function.
-    ///
-    /// This variant contains the identifier of the external function that is expected to be
-    /// called, and its parameters. When you call [`run`](VirtualMachine::run) again, you must
-    /// pass back the outcome of calling that function.
-    ///
-    /// > **Note**: The type of the return value of the function is called is not specified, as the
-    /// >           user is supposed to know it based on the identifier. It is an error to call
-    /// >           [`run`](VirtualMachine::run) with a value of the wrong type.
-    Interrupted {
-        /// Identifier of the function to call. Corresponds to the value provided at
-        /// initialization when resolving imports.
-        id: usize,
-
-        /// Parameters of the function call.
-        params: Vec<WasmValue>,
-    },
-}
-
 /// Wasm blob known to be valid.
 // Note: this struct exists in order to hide wasmi as an implementation detail.
 pub struct WasmBlob {
     inner: wasmi::Module,
-}
-
-/// Error that can happen when initializing a VM.
-#[derive(Debug)]
-pub enum NewErr {
-    /// Error in the interpreter.
-    // TODO: don't expose wasmi in API
-    Interpreter(wasmi::Error),
-    /// If a "memory" symbol is provided, it must be a memory.
-    MemoryIsntMemory,
-    /// If a "__indirect_function_table" symbol is provided, it must be a table.
-    IndirectTableIsntTable,
-    /// Couldn't find the requested function.
-    FunctionNotFound,
-    /// The requested function has been found in the list of exports, but it is not a function.
-    NotAFunction,
-}
-
-/// Error that can happen when resuming the execution of a function.
-#[derive(Debug)]
-pub enum RunErr {
-    /// The state machine is poisoned.
-    Poisoned,
-    /// Passed a wrong value back.
-    BadValueTy {
-        /// Type of the value that was expected.
-        expected: Option<ValueType>,
-        /// Type of the value that was actually passed.
-        obtained: Option<ValueType>,
-    },
-}
-
-/// Error that can happen when calling [`VirtualMachine::global_value`].
-#[derive(Debug, derive_more::Display)]
-pub enum GlobalValueErr {
-    NotFound,
-    Invalid,
 }
 
 impl VirtualMachinePrototype {
@@ -539,39 +470,4 @@ impl<'a> TryFrom<&'a [u8]> for WasmBlob {
     fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
         WasmBlob::from_bytes(bytes)
     }
-}
-
-impl fmt::Display for NewErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            NewErr::Interpreter(_) => write!(f, "Error in the interpreter"),
-            NewErr::MemoryIsntMemory => {
-                write!(f, "If a \"memory\" symbol is provided, it must be a memory")
-            }
-            NewErr::IndirectTableIsntTable => write!(
-                f,
-                "If a \"__indirect_function_table\" symbol is provided, it must be a table"
-            ),
-            NewErr::FunctionNotFound => write!(f, "Function to start was not found"),
-            NewErr::NotAFunction => write!(f, "Symbol to start is not a function"),
-        }
-    }
-}
-
-impl fmt::Display for RunErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RunErr::Poisoned => write!(f, "State machine is poisoned"),
-            RunErr::BadValueTy { expected, obtained } => write!(
-                f,
-                "Expected value of type {:?} but got {:?} instead",
-                expected, obtained
-            ),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // TODO:
 }
