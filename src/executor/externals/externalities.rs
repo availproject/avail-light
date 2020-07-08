@@ -55,10 +55,9 @@ pub struct Externality {
     // Called by `start_call`.
     call: fn(
         Box<dyn InternalInterface + Send + Sync>,
-        &[vm::RuntimeValue],
-    ) -> Pin<
-        Box<dyn Future<Output = Result<Option<vm::RuntimeValue>, Error>> + Send + Sync>,
-    >,
+        &[vm::WasmValue],
+    )
+        -> Pin<Box<dyn Future<Output = Result<Option<vm::WasmValue>, Error>> + Send + Sync>>,
 
     /// Name of the function. Used for debugging purposes.
     name: &'static str,
@@ -96,7 +95,7 @@ macro_rules! define_internal_interface {
         enum CallStateInner {
             Initial,
             Finished {
-                return_value: Option<vm::RuntimeValue>,
+                return_value: Option<vm::WasmValue>,
             },
             Error(Error),
             $($variant {
@@ -126,7 +125,7 @@ impl Externality {
     /// Initialize a [`CallState`] that tracks a call to this externality.
     ///
     /// Must pass the parameters of the call.
-    pub fn start_call(&self, params: &[vm::RuntimeValue]) -> CallState {
+    pub fn start_call(&self, params: &[vm::WasmValue]) -> CallState {
         let (tx, rx) = mpsc::channel(3);
 
         CallState {
@@ -145,7 +144,7 @@ impl fmt::Debug for Externality {
 
 pub struct CallState {
     future: future::Fuse<
-        Pin<Box<dyn Future<Output = Result<Option<vm::RuntimeValue>, Error>> + Send + Sync>>,
+        Pin<Box<dyn Future<Output = Result<Option<vm::WasmValue>, Error>> + Send + Sync>>,
     >,
     next_state: mpsc::Receiver<CallStateInner>,
     state: CallStateInner,
@@ -255,7 +254,7 @@ pub enum State<'a> {
     /// The call is finished.
     Finished {
         /// Value that the externality must return.
-        return_value: Option<vm::RuntimeValue>,
+        return_value: Option<vm::WasmValue>,
     },
 
     /// A problem happened during the call.
@@ -410,7 +409,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, value_encoded).await;
 
                     let ret = build_pointer_size(dest_ptr, value_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -440,7 +439,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, outcome_encoded).await;
 
                     let ret = build_pointer_size(dest_ptr, outcome_encoded_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -465,9 +464,9 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     let key = expect_pointer_size(&params[0], &*interface).await?;
                     let value = interface.storage_get(key, 0, 0).await;
                     if value.is_some() {
-                        Ok(Some(vm::RuntimeValue::I32(1)))
+                        Ok(Some(vm::WasmValue::I32(1)))
                     } else {
-                        Ok(Some(vm::RuntimeValue::I32(0)))
+                        Ok(Some(vm::WasmValue::I32(0)))
                     }
                 })
             },
@@ -499,7 +498,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, encoded_hash).await;
 
                     let ret = build_pointer_size(dest_ptr, value_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -520,7 +519,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, encoded_hash).await;
 
                     let ret = build_pointer_size(dest_ptr, value_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -542,7 +541,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, value_encoded).await;
 
                     let ret = build_pointer_size(dest_ptr, value_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -687,7 +686,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(3, &params)?;
                     // TODO: wrong! this is a dummy implementation meaning that all signature
                     // verifications are always successful
-                    Ok(Some(vm::RuntimeValue::I32(1)))
+                    Ok(Some(vm::WasmValue::I32(1)))
                 })
             },
         }),
@@ -720,7 +719,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(3, &params)?;
                     // TODO: wrong! this is a dummy implementation meaning that all signature
                     // verifications are always successful
-                    Ok(Some(vm::RuntimeValue::I32(1)))
+                    Ok(Some(vm::WasmValue::I32(1)))
                 })
             },
         }),
@@ -732,7 +731,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(3, &params)?;
                     // TODO: wrong! this is a dummy implementation meaning that all signature
                     // verifications are always successful
-                    Ok(Some(vm::RuntimeValue::I32(1)))
+                    Ok(Some(vm::WasmValue::I32(1)))
                 })
             },
         }),
@@ -778,7 +777,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, result_encoded).await;
 
                     let ret = build_pointer_size(dest_ptr, result_encoded_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -807,7 +806,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(0, &params)?;
                     // TODO: wrong! this is a dummy implementation meaning that all signature
                     // verifications are always successful
-                    Ok(Some(vm::RuntimeValue::I32(1)))
+                    Ok(Some(vm::WasmValue::I32(1)))
                 })
             },
         }),
@@ -827,7 +826,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out.to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -852,7 +851,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface
                         .write_memory(dest_ptr, out.as_bytes().to_vec())
                         .await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -870,7 +869,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface
                         .write_memory(dest_ptr, out.as_bytes().to_vec())
                         .await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -890,7 +889,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface
                         .write_memory(dest_ptr, r0.to_le_bytes().to_vec())
                         .await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -914,7 +913,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(16).await;
                     interface.write_memory(dest_ptr, out_value).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -946,7 +945,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out_value).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -1074,7 +1073,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out.to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -1098,7 +1097,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out.to_vec()).await;
-                    Ok(Some(vm::RuntimeValue::I32(reinterpret_u32_i32(dest_ptr))))
+                    Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
                 })
             },
         }),
@@ -1110,7 +1109,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Box::pin(async move {
                     expect_num_params(0, &params)?;
                     // TODO: seems to be hardcoded to 42 for some reason?!
-                    Ok(Some(vm::RuntimeValue::I64(42)))
+                    Ok(Some(vm::WasmValue::I64(42)))
                 })
             },
         }),
@@ -1176,7 +1175,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     interface.write_memory(dest_ptr, value_encoded).await;
 
                     let ret = build_pointer_size(dest_ptr, value_len);
-                    Ok(Some(vm::RuntimeValue::I64(reinterpret_u64_i64(ret))))
+                    Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
                 })
             },
         }),
@@ -1189,7 +1188,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     let size = expect_u32(&params[0])?;
                     let ptr = interface.allocate(size).await;
                     let ptr_i32 = i32::from_ne_bytes(ptr.to_ne_bytes());
-                    Ok(Some(vm::RuntimeValue::I32(ptr_i32)))
+                    Ok(Some(vm::WasmValue::I32(ptr_i32)))
                 })
             },
         }),
@@ -1251,7 +1250,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
 }
 
 /// Utility function that returns an error if `params.len()` is not equal to `expected_num`.
-fn expect_num_params(expected_num: usize, params: &[vm::RuntimeValue]) -> Result<(), Error> {
+fn expect_num_params(expected_num: usize, params: &[vm::WasmValue]) -> Result<(), Error> {
     if expected_num == params.len() {
         Ok(())
     } else {
@@ -1260,26 +1259,26 @@ fn expect_num_params(expected_num: usize, params: &[vm::RuntimeValue]) -> Result
 }
 
 /// Utility function that turns a parameter into a `u32`, or returns an error if it is impossible.
-fn expect_u32(param: &vm::RuntimeValue) -> Result<u32, Error> {
+fn expect_u32(param: &vm::WasmValue) -> Result<u32, Error> {
     match param {
-        vm::RuntimeValue::I32(v) => Ok(u32::from_ne_bytes(v.to_ne_bytes())),
+        vm::WasmValue::I32(v) => Ok(u32::from_ne_bytes(v.to_ne_bytes())),
         _ => Err(Error::WrongParamTy),
     }
 }
 
 /// Utility function that turns a parameter into a `u64`, or returns an error if it is impossible.
-fn expect_u64(param: &vm::RuntimeValue) -> Result<u64, Error> {
+fn expect_u64(param: &vm::WasmValue) -> Result<u64, Error> {
     match param {
-        vm::RuntimeValue::I64(v) => Ok(u64::from_ne_bytes(v.to_ne_bytes())),
+        vm::WasmValue::I64(v) => Ok(u64::from_ne_bytes(v.to_ne_bytes())),
         _ => Err(Error::WrongParamTy),
     }
 }
 
 /// Utility function that turns a parameter into a "pointer-size" parameter, or returns an error
 /// if it is impossible.
-fn expect_pointer_size_raw(param: &vm::RuntimeValue) -> Result<(u32, u32), Error> {
+fn expect_pointer_size_raw(param: &vm::WasmValue) -> Result<(u32, u32), Error> {
     let val = match param {
-        vm::RuntimeValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
+        vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
         _ => return Err(Error::WrongParamTy),
     };
 
@@ -1291,7 +1290,7 @@ fn expect_pointer_size_raw(param: &vm::RuntimeValue) -> Result<(u32, u32), Error
 /// Utility function that turns a "pointer-size" parameter into the memory content, or returns an
 /// error if it is impossible.
 async fn expect_pointer_size(
-    param: &vm::RuntimeValue,
+    param: &vm::WasmValue,
     interface: &(dyn InternalInterface + Send + Sync),
 ) -> Result<Vec<u8>, Error> {
     let (ptr, len) = expect_pointer_size_raw(param)?;
@@ -1301,7 +1300,7 @@ async fn expect_pointer_size(
 /// Utility function that turns a pointer parameter into the memory content, or returns an error
 /// if it is impossible.
 async fn expect_constant_size_pointer(
-    param: &vm::RuntimeValue,
+    param: &vm::WasmValue,
     memory_size: u32,
     interface: &(dyn InternalInterface + Send + Sync),
 ) -> Result<Vec<u8>, Error> {

@@ -52,7 +52,7 @@ enum StateInner {
     /// Wasm virtual machine is ready to be run. Will pass the first parameter as the "resume"
     /// value. This is either `None` at initialization, or, if the virtual machine was calling
     /// an externality, the value returned by the externality.
-    Ready(Option<vm::RuntimeValue>),
+    Ready(Option<vm::WasmValue>),
     /// Currently calling an externality. The Wasm virtual machine is paused while we perform all
     /// the outside-of-the-VM operations.
     Calling(externalities::CallState),
@@ -113,8 +113,8 @@ impl ExternalsVm {
         let mut vm = vm_proto.start(
             called_function.symbol_name(),
             &[
-                vm::RuntimeValue::I32(i32::from_ne_bytes(heap_base.to_ne_bytes())),
-                vm::RuntimeValue::I32(data_len_i32),
+                vm::WasmValue::I32(i32::from_ne_bytes(heap_base.to_ne_bytes())),
+                vm::WasmValue::I32(data_len_i32),
             ],
         )?;
         vm.write_memory(heap_base, &data).unwrap();
@@ -453,7 +453,7 @@ impl<'a> ReadyToRun<'a> {
 
             match self.inner.vm.run(resume_value) {
                 Ok(vm::ExecOutcome::Finished {
-                    return_value: Ok(Some(vm::RuntimeValue::I64(ret))),
+                    return_value: Ok(Some(vm::WasmValue::I64(ret))),
                 }) => {
                     // Wasm virtual machine has successfully returned.
 
