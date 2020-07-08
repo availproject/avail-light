@@ -1,10 +1,14 @@
 mod interpreter;
-//mod jit;
+mod jit;
 
 use core::fmt;
 use smallvec::SmallVec;
 
-pub use interpreter::*;
+pub use jit::{Jit as VirtualMachine, JitPrototype as VirtualMachinePrototype, WasmBlob};
+
+//pub use interpreter::*;
+
+// TODO: wrap around the content of the submodules here, and make the submodules private
 
 /// Low-level Wasm function signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,7 +68,7 @@ impl<'a> From<&'a wasmi::Signature> for Signature {
     }
 }
 
-/*impl<'a> From<&'a wasmtime::FuncType> for Signature {
+impl<'a> From<&'a wasmtime::FuncType> for Signature {
     fn from(sig: &'a wasmtime::FuncType) -> Signature {
         // TODO: we only support one return type at the moment; what even is multiple
         // return types?
@@ -75,7 +79,7 @@ impl<'a> From<&'a wasmi::Signature> for Signature {
             sig.results().get(0).cloned().map(ValueType::from),
         )
     }
-}*/
+}
 
 impl From<wasmi::Signature> for Signature {
     fn from(sig: wasmi::Signature) -> Signature {
@@ -150,7 +154,7 @@ impl From<WasmValue> for wasmi::RuntimeValue {
     }
 }
 
-/*impl From<WasmValue> for wasmtime::Val {
+impl From<WasmValue> for wasmtime::Val {
     fn from(val: WasmValue) -> Self {
         match val {
             WasmValue::I32(v) => wasmtime::Val::I32(v),
@@ -168,7 +172,7 @@ impl From<wasmtime::Val> for WasmValue {
             _ => unimplemented!(),
         }
     }
-}*/
+}
 
 impl From<ValueType> for wasmi::ValueType {
     fn from(ty: ValueType) -> wasmi::ValueType {
@@ -189,17 +193,15 @@ impl From<wasmi::ValueType> for ValueType {
     }
 }
 
-/*impl From<wasmtime::ValType> for ValueType {
+impl From<wasmtime::ValType> for ValueType {
     fn from(val: wasmtime::ValType) -> Self {
         match val {
             wasmtime::ValType::I32 => ValueType::I32,
             wasmtime::ValType::I64 => ValueType::I64,
-            wasmtime::ValType::F32 => ValueType::F32,
-            wasmtime::ValType::F64 => ValueType::F64,
             _ => unimplemented!(), // TODO:
         }
     }
-}*/
+}
 
 /// Outcome of the [`run`](VirtualMachine::run) function.
 #[derive(Debug)]
