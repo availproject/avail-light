@@ -157,14 +157,16 @@ impl ExternalsVm {
 
                 // The variants below can be handled immediately, and then we continue looping.
                 externalities::State::AllocationNeeded { size, inject_value } => {
-                    self.state = if let Ok(ptr) =
-                        self.allocator.allocate(&mut MemAccess(&mut self.vm), size)
-                    {
-                        inject_value.inject(ptr);
-                        StateInner::Calling(calling)
-                    } else {
-                        StateInner::Trapped
-                    }
+                    self.state = match self.allocator.allocate(&mut MemAccess(&mut self.vm), size) {
+                        Ok(ptr) => {
+                            inject_value.inject(ptr);
+                            StateInner::Calling(calling)
+                        }
+                        Err(err) => {
+                            println!("test {:?}", err); // TODO: no
+                            StateInner::Trapped
+                        }
+                    };
                 }
                 externalities::State::UntrustedDealloc { pointer, done } => {
                     self.state = if self

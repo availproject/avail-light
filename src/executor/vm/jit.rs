@@ -16,7 +16,7 @@
 use super::{ExecOutcome, GlobalValueErr, NewErr, RunErr, Signature, StartErr, WasmValue};
 
 use alloc::{boxed::Box, rc::Rc, vec::Vec};
-use core::{cell::RefCell, convert::TryFrom, fmt};
+use core::{cell::RefCell, cmp, convert::TryFrom, fmt};
 
 mod coroutine;
 
@@ -88,12 +88,19 @@ impl JitPrototype {
                     wasmtime::ExternType::Global(_) => unimplemented!(),
                     wasmtime::ExternType::Table(_) => unimplemented!(),
                     wasmtime::ExternType::Memory(m) => {
+                        let mut limits = {
+                            // TODO: this 32 is arbitrary
+                            let min = cmp::max(m.limits().min(), 32);
+                            let max = m.limits().max(); // TODO: make sure it's > to min
+                            wasmtime::Limits::new(min, max)
+                        };
+
                         // TODO: check name and all?
                         // TODO: proper error instead of asserting?
                         assert!(imported_memory.is_none());
                         imported_memory = Some(wasmtime::Memory::new(
                             &store,
-                            wasmtime::MemoryType::new(m.limits().clone()),
+                            wasmtime::MemoryType::new(limits),
                         ));
                         imports.push(wasmtime::Extern::Memory(
                             imported_memory.as_ref().unwrap().clone(),
@@ -137,9 +144,9 @@ impl JitPrototype {
                     };
 
                 let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
-                let start_function_name = loop {
+                let (start_function_name, start_parameters) = loop {
                     match request {
-                        ToCoroutine::Start(n) => break n,
+                        ToCoroutine::Start(n, p) => break (n, p),
                         ToCoroutine::GetGlobal(global) => {
                             let global_val = match instance.get_export(&global) {
                                 Some(wasmtime::Extern::Global(g)) => match g.get() {
@@ -161,8 +168,7 @@ impl JitPrototype {
                                     indirect_table: indirect_table.clone(),
                                 });
                         }
-                        // TODO:
-                        _ => todo!(),
+                        ToCoroutine::Resume(_) => unreachable!(),
                     }
                 };
 
@@ -187,7 +193,12 @@ impl JitPrototype {
 
                 // Now running the `start` function of the Wasm code.
                 // This will interrupt the coroutine every time we reach an external function.
-                let result = start_function.call(&[])?;
+                let result = start_function.call(
+                    &start_parameters
+                        .into_iter()
+                        .map(From::from)
+                        .collect::<Vec<_>>(),
+                )?;
 
                 // Execution resumes here when the Wasm code has gracefully finished.
                 assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
@@ -236,10 +247,10 @@ impl JitPrototype {
                 _ => unreachable!(),
             };
 
-        match self
-            .coroutine
-            .run(Some(ToCoroutine::Start(function_name.to_owned())))
-        {
+        match self.coroutine.run(Some(ToCoroutine::Start(
+            function_name.to_owned(),
+            params.to_owned(),
+        ))) {
             coroutine::RunOut::Interrupted(FromCoroutine::Init(Err(err))) => return Err(err),
             coroutine::RunOut::Interrupted(FromCoroutine::Init(Ok(()))) => {}
             _ => unreachable!(),
@@ -264,7 +275,7 @@ impl JitPrototype {
 /// Type that can be given to the coroutine.
 enum ToCoroutine {
     /// Start execution of the given function. Answered with [`FromCoroutine::Init`].
-    Start(String),
+    Start(String, Vec<WasmValue>),
     /// Resume execution after [`FromCoroutine::Interrupt`].
     Resume(Option<WasmValue>),
     /// Return the memory and indirect table globals.
@@ -336,13 +347,9 @@ impl Jit {
             .coroutine
             .run(Some(ToCoroutine::Resume(value.map(From::from))))
         {
-            coroutine::RunOut::Finished(Err(err)) => {
-                // TODO: don't println
-                println!("err: {}", err);
-                Ok(ExecOutcome::Finished {
-                    return_value: Err(()),
-                })
-            }
+            coroutine::RunOut::Finished(Err(err)) => Ok(ExecOutcome::Finished {
+                return_value: Err(()),
+            }),
             coroutine::RunOut::Finished(Ok(val)) => Ok(ExecOutcome::Finished {
                 return_value: Ok(val.map(From::from)),
             }),
