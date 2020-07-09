@@ -20,6 +20,8 @@ use core::{cell::RefCell, cmp, convert::TryFrom, fmt};
 
 mod coroutine;
 
+// TODO: this entire module is unsatisfactory
+
 /// Prototype for a [`Jit`].
 pub struct JitPrototype {
     /// Coroutine that contains the Wasm execution stack.
@@ -116,27 +118,18 @@ impl JitPrototype {
         let mut coroutine = {
             let interrupter = builder.interrupter();
             builder.build(Box::new(move || -> () {
-                // TODO: don't unwrap
-                let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
+                // TODO: no, don't send this now but below; need to adjust for this elsewhere
+                let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
 
-                let memory = if let Some(mem) = instance.get_export("memory") {
-                    if let Some(mem) = mem.into_memory() {
-                        Some(mem.clone())
-                    } else {
-                        let err = NewErr::MemoryIsntMemory;
-                        interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                        return;
-                    }
-                } else {
-                    None
-                };
+                loop {
+                    // TODO: don't unwrap
+                    let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
 
-                let indirect_table =
-                    if let Some(tbl) = instance.get_export("__indirect_function_table") {
-                        if let Some(tbl) = tbl.into_table() {
-                            Some(tbl.clone())
+                    let memory = if let Some(mem) = instance.get_export("memory") {
+                        if let Some(mem) = mem.into_memory() {
+                            Some(mem.clone())
                         } else {
-                            let err = NewErr::IndirectTableIsntTable;
+                            let err = NewErr::MemoryIsntMemory;
                             interrupter.interrupt(FromCoroutine::Init(Err(err)));
                             return;
                         }
@@ -144,9 +137,19 @@ impl JitPrototype {
                         None
                     };
 
-                let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
+                    let indirect_table =
+                        if let Some(tbl) = instance.get_export("__indirect_function_table") {
+                            if let Some(tbl) = tbl.into_table() {
+                                Some(tbl.clone())
+                            } else {
+                                let err = NewErr::IndirectTableIsntTable;
+                                interrupter.interrupt(FromCoroutine::Init(Err(err)));
+                                return;
+                            }
+                        } else {
+                            None
+                        };
 
-                loop {
                     let (start_function_name, start_parameters) = loop {
                         match request {
                             ToCoroutine::Start(n, p) => break (n, p),
