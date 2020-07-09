@@ -92,8 +92,8 @@ impl JitPrototype {
                     wasmtime::ExternType::Table(_) => unimplemented!(),
                     wasmtime::ExternType::Memory(m) => {
                         let limits = {
-                            // TODO: this 32 is arbitrary
-                            let min = cmp::max(m.limits().min(), 32);
+                            // TODO: this 1024 is arbitrary, it's the "heap_pages" value
+                            let min = cmp::max(m.limits().min(), 1024);
                             let max = m.limits().max(); // TODO: make sure it's > to min
                             wasmtime::Limits::new(min, max)
                         };
@@ -464,7 +464,8 @@ impl Jit {
     pub fn into_prototype(self) -> JitPrototype {
         // TODO: how do we handle if the coroutine was in an externality?
 
-        // Zero-ing the memory.
+        // TODO: necessary?
+        /*// Zero-ing the memory.
         if let Some(memory) = &self.memory {
             // Soundness: the documentation of wasmtime precisely explains what is safe or not.
             // Basically, we are safe as long as we are sure that we don't potentially grow the
@@ -474,7 +475,7 @@ impl Jit {
                     *byte = 0;
                 }
             }
-        }
+        }*/
 
         JitPrototype {
             coroutine: self.coroutine,
