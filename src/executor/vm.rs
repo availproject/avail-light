@@ -4,9 +4,9 @@ mod jit;
 use core::fmt;
 use smallvec::SmallVec;
 
-//pub use jit::{Jit as VirtualMachine, JitPrototype as VirtualMachinePrototype};
+pub use jit::{Jit as VirtualMachine, JitPrototype as VirtualMachinePrototype};
 
-pub use interpreter::*;
+//pub use interpreter::*;
 
 // TODO: wrap around the content of the submodules here, and make the submodules private
 

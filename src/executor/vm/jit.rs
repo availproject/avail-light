@@ -24,7 +24,7 @@ mod coroutine;
 pub struct JitPrototype {
     /// Coroutine that contains the Wasm execution stack.
     coroutine: coroutine::Coroutine<
-        Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>,
+        Box<dyn FnOnce() -> ()>, // TODO: `!`
         FromCoroutine,
         ToCoroutine,
     >,
@@ -115,7 +115,7 @@ impl JitPrototype {
         // We now build the coroutine of the main thread.
         let mut coroutine = {
             let interrupter = builder.interrupter();
-            builder.build(Box::new(move || {
+            builder.build(Box::new(move || -> () {
                 // TODO: don't unwrap
                 let instance = wasmtime::Instance::new(&module, &imports).unwrap();
 
@@ -125,7 +125,7 @@ impl JitPrototype {
                     } else {
                         let err = NewErr::MemoryIsntMemory;
                         interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                        return Ok(None);
+                        return;
                     }
                 } else {
                     None
@@ -138,75 +138,90 @@ impl JitPrototype {
                         } else {
                             let err = NewErr::IndirectTableIsntTable;
                             interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                            return Ok(None);
+                            return;
                         }
                     } else {
                         None
                     };
 
                 let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
-                let (start_function_name, start_parameters) = loop {
-                    match request {
-                        ToCoroutine::Start(n, p) => break (n, p),
-                        ToCoroutine::GetGlobal(global) => {
-                            let global_val = match instance.get_export(&global) {
-                                Some(wasmtime::Extern::Global(g)) => match g.get() {
-                                    wasmtime::Val::I32(v) => {
-                                        Ok(u32::from_ne_bytes(v.to_ne_bytes()))
-                                    }
-                                    _ => Err(GlobalValueErr::Invalid),
-                                },
-                                _ => Err(GlobalValueErr::NotFound),
-                            };
 
-                            request =
-                                interrupter.interrupt(FromCoroutine::GetGlobalResponse(global_val));
-                        }
-                        ToCoroutine::GetMemoryTable => {
-                            request =
-                                interrupter.interrupt(FromCoroutine::GetMemoryTableResponse {
-                                    memory: memory.clone(),
-                                    indirect_table: indirect_table.clone(),
-                                });
-                        }
-                        ToCoroutine::Resume(_) => unreachable!(),
-                    }
-                };
+                loop {
+                    let (start_function_name, start_parameters) = loop {
+                        match request {
+                            ToCoroutine::Start(n, p) => break (n, p),
+                            ToCoroutine::GetGlobal(global) => {
+                                let global_val = match instance.get_export(&global) {
+                                    Some(wasmtime::Extern::Global(g)) => match g.get() {
+                                        wasmtime::Val::I32(v) => {
+                                            Ok(u32::from_ne_bytes(v.to_ne_bytes()))
+                                        }
+                                        _ => Err(GlobalValueErr::Invalid),
+                                    },
+                                    _ => Err(GlobalValueErr::NotFound),
+                                };
 
-                // Try to start executing `_start`.
-                let start_function = if let Some(f) = instance.get_export(&start_function_name) {
-                    if let Some(f) = f.func() {
-                        f.clone()
+                                request = interrupter
+                                    .interrupt(FromCoroutine::GetGlobalResponse(global_val));
+                            }
+                            ToCoroutine::GetMemoryTable => {
+                                request =
+                                    interrupter.interrupt(FromCoroutine::GetMemoryTableResponse {
+                                        memory: memory.clone(),
+                                        indirect_table: indirect_table.clone(),
+                                    });
+                            }
+                            ToCoroutine::Resume(_) => unreachable!(),
+                        }
+                    };
+
+                    // Try to start executing `_start`.
+                    let start_function = if let Some(f) = instance.get_export(&start_function_name)
+                    {
+                        if let Some(f) = f.func() {
+                            f.clone()
+                        } else {
+                            let err = NewErr::NotAFunction;
+                            interrupter.interrupt(FromCoroutine::Init(Err(err)));
+                            return;
+                        }
                     } else {
-                        let err = NewErr::NotAFunction;
+                        let err = NewErr::FunctionNotFound;
                         interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                        return Ok(None);
-                    }
-                } else {
-                    let err = NewErr::FunctionNotFound;
-                    interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                    return Ok(None);
-                };
+                        return;
+                    };
 
-                // Report back that everything went ok.
-                let reinjected: ToCoroutine = interrupter.interrupt(FromCoroutine::Init(Ok(())));
-                assert!(matches!(reinjected, ToCoroutine::Resume(None)));
+                    // Report back that everything went ok.
+                    let reinjected: ToCoroutine =
+                        interrupter.interrupt(FromCoroutine::Init(Ok(())));
+                    assert!(matches!(reinjected, ToCoroutine::Resume(None)));
 
-                // Now running the `start` function of the Wasm code.
-                // This will interrupt the coroutine every time we reach an external function.
-                let result = start_function.call(
-                    &start_parameters
-                        .into_iter()
-                        .map(From::from)
-                        .collect::<Vec<_>>(),
-                )?;
+                    // Now running the `start` function of the Wasm code.
+                    // This will interrupt the coroutine every time we reach an external function.
+                    let result = start_function.call(
+                        &start_parameters
+                            .into_iter()
+                            .map(From::from)
+                            .collect::<Vec<_>>(),
+                    );
 
-                // Execution resumes here when the Wasm code has gracefully finished.
-                assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
-                if result.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(result[0].clone())) // TODO: don't clone?
+                    let result = match result {
+                        Ok(r) => r,
+                        Err(err) => {
+                            request = interrupter.interrupt(FromCoroutine::Done(Err(err)));
+                            continue;
+                        }
+                    };
+
+                    // Execution resumes here when the Wasm code has gracefully finished.
+                    assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
+                    let result = if result.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(Some(result[0].clone())) // TODO: don't clone?
+                    };
+
+                    request = interrupter.interrupt(FromCoroutine::Done(result));
                 }
             }) as Box<_>)
         };
@@ -258,16 +273,17 @@ impl JitPrototype {
         }
 
         // TODO: proper error instead of panicking?
-        let memory = match (exported_memory, self.imported_memory) {
+        let memory = match (exported_memory, &self.imported_memory) {
             (Some(_), Some(_)) => unimplemented!(),
             (Some(m), None) => Some(m),
-            (None, Some(m)) => Some(m),
+            (None, Some(m)) => Some(m.clone()),
             (None, None) => None,
         };
 
         Ok(Jit {
             coroutine: self.coroutine,
             memory,
+            imported_memory: self.imported_memory,
             indirect_table,
         })
     }
@@ -307,16 +323,21 @@ enum FromCoroutine {
     },
     /// Response to a [`ToCoroutine::GetGlobal`].
     GetGlobalResponse(Result<u32, GlobalValueErr>),
+    /// Executing the function is finished.
+    Done(Result<Option<wasmtime::Val>, wasmtime::Trap>),
 }
 
 /// Wasm VM that uses JITted compilation.
 pub struct Jit {
     /// Coroutine that contains the Wasm execution stack.
     coroutine: coroutine::Coroutine<
-        Box<dyn FnOnce() -> Result<Option<wasmtime::Val>, wasmtime::Trap>>,
+        Box<dyn FnOnce() -> ()>, // TODO: `!`
         FromCoroutine,
         ToCoroutine,
     >,
+
+    /// See [`JitPrototype::imported_memory`].
+    imported_memory: Option<wasmtime::Memory>,
 
     /// Reference to the memory, in case we need to access it.
     /// `None` if the module doesn't export its memory.
@@ -351,12 +372,19 @@ impl Jit {
             .coroutine
             .run(Some(ToCoroutine::Resume(value.map(From::from))))
         {
-            coroutine::RunOut::Finished(Err(err)) => Ok(ExecOutcome::Finished {
-                return_value: Err(()),
-            }),
-            coroutine::RunOut::Finished(Ok(val)) => Ok(ExecOutcome::Finished {
-                return_value: Ok(val.map(From::from)),
-            }),
+            // TODO: use `!`
+            coroutine::RunOut::Finished(_) => unreachable!(),
+
+            coroutine::RunOut::Interrupted(FromCoroutine::Done(Err(err))) => {
+                Ok(ExecOutcome::Finished {
+                    return_value: Err(()),
+                })
+            }
+            coroutine::RunOut::Interrupted(FromCoroutine::Done(Ok(val))) => {
+                Ok(ExecOutcome::Finished {
+                    return_value: Ok(val.map(From::from)),
+                })
+            }
             coroutine::RunOut::Interrupted(FromCoroutine::Interrupt {
                 function_index,
                 parameters,
@@ -398,6 +426,8 @@ impl Jit {
             .checked_add(usize::try_from(size).map_err(|_| ())?)
             .ok_or(())?;
 
+        // TODO: we don't check bounds
+
         // Soundness: the documentation of wasmtime precisely explains what is safe or not.
         // Basically, we are safe as long as we are sure that we don't potentially grow the
         // buffer (which would invalidate the buffer pointer).
@@ -412,6 +442,8 @@ impl Jit {
         let start = usize::try_from(offset).map_err(|_| ())?;
         let end = start.checked_add(value.len()).ok_or(())?;
 
+        // TODO: we don't check bounds
+
         // Soundness: the documentation of wasmtime precisely explains what is safe or not.
         // Basically, we are safe as long as we are sure that we don't potentially grow the
         // buffer (which would invalidate the buffer pointer).
@@ -424,9 +456,24 @@ impl Jit {
 
     /// Turns back this virtual machine into a prototype.
     pub fn into_prototype(self) -> JitPrototype {
-        // TODO: zero the memory
+        // TODO: how do we handle if the coroutine was in an externality?
 
-        todo!()
+        // Zero-ing the memory.
+        if let Some(memory) = self.memory {
+            // Soundness: the documentation of wasmtime precisely explains what is safe or not.
+            // Basically, we are safe as long as we are sure that we don't potentially grow the
+            // buffer (which would invalidate the buffer pointer).
+            unsafe {
+                for byte in memory.data_unchecked_mut() {
+                    *byte = 0;
+                }
+            }
+        }
+
+        JitPrototype {
+            coroutine: self.coroutine,
+            imported_memory: self.imported_memory,
+        }
     }
 }
 

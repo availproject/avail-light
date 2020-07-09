@@ -30,7 +30,7 @@ pub struct ExternalsVmPrototype {
     /// Inner virtual machine prototype.
     vm_proto: vm::VirtualMachinePrototype,
 
-    /// Value of the `__heap_base` global in the Wasm module. Used to initialize the memory
+    /// Initial value of the `__heap_base` global in the Wasm module. Used to initialize the memory
     /// allocator.
     heap_base: u32,
 
@@ -122,8 +122,8 @@ pub struct ExternalsVm {
     /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
 
-    /// Value of the `__heap_base` global in the Wasm module. Used to initialize the memory
-    /// allocator.
+    /// Initial value of the `__heap_base` global in the Wasm module. Used to initialize the memory
+    /// allocator in case we need to rebuild the VM.
     heap_base: u32,
 
     /// Function currently being called.
