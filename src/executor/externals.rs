@@ -25,16 +25,14 @@ pub use entry_points::{CoreVersionSuccess, FunctionToCall, Success};
 mod entry_points;
 mod externalities;
 
-/// A running virtual machine.
-pub struct ExternalsVm {
-    /// Inner lower-level virtual machine.
-    vm: vm::VirtualMachine,
+/// Prototype for an [`ExternalsVm`].
+pub struct ExternalsVmPrototype {
+    /// Inner virtual machine prototype.
+    vm_proto: vm::VirtualMachinePrototype,
 
-    /// Function currently being called.
-    called_function: entry_points::CalledFunction,
-
-    /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
-    state: StateInner,
+    /// Value of the `__heap_base` global in the Wasm module. Used to initialize the memory
+    /// allocator.
+    heap_base: u32,
 
     /// List of functions that the Wasm code imports.
     ///
@@ -42,39 +40,11 @@ pub struct ExternalsVm {
     /// executor. Whenever the Wasm code invokes an external function, we obtain its index, and
     /// look within this `Vec` to know what to do.
     registered_functions: Vec<externalities::Externality>,
-
-    /// Memory allocator in order to answer the calls to `malloc` and `free`.
-    allocator: allocator::FreeingBumpHeapAllocator,
 }
 
-/// State of the virtual machine.
-enum StateInner {
-    /// Wasm virtual machine is ready to be run. Will pass the first parameter as the "resume"
-    /// value. This is either `None` at initialization, or, if the virtual machine was calling
-    /// an externality, the value returned by the externality.
-    Ready(Option<vm::WasmValue>),
-    /// Currently calling an externality. The Wasm virtual machine is paused while we perform all
-    /// the outside-of-the-VM operations.
-    Calling(externalities::CallState),
-    /// The Wasm blob did something that doesn't conform to the runtime environment. This state
-    /// never changes to anything else.
-    NonConforming(NonConformingErr),
-    /// The Wasm VM has encountered a trap (i.e. it has panicked). This state never changes to
-    /// anything else.
-    Trapped,
-    /// Function call has successfully finished. This state never changes to anything else.
-    Finished(Success),
-    /// Temporary state to permit state transitions without running into borrowing issues.
-    Poisoned,
-}
-
-impl ExternalsVm {
-    /// Creates a new state machine from the given module that executes the given function.
-    pub fn new(module: &vm::WasmBlob, to_call: FunctionToCall) -> Result<Self, NewErr> {
-        let (called_function, data) = to_call.into_function_and_param();
-        let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
-        let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
-
+impl ExternalsVmPrototype {
+    /// Creates a new [`ExternalsVmPrototype`]. Parses and potentially JITs the module.
+    pub fn new(module: impl AsRef<[u8]>) -> Result<Self, NewErr> {
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
@@ -108,30 +78,89 @@ impl ExternalsVm {
             .global_value("__heap_base")
             .map_err(|_| NewErr::HeapBaseNotFound)?;
 
-        // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
-        // of the input data.
-        let mut vm = vm_proto.start(
-            called_function.symbol_name(),
-            &[
-                vm::WasmValue::I32(i32::from_ne_bytes(heap_base.to_ne_bytes())),
-                vm::WasmValue::I32(data_len_i32),
-            ],
-        )?;
-        vm.write_memory(heap_base, &data).unwrap();
-
-        // Initialize the state of the memory allocator. This is the allocator that is later used
-        // when the Wasm code requests variable-length data.
-        let allocator = allocator::FreeingBumpHeapAllocator::new(heap_base + data_len_u32);
-
-        Ok(ExternalsVm {
-            vm,
-            called_function,
-            state: StateInner::Ready(None),
+        Ok(ExternalsVmPrototype {
+            vm_proto,
+            heap_base,
             registered_functions,
-            allocator,
         })
     }
 
+    /// Starts the VM, calling the function passed as parameter.
+    pub fn run(self, to_call: FunctionToCall) -> Result<ExternalsVm, NewErr> {
+        let (called_function, data) = to_call.into_function_and_param();
+        let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
+        let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
+
+        // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
+        // of the input data.
+        let mut vm = self.vm_proto.start(
+            called_function.symbol_name(),
+            &[
+                vm::WasmValue::I32(i32::from_ne_bytes(self.heap_base.to_ne_bytes())),
+                vm::WasmValue::I32(data_len_i32),
+            ],
+        )?;
+        vm.write_memory(self.heap_base, &data).unwrap();
+
+        // Initialize the state of the memory allocator. This is the allocator that is later used
+        // when the Wasm code requests variable-length data.
+        let allocator = allocator::FreeingBumpHeapAllocator::new(self.heap_base + data_len_u32);
+
+        Ok(ExternalsVm {
+            vm,
+            heap_base: self.heap_base,
+            called_function,
+            state: StateInner::Ready(None),
+            registered_functions: self.registered_functions,
+            allocator,
+        })
+    }
+}
+
+/// A running virtual machine.
+pub struct ExternalsVm {
+    /// Inner lower-level virtual machine.
+    vm: vm::VirtualMachine,
+
+    /// Value of the `__heap_base` global in the Wasm module. Used to initialize the memory
+    /// allocator.
+    heap_base: u32,
+
+    /// Function currently being called.
+    called_function: entry_points::CalledFunction,
+
+    /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
+    state: StateInner,
+
+    /// See [`ExternalsVmPrototype::registered_functions`].
+    registered_functions: Vec<externalities::Externality>,
+
+    /// Memory allocator in order to answer the calls to `malloc` and `free`.
+    allocator: allocator::FreeingBumpHeapAllocator,
+}
+
+/// State of the virtual machine.
+enum StateInner {
+    /// Wasm virtual machine is ready to be run. Will pass the first parameter as the "resume"
+    /// value. This is either `None` at initialization, or, if the virtual machine was calling
+    /// an externality, the value returned by the externality.
+    Ready(Option<vm::WasmValue>),
+    /// Currently calling an externality. The Wasm virtual machine is paused while we perform all
+    /// the outside-of-the-VM operations.
+    Calling(externalities::CallState),
+    /// The Wasm blob did something that doesn't conform to the runtime environment. This state
+    /// never changes to anything else.
+    NonConforming(NonConformingErr),
+    /// The Wasm VM has encountered a trap (i.e. it has panicked). This state never changes to
+    /// anything else.
+    Trapped,
+    /// Function call has successfully finished. This state never changes to anything else.
+    Finished(Success),
+    /// Temporary state to permit state transitions without running into borrowing issues.
+    Poisoned,
+}
+
+impl ExternalsVm {
     /// Returns the current state of the virtual machine.
     pub fn state(&mut self) -> State {
         // Note: the internal structure of this function is unfortunately a bit weird because we
@@ -294,6 +323,15 @@ impl ExternalsVm {
                     | externalities::State::MemoryWriteNeeded { .. } => unreachable!(),
                 }
             }
+        }
+    }
+
+    /// Turns the virtual machine back into a prototype.
+    pub fn into_prototype(self) -> ExternalsVmPrototype {
+        ExternalsVmPrototype {
+            vm_proto: self.vm.into_prototype(),
+            heap_base: self.heap_base,
+            registered_functions: self.registered_functions,
         }
     }
 }

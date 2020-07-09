@@ -41,12 +41,13 @@ impl JitPrototype {
     /// functions, this number will be returned back in order for the user to know how to handle
     /// the call.
     pub fn new(
-        module: &WasmBlob,
+        module: impl AsRef<[u8]>,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
+        // TODO: deny floating points?
         let engine = wasmtime::Engine::new(&Default::default());
         let store = wasmtime::Store::new(&engine);
-        let module = wasmtime::Module::from_binary(&store, &module.bytes).unwrap();
+        let module = wasmtime::Module::from_binary(&store, module.as_ref()).unwrap();
 
         let builder = coroutine::CoroutineBuilder::new();
 
@@ -272,6 +273,9 @@ impl JitPrototype {
     }
 }
 
+// TODO: explain how this is sound
+unsafe impl Send for JitPrototype {}
+
 /// Type that can be given to the coroutine.
 enum ToCoroutine {
     /// Start execution of the given function. Answered with [`FromCoroutine::Init`].
@@ -417,6 +421,13 @@ impl Jit {
 
         Ok(())
     }
+
+    /// Turns back this virtual machine into a prototype.
+    pub fn into_prototype(self) -> JitPrototype {
+        // TODO: zero the memory
+
+        todo!()
+    }
 }
 
 // TODO: explain how this is sound
@@ -425,29 +436,5 @@ unsafe impl Send for Jit {}
 impl fmt::Debug for Jit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Jit").finish()
-    }
-}
-
-/// Wasm blob known to be valid.
-// Note: this struct exists in order to hide wasmtime as an implementation detail.
-pub struct WasmBlob {
-    // TODO: do something better than that?
-    bytes: Vec<u8>,
-}
-
-impl WasmBlob {
-    // TODO: better error type
-    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, ()> {
-        Ok(WasmBlob {
-            bytes: bytes.as_ref().to_owned(),
-        })
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for WasmBlob {
-    type Error = (); // TODO: better error type
-
-    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        WasmBlob::from_bytes(bytes)
     }
 }

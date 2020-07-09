@@ -85,12 +85,6 @@ pub struct VirtualMachinePrototype {
     indirect_table: Option<wasmi::TableRef>,
 }
 
-/// Wasm blob known to be valid.
-// Note: this struct exists in order to hide wasmi as an implementation detail.
-pub struct WasmBlob {
-    inner: wasmi::Module,
-}
-
 impl VirtualMachinePrototype {
     /// Creates a new state machine from the given module that executes the given function.
     ///
@@ -98,11 +92,17 @@ impl VirtualMachinePrototype {
     /// to each import, or return an error if the import can't be resolved. When the VM calls one
     /// of these functions, this number will be returned back in order for the user to know how
     /// to handle the call.
-    // TODO: don't expose wasmi in API
     pub fn new(
-        module: &WasmBlob,
+        module_bytes: impl AsRef<[u8]>,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
+        let module =
+            wasmi::Module::from_buffer(module_bytes.as_ref()).map_err(NewErr::Interpreter)?;
+        // TODO: for parity with wasmtime we unwrap() at the moment rather than committing to the
+        // idea that floating points are checked at initialization; but ideally wasmtime should
+        // check floating points as well
+        module.deny_floating_point().unwrap();
+
         struct ImportResolve<'a> {
             functions: RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
             import_memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
@@ -208,7 +208,7 @@ impl VirtualMachinePrototype {
                 import_memory: RefCell::new(&mut import_memory),
                 heap_pages: 1024,
             };
-            wasmi::ModuleInstance::new(&module.inner, &resolver).map_err(NewErr::Interpreter)?
+            wasmi::ModuleInstance::new(&module, &resolver).map_err(NewErr::Interpreter)?
         };
         // TODO: explain `assert_no_start`
         let module = not_started.assert_no_start();
@@ -295,6 +295,16 @@ impl VirtualMachinePrototype {
         })
     }
 }
+
+// The fields related to `wasmi` do not implement `Send` because they use `std::rc::Rc`. `Rc`
+// does not implement `Send` because incrementing/decrementing the reference counter from
+// multiple threads simultaneously would be racy. It is however perfectly sound to move all the
+// instances of `Rc`s at once between threads, which is what we're doing here.
+//
+// This importantly means that we should never return a `Rc` (even by reference) across the API
+// boundary.
+// TODO: really annoying to have to use unsafe code
+unsafe impl Send for VirtualMachinePrototype {}
 
 impl VirtualMachine {
     /// Returns true if the state machine is in a poisoned state and cannot run anymore.
@@ -437,6 +447,17 @@ impl VirtualMachine {
 
         mem.set(offset, value).map_err(|_| ())
     }
+
+    /// Turns back this virtual machine into a prototype.
+    pub fn into_prototype(self) -> VirtualMachinePrototype {
+        // TODO: zero the memory
+
+        VirtualMachinePrototype {
+            module: self._module,
+            memory: self.memory,
+            indirect_table: self.indirect_table,
+        }
+    }
 }
 
 // The fields related to `wasmi` do not implement `Send` because they use `std::rc::Rc`. `Rc`
@@ -452,22 +473,5 @@ unsafe impl Send for VirtualMachine {}
 impl fmt::Debug for VirtualMachine {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("VirtualMachine").finish()
-    }
-}
-
-impl WasmBlob {
-    // TODO: better error type
-    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, ()> {
-        let inner = wasmi::Module::from_buffer(bytes.as_ref()).map_err(|_| ())?;
-        inner.deny_floating_point().map_err(|_| ())?;
-        Ok(WasmBlob { inner })
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for WasmBlob {
-    type Error = (); // TODO: better error type
-
-    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        WasmBlob::from_bytes(bytes)
     }
 }

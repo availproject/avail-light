@@ -18,7 +18,7 @@ use hashbrown::{HashMap, HashSet};
 pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
-    pub runtime: &'a executor::WasmBlob,
+    pub runtime: executor::WasmVmPrototype,
 
     /// Header of the block to verify.
     ///
@@ -49,6 +49,8 @@ pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
 
 /// Block successfully verified.
 pub struct Success {
+    /// Runtime that was passed by [`Config`].
+    pub runtime: executor::WasmVmPrototype,
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
     /// Cache used for calculating the top trie root.
@@ -84,14 +86,15 @@ where
     let mut block_header = config.block_header.clone();
     let _seal_log = block_header.digest.logs.pop().unwrap();
 
-    let mut vm = executor::WasmVm::new(
-        config.runtime,
-        executor::FunctionToCall::CoreExecuteBlock(&crate::block::Block {
-            header: block_header,
-            extrinsics: config.block_body.to_vec(),
-        }),
-    )
-    .unwrap();
+    let mut vm = config
+        .runtime
+        .run(executor::FunctionToCall::CoreExecuteBlock(
+            &crate::block::Block {
+                header: block_header,
+                extrinsics: config.block_body.to_vec(),
+            },
+        ))
+        .unwrap();
 
     // Pending changes to the top storage trie that this block performs.
     let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
@@ -108,6 +111,7 @@ where
             executor::State::ReadyToRun(r) => r.run(),
             executor::State::Finished(executor::Success::CoreExecuteBlock) => {
                 return Ok(Success {
+                    runtime: vm.into_prototype(),
                     storage_top_trie_changes: top_trie_changes,
                     top_trie_root_calculation_cache,
                 })
@@ -281,17 +285,14 @@ where
 
             executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
                 // TODO: is there maybe a better way to handle that?
-                let wasm_blob = match executor::WasmBlob::from_bytes(wasm_blob) {
+                let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob) {
                     Ok(w) => w,
                     Err(_) => {
                         resolve.finish_call(Err(()));
                         continue;
                     }
                 };
-                let mut inner_vm = match executor::WasmVm::new(
-                    &wasm_blob,
-                    executor::FunctionToCall::CoreVersion,
-                ) {
+                let mut inner_vm = match vm_prototype.run(executor::FunctionToCall::CoreVersion) {
                     Ok(v) => v,
                     Err(_) => {
                         resolve.finish_call(Err(()));

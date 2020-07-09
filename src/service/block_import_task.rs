@@ -72,7 +72,7 @@ pub async fn run_block_import_task(mut config: Config) {
     // The `WasmBlob` object corresponding to the head of the chain. Set to `None` if the runtime
     // code is modified.
     // Used to avoid recompiling it every single time.
-    let mut wasm_blob_cache: Option<executor::WasmBlob> = None;
+    let mut wasm_blob_cache: Option<executor::WasmVmPrototype> = None;
 
     // Cache used to calculate the storage trie root.
     // This cache has to be kept up to date with the actual state of the storage.
@@ -121,13 +121,11 @@ pub async fn run_block_import_task(mut config: Config) {
 
                 // In order to avoid parsing/compiling the runtime code every single time, we
                 // maintain a cache of the `WasmBlob` of the head of the chain.
-                let runtime_wasm_blob = {
-                    if wasm_blob_cache.is_none() {
-                        let code = local_storage_cache.get(&b":code"[..]).unwrap();
-                        let wasm_blob = executor::WasmBlob::from_bytes(&code).unwrap();
-                        wasm_blob_cache = Some(wasm_blob);
-                    }
-                    wasm_blob_cache.as_ref().unwrap()
+                let runtime_wasm_blob = if let Some(vm) = wasm_blob_cache.take() {
+                    vm
+                } else {
+                    let code = local_storage_cache.get(&b":code"[..]).unwrap();
+                    executor::WasmVmPrototype::new(&code).unwrap()
                 };
 
                 // Now perform the actual block verification.
@@ -238,14 +236,15 @@ pub async fn run_block_import_task(mut config: Config) {
                 }));
 
                 // We now have to update the local values for the next iteration.
-                // Invalidate the `wasm_blob_cache` if some changes have been made to `:code`.
+                // Put back the same runtime `wasm_blob_cache` unless changes have been made
+                // to `:code`.
                 top_trie_root_calculation_cache =
                     Some(import_result.top_trie_root_calculation_cache);
-                if import_result
+                if !import_result
                     .storage_top_trie_changes
                     .contains_key(&b":code"[..])
                 {
-                    wasm_blob_cache = None;
+                    wasm_blob_cache = Some(import_result.runtime);
                 }
                 for (key, value) in import_result.storage_top_trie_changes {
                     if let Some(value) = value {
