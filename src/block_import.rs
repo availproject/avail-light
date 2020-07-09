@@ -50,7 +50,7 @@ pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
 /// Block successfully verified.
 pub struct Success {
     /// Runtime that was passed by [`Config`].
-    pub runtime: executor::WasmVmPrototype,
+    pub parent_runtime: executor::WasmVmPrototype,
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
     /// Cache used for calculating the top trie root.
@@ -111,7 +111,7 @@ where
             executor::State::ReadyToRun(r) => r.run(),
             executor::State::Finished(executor::Success::CoreExecuteBlock) => {
                 return Ok(Success {
-                    runtime: vm.into_prototype(),
+                    parent_runtime: vm.into_prototype(),
                     storage_top_trie_changes: top_trie_changes,
                     top_trie_root_calculation_cache,
                 })

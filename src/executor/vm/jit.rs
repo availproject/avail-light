@@ -208,6 +208,8 @@ impl JitPrototype {
                     let result = match result {
                         Ok(r) => r,
                         Err(err) => {
+                            // TODO: remove
+                            println!("trapped in vm: {:?}", err);
                             request = interrupter.interrupt(FromCoroutine::Done(Err(err)));
                             continue;
                         }
@@ -459,7 +461,7 @@ impl Jit {
         // TODO: how do we handle if the coroutine was in an externality?
 
         // Zero-ing the memory.
-        if let Some(memory) = self.memory {
+        if let Some(memory) = &self.memory {
             // Soundness: the documentation of wasmtime precisely explains what is safe or not.
             // Basically, we are safe as long as we are sure that we don't potentially grow the
             // buffer (which would invalidate the buffer pointer).

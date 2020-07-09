@@ -244,7 +244,7 @@ pub async fn run_block_import_task(mut config: Config) {
                     .storage_top_trie_changes
                     .contains_key(&b":code"[..])
                 {
-                    wasm_blob_cache = Some(import_result.runtime);
+                    wasm_blob_cache = Some(import_result.parent_runtime);
                 }
                 for (key, value) in import_result.storage_top_trie_changes {
                     if let Some(value) = value {
