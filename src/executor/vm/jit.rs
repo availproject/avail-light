@@ -47,7 +47,7 @@ impl JitPrototype {
         // TODO: deny floating points?
         let engine = wasmtime::Engine::new(&Default::default());
         let store = wasmtime::Store::new(&engine);
-        let module = wasmtime::Module::from_binary(&store, module.as_ref()).unwrap();
+        let module = wasmtime::Module::from_binary(&engine, module.as_ref()).unwrap();
 
         let builder = coroutine::CoroutineBuilder::new();
 
@@ -61,7 +61,7 @@ impl JitPrototype {
                     wasmtime::ExternType::Func(f) => {
                         // TODO: don't panic if not found
                         let function_index =
-                            symbols(import.module(), import.name(), &From::from(f)).unwrap();
+                            symbols(import.module(), import.name(), &From::from(&f)).unwrap();
                         let interrupter = builder.interrupter();
                         imports.push(wasmtime::Extern::Func(wasmtime::Func::new(
                             &store,
@@ -89,7 +89,7 @@ impl JitPrototype {
                     wasmtime::ExternType::Global(_) => unimplemented!(),
                     wasmtime::ExternType::Table(_) => unimplemented!(),
                     wasmtime::ExternType::Memory(m) => {
-                        let mut limits = {
+                        let limits = {
                             // TODO: this 32 is arbitrary
                             let min = cmp::max(m.limits().min(), 32);
                             let max = m.limits().max(); // TODO: make sure it's > to min
@@ -117,10 +117,10 @@ impl JitPrototype {
             let interrupter = builder.interrupter();
             builder.build(Box::new(move || -> () {
                 // TODO: don't unwrap
-                let instance = wasmtime::Instance::new(&module, &imports).unwrap();
+                let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
 
                 let memory = if let Some(mem) = instance.get_export("memory") {
-                    if let Some(mem) = mem.memory() {
+                    if let Some(mem) = mem.into_memory() {
                         Some(mem.clone())
                     } else {
                         let err = NewErr::MemoryIsntMemory;
@@ -133,7 +133,7 @@ impl JitPrototype {
 
                 let indirect_table =
                     if let Some(tbl) = instance.get_export("__indirect_function_table") {
-                        if let Some(tbl) = tbl.table() {
+                        if let Some(tbl) = tbl.into_table() {
                             Some(tbl.clone())
                         } else {
                             let err = NewErr::IndirectTableIsntTable;
@@ -178,7 +178,7 @@ impl JitPrototype {
                     // Try to start executing `_start`.
                     let start_function = if let Some(f) = instance.get_export(&start_function_name)
                     {
-                        if let Some(f) = f.func() {
+                        if let Some(f) = f.into_func() {
                             f.clone()
                         } else {
                             let err = NewErr::NotAFunction;
@@ -326,7 +326,8 @@ enum FromCoroutine {
     /// Response to a [`ToCoroutine::GetGlobal`].
     GetGlobalResponse(Result<u32, GlobalValueErr>),
     /// Executing the function is finished.
-    Done(Result<Option<wasmtime::Val>, wasmtime::Trap>),
+    // TODO: report to wasmtime that it's stupid to use anyhow
+    Done(Result<Option<wasmtime::Val>, anyhow::Error>),
 }
 
 /// Wasm VM that uses JITted compilation.

@@ -42,6 +42,7 @@ wasm-timer = "0.2.4"
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
+anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
 bitflags = "1.2.1"  # TODO: I hate bitflags
 blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
@@ -57,7 +58,7 @@ default-features = false
 features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-wasmtime = { version = "0.13.0", default-features = false }
+wasmtime = { version = "0.18.0", default-features = false }
 
 [build-dependencies]
 prost-build = "0.6.1"
