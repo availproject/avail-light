@@ -227,6 +227,8 @@ pub async fn run_block_import_task(mut config: Config) {
                     let best_block_hash = best_block_hash.clone();
                     let database = config.database.clone();
                     let storage_top_trie_changes = import_result.storage_top_trie_changes;
+                    // TODO: err, it's possible that the previous block hasn't finished being imported yet when we
+                    // reach with the next one
                     Box::pin(async move {
                         let db_import_result = database.insert_new_best(
                             current_best_hash,
