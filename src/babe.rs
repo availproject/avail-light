@@ -22,11 +22,6 @@
 //! While every block must belong to a specific block, the opposite is not necessarily true: not
 //! all slots lead to a block being produced.
 //!
-//! Nodes can estimate what the current slot is (in other words, the slot corresponding to "now")
-//! by looking at the latest received block. Each block, alongside with its slot number, includes
-//! a "timestamp" intrinsic indicating the clock value when it has been generated.
-//! TODO: write more about time maybe ^
-//!
 //! The header of first block produced after a transition to a new epoch must contain a log entry
 //! indicating the public keys that are allowed to sign blocks during that epoch, alongside with
 //! a weight for each of them, and a "randomness value".
