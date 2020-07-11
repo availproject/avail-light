@@ -96,16 +96,17 @@ pub async fn run_block_import_task(mut config: Config) {
         cache
     };
 
+    // Cache of the best block hash.
+    // Since we want to be able to import a block while the database is still importing its
+    // parent, we maintain this information in cache.
+    let mut best_block_number = config.database.best_block_number().unwrap();
+    let mut best_block_hash = config.database.best_block_hash().unwrap();
+
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
         match event {
             ToBlockImport::BestBlockNumber { send_back } => {
-                if send_back.is_canceled() {
-                    continue;
-                }
-
-                let num = config.database.best_block_number().unwrap();
-                let _ = send_back.send(num);
+                let _ = send_back.send(best_block_number);
             }
 
             ToBlockImport::Import {
@@ -113,9 +114,10 @@ pub async fn run_block_import_task(mut config: Config) {
                 send_back,
             } => {
                 // We only accept blocks whose parent is the current best block.
-                let current_best_hash = config.database.best_block_hash().unwrap();
-                if current_best_hash != <[u8; 32]>::from(to_execute.header.parent_hash) {
-                    let _ = send_back.send(Err(ImportError::ParentIsntBest { current_best_hash }));
+                if best_block_hash != <[u8; 32]>::from(to_execute.header.parent_hash) {
+                    let _ = send_back.send(Err(ImportError::ParentIsntBest {
+                        current_best_hash: best_block_hash,
+                    }));
                     continue;
                 }
 
@@ -195,47 +197,10 @@ pub async fn run_block_import_task(mut config: Config) {
                     }
                 };
 
-                // The block is correct. Now import it into the database.
-                // TODO: it seems that importing the block takes less than 1ms, which
-                // makes it ok in an asynchronous context, but eventually make sure that
-                // this remains cheap even with big blocks
-                let db_import_result = config.database.insert_new_best(
-                    current_best_hash,
-                    &to_execute.header.encode(),
-                    to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
-                    import_result
-                        .storage_top_trie_changes
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone())),
-                );
+                // The block is correct. The import is going to be successful. 🎉
+                // TODO: ^ unless something else wrote in the DB in the meanwhile
 
-                match db_import_result {
-                    Ok(()) => {}
-                    Err(database::InsertNewBestError::ObsoleteCurrentHead) => {
-                        // We have already checked above whether the parent of the block to import
-                        // was indeed the best block in the database. However the import can still
-                        // fail if something else has modified the database's best block while we
-                        // were busy verifying the block.
-                        let _ =
-                            send_back.send(Err(ImportError::ParentIsntBest { current_best_hash }));
-                        continue;
-                    }
-                    Err(database::InsertNewBestError::Access(err)) => {
-                        panic!("Database internal error: {}", err);
-                    }
-                }
-
-                // Block has been successfully imported! 🎉
-                let _ = send_back.send(Ok(ImportSuccess {
-                    block: to_execute,
-                    modified_keys: import_result
-                        .storage_top_trie_changes
-                        .keys()
-                        .cloned()
-                        .collect(),
-                }));
-
-                // We now have to update the local values for the next iteration.
+                // We now update the local values for the next iteration.
                 // Put back the same runtime `wasm_blob_cache` unless changes have been made
                 // to `:code`.
                 top_trie_root_calculation_cache =
@@ -246,13 +211,58 @@ pub async fn run_block_import_task(mut config: Config) {
                 {
                     wasm_blob_cache = Some(import_result.parent_runtime);
                 }
-                for (key, value) in import_result.storage_top_trie_changes {
+                for (key, value) in &import_result.storage_top_trie_changes {
                     if let Some(value) = value {
-                        local_storage_cache.insert(key, value);
+                        local_storage_cache.insert(key.clone(), value.clone());
                     } else {
-                        local_storage_cache.remove(&key);
+                        local_storage_cache.remove(key);
                     }
                 }
+                best_block_number += 1;
+                let current_best_hash = best_block_hash.clone();
+                best_block_hash = to_execute.block_hash().0;
+
+                // Now spawn a database task dedicated entirely to writing the block.
+                (config.tasks_executor)({
+                    let best_block_hash = best_block_hash.clone();
+                    let database = config.database.clone();
+                    let storage_top_trie_changes = import_result.storage_top_trie_changes;
+                    Box::pin(async move {
+                        let db_import_result = database.insert_new_best(
+                            current_best_hash,
+                            &to_execute.header.encode(),
+                            to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
+                            // TODO: we can't use `into_iter()` because the `Clone` trait isn't implemented; should be fixed in hashbrown
+                            storage_top_trie_changes
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone())),
+                        );
+
+                        match db_import_result {
+                            Ok(()) => {}
+                            Err(database::InsertNewBestError::ObsoleteCurrentHead) => {
+                                // TODO: look into the implications for the parent task
+                                // We have already checked above whether the parent of the block to import
+                                // was indeed the best block in the database. However the import can still
+                                // fail if something else has modified the database's best block while we
+                                // were busy verifying the block.
+                                let current_best_hash = database.best_block_hash().unwrap();
+                                let _ = send_back
+                                    .send(Err(ImportError::ParentIsntBest { current_best_hash }));
+                                return;
+                            }
+                            Err(database::InsertNewBestError::Access(err)) => {
+                                panic!("Database internal error: {}", err);
+                            }
+                        }
+
+                        // Block has been successfully imported! 🎉
+                        let _ = send_back.send(Ok(ImportSuccess {
+                            block: to_execute,
+                            modified_keys: storage_top_trie_changes.keys().cloned().collect(),
+                        }));
+                    })
+                });
             }
         }
     }
