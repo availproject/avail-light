@@ -10,6 +10,7 @@ default-run = "node"
 ansi_term = "0.12.1"
 app_dirs = "1.2.1"
 arrayvec = "0.5.1"
+async-trait = "0.1"
 blake2-rfc = { version = "0.2.18", default-features = false }
 derive_more = "0.99.7"
 either = "1.5.3"
@@ -49,13 +50,13 @@ bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 log = "0.4"  # TODO: we don't need logging
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
-sc-peerset = "2.0.0-alpha.3"
+sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "5862ef152edd3f1875faf31278145fe8454f6e9d" }
 void = "1.0"    # TODO: remove
 
 [dependencies.libp2p]
-version = "0.19.1"
+version = "0.21.1"
 default-features = false
-features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
+features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 wasmtime = { version = "0.18.0", default-features = false }
@@ -64,8 +65,8 @@ wasmtime = { version = "0.18.0", default-features = false }
 prost-build = "0.6.1"
 
 [dev-dependencies]
-async-std = "~1.5.0"
-libp2p = { version = "0.19.1", default-features = false, features = ["secio"] }
+async-std = "1.6.2"
+libp2p = { version = "0.21.1", default-features = false, features = ["secio"] }
 
 
 [profile.dev]

@@ -45,13 +45,12 @@
 //! - TODO: finish
 //!
 
-pub use behaviour::{
-    BlockData, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
-    BlocksRequestFields, ScaleBlockHeader,
-};
 pub use builder::builder;
 pub use libp2p::{Multiaddr, PeerId};
-pub use worker::{Event, Network};
+pub use worker::{
+    BlockData, BlocksRequestConfig, BlocksRequestConfigStart, BlocksRequestDirection,
+    BlocksRequestFields, Event, Network, RequestId, ScaleBlockHeader,
+};
 
 #[doc(inline)]
 pub use libp2p::multiaddr;
@@ -59,11 +58,11 @@ pub use libp2p::multiaddr;
 pub mod builder;
 
 mod behaviour;
-mod block_requests;
 mod debug_info;
 mod discovery;
 mod generic_proto;
 mod legacy_message;
+mod request_responses;
 mod schema;
 mod transport;
 mod worker;

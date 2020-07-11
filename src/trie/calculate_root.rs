@@ -202,7 +202,9 @@ pub fn root_merkle_value<'a>(cache: Option<&mut CalculationCache>) -> RootMerkle
     // afterwards. If the user didn't pass any cache, we create a temporary one.
     let cache_or_temporary = if let Some(cache) = cache {
         if let Some(structure) = &mut cache.structure {
-            structure.shrink_to_fit();
+            if structure.capacity() > structure.len().saturating_mul(2) {
+                structure.shrink_to_fit();
+            }
         }
         CowMut::Borrowed(cache)
     } else {

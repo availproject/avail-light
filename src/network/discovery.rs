@@ -117,7 +117,7 @@ impl DiscoveryConfig {
     {
         for (peer_id, addr) in user_defined {
             for kad in self.kademlias.values_mut() {
-                kad.add_address(&peer_id, addr.clone())
+                kad.add_address(&peer_id, addr.clone());
             }
             self.user_defined.push((peer_id, addr))
         }
@@ -239,15 +239,14 @@ pub struct DiscoveryBehaviour {
 
 impl DiscoveryBehaviour {
     /// Returns the list of nodes that we know exist in the network.
-    pub fn known_peers(&mut self) -> impl Iterator<Item = &PeerId> {
+    pub fn known_peers(&mut self) -> impl Iterator<Item = PeerId> {
         let mut set = HashSet::new();
-        for p in self
-            .kademlias
-            .values_mut()
-            .map(|k| k.kbuckets_entries())
-            .flatten()
-        {
-            set.insert(p);
+        for k in self.kademlias.values_mut() {
+            for b in k.kbuckets() {
+                for e in b.iter() {
+                    set.insert(e.node.key.preimage().clone());
+                }
+            }
         }
         set.into_iter()
     }
@@ -264,7 +263,7 @@ impl DiscoveryBehaviour {
             .all(|(p, a)| *p != peer_id && *a != addr)
         {
             for k in self.kademlias.values_mut() {
-                k.add_address(&peer_id, addr.clone())
+                k.add_address(&peer_id, addr.clone());
             }
             self.pending_events
                 .push_back(DiscoveryOut::Discovered(peer_id.clone()));
@@ -279,7 +278,7 @@ impl DiscoveryBehaviour {
     pub fn add_self_reported_address(&mut self, peer_id: &PeerId, addr: Multiaddr) {
         if self.allow_non_globals_in_dht || self.can_add_to_dht(&addr) {
             for k in self.kademlias.values_mut() {
-                k.add_address(peer_id, addr.clone())
+                k.add_address(peer_id, addr.clone());
             }
         } else {
             log::trace!(target: "sub-libp2p", "Ignoring self-reported address {} from {}", addr, peer_id);
@@ -307,13 +306,6 @@ impl DiscoveryBehaviour {
                     .push_back(DiscoveryOut::ValuePutFailed(key.clone()));
             }
         }
-    }
-
-    /// Returns the number of nodes that are in the Kademlia k-buckets.
-    pub fn num_kbuckets_entries(&mut self) -> impl ExactSizeIterator<Item = (&Vec<u8>, usize)> {
-        self.kademlias
-            .iter_mut()
-            .map(|(id, kad)| (id, kad.kbuckets_entries().count()))
     }
 
     /// Returns the number of records in the Kademlia record stores.
@@ -400,10 +392,10 @@ impl NetworkBehaviour for DiscoveryBehaviour {
 
         MultiHandler::try_from_iter(iter).expect(
             "There can be at most one handler per `Vec<u8>` and \
-				protocol names contain the `Vec<u8>` so no two protocol \
-				names in `self.kademlias` can be equal which is the only error \
-				`try_from_iter` can return, therefore this call is guaranteed \
-				to succeed; qed",
+                protocol names contain the `Vec<u8>` so no two protocol \
+                names in `self.kademlias` can be equal which is the only error \
+                `try_from_iter` can return, therefore this call is guaranteed \
+                to succeed; qed",
         )
     }
 
@@ -436,23 +428,6 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             }
 
             list.extend(list_to_filter);
-        }
-
-        if !list.is_empty() {
-            trace!(target: "sub-libp2p", "Addresses of {:?}: {:?}", peer_id, list);
-        } else {
-            let mut has_entry = false;
-            for k in self.kademlias.values_mut() {
-                if k.kbuckets_entries().any(|p| p == peer_id) {
-                    has_entry = true;
-                    break;
-                }
-            }
-            if has_entry {
-                trace!(target: "sub-libp2p", "Addresses of {:?}: none (peer in k-buckets)", peer_id);
-            } else {
-                trace!(target: "sub-libp2p", "Addresses of {:?}: none (peer not in k-buckets)", peer_id);
-            }
         }
 
         list
@@ -515,8 +490,8 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             return kad.inject_event(peer_id, connection, event);
         }
         log::error!(target: "sub-libp2p",
-			"inject_node_event: no kademlia instance registered for protocol {:?}",
-			pid)
+            "inject_node_event: no kademlia instance registered for protocol {:?}",
+            pid)
     }
 
     fn inject_new_external_addr(&mut self, addr: &Multiaddr) {
@@ -579,8 +554,8 @@ impl NetworkBehaviour for DiscoveryBehaviour {
             let actually_started = if self.num_connections < self.discovery_only_if_under_num {
                 let random_peer_id = PeerId::random();
                 debug!(target: "sub-libp2p",
-					"Libp2p <= Starting random Kademlia request for {:?}",
-					random_peer_id);
+                    "Libp2p <= Starting random Kademlia request for {:?}",
+                    random_peer_id);
                 for k in self.kademlias.values_mut() {
                     k.get_closest_peers(random_peer_id.clone());
                 }
@@ -626,16 +601,16 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                         } => match res {
                             Err(GetClosestPeersError::Timeout { key, peers }) => {
                                 debug!(target: "sub-libp2p",
-										"Libp2p => Query for {:?} timed out with {} results",
-										&key, peers.len());
+                                        "Libp2p => Query for {:?} timed out with {} results",
+                                        &key, peers.len());
                             }
                             Ok(ok) => {
                                 trace!(target: "sub-libp2p",
-										"Libp2p => Query for {:?} yielded {:?} results",
-										&ok.key, ok.peers.len());
+                                        "Libp2p => Query for {:?} yielded {:?} results",
+                                        &ok.key, ok.peers.len());
                                 if ok.peers.is_empty() && self.num_connections != 0 {
                                     debug!(target: "sub-libp2p", "Libp2p => Random Kademlia query has yielded empty \
-											results");
+                                            results");
                                 }
                             }
                         },
@@ -645,19 +620,22 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                         } => {
                             let ev = match res {
                                 Ok(ok) => {
-                                    let results =
-                                        ok.records.into_iter().map(|r| (r.key, r.value)).collect();
+                                    let results = ok
+                                        .records
+                                        .into_iter()
+                                        .map(|r| (r.record.key, r.record.value))
+                                        .collect();
 
                                     DiscoveryOut::ValueFound(results)
                                 }
                                 Err(e @ libp2p::kad::GetRecordError::NotFound { .. }) => {
                                     trace!(target: "sub-libp2p",
-										"Libp2p => Failed to get record: {:?}", e);
+                                        "Libp2p => Failed to get record: {:?}", e);
                                     DiscoveryOut::ValueNotFound(e.into_key())
                                 }
                                 Err(e) => {
                                     warn!(target: "sub-libp2p",
-										"Libp2p => Failed to get record: {:?}", e);
+                                        "Libp2p => Failed to get record: {:?}", e);
                                     DiscoveryOut::ValueNotFound(e.into_key())
                                 }
                             };
@@ -671,7 +649,7 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                                 Ok(ok) => DiscoveryOut::ValuePut(ok.key),
                                 Err(e) => {
                                     warn!(target: "sub-libp2p",
-										"Libp2p => Failed to put record: {:?}", e);
+                                        "Libp2p => Failed to put record: {:?}", e);
                                     DiscoveryOut::ValuePutFailed(e.into_key())
                                 }
                             };
@@ -682,15 +660,12 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                             ..
                         } => match res {
                             Ok(ok) => debug!(target: "sub-libp2p",
-									"Libp2p => Record republished: {:?}",
-									ok.key),
+                                    "Libp2p => Record republished: {:?}",
+                                    ok.key),
                             Err(e) => warn!(target: "sub-libp2p",
-									"Libp2p => Republishing of record {:?} failed with: {:?}",
-									e.key(), e),
+                                    "Libp2p => Republishing of record {:?} failed with: {:?}",
+                                    e.key(), e),
                         },
-                        KademliaEvent::Discovered { .. } => {
-                            // We are not interested in these events at the moment.
-                        }
                         // We never start any other type of query.
                         e => {
                             warn!(target: "sub-libp2p", "Libp2p => Unhandled Kademlia event: {:?}", e)

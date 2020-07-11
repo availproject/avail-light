@@ -15,16 +15,17 @@
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::{
-    block_requests, debug_info,
+    debug_info,
     discovery::{DiscoveryBehaviour, DiscoveryConfig, DiscoveryOut},
-    generic_proto, legacy_message,
+    generic_proto, legacy_message, request_responses,
 };
 
-use alloc::collections::VecDeque;
+use alloc::{borrow::Cow, collections::VecDeque};
 use core::{
     iter,
     num::NonZeroU64,
     task::{Context, Poll},
+    time::Duration,
 };
 use hashbrown::HashMap;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
@@ -46,17 +47,8 @@ pub struct Behaviour {
     debug_info: debug_info::DebugInfoBehaviour,
     /// Discovers nodes of the network.
     discovery: DiscoveryBehaviour,
-    /// Block request handling.
-    block_requests: block_requests::BlockRequests,
-    // TODO: light_client_handler: protocol::LightClientHandler,
-
-    // TODO: this is a stupid translation layer between block_requests and a proper API
-    // because block_requests is copy-pasted from Substrate, and because we want to be able to
-    // easily refresh it, we need some API adjustments
-    #[behaviour(ignore)]
-    pending_block_requests: HashMap<(PeerId, legacy_message::BlockRequest), BlocksRequestId>,
-    #[behaviour(ignore)]
-    next_block_request_id: BlocksRequestId,
+    /// All request-response protocols: blocks, light client requests, and so on.
+    request_responses: request_responses::RequestResponsesBehaviour,
 
     #[behaviour(ignore)]
     local_best_hash: H256,
@@ -71,77 +63,29 @@ pub struct Behaviour {
 #[derive(Debug)]
 pub enum BehaviourOut {
     /// An announcement about a block has been gossiped to us.
-    BlockAnnounce(ScaleBlockHeader),
-    BlocksResponse {
-        id: BlocksRequestId,
-        // TODO: proper error type
-        result: Result<Vec<BlockData>, ()>,
+    BlockAnnounce(super::ScaleBlockHeader),
+
+    /// We have received a request from a peer and answered it.
+    ///
+    /// This event is generated for statistics purposes.
+    InboundRequest {
+        /// Peer which sent us a request.
+        peer: PeerId,
+        /// Protocol name of the request.
+        protocol: Cow<'static, str>,
+        /// If `Ok`, contains the time elapsed between when we received the request and when we
+        /// sent back the response. If `Err`, the error that happened.
+        outcome: Result<Duration, request_responses::InboundError>,
+    },
+
+    /// A request initiated using [`Behaviour::send_request`] has succeeded or failed.
+    RequestFinished {
+        /// Request that has succeeded.
+        request_id: request_responses::RequestId,
+        /// Response sent by the remote or reason for failure.
+        outcome: Result<Vec<u8>, request_responses::OutboundFailure>,
     },
 }
-
-/// SCALE-encoded block header.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScaleBlockHeader(pub Vec<u8>);
-
-/// Block data sent in the response.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BlockData {
-    /// Block header hash.
-    pub hash: H256,
-    /// SCALE-encoded block header if requested.
-    pub header: Option<ScaleBlockHeader>,
-    /// Block body if requested.
-    pub body: Option<Vec<Extrinsic>>,
-    /// Justification if requested.
-    pub justification: Option<Vec<u8>>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct Extrinsic(pub Vec<u8>);
-
-// TODO: the BlocksRequestConfig and all derivates should be in the block_requests module, but the
-// block_requests module at the moment is more or less copy-pasted from upstream Substrate, so we
-// have them here to make it easier to update the code
-/// Description of a blocks request that the network must perform.
-#[derive(Debug, PartialEq, Eq)]
-pub struct BlocksRequestConfig {
-    /// First block that the remote must return.
-    pub start: BlocksRequestConfigStart,
-    /// Number of blocks to request. The remote is free to return fewer blocks than requested.
-    pub desired_count: u32,
-    /// Whether the first block should be the one with the highest number, of the one with the
-    /// lowest number.
-    pub direction: BlocksRequestDirection,
-    /// Which fields should be present in the response.
-    pub fields: BlocksRequestFields,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum BlocksRequestDirection {
-    Ascending,
-    Descending,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct BlocksRequestFields {
-    pub header: bool,
-    pub body: bool,
-    pub justification: bool,
-}
-
-/// Which block the remote must return first.
-#[derive(Debug, PartialEq, Eq)]
-pub enum BlocksRequestConfigStart {
-    /// Hash of the block.
-    ///
-    /// > **Note**: As a reminder, the hash of a block is the same thing as the hash of its header.
-    Hash(H256),
-    /// Number of the block, where 0 would be the genesis block.
-    Number(NonZeroU64),
-}
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct BlocksRequestId(u64);
 
 impl Behaviour {
     /// Builds a new `Behaviour`.
@@ -153,6 +97,7 @@ impl Behaviour {
         enable_mdns: bool,
         allow_private_ipv4: bool,
         discovery_only_if_under_num: u64,
+        request_response_protocols: Vec<request_responses::ProtocolConfig>,
         local_best_hash: H256,
         local_genesis_hash: H256,
     ) -> Self {
@@ -172,14 +117,9 @@ impl Behaviour {
             peerset,
         );
 
-        let block_requests = block_requests::BlockRequests::new(block_requests::Config::new(
-            &chain_spec_protocol_id,
-        ));
-
         Behaviour {
             legacy,
             debug_info: debug_info::DebugInfoBehaviour::new(user_agent, local_public_key.clone()),
-            block_requests,
             discovery: {
                 let mut cfg = DiscoveryConfig::new(local_public_key);
                 cfg.with_user_defined(known_addresses);
@@ -189,87 +129,25 @@ impl Behaviour {
                 cfg.add_protocol(chain_spec_protocol_id);
                 cfg.finish()
             },
-            pending_block_requests: Default::default(),
-            next_block_request_id: BlocksRequestId(0),
+            request_responses: {
+                request_responses::RequestResponsesBehaviour::new(
+                    request_response_protocols.into_iter(),
+                )
+                .unwrap()
+            },
             local_best_hash,
             local_genesis_hash,
             events: VecDeque::new(),
         }
     }
 
-    pub fn send_block_data_request(&mut self, config: BlocksRequestConfig) -> BlocksRequestId {
-        let request_id = self.next_block_request_id;
-        self.next_block_request_id.0 += 1;
-
-        let target = match self.legacy.open_peers().next() {
-            Some(p) => p.clone(),
-            None => {
-                self.events.push_back(BehaviourOut::BlocksResponse {
-                    id: request_id,
-                    result: Err(()),
-                });
-                return request_id;
-            }
-        };
-
-        let legacy = legacy_message::BlockRequest {
-            id: 0,
-            fields: {
-                let mut fields = legacy_message::BlockAttributes::empty();
-                if config.fields.header {
-                    fields |= legacy_message::BlockAttributes::HEADER;
-                }
-                if config.fields.body {
-                    fields |= legacy_message::BlockAttributes::BODY;
-                }
-                if config.fields.justification {
-                    fields |= legacy_message::BlockAttributes::JUSTIFICATION;
-                }
-                fields
-            },
-            from: match config.start {
-                BlocksRequestConfigStart::Hash(_h) => unimplemented!(),
-                BlocksRequestConfigStart::Number(n) => legacy_message::FromBlock::Number(n.get()),
-            },
-            to: None,
-            direction: match config.direction {
-                BlocksRequestDirection::Ascending => legacy_message::Direction::Ascending,
-                BlocksRequestDirection::Descending => legacy_message::Direction::Descending,
-            },
-            max: Some(config.desired_count),
-        };
-
-        match self.block_requests.send_request(&target, legacy.clone()) {
-            block_requests::SendRequestOutcome::EncodeError(_) => panic!(),
-            block_requests::SendRequestOutcome::Ok => {
-                self.pending_block_requests
-                    .insert((target, legacy), request_id);
-            }
-            block_requests::SendRequestOutcome::Replaced { previous, .. } => {
-                self.pending_block_requests
-                    .insert((target.clone(), legacy), request_id);
-                let previous = self
-                    .pending_block_requests
-                    .remove(&(target, previous))
-                    .unwrap();
-                self.events.push_back(BehaviourOut::BlocksResponse {
-                    id: previous,
-                    result: Err(()),
-                });
-            }
-            block_requests::SendRequestOutcome::NotConnected => {
-                self.events.push_back(BehaviourOut::BlocksResponse {
-                    id: request_id,
-                    result: Err(()),
-                });
-            }
-        }
-
-        request_id
+    // TODO: document
+    pub fn open_peers(&self) -> impl Iterator<Item = &PeerId> {
+        self.legacy.open_peers()
     }
 
     /// Returns the list of nodes that we know exist in the network.
-    pub fn known_peers(&mut self) -> impl Iterator<Item = &PeerId> {
+    pub fn known_peers(&mut self) -> impl Iterator<Item = PeerId> {
         self.discovery.known_peers()
     }
 
@@ -285,6 +163,20 @@ impl Behaviour {
     /// node.
     pub fn node(&self, peer_id: &PeerId) -> Option<debug_info::Node> {
         self.debug_info.node(peer_id)
+    }
+
+    /// Initiates sending a request.
+    ///
+    /// An error is returned if we are not connected to the target peer of if the protocol doesn't
+    /// match one that has been registered.
+    pub fn send_request(
+        &mut self,
+        target: &PeerId,
+        protocol: &str,
+        request: Vec<u8>,
+    ) -> Result<request_responses::RequestId, request_responses::SendRequestError> {
+        self.request_responses
+            .send_request(target, protocol, request)
     }
 
     /// Start querying a record from the DHT. Will later produce either a `ValueFound` or a `ValueNotFound` event.
@@ -344,10 +236,9 @@ impl NetworkBehaviourEventProcess<generic_proto::GenericProtoOut> for Behaviour 
             } => {
                 match legacy_message::Message::decode_all(&message) {
                     Ok(legacy_message::Message::BlockAnnounce(announcement)) => {
-                        self.events
-                            .push_back(BehaviourOut::BlockAnnounce(ScaleBlockHeader(
-                                announcement.header.encode(),
-                            )));
+                        self.events.push_back(BehaviourOut::BlockAnnounce(
+                            super::ScaleBlockHeader(announcement.header.encode()),
+                        ));
                     }
                     Ok(legacy_message::Message::Status(_)) => {}
                     _msg => {} // TODO: for debugging println!("message from {:?} => {:?}", peer_id, msg),
@@ -389,53 +280,28 @@ impl NetworkBehaviourEventProcess<DiscoveryOut> for Behaviour {
     }
 }
 
-impl NetworkBehaviourEventProcess<block_requests::Event> for Behaviour {
-    fn inject_event(&mut self, out: block_requests::Event) {
-        match out {
-            block_requests::Event::AnsweredRequest { .. } => {}
-            block_requests::Event::Response {
+impl NetworkBehaviourEventProcess<request_responses::Event> for Behaviour {
+    fn inject_event(&mut self, event: request_responses::Event) {
+        match event {
+            request_responses::Event::InboundRequest {
                 peer,
-                original_request,
-                response,
-                ..
+                protocol,
+                outcome,
             } => {
-                let id = self
-                    .pending_block_requests
-                    .remove(&(peer, original_request))
-                    .unwrap();
-                self.events.push_back(BehaviourOut::BlocksResponse {
-                    id,
-                    result: Ok(response
-                        .blocks
-                        .into_iter()
-                        .map(|data| BlockData {
-                            hash: data.hash,
-                            header: data.header.map(|header| ScaleBlockHeader(header.encode())),
-                            body: data
-                                .body
-                                .map(|body| body.into_iter().map(|ext| Extrinsic(ext.0)).collect()),
-                            justification: data.justification,
-                        })
-                        .collect()),
+                self.events.push_back(BehaviourOut::InboundRequest {
+                    peer,
+                    protocol,
+                    outcome,
                 });
             }
-            block_requests::Event::RequestCancelled {
-                peer,
-                original_request,
-                ..
-            }
-            | block_requests::Event::RequestTimeout {
-                peer,
-                original_request,
-                ..
+
+            request_responses::Event::OutboundFinished {
+                request_id,
+                outcome,
             } => {
-                let id = self
-                    .pending_block_requests
-                    .remove(&(peer, original_request))
-                    .unwrap();
-                self.events.push_back(BehaviourOut::BlocksResponse {
-                    id,
-                    result: Err(()),
+                self.events.push_back(BehaviourOut::RequestFinished {
+                    request_id,
+                    outcome,
                 });
             }
         }

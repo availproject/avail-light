@@ -89,8 +89,11 @@ pub async fn run_networking_task(mut config: Config) {
                 match ev {
                     None => return,
                     Some(ToNetwork::BlocksRequest(rq, send_back)) => {
-                        let id = network.start_block_request(rq).await;
-                        pending_blocks_requests.insert(id, send_back);
+                        if let Ok(id) = network.start_block_request(rq).await {
+                            pending_blocks_requests.insert(id, send_back);
+                        } else {
+                            let _ = send_back.send(Err(()));
+                        }
                     }
                     Some(ToNetwork::LocalPeerId(send_back)) => {
                         let peer_id = network.local_peer_id().clone();

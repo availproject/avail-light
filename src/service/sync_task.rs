@@ -49,8 +49,7 @@ pub async fn run_sync_task(mut config: Config) {
 
     loop {
         // Download more blocks if appropriate.
-        // TODO: fails if more than one download at a time because it's not properly implement in the network thing
-        while pending_downloads.get_ref().len() <= 0 && blocks_queue.len() <= 4096 {
+        while pending_downloads.get_ref().len() <= 10 && blocks_queue.len() <= 8192 {
             let (tx, rx) = oneshot::channel();
             let rq = network::BlocksRequestConfig {
                 start: network::BlocksRequestConfigStart::Number(

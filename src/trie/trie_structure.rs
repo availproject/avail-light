@@ -53,6 +53,14 @@ impl<TUd> TrieStructure<TUd> {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.nodes.capacity()
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Reduces the capacity of the trie as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.nodes.shrink_to_fit();
