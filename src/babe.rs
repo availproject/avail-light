@@ -3,6 +3,9 @@
 //! BABE, or Blind Assignment for Blockchain Extension, is the consensus algorithm used by
 //! Polkadot in order to determine who is authorized to generate a block.
 //!
+//! Every block (with the exception of the genesis block) must contain, in its header, some data
+//! that makes it possible to verify the correctness of the block.
+//!
 //! References:
 //!
 //! - https://research.web3.foundation/en/latest/polkadot/BABE/Babe.html
@@ -35,9 +38,10 @@
 //! and based on the slot number, genesis hash, and aformentioned "randomness value",
 //! a number whose value is lower than a certain threshold.
 //!
-//! The number that has been generated must be included in the header of the block, alongside with
-//! the proof that can be verified using one of the public keys allowed to generate blocks in that
-//! epoch. The weight associated to that public key determines the allowed threshold.
+//! The number that has been generated must be included in the header of the authored block,
+//! alongside with the proof of the correct generation that can be verified using one of the
+//! public keys allowed to generate blocks in that epoch. The weight associated to that public key
+//! determines the allowed threshold.
 //!
 //! The "randomess value" of an epoch `N` is calculated by combining the generated numbers of all
 //! the blocks of the epoch `N - 2`.
@@ -47,64 +51,85 @@
 //! ## Chain selection
 //!
 //! The "best" block of a chain in the BABE algorithm is the one with the highest slot number.
-//! If there exists multiple blocks on the same slot, the best block is one with the most claimed
-//! primary slots. In other words, is two blocks have the same parent, but one is a primary slot
-//! claim and the other is a secondary slot claim, we prefer the one with the primary slot claim.
+//! If there exists multiple blocks on the same slot, the best block is one with the highest number
+//! of primary slots claimed. In other words, if two blocks have the same parent, but one is a
+//! primary slot claim and the other is a secondary slot claim, we prefer the one with the primary
+//! slot claim.
 //!
-//! Keep in mind that there can still be draws in terms of primary slot claims numbers, in which
+//! Keep in mind that there can still be draws in terms of primary slot claims count, in which
 //! case the winning block is the one upon which the next block author builds upon.
 //!
-//! # Runtime
-//!
-//! The runtime of a chain on which BABE operates provides a couple of entry points:
-//!
-//! - `BabeApi_configuration`, providing the configuration for BABE at the genesis block.
-//!
+
+use crate::executor;
 
 mod definitions;
+mod runtime;
 
-/// Verifies whether a block header.
-pub fn verify_header() {}
+/// Failed to verify a block.
+#[derive(Debug, Clone, derive_more::Display)]
+pub enum VerifyError {}
 
+/// Configuration for [`verify_header`].
+pub struct VerifyConfig<'a> {
+    /// SCALE-encoded header of the block.
+    pub scale_encoded_header: &'a [u8],
+    // TODO:
+    /*/// BABE configuration retrieved from the genesis block.
+    ///
+    /// Can be obtained by calling [`BabeGenesisConfiguration::from_runtime_code`] with the
+    /// runtime of the genesis block.
+    pub genesis_configuration: &'a BabeGenesisConfiguration,*/
+}
 
-/*
-sp_api::decl_runtime_apis! {
-    /// API necessary for block authorship with BABE.
-    #[api_version(2)]
-    pub trait BabeApi {
-        /// Return the genesis configuration for BABE. The configuration is only read on genesis.
-        fn configuration() -> BabeGenesisConfiguration;
+/// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
+pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
+    // TODO:
+    Ok(())
+}
 
-        /// Returns the slot number that started the current epoch.
-        fn current_epoch_start() -> SlotNumber;
+/// BABE configuration of a chain, as extracted from the genesis block.
+///
+/// The way a chain configures BABE is stored in its runtime.
+pub struct BabeGenesisConfiguration {}
 
-        /// Generates a proof of key ownership for the given authority in the
-        /// current epoch. An example usage of this module is coupled with the
-        /// session historical module to prove that a given authority key is
-        /// tied to a given staking identity during a specific session. Proofs
-        /// of key ownership are necessary for submitting equivocation reports.
-        /// NOTE: even though the API takes a `slot_number` as parameter the current
-        /// implementations ignores this parameter and instead relies on this
-        /// method being called at the correct block height, i.e. any point at
-        /// which the epoch for the given slot is live on-chain. Future
-        /// implementations will instead use indexed data through an offchain
-        /// worker, not requiring older states to be available.
-        fn generate_key_ownership_proof(
-            slot_number: SlotNumber,
-            authority_id: AuthorityId,
-        ) -> Option<OpaqueKeyOwnershipProof>;
+impl BabeGenesisConfiguration {
+    /// Retrieves the configuration from the given runtime code.
+    ///
+    /// Returns back the same virtual machine prototype as was passed as parameter.
+    pub fn from_runtime_code(
+        &self,
+        vm: executor::WasmVmPrototype,
+    ) -> (
+        Result<Self, BabeChainConfigurationError>,
+        executor::WasmVmPrototype,
+    ) {
+        /*let mut vm = vm.run_old(executor::FunctionToCall::BabeApiConfiguration)
+            .map_err(BabeChainConfigurationError::VmInitialization).unwrap(); // TODO: don't unwrap, but must give back the VmPrototype
 
-        /// Submits an unsigned extrinsic to report an equivocation. The caller
-        /// must provide the equivocation proof and a key ownership proof
-        /// (should be obtained using `generate_key_ownership_proof`). The
-        /// extrinsic will be unsigned and should only be accepted for local
-        /// authorship (not to be broadcast to the network). This method returns
-        /// `None` when creation of the extrinsic fails, e.g. if equivocation
-        /// reporting is disabled for the given runtime (i.e. this method is
-        /// hardcoded to return `None`). Only useful in an offchain context.
-        fn submit_report_equivocation_unsigned_extrinsic(
-            equivocation_proof: EquivocationProof<Block::Header>,
-            key_owner_proof: OpaqueKeyOwnershipProof,
-        ) -> Option<()>;
+        let outcome = loop {
+            match vm.state() {
+                executor::State::ReadyToRun(r) => r.run(),
+                // TODO: no, should be BabeApi thing
+                executor::State::Finished(executor::Success::CoreVersion(version)) => {
+                    break Ok(version.clone());
+                }
+                executor::State::Finished(_) => unreachable!(),
+                executor::State::Trapped => break Err(()),
+
+                // Since there are potential ambiguities we don't allow any storage access
+                // or anything similar. The last thing we want is to have an infinite
+                // recursion of runtime calls.
+                _ => break Err(()),
+            }
+        };*/
+
+        todo!()
     }
-*/
+}
+
+/// Error when retrieving the BABE configuration.
+#[derive(Debug, derive_more::Display)]
+pub enum BabeChainConfigurationError {
+    /// Error when initializing the virtual machine.
+    VmInitialization(executor::NewErr),
+}

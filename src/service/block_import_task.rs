@@ -96,6 +96,12 @@ pub async fn run_block_import_task(mut config: Config) {
         cache
     };
 
+    // Because we store blocks in the database asynchronously, we must make sure that each
+    // database import starts after the previous block has finished being imported.
+    // This variable contains a `oneshot::Receiver` that is triggered when the block at the
+    // previous iteration has finished being imported.
+    let mut previous_block_database_import_finished = None;
+
     // Cache of the best block hash.
     // Since we want to be able to import a block while the database is still importing its
     // parent, we maintain this information in cache.
@@ -227,9 +233,16 @@ pub async fn run_block_import_task(mut config: Config) {
                     let best_block_hash = best_block_hash.clone();
                     let database = config.database.clone();
                     let storage_top_trie_changes = import_result.storage_top_trie_changes;
-                    // TODO: err, it's possible that the previous block hasn't finished being imported yet when we
-                    // reach with the next one
+
+                    let previous_block_db_import = previous_block_database_import_finished.take();
+                    let (finished_tx, finished_rx) = oneshot::channel();
+                    previous_block_database_import_finished = Some(finished_rx);
+
                     Box::pin(async move {
+                        if let Some(previous_block_db_import) = previous_block_db_import {
+                            let _ = previous_block_db_import.await;
+                        }
+
                         let db_import_result = database.insert_new_best(
                             current_best_hash,
                             &to_execute.header.encode(),
@@ -263,6 +276,8 @@ pub async fn run_block_import_task(mut config: Config) {
                             block: to_execute,
                             modified_keys: storage_top_trie_changes.keys().cloned().collect(),
                         }));
+
+                        let _ = finished_tx.send(());
                     })
                 });
             }

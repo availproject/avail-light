@@ -7,7 +7,7 @@
 //! But before doing so, we must first verify whether the block is correct. In other words, that
 //! all the extrinsics in the block can indeed be applied on top of its parent.
 
-use crate::{executor, trie::calculate_root};
+use crate::{babe, executor, trie::calculate_root};
 
 use core::{cmp, convert::TryFrom as _};
 use futures::prelude::*;
@@ -64,6 +64,8 @@ pub enum Error {
     /// Error while executing the Wasm virtual machine.
     // TODO: add the logs written by the runtime
     Trapped,
+    /// Failed to verify the authenticity of the block with the BABE algorithm.
+    BabeVerification(babe::VerifyError),
 }
 
 /// Verifies whether a block is valid.
@@ -80,6 +82,13 @@ where
     TPaNe: Fn(Vec<u8>) -> TPaNeOut,
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
+    // Start by verifying BABE.
+    babe::verify_header(babe::VerifyConfig {
+        // TODO: inefficiency
+        scale_encoded_header: &parity_scale_codec::Encode::encode(&config.block_header),
+    })
+    .map_err(Error::BabeVerification)?;
+
     // Remove the seal
     // TODO: obviously make this less hacky
     // TODO: BABE appends a seal to each block that the runtime doesn't know about

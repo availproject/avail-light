@@ -97,5 +97,5 @@ mod vm;
 
 pub use externals::{
     CoreVersionSuccess, ExternalsVm as WasmVm, ExternalsVmPrototype as WasmVmPrototype,
-    FunctionToCall, NonConformingErr, ReadyToRun, Resume, State, Success,
+    FunctionToCall, NewErr, NonConformingErr, ReadyToRun, Resume, State, Success,
 };
