@@ -46,7 +46,18 @@
 //! The "randomess value" of an epoch `N` is calculated by combining the generated numbers of all
 //! the blocks of the epoch `N - 2`.
 //!
-//! TODO: read about and explain the secondary slot stuff
+//! ## Secondary slots
+//!
+//! While all slots can be claimed by generating a number below a certain threshold, each slot is
+//! additionally assigned to a specific public key amongst the ones allowed. The owner of a
+//! public key is always allowed to generate a block during the slot assigned to it.
+//!
+//! The mechanism of attributing each slot to a public key is called "secondary slots", while the
+//! mechanism of generating a number below a certain threshold is called "primary slots". As their
+//! name indicates, primary slots have a higher priority over secondary slots.
+//!
+//! Secondary slots are a way to guarantee that all slots can potentially lead to a block being
+//! produced.
 //!
 //! ## Chain selection
 //!
