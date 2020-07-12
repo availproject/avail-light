@@ -1,5 +1,5 @@
 use super::{block_import_task, database_task, keystore_task, network_task, sync_task, Service};
-use crate::{chain_spec::ChainSpec, database, keystore, network};
+use crate::{babe, chain_spec::ChainSpec, database, keystore, network};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
@@ -10,9 +10,13 @@ use futures::{
 };
 
 /// Prototype for a service.
+// TODO: replace with a config pattern
 pub struct ServiceBuilder {
     /// Database where the chain data is stored. If `None`, data is kept in memory.
     database: Option<database::Database>,
+
+    /// BABE configuration of the chain, as retreived from the genesis block.
+    babe_genesis_config: Option<babe::BabeGenesisConfiguration>,
 
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
@@ -26,6 +30,7 @@ pub struct ServiceBuilder {
 pub fn builder() -> ServiceBuilder {
     ServiceBuilder {
         database: None,
+        babe_genesis_config: None,
         tasks_executor: None,
         network: network::builder(),
     }
@@ -50,6 +55,23 @@ impl ServiceBuilder {
                 .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
         );
 
+        self.babe_genesis_config = Some({
+            let wasm_code = specs
+                .genesis_storage()
+                .find(|(k, _)| k == b":code")
+                .unwrap()
+                .1
+                .to_owned();
+
+            babe::BabeGenesisConfiguration::from_runtime_code(&wasm_code, |k| {
+                specs
+                    .genesis_storage()
+                    .find(|(k2, _)| *k2 == k)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .unwrap()
+        });
+
         self.network
             .set_chain_spec_protocol_id(specs.protocol_id().unwrap());
 
@@ -70,6 +92,7 @@ impl ServiceBuilder {
     pub fn with_chain_spec_protocol_id(self, id: impl AsRef<[u8]>) -> Self {
         ServiceBuilder {
             database: self.database,
+            babe_genesis_config: self.babe_genesis_config,
             tasks_executor: self.tasks_executor,
             network: self.network.with_chain_spec_protocol_id(id),
         }
@@ -82,7 +105,7 @@ impl ServiceBuilder {
     }
 
     /// Builds the actual service, starting everything.
-    pub async fn build(self) -> Service {
+    pub async fn build(mut self) -> Service {
         // TODO: check that chain specs match database?
 
         // Start by building the function that will spawn tasks. Since the user is allowed to
@@ -169,6 +192,8 @@ impl ServiceBuilder {
         tasks_executor(
             block_import_task::run_block_import_task(block_import_task::Config {
                 database: database.clone(),
+                // TODO: this unwraps if the service builder isn't properly configured; service builder should just be a Config struct instead
+                babe_genesis_config: self.babe_genesis_config.take().unwrap(),
                 tasks_executor: Box::new({
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| tasks_executor(task))

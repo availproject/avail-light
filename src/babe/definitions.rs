@@ -1,5 +1,7 @@
 //! Definitions copy-pasted from Substrate
 
+// TODO: decide what to do with this module; it's obviously not great
+
 use parity_scale_codec::{Decode, Encode};
 
 /// BABE epoch information

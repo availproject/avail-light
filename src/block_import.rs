@@ -20,6 +20,11 @@ pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
     /// block.
     pub runtime: executor::WasmVmPrototype,
 
+    /// BABE configuration retrieved from the genesis block.
+    ///
+    /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
+    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
+
     /// Header of the block to verify.
     ///
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
@@ -85,6 +90,7 @@ where
     babe::verify_header(babe::VerifyConfig {
         // TODO: inefficiency by encoding header
         scale_encoded_header: &parity_scale_codec::Encode::encode(&config.block_header),
+        genesis_configuration: config.babe_genesis_configuration,
     })
     .map_err(Error::BabeVerification)?;
 

@@ -17,7 +17,7 @@
 //! `BabeApi_configuration` runtime entry point.
 //!
 //! > **Note**: As example values, in the Polkadot genesis, a slot lasts for 6 seconds and an
-//! >           epoch consists of 600 slots (in other words, one hour).
+//! >           epoch consists of 2400 slots (in other words, four hours).
 //!
 //! Every block that is produced must belong to a specific slot. This slot number can be found in
 //! the header of every single block with the exception of the genesis block. Slots are numbered,
@@ -61,9 +61,14 @@
 //!
 
 use crate::executor;
+use parity_scale_codec::DecodeAll as _;
 
 mod definitions;
 mod runtime;
+
+pub mod chain_config;
+
+pub use chain_config::BabeGenesisConfiguration;
 
 /// Failed to verify a block.
 #[derive(Debug, Clone, derive_more::Display)]
@@ -73,63 +78,16 @@ pub enum VerifyError {}
 pub struct VerifyConfig<'a> {
     /// SCALE-encoded header of the block.
     pub scale_encoded_header: &'a [u8],
-    // TODO:
-    /*/// BABE configuration retrieved from the genesis block.
+
+    /// BABE configuration retrieved from the genesis block.
     ///
     /// Can be obtained by calling [`BabeGenesisConfiguration::from_virtual_machine_prototype`]
     /// with the runtime of the genesis block.
-    pub genesis_configuration: &'a BabeGenesisConfiguration,*/
+    pub genesis_configuration: &'a BabeGenesisConfiguration,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
 pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
     // TODO:
     Ok(())
-}
-
-/// BABE configuration of a chain, as extracted from the genesis block.
-///
-/// The way a chain configures BABE is stored in its runtime.
-pub struct BabeGenesisConfiguration {}
-
-impl BabeGenesisConfiguration {
-    /// Retrieves the configuration from the given runtime code.
-    ///
-    /// Returns back the same virtual machine prototype as was passed as parameter.
-    pub fn from_virtual_machine_prototype(
-        &self,
-        vm: executor::WasmVmPrototype,
-    ) -> (
-        Result<Self, BabeChainConfigurationError>,
-        executor::WasmVmPrototype,
-    ) {
-        /*let mut vm = vm.run_old(executor::FunctionToCall::BabeApiConfiguration)
-            .map_err(BabeChainConfigurationError::VmInitialization).unwrap(); // TODO: don't unwrap, but must give back the VmPrototype
-
-        let outcome = loop {
-            match vm.state() {
-                executor::State::ReadyToRun(r) => r.run(),
-                // TODO: no, should be BabeApi thing
-                executor::State::Finished(executor::Success::CoreVersion(version)) => {
-                    break Ok(version.clone());
-                }
-                executor::State::Finished(_) => unreachable!(),
-                executor::State::Trapped => break Err(()),
-
-                // Since there are potential ambiguities we don't allow any storage access
-                // or anything similar. The last thing we want is to have an infinite
-                // recursion of runtime calls.
-                _ => break Err(()),
-            }
-        };*/
-
-        todo!()
-    }
-}
-
-/// Error when retrieving the BABE configuration.
-#[derive(Debug, derive_more::Display)]
-pub enum BabeChainConfigurationError {
-    /// Error when initializing the virtual machine.
-    VmInitialization(executor::NewErr),
 }

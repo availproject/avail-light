@@ -8,7 +8,7 @@
 //! if so appends them to the head of the chain. Only blocks whose parent is the current head of
 //! the chain are considered, and the others discarded.
 
-use crate::{block, block_import, database, executor, trie::calculate_root};
+use crate::{babe, block, block_import, database, executor, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -61,6 +61,8 @@ pub enum ImportError {
 pub struct Config {
     /// Database where to import blocks to.
     pub database: Arc<database::Database>,
+    /// Configuration for BABE, retreived from the genesis block.
+    pub babe_genesis_config: babe::BabeGenesisConfiguration,
     /// How to spawn other background tasks.
     pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
     /// Receiver for messages that the executor task will process.
@@ -145,6 +147,7 @@ pub async fn run_block_import_task(mut config: Config) {
 
                     block_import::verify_block(block_import::Config {
                         runtime: runtime_wasm_blob,
+                        babe_genesis_configuration: &config.babe_genesis_config,
                         block_header: &to_execute.header,
                         block_body: &to_execute.extrinsics,
                         parent_storage_get: {
