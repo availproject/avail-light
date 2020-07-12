@@ -1,3 +1,8 @@
+//! Manages the structure of a trie. Allows inserting and removing nodes, but does not store any
+//! value. Only the structure is stored.
+//!
+//! See the [`TrieStructure`] struct.
+
 use super::nibble::Nibble;
 
 use core::{convert::TryFrom as _, fmt, iter};

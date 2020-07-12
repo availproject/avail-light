@@ -29,6 +29,7 @@ pub enum ToBlockImport {
     /// Verify the correctness of a block and apply it on the storage.
     Import {
         /// Block to try execute.
+        // TODO: weaker typing
         to_execute: block::Block,
         /// Channel where to send back the outcome of the execution.
         send_back: oneshot::Sender<Result<ImportSuccess, ImportError>>,

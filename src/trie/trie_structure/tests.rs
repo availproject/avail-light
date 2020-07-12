@@ -8,8 +8,6 @@ use rand::{
 };
 use std::{collections::HashSet, convert::TryFrom as _, mem};
 
-// TODO: fuzzing test
-
 #[test]
 fn remove_turns_storage_into_branch() {
     let with_removal = {
