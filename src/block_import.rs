@@ -15,7 +15,7 @@ use hashbrown::{HashMap, HashSet};
 
 /// Configuration for a block verification.
 // TODO: don't pass functions to the Config; instead, have a state-machine-like API
-pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
+pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
     pub runtime: executor::WasmVmPrototype,
@@ -33,7 +33,7 @@ pub struct Config<'a, TPaAcc, TPaPref, TPaNe> {
     pub block_header: &'a crate::block::Header,
 
     /// Body of the block to verify.
-    pub block_body: &'a [crate::block::Extrinsic],
+    pub block_body: TBody,
 
     /// Function that returns the value in the parent's storage correpsonding to the key passed
     /// as parameter. Returns `None` if there is no value associated to this key.
@@ -74,10 +74,22 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub async fn verify_block<'a, TPaAcc, TPaAccOut, TPaPref, TPaPrefOut, TPaNe, TPaNeOut>(
-    mut config: Config<'a, TPaAcc, TPaPref, TPaNe>,
+pub async fn verify_block<
+    'a,
+    TBody,
+    TExt,
+    TPaAcc,
+    TPaAccOut,
+    TPaPref,
+    TPaPrefOut,
+    TPaNe,
+    TPaNeOut,
+>(
+    mut config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe>,
 ) -> Result<Success, Error>
 where
+    TBody: ExactSizeIterator<Item = TExt> + Clone,
+    TExt: AsRef<[u8]> + Clone,
     // TODO: ugh, we pass Vecs because of lifetime clusterfuck
     TPaAcc: Fn(Vec<u8>) -> TPaAccOut,
     TPaAccOut: Future<Output = Option<Vec<u8>>>,
@@ -106,24 +118,28 @@ where
             u32::try_from(config.block_body.len()).unwrap(),
         ));
 
-        // TODO: this more optimized version doesn't work, don't understand why
-        /*config
-        .runtime
-        .run_vectored("Core_execute_block", {
-            let body = config.block_body.iter().map(|ext| &ext.0[..]);
-            iter::once(encoded_header.as_ref())
-                .chain(iter::once(encoded_body_len.as_ref()))
-                .chain(body)
-        })
-        .unwrap()*/
-
         config
             .runtime
-            .run("Core_execute_block", &{
-                parity_scale_codec::Encode::encode(&crate::block::Block {
-                    header: block_header,
-                    extrinsics: config.block_body.to_vec(),
-                })
+            .run_vectored("Core_execute_block", {
+                // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
+                // where `body` is a `Vec<Vec<u8>>`. We do the encoding manually to avoid
+                // performing redundant data copies.
+                let body = config.block_body.flat_map(|ext| {
+                    let encoded_ext_len = parity_scale_codec::Encode::encode(
+                        &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
+                    );
+
+                    iter::once(either::Either::Left(either::Either::Left(encoded_ext_len)))
+                        .chain(iter::once(either::Either::Right(ext)))
+                });
+
+                iter::once(either::Either::Left(either::Either::Right(
+                    &encoded_header[..],
+                )))
+                .chain(iter::once(either::Either::Left(either::Either::Right(
+                    &encoded_body_len[..],
+                ))))
+                .chain(body)
             })
             .unwrap()
     };
@@ -161,9 +177,7 @@ where
                 let mut value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone()
                 } else {
-                    (config.parent_storage_get)(storage_key.to_vec())
-                        .await
-                        .map(|v| v.to_vec())
+                    (config.parent_storage_get)(storage_key.to_vec()).await
                 };
                 if let Some(value) = &mut value {
                     if usize::try_from(offset).unwrap() < value.len() {
@@ -200,7 +214,6 @@ where
                 } else {
                     (config.parent_storage_get)(storage_key.to_vec())
                         .await
-                        .map(|v| v.to_vec())
                         .unwrap_or(Vec::new())
                 };
                 let curr_len =

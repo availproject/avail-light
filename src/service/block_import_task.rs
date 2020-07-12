@@ -149,7 +149,7 @@ pub async fn run_block_import_task(mut config: Config) {
                         runtime: runtime_wasm_blob,
                         babe_genesis_configuration: &config.babe_genesis_config,
                         block_header: &to_execute.header,
-                        block_body: &to_execute.extrinsics,
+                        block_body: to_execute.extrinsics.iter().map(|e| &e.0[..]),
                         parent_storage_get: {
                             let local_storage_cache = local_storage_cache.clone();
                             move |key: Vec<u8>| {
