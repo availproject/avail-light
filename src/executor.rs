@@ -91,11 +91,55 @@
 //! ```
 // TODO: use an actual Wasm blob extracted from somewhere as an example ^
 
+use core::iter;
+use parity_scale_codec::DecodeAll as _;
+
 mod allocator;
 mod externals;
 mod vm;
 
 pub use externals::{
-    CoreVersionSuccess, ExternalsVm as WasmVm, ExternalsVmPrototype as WasmVmPrototype,
-    FunctionToCall, NewErr, NonConformingErr, ReadyToRun, Resume, State, Success,
+    ExternalsVm as WasmVm, ExternalsVmPrototype as WasmVmPrototype, NewErr, NonConformingErr,
+    ReadyToRun, Resume, State,
 };
+
+/// Runs the `Core_version` function using the given virtual machine prototype, and returns
+/// the output.
+///
+/// All externalities are forbidden.
+// TODO: proper error
+pub fn core_version(vm_proto: WasmVmPrototype) -> Result<(CoreVersion, WasmVmPrototype), ()> {
+    // TODO: is there maybe a better way to handle that?
+    let mut vm = vm_proto.run_no_param("Core_version").map_err(|_| ())?;
+
+    let core_version = loop {
+        match vm.state() {
+            State::ReadyToRun(r) => r.run(),
+            State::Finished(data) => {
+                let decoded = CoreVersion::decode_all(&data).map_err(|_| ())?;
+                break decoded;
+            }
+            State::Trapped => return Err(()),
+
+            // Since there are potential ambiguities we don't allow any storage access
+            // or anything similar. The last thing we want is to have an infinite
+            // recursion of runtime calls.
+            _ => return Err(()),
+        }
+    };
+
+    Ok((core_version, vm.into_prototype()))
+}
+
+/// Structure that the `CoreVersion` function returns.
+#[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub struct CoreVersion {
+    pub spec_name: String,
+    pub impl_name: String,
+    pub authoring_version: u32,
+    pub spec_version: u32,
+    pub impl_version: u32,
+    // TODO: stronger typing
+    pub apis: Vec<([u8; 8], u32)>,
+    pub transaction_version: u32,
+}

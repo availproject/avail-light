@@ -9,7 +9,7 @@
 
 use crate::{babe, executor, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _};
+use core::{cmp, convert::TryFrom as _, iter};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 
@@ -84,7 +84,7 @@ where
 {
     // Start by verifying BABE.
     babe::verify_header(babe::VerifyConfig {
-        // TODO: inefficiency
+        // TODO: inefficiency by encoding header
         scale_encoded_header: &parity_scale_codec::Encode::encode(&config.block_header),
     })
     .map_err(Error::BabeVerification)?;
@@ -95,15 +95,16 @@ where
     let mut block_header = config.block_header.clone();
     let _seal_log = block_header.digest.logs.pop().unwrap();
 
-    let mut vm = config
-        .runtime
-        .run(executor::FunctionToCall::CoreExecuteBlock(
-            &crate::block::Block {
-                header: block_header,
-                extrinsics: config.block_body.to_vec(),
-            },
-        ))
-        .unwrap();
+    let mut vm = {
+        let encoded_header = parity_scale_codec::Encode::encode(&block_header);
+        config
+            .runtime
+            .run_vectored("Core_execute_block", {
+                let body = config.block_body.iter().map(|ext| &ext.0[..]);
+                iter::once(encoded_header.as_ref()).chain(body)
+            })
+            .unwrap()
+    };
 
     // Pending changes to the top storage trie that this block performs.
     let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
@@ -118,14 +119,14 @@ where
     loop {
         match vm.state() {
             executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(executor::Success::CoreExecuteBlock) => {
+            executor::State::Finished(_) => {
+                // TODO: assert output is empty?
                 return Ok(Success {
                     parent_runtime: vm.into_prototype(),
                     storage_top_trie_changes: top_trie_changes,
                     top_trie_root_calculation_cache,
-                })
+                });
             }
-            executor::State::Finished(_) => unreachable!(),
             executor::State::Trapped => return Err(Error::Trapped),
 
             executor::State::ExternalStorageGet {
@@ -301,31 +302,15 @@ where
                         continue;
                     }
                 };
-                let mut inner_vm = match vm_prototype.run(executor::FunctionToCall::CoreVersion) {
-                    Ok(v) => v,
+
+                match executor::core_version(vm_prototype) {
+                    Ok((version, _)) => {
+                        resolve.finish_call(Ok(parity_scale_codec::Encode::encode(&version)));
+                    }
                     Err(_) => {
                         resolve.finish_call(Err(()));
-                        continue;
                     }
-                };
-
-                let outcome = loop {
-                    match inner_vm.state() {
-                        executor::State::ReadyToRun(r) => r.run(),
-                        executor::State::Finished(executor::Success::CoreVersion(version)) => {
-                            break Ok(parity_scale_codec::Encode::encode(&version));
-                        }
-                        executor::State::Finished(_) => unreachable!(),
-                        executor::State::Trapped => break Err(()),
-
-                        // Since there are potential ambiguities we don't allow any storage access
-                        // or anything similar. The last thing we want is to have an infinite
-                        // recursion of runtime calls.
-                        _ => break Err(()),
-                    }
-                };
-
-                resolve.finish_call(outcome);
+                }
             }
             s => unimplemented!("unimplemented externality: {:?}", s),
         }

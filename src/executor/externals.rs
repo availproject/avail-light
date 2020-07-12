@@ -15,14 +15,31 @@
 //! >           return the current time, must also be handled by the user. While these functions
 //! >           could theoretically be handled directly by this module, it might be useful for
 //! >           testing purposes to have the possibility to return a deterministic value.
+//!
+//! Contrary to most programs, Wasm runtime code doesn't have a singe `main` function. Instead, it
+//! exposes several entry points. Which one to call indicates which action it has to perform. Not
+//! all entry points are necessarily available on all runtimes.
+//!
+//! # ABI
+//!
+//! All entry points have the same signature:
+//!
+//! ```ignore
+//! (func $runtime_entry(param $data i32) (param $len i32) (result i64))
+//! ```
+//!
+//! In order to call into the runtime, one must write a buffer of data containing the input
+//! parameters into the Wasm virtual machine's memory, then pass a pointer and length of this
+//! buffer as the parameters of the entry point.
+//!
+//! The function returns a 64bits number. The 32 less significant bits represent a pointer to the
+//! Wasm virtual machine's memory, and the 32 most significant bits a length. This pointer and
+//! length designate a buffer containing the actual return value.
 
 use super::{allocator, vm};
 
-use core::{convert::TryFrom as _, fmt, mem};
+use core::{convert::TryFrom as _, fmt, iter, mem};
 
-pub use entry_points::{CoreVersionSuccess, FunctionToCall, Success};
-
-mod entry_points;
 mod externalities;
 
 /// Prototype for an [`ExternalsVm`].
@@ -73,7 +90,6 @@ impl ExternalsVmPrototype {
 
         // In the runtime environment, Wasm blobs must export a global symbol named
         // `__heap_base` indicating where the memory allocator is allowed to allocate memory.
-        // TODO: this isn't mentioned in the specs but seems mandatory; report to the specs writers
         let heap_base = vm_proto
             .global_value("__heap_base")
             .map_err(|_| NewErr::HeapBaseNotFound)?;
@@ -86,30 +102,57 @@ impl ExternalsVmPrototype {
     }
 
     /// Starts the VM, calling the function passed as parameter.
-    pub fn run(self, to_call: FunctionToCall) -> Result<ExternalsVm, NewErr> {
-        let (called_function, data) = to_call.into_function_and_param();
-        let data_len_u32 = u32::try_from(data.len()).map_err(|_| NewErr::DataSizeOverflow)?;
-        let data_len_i32 = i32::from_ne_bytes(data_len_u32.to_ne_bytes());
+    pub fn run(self, function_to_call: &str, data: &[u8]) -> Result<ExternalsVm, NewErr> {
+        self.run_vectored(function_to_call, iter::once(data))
+    }
+
+    /// Same as [`ExternalsVmPrototype::run`], except that the function desn't need any parameter.
+    pub fn run_no_param(self, function_to_call: &str) -> Result<ExternalsVm, NewErr> {
+        self.run_vectored(function_to_call, iter::empty::<Vec<u8>>())
+    }
+
+    /// Same as [`ExternalsVmPrototype::run`], except that the function parameter can be passed as
+    /// a list of buffers. All the buffers will be concatenated in memory.
+    pub fn run_vectored(
+        self,
+        function_to_call: &str,
+        data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
+    ) -> Result<ExternalsVm, NewErr> {
+        let mut data_len_u32: u32 = 0;
+        for data in data.clone() {
+            let len = u32::try_from(data.as_ref().len()).map_err(|_| NewErr::DataSizeOverflow)?;
+            data_len_u32 = data_len_u32
+                .checked_add(len)
+                .ok_or(NewErr::DataSizeOverflow)?;
+        }
 
         // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
         // of the input data.
         let mut vm = self.vm_proto.start(
-            called_function.symbol_name(),
+            function_to_call,
             &[
                 vm::WasmValue::I32(i32::from_ne_bytes(self.heap_base.to_ne_bytes())),
-                vm::WasmValue::I32(data_len_i32),
+                vm::WasmValue::I32(i32::from_ne_bytes(data_len_u32.to_ne_bytes())),
             ],
         )?;
-        vm.write_memory(self.heap_base, &data).unwrap();
+
+        // Now writing the input data into the VM.
+        let mut after_input_data = self.heap_base;
+        for data in data {
+            let data = data.as_ref();
+            vm.write_memory(after_input_data, data).unwrap();
+            after_input_data = after_input_data
+                .checked_add(u32::try_from(data.len()).unwrap())
+                .unwrap();
+        }
 
         // Initialize the state of the memory allocator. This is the allocator that is later used
         // when the Wasm code requests variable-length data.
-        let allocator = allocator::FreeingBumpHeapAllocator::new(self.heap_base + data_len_u32);
+        let allocator = allocator::FreeingBumpHeapAllocator::new(after_input_data);
 
         Ok(ExternalsVm {
             vm,
             heap_base: self.heap_base,
-            called_function,
             state: StateInner::Ready(None),
             registered_functions: self.registered_functions,
             allocator,
@@ -125,9 +168,6 @@ pub struct ExternalsVm {
     /// Initial value of the `__heap_base` global in the Wasm module. Used to initialize the memory
     /// allocator in case we need to rebuild the VM.
     heap_base: u32,
-
-    /// Function currently being called.
-    called_function: entry_points::CalledFunction,
 
     /// State of the virtual machine. Must be in sync with [`ExternalsVm::vm`].
     state: StateInner,
@@ -155,7 +195,7 @@ enum StateInner {
     /// anything else.
     Trapped,
     /// Function call has successfully finished. This state never changes to anything else.
-    Finished(Success),
+    Finished(Vec<u8>),
     /// Temporary state to permit state transitions without running into borrowing issues.
     Poisoned,
 }
@@ -343,7 +383,7 @@ pub enum State<'a> {
     /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
     ReadyToRun(ReadyToRun<'a>),
     /// Function execution has succeeded. Contains the return value of the call.
-    Finished(&'a Success),
+    Finished(&'a [u8]),
     /// The Wasm blob did something that doesn't conform to the runtime environment.
     NonConforming(NonConformingErr),
     /// The Wasm VM has encountered a trap (i.e. it has panicked).
@@ -459,11 +499,6 @@ pub enum NonConformingErr {
         /// Size of the virtual memory.
         memory_size: u32,
     },
-    /// Failed to decode the structure returned by the function.
-    #[display(fmt = "Failed to decode the structure returned by the function")]
-    ReturnedValueDecodeFail(parity_scale_codec::Error),
-    /// Failed to decode the value returned by the function.
-    SuccessDecode(entry_points::SuccessDecodeErr),
     /// An externality wants to returns a certain value, but the Wasm code expects a different one.
     ExternalityBadReturnValue,
 }
@@ -501,25 +536,16 @@ impl<'a> ReadyToRun<'a> {
                     // Turn the `i64` into a `u64`.
                     let ret = u64::from_ne_bytes(ret.to_ne_bytes());
 
-                    // According to the runtime environment specifies, the return value is two
+                    // According to the runtime environment specifications, the return value is two
                     // consecutive I32s representing the length and size of the SCALE-encoded
                     // return value.
                     let ret_len = u32::try_from(ret >> 32).unwrap();
                     let ret_ptr = u32::try_from(ret & 0xffffffff).unwrap();
-                    // TODO: optimization: don't copy memory but immediately decode from slice
 
+                    // TODO: optimization: don't copy memory?
                     self.inner.state =
                         if let Ok(ret_data) = self.inner.vm.read_memory(ret_ptr, ret_len) {
-                            // We have the raw data, now try to decode it into the proper
-                            // strongly-typed return value.
-                            let decoded = Success::decode(&self.inner.called_function, &ret_data);
-
-                            match decoded {
-                                Ok(v) => StateInner::Finished(v),
-                                Err(err) => {
-                                    StateInner::NonConforming(NonConformingErr::SuccessDecode(err))
-                                }
-                            }
+                            StateInner::Finished(ret_data)
                         } else {
                             StateInner::NonConforming(NonConformingErr::ReturnedPtrOutOfRange {
                                 pointer: ret_ptr,

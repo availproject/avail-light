@@ -3,7 +3,7 @@
 // TODO: write docs
 
 use crate::{executor, service};
-use core::{convert::TryFrom as _, fmt};
+use core::{convert::TryFrom as _, fmt, iter};
 use std::{io, net::SocketAddr};
 
 pub use raw::RequestId;
@@ -581,7 +581,7 @@ fn metadata(wasm_blob: &[u8]) -> Result<Vec<u8>, ()> {
             }
         };
 
-        match prototype.run(executor::FunctionToCall::MetadataMetadata) {
+        match prototype.run_no_param("Metadata_metadata") {
             Ok(v) => v,
             Err(_) => {
                 return Err(());
@@ -592,8 +592,8 @@ fn metadata(wasm_blob: &[u8]) -> Result<Vec<u8>, ()> {
     loop {
         match inner_vm.state() {
             executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(executor::Success::MetadataMetadata(version)) => {
-                break Ok(version.clone());
+            executor::State::Finished(data) => {
+                break Ok(data.to_owned());
             }
             executor::State::Finished(_) => unreachable!(),
             executor::State::Trapped => break Err(()),
@@ -607,37 +607,15 @@ fn metadata(wasm_blob: &[u8]) -> Result<Vec<u8>, ()> {
 }
 
 /// Obtains the `RuntimeVersion` struct corresponding to the given Wasm runtime blob.
-fn runtime_version(wasm_blob: &[u8]) -> Result<executor::CoreVersionSuccess, ()> {
+fn runtime_version(wasm_blob: &[u8]) -> Result<executor::CoreVersion, ()> {
     // TODO: is there maybe a better way to handle that?
-    let mut inner_vm = {
-        let prototype = match executor::WasmVmPrototype::new(&wasm_blob) {
-            Ok(p) => p,
-            Err(_) => {
-                return Err(());
-            }
-        };
-
-        match prototype.run(executor::FunctionToCall::CoreVersion) {
-            Ok(v) => v,
-            Err(_) => {
-                return Err(());
-            }
+    let prototype = match executor::WasmVmPrototype::new(&wasm_blob) {
+        Ok(p) => p,
+        Err(_) => {
+            return Err(());
         }
     };
 
-    loop {
-        match inner_vm.state() {
-            executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(executor::Success::CoreVersion(version)) => {
-                break Ok(version.clone());
-            }
-            executor::State::Finished(_) => unreachable!(),
-            executor::State::Trapped => break Err(()),
-
-            // Since there are potential ambiguities we don't allow any storage access
-            // or anything similar. The last thing we want is to have an infinite
-            // recursion of runtime calls.
-            _ => break Err(()),
-        }
-    }
+    let (out, _) = executor::core_version(prototype).map_err(|_| ())?;
+    Ok(out)
 }
