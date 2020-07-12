@@ -76,8 +76,8 @@ pub struct VerifyConfig<'a> {
     // TODO:
     /*/// BABE configuration retrieved from the genesis block.
     ///
-    /// Can be obtained by calling [`BabeGenesisConfiguration::from_runtime_code`] with the
-    /// runtime of the genesis block.
+    /// Can be obtained by calling [`BabeGenesisConfiguration::from_virtual_machine_prototype`]
+    /// with the runtime of the genesis block.
     pub genesis_configuration: &'a BabeGenesisConfiguration,*/
 }
 
@@ -96,7 +96,7 @@ impl BabeGenesisConfiguration {
     /// Retrieves the configuration from the given runtime code.
     ///
     /// Returns back the same virtual machine prototype as was passed as parameter.
-    pub fn from_runtime_code(
+    pub fn from_virtual_machine_prototype(
         &self,
         vm: executor::WasmVmPrototype,
     ) -> (

@@ -69,7 +69,6 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-// TODO: Aura/BABE
 pub async fn verify_block<'a, TPaAcc, TPaAccOut, TPaPref, TPaPrefOut, TPaNe, TPaNeOut>(
     mut config: Config<'a, TPaAcc, TPaPref, TPaNe>,
 ) -> Result<Success, Error>
@@ -97,11 +96,28 @@ where
 
     let mut vm = {
         let encoded_header = parity_scale_codec::Encode::encode(&block_header);
+        let encoded_body_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+            u32::try_from(config.block_body.len()).unwrap(),
+        ));
+
+        // TODO: this more optimized version doesn't work, don't understand why
+        /*config
+        .runtime
+        .run_vectored("Core_execute_block", {
+            let body = config.block_body.iter().map(|ext| &ext.0[..]);
+            iter::once(encoded_header.as_ref())
+                .chain(iter::once(encoded_body_len.as_ref()))
+                .chain(body)
+        })
+        .unwrap()*/
+
         config
             .runtime
-            .run_vectored("Core_execute_block", {
-                let body = config.block_body.iter().map(|ext| &ext.0[..]);
-                iter::once(encoded_header.as_ref()).chain(body)
+            .run("Core_execute_block", &{
+                parity_scale_codec::Encode::encode(&crate::block::Block {
+                    header: block_header,
+                    extrinsics: config.block_body.to_vec(),
+                })
             })
             .unwrap()
     };
