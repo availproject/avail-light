@@ -14,6 +14,7 @@ use libp2p::{
 use parity_scale_codec::{DecodeAll, Encode};
 use primitive_types::H256;
 use prost::Message as _;
+use rand::seq::IteratorRandom as _;
 
 pub use request_responses::RequestId;
 
@@ -187,7 +188,8 @@ impl Network {
         &mut self,
         config: BlocksRequestConfig,
     ) -> Result<RequestId, ()> {
-        let target = match self.swarm.open_peers().next() {
+        // TODO: better peer selection
+        let target = match self.swarm.open_peers().choose(&mut rand::thread_rng()) {
             Some(p) => p.clone(),
             None => return Err(()),
         };

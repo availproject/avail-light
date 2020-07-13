@@ -74,8 +74,8 @@
 //!
 //! The information about an epoch `N` is provided by the first block of the epoch `N-1`.
 //!
-//! Because of this, we need to special-case epochs 0 and 1. The information about these two epochs
-//! in particular is contained in the chain-wide BABE configuration found in the runtime.
+//! Because of this, we need to special-case epochs 0 and 1. The information about these two
+//! epochs in particular is contained in the chain-wide BABE configuration found in the runtime.
 
 use crate::executor;
 use parity_scale_codec::DecodeAll as _;
