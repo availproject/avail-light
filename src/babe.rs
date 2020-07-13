@@ -24,8 +24,10 @@
 //! block implicitly belongs to slot 0.
 //!
 //! The header of first block produced after a transition to a new epoch must contain a log entry
-//! indicating the public keys that are allowed to sign blocks during the upcoming epoch, alongside
-//! with a weight for each of them, and a "randomness value".
+//! indicating the public keys that are allowed to sign blocks, alongside with a weight for each of
+//! them, and a "randomness value". This information does not concern the newly-started epoch, but
+//! the one immediately after. In other words, the first block of epoch `N` contains the
+//! information about epoch `N+1`.
 //!
 //! > **Note**: The way the list of authorities and their weights is determined is at the
 //! >           discretion of the runtime code and is out of scope of this module, but it normally
@@ -68,6 +70,12 @@
 //! Keep in mind that there can still be draws in terms of primary slot claims count, in which
 //! case the winning block is the one upon which the next block author builds upon.
 //!
+//! ## Epochs 0 and 1
+//!
+//! The information about an epoch `N` is provided by the first block of the epoch `N-1`.
+//!
+//! Because of this, we need to special-case epochs 0 and 1. The information about these two epochs
+//! in particular is contained in the chain-wide BABE configuration found in the runtime.
 
 use crate::executor;
 use parity_scale_codec::DecodeAll as _;
