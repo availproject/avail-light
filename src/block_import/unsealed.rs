@@ -185,31 +185,16 @@ where
             } => {
                 top_trie_root_calculation_cache.storage_value_update(storage_key, true);
 
-                let current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
+                let mut current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
                     overlay.clone().unwrap_or(Vec::new())
                 } else {
                     (config.parent_storage_get)(storage_key.to_vec())
                         .await
                         .unwrap_or(Vec::new())
                 };
-                let curr_len =
-                    <parity_scale_codec::Compact<u64> as parity_scale_codec::Decode>::decode(
-                        &mut &current_value[..],
-                    );
-                let new_value = if let Ok(mut curr_len) = curr_len {
-                    let len_size = <parity_scale_codec::Compact::<u64> as parity_scale_codec::CompactLen::<u64>>::compact_len(&curr_len.0);
-                    curr_len.0 += 1;
-                    let mut new_value = parity_scale_codec::Encode::encode(&curr_len);
-                    new_value.extend_from_slice(&current_value[len_size..]);
-                    new_value.extend_from_slice(value);
-                    new_value
-                } else {
-                    let mut new_value =
-                        parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(1u64));
-                    new_value.extend_from_slice(value);
-                    new_value
-                };
-                top_trie_changes.insert(storage_key.to_vec(), Some(new_value));
+
+                append_to_storage_value(&mut current_value, value);
+                top_trie_changes.insert(storage_key.to_vec(), Some(current_value));
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageClearPrefix {
@@ -326,4 +311,52 @@ where
             s => unimplemented!("unimplemented externality: {:?}", s),
         }
     }
+}
+
+/// Performs the action described by [`executor::State::ExternalStorageAppend`] on an encoded
+/// storage value.
+fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {
+    let curr_len = match <parity_scale_codec::Compact<u64> as parity_scale_codec::Decode>::decode(
+        &mut &value[..],
+    ) {
+        Ok(l) => l,
+        Err(_) => {
+            value.clear();
+            parity_scale_codec::Encode::encode_to(&parity_scale_codec::Compact(1u64), value);
+            value.extend_from_slice(to_add);
+            return;
+        }
+    };
+
+    // Note: we use `checked_add`, as it is possible that the storage entry erroneously starts
+    // with `u64::max_value()`.
+    let new_len = match curr_len.0.checked_add(1) {
+        Some(l) => parity_scale_codec::Compact(l),
+        None => {
+            value.clear();
+            parity_scale_codec::Encode::encode_to(&parity_scale_codec::Compact(1u64), value);
+            value.extend_from_slice(to_add);
+            return;
+        }
+    };
+
+    let curr_len_encoded_size =
+        <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
+            &curr_len.0,
+        );
+    let new_len_encoded_size =
+        <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
+            &new_len.0,
+        );
+    debug_assert!(
+        new_len_encoded_size == curr_len_encoded_size
+            || new_len_encoded_size == curr_len_encoded_size + 1
+    );
+
+    for _ in 0..(new_len_encoded_size - curr_len_encoded_size) {
+        value.insert(0, 0);
+    }
+
+    parity_scale_codec::Encode::encode_to(&new_len, &mut (&mut value[..new_len_encoded_size]));
+    value.extend_from_slice(to_add);
 }
