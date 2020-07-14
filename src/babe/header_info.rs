@@ -20,6 +20,7 @@ pub struct HeaderInfo<'a> {
     // Finally, the header can contain consensus digest logs, indicating an epoch transition or
     // a configuration change.
     // TODO: some zero-cost iterator instead
+    // TODO: use a different type
     pub consensus_logs: Vec<definitions::ConsensusLog>,
 }
 

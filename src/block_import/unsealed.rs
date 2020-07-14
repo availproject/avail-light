@@ -22,8 +22,8 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
     /// the other fields.
     ///
-    /// Block headers typically contain a `Seal` item as their last digest log item. This header
-    /// must **not** contain this `Seal` item.
+    /// Block headers typically contain a `Seal` item as their last digest log item. When calling
+    /// the [`verify_unsealed_block`] function, this header must **not** contain any `Seal` item.
     pub block_header: header::HeaderRef<'a>,
 
     /// Body of the block to verify.
@@ -90,39 +90,38 @@ where
     TPaNe: Fn(Vec<u8>) -> TPaNeOut,
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
-    let mut vm = {
-        // TODO: zero-cost
-        let encoded_body_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-            u32::try_from(config.block_body.len()).unwrap(),
-        ));
+    let mut vm = config
+        .runtime
+        .run_vectored("Core_execute_block", {
+            // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
+            // where `body` is a `Vec<Vec<u8>>`. We perform the encoding manually to avoid
+            // performing redundant data copies.
 
-        config
-            .runtime
-            .run_vectored("Core_execute_block", {
-                // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
-                // where `body` is a `Vec<Vec<u8>>`. We do the encoding manually to avoid
-                // performing redundant data copies.
-                let body = config.block_body.flat_map(|ext| {
-                    // TODO: don't allocate
-                    let encoded_ext_len = parity_scale_codec::Encode::encode(
-                        &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
-                    );
+            // TODO: zero-cost
+            let encoded_body_len = parity_scale_codec::Encode::encode(
+                &parity_scale_codec::Compact(u32::try_from(config.block_body.len()).unwrap()),
+            );
 
-                    iter::once(either::Either::Left(encoded_ext_len))
-                        .chain(iter::once(either::Either::Right(ext)))
-                });
+            let body = config.block_body.flat_map(|ext| {
+                // TODO: don't allocate
+                let encoded_ext_len = parity_scale_codec::Encode::encode(
+                    &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
+                );
 
-                config
-                    .block_header
-                    .scale_encoding()
-                    .map(|b| either::Either::Right(either::Either::Left(b)))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        &encoded_body_len[..],
-                    ))))
-                    .chain(body.map(either::Either::Left))
-            })
-            .unwrap()
-    };
+                iter::once(either::Either::Left(encoded_ext_len))
+                    .chain(iter::once(either::Either::Right(ext)))
+            });
+
+            config
+                .block_header
+                .scale_encoding()
+                .map(|b| either::Either::Right(either::Either::Left(b)))
+                .chain(iter::once(either::Either::Right(either::Either::Right(
+                    encoded_body_len,
+                ))))
+                .chain(body.map(either::Either::Left))
+        })
+        .unwrap();
 
     // Pending changes to the top storage trie that this block performs.
     let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
