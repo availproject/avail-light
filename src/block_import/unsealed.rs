@@ -17,12 +17,14 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// block.
     pub runtime: executor::WasmVmPrototype,
 
-    /// Header of the block to verify.
+    /// Header of the block to verify, in SCALE encoding.
     ///
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
     /// the other fields.
-    // TODO: weaker typing
-    pub block_header: &'a crate::block::Header,
+    ///
+    /// Block headers typically contain a `Seal` item as their last digest log item. This header
+    /// must **not** contain this `Seal` item.
+    pub block_header: &'a [u8],
 
     /// Body of the block to verify.
     pub block_body: TBody,
@@ -89,7 +91,7 @@ where
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
     let mut vm = {
-        let encoded_header = parity_scale_codec::Encode::encode(&config.block_header);
+        // TODO: zero-cost
         let encoded_body_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
             u32::try_from(config.block_body.len()).unwrap(),
         ));
@@ -110,7 +112,7 @@ where
                 });
 
                 iter::once(either::Either::Left(either::Either::Right(
-                    &encoded_header[..],
+                    config.block_header,
                 )))
                 .chain(iter::once(either::Either::Left(either::Either::Right(
                     &encoded_body_len[..],

@@ -7,7 +7,7 @@
 //! This data structure is a tree composed of nodes, each node being identified by a key. A key
 //! consists in a sequence of 4-bits values called *nibbles*. Example key: `[3, 12, 7, 0]`.
 //!
-//! Some of these nodes contain a value. These values are inserted by calling [`Trie::insert`].
+//! Some of these nodes contain a value.
 //!
 //! A node A is an *ancestor* of another node B if the key of A is a prefix of the key of B. For
 //! example, the node whose key is `[3, 12]` is an ancestor of the node whose key is

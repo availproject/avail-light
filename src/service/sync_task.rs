@@ -1,7 +1,7 @@
 //! Service task that tries to download blocks from the network.
 
 use super::{block_import_task, network_task};
-use crate::{block, network};
+use crate::{block, header, network};
 
 use alloc::collections::VecDeque;
 use core::num::NonZeroU64;
@@ -90,17 +90,13 @@ pub async fn run_sync_task(mut config: Config) {
             let (tx, rx) = oneshot::channel();
             let header = block.header.unwrap();
             let body = block.body.unwrap();
-            // TODO: don't unwrap
-            let decoded_header =
-                <block::Header as parity_scale_codec::DecodeAll>::decode_all(&header.0).unwrap();
 
             config
                 .to_block_import
                 .start_send(block_import_task::ToBlockImport::Import {
-                    to_execute: block::Block {
-                        header: decoded_header.clone(), // TODO: ideally don't clone? dunno
-                        extrinsics: body.into_iter().map(|e| block::Extrinsic(e.0)).collect(),
-                    },
+                    scale_encoded_header: header.0,
+                    // TODO: overhead
+                    body: body.into_iter().map(|b| b.0).collect(),
                     send_back: tx,
                 })
                 .unwrap();
@@ -142,14 +138,17 @@ pub async fn run_sync_task(mut config: Config) {
                     Err(_) => panic!("Import task closed"),
                 };
 
+                // TODO: redundant
+                let decoded = header::decode(&success.scale_encoded_header).unwrap();
+
                 head_of_chain += 1;
-                assert_eq!(head_of_chain, success.block.header.number);
+                assert_eq!(head_of_chain, decoded.number);
 
                 let result = config
                     .to_service_out
                     .send(super::Event::NewChainHead {
-                        number: success.block.header.number,
-                        hash: success.block.block_hash().0.into(),
+                        number: decoded.number,
+                        hash: header::hash_from_scale_encoded_header(&success.scale_encoded_header),
                         head_update: super::ChainHeadUpdate::FastForward, // TODO: dummy
                         modified_keys: success.modified_keys,
                     })

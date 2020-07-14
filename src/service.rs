@@ -32,7 +32,6 @@ use futures::{
     prelude::*,
 };
 use network::PeerId;
-use primitive_types::H256;
 
 pub use builder::{builder, ServiceBuilder};
 
@@ -85,7 +84,7 @@ pub enum Event {
     /// Database state has been updated for the given block.
     NewChainHead {
         number: u64,
-        hash: H256,
+        hash: [u8; 32],
         head_update: ChainHeadUpdate,
         /// List of keys whose values has been added, removed, or has changed in the storage as a
         /// result of the chain head update.
@@ -97,7 +96,7 @@ pub enum Event {
         /// Number of the finalized block.
         number: u64,
         /// Hash of the finalized block.
-        hash: H256,
+        hash: [u8; 32],
     },
 
     /// Received a block announce from the network.
@@ -105,7 +104,7 @@ pub enum Event {
         /// Block number.
         number: u64,
         /// Block hash.
-        hash: H256,
+        hash: [u8; 32],
     },
 
     /// Networking has detected a new external address.

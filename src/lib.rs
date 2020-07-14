@@ -7,7 +7,7 @@
 extern crate alloc;
 
 pub mod babe;
-pub mod block;
+pub mod block; // TODO: remove
 pub mod block_import;
 pub mod chain_spec;
 pub mod database;

@@ -21,6 +21,7 @@ use crate::{babe, executor, trie::calculate_root};
 use core::{cmp, convert::TryFrom as _, iter};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
+use parity_scale_codec::DecodeAll as _;
 
 mod unsealed;
 
@@ -36,12 +37,11 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
     pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
 
-    /// Header of the block to verify.
+    /// Header of the block to verify, in SCALE encoding.
     ///
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
     /// the other fields.
-    // TODO: weaker typing
-    pub block_header: &'a crate::block::Header,
+    pub block_header: &'a [u8],
 
     /// Body of the block to verify.
     pub block_body: TBody,
@@ -110,20 +110,22 @@ where
 {
     // Start by verifying BABE.
     babe::verify_header(babe::VerifyConfig {
-        // TODO: inefficiency by encoding header
-        scale_encoded_header: &parity_scale_codec::Encode::encode(&config.block_header),
+        scale_encoded_header: config.block_header,
         genesis_configuration: config.babe_genesis_configuration,
     })
     .map_err(Error::BabeVerification)?;
 
     // BABE adds a seal at the end of the digest logs. This seal is guaranteed to be the last
     // item. We need to remove it before we can verify the unsealed header.
-    let mut unsealed_header = config.block_header.clone();
+    // TODO: don't unwrap; also, probably redundant
+    let mut unsealed_header =
+        crate::block::Header::decode_all(&mut &config.block_header[..]).unwrap();
     let _seal_log = unsealed_header.digest.logs.pop().unwrap();
 
     let outcome = unsealed::verify_unsealed_block(unsealed::Config {
         runtime: config.runtime,
-        block_header: &unsealed_header,
+        // TODO: don't reencode
+        block_header: &parity_scale_codec::Encode::encode(&unsealed_header),
         block_body: config.block_body,
         parent_storage_get: config.parent_storage_get,
         parent_storage_keys_prefix: config.parent_storage_keys_prefix,

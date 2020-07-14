@@ -8,7 +8,7 @@
 //! if so appends them to the head of the chain. Only blocks whose parent is the current head of
 //! the chain are considered, and the others discarded.
 
-use crate::{babe, block, block_import, database, executor, trie::calculate_root};
+use crate::{babe, block, block_import, database, executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -28,18 +28,21 @@ pub enum ToBlockImport {
     },
     /// Verify the correctness of a block and apply it on the storage.
     Import {
-        /// Block to try execute.
-        // TODO: weaker typing
-        to_execute: block::Block,
+        /// Header of the block to try to import.
+        scale_encoded_header: Vec<u8>,
+        /// Body of the block to try to import.
+        body: Vec<Vec<u8>>,
         /// Channel where to send back the outcome of the execution.
         send_back: oneshot::Sender<Result<ImportSuccess, ImportError>>,
     },
 }
 
 pub struct ImportSuccess {
-    /// The block that was passed as parameter.
-    // TODO: do we really need to pass it back?
-    pub block: block::Block,
+    /// Header of the block that was passed as parameter.
+    // TODO: return owned decoded header instead
+    pub scale_encoded_header: Vec<u8>,
+    /// Body of the block that was passed as parameter.
+    pub body: Vec<Vec<u8>>,
     /// List of keys that have appeared, disappeared, or whose value has been modified during the
     /// execution of the block.
     pub modified_keys: Vec<Vec<u8>>,
@@ -48,6 +51,8 @@ pub struct ImportSuccess {
 /// Error that can happen when importing a block.
 #[derive(Debug, derive_more::Display)]
 pub enum ImportError {
+    /// Error while decoding header.
+    InvalidHeader(header::Error),
     /// The parent of the block isn't the current best block.
     #[display(fmt = "The parent of the block isn't the current best block.")]
     ParentIsntBest {
@@ -119,11 +124,20 @@ pub async fn run_block_import_task(mut config: Config) {
             }
 
             ToBlockImport::Import {
-                to_execute,
+                scale_encoded_header,
+                body,
                 send_back,
             } => {
+                let decoded_header = match header::decode(&scale_encoded_header) {
+                    Ok(h) => h,
+                    Err(err) => {
+                        let _ = send_back.send(Err(ImportError::InvalidHeader(err)));
+                        return;
+                    }
+                };
+
                 // We only accept blocks whose parent is the current best block.
-                if best_block_hash != <[u8; 32]>::from(to_execute.header.parent_hash) {
+                if best_block_hash != *decoded_header.parent_hash {
                     let _ = send_back.send(Err(ImportError::ParentIsntBest {
                         current_best_hash: best_block_hash,
                     }));
@@ -149,8 +163,8 @@ pub async fn run_block_import_task(mut config: Config) {
                     block_import::verify_block(block_import::Config {
                         runtime: runtime_wasm_blob,
                         babe_genesis_configuration: &config.babe_genesis_config,
-                        block_header: &to_execute.header,
-                        block_body: to_execute.extrinsics.iter().map(|e| &e.0[..]),
+                        block_header: &scale_encoded_header,
+                        block_body: body.iter().map(|e| &e[..]),
                         parent_storage_get: {
                             let local_storage_cache = local_storage_cache.clone();
                             move |key: Vec<u8>| {
@@ -230,7 +244,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 }
                 best_block_number += 1;
                 let current_best_hash = best_block_hash.clone();
-                best_block_hash = to_execute.block_hash().0;
+                best_block_hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
 
                 // Now spawn a database task dedicated entirely to writing the block.
                 (config.tasks_executor)({
@@ -249,8 +263,8 @@ pub async fn run_block_import_task(mut config: Config) {
 
                         let db_import_result = database.insert_new_best(
                             current_best_hash,
-                            &to_execute.header.encode(),
-                            to_execute.extrinsics.iter().map(|e| e.0.to_vec()),
+                            &scale_encoded_header,
+                            body.iter().cloned(),
                             // TODO: we can't use `into_iter()` because the `Clone` trait isn't implemented; should be fixed in hashbrown
                             storage_top_trie_changes
                                 .iter()
@@ -277,7 +291,8 @@ pub async fn run_block_import_task(mut config: Config) {
 
                         // Block has been successfully imported! 🎉
                         let _ = send_back.send(Ok(ImportSuccess {
-                            block: to_execute,
+                            scale_encoded_header,
+                            body,
                             modified_keys: storage_top_trie_changes.keys().cloned().collect(),
                         }));
 

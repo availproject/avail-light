@@ -23,6 +23,20 @@ use blake2::digest::{Input as _, VariableOutput as _};
 use core::convert::TryFrom;
 use parity_scale_codec::{Decode, Encode, EncodeAsRef, EncodeLike, HasCompact, Input, Output};
 
+/// Returns a hash of the SCALE-encoded header.
+pub fn hash_from_scale_encoded_header(header: &[u8]) -> [u8; 32] {
+    let mut out = [0; 32];
+
+    let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
+    hasher.input(header);
+    hasher.variable_result(|result| {
+        debug_assert_eq!(result.len(), 32);
+        out.copy_from_slice(result)
+    });
+
+    out
+}
+
 /// Attempt to decode the given SCALE-encoded header.
 pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<DecodedHeader<'a>, Error> {
     if scale_encoded.len() < 32 + 8 + 32 + 32 {
@@ -118,6 +132,22 @@ pub struct Digest<'a> {
 }
 
 impl<'a> Digest<'a> {
+    /// Pops the last element of the [`Digest`].
+    pub fn pop(&mut self) -> Option<DigestItem<'a>> {
+        let digest_logs_len_minus_one = self.digest_logs_len.checked_sub(1)?;
+
+        let mut iter = self.logs();
+        for _ in 0..digest_logs_len_minus_one {
+            let _item = iter.next();
+            debug_assert!(_item.is_some());
+        }
+
+        self.digest_logs_len = digest_logs_len_minus_one;
+        self.digest = &self.digest[..self.digest.len() - iter.pointer.len()];
+
+        Some(iter.next().unwrap())
+    }
+
     /// Returns an iterator to the log items in this digest.
     pub fn logs(&self) -> LogsIter<'a> {
         LogsIter {
