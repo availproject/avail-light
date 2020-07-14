@@ -127,7 +127,9 @@ pub struct HeaderRef<'a> {
 impl<'a> HeaderRef<'a> {
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of the header.
-    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         // TODO: don't allocate?
         let encoded_number =
             parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(self.number));
@@ -187,7 +189,9 @@ impl<'a> DigestRef<'a> {
 
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of the digest items.
-    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         // TODO: don't allocate?
         let encoded_len =
             parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(self.digest_logs_len));
@@ -249,7 +253,9 @@ pub enum DigestItemRef<'a> {
 impl<'a> DigestItemRef<'a> {
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of that digest item.
-    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         let index = One([match self {
             DigestItemRef::ChangesTrieRoot(_) => 2,
             DigestItemRef::PreRuntime(_, _) => 6,
@@ -259,6 +265,7 @@ impl<'a> DigestItemRef<'a> {
             DigestItemRef::Other(_) => 0,
         }]);
 
+        #[derive(Clone)]
         struct One([u8; 1]);
         impl AsRef<[u8]> for One {
             fn as_ref(&self) -> &[u8] {
@@ -275,60 +282,45 @@ impl<'a> DigestItemRef<'a> {
                     u64::try_from(data.len()).unwrap(),
                 ));
 
-                Box::new(
-                    iter::once(either::Either::Left(index))
-                        .chain(iter::once(either::Either::Right(either::Either::Right(
-                            &engine_id[..],
-                        ))))
-                        .chain(iter::once(either::Either::Right(either::Either::Left(
-                            encoded_len,
-                        ))))
-                        .chain(iter::once(either::Either::Right(either::Either::Right(
-                            data,
-                        )))),
-                )
-                    as Box<
-                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
-                            + 'a,
-                    >
+                let iter = iter::once(either::Either::Left(index))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
+                        &engine_id[..],
+                    ))))
+                    .chain(iter::once(either::Either::Right(either::Either::Left(
+                        encoded_len,
+                    ))))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
+                        data,
+                    ))));
+
+                either::Either::Left(either::Either::Left(iter))
             }
             DigestItemRef::ChangesTrieSignal(ref changes) => {
                 let encoded = parity_scale_codec::Encode::encode(changes);
-                Box::new(iter::once(either::Either::Left(index)).chain(iter::once(
+                let iter = iter::once(either::Either::Left(index)).chain(iter::once(
                     either::Either::Right(either::Either::Left(encoded)),
-                )))
-                    as Box<
-                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
-                            + 'a,
-                    >
+                ));
+                either::Either::Left(either::Either::Right(iter))
             }
             DigestItemRef::ChangesTrieRoot(data) => {
-                Box::new(iter::once(either::Either::Left(index)).chain(iter::once(
+                let iter = iter::once(either::Either::Left(index)).chain(iter::once(
                     either::Either::Right(either::Either::Right(&data[..])),
-                )))
-                    as Box<
-                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
-                            + 'a,
-                    >
+                ));
+                either::Either::Right(either::Either::Left(iter))
             }
             DigestItemRef::Other(data) => {
                 let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
                     u64::try_from(data.len()).unwrap(),
                 ));
 
-                Box::new(
-                    iter::once(either::Either::Left(index))
-                        .chain(iter::once(either::Either::Right(either::Either::Left(
-                            encoded_len,
-                        ))))
-                        .chain(iter::once(either::Either::Right(either::Either::Right(
-                            data,
-                        )))),
-                )
-                    as Box<
-                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
-                            + 'a,
-                    >
+                let iter = iter::once(either::Either::Left(index))
+                    .chain(iter::once(either::Either::Right(either::Either::Left(
+                        encoded_len,
+                    ))))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
+                        data,
+                    ))));
+                either::Either::Right(either::Either::Right(iter))
             }
         }
     }

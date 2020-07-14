@@ -108,24 +108,18 @@ where
                         &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
                     );
 
-                    iter::once(either::Either::Left(either::Either::Left(encoded_ext_len)))
+                    iter::once(either::Either::Left(encoded_ext_len))
                         .chain(iter::once(either::Either::Right(ext)))
                 });
 
-                // TODO: don't allocate buffer; requires changes in the `scale_encoding()` method
-                let header = config
+                config
                     .block_header
                     .scale_encoding()
-                    .fold(Vec::new(), |mut a, b| {
-                        a.extend_from_slice(b.as_ref());
-                        a
-                    });
-
-                iter::once(either::Either::Left(either::Either::Left(header)))
-                    .chain(iter::once(either::Either::Left(either::Either::Right(
+                    .map(|b| either::Either::Right(either::Either::Left(b)))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
                         &encoded_body_len[..],
                     ))))
-                    .chain(body)
+                    .chain(body.map(either::Either::Left))
             })
             .unwrap()
     };
