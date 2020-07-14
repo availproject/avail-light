@@ -20,10 +20,12 @@
 //! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec).
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::convert::TryFrom;
+use core::{convert::TryFrom, iter};
 use parity_scale_codec::{Decode, Encode, EncodeAsRef, EncodeLike, HasCompact, Input, Output};
 
 /// Returns a hash of the SCALE-encoded header.
+///
+/// Does not verify the validity of the header.
 pub fn hash_from_scale_encoded_header(header: &[u8]) -> [u8; 32] {
     let mut out = [0; 32];
 
@@ -38,7 +40,7 @@ pub fn hash_from_scale_encoded_header(header: &[u8]) -> [u8; 32] {
 }
 
 /// Attempt to decode the given SCALE-encoded header.
-pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<DecodedHeader<'a>, Error> {
+pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
     if scale_encoded.len() < 32 + 8 + 32 + 32 {
         return Err(Error::TooShort);
     }
@@ -73,19 +75,19 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<DecodedHeader<'a>, Erro
         }
     }
 
-    Ok(DecodedHeader {
+    Ok(HeaderRef {
         parent_hash,
         number: number.0,
         state_root,
         extrinsics_root,
-        digest: Digest {
+        digest: DigestRef {
             digest_logs_len: digest_logs_len.0,
             digest,
         },
     })
 }
 
-/// Potential error while decoding a header.
+/// Potential error when decoding a header.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Header is not long enough.
@@ -109,7 +111,7 @@ pub enum Error {
 /// Note that the information in there are not guaranteed to be exact. The exactness of the
 /// information depends on the context.
 #[derive(Debug, Clone)]
-pub struct DecodedHeader<'a> {
+pub struct HeaderRef<'a> {
     /// Hash of the parent block stored in the header.
     pub parent_hash: &'a [u8; 32],
     /// Block number stored in the header.
@@ -119,21 +121,47 @@ pub struct DecodedHeader<'a> {
     /// The merkle root of the extrinsics.
     pub extrinsics_root: &'a [u8; 32],
     /// List of auxiliary data appended to the block header.
-    pub digest: Digest<'a>,
+    pub digest: DigestRef<'a>,
+}
+
+impl<'a> HeaderRef<'a> {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of the header.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        // TODO: don't allocate?
+        let encoded_number =
+            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(self.number));
+
+        iter::once(either::Either::Left(either::Either::Left(
+            &self.parent_hash[..],
+        )))
+        .chain(iter::once(either::Either::Left(either::Either::Right(
+            encoded_number,
+        ))))
+        .chain(iter::once(either::Either::Left(either::Either::Left(
+            &self.state_root[..],
+        ))))
+        .chain(iter::once(either::Either::Left(either::Either::Left(
+            &self.extrinsics_root[..],
+        ))))
+        .chain(self.digest.scale_encoding().map(either::Either::Right))
+    }
 }
 
 /// Generic header digest.
 #[derive(Debug, Clone)]
-pub struct Digest<'a> {
+pub struct DigestRef<'a> {
     /// Number of log items in the header.
+    /// Must always match the actual number of items in `digest`. The validity must be verified
+    /// before a [`DigestRef`] object is instantiated.
     digest_logs_len: u64,
-    /// Encoded digest.
+    /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is instantiated.
     digest: &'a [u8],
 }
 
-impl<'a> Digest<'a> {
-    /// Pops the last element of the [`Digest`].
-    pub fn pop(&mut self) -> Option<DigestItem<'a>> {
+impl<'a> DigestRef<'a> {
+    /// Pops the last element of the [`DigestRef`].
+    pub fn pop(&mut self) -> Option<DigestItemRef<'a>> {
         let digest_logs_len_minus_one = self.digest_logs_len.checked_sub(1)?;
 
         let mut iter = self.logs();
@@ -145,6 +173,7 @@ impl<'a> Digest<'a> {
         self.digest_logs_len = digest_logs_len_minus_one;
         self.digest = &self.digest[..self.digest.len() - iter.pointer.len()];
 
+        debug_assert_eq!(iter.remaining_len, 1);
         Some(iter.next().unwrap())
     }
 
@@ -154,6 +183,18 @@ impl<'a> Digest<'a> {
             pointer: self.digest,
             remaining_len: self.digest_logs_len,
         }
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of the digest items.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        // TODO: don't allocate?
+        let encoded_len =
+            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(self.digest_logs_len));
+        iter::once(either::Either::Left(encoded_len)).chain(
+            self.logs()
+                .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
+        )
     }
 }
 
@@ -167,13 +208,14 @@ pub struct LogsIter<'a> {
 }
 
 impl<'a> Iterator for LogsIter<'a> {
-    type Item = DigestItem<'a>;
+    type Item = DigestItemRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining_len == 0 {
             return None;
         }
 
+        // Validity is guaranteed when the `DigestRef` is constructed.
         let (item, new_pointer) = decode_item(self.pointer).unwrap();
         self.pointer = new_pointer;
         self.remaining_len -= 1;
@@ -192,7 +234,7 @@ impl<'a> ExactSizeIterator for LogsIter<'a> {}
 /// A 'referencing view' for digest item. Does not own its contents. Used by
 /// final runtime implementations for encoding/decoding its log items.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum DigestItem<'a> {
+pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
     PreRuntime(&'a [u8; 4], &'a [u8]),
     Consensus(&'a [u8; 4], &'a [u8]),
@@ -202,6 +244,94 @@ pub enum DigestItem<'a> {
     ChangesTrieSignal(ChangesTrieSignal),
     /// Any 'non-system' digest item, opaque to the native code.
     Other(&'a [u8]),
+}
+
+impl<'a> DigestItemRef<'a> {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that digest item.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        let index = One([match self {
+            DigestItemRef::ChangesTrieRoot(_) => 2,
+            DigestItemRef::PreRuntime(_, _) => 6,
+            DigestItemRef::Consensus(_, _) => 4,
+            DigestItemRef::Seal(_, _) => 5,
+            DigestItemRef::ChangesTrieSignal(_) => 7,
+            DigestItemRef::Other(_) => 0,
+        }]);
+
+        struct One([u8; 1]);
+        impl AsRef<[u8]> for One {
+            fn as_ref(&self) -> &[u8] {
+                &self.0[..]
+            }
+        }
+
+        // TODO: don't use Boxes nor Vecs?
+        match *self {
+            DigestItemRef::PreRuntime(engine_id, data)
+            | DigestItemRef::Consensus(engine_id, data)
+            | DigestItemRef::Seal(engine_id, data) => {
+                let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+                    u64::try_from(data.len()).unwrap(),
+                ));
+
+                Box::new(
+                    iter::once(either::Either::Left(index))
+                        .chain(iter::once(either::Either::Right(either::Either::Right(
+                            &engine_id[..],
+                        ))))
+                        .chain(iter::once(either::Either::Right(either::Either::Left(
+                            encoded_len,
+                        ))))
+                        .chain(iter::once(either::Either::Right(either::Either::Right(
+                            data,
+                        )))),
+                )
+                    as Box<
+                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
+                            + 'a,
+                    >
+            }
+            DigestItemRef::ChangesTrieSignal(ref changes) => {
+                let encoded = parity_scale_codec::Encode::encode(changes);
+                Box::new(iter::once(either::Either::Left(index)).chain(iter::once(
+                    either::Either::Right(either::Either::Left(encoded)),
+                )))
+                    as Box<
+                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
+                            + 'a,
+                    >
+            }
+            DigestItemRef::ChangesTrieRoot(data) => {
+                Box::new(iter::once(either::Either::Left(index)).chain(iter::once(
+                    either::Either::Right(either::Either::Right(&data[..])),
+                )))
+                    as Box<
+                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
+                            + 'a,
+                    >
+            }
+            DigestItemRef::Other(data) => {
+                let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+                    u64::try_from(data.len()).unwrap(),
+                ));
+
+                Box::new(
+                    iter::once(either::Either::Left(index))
+                        .chain(iter::once(either::Either::Right(either::Either::Left(
+                            encoded_len,
+                        ))))
+                        .chain(iter::once(either::Either::Right(either::Either::Right(
+                            data,
+                        )))),
+                )
+                    as Box<
+                        dyn Iterator<Item = either::Either<One, either::Either<Vec<u8>, &'a [u8]>>>
+                            + 'a,
+                    >
+            }
+        }
+    }
 }
 
 /// Available changes trie signals.
@@ -240,7 +370,7 @@ pub struct ChangesTrieConfiguration {
 
 /// Decodes a single digest log item. On success, returns the item and the data that remains
 /// after the item.
-fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItem<'a>, &'a [u8]), Error> {
+fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]), Error> {
     let index = *slice.get(0).ok_or(Error::TooShort)?;
     slice = &slice[1..];
 
@@ -258,7 +388,7 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItem<'a>, &'a [u8]), Er
 
             let content = &slice[..len];
             slice = &slice[len..];
-            Ok((DigestItem::Other(content), slice))
+            Ok((DigestItemRef::Other(content), slice))
         }
         4 | 5 | 6 => {
             if slice.len() < 4 {
@@ -282,9 +412,9 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItem<'a>, &'a [u8]), Er
             slice = &slice[len..];
 
             let item = match index {
-                4 => DigestItem::Consensus(engine_id, content),
-                5 => DigestItem::Seal(engine_id, content),
-                6 => DigestItem::PreRuntime(engine_id, content),
+                4 => DigestItemRef::Consensus(engine_id, content),
+                5 => DigestItemRef::Seal(engine_id, content),
+                6 => DigestItemRef::PreRuntime(engine_id, content),
                 _ => unreachable!(),
             };
 
@@ -297,12 +427,12 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItem<'a>, &'a [u8]), Er
 
             let hash: &[u8; 32] = TryFrom::try_from(&slice[0..32]).unwrap();
             slice = &slice[32..];
-            Ok((DigestItem::ChangesTrieRoot(hash), slice))
+            Ok((DigestItemRef::ChangesTrieRoot(hash), slice))
         }
         7 => {
             let item = parity_scale_codec::Decode::decode(&mut slice)
                 .map_err(Error::DigestItemDecodeError)?;
-            Ok((DigestItem::ChangesTrieSignal(item), slice))
+            Ok((DigestItemRef::ChangesTrieSignal(item), slice))
         }
         ty => Err(Error::UnknownDigestLogType(ty)),
     }

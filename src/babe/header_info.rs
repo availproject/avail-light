@@ -51,7 +51,7 @@ pub fn header_information(scale_encoded_header: &[u8]) -> Result<HeaderInfo, Err
         .logs()
         .last()
         .and_then(|l| match l {
-            header::DigestItem::Seal(engine, signature) if engine == b"BABE" => Some(signature),
+            header::DigestItemRef::Seal(engine, signature) if engine == b"BABE" => Some(signature),
             _ => None,
         })
         .ok_or(Error::MissingSeal)?;
@@ -60,7 +60,7 @@ pub fn header_information(scale_encoded_header: &[u8]) -> Result<HeaderInfo, Err
     // content contains the slot claim made by the author.
     let pre_runtime: definitions::PreDigest = {
         let mut pre_runtime_digests = header.digest.logs().filter_map(|l| match l {
-            header::DigestItem::PreRuntime(engine, data) if engine == b"BABE" => Some(data),
+            header::DigestItemRef::PreRuntime(engine, data) if engine == b"BABE" => Some(data),
             _ => None,
         });
         let pre_runtime = pre_runtime_digests
@@ -77,7 +77,7 @@ pub fn header_information(scale_encoded_header: &[u8]) -> Result<HeaderInfo, Err
     // a configuration change.
     let consensus_logs: Vec<definitions::ConsensusLog> = {
         let list = header.digest.logs().filter_map(|l| match l {
-            header::DigestItem::Consensus(engine, data) if engine == b"BABE" => Some(data),
+            header::DigestItemRef::Consensus(engine, data) if engine == b"BABE" => Some(data),
             _ => None,
         });
 

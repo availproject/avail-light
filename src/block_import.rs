@@ -16,7 +16,7 @@
 //! correct.
 //!
 
-use crate::{babe, executor, trie::calculate_root};
+use crate::{babe, executor, header, trie::calculate_root};
 
 use core::{cmp, convert::TryFrom as _, iter};
 use futures::prelude::*;
@@ -117,15 +117,13 @@ where
 
     // BABE adds a seal at the end of the digest logs. This seal is guaranteed to be the last
     // item. We need to remove it before we can verify the unsealed header.
-    // TODO: don't unwrap; also, probably redundant
-    let mut unsealed_header =
-        crate::block::Header::decode_all(&mut &config.block_header[..]).unwrap();
-    let _seal_log = unsealed_header.digest.logs.pop().unwrap();
+    // TODO: don't unwrap; also, decoding redundant
+    let mut unsealed_header = header::decode(&config.block_header).unwrap();
+    let _seal_log = unsealed_header.digest.pop().unwrap();
 
     let outcome = unsealed::verify_unsealed_block(unsealed::Config {
         runtime: config.runtime,
-        // TODO: don't reencode
-        block_header: &parity_scale_codec::Encode::encode(&unsealed_header),
+        block_header: unsealed_header,
         block_body: config.block_body,
         parent_storage_get: config.parent_storage_get,
         parent_storage_keys_prefix: config.parent_storage_keys_prefix,

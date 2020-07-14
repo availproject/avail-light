@@ -4,7 +4,7 @@
 //! signature, using a key known only to the author of the block, of the header of the block
 //! without that seal.
 
-use crate::{executor, trie::calculate_root};
+use crate::{executor, header, trie::calculate_root};
 
 use core::{cmp, convert::TryFrom as _, iter};
 use futures::prelude::*;
@@ -24,7 +24,7 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     ///
     /// Block headers typically contain a `Seal` item as their last digest log item. This header
     /// must **not** contain this `Seal` item.
-    pub block_header: &'a [u8],
+    pub block_header: header::HeaderRef<'a>,
 
     /// Body of the block to verify.
     pub block_body: TBody,
@@ -103,6 +103,7 @@ where
                 // where `body` is a `Vec<Vec<u8>>`. We do the encoding manually to avoid
                 // performing redundant data copies.
                 let body = config.block_body.flat_map(|ext| {
+                    // TODO: don't allocate
                     let encoded_ext_len = parity_scale_codec::Encode::encode(
                         &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
                     );
@@ -111,13 +112,20 @@ where
                         .chain(iter::once(either::Either::Right(ext)))
                 });
 
-                iter::once(either::Either::Left(either::Either::Right(
-                    config.block_header,
-                )))
-                .chain(iter::once(either::Either::Left(either::Either::Right(
-                    &encoded_body_len[..],
-                ))))
-                .chain(body)
+                // TODO: don't allocate buffer; requires changes in the `scale_encoding()` method
+                let header = config
+                    .block_header
+                    .scale_encoding()
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
+                iter::once(either::Either::Left(either::Either::Left(header)))
+                    .chain(iter::once(either::Either::Left(either::Either::Right(
+                        &encoded_body_len[..],
+                    ))))
+                    .chain(body)
             })
             .unwrap()
     };
