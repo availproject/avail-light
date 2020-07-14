@@ -37,11 +37,11 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
     pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
 
-    /// Header of the block to verify, in SCALE encoding.
+    /// Header of the block to verify.
     ///
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
     /// the other fields.
-    pub block_header: &'a [u8],
+    pub block_header: header::HeaderRef<'a>,
 
     /// Body of the block to verify.
     pub block_body: TBody,
@@ -110,15 +110,14 @@ where
 {
     // Start by verifying BABE.
     babe::verify_header(babe::VerifyConfig {
-        scale_encoded_header: config.block_header,
+        header: config.block_header.clone(),
         genesis_configuration: config.babe_genesis_configuration,
     })
     .map_err(Error::BabeVerification)?;
 
     // BABE adds a seal at the end of the digest logs. This seal is guaranteed to be the last
     // item. We need to remove it before we can verify the unsealed header.
-    // TODO: don't unwrap; also, decoding redundant
-    let mut unsealed_header = header::decode(&config.block_header).unwrap();
+    let mut unsealed_header = config.block_header.clone();
     let _seal_log = unsealed_header.digest.pop().unwrap();
 
     let outcome = unsealed::verify_unsealed_block(unsealed::Config {

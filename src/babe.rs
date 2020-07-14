@@ -77,7 +77,7 @@
 //! Because of this, we need to special-case epochs 0 and 1. The information about these two
 //! epochs in particular is contained in the chain-wide BABE configuration found in the runtime.
 
-use crate::executor;
+use crate::{executor, header};
 use parity_scale_codec::DecodeAll as _;
 
 mod definitions;
@@ -97,8 +97,8 @@ pub enum VerifyError {
 
 /// Configuration for [`verify_header`].
 pub struct VerifyConfig<'a> {
-    /// SCALE-encoded header of the block.
-    pub scale_encoded_header: &'a [u8],
+    /// Header of the block to verify.
+    pub header: header::HeaderRef<'a>,
 
     /// BABE configuration retrieved from the genesis block.
     ///
@@ -109,8 +109,7 @@ pub struct VerifyConfig<'a> {
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
 pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
-    let header = header_info::header_information(config.scale_encoded_header)
-        .map_err(VerifyError::BadHeader)?;
+    let header = header_info::header_information(config.header).map_err(VerifyError::BadHeader)?;
 
     if !header.consensus_logs.is_empty() {
         println!("logs: {:?}", header.consensus_logs);

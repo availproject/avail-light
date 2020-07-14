@@ -29,8 +29,6 @@ pub struct HeaderInfo<'a> {
 /// Indicates that the header is malformed.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
-    /// Header passed is of the wrong format.
-    InvalidHeader(header::Error),
     /// The seal (containing the signature of the authority) is missing from the header.
     MissingSeal,
     /// No pre-runtime digest in the block header.
@@ -44,9 +42,7 @@ pub enum Error {
 }
 
 /// Returns the information stored in a certain header.
-pub fn header_information(scale_encoded_header: &[u8]) -> Result<HeaderInfo, Error> {
-    let header = header::decode(scale_encoded_header).map_err(Error::InvalidHeader)?;
-
+pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error> {
     let seal_signature: &[u8] = header
         .digest
         .logs()
