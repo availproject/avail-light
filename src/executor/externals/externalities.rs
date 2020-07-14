@@ -1240,7 +1240,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         //_ => None,
         _f => {
             // TODO: this println is a bit too verbose
-            //println!("unknown function: {}", f);
+            println!("unknown function: {:?}", _f);
             Some(Externality {
                 name: "unknown",
                 call: |_, _| unimplemented!(),

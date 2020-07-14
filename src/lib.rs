@@ -12,6 +12,7 @@ pub mod block_import;
 pub mod chain_spec;
 pub mod database;
 pub mod executor;
+pub mod header;
 pub mod informant;
 pub mod keystore;
 pub mod network;

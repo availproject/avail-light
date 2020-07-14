@@ -113,7 +113,7 @@
 //! certain that this specific key-value indeed belongs to the block with the given hash.
 //!
 
-// TODO: rethink this module; ideally we don't want to tie things together too much
+// TODO: remove this module; we don't want to tie things together too much
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use parity_scale_codec::{
