@@ -75,7 +75,7 @@ pub struct Success {
 }
 
 /// Error that can happen during the verification.
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Error while verifying the unsealed block.
     Unsealed(unsealed::Error),

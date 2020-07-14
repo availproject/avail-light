@@ -84,15 +84,16 @@ mod definitions;
 mod runtime;
 
 pub mod chain_config;
-//pub mod header_info;
+pub mod header_info;
 
 pub use chain_config::BabeGenesisConfiguration;
 
 /// Failure to verify a block.
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, derive_more::Display)]
 pub enum VerifyError {
-    /*/// Error while reading information from the header.
-BadHeader(header_info::Error),*/}
+    /// Error while reading information from the header.
+    BadHeader(header_info::Error),
+}
 
 /// Configuration for [`verify_header`].
 pub struct VerifyConfig<'a> {
@@ -108,14 +109,24 @@ pub struct VerifyConfig<'a> {
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
 pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
-    let _header = crate::header::decode(config.scale_encoded_header).unwrap();
-
-    /*let header_info = header_info::header_information(config.scale_encoded_header)
+    let header = header_info::header_information(config.scale_encoded_header)
         .map_err(VerifyError::BadHeader)?;
 
-    if !consensus_logs.is_empty() {
-        println!("logs: {:?}", consensus_logs);
-    }*/
+    if !header.consensus_logs.is_empty() {
+        println!("logs: {:?}", header.consensus_logs);
+    }
+
+    /*// The signature of the block header applies to the header from where the signature isn't
+    // present.
+    let pre_seal_hash = {
+        let mut unsealed_header = header.clone();
+        let _popped = unsealed_header.digest.logs.pop();
+        debug_assert!(matches!(
+            _popped,
+            Some(crate::block::DigestItem::Seal(_, _))
+        ));
+        unsealed_header.block_hash()
+    };*/
 
     // TODO:
     Ok(())

@@ -119,7 +119,7 @@ pub struct Digest<'a> {
 
 impl<'a> Digest<'a> {
     /// Returns an iterator to the log items in this digest.
-    pub fn logs(&self) -> impl Iterator<Item = DigestItem<'a>> + 'a {
+    pub fn logs(&self) -> LogsIter<'a> {
         LogsIter {
             pointer: self.digest,
             remaining_len: self.digest_logs_len,
