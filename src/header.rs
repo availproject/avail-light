@@ -152,7 +152,7 @@ impl<'a> HeaderRef<'a> {
     /// Builds the hash of the header.
     pub fn hash(&self) -> [u8; 32] {
         let mut out = [0; 32];
-    
+
         let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
         for buffer in self.scale_encoding() {
             hasher.input(buffer.as_ref());
@@ -161,7 +161,7 @@ impl<'a> HeaderRef<'a> {
             debug_assert_eq!(result.len(), 32);
             out.copy_from_slice(result)
         });
-    
+
         out
     }
 }

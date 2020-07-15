@@ -5,7 +5,7 @@ use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
 // TODO: move these definitions locally
-pub use definitions::{ConsensusLog, PreDigest};
+pub use definitions::{NextConfigDescriptor, NextEpochDescriptor, PreDigest};
 
 /// Information successfully extracted from the header.
 #[derive(Debug)]
@@ -16,15 +16,13 @@ pub struct HeaderInfo<'a> {
     /// containing a signature of the rest of the header and made by the author of the block.
     pub seal_signature: &'a [u8],
 
-    /// Slot claim made by the block author.
+    /// Information about the slot claim made by the block author.
     // TODO: use a different type
     pub pre_runtime: PreDigest,
 
-    // Finally, the header can contain consensus digest logs, indicating an epoch transition or
-    // a configuration change.
-    // TODO: some zero-cost iterator instead
-    // TODO: use a different type
-    pub consensus_logs: Vec<ConsensusLog>,
+    /// Information about an epoch change, and additionally potentially to the BABE configuration.
+    // TODO: use different types
+    pub epoch_change: Option<(NextEpochDescriptor, Option<NextConfigDescriptor>)>,
 }
 
 /// Failure to get the information from the header.
@@ -42,6 +40,12 @@ pub enum Error {
     PreRuntimeDigestDecodeError(parity_scale_codec::Error),
     /// Failed to decode a consensus digest.
     ConsensusDigestDecodeError(parity_scale_codec::Error),
+    /// There are multiple epoch descriptor digests in the block header.
+    MultipleEpochDescriptors,
+    /// There are multiple configuration descriptor digests in the block header.
+    MultipleConfigDescriptors,
+    /// Found a configuration change digest without an epoch change digest.
+    UnexpectedConfigDescriptor,
 }
 
 /// Returns the information stored in a certain header.
@@ -74,7 +78,7 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
 
     // Finally, the header can contain consensus digest logs, indicating an epoch transition or
     // a configuration change.
-    let consensus_logs: Vec<ConsensusLog> = {
+    let consensus_logs: Vec<definitions::ConsensusLog> = {
         let list = header.digest.logs().filter_map(|l| match l {
             header::DigestItemRef::Consensus(engine, data) if engine == b"BABE" => Some(data),
             _ => None,
@@ -82,16 +86,43 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
 
         let mut consensus_logs = Vec::with_capacity(header.digest.logs().len());
         for digest in list {
-            let decoded =
-                ConsensusLog::decode_all(&digest).map_err(Error::ConsensusDigestDecodeError)?;
+            let decoded = definitions::ConsensusLog::decode_all(&digest)
+                .map_err(Error::ConsensusDigestDecodeError)?;
             consensus_logs.push(decoded);
         }
         consensus_logs
     };
 
+    // Amongst `consensus_logs`, try to find the epoch and config change logs.
+    let epoch_change = {
+        let mut epoch_change = None;
+        let mut config_change = None;
+
+        for consensus_log in consensus_logs {
+            match consensus_log {
+                definitions::ConsensusLog::NextEpochData(_) if epoch_change.is_some() => {
+                    return Err(Error::MultipleEpochDescriptors)
+                }
+                definitions::ConsensusLog::NextEpochData(data) => epoch_change = Some(data),
+                definitions::ConsensusLog::NextConfigData(_) if config_change.is_some() => {
+                    return Err(Error::MultipleConfigDescriptors)
+                }
+                definitions::ConsensusLog::NextConfigData(data) => config_change = Some(data),
+                definitions::ConsensusLog::OnDisabled(_) => todo!(), // TODO: unimplemented
+            }
+        }
+
+        match (epoch_change, config_change) {
+            (None, Some(_)) => return Err(Error::UnexpectedConfigDescriptor),
+            (None, None) => None,
+            (Some(e), Some(c)) => Some((e, Some(c))),
+            (Some(e), None) => Some((e, None)),
+        }
+    };
+
     Ok(HeaderInfo {
         seal_signature,
         pre_runtime,
-        consensus_logs,
+        epoch_change,
     })
 }

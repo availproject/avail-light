@@ -15,7 +15,7 @@ use hashbrown::{HashMap, HashSet};
 pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
-    pub runtime: executor::WasmVmPrototype,
+    pub parent_runtime: executor::WasmVmPrototype,
 
     /// Header of the block to verify, in SCALE encoding.
     ///
@@ -91,7 +91,7 @@ where
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
     let mut vm = config
-        .runtime
+        .parent_runtime
         .run_vectored("Core_execute_block", {
             // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
             // where `body` is a `Vec<Vec<u8>>`. We perform the encoding manually to avoid

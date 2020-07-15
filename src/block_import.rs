@@ -23,6 +23,8 @@ use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 use parity_scale_codec::DecodeAll as _;
 
+pub use babe::EpochInformation;
+
 mod unsealed;
 
 /// Configuration for a block verification.
@@ -30,7 +32,7 @@ mod unsealed;
 pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
-    pub runtime: executor::WasmVmPrototype,
+    pub parent_runtime: executor::WasmVmPrototype,
 
     /// BABE configuration retrieved from the genesis block.
     ///
@@ -72,8 +74,13 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
 pub struct Success {
     /// Runtime that was passed by [`Config`].
     pub parent_runtime: executor::WasmVmPrototype,
+
+    /// Returns the BABE epoch transition information contained in the verified block, if any.
+    pub babe_epoch_change: Option<EpochInformation>,
+
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
     // TOOD: logs written by the runtime
@@ -114,7 +121,7 @@ where
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
     // Start by verifying BABE.
-    babe::verify_header(babe::VerifyConfig {
+    let babe_verify_success = babe::verify_header(babe::VerifyConfig {
         header: config.block_header.clone(),
         parent_block_header: config.parent_block_header,
         genesis_configuration: config.babe_genesis_configuration,
@@ -127,7 +134,7 @@ where
     let _seal_log = unsealed_header.digest.pop().unwrap();
 
     let outcome = unsealed::verify_unsealed_block(unsealed::Config {
-        runtime: config.runtime,
+        parent_runtime: config.parent_runtime,
         block_header: unsealed_header,
         block_body: config.block_body,
         parent_storage_get: config.parent_storage_get,
@@ -140,6 +147,7 @@ where
 
     Ok(Success {
         parent_runtime: outcome.parent_runtime,
+        babe_epoch_change: babe_verify_success.epoch_change,
         storage_top_trie_changes: outcome.storage_top_trie_changes,
         top_trie_root_calculation_cache: outcome.top_trie_root_calculation_cache,
     })

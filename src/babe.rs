@@ -87,15 +87,6 @@ pub mod header_info;
 
 pub use chain_config::BabeGenesisConfiguration;
 
-/// Failure to verify a block.
-#[derive(Debug, derive_more::Display)]
-pub enum VerifyError {
-    /// Error while reading information from the header.
-    BadHeader(header_info::Error),
-    /// Slot number must be strictly increasing between a parent and its child.
-    SlotNumberNotIncreasing,
-}
-
 /// Configuration for [`verify_header`].
 pub struct VerifyConfig<'a> {
     /// Header of the block to verify.
@@ -115,14 +106,59 @@ pub struct VerifyConfig<'a> {
     pub genesis_configuration: &'a BabeGenesisConfiguration,
 }
 
-/// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
-pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
-    let header = header_info::header_information(config.header).map_err(VerifyError::BadHeader)?;
+/// Information yielded back after successfully verifying a block.
+#[derive(Debug)]
+pub struct VerifySuccess {
+    /// If `Some`, the verified block contains an epoch transition. This epoch transition must
+    /// later be provided back as part of the [`VerifyConfig`] of the blocks that are part of
+    /// that epoch.
+    pub epoch_change: Option<EpochInformation>,
+}
 
-    // TODO: remove
-    if !header.consensus_logs.is_empty() {
-        println!("logs: {:?}", header.consensus_logs);
-    }
+/// Information about an epoch.
+///
+/// Obtained as part of the [`VerifySuccess`] returned after verifying a block.
+#[derive(Debug)]
+pub struct EpochInformation {
+    /// List of authorities that are allowed to sign blocks during this epoch.
+    ///
+    /// The order of the authorities in the list is important, as blocks contain the index, in
+    /// that list, of the authority that signed them.
+    pub authorities: Vec<EpochInformationAuthority>,
+
+    /// High-entropy data that can be used as a source of randomness during this epoch. Built
+    /// using the VRF output of all the blocks in the previous epoch.
+    // TODO: not the previous epoch ^
+    pub randomness: [u8; 32],
+}
+
+/// Information about a specific authority.
+#[derive(Debug)]
+pub struct EpochInformationAuthority {
+    /// Ristretto public key that is authorized to sign blocks.
+    pub public_key: [u8; 32],
+
+    /// An arbitrary weight value applied to this authority.
+    ///
+    /// These values don't have any meaning in the absolute, only relative to each other. An
+    /// authority with twice the weight value as another authority will be able to claim twice as
+    /// many slots.
+    pub weight: u64,
+}
+
+/// Failure to verify a block.
+#[derive(Debug, derive_more::Display)]
+pub enum VerifyError {
+    /// Error while reading information from the header.
+    BadHeader(header_info::Error),
+    /// Slot number must be strictly increasing between a parent and its child.
+    SlotNumberNotIncreasing,
+}
+
+/// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
+pub fn verify_header(config: VerifyConfig) -> Result<VerifySuccess, VerifyError> {
+    let header =
+        header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
     // Slot number of the parent block.
     let parent_slot_number = {
@@ -159,18 +195,28 @@ pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
 
     // TODO: gather current authorities, and verify everything
 
-    /*// The signature of the block header applies to the header from where the signature isn't
-    // present.
+    // The signature in the seal applies to the header from where the signature isn't present.
+    // Build the hash that is expected to be signed.
     let pre_seal_hash = {
-        let mut unsealed_header = header.clone();
-        let _popped = unsealed_header.digest.logs.pop();
-        debug_assert!(matches!(
-            _popped,
-            Some(crate::block::DigestItem::Seal(_, _))
-        ));
-        unsealed_header.block_hash()
-    };*/
+        let mut unsealed_header = config.header;
+        let _popped = unsealed_header.digest.pop();
+        debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
+        unsealed_header.hash()
+    };
 
-    // TODO:
-    Ok(())
+    // TODO: check that epoch change is in header iff it's actually an epoch change
+
+    // TODO: handle config change
+    let epoch_change = header
+        .epoch_change
+        .map(|(epoch_change, _)| EpochInformation {
+            randomness: epoch_change.randomness,
+            authorities: epoch_change
+                .authorities
+                .into_iter()
+                .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
+                .collect(),
+        });
+
+    Ok(VerifySuccess { epoch_change })
 }
