@@ -110,17 +110,23 @@ pub async fn run_block_import_task(mut config: Config) {
     // previous iteration has finished being imported.
     let mut previous_block_database_import_finished = None;
 
-    // Cache of the best block hash.
+    // Cache of the best block header and hash.
     // Since we want to be able to import a block while the database is still importing its
     // parent, we maintain this information in cache.
-    let mut best_block_number = config.database.best_block_number().unwrap();
     let mut best_block_hash = config.database.best_block_hash().unwrap();
+    // TODO: should be an owned decoded block
+    let mut best_block_header = config
+        .database
+        .block_scale_encoded_header(&best_block_hash)
+        .unwrap()
+        .unwrap()
+        .to_vec();
 
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
         match event {
             ToBlockImport::BestBlockNumber { send_back } => {
-                let _ = send_back.send(best_block_number);
+                let _ = send_back.send(header::decode(&best_block_header).unwrap().number);
             }
 
             ToBlockImport::Import {
@@ -165,6 +171,7 @@ pub async fn run_block_import_task(mut config: Config) {
                         babe_genesis_configuration: &config.babe_genesis_config,
                         block_header: decoded_header,
                         block_body: body.iter().map(|e| &e[..]),
+                        parent_block_header: header::decode(&best_block_header).unwrap(),
                         parent_storage_get: {
                             let local_storage_cache = local_storage_cache.clone();
                             move |key: Vec<u8>| {
@@ -242,9 +249,10 @@ pub async fn run_block_import_task(mut config: Config) {
                         local_storage_cache.remove(key);
                     }
                 }
-                best_block_number += 1;
+
                 let current_best_hash = best_block_hash.clone();
                 best_block_hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
+                best_block_header = scale_encoded_header.clone();
 
                 // Now spawn a database task dedicated entirely to writing the block.
                 (config.tasks_executor)({

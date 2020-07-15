@@ -4,6 +4,9 @@ use super::definitions;
 use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
+// TODO: move these definitions locally
+pub use definitions::{ConsensusLog, PreDigest};
+
 /// Information successfully extracted from the header.
 #[derive(Debug)]
 pub struct HeaderInfo<'a> {
@@ -15,13 +18,13 @@ pub struct HeaderInfo<'a> {
 
     /// Slot claim made by the block author.
     // TODO: use a different type
-    pub pre_runtime: definitions::PreDigest,
+    pub pre_runtime: PreDigest,
 
     // Finally, the header can contain consensus digest logs, indicating an epoch transition or
     // a configuration change.
     // TODO: some zero-cost iterator instead
     // TODO: use a different type
-    pub consensus_logs: Vec<definitions::ConsensusLog>,
+    pub consensus_logs: Vec<ConsensusLog>,
 }
 
 /// Failure to get the information from the header.
@@ -55,7 +58,7 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
 
     // Additionally, one of the digest logs of the header must be a BABE pre-runtime digest whose
     // content contains the slot claim made by the author.
-    let pre_runtime: definitions::PreDigest = {
+    let pre_runtime: PreDigest = {
         let mut pre_runtime_digests = header.digest.logs().filter_map(|l| match l {
             header::DigestItemRef::PreRuntime(engine, data) if engine == b"BABE" => Some(data),
             _ => None,
@@ -66,13 +69,12 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
         if pre_runtime_digests.next().is_some() {
             return Err(Error::MultiplePreRuntimeDigests);
         }
-        definitions::PreDigest::decode_all(&pre_runtime)
-            .map_err(Error::PreRuntimeDigestDecodeError)?
+        PreDigest::decode_all(&pre_runtime).map_err(Error::PreRuntimeDigestDecodeError)?
     };
 
     // Finally, the header can contain consensus digest logs, indicating an epoch transition or
     // a configuration change.
-    let consensus_logs: Vec<definitions::ConsensusLog> = {
+    let consensus_logs: Vec<ConsensusLog> = {
         let list = header.digest.logs().filter_map(|l| match l {
             header::DigestItemRef::Consensus(engine, data) if engine == b"BABE" => Some(data),
             _ => None,
@@ -80,8 +82,8 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
 
         let mut consensus_logs = Vec::with_capacity(header.digest.logs().len());
         for digest in list {
-            let decoded = definitions::ConsensusLog::decode_all(&digest)
-                .map_err(Error::ConsensusDigestDecodeError)?;
+            let decoded =
+                ConsensusLog::decode_all(&digest).map_err(Error::ConsensusDigestDecodeError)?;
             consensus_logs.push(decoded);
         }
         consensus_logs

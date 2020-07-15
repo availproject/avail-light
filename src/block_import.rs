@@ -46,6 +46,11 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// Body of the block to verify.
     pub block_body: TBody,
 
+    /// Header of the parent of the block to verify.
+    ///
+    /// The hash of this header must be the one referenced in [`Config::block_header`].
+    pub parent_block_header: header::HeaderRef<'a>,
+
     /// Function that returns the value in the parent's storage correpsonding to the key passed
     /// as parameter. Returns `None` if there is no value associated to this key.
     ///
@@ -111,6 +116,7 @@ where
     // Start by verifying BABE.
     babe::verify_header(babe::VerifyConfig {
         header: config.block_header.clone(),
+        parent_block_header: config.parent_block_header,
         genesis_configuration: config.babe_genesis_configuration,
     })
     .map_err(Error::BabeVerification)?;

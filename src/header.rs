@@ -148,6 +148,22 @@ impl<'a> HeaderRef<'a> {
         ))))
         .chain(self.digest.scale_encoding().map(either::Either::Right))
     }
+
+    /// Builds the hash of the header.
+    pub fn hash(&self) -> [u8; 32] {
+        let mut out = [0; 32];
+    
+        let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
+        for buffer in self.scale_encoding() {
+            hasher.input(buffer.as_ref());
+        }
+        hasher.variable_result(|result| {
+            debug_assert_eq!(result.len(), 32);
+            out.copy_from_slice(result)
+        });
+    
+        out
+    }
 }
 
 /// Generic header digest.
@@ -235,18 +251,14 @@ impl<'a> Iterator for LogsIter<'a> {
 
 impl<'a> ExactSizeIterator for LogsIter<'a> {}
 
-/// A 'referencing view' for digest item. Does not own its contents. Used by
-/// final runtime implementations for encoding/decoding its log items.
+// TODO: document
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
     PreRuntime(&'a [u8; 4], &'a [u8]),
     Consensus(&'a [u8; 4], &'a [u8]),
     Seal(&'a [u8; 4], &'a [u8]),
-    /// Digest item that contains signal from changes tries manager to the
-    /// native code.
     ChangesTrieSignal(ChangesTrieSignal),
-    /// Any 'non-system' digest item, opaque to the native code.
     Other(&'a [u8]),
 }
 
@@ -273,7 +285,7 @@ impl<'a> DigestItemRef<'a> {
             }
         }
 
-        // TODO: don't use Boxes nor Vecs?
+        // TODO: don't use Vecs?
         match *self {
             DigestItemRef::PreRuntime(engine_id, data)
             | DigestItemRef::Consensus(engine_id, data)
@@ -327,6 +339,7 @@ impl<'a> DigestItemRef<'a> {
 }
 
 /// Available changes trie signals.
+// TODO: review documentation
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
 pub enum ChangesTrieSignal {
     /// New changes trie configuration is enacted, starting from **next block**.
@@ -344,6 +357,7 @@ pub enum ChangesTrieSignal {
 }
 
 /// Substrate changes trie configuration.
+// TODO: review documentation
 #[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode)]
 pub struct ChangesTrieConfiguration {
     /// Interval (in blocks) at which level1-digests are created. Digests are not

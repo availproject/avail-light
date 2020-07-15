@@ -20,8 +20,7 @@
 //! >           epoch consists of 2400 slots (in other words, four hours).
 //!
 //! Every block that is produced must belong to a specific slot. This slot number can be found in
-//! the block header, with the exception of the genesis block. Slots are numbered, and the genesis
-//! block implicitly belongs to slot 0.
+//! the block header, with the exception of the genesis block.
 //!
 //! The header of first block produced after a transition to a new epoch must contain a log entry
 //! indicating the public keys that are allowed to sign blocks, alongside with a weight for each of
@@ -93,12 +92,21 @@ pub use chain_config::BabeGenesisConfiguration;
 pub enum VerifyError {
     /// Error while reading information from the header.
     BadHeader(header_info::Error),
+    /// Slot number must be strictly increasing between a parent and its child.
+    SlotNumberNotIncreasing,
 }
 
 /// Configuration for [`verify_header`].
 pub struct VerifyConfig<'a> {
     /// Header of the block to verify.
     pub header: header::HeaderRef<'a>,
+
+    /// Header of the parent of the block to verify.
+    ///
+    /// [`verify_header`] assumes that this block has been successfully verified before.
+    ///
+    /// The hash of this header must be the one referenced in [`VerifyConfig::header`].
+    pub parent_block_header: header::HeaderRef<'a>,
 
     /// BABE configuration retrieved from the genesis block.
     ///
@@ -111,9 +119,45 @@ pub struct VerifyConfig<'a> {
 pub fn verify_header(config: VerifyConfig) -> Result<(), VerifyError> {
     let header = header_info::header_information(config.header).map_err(VerifyError::BadHeader)?;
 
+    // TODO: remove
     if !header.consensus_logs.is_empty() {
         println!("logs: {:?}", header.consensus_logs);
     }
+
+    // Slot number of the parent block.
+    let parent_slot_number = {
+        let parent_info = header_info::header_information(config.parent_block_header).unwrap();
+        match parent_info.pre_runtime {
+            header_info::PreDigest::Primary(digest) => digest.slot_number,
+            header_info::PreDigest::SecondaryPlain(digest) => digest.slot_number,
+            header_info::PreDigest::SecondaryVRF(digest) => digest.slot_number,
+        }
+    };
+
+    // Gather the BABE-related information.
+    let (authority_index, slot_number, primary, vrf_output_and_proof) = match header.pre_runtime {
+        header_info::PreDigest::Primary(digest) => (
+            digest.authority_index,
+            digest.slot_number,
+            true,
+            Some((digest.vrf_output, digest.vrf_proof)),
+        ),
+        header_info::PreDigest::SecondaryPlain(digest) => {
+            (digest.authority_index, digest.slot_number, false, None)
+        }
+        header_info::PreDigest::SecondaryVRF(digest) => (
+            digest.authority_index,
+            digest.slot_number,
+            false,
+            Some((digest.vrf_output, digest.vrf_proof)),
+        ),
+    };
+
+    if slot_number <= parent_slot_number {
+        return Err(VerifyError::SlotNumberNotIncreasing);
+    }
+
+    // TODO: gather current authorities, and verify everything
 
     /*// The signature of the block header applies to the header from where the signature isn't
     // present.
