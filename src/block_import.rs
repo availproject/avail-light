@@ -18,7 +18,7 @@
 
 use crate::{babe, executor, header, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _, iter};
+use core::{cmp, convert::TryFrom as _, iter, time::Duration};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 use parity_scale_codec::DecodeAll as _;
@@ -38,6 +38,10 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     ///
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
     pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
+
+    /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
+    /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
+    pub now_from_unix_epoch: Duration,
 
     /// Header of the block to verify.
     ///
@@ -121,12 +125,20 @@ where
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
 {
     // Start by verifying BABE.
-    let babe_verify_success = babe::verify_header(babe::VerifyConfig {
-        header: config.block_header.clone(),
-        parent_block_header: config.parent_block_header,
-        genesis_configuration: config.babe_genesis_configuration,
-    })
-    .map_err(Error::BabeVerification)?;
+    let babe_verify_success = {
+        let start = babe::start_verify_header(babe::VerifyConfig {
+            header: config.block_header.clone(),
+            parent_block_header: config.parent_block_header,
+            genesis_configuration: config.babe_genesis_configuration,
+            now_from_unix_epoch: config.now_from_unix_epoch,
+        })
+        .map_err(Error::BabeVerification)?;
+
+        match start {
+            babe::SuccessOrPending::Pending(_) => todo!(),
+            babe::SuccessOrPending::Success(success) => success,
+        }
+    };
 
     // BABE adds a seal at the end of the digest logs. This seal is guaranteed to be the last
     // item. We need to remove it before we can verify the unsealed header.

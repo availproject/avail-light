@@ -169,6 +169,10 @@ pub async fn run_block_import_task(mut config: Config) {
                     block_import::verify_block(block_import::Config {
                         parent_runtime: runtime_wasm_blob,
                         babe_genesis_configuration: &config.babe_genesis_config,
+                        now_from_unix_epoch: {
+                            // TODO: is it reasonable to use the stdlib here?
+                            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                        },
                         block_header: decoded_header,
                         block_body: body.iter().map(|e| &e[..]),
                         parent_block_header: header::decode(&best_block_header).unwrap(),

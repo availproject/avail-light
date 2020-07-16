@@ -22,6 +22,10 @@
 //! Every block that is produced must belong to a specific slot. This slot number can be found in
 //! the block header, with the exception of the genesis block.
 //!
+//! At the moment, the slot number is determined purely based on the slot duration (e.g. 6 seconds
+//! for Polkadot) and the local clock based on the UNIX EPOCH. The current slot number is
+//! `unix_timestamp / duration_per_slot`. This might change in the future.
+//!
 //! The header of first block produced after a transition to a new epoch must contain a log entry
 //! indicating the public keys that are allowed to sign blocks, alongside with a weight for each of
 //! them, and a "randomness value". This information does not concern the newly-started epoch, but
@@ -75,8 +79,20 @@
 //!
 //! Because of this, we need to special-case epochs 0 and 1. The information about these two
 //! epochs in particular is contained in the chain-wide BABE configuration found in the runtime.
+//!
+//! # Usage
+//!
+//! Verifying a BABE block is done in two phases:
+//!
+//! - First, call [`start_verify_header`] to start the verification process. This returns a
+//! [`SuccessOrPending`] enum.
+//! - If [`SuccessOrPending::Pending`] has been returned, you need to provide a specific
+//! [`EpochInformation`] struct.
+//!
 
 use crate::{executor, header};
+
+use core::time::Duration;
 use parity_scale_codec::DecodeAll as _;
 
 mod definitions;
@@ -87,14 +103,19 @@ pub mod header_info;
 
 pub use chain_config::BabeGenesisConfiguration;
 
-/// Configuration for [`verify_header`].
+/// Configuration for [`start_verify_header`].
 pub struct VerifyConfig<'a> {
     /// Header of the block to verify.
     pub header: header::HeaderRef<'a>,
 
+    /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
+    /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
+    // TODO: unused, should check against a block's slot
+    pub now_from_unix_epoch: Duration,
+
     /// Header of the parent of the block to verify.
     ///
-    /// [`verify_header`] assumes that this block has been successfully verified before.
+    /// [`start_verify_header`] assumes that this block has been successfully verified before.
     ///
     /// The hash of this header must be the one referenced in [`VerifyConfig::header`].
     pub parent_block_header: header::HeaderRef<'a>,
@@ -127,8 +148,7 @@ pub struct EpochInformation {
     pub authorities: Vec<EpochInformationAuthority>,
 
     /// High-entropy data that can be used as a source of randomness during this epoch. Built
-    /// using the VRF output of all the blocks in the previous epoch.
-    // TODO: not the previous epoch ^
+    /// by the runtime using the VRF output of all the blocks in the previous epoch.
     pub randomness: [u8; 32],
 }
 
@@ -156,57 +176,17 @@ pub enum VerifyError {
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
-pub fn verify_header(config: VerifyConfig) -> Result<VerifySuccess, VerifyError> {
+///
+/// Returns either a [`PendingVerify`] if more information is needed, or a [`VerifySuccess`] if
+/// the verification could be successfully performed.
+pub fn start_verify_header<'a>(
+    config: VerifyConfig<'a>,
+) -> Result<SuccessOrPending<'a>, VerifyError> {
     let header =
         header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
-    // Slot number of the parent block.
-    let parent_slot_number = {
-        let parent_info = header_info::header_information(config.parent_block_header).unwrap();
-        match parent_info.pre_runtime {
-            header_info::PreDigest::Primary(digest) => digest.slot_number,
-            header_info::PreDigest::SecondaryPlain(digest) => digest.slot_number,
-            header_info::PreDigest::SecondaryVRF(digest) => digest.slot_number,
-        }
-    };
-
-    // Gather the BABE-related information.
-    let (authority_index, slot_number, primary, vrf_output_and_proof) = match header.pre_runtime {
-        header_info::PreDigest::Primary(digest) => (
-            digest.authority_index,
-            digest.slot_number,
-            true,
-            Some((digest.vrf_output, digest.vrf_proof)),
-        ),
-        header_info::PreDigest::SecondaryPlain(digest) => {
-            (digest.authority_index, digest.slot_number, false, None)
-        }
-        header_info::PreDigest::SecondaryVRF(digest) => (
-            digest.authority_index,
-            digest.slot_number,
-            false,
-            Some((digest.vrf_output, digest.vrf_proof)),
-        ),
-    };
-
-    if slot_number <= parent_slot_number {
-        return Err(VerifyError::SlotNumberNotIncreasing);
-    }
-
-    // TODO: gather current authorities, and verify everything
-
-    // The signature in the seal applies to the header from where the signature isn't present.
-    // Build the hash that is expected to be signed.
-    let pre_seal_hash = {
-        let mut unsealed_header = config.header;
-        let _popped = unsealed_header.digest.pop();
-        debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
-        unsealed_header.hash()
-    };
-
-    // TODO: check that epoch change is in header iff it's actually an epoch change
-
-    // TODO: handle config change
+    // TODO: as a hack, we just return `Success` right now even though we don't check much; this
+    //       is because the `Pending` variant is unusable
     let epoch_change = header
         .epoch_change
         .map(|(epoch_change, _)| EpochInformation {
@@ -217,6 +197,96 @@ pub fn verify_header(config: VerifyConfig) -> Result<VerifySuccess, VerifyError>
                 .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
                 .collect(),
         });
+    Ok(SuccessOrPending::Success(VerifySuccess { epoch_change }))
+}
 
-    Ok(VerifySuccess { epoch_change })
+/// Verification in progress. The block is **not** fully verified yet. You must call
+/// [`PendingVerify::finish`] in order to finish the verification.
+#[must_use]
+pub enum SuccessOrPending<'a> {
+    Pending(PendingVerify<'a>),
+    Success(VerifySuccess),
+}
+
+/// Verification in progress. The block is **not** fully verified yet. You must call
+/// [`PendingVerify::finish`] in order to finish the verification.
+#[must_use]
+pub struct PendingVerify<'a> {
+    config: VerifyConfig<'a>,
+}
+
+impl<'a> PendingVerify<'a> {
+    // TODO: should provide ways to find out which `EpochInformation` to pass back
+
+    /// Finishes the verification. Must provide the information about the epoch the block belongs
+    /// to.
+    pub fn finish(self, epoch_info: &EpochInformation) -> Result<VerifySuccess, VerifyError> {
+        let header = header_info::header_information(self.config.header.clone())
+            .map_err(VerifyError::BadHeader)?;
+
+        // Gather the BABE-related information.
+        let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
+            header_info::PreDigest::Primary(digest) => (
+                digest.authority_index,
+                digest.slot_number,
+                true,
+                Some((digest.vrf_output, digest.vrf_proof)),
+            ),
+            header_info::PreDigest::SecondaryPlain(digest) => {
+                (digest.authority_index, digest.slot_number, false, None)
+            }
+            header_info::PreDigest::SecondaryVRF(digest) => (
+                digest.authority_index,
+                digest.slot_number,
+                false,
+                Some((digest.vrf_output, digest.vrf_proof)),
+            ),
+        };
+
+        // Slot number of the parent block.
+        let parent_slot_number = {
+            let parent_info =
+                header_info::header_information(self.config.parent_block_header).unwrap();
+            match parent_info.pre_runtime {
+                header_info::PreDigest::Primary(digest) => digest.slot_number,
+                header_info::PreDigest::SecondaryPlain(digest) => digest.slot_number,
+                header_info::PreDigest::SecondaryVRF(digest) => digest.slot_number,
+            }
+        };
+
+        if slot_number <= parent_slot_number {
+            return Err(VerifyError::SlotNumberNotIncreasing);
+        }
+
+        // TODO: gather current authorities, and verify everything
+
+        // The signature in the seal applies to the header from where the signature isn't present.
+        // Build the hash that is expected to be signed.
+        let pre_seal_hash = {
+            let mut unsealed_header = self.config.header;
+            let _popped = unsealed_header.digest.pop();
+            debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
+            unsealed_header.hash()
+        };
+
+        // TODO: check that epoch change is in header iff it's actually an epoch change
+
+        // TODO: in case of epoch change, should also check the randomness value; while the runtime
+        //       checks that the randomness value is correct, light clients in particular do not
+        //       execute the runtime
+
+        // TODO: handle config change
+        let epoch_change = header
+            .epoch_change
+            .map(|(epoch_change, _)| EpochInformation {
+                randomness: epoch_change.randomness,
+                authorities: epoch_change
+                    .authorities
+                    .into_iter()
+                    .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
+                    .collect(),
+            });
+
+        Ok(VerifySuccess { epoch_change })
+    }
 }
