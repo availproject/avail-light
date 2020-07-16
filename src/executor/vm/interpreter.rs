@@ -426,7 +426,7 @@ impl VirtualMachine {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
             None => unreachable!(),

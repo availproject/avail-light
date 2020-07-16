@@ -425,19 +425,19 @@ impl Jit {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory(&self, offset: u32, size: u32) -> Result<Vec<u8>, ()> {
+    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
         let mem = self.memory.as_ref().ok_or(())?;
         let start = usize::try_from(offset).map_err(|_| ())?;
         let end = start
             .checked_add(usize::try_from(size).map_err(|_| ())?)
             .ok_or(())?;
 
-        // TODO: we don't check bounds
+        // TODO: we don't check bounds before slicing, meaning that an out of range will panic
 
         // Soundness: the documentation of wasmtime precisely explains what is safe or not.
         // Basically, we are safe as long as we are sure that we don't potentially grow the
         // buffer (which would invalidate the buffer pointer).
-        unsafe { Ok(mem.data_unchecked()[start..end].to_vec()) }
+        unsafe { Ok(&mem.data_unchecked()[start..end]) }
     }
 
     /// Write the data at the given memory location.

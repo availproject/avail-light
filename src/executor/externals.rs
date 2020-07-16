@@ -255,7 +255,8 @@ impl ExternalsVm {
                     inject_value,
                 } => {
                     self.state = if let Ok(data) = self.vm.read_memory(offset, size) {
-                        inject_value.inject(data);
+                        // TODO: to_vec() overhead
+                        inject_value.inject(data.as_ref().to_vec());
                         StateInner::Calling(calling)
                     } else {
                         StateInner::Trapped
@@ -545,7 +546,7 @@ impl<'a> ReadyToRun<'a> {
                     // TODO: optimization: don't copy memory?
                     self.inner.state =
                         if let Ok(ret_data) = self.inner.vm.read_memory(ret_ptr, ret_len) {
-                            StateInner::Finished(ret_data)
+                            StateInner::Finished(ret_data.as_ref().to_vec()) // TODO: overhead
                         } else {
                             StateInner::NonConforming(NonConformingErr::ReturnedPtrOutOfRange {
                                 pointer: ret_ptr,
@@ -633,7 +634,9 @@ struct MemAccess<'a>(&'a mut vm::VirtualMachine);
 impl<'a> allocator::Memory for MemAccess<'a> {
     fn read_le_u64(&self, ptr: u32) -> Result<u64, allocator::Error> {
         let bytes = self.0.read_memory(ptr, 8).unwrap(); // TODO: convert error
-        Ok(u64::from_le_bytes(<[u8; 8]>::try_from(&bytes[..]).unwrap()))
+        Ok(u64::from_le_bytes(
+            <[u8; 8]>::try_from(bytes.as_ref()).unwrap(),
+        ))
     }
 
     fn write_le_u64(&mut self, ptr: u32, val: u64) -> Result<(), allocator::Error> {
