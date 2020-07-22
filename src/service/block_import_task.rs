@@ -128,10 +128,18 @@ pub async fn run_block_import_task(mut config: Config) {
     // Load the slot number of block #1, or `None` if the database doesn't contain block #1.
     let mut block1_slot_number = match config.database.block_hash_by_number(1).unwrap() {
         Some(block_hash) => {
-            let block1_header = config.database.block_scale_encoded_header(&block_hash).unwrap().unwrap();
+            let block1_header = config
+                .database
+                .block_scale_encoded_header(&block_hash)
+                .unwrap()
+                .unwrap();
             let decoded = header::decode(&block1_header).unwrap();
-            Some(babe::header_info::header_information(decoded).unwrap().slot_number())
-        },
+            Some(
+                babe::header_info::header_information(decoded)
+                    .unwrap()
+                    .slot_number(),
+            )
+        }
         None => None,
     };
 

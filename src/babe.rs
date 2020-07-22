@@ -27,14 +27,16 @@
 //! 6 seconds for Polkadot) and the local clock based on the UNIX EPOCH. The current slot
 //! number is `unix_timestamp / duration_per_slot`. This might change in the future.
 //!
-//! The first epoch ends at `slot_number(block #1) + slots_per_epoch - 1`. After that, all epochs
-//! end at `end_of_previous_epoch + slots_per_epoch`.
+//! The first epoch starts at `slot_number(block #1)` and ends at
+//! `slot_number(block #1) + slots_per_epoch`. The second epoch starts at slot
+//! `end_of_epoch_1 + 1`. All epochs end at `start_of_new_epoch + slots_per_epoch`. Block #0
+//! doesn't belong to any epoch.
 //!
-//! The header of first block produced after a transition to a new epoch must contain a log entry
-//! indicating the public keys that are allowed to sign blocks, alongside with a weight for each of
-//! them, and a "randomness value". This information does not concern the newly-started epoch, but
-//! the one immediately after. In other words, the first block of epoch `N` contains the
-//! information about epoch `N+1`.
+//! The header of first block produced after a transition to a new epoch (including block #1) must
+//! contain a log entry indicating the public keys that are allowed to sign blocks, alongside with
+//! a weight for each of them, and a "randomness value". This information does not concern the
+//! newly-started epoch, but the one immediately after. In other words, the first block of epoch
+//! `N` contains the information about epoch `N+1`.
 //!
 //! > **Note**: The way the list of authorities and their weights is determined is at the
 //! >           discretion of the runtime code and is out of scope of this module, but it normally
@@ -225,21 +227,27 @@ pub fn start_verify_header<'a>(
 
     // Determine the epoch number of the block that we verify.
     let epoch_number = match (slot_number, config.block1_slot_number) {
-        (curr, Some(block1)) => slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap(), // TODO: don't unwrap
+        (curr, Some(block1)) => {
+            slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap()
+        } // TODO: don't unwrap
         (_, None) if config.header.number == 1 => 0,
         (_, None) => panic!(),
     };
 
-    // Determine the epoch number of the parent block.
+    // Determine the epoch number of the parent block. `None` if the parent is the genesis block.
     let parent_epoch_number = if config.parent_block_header.number != 0 {
-        let parent_info = header_info::header_information(config.parent_block_header.clone()).unwrap();
-        if config.parent_block_header.number != 1 {
-            slot_number_to_epoch(parent_info.slot_number(), config.genesis_configuration, config.block1_slot_number.unwrap()).unwrap()
-        } else {
-            0
-        }
+        let parent_info =
+            header_info::header_information(config.parent_block_header.clone()).unwrap();
+        Some(
+            slot_number_to_epoch(
+                parent_info.slot_number(),
+                config.genesis_configuration,
+                config.block1_slot_number.unwrap(),
+            )
+            .unwrap(),
+        )
     } else {
-        0
+        None
     };
 
     let epoch_change = header
@@ -254,10 +262,10 @@ pub fn start_verify_header<'a>(
         });
 
     // Make sure that the expected epoch transitions corresponds to what the block reports.
-    match (&epoch_change, epoch_number != parent_epoch_number) {
-        (Some(_), true) => {},
-        (None, false) => {},
-        (Some(_), false) => { println!("num = {:?}", config.header.number); return Err(VerifyError::UnexpectedEpochChangeLog)},
+    match (&epoch_change, Some(epoch_number) != parent_epoch_number) {
+        (Some(_), true) => {}
+        (None, false) => {}
+        (Some(_), false) => return Err(VerifyError::UnexpectedEpochChangeLog),
         (None, true) => return Err(VerifyError::MissingEpochChangeLog),
     };
 
@@ -366,7 +374,11 @@ impl<'a> PendingVerify<'a> {
 /// Turns a slot number into an epoch number.
 ///
 /// Returns an error if `slot_number` is inferior to `block1_slot_number`.
-fn slot_number_to_epoch(slot_number: u64, genesis_config: &BabeGenesisConfiguration, block1_slot_number: u64) -> Result<u64, ()> {
+fn slot_number_to_epoch(
+    slot_number: u64,
+    genesis_config: &BabeGenesisConfiguration,
+    block1_slot_number: u64,
+) -> Result<u64, ()> {
     let slots_diff = slot_number.checked_sub(block1_slot_number).ok_or(())?;
-    Ok((slots_diff.checked_add(1).ok_or(())?) / genesis_config.slots_per_epoch())
+    Ok(slots_diff / genesis_config.slots_per_epoch())
 }
