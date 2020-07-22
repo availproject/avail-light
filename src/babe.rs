@@ -61,18 +61,19 @@
 //! additionally assigned to a specific public key amongst the ones allowed. The owner of a
 //! public key is always allowed to generate a block during the slot assigned to it.
 //!
-//! The mechanism of attributing each slot to a public key is called "secondary slots", while the
-//! mechanism of generating a number below a certain threshold is called "primary slots". As their
-//! name indicates, primary slots have a higher priority over secondary slots.
+//! The mechanism of attributing each slot to a public key is called "secondary slot claims",
+//! while the mechanism of generating a number below a certain threshold is called a "primary
+//! slot claim". As their name indicates, primary slot claims have a higher priority over
+//! secondary slot claims.
 //!
-//! Secondary slots are a way to guarantee that all slots can potentially lead to a block being
-//! produced.
+//! Secondary slot claims are a way to guarantee that all slots can potentially lead to a block
+//! being produced.
 //!
 //! ## Chain selection
 //!
 //! The "best" block of a chain in the BABE algorithm is the one with the highest slot number.
 //! If there exists multiple blocks on the same slot, the best block is one with the highest number
-//! of primary slots claimed. In other words, if two blocks have the same parent, but one is a
+//! of primary slot claims. In other words, if two blocks have the same parent, but one is a
 //! primary slot claim and the other is a secondary slot claim, we prefer the one with the primary
 //! slot claim.
 //!
@@ -315,7 +316,7 @@ pub struct PendingVerify<'a> {
     slot_number: u64,
     /// Index of the authority that has signed the block, according to the block header.
     authority_index: u32,
-    /// If true, the slot claim is a primary slot. If false, a secondary slot.
+    /// If true, the slot claim is a primary claim. If false, a secondary claim.
     primary_slot_claim: bool,
     /// VRF output and proof contained in the block header. Cannot be `None` if
     /// `primary_slot_claim` is true.
