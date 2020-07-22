@@ -27,8 +27,8 @@
 //! 6 seconds for Polkadot) and the local clock based on the UNIX EPOCH. The current slot
 //! number is `unix_timestamp / duration_per_slot`. This might change in the future.
 //!
-//! The first epoch starts at `slot_number(block #1)` and ends at
-//! `slot_number(block #1) + slots_per_epoch`. The second epoch starts at slot
+//! The first epoch (epoch number 0) starts at `slot_number(block #1)` and ends at
+//! `slot_number(block #1) + slots_per_epoch`. The second epoch (epoch #1) starts at slot
 //! `end_of_epoch_1 + 1`. All epochs end at `start_of_new_epoch + slots_per_epoch`. Block #0
 //! doesn't belong to any epoch.
 //!
