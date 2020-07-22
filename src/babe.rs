@@ -179,6 +179,8 @@ pub enum VerifyError {
     BadSignature,
     /// VRF proof in the block header is invalid.
     BadVrfProof,
+    /// Block is a secondary slot claim and its author is not the expected author.
+    BadSecondarySlotAuthor,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
@@ -329,6 +331,8 @@ impl<'a> PendingVerify<'a> {
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`PendingVerify::epoch_number`].
     pub fn finish(self, epoch_info: &EpochInformation) -> Result<VerifySuccess, VerifyError> {
+        // TODO: check that slot type is allowed by BABE config
+
         // Fetch the authority that has supposedly signed the block.
         let signing_authority = epoch_info
             .authorities
@@ -361,8 +365,6 @@ impl<'a> PendingVerify<'a> {
                 .map_err(|_| VerifyError::BadSignature)?;
         }
 
-        // TODO: check that slot type is allowed by BABE config
-
         // Now verify the VRF.
         if let Some((vrf_output, vrf_proof)) = self.vrf_output_and_proof {
             // In order to verify the VRF output, we first need to create a transcript containing all
@@ -380,16 +382,45 @@ impl<'a> PendingVerify<'a> {
             let vrf_output = schnorrkel::vrf::VRFOutput::from_bytes(&vrf_output[..]).unwrap();
             let vrf_proof = schnorrkel::vrf::VRFProof::from_bytes(&vrf_proof[..]).unwrap();
 
-            signing_public_key
+            let (vrf_in_out, _) = signing_public_key
                 .vrf_verify(transcript, &vrf_output, &vrf_proof)
                 .map_err(|_| VerifyError::BadVrfProof)?;
+
+            // If this is a primary slot claim, we need to make sure that the VRF output is below
+            // a certain threshold, otherwise all the authorities could claim all the slots.
+            if self.primary_slot_claim {
+                // TODO: not implemented
+            }
         } else {
-            panic!() // TODO:
+            debug_assert!(self.primary_slot_claim);
         }
 
-        // TODO: need to check number threshold in case of primary slot
-        // TODO: need to check expected author against actual author in case of secondary slot
+        // Each slot can be claimed by one specific authority in what is called a secondary slot
+        // claim. If the block is a secondary slot claim, we need to make sure that the author
+        // is indeed the one that is expected.
+        if !self.primary_slot_claim {
+            // Expected author is determined based on `blake2_256(randomness | slot_number)`.
+            let hash = {
+                let mut hash = blake2_rfc::blake2b::Blake2b::new(32);
+                hash.update(&epoch_info.randomness);
+                hash.update(&self.slot_number.to_le_bytes());
+                hash.finalize()
+            };
 
+            // The expected authority index is `hash % num_authorities`.
+            let expected_authority_index = {
+                let hash = primitive_types::U256::from_big_endian(hash.as_bytes());
+                let authorities_len = primitive_types::U256::from(epoch_info.authorities.len());
+                debug_assert!(!epoch_info.authorities.is_empty());
+                hash % authorities_len
+            };
+
+            if expected_authority_index.as_u32() != self.authority_index {
+                return Err(VerifyError::BadSecondarySlotAuthor);
+            }
+        }
+
+        // Success! 🚀
         Ok(VerifySuccess {
             epoch_change: self.epoch_change,
             slot_number: self.slot_number,
@@ -414,28 +445,68 @@ fn slot_number_to_epoch(
 /*
 
 
-/// Get the expected secondary author for the given slot and with given
-/// authorities. This should always assign the slot to some authority unless the
-/// authorities list is empty.
-pub(super) fn secondary_slot_author(
-    slot_number: u64,
+/// Calculates the primary selection threshold for a given authority, taking
+/// into account `c` (`1 - c` represents the probability of a slot being empty).
+pub(super) fn calculate_primary_threshold(
+    c: (u64, u64),
     authorities: &[(AuthorityId, BabeAuthorityWeight)],
-    randomness: [u8; 32],
-) -> Option<&AuthorityId> {
-    if authorities.is_empty() {
-        return None;
-    }
+    authority_index: usize,
+) -> u128 {
+    use num_bigint::BigUint;
+    use num_rational::BigRational;
+    use num_traits::{cast::ToPrimitive, identities::One};
 
-    let rand = U256::from((randomness, slot_number).using_encoded(blake2_256));
+    let c = c.0 as f64 / c.1 as f64;
 
-    let authorities_len = U256::from(authorities.len());
-    let idx = rand % authorities_len;
+    let theta =
+        authorities[authority_index].1 as f64 /
+        authorities.iter().map(|(_, weight)| weight).sum::<u64>() as f64;
 
-    let expected_author = authorities.get(idx.as_u32() as usize)
-        .expect("authorities not empty; index constrained to list length; \
-                this is a valid index; qed");
+    assert!(theta > 0.0, "authority with weight 0.");
 
-    Some(&expected_author.0)
+    // NOTE: in the equation `p = 1 - (1 - c)^theta` the value of `p` is always
+    // capped by `c`. For all pratical purposes `c` should always be set to a
+    // value < 0.5, as such in the computations below we should never be near
+    // edge cases like `0.999999`.
+
+    let p = BigRational::from_float(1f64 - (1f64 - c).powf(theta)).expect(
+        "returns None when the given value is not finite; \
+         c is a configuration parameter defined in (0, 1]; \
+         theta must be > 0 if the given authority's weight is > 0; \
+         theta represents the validator's relative weight defined in (0, 1]; \
+         powf will always return values in (0, 1] given both the \
+         base and exponent are in that domain; \
+         qed.",
+    );
+
+    let numer = p.numer().to_biguint().expect(
+        "returns None when the given value is negative; \
+         p is defined as `1 - n` where n is defined in (0, 1]; \
+         p must be a value in [0, 1); \
+         qed."
+    );
+
+    let denom = p.denom().to_biguint().expect(
+        "returns None when the given value is negative; \
+         p is defined as `1 - n` where n is defined in (0, 1]; \
+         p must be a value in [0, 1); \
+         qed."
+    );
+
+    ((BigUint::one() << 128) * numer / denom).to_u128().expect(
+        "returns None if the underlying value cannot be represented with 128 bits; \
+         we start with 2^128 which is one more than can be represented with 128 bits; \
+         we multiple by p which is defined in [0, 1); \
+         the result must be lower than 2^128 by at least one and thus representable with 128 bits; \
+         qed.",
+    )
 }
 
+
 */
+
+/*/// Returns true if the given VRF output is lower than the given threshold,
+/// false otherwise.
+pub(super) fn check_primary_threshold(inout: &VRFInOut, threshold: u128) -> bool {
+    u128::from_le_bytes(inout.make_bytes::<[u8; 16]>(BABE_VRF_PREFIX)) < threshold
+}*/
