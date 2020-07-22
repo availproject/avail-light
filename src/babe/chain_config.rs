@@ -1,4 +1,4 @@
-use super::definitions;
+use super::{definitions, header_info};
 use crate::executor;
 
 use core::convert::TryFrom as _;
@@ -82,12 +82,33 @@ impl BabeGenesisConfiguration {
         Ok((outcome, vm.into_prototype()))
     }
 
+    // TODO: docs
     pub fn slot_duration(&self) -> u64 {
         self.inner.slot_duration
     }
 
+    // TODO: docs
     pub fn slots_per_epoch(&self) -> u64 {
         self.inner.epoch_length
+    }
+
+    // TODO: docs
+    // TODO: build this initially and return a reference instead
+    pub fn epoch0_configuration(&self) -> header_info::EpochInformation {
+        header_info::EpochInformation {
+            randomness: self.inner.randomness,
+            authorities: self
+                .inner
+                .genesis_authorities
+                .iter()
+                .map(
+                    |(public_key, weight)| header_info::EpochInformationAuthority {
+                        public_key: *public_key,
+                        weight: *weight,
+                    },
+                )
+                .collect(),
+        }
     }
 }
 

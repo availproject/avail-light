@@ -5,7 +5,7 @@ use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
 // TODO: move these definitions locally
-pub use definitions::{NextConfigDescriptor, NextEpochDescriptor, PreDigest};
+pub use definitions::{NextConfigDescriptor, PreDigest};
 
 /// Information successfully extracted from the header.
 #[derive(Debug)]
@@ -21,8 +21,8 @@ pub struct HeaderInfo<'a> {
     pub pre_runtime: PreDigest,
 
     /// Information about an epoch change, and additionally potentially to the BABE configuration.
-    // TODO: use different types
-    pub epoch_change: Option<(NextEpochDescriptor, Option<NextConfigDescriptor>)>,
+    // TODO: replace `NextConfigDescriptor` with different type
+    pub epoch_change: Option<(EpochInformation, Option<NextConfigDescriptor>)>,
 }
 
 impl<'a> HeaderInfo<'a> {
@@ -34,6 +34,36 @@ impl<'a> HeaderInfo<'a> {
             PreDigest::SecondaryVRF(digest) => digest.slot_number,
         }
     }
+}
+
+/// Information about an epoch.
+///
+/// Obtained as part of the [`VerifySuccess`] returned after verifying a block.
+#[derive(Debug, Clone)]
+pub struct EpochInformation {
+    /// List of authorities that are allowed to sign blocks during this epoch.
+    ///
+    /// The order of the authorities in the list is important, as blocks contain the index, in
+    /// that list, of the authority that signed them.
+    pub authorities: Vec<EpochInformationAuthority>,
+
+    /// High-entropy data that can be used as a source of randomness during this epoch. Built
+    /// by the runtime using the VRF output of all the blocks in the previous epoch.
+    pub randomness: [u8; 32],
+}
+
+/// Information about a specific authority.
+#[derive(Debug, Clone)]
+pub struct EpochInformationAuthority {
+    /// Ristretto public key that is authorized to sign blocks.
+    pub public_key: [u8; 32],
+
+    /// An arbitrary weight value applied to this authority.
+    ///
+    /// These values don't have any meaning in the absolute, only relative to each other. An
+    /// authority with twice the weight value as another authority will be able to claim twice as
+    /// many slots.
+    pub weight: u64,
 }
 
 /// Failure to get the information from the header.
@@ -122,6 +152,15 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
                 definitions::ConsensusLog::OnDisabled(_) => todo!(), // TODO: unimplemented
             }
         }
+
+        let epoch_change = epoch_change.map(|epoch| EpochInformation {
+            randomness: epoch.randomness,
+            authorities: epoch
+                .authorities
+                .into_iter()
+                .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
+                .collect(),
+        });
 
         match (epoch_change, config_change) {
             (None, Some(_)) => return Err(Error::UnexpectedConfigDescriptor),

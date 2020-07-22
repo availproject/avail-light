@@ -16,6 +16,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
+use hashbrown::HashMap;
 use parking_lot::Mutex;
 
 /// Message that can be sent to the block import task by the other parts of the code.
@@ -143,6 +144,10 @@ pub async fn run_block_import_task(mut config: Config) {
         None => None,
     };
 
+    // Cache of the information about BABE epochs.
+    // TODO: should be an LRU cache
+    let mut babe_epoch_info_cache: HashMap<u64, babe::EpochInformation> = HashMap::new();
+
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
         match event {
@@ -238,6 +243,10 @@ pub async fn run_block_import_task(mut config: Config) {
                                 async move { ret }
                             }
                         },
+                        babe_epoch_information_get: |epoch_num| {
+                            // TODO: don't unwrap!
+                            babe_epoch_info_cache.get(&epoch_num).unwrap().clone()
+                        },
                         top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
                     })
                     .await
@@ -278,6 +287,9 @@ pub async fn run_block_import_task(mut config: Config) {
                 if decoded_header.number == 1 {
                     assert!(block1_slot_number.is_none());
                     block1_slot_number = Some(import_result.slot_number);
+                }
+                if let Some(epoch_change) = import_result.babe_epoch_change {
+                    babe_epoch_info_cache.insert(epoch_change.info_epoch_number, epoch_change.info);
                 }
 
                 let current_best_hash = best_block_hash.clone();

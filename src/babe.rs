@@ -106,6 +106,7 @@ pub mod chain_config;
 pub mod header_info;
 
 pub use chain_config::BabeGenesisConfiguration;
+pub use header_info::{EpochInformation, EpochInformationAuthority};
 
 /// Configuration for [`start_verify_header`].
 pub struct VerifyConfig<'a> {
@@ -150,40 +151,15 @@ pub struct VerifySuccess {
 /// Information about a change of epoch.
 #[derive(Debug)]
 pub struct EpochChangeInformation {
-    /// Number of the new epoch we transitioned to.
-    pub epoch_number: u64,
-    /// Information about this new epoch.
+    /// Number of the new epoch that `info` described.
+    ///
+    /// > **Note**: This is **not** the epoch that we have just entered.
+    pub info_epoch_number: u64,
+
+    /// Information about the next epoch.
+    ///
+    /// > **Note**: This is **not** the epoch that we have just entered, but the next one.
     pub info: EpochInformation,
-}
-
-/// Information about an epoch.
-///
-/// Obtained as part of the [`VerifySuccess`] returned after verifying a block.
-#[derive(Debug)]
-pub struct EpochInformation {
-    /// List of authorities that are allowed to sign blocks during this epoch.
-    ///
-    /// The order of the authorities in the list is important, as blocks contain the index, in
-    /// that list, of the authority that signed them.
-    pub authorities: Vec<EpochInformationAuthority>,
-
-    /// High-entropy data that can be used as a source of randomness during this epoch. Built
-    /// by the runtime using the VRF output of all the blocks in the previous epoch.
-    pub randomness: [u8; 32],
-}
-
-/// Information about a specific authority.
-#[derive(Debug)]
-pub struct EpochInformationAuthority {
-    /// Ristretto public key that is authorized to sign blocks.
-    pub public_key: [u8; 32],
-
-    /// An arbitrary weight value applied to this authority.
-    ///
-    /// These values don't have any meaning in the absolute, only relative to each other. An
-    /// authority with twice the weight value as another authority will be able to claim twice as
-    /// many slots.
-    pub weight: u64,
 }
 
 /// Failure to verify a block.
@@ -269,19 +245,10 @@ pub fn start_verify_header<'a>(
     };
 
     // Extract the epoch change information stored in the header, if any.
-    let epoch_change = header
-        .epoch_change
-        .map(|(epoch_change, _)| EpochChangeInformation {
-            epoch_number,
-            info: EpochInformation {
-                randomness: epoch_change.randomness,
-                authorities: epoch_change
-                    .authorities
-                    .into_iter()
-                    .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
-                    .collect(),
-            },
-        });
+    let epoch_change = header.epoch_change.map(|(info, _)| EpochChangeInformation {
+        info_epoch_number: epoch_number + 1,
+        info,
+    });
 
     // TODO: in case of epoch change, should also check the randomness value; while the runtime
     //       checks that the randomness value is correct, light clients in particular do not
@@ -295,19 +262,34 @@ pub fn start_verify_header<'a>(
         (None, true) => return Err(VerifyError::MissingEpochChangeLog),
     };
 
-    // TODO: as a hack, we just return `Success` right now even though we don't check much; this
-    //       is because the `Pending` variant is unusable
-    Ok(SuccessOrPending::Success(VerifySuccess {
+    // Intermediary object representing the state of the verification at this point.
+    let pending = PendingVerify {
+        header: config.header,
+        seal_signature: header.seal_signature,
         epoch_change,
+        epoch_number,
         slot_number,
-    }))
+        authority_index,
+    };
+
+    // The information about epoch number 0 is never given by any block and is instead found in
+    // the BABE genesis configuration.
+    Ok(if epoch_number == 0 {
+        SuccessOrPending::Success(
+            pending.finish(&config.genesis_configuration.epoch0_configuration())?,
+        )
+    } else {
+        SuccessOrPending::Pending(pending)
+    })
 }
 
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
 pub enum SuccessOrPending<'a> {
+    /// Need information about an epoch in order to finish verifying the block.
     Pending(PendingVerify<'a>),
+    /// Block has been successfully verified.
     Success(VerifySuccess),
 }
 
@@ -315,12 +297,14 @@ pub enum SuccessOrPending<'a> {
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
 pub struct PendingVerify<'a> {
-    // TODO: replace with something else?
-    config: VerifyConfig<'a>,
+    /// Header of the block to verify.
+    header: header::HeaderRef<'a>,
     /// Block signature contained in the header that we verify.
     seal_signature: &'a [u8],
     /// If `Some`, block is at an epoch transition.
     epoch_change: Option<EpochChangeInformation>,
+    /// Epoch number the block belongs to.
+    epoch_number: u64,
     /// Slot number the block belongs to.
     slot_number: u64,
     /// Index of the authority that has signed the block, according to the block header.
@@ -328,10 +312,13 @@ pub struct PendingVerify<'a> {
 }
 
 impl<'a> PendingVerify<'a> {
-    // TODO: should provide ways to find out which `EpochInformation` to pass back
+    /// Returns the epoch number whose information must be passed to [`PendingVerify::finish`].
+    pub fn epoch_number(&self) -> u64 {
+        self.epoch_number
+    }
 
-    /// Finishes the verification. Must provide the information about the epoch the block belongs
-    /// to.
+    /// Finishes the verification. Must provide the information about the epoch whose number is
+    /// obtained with [`PendingVerify::epoch_number`].
     pub fn finish(self, epoch_info: &EpochInformation) -> Result<VerifySuccess, VerifyError> {
         // Fetch the authority that has supposedly signed the block.
         let signing_authority = epoch_info
@@ -342,6 +329,8 @@ impl<'a> PendingVerify<'a> {
             )
             .ok_or(VerifyError::InvalidAuthorityIndex)?;
 
+        // This `unwrap()` can only panic if `public_key` is the wrong length, which we know can't
+        // happen as it's of type `[u8; 32]`.
         let signing_public_key =
             schnorrkel::PublicKey::from_bytes(&signing_authority.public_key).unwrap();
 
@@ -352,7 +341,7 @@ impl<'a> PendingVerify<'a> {
             // The signature in the seal applies to the header from where the signature isn't present.
             // Build the hash that is expected to be signed.
             let pre_seal_hash = {
-                let mut unsealed_header = self.config.header;
+                let mut unsealed_header = self.header;
                 let _popped = unsealed_header.digest.pop();
                 debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
                 unsealed_header.hash()

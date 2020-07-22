@@ -27,7 +27,7 @@ mod unsealed;
 
 /// Configuration for a block verification.
 // TODO: don't pass functions to the Config; instead, have a state-machine-like API
-pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
+pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe, TEGet> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
     pub parent_runtime: executor::WasmVmPrototype,
@@ -74,6 +74,9 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// passed as parameter. Returns `None` if this is the last key.
     pub parent_storage_next_key: TPaNe,
 
+    /// Function that returns the BABE epoch information from a given epoch number.
+    pub babe_epoch_information_get: TEGet,
+
     /// Optional cache corresponding to the storage trie root hash calculation.
     pub top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
 }
@@ -83,7 +86,8 @@ pub struct Success {
     /// Runtime that was passed by [`Config`].
     pub parent_runtime: executor::WasmVmPrototype,
 
-    /// Returns the BABE epoch transition information contained in the verified block, if any.
+    /// If `Some`, the block is the first block of a new BABE epoch. Returns the information about
+    /// the epoch.
     pub babe_epoch_change: Option<babe::EpochChangeInformation>,
 
     /// Slot number the block belongs to.
@@ -117,8 +121,9 @@ pub async fn verify_block<
     TPaPrefOut,
     TPaNe,
     TPaNeOut,
+    TEGet,
 >(
-    config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe>,
+    config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe, TEGet>,
 ) -> Result<Success, Error>
 where
     TBody: ExactSizeIterator<Item = TExt> + Clone,
@@ -130,6 +135,7 @@ where
     TPaPrefOut: Future<Output = Vec<Vec<u8>>>,
     TPaNe: Fn(Vec<u8>) -> TPaNeOut,
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
+    TEGet: Fn(u64) -> babe::EpochInformation,
 {
     // Start by verifying BABE.
     let babe_verify_success = {
@@ -143,7 +149,12 @@ where
         .map_err(Error::BabeVerification)?;
 
         match start {
-            babe::SuccessOrPending::Pending(_) => todo!(),
+            babe::SuccessOrPending::Pending(pending) => {
+                let epoch_info = (config.babe_epoch_information_get)(pending.epoch_number());
+                pending
+                    .finish(&epoch_info)
+                    .map_err(Error::BabeVerification)?
+            }
             babe::SuccessOrPending::Success(success) => success,
         }
     };
