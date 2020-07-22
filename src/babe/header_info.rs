@@ -25,6 +25,17 @@ pub struct HeaderInfo<'a> {
     pub epoch_change: Option<(NextEpochDescriptor, Option<NextConfigDescriptor>)>,
 }
 
+impl<'a> HeaderInfo<'a> {
+    /// Returns the slot number stored in the header.
+    pub fn slot_number(&self) -> u64 {
+        match &self.pre_runtime {
+            PreDigest::Primary(digest) => digest.slot_number,
+            PreDigest::SecondaryPlain(digest) => digest.slot_number,
+            PreDigest::SecondaryVRF(digest) => digest.slot_number,
+        }
+    }
+}
+
 /// Failure to get the information from the header.
 ///
 /// Indicates that the header is malformed.

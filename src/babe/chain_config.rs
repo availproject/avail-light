@@ -81,6 +81,14 @@ impl BabeGenesisConfiguration {
 
         Ok((outcome, vm.into_prototype()))
     }
+
+    pub fn slot_duration(&self) -> u64 {
+        self.inner.slot_duration
+    }
+
+    pub fn slots_per_epoch(&self) -> u64 {
+        self.inner.epoch_length
+    }
 }
 
 /// Error when retrieving the BABE configuration.

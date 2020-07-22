@@ -8,7 +8,7 @@
 //! if so appends them to the head of the chain. Only blocks whose parent is the current head of
 //! the chain are considered, and the others discarded.
 
-use crate::{babe, block, block_import, database, executor, header, trie::calculate_root};
+use crate::{babe, block_import, database, executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -16,7 +16,6 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use parity_scale_codec::Encode as _;
 use parking_lot::Mutex;
 
 /// Message that can be sent to the block import task by the other parts of the code.
@@ -126,6 +125,16 @@ pub async fn run_block_import_task(mut config: Config) {
         best_block_hash
     );
 
+    // Load the slot number of block #1, or `None` if the database doesn't contain block #1.
+    let mut block1_slot_number = match config.database.block_hash_by_number(1).unwrap() {
+        Some(block_hash) => {
+            let block1_header = config.database.block_scale_encoded_header(&block_hash).unwrap().unwrap();
+            let decoded = header::decode(&block1_header).unwrap();
+            Some(babe::header_info::header_information(decoded).unwrap().slot_number())
+        },
+        None => None,
+    };
+
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
         match event {
@@ -173,11 +182,12 @@ pub async fn run_block_import_task(mut config: Config) {
                     block_import::verify_block(block_import::Config {
                         parent_runtime: runtime_wasm_blob,
                         babe_genesis_configuration: &config.babe_genesis_config,
+                        block1_slot_number,
                         now_from_unix_epoch: {
                             // TODO: is it reasonable to use the stdlib here?
                             std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
                         },
-                        block_header: decoded_header,
+                        block_header: decoded_header.clone(),
                         block_body: body.iter().map(|e| &e[..]),
                         parent_block_header: header::decode(&best_block_header).unwrap(),
                         parent_storage_get: {
@@ -256,6 +266,10 @@ pub async fn run_block_import_task(mut config: Config) {
                     } else {
                         local_storage_cache.remove(key);
                     }
+                }
+                if decoded_header.number == 1 {
+                    assert!(block1_slot_number.is_none());
+                    block1_slot_number = Some(import_result.slot_number);
                 }
 
                 let current_best_hash = best_block_hash.clone();

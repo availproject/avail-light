@@ -39,6 +39,12 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
     pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
 
+    /// Slot number of block #1. **Must** be provided, unless the block being verified is block
+    /// #1 itself.
+    ///
+    /// Must be the value of [`Success::slot_number`] for block #1.
+    pub block1_slot_number: Option<u64>,
+
     /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
     /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
     pub now_from_unix_epoch: Duration,
@@ -82,6 +88,9 @@ pub struct Success {
     /// Returns the BABE epoch transition information contained in the verified block, if any.
     pub babe_epoch_change: Option<EpochInformation>,
 
+    /// Slot number the block belongs to.
+    pub slot_number: u64,
+
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
 
@@ -111,7 +120,7 @@ pub async fn verify_block<
     TPaNe,
     TPaNeOut,
 >(
-    mut config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe>,
+    config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe>,
 ) -> Result<Success, Error>
 where
     TBody: ExactSizeIterator<Item = TExt> + Clone,
@@ -131,6 +140,7 @@ where
             parent_block_header: config.parent_block_header,
             genesis_configuration: config.babe_genesis_configuration,
             now_from_unix_epoch: config.now_from_unix_epoch,
+            block1_slot_number: config.block1_slot_number,
         })
         .map_err(Error::BabeVerification)?;
 
@@ -160,6 +170,7 @@ where
     Ok(Success {
         parent_runtime: outcome.parent_runtime,
         babe_epoch_change: babe_verify_success.epoch_change,
+        slot_number: babe_verify_success.slot_number,
         storage_top_trie_changes: outcome.storage_top_trie_changes,
         top_trie_root_calculation_cache: outcome.top_trie_root_calculation_cache,
     })

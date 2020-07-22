@@ -20,11 +20,15 @@
 //! >           epoch consists of 2400 slots (in other words, four hours).
 //!
 //! Every block that is produced must belong to a specific slot. This slot number can be found in
-//! the block header, with the exception of the genesis block.
+//! the block header, with the exception of the genesis block which is considered timeless and
+//! doesn't have any slot number.
 //!
-//! At the moment, the slot number is determined purely based on the slot duration (e.g. 6 seconds
-//! for Polkadot) and the local clock based on the UNIX EPOCH. The current slot number is
-//! `unix_timestamp / duration_per_slot`. This might change in the future.
+//! At the moment, the current slot number is determined purely based on the slot duration (e.g.
+//! 6 seconds for Polkadot) and the local clock based on the UNIX EPOCH. The current slot
+//! number is `unix_timestamp / duration_per_slot`. This might change in the future.
+//!
+//! The first epoch ends at `slot_number(block #1) + slots_per_epoch - 1`. After that, all epochs
+//! end at `end_of_previous_epoch + slots_per_epoch`.
 //!
 //! The header of first block produced after a transition to a new epoch must contain a log entry
 //! indicating the public keys that are allowed to sign blocks, alongside with a weight for each of
@@ -90,10 +94,8 @@
 //! [`EpochInformation`] struct.
 //!
 
-use crate::{executor, header};
-
+use crate::header;
 use core::time::Duration;
-use parity_scale_codec::DecodeAll as _;
 
 mod definitions;
 mod runtime;
@@ -125,6 +127,10 @@ pub struct VerifyConfig<'a> {
     /// Can be obtained by calling [`BabeGenesisConfiguration::from_virtual_machine_prototype`]
     /// with the runtime of the genesis block.
     pub genesis_configuration: &'a BabeGenesisConfiguration,
+
+    /// Slot number of block #1. **Must** be provided, unless the block being verified is block
+    /// #1 itself.
+    pub block1_slot_number: Option<u64>,
 }
 
 /// Information yielded back after successfully verifying a block.
@@ -134,6 +140,9 @@ pub struct VerifySuccess {
     /// later be provided back as part of the [`VerifyConfig`] of the blocks that are part of
     /// that epoch.
     pub epoch_change: Option<EpochInformation>,
+
+    /// Slot number the block belongs to.
+    pub slot_number: u64,
 }
 
 /// Information about an epoch.
@@ -173,20 +182,66 @@ pub enum VerifyError {
     BadHeader(header_info::Error),
     /// Slot number must be strictly increasing between a parent and its child.
     SlotNumberNotIncreasing,
+    /// Block contains an epoch change digest log, but no epoch change is to be performed.
+    UnexpectedEpochChangeLog,
+    /// Block is the first block after a new epoch, but it is missing an epoch change digest log.
+    MissingEpochChangeLog,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
 ///
 /// Returns either a [`PendingVerify`] if more information is needed, or a [`VerifySuccess`] if
 /// the verification could be successfully performed.
+///
+/// # Panic
+///
+/// Panics if `config.parent_block_header` is invalid.
+/// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
+///
 pub fn start_verify_header<'a>(
     config: VerifyConfig<'a>,
 ) -> Result<SuccessOrPending<'a>, VerifyError> {
     let header =
         header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
-    // TODO: as a hack, we just return `Success` right now even though we don't check much; this
-    //       is because the `Pending` variant is unusable
+    // Gather the BABE-related information.
+    let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
+        header_info::PreDigest::Primary(digest) => (
+            digest.authority_index,
+            digest.slot_number,
+            true,
+            Some((digest.vrf_output, digest.vrf_proof)),
+        ),
+        header_info::PreDigest::SecondaryPlain(digest) => {
+            (digest.authority_index, digest.slot_number, false, None)
+        }
+        header_info::PreDigest::SecondaryVRF(digest) => (
+            digest.authority_index,
+            digest.slot_number,
+            false,
+            Some((digest.vrf_output, digest.vrf_proof)),
+        ),
+    };
+
+    // Determine the epoch number of the block that we verify.
+    let epoch_number = match (slot_number, config.block1_slot_number) {
+        (curr, Some(block1)) => slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap(), // TODO: don't unwrap
+        (_, None) if config.header.number == 1 => 0,
+        (_, None) => panic!(),
+    };
+
+    // Determine the epoch number of the parent block.
+    let parent_epoch_number = if config.parent_block_header.number != 0 {
+        let parent_info = header_info::header_information(config.parent_block_header.clone()).unwrap();
+        if config.parent_block_header.number != 1 {
+            slot_number_to_epoch(parent_info.slot_number(), config.genesis_configuration, config.block1_slot_number.unwrap()).unwrap()
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
     let epoch_change = header
         .epoch_change
         .map(|(epoch_change, _)| EpochInformation {
@@ -197,7 +252,21 @@ pub fn start_verify_header<'a>(
                 .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
                 .collect(),
         });
-    Ok(SuccessOrPending::Success(VerifySuccess { epoch_change }))
+
+    // Make sure that the expected epoch transitions corresponds to what the block reports.
+    match (&epoch_change, epoch_number != parent_epoch_number) {
+        (Some(_), true) => {},
+        (None, false) => {},
+        (Some(_), false) => { println!("num = {:?}", config.header.number); return Err(VerifyError::UnexpectedEpochChangeLog)},
+        (None, true) => return Err(VerifyError::MissingEpochChangeLog),
+    };
+
+    // TODO: as a hack, we just return `Success` right now even though we don't check much; this
+    //       is because the `Pending` variant is unusable
+    Ok(SuccessOrPending::Success(VerifySuccess {
+        epoch_change,
+        slot_number,
+    }))
 }
 
 /// Verification in progress. The block is **not** fully verified yet. You must call
@@ -287,6 +356,17 @@ impl<'a> PendingVerify<'a> {
                     .collect(),
             });
 
-        Ok(VerifySuccess { epoch_change })
+        Ok(VerifySuccess {
+            epoch_change,
+            slot_number,
+        })
     }
+}
+
+/// Turns a slot number into an epoch number.
+///
+/// Returns an error if `slot_number` is inferior to `block1_slot_number`.
+fn slot_number_to_epoch(slot_number: u64, genesis_config: &BabeGenesisConfiguration, block1_slot_number: u64) -> Result<u64, ()> {
+    let slots_diff = slot_number.checked_sub(block1_slot_number).ok_or(())?;
+    Ok((slots_diff.checked_add(1).ok_or(())?) / genesis_config.slots_per_epoch())
 }
