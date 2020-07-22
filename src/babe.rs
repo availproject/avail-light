@@ -177,6 +177,8 @@ pub enum VerifyError {
     InvalidAuthorityIndex,
     /// Block header signature is invalid.
     BadSignature,
+    /// VRF proof in the block header is invalid.
+    BadVrfProof,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
@@ -220,7 +222,7 @@ pub fn start_verify_header<'a>(
             slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap()
         } // TODO: don't unwrap
         (_, None) if config.header.number == 1 => 0,
-        (_, None) => panic!(),
+        (_, None) => panic!(), // Bad `Config`.
     };
 
     // Determine the epoch number of the parent block. `None` if the parent is the genesis block.
@@ -270,6 +272,8 @@ pub fn start_verify_header<'a>(
         epoch_number,
         slot_number,
         authority_index,
+        primary_slot_claim: primary,
+        vrf_output_and_proof: vrf,
     };
 
     // The information about epoch number 0 is never given by any block and is instead found in
@@ -309,6 +313,11 @@ pub struct PendingVerify<'a> {
     slot_number: u64,
     /// Index of the authority that has signed the block, according to the block header.
     authority_index: u32,
+    /// If true, the slot claim is a primary slot. If false, a secondary slot.
+    primary_slot_claim: bool,
+    /// VRF output and proof contained in the block header. Cannot be `None` if
+    /// `primary_slot_claim` is true.
+    vrf_output_and_proof: Option<([u8; 32], [u8; 64])>,
 }
 
 impl<'a> PendingVerify<'a> {
@@ -334,8 +343,6 @@ impl<'a> PendingVerify<'a> {
         let signing_public_key =
             schnorrkel::PublicKey::from_bytes(&signing_authority.public_key).unwrap();
 
-        // TODO: check VRF output
-
         // Now verifying the signature in the seal.
         {
             // The signature in the seal applies to the header from where the signature isn't present.
@@ -353,6 +360,35 @@ impl<'a> PendingVerify<'a> {
                 .verify_simple(b"substrate", &pre_seal_hash, &signature)
                 .map_err(|_| VerifyError::BadSignature)?;
         }
+
+        // TODO: check that slot type is allowed by BABE config
+
+        // Now verify the VRF.
+        if let Some((vrf_output, vrf_proof)) = self.vrf_output_and_proof {
+            // In order to verify the VRF output, we first need to create a transcript containing all
+            // the data to verify the VRF against.
+            let transcript = {
+                let mut transcript = merlin::Transcript::new(&b"BABE"[..]);
+                transcript.append_u64(b"slot number", self.slot_number);
+                transcript.append_u64(b"current epoch", self.epoch_number);
+                transcript.append_message(b"chain randomness", &epoch_info.randomness[..]);
+                transcript
+            };
+
+            // These `unwrap()`s can only panic if `vrf_output` or `vrf_proof` are of the wrong
+            // length, which we know can't happen as they're of types `[u8; 32]` and `[u8; 64]`.
+            let vrf_output = schnorrkel::vrf::VRFOutput::from_bytes(&vrf_output[..]).unwrap();
+            let vrf_proof = schnorrkel::vrf::VRFProof::from_bytes(&vrf_proof[..]).unwrap();
+
+            signing_public_key
+                .vrf_verify(transcript, &vrf_output, &vrf_proof)
+                .map_err(|_| VerifyError::BadVrfProof)?;
+        } else {
+            panic!() // TODO:
+        }
+
+        // TODO: need to check number threshold in case of primary slot
+        // TODO: need to check expected author against actual author in case of secondary slot
 
         Ok(VerifySuccess {
             epoch_change: self.epoch_change,
@@ -372,3 +408,34 @@ fn slot_number_to_epoch(
     let slots_diff = slot_number.checked_sub(block1_slot_number).ok_or(())?;
     Ok(slots_diff / genesis_config.slots_per_epoch())
 }
+
+// TODO:
+
+/*
+
+
+/// Get the expected secondary author for the given slot and with given
+/// authorities. This should always assign the slot to some authority unless the
+/// authorities list is empty.
+pub(super) fn secondary_slot_author(
+    slot_number: u64,
+    authorities: &[(AuthorityId, BabeAuthorityWeight)],
+    randomness: [u8; 32],
+) -> Option<&AuthorityId> {
+    if authorities.is_empty() {
+        return None;
+    }
+
+    let rand = U256::from((randomness, slot_number).using_encoded(blake2_256));
+
+    let authorities_len = U256::from(authorities.len());
+    let idx = rand % authorities_len;
+
+    let expected_author = authorities.get(idx.as_u32() as usize)
+        .expect("authorities not empty; index constrained to list length; \
+                this is a valid index; qed");
+
+    Some(&expected_author.0)
+}
+
+*/
