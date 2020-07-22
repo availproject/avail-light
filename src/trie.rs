@@ -26,6 +26,7 @@
 //! size of the trie.
 
 use alloc::collections::BTreeMap;
+use core::mem;
 
 mod nibble;
 
@@ -83,18 +84,36 @@ impl Trie {
     /// Passes an optional cache.
     pub fn root_merkle_value(
         &self,
-        cache: Option<&mut calculate_root::CalculationCache>,
+        mut cache: Option<&mut calculate_root::CalculationCache>,
     ) -> [u8; 32] {
-        let mut calculation = calculate_root::root_merkle_value(cache);
+        let mut calculation = calculate_root::root_merkle_value({
+            if let Some(cache) = &mut cache {
+                Some(mem::replace(
+                    cache,
+                    calculate_root::CalculationCache::empty(),
+                ))
+            } else {
+                None
+            }
+        });
+
         loop {
-            match calculation.next() {
-                calculate_root::Next::Finished(value) => return value,
-                calculate_root::Next::AllKeys(keys) => {
-                    keys.inject(self.entries.keys().map(|k| k.iter().cloned()))
+            match calculation {
+                calculate_root::RootMerkleValueCalculation::Finished {
+                    hash,
+                    cache: new_cache,
+                } => {
+                    if let Some(cache) = cache {
+                        *cache = new_cache;
+                    }
+                    return hash;
                 }
-                calculate_root::Next::StorageValue(value) => {
+                calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+                    calculation = keys.inject(self.entries.keys().map(|k| k.iter().cloned()));
+                }
+                calculate_root::RootMerkleValueCalculation::StorageValue(value) => {
                     let key = value.key().collect::<Vec<u8>>();
-                    value.inject(self.entries.get(&key));
+                    calculation = value.inject(self.entries.get(&key));
                 }
             }
         }

@@ -121,6 +121,7 @@ pub async fn run_block_import_task(mut config: Config) {
         .unwrap()
         .unwrap()
         .to_vec();
+    debug_assert!(header::decode(&best_block_header).is_ok());
 
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {

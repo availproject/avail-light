@@ -6,7 +6,7 @@
 
 use crate::{executor, header, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _, iter};
+use core::{cmp, convert::TryFrom as _, iter, mem};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 
@@ -224,16 +224,19 @@ where
                 resolve.finish_call(());
             }
             executor::State::ExternalStorageRoot { resolve } => {
-                let mut calculation =
-                    calculate_root::root_merkle_value(Some(&mut top_trie_root_calculation_cache));
+                let mut calculation = calculate_root::root_merkle_value(Some(mem::replace(
+                    &mut top_trie_root_calculation_cache,
+                    Default::default(),
+                )));
 
                 loop {
-                    match calculation.next() {
-                        calculate_root::Next::Finished(value) => {
-                            resolve.finish_call(value);
+                    match calculation {
+                        calculate_root::RootMerkleValueCalculation::Finished { hash, cache } => {
+                            top_trie_root_calculation_cache = cache;
+                            resolve.finish_call(hash);
                             break;
                         }
-                        calculate_root::Next::AllKeys(keys) => {
+                        calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
                             let mut result = (config.parent_storage_keys_prefix)(Vec::new())
                                 .now_or_never()
                                 .unwrap()
@@ -247,17 +250,17 @@ where
                                 }
                                 result.insert(key.clone());
                             }
-                            keys.inject(result.into_iter().map(|k| k.into_iter()))
+                            calculation = keys.inject(result.into_iter().map(|k| k.into_iter()));
                         }
-                        calculate_root::Next::StorageValue(value_request) => {
+                        calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
                             let key = value_request.key().collect::<Vec<u8>>();
                             if let Some(overlay) = top_trie_changes.get(&key) {
-                                value_request.inject(overlay.as_ref());
+                                calculation = value_request.inject(overlay.as_ref());
                             } else {
                                 let val = (config.parent_storage_get)(key.to_vec())
                                     .now_or_never() // TODO: hack because `TrieRef` isn't async-friendly yet
                                     .unwrap();
-                                value_request.inject(val.as_ref());
+                                calculation = value_request.inject(val.as_ref());
                             }
                         }
                     }

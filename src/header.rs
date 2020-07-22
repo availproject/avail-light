@@ -21,7 +21,7 @@
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, iter};
-use parity_scale_codec::{Decode, Encode, EncodeAsRef, EncodeLike, HasCompact, Input, Output};
+use parity_scale_codec::{Decode, Encode, EncodeAsRef, EncodeLike, HasCompact};
 
 /// Returns a hash of the SCALE-encoded header.
 ///
@@ -41,7 +41,7 @@ pub fn hash_from_scale_encoded_header(header: &[u8]) -> [u8; 32] {
 
 /// Attempt to decode the given SCALE-encoded header.
 pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
-    if scale_encoded.len() < 32 + 8 + 32 + 32 {
+    if scale_encoded.len() < 32 + 1 {
         return Err(Error::TooShort);
     }
 
@@ -51,6 +51,10 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
     let number: parity_scale_codec::Compact<u64> =
         parity_scale_codec::Decode::decode(&mut scale_encoded)
             .map_err(Error::BlockNumberDecodeError)?;
+
+    if scale_encoded.len() < 32 + 32 + 1 {
+        return Err(Error::TooShort);
+    }
 
     let state_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];

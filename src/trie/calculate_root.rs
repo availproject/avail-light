@@ -6,7 +6,6 @@
 //!
 //! Calling the [`root_merkle_value`] function creates a [`RootMerkleValueCalculation`] object
 //! which you have to drive to completion by repeatedly calling
-//! [`RootMerkleValueCalculation::next`] until [`Next::Finished`] is returned.
 //!
 //! Example:
 //!
@@ -21,14 +20,14 @@
 //! let trie_root = {
 //!     let mut calculation = calculate_root::root_merkle_value(None);
 //!     loop {
-//!         match calculation.next() {
-//!             calculate_root::Next::Finished(hash) => break hash,
-//!             calculate_root::Next::AllKeys(keys) => {
-//!                 keys.inject(storage.keys().map(|k| k.iter().cloned()))
+//!         match calculation {
+//!             calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => break hash,
+//!             calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+//!                 calculation = keys.inject(storage.keys().map(|k| k.iter().cloned()));
 //!             }
-//!             calculate_root::Next::StorageValue(value_request) => {
+//!             calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
 //!                 let key = value_request.key().collect::<Vec<u8>>();
-//!                 value_request.inject(storage.get(&key));
+//!                 calculation = value_request.inject(storage.get(&key));
 //!             }
 //!         }
 //!     }
@@ -53,7 +52,7 @@ use super::{
     node_value, trie_structure,
 };
 
-use core::{convert::TryFrom as _, fmt, iter, ops};
+use core::{convert::TryFrom as _, fmt, iter};
 
 /// Cache containing intermediate calculation steps.
 ///
@@ -197,41 +196,63 @@ impl fmt::Debug for CalculationCache {
 }
 
 /// Start calculating the Merkle value of the root node.
-pub fn root_merkle_value<'a>(cache: Option<&mut CalculationCache>) -> RootMerkleValueCalculation {
+pub fn root_merkle_value(cache: Option<CalculationCache>) -> RootMerkleValueCalculation {
     // The calculation that we perform relies on storing values in the cache and reloading them
     // afterwards. If the user didn't pass any cache, we create a temporary one.
-    let cache_or_temporary = if let Some(cache) = cache {
+    let cache_or_temporary = if let Some(mut cache) = cache {
         if let Some(structure) = &mut cache.structure {
             if structure.capacity() > structure.len().saturating_mul(2) {
                 structure.shrink_to_fit();
             }
         }
-        CowMut::Borrowed(cache)
+        cache
     } else {
-        CowMut::Owned(CalculationCache::empty())
+        CalculationCache::empty()
     };
 
-    RootMerkleValueCalculation {
+    CalcInner {
         cache: cache_or_temporary,
         current: None,
         coming_from_child: false,
     }
+    .next()
 }
 
-/// Pending calculation of the Merkle value of a trie root node.
-//
-// # Implementation notes
-//
-// We traverse the trie in attempt to find missing Merkle values.
-// We start with the root node. For each node, if its Merkle value is absent, we continue
-// iterating with its first child. If its Merkle value is present, we continue iterating with
-// the next sibling or, if it is the last sibling, the parent. In that situation where we jump
-// from last sibling to parent, we also calculate the parent's Merkle value in the process.
-// Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
-// the Merkle value is calculated that second time.
-pub struct RootMerkleValueCalculation<'a> {
-    /// Either a `CalculationCache` or a `&'a mut CalculationCache`. Implements `DerefMut`.
-    cache: CowMut<'a>,
+/// Current state of the [`RootMerkleValueCalculation`] and how to continue.
+#[must_use]
+pub enum RootMerkleValueCalculation {
+    /// The calculation is finished.
+    Finished {
+        /// Root hash that has been calculated.
+        hash: [u8; 32],
+        /// Cache of the calculation that can be passed next time.
+        cache: CalculationCache,
+    },
+
+    /// Request to return the list of all the keys in the trie. Call [`AllKeys::inject`] to
+    /// indicate this list.
+    AllKeys(AllKeys),
+
+    /// Request the value of the node with a specific key. Call [`StorageValue::inject`] to
+    /// indicate the value.
+    StorageValue(StorageValue),
+}
+
+/// Calculation of the Merkle value is ready to continue.
+/// Shared by all the public-facing structs.
+///
+/// # Implementation notes
+///
+/// We traverse the trie in attempt to find missing Merkle values.
+/// We start with the root node. For each node, if its Merkle value is absent, we continue
+/// iterating with its first child. If its Merkle value is present, we continue iterating with
+/// the next sibling or, if it is the last sibling, the parent. In that situation where we jump
+/// from last sibling to parent, we also calculate the parent's Merkle value in the process.
+/// Due to this order of iteration, we traverse each node which lack a Merkle value twice, and
+/// the Merkle value is calculated that second time.
+struct CalcInner {
+    /// Contains the intermediary steps of the calculation. `None` if the calculation is finished.
+    cache: CalculationCache,
 
     /// Index within `cache` of the node currently being iterated.
     current: Option<trie_structure::NodeIndex>,
@@ -241,12 +262,12 @@ pub struct RootMerkleValueCalculation<'a> {
     coming_from_child: bool,
 }
 
-impl<'a> RootMerkleValueCalculation<'a> {
-    /// Advance the calculation to the next step.
-    pub fn next<'b>(&'b mut self) -> Next<'a, 'b> {
+impl CalcInner {
+    /// Advances the calculation to the next step.
+    fn next(mut self) -> RootMerkleValueCalculation {
         // Make sure that `cache.structure` contains a trie structure that matches the trie.
         if self.cache.structure.is_none() {
-            return Next::AllKeys(AllKeys { calculation: self });
+            return RootMerkleValueCalculation::AllKeys(AllKeys { calculation: self });
         }
 
         // At this point `trie_structure` is guaranteed to match the trie, but its Merkle values
@@ -267,7 +288,10 @@ impl<'a> RootMerkleValueCalculation<'a> {
                             stored_value: None::<Vec<u8>>,
                         });
 
-                        return Next::Finished(merkle_value.into());
+                        return RootMerkleValueCalculation::Finished {
+                            hash: merkle_value.into(),
+                            cache: self.cache,
+                        };
                     }
                 };
             }
@@ -296,7 +320,10 @@ impl<'a> RootMerkleValueCalculation<'a> {
                             // No next sibling nor parent. We have finished traversing the tree.
                             let mut root_node = trie_structure.root_node().unwrap();
                             let merkle_value = root_node.user_data().merkle_value.clone().unwrap();
-                            return Next::Finished(merkle_value.into());
+                            return RootMerkleValueCalculation::Finished {
+                                hash: merkle_value.into(),
+                                cache: self.cache,
+                            };
                         }
                     }
                 }
@@ -342,34 +369,24 @@ impl<'a> RootMerkleValueCalculation<'a> {
                 continue;
             }
 
-            return Next::StorageValue(StorageValue { calculation: self });
+            return RootMerkleValueCalculation::StorageValue(StorageValue { calculation: self });
         }
     }
-}
-
-/// Current state of the [`RootMerkleValueCalculation`] and how to continue.
-#[must_use]
-pub enum Next<'a, 'b> {
-    /// The claculation is finished. Contains the root hash.
-    Finished([u8; 32]),
-    /// Request to return the list of all the keys in the trie. Call [`AllKeys::inject`] to
-    /// indicate this list.
-    AllKeys(AllKeys<'a, 'b>),
-    /// Request the value of the node with a specific key. Call [`StorageValue::inject`] to
-    /// indicate the value.
-    StorageValue(StorageValue<'a, 'b>),
 }
 
 /// Request to return the list of all the keys in the storage. Call [`AllKeys::inject`] to indicate
 /// this list.
 #[must_use]
-pub struct AllKeys<'a, 'b> {
-    calculation: &'b mut RootMerkleValueCalculation<'a>,
+pub struct AllKeys {
+    calculation: CalcInner,
 }
 
-impl<'a, 'b> AllKeys<'a, 'b> {
-    /// Indicate the list of all keys of the trie.
-    pub fn inject(self, keys: impl Iterator<Item = impl Iterator<Item = u8> + Clone>) {
+impl AllKeys {
+    /// Indicates the list of all keys of the trie and advances the calculation.
+    pub fn inject(
+        mut self,
+        keys: impl Iterator<Item = impl Iterator<Item = u8> + Clone>,
+    ) -> RootMerkleValueCalculation {
         debug_assert!(self.calculation.cache.structure.is_none());
         self.calculation.cache.structure = Some({
             let mut structure = trie_structure::TrieStructure::new();
@@ -383,19 +400,20 @@ impl<'a, 'b> AllKeys<'a, 'b> {
             }
             structure
         });
+        self.calculation.next()
     }
 }
 
 /// Request the value of the node with a specific key. Call [`StorageValue::inject`] to indicate
 /// the value.
 #[must_use]
-pub struct StorageValue<'a, 'b> {
-    calculation: &'b mut RootMerkleValueCalculation<'a>,
+pub struct StorageValue {
+    calculation: CalcInner,
 }
 
-impl<'a, 'b> StorageValue<'a, 'b> {
+impl StorageValue {
     /// Returns the key whose value is being requested.
-    pub fn key<'c>(&'c self) -> impl Iterator<Item = u8> + 'c {
+    pub fn key<'a>(&'a self) -> impl Iterator<Item = u8> + 'a {
         let trie_structure = self.calculation.cache.structure.as_ref().unwrap();
         let mut full_key = trie_structure
             .node_full_key_by_index(self.calculation.current.unwrap())
@@ -408,8 +426,8 @@ impl<'a, 'b> StorageValue<'a, 'b> {
         })
     }
 
-    /// Indicate the storage value.
-    pub fn inject(self, stored_value: Option<impl AsRef<[u8]>>) {
+    /// Indicates the storage value and advances the calculation.
+    pub fn inject(mut self, stored_value: Option<impl AsRef<[u8]>>) -> RootMerkleValueCalculation {
         assert!(stored_value.is_some());
 
         let trie_structure = self.calculation.cache.structure.as_mut().unwrap();
@@ -432,33 +450,7 @@ impl<'a, 'b> StorageValue<'a, 'b> {
         });
 
         current.user_data().merkle_value = Some(merkle_value);
-    }
-}
-
-/// Utility type. Contains either a `CalculationCache` or a `&mut CalculationCache` and implements
-/// `Deref`/`DerefMut`.
-enum CowMut<'a> {
-    Owned(CalculationCache),
-    Borrowed(&'a mut CalculationCache),
-}
-
-impl<'a> ops::Deref for CowMut<'a> {
-    type Target = CalculationCache;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            CowMut::Owned(c) => c,
-            CowMut::Borrowed(c) => c,
-        }
-    }
-}
-
-impl<'a> ops::DerefMut for CowMut<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            CowMut::Owned(c) => c,
-            CowMut::Borrowed(c) => c,
-        }
+        self.calculation.next()
     }
 }
 
