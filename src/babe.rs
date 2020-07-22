@@ -97,7 +97,7 @@
 //!
 
 use crate::header;
-use core::time::Duration;
+use core::{convert::TryFrom as _, time::Duration};
 
 mod definitions;
 mod runtime;
@@ -141,10 +141,19 @@ pub struct VerifySuccess {
     /// If `Some`, the verified block contains an epoch transition. This epoch transition must
     /// later be provided back as part of the [`VerifyConfig`] of the blocks that are part of
     /// that epoch.
-    pub epoch_change: Option<EpochInformation>,
+    pub epoch_change: Option<EpochChangeInformation>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
+}
+
+/// Information about a change of epoch.
+#[derive(Debug)]
+pub struct EpochChangeInformation {
+    /// Number of the new epoch we transitioned to.
+    pub epoch_number: u64,
+    /// Information about this new epoch.
+    pub info: EpochInformation,
 }
 
 /// Information about an epoch.
@@ -188,6 +197,10 @@ pub enum VerifyError {
     UnexpectedEpochChangeLog,
     /// Block is the first block after a new epoch, but it is missing an epoch change digest log.
     MissingEpochChangeLog,
+    /// Authority index stored within block is out of range.
+    InvalidAuthorityIndex,
+    /// Block header signature is invalid.
+    BadSignature,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
@@ -206,7 +219,7 @@ pub fn start_verify_header<'a>(
     let header =
         header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
-    // Gather the BABE-related information.
+    // Gather the BABE-related information from the header.
     let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
         header_info::PreDigest::Primary(digest) => (
             digest.authority_index,
@@ -238,6 +251,11 @@ pub fn start_verify_header<'a>(
     let parent_epoch_number = if config.parent_block_header.number != 0 {
         let parent_info =
             header_info::header_information(config.parent_block_header.clone()).unwrap();
+
+        if slot_number <= parent_info.slot_number() {
+            return Err(VerifyError::SlotNumberNotIncreasing);
+        }
+
         Some(
             slot_number_to_epoch(
                 parent_info.slot_number(),
@@ -250,18 +268,26 @@ pub fn start_verify_header<'a>(
         None
     };
 
+    // Extract the epoch change information stored in the header, if any.
     let epoch_change = header
         .epoch_change
-        .map(|(epoch_change, _)| EpochInformation {
-            randomness: epoch_change.randomness,
-            authorities: epoch_change
-                .authorities
-                .into_iter()
-                .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
-                .collect(),
+        .map(|(epoch_change, _)| EpochChangeInformation {
+            epoch_number,
+            info: EpochInformation {
+                randomness: epoch_change.randomness,
+                authorities: epoch_change
+                    .authorities
+                    .into_iter()
+                    .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
+                    .collect(),
+            },
         });
 
-    // Make sure that the expected epoch transitions corresponds to what the block reports.
+    // TODO: in case of epoch change, should also check the randomness value; while the runtime
+    //       checks that the randomness value is correct, light clients in particular do not
+    //       execute the runtime
+
+    // Make sure that the expected epoch transitions correspond to what the blocks report.
     match (&epoch_change, Some(epoch_number) != parent_epoch_number) {
         (Some(_), true) => {}
         (None, false) => {}
@@ -289,7 +315,16 @@ pub enum SuccessOrPending<'a> {
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
 pub struct PendingVerify<'a> {
+    // TODO: replace with something else?
     config: VerifyConfig<'a>,
+    /// Block signature contained in the header that we verify.
+    seal_signature: &'a [u8],
+    /// If `Some`, block is at an epoch transition.
+    epoch_change: Option<EpochChangeInformation>,
+    /// Slot number the block belongs to.
+    slot_number: u64,
+    /// Index of the authority that has signed the block, according to the block header.
+    authority_index: u32,
 }
 
 impl<'a> PendingVerify<'a> {
@@ -298,75 +333,41 @@ impl<'a> PendingVerify<'a> {
     /// Finishes the verification. Must provide the information about the epoch the block belongs
     /// to.
     pub fn finish(self, epoch_info: &EpochInformation) -> Result<VerifySuccess, VerifyError> {
-        let header = header_info::header_information(self.config.header.clone())
-            .map_err(VerifyError::BadHeader)?;
+        // Fetch the authority that has supposedly signed the block.
+        let signing_authority = epoch_info
+            .authorities
+            .get(
+                usize::try_from(self.authority_index)
+                    .map_err(|_| VerifyError::InvalidAuthorityIndex)?,
+            )
+            .ok_or(VerifyError::InvalidAuthorityIndex)?;
 
-        // Gather the BABE-related information.
-        let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
-            header_info::PreDigest::Primary(digest) => (
-                digest.authority_index,
-                digest.slot_number,
-                true,
-                Some((digest.vrf_output, digest.vrf_proof)),
-            ),
-            header_info::PreDigest::SecondaryPlain(digest) => {
-                (digest.authority_index, digest.slot_number, false, None)
-            }
-            header_info::PreDigest::SecondaryVRF(digest) => (
-                digest.authority_index,
-                digest.slot_number,
-                false,
-                Some((digest.vrf_output, digest.vrf_proof)),
-            ),
-        };
+        let signing_public_key =
+            schnorrkel::PublicKey::from_bytes(&signing_authority.public_key).unwrap();
 
-        // Slot number of the parent block.
-        let parent_slot_number = {
-            let parent_info =
-                header_info::header_information(self.config.parent_block_header).unwrap();
-            match parent_info.pre_runtime {
-                header_info::PreDigest::Primary(digest) => digest.slot_number,
-                header_info::PreDigest::SecondaryPlain(digest) => digest.slot_number,
-                header_info::PreDigest::SecondaryVRF(digest) => digest.slot_number,
-            }
-        };
+        // TODO: check VRF output
 
-        if slot_number <= parent_slot_number {
-            return Err(VerifyError::SlotNumberNotIncreasing);
+        // Now verifying the signature in the seal.
+        {
+            // The signature in the seal applies to the header from where the signature isn't present.
+            // Build the hash that is expected to be signed.
+            let pre_seal_hash = {
+                let mut unsealed_header = self.config.header;
+                let _popped = unsealed_header.digest.pop();
+                debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
+                unsealed_header.hash()
+            };
+
+            let signature = schnorrkel::Signature::from_bytes(self.seal_signature)
+                .map_err(|_| VerifyError::BadSignature)?;
+            signing_public_key
+                .verify_simple(b"substrate", &pre_seal_hash, &signature)
+                .map_err(|_| VerifyError::BadSignature)?;
         }
 
-        // TODO: gather current authorities, and verify everything
-
-        // The signature in the seal applies to the header from where the signature isn't present.
-        // Build the hash that is expected to be signed.
-        let pre_seal_hash = {
-            let mut unsealed_header = self.config.header;
-            let _popped = unsealed_header.digest.pop();
-            debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
-            unsealed_header.hash()
-        };
-
-        // TODO: check that epoch change is in header iff it's actually an epoch change
-
-        // TODO: in case of epoch change, should also check the randomness value; while the runtime
-        //       checks that the randomness value is correct, light clients in particular do not
-        //       execute the runtime
-
-        // TODO: handle config change
-        let epoch_change = header
-            .epoch_change
-            .map(|(epoch_change, _)| EpochInformation {
-                randomness: epoch_change.randomness,
-                authorities: epoch_change
-                    .authorities
-                    .into_iter()
-                    .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
-                    .collect(),
-            });
-
         Ok(VerifySuccess {
-            epoch_change,
-            slot_number,
+            epoch_change: self.epoch_change,
+            slot_number: self.slot_number,
         })
     }
 }

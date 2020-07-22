@@ -30,6 +30,7 @@ parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 pin-project = "0.4"
 prost = "0.6.1"
 rand = "0.7"
+schnorrkel = { version = "0.9.1", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 slab = "0.4.2"

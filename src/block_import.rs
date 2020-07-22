@@ -23,8 +23,6 @@ use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 use parity_scale_codec::DecodeAll as _;
 
-pub use babe::EpochInformation;
-
 mod unsealed;
 
 /// Configuration for a block verification.
@@ -86,7 +84,7 @@ pub struct Success {
     pub parent_runtime: executor::WasmVmPrototype,
 
     /// Returns the BABE epoch transition information contained in the verified block, if any.
-    pub babe_epoch_change: Option<EpochInformation>,
+    pub babe_epoch_change: Option<babe::EpochChangeInformation>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
