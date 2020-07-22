@@ -365,7 +365,9 @@ impl<'a> PendingVerify<'a> {
                 .map_err(|_| VerifyError::BadSignature)?;
         }
 
-        // Now verify the VRF.
+        // Now verify the VRF output and proof, if any.
+        // The lack of VRF output/proof in the header is checked when we check whether the slot
+        // type is allowed by the current configuration.
         if let Some((vrf_output, vrf_proof)) = self.vrf_output_and_proof {
             // In order to verify the VRF output, we first need to create a transcript containing all
             // the data to verify the VRF against.
@@ -399,7 +401,7 @@ impl<'a> PendingVerify<'a> {
         // claim. If the block is a secondary slot claim, we need to make sure that the author
         // is indeed the one that is expected.
         if !self.primary_slot_claim {
-            // Expected author is determined based on `blake2_256(randomness | slot_number)`.
+            // Expected author is determined based on `blake2(randomness | slot_number)`.
             let hash = {
                 let mut hash = blake2_rfc::blake2b::Blake2b::new(32);
                 hash.update(&epoch_info.randomness);
