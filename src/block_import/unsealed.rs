@@ -6,13 +6,12 @@
 
 use crate::{executor, header, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _, iter, mem};
+use core::{cmp, convert::TryFrom as _, iter, mem, slice};
 use futures::prelude::*;
 use hashbrown::{HashMap, HashSet};
 
 /// Configuration for an unsealed block verification.
-// TODO: don't pass functions to the Config; instead, have a state-machine-like API
-pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
+pub struct Config<'a, TBody> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
     pub parent_runtime: executor::WasmVmPrototype,
@@ -28,19 +27,6 @@ pub struct Config<'a, TBody, TPaAcc, TPaPref, TPaNe> {
 
     /// Body of the block to verify.
     pub block_body: TBody,
-
-    /// Function that returns the value in the parent's storage correpsonding to the key passed
-    /// as parameter. Returns `None` if there is no value associated to this key.
-    ///
-    /// > **Note**: Returning `None` does *not* mean "unknown". It means "known to be empty".
-    pub parent_storage_get: TPaAcc,
-
-    /// Function that returns the keys in the parent's storage that start with the given prefix.
-    pub parent_storage_keys_prefix: TPaPref,
-
-    /// Function that returns the key in the parent's storage that immediately follows the one
-    /// passed as parameter. Returns `None` if this is the last key.
-    pub parent_storage_next_key: TPaNe,
 
     /// Optional cache corresponding to the storage trie root hash calculation.
     pub top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
@@ -65,32 +51,42 @@ pub enum Error {
     Trapped,
 }
 
+/// Current state of the verification.
+#[must_use]
+pub enum Verify {
+    /// Verification is over.
+    Finished(Result<Success, Error>),
+    /// Verification is ready to continue.
+    ReadyToRun(ReadyToRun),
+    /// Loading a storage value is required in order to continue.
+    StorageGet(StorageGet),
+    /// Fetching the list of keys with a given prefix is required in order to continue.
+    PrefixKeys(PrefixKeys),
+    /// Fetching the key that follows a given one is required in order to continue.
+    NextKey(NextKey),
+}
+
+/// Verification is ready to continue.
+#[must_use]
+pub struct ReadyToRun {
+    vm: executor::WasmVm,
+
+    /// Pending changes to the top storage trie that this block performs.
+    top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+
+    /// Cache passed by the user in the [`Config`]. Always `Some` except when we are currently
+    /// calculating the trie state root.
+    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+
+    /// Trie root calculation in progress.
+    root_calculation: Option<calculate_root::RootMerkleValueCalculation>,
+}
+
 /// Verifies whether a block is valid.
-pub async fn verify_unsealed_block<
-    'a,
-    TBody,
-    TExt,
-    TPaAcc,
-    TPaAccOut,
-    TPaPref,
-    TPaPrefOut,
-    TPaNe,
-    TPaNeOut,
->(
-    mut config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe>,
-) -> Result<Success, Error>
-where
-    TBody: ExactSizeIterator<Item = TExt> + Clone,
-    TExt: AsRef<[u8]> + Clone,
-    // TODO: ugh, we pass Vecs because of lifetime clusterfuck
-    TPaAcc: Fn(Vec<u8>) -> TPaAccOut,
-    TPaAccOut: Future<Output = Option<Vec<u8>>>,
-    TPaPref: Fn(Vec<u8>) -> TPaPrefOut,
-    TPaPrefOut: Future<Output = Vec<Vec<u8>>>,
-    TPaNe: Fn(Vec<u8>) -> TPaNeOut,
-    TPaNeOut: Future<Output = Option<Vec<u8>>>,
-{
-    let mut vm = config
+pub fn verify_unsealed_block<'a>(
+    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+) -> Result<ReadyToRun, Error> {
+    let vm = config
         .parent_runtime
         .run_vectored("Core_execute_block", {
             // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
@@ -123,83 +119,295 @@ where
         })
         .unwrap();
 
-    // Pending changes to the top storage trie that this block performs.
-    let mut top_trie_changes = HashMap::<Vec<u8>, Option<Vec<u8>>>::new();
-    // Cache passed as part of the configuration. Initially guaranteed to match the storage or the
-    // parent, then updated to match the changes made during the verification.
-    // TODO: we use `take()` as a work-around because we use `config` below, but it could be fixed
-    let mut top_trie_root_calculation_cache = config
-        .top_trie_root_calculation_cache
-        .take()
-        .unwrap_or_default();
+    Ok(ReadyToRun {
+        vm,
+        top_trie_changes: Default::default(),
+        top_trie_root_calculation_cache: Some(
+            config.top_trie_root_calculation_cache.unwrap_or_default(),
+        ),
+        root_calculation: None,
+    })
+}
 
-    loop {
-        match vm.state() {
-            executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(_) => {
-                // TODO: assert output is empty?
-                return Ok(Success {
-                    parent_runtime: vm.into_prototype(),
-                    storage_top_trie_changes: top_trie_changes,
-                    top_trie_root_calculation_cache,
-                });
+impl ReadyToRun {
+    /// Continues the verification.
+    pub fn run(mut self) -> Verify {
+        loop {
+            match self.vm.state() {
+                executor::State::ReadyToRun(r) => r.run(),
+
+                executor::State::Trapped => return Verify::Finished(Err(Error::Trapped)),
+                executor::State::Finished(_) => {
+                    // TODO: assert output is empty?
+                    return Verify::Finished(Ok(Success {
+                        parent_runtime: self.vm.into_prototype(),
+                        storage_top_trie_changes: self.top_trie_changes,
+                        top_trie_root_calculation_cache: self
+                            .top_trie_root_calculation_cache
+                            .unwrap(),
+                    }));
+                }
+
+                executor::State::ExternalStorageGet {
+                    storage_key,
+                    offset,
+                    max_size,
+                    resolve,
+                } => {
+                    if let Some(overlay) = self.top_trie_changes.get(storage_key) {
+                        if let Some(overlay) = overlay {
+                            // TODO: this clones the storage value, meh
+                            let mut value = overlay.clone();
+                            if usize::try_from(offset).unwrap() < value.len() {
+                                value = value[usize::try_from(offset).unwrap()..].to_vec();
+                                if usize::try_from(max_size).unwrap() < value.len() {
+                                    value = value[..usize::try_from(max_size).unwrap()].to_vec();
+                                }
+                            } else {
+                                value = Vec::new();
+                            }
+                            resolve.finish_call(Some(value));
+                        } else {
+                            resolve.finish_call(None);
+                        }
+                    } else {
+                        return Verify::StorageGet(StorageGet { inner: self });
+                    }
+                }
+
+                executor::State::ExternalStorageSet {
+                    storage_key,
+                    new_storage_value,
+                    resolve,
+                } => {
+                    self.top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(storage_key, new_storage_value.is_some());
+                    self.top_trie_changes
+                        .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
+                    resolve.finish_call(());
+                }
+
+                executor::State::ExternalStorageAppend {
+                    storage_key,
+                    value,
+                    resolve,
+                } => {
+                    self.top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(storage_key, true);
+
+                    if let Some(mut current_value) = self.top_trie_changes.get(storage_key) {
+                        let mut current_value = current_value.clone().unwrap_or_default();
+                        append_to_storage_value(&mut current_value, value);
+                        self.top_trie_changes
+                            .insert(storage_key.to_vec(), Some(current_value));
+                        resolve.finish_call(());
+                    } else {
+                        return Verify::StorageGet(StorageGet { inner: self });
+                    }
+                }
+
+                executor::State::ExternalStorageClearPrefix {
+                    storage_key,
+                    resolve,
+                } => {
+                    return Verify::PrefixKeys(PrefixKeys { inner: self });
+                }
+
+                executor::State::ExternalStorageRoot { resolve } => {
+                    if self.root_calculation.is_none() {
+                        self.root_calculation = Some(calculate_root::root_merkle_value(Some(
+                            self.top_trie_root_calculation_cache.take().unwrap(),
+                        )));
+                    }
+
+                    match self.root_calculation.take().unwrap() {
+                        calculate_root::RootMerkleValueCalculation::Finished { hash, cache } => {
+                            self.top_trie_root_calculation_cache = Some(cache);
+                            resolve.finish_call(hash);
+                        }
+                        calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+                            self.root_calculation =
+                                Some(calculate_root::RootMerkleValueCalculation::AllKeys(keys));
+                            return Verify::PrefixKeys(PrefixKeys { inner: self });
+                        }
+                        calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
+                            // TODO: allocating a Vec, meh
+                            if let Some(overlay) = self
+                                .top_trie_changes
+                                .get(&value_request.key().collect::<Vec<_>>())
+                            {
+                                self.root_calculation =
+                                    Some(value_request.inject(overlay.as_ref()));
+                            } else {
+                                self.root_calculation =
+                                    Some(calculate_root::RootMerkleValueCalculation::StorageValue(
+                                        value_request,
+                                    ));
+                                return Verify::StorageGet(StorageGet { inner: self });
+                            }
+                        }
+                    }
+                }
+
+                executor::State::ExternalStorageChangesRoot {
+                    parent_hash: _,
+                    resolve,
+                } => {
+                    // TODO: this is probably one of the most complicated things to implement
+                    // TODO: must return None iff `state_at(parent_block).exists_storage(&well_known_keys::CHANGES_TRIE_CONFIG).unwrap() == false`
+                    resolve.finish_call(None);
+                }
+
+                executor::State::ExternalStorageNextKey {
+                    storage_key,
+                    resolve,
+                } => return Verify::NextKey(NextKey { inner: self }),
+
+                executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
+                    // TODO: is there maybe a better way to handle that?
+                    let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob) {
+                        Ok(w) => w,
+                        Err(_) => {
+                            resolve.finish_call(Err(()));
+                            continue;
+                        }
+                    };
+
+                    match executor::core_version(vm_prototype) {
+                        Ok((version, _)) => {
+                            resolve.finish_call(Ok(parity_scale_codec::Encode::encode(&version)));
+                        }
+                        Err(_) => {
+                            resolve.finish_call(Err(()));
+                        }
+                    }
+                }
+
+                s => unimplemented!("unimplemented externality: {:?}", s),
             }
-            executor::State::Trapped => return Err(Error::Trapped),
+        }
+    }
+}
 
+/// Loading a storage value is required in order to continue.
+#[must_use]
+pub struct StorageGet {
+    inner: ReadyToRun,
+}
+
+impl StorageGet {
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    // TODO: shouldn't be mut
+    pub fn key<'a>(&'a mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageGet { storage_key, .. }
+            | executor::State::ExternalStorageAppend { storage_key, .. } => {
+                either::Either::Left(iter::once(either::Either::Left(storage_key)))
+            }
+
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
+                    self.inner.root_calculation.as_ref().unwrap()
+                {
+                    struct One(u8);
+                    impl AsRef<[u8]> for One {
+                        fn as_ref(&self) -> &[u8] {
+                            slice::from_ref(&self.0)
+                        }
+                    }
+                    either::Either::Right(value_request.key().map(One).map(either::Either::Right))
+                } else {
+                    // We only create a `StorageGet` if the state is `StorageValue`.
+                    panic!()
+                }
+            }
+
+            // We only create a `StorageGet` if the state is one of the above.
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the corresponding storage value.
+    // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
+    pub fn inject_value(mut self, value: Option<&[u8]>) -> ReadyToRun {
+        match self.inner.vm.state() {
             executor::State::ExternalStorageGet {
                 storage_key,
                 offset,
                 max_size,
                 resolve,
             } => {
-                // TODO: this clones the storage value, meh
-                let mut value = if let Some(overlay) = top_trie_changes.get(storage_key) {
-                    overlay.clone()
-                } else {
-                    (config.parent_storage_get)(storage_key.to_vec()).await
-                };
-                if let Some(value) = &mut value {
+                if let Some(mut value) = value {
                     if usize::try_from(offset).unwrap() < value.len() {
-                        *value = value[usize::try_from(offset).unwrap()..].to_vec();
+                        value = &value[usize::try_from(offset).unwrap()..];
                         if usize::try_from(max_size).unwrap() < value.len() {
-                            *value = value[..usize::try_from(max_size).unwrap()].to_vec();
+                            value = &value[..usize::try_from(max_size).unwrap()];
                         }
-                    } else {
-                        *value = Vec::new();
                     }
+
+                    resolve.finish_call(Some(value.to_vec())); // TODO: overhead
+                } else {
+                    resolve.finish_call(None);
                 }
-                resolve.finish_call(value);
-            }
-            executor::State::ExternalStorageSet {
-                storage_key,
-                new_storage_value,
-                resolve,
-            } => {
-                top_trie_root_calculation_cache
-                    .storage_value_update(storage_key, new_storage_value.is_some());
-                top_trie_changes
-                    .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
-                resolve.finish_call(());
             }
             executor::State::ExternalStorageAppend {
                 storage_key,
-                value,
+                value: to_add,
                 resolve,
             } => {
-                top_trie_root_calculation_cache.storage_value_update(storage_key, true);
-
-                let mut current_value = if let Some(overlay) = top_trie_changes.get(storage_key) {
-                    overlay.clone().unwrap_or(Vec::new())
-                } else {
-                    (config.parent_storage_get)(storage_key.to_vec())
-                        .await
-                        .unwrap_or(Vec::new())
-                };
-
-                append_to_storage_value(&mut current_value, value);
-                top_trie_changes.insert(storage_key.to_vec(), Some(current_value));
+                let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
+                // TODO: could be less overhead?
+                append_to_storage_value(&mut value, to_add);
+                self.inner
+                    .top_trie_changes
+                    .insert(storage_key.to_vec(), Some(value.clone()));
                 resolve.finish_call(());
             }
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
+                    self.inner.root_calculation.take().unwrap()
+                {
+                    self.inner.root_calculation = Some(value_request.inject(value));
+                } else {
+                    // We only create a `StorageGet` if the state is `StorageValue`.
+                    panic!()
+                }
+            }
+
+            // We only create a `StorageGet` if the state is one of the above.
+            _ => unreachable!(),
+        };
+
+        self.inner
+    }
+}
+
+/// Fetching the list of keys with a given prefix is required in order to continue.
+#[must_use]
+pub struct PrefixKeys {
+    inner: ReadyToRun,
+}
+
+impl PrefixKeys {
+    /// Returns the prefix whose keys to load.
+    // TODO: don't take &mut mut but &self
+    pub fn prefix(&mut self) -> &[u8] {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageClearPrefix { storage_key, .. } => storage_key,
+            executor::State::ExternalStorageRoot { .. } => &[],
+
+            // We only create a `PrefixKeys` if the state is one of the above.
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the list of keys.
+    pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
+        match self.inner.vm.state() {
             executor::State::ExternalStorageClearPrefix {
                 storage_key,
                 resolve,
@@ -207,115 +415,118 @@ where
                 // TODO: use prefix_remove_update once optimized
                 //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
 
-                for key in (config.parent_storage_keys_prefix)(Vec::new()).await {
-                    if !key.starts_with(&storage_key) {
-                        continue;
-                    }
-                    top_trie_root_calculation_cache.storage_value_update(&key, false);
-                    top_trie_changes.insert(key, None);
+                for key in keys {
+                    self.inner
+                        .top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(key.as_ref(), false);
+                    self.inner
+                        .top_trie_changes
+                        .insert(key.as_ref().to_vec(), None);
                 }
-                for (key, value) in top_trie_changes.iter_mut() {
+                for (key, value) in self.inner.top_trie_changes.iter_mut() {
                     if !key.starts_with(&storage_key) {
                         continue;
                     }
-                    top_trie_root_calculation_cache.storage_value_update(key, false);
+                    if value.is_none() {
+                        continue;
+                    }
+                    self.inner
+                        .top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(key, false);
                     *value = None;
                 }
                 resolve.finish_call(());
             }
-            executor::State::ExternalStorageRoot { resolve } => {
-                let mut calculation = calculate_root::root_merkle_value(Some(mem::replace(
-                    &mut top_trie_root_calculation_cache,
-                    Default::default(),
-                )));
 
-                loop {
-                    match calculation {
-                        calculate_root::RootMerkleValueCalculation::Finished { hash, cache } => {
-                            top_trie_root_calculation_cache = cache;
-                            resolve.finish_call(hash);
-                            break;
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::AllKeys(all_keys) =
+                    self.inner.root_calculation.take().unwrap()
+                {
+                    // TODO: overhead
+                    let mut list = keys
+                        .filter(|v| {
+                            self.inner
+                                .top_trie_changes
+                                .get(v.as_ref())
+                                .map_or(true, |v| v.is_some())
+                        })
+                        .map(|v| v.as_ref().to_vec())
+                        .collect::<HashSet<_>>();
+                    // TODO: slow to iterate over everything?
+                    for (key, value) in self.inner.top_trie_changes.iter() {
+                        if value.is_none() {
+                            continue;
                         }
-                        calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
-                            let mut result = (config.parent_storage_keys_prefix)(Vec::new())
-                                .now_or_never()
-                                .unwrap()
-                                .into_iter()
-                                .filter(|v| top_trie_changes.get(v).map_or(true, |v| v.is_some()))
-                                .collect::<HashSet<_>>();
-                            // TODO: slow to iterate over everything?
-                            for (key, value) in top_trie_changes.iter() {
-                                if value.is_none() {
-                                    continue;
-                                }
-                                result.insert(key.clone());
-                            }
-                            calculation = keys.inject(result.into_iter().map(|k| k.into_iter()));
-                        }
-                        calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
-                            let key = value_request.key().collect::<Vec<u8>>();
-                            if let Some(overlay) = top_trie_changes.get(&key) {
-                                calculation = value_request.inject(overlay.as_ref());
-                            } else {
-                                let val = (config.parent_storage_get)(key.to_vec())
-                                    .now_or_never() // TODO: hack because `TrieRef` isn't async-friendly yet
-                                    .unwrap();
-                                calculation = value_request.inject(val.as_ref());
-                            }
-                        }
+                        list.insert(key.clone());
                     }
+                    self.inner.root_calculation =
+                        Some(all_keys.inject(list.into_iter().map(|k| k.into_iter())));
+                } else {
+                    // We only create a `PrefixKeys` if the state is `AllKeys`.
+                    panic!()
                 }
             }
-            executor::State::ExternalStorageChangesRoot {
-                parent_hash: _,
-                resolve,
-            } => {
-                // TODO: this is probably one of the most complicated things to implement
-                // TODO: must return None iff `state_at(parent_block).exists_storage(&well_known_keys::CHANGES_TRIE_CONFIG).unwrap() == false`
-                resolve.finish_call(None);
-            }
+
+            // We only create a `PrefixKeys` if the state is one of the above.
+            _ => unreachable!(),
+        };
+
+        self.inner
+    }
+}
+
+/// Fetching the key that follows a given one is required in order to continue.
+#[must_use]
+pub struct NextKey {
+    inner: ReadyToRun,
+}
+
+impl NextKey {
+    /// Returns the key whose next key must be passed back.
+    // TODO: don't take &mut mut but &self
+    pub fn key(&mut self) -> &[u8] {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageNextKey { storage_key, .. } => storage_key,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the key.
+    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
+        match self.inner.vm.state() {
             executor::State::ExternalStorageNextKey {
                 storage_key,
                 resolve,
             } => {
+                // The next key can be either the one passed by the user or one key in the current
+                // pending storage changes that has been inserted during the verification.
                 // TODO: not optimized regarding cloning
-                let in_storage = (config.parent_storage_next_key)(storage_key.to_vec())
-                    .await
-                    .map(|v| v.to_vec());
-                let in_overlay = top_trie_changes
+                // TODO: also not optimized in terms of searching time ; should really be a BTreeMap or something
+                let in_overlay = self
+                    .inner
+                    .top_trie_changes
                     .keys()
                     .filter(|k| &***k > storage_key)
                     .min();
-                let outcome = match (in_storage, in_overlay) {
-                    (Some(a), Some(b)) => Some(cmp::min(a, b.clone())),
-                    (Some(a), None) => Some(a),
+                // TODO: `to_vec()` overhead
+                let outcome = match (key, in_overlay) {
+                    (Some(a), Some(b)) => Some(cmp::min(a.as_ref().to_vec(), b.clone())),
+                    (Some(a), None) => Some(a.as_ref().to_vec()),
                     (None, Some(b)) => Some(b.clone()),
                     (None, None) => None,
                 };
                 resolve.finish_call(outcome);
             }
 
-            executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
-                // TODO: is there maybe a better way to handle that?
-                let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob) {
-                    Ok(w) => w,
-                    Err(_) => {
-                        resolve.finish_call(Err(()));
-                        continue;
-                    }
-                };
+            // We only create a `NextKey` if the state is one of the above.
+            _ => unreachable!(),
+        };
 
-                match executor::core_version(vm_prototype) {
-                    Ok((version, _)) => {
-                        resolve.finish_call(Ok(parity_scale_codec::Encode::encode(&version)));
-                    }
-                    Err(_) => {
-                        resolve.finish_call(Err(()));
-                    }
-                }
-            }
-            s => unimplemented!("unimplemented externality: {:?}", s),
-        }
+        self.inner
     }
 }
 

@@ -225,7 +225,7 @@ pub fn start_verify_header<'a>(
             slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap()
         } // TODO: don't unwrap
         (_, None) if config.header.number == 1 => 0,
-        (_, None) => panic!(), // Bad `Config`.
+        (_, None) => panic!(), // Bad `VerifyConfig`.
     };
 
     // Determine the epoch number of the parent block. `None` if the parent is the genesis block.

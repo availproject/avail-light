@@ -123,7 +123,7 @@ pub async fn verify_block<
     TPaNeOut,
     TEGet,
 >(
-    config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe, TEGet>,
+    mut config: Config<'a, TBody, TPaAcc, TPaPref, TPaNe, TEGet>,
 ) -> Result<Success, Error>
 where
     TBody: ExactSizeIterator<Item = TExt> + Clone,
@@ -135,7 +135,7 @@ where
     TPaPrefOut: Future<Output = Vec<Vec<u8>>>,
     TPaNe: Fn(Vec<u8>) -> TPaNeOut,
     TPaNeOut: Future<Output = Option<Vec<u8>>>,
-    TEGet: Fn(u64) -> babe::EpochInformation,
+    TEGet: FnMut(u64) -> babe::EpochInformation,
 {
     // Start by verifying BABE.
     let babe_verify_success = {
@@ -164,17 +164,53 @@ where
     let mut unsealed_header = config.block_header.clone();
     let _seal_log = unsealed_header.digest.pop().unwrap();
 
-    let outcome = unsealed::verify_unsealed_block(unsealed::Config {
-        parent_runtime: config.parent_runtime,
-        block_header: unsealed_header,
-        block_body: config.block_body,
-        parent_storage_get: config.parent_storage_get,
-        parent_storage_keys_prefix: config.parent_storage_keys_prefix,
-        parent_storage_next_key: config.parent_storage_next_key,
-        top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
-    })
-    .await
-    .map_err(Error::Unsealed)?;
+    let mut import_process = unsealed::Verify::ReadyToRun(
+        unsealed::verify_unsealed_block(unsealed::Config {
+            parent_runtime: config.parent_runtime,
+            block_header: unsealed_header,
+            block_body: config.block_body,
+            top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
+        })
+        .map_err(Error::Unsealed)?,
+    );
+
+    let outcome = loop {
+        match import_process {
+            unsealed::Verify::Finished(Ok(success)) => {
+                break success;
+            }
+            unsealed::Verify::Finished(Err(error)) => {
+                return Err(Error::Unsealed(error));
+            }
+            unsealed::Verify::ReadyToRun(run) => {
+                import_process = run.run();
+            }
+            unsealed::Verify::StorageGet(mut storage_get) => {
+                // TODO: overhead
+                let key = storage_get.key().fold(Vec::new(), |mut v, a| {
+                    v.extend_from_slice(a.as_ref());
+                    v
+                });
+                let fut = (config.parent_storage_get)(key);
+                let value = fut.await;
+                import_process = storage_get
+                    .inject_value(value.as_ref().map(|v| &v[..]))
+                    .run();
+            }
+            unsealed::Verify::PrefixKeys(mut prefix_keys) => {
+                // TODO: overhead
+                let fut = (config.parent_storage_keys_prefix)(prefix_keys.prefix().to_vec());
+                let keys = fut.await;
+                import_process = prefix_keys.inject_keys(keys.iter().map(|v| &v[..])).run();
+            }
+            unsealed::Verify::NextKey(mut next_key) => {
+                // TODO: overhead
+                let fut = (config.parent_storage_next_key)(next_key.key().to_vec());
+                let key = fut.await;
+                import_process = next_key.inject_key(key).run();
+            }
+        }
+    };
 
     Ok(Success {
         parent_runtime: outcome.parent_runtime,

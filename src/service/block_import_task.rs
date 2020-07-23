@@ -16,7 +16,7 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use hashbrown::HashMap;
+use hashbrown::{hash_map::Entry, HashMap};
 use parking_lot::Mutex;
 
 /// Message that can be sent to the block import task by the other parts of the code.
@@ -243,9 +243,13 @@ pub async fn run_block_import_task(mut config: Config) {
                                 async move { ret }
                             }
                         },
-                        babe_epoch_information_get: |epoch_num| {
-                            // TODO: don't unwrap!
-                            babe_epoch_info_cache.get(&epoch_num).unwrap().clone()
+                        babe_epoch_information_get: |epoch_num: u64| {
+                            match babe_epoch_info_cache.entry(epoch_num) {
+                                Entry::Occupied(e) => e.get().clone(),
+                                Entry::Vacant(e) => {
+                                    todo!() // TODO:
+                                }
+                            }
                         },
                         top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
                     })
