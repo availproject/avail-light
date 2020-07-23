@@ -18,8 +18,7 @@
 
 use crate::{babe, executor, header, trie::calculate_root};
 
-use core::{convert::TryFrom as _, iter, time::Duration};
-use futures::prelude::*;
+use core::time::Duration;
 use hashbrown::HashMap;
 
 mod unsealed;
@@ -95,7 +94,7 @@ pub enum Error {
 
 /// Verifies whether a block is valid.
 pub fn verify_block<'a>(
-    mut config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
     // Start the BABE verification process.
     let babe_verification = {
@@ -180,7 +179,7 @@ enum ReadyToRunInner {
 
 impl ReadyToRun {
     /// Continues the verification.
-    pub fn run(mut self) -> Verify {
+    pub fn run(self) -> Verify {
         match self.inner {
             ReadyToRunInner::Babe {
                 babe_verification,
@@ -282,7 +281,7 @@ impl StorageGet {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> ReadyToRun {
+    pub fn inject_value(self, value: Option<&[u8]>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_value(value),
@@ -307,7 +306,7 @@ impl PrefixKeys {
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
+    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_keys(keys),
@@ -332,7 +331,7 @@ impl NextKey {
     }
 
     /// Injects the key.
-    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_key(key),

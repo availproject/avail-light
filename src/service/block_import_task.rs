@@ -17,7 +17,6 @@ use futures::{
     prelude::*,
 };
 use hashbrown::{hash_map::Entry, HashMap};
-use parking_lot::Mutex;
 
 /// Message that can be sent to the block import task by the other parts of the code.
 pub enum ToBlockImport {

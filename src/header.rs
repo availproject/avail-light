@@ -21,7 +21,6 @@
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, iter};
-use parity_scale_codec::{Decode, Encode, EncodeAsRef, EncodeLike, HasCompact};
 
 /// Returns a hash of the SCALE-encoded header.
 ///
@@ -344,7 +343,7 @@ impl<'a> DigestItemRef<'a> {
 
 /// Available changes trie signals.
 // TODO: review documentation
-#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub enum ChangesTrieSignal {
     /// New changes trie configuration is enacted, starting from **next block**.
     ///
@@ -362,7 +361,9 @@ pub enum ChangesTrieSignal {
 
 /// Substrate changes trie configuration.
 // TODO: review documentation
-#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
 pub struct ChangesTrieConfiguration {
     /// Interval (in blocks) at which level1-digests are created. Digests are not
     /// created when this is less or equal to 1.

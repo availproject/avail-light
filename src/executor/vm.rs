@@ -159,7 +159,6 @@ impl From<WasmValue> for wasmtime::Val {
         match val {
             WasmValue::I32(v) => wasmtime::Val::I32(v),
             WasmValue::I64(v) => wasmtime::Val::I64(v),
-            _ => unimplemented!(),
         }
     }
 }

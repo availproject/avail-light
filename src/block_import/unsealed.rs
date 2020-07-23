@@ -198,7 +198,7 @@ impl ReadyToRun {
                         .unwrap()
                         .storage_value_update(storage_key, true);
 
-                    if let Some(mut current_value) = self.top_trie_changes.get(storage_key) {
+                    if let Some(current_value) = self.top_trie_changes.get(storage_key) {
                         let mut current_value = current_value.clone().unwrap_or_default();
                         append_to_storage_value(&mut current_value, value);
                         self.top_trie_changes

@@ -243,7 +243,6 @@ impl CallState {
                     done: Resume { sender: result },
                 }
             }
-            st => unimplemented!("unimplemented state: {:?}", st), // TODO:
         }
     }
 }
