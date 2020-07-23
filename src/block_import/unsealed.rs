@@ -6,8 +6,7 @@
 
 use crate::{executor, header, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _, iter, mem, slice};
-use futures::prelude::*;
+use core::{cmp, convert::TryFrom as _, iter, slice};
 use hashbrown::{HashMap, HashSet};
 
 /// Configuration for an unsealed block verification.
@@ -49,37 +48,6 @@ pub enum Error {
     /// Error while executing the Wasm virtual machine.
     // TODO: add the logs written by the runtime
     Trapped,
-}
-
-/// Current state of the verification.
-#[must_use]
-pub enum Verify {
-    /// Verification is over.
-    Finished(Result<Success, Error>),
-    /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun),
-    /// Loading a storage value is required in order to continue.
-    StorageGet(StorageGet),
-    /// Fetching the list of keys with a given prefix is required in order to continue.
-    PrefixKeys(PrefixKeys),
-    /// Fetching the key that follows a given one is required in order to continue.
-    NextKey(NextKey),
-}
-
-/// Verification is ready to continue.
-#[must_use]
-pub struct ReadyToRun {
-    vm: executor::WasmVm,
-
-    /// Pending changes to the top storage trie that this block performs.
-    top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
-
-    /// Cache passed by the user in the [`Config`]. Always `Some` except when we are currently
-    /// calculating the trie state root.
-    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
-
-    /// Trie root calculation in progress.
-    root_calculation: Option<calculate_root::RootMerkleValueCalculation>,
 }
 
 /// Verifies whether a block is valid.
@@ -127,6 +95,37 @@ pub fn verify_unsealed_block<'a>(
         ),
         root_calculation: None,
     })
+}
+
+/// Current state of the verification.
+#[must_use]
+pub enum Verify {
+    /// Verification is over.
+    Finished(Result<Success, Error>),
+    /// Verification is ready to continue.
+    ReadyToRun(ReadyToRun),
+    /// Loading a storage value is required in order to continue.
+    StorageGet(StorageGet),
+    /// Fetching the list of keys with a given prefix is required in order to continue.
+    PrefixKeys(PrefixKeys),
+    /// Fetching the key that follows a given one is required in order to continue.
+    NextKey(NextKey),
+}
+
+/// Verification is ready to continue.
+#[must_use]
+pub struct ReadyToRun {
+    vm: executor::WasmVm,
+
+    /// Pending changes to the top storage trie that this block performs.
+    top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+
+    /// Cache passed by the user in the [`Config`]. Always `Some` except when we are currently
+    /// calculating the trie state root.
+    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+
+    /// Trie root calculation in progress.
+    root_calculation: Option<calculate_root::RootMerkleValueCalculation>,
 }
 
 impl ReadyToRun {

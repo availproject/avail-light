@@ -188,11 +188,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 // Now perform the actual block verification.
                 // Note that this does **not** modify `local_storage_cache`.
                 let import_result = {
-                    // TODO: this mutex is stupid, the `crate::block_import` module should be reworked
-                    // to be coroutine-like
-                    let local_storage_cache = Arc::new(Mutex::new(&mut local_storage_cache));
-
-                    block_import::verify_block(block_import::Config {
+                    let mut process = block_import::verify_block(block_import::Config {
                         parent_runtime: runtime_wasm_blob,
                         babe_genesis_configuration: &config.babe_genesis_config,
                         block1_slot_number,
@@ -203,29 +199,43 @@ pub async fn run_block_import_task(mut config: Config) {
                         block_header: decoded_header.clone(),
                         block_body: body.iter().map(|e| &e[..]),
                         parent_block_header: header::decode(&best_block_header).unwrap(),
-                        parent_storage_get: {
-                            let local_storage_cache = local_storage_cache.clone();
-                            move |key: Vec<u8>| {
-                                let ret: Option<Vec<u8>> =
-                                    local_storage_cache.lock().get(&key).cloned();
-                                async move { ret }
+                        top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
+                    });
+
+                    loop {
+                        match process {
+                            block_import::Verify::Finished(result) => break result,
+                            block_import::Verify::ReadyToRun(run) => {
+                                process = run.run();
                             }
-                        },
-                        parent_storage_keys_prefix: {
-                            let local_storage_cache = local_storage_cache.clone();
-                            move |prefix: Vec<u8>| {
+                            block_import::Verify::EpochInformation(epoch_info) => {
+                                let epoch =
+                                    match babe_epoch_info_cache.entry(epoch_info.epoch_number()) {
+                                        Entry::Occupied(e) => e.get().clone(),
+                                        Entry::Vacant(e) => {
+                                            todo!() // TODO:
+                                        }
+                                    };
+                                process = epoch_info.inject_epoch(&epoch).run();
+                            }
+                            block_import::Verify::StorageGet(mut get) => {
+                                let key = get.key().fold(Vec::new(), |mut a, b| {
+                                    a.extend_from_slice(b.as_ref());
+                                    a
+                                });
+                                let value = local_storage_cache.get(&key).cloned();
+                                process = get.inject_value(value.as_ref().map(|v| &v[..])).run();
+                            }
+                            block_import::Verify::PrefixKeys(mut prefix_keys) => {
+                                // TODO: we need to collect into a Vec because of multiple borrows of prefix_keys
                                 let ret = local_storage_cache
-                                    .lock()
-                                    .range(prefix.clone()..)
-                                    .take_while(|(k, _)| k.starts_with(&prefix))
+                                    .range(prefix_keys.prefix().to_vec()..)
+                                    .take_while(|(k, _)| k.starts_with(prefix_keys.prefix()))
                                     .map(|(k, _)| k.to_vec())
-                                    .collect();
-                                async move { ret }
+                                    .collect::<Vec<_>>();
+                                process = prefix_keys.inject_keys(ret.into_iter()).run();
                             }
-                        },
-                        parent_storage_next_key: {
-                            let local_storage_cache = local_storage_cache.clone();
-                            move |key: Vec<u8>| {
+                            block_import::Verify::NextKey(mut next_key) => {
                                 struct CustomBound(Vec<u8>);
                                 impl core::ops::RangeBounds<Vec<u8>> for CustomBound {
                                     fn start_bound(&self) -> core::ops::Bound<&Vec<u8>> {
@@ -236,24 +246,13 @@ pub async fn run_block_import_task(mut config: Config) {
                                     }
                                 }
                                 let ret = local_storage_cache
-                                    .lock()
-                                    .range(CustomBound(key))
+                                    .range(CustomBound(next_key.key().to_vec()))
                                     .next()
                                     .map(|(k, _)| k.to_vec());
-                                async move { ret }
+                                process = next_key.inject_key(ret).run();
                             }
-                        },
-                        babe_epoch_information_get: |epoch_num: u64| {
-                            match babe_epoch_info_cache.entry(epoch_num) {
-                                Entry::Occupied(e) => e.get().clone(),
-                                Entry::Vacant(e) => {
-                                    todo!() // TODO:
-                                }
-                            }
-                        },
-                        top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
-                    })
-                    .await
+                        }
+                    }
                 };
 
                 // If the block verification failed, we can just discard everything as nothing

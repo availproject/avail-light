@@ -194,9 +194,7 @@ pub enum VerifyError {
 /// Panics if `config.parent_block_header` is invalid.
 /// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
 ///
-pub fn start_verify_header<'a>(
-    config: VerifyConfig<'a>,
-) -> Result<SuccessOrPending<'a>, VerifyError> {
+pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPending, VerifyError> {
     let header =
         header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
@@ -267,10 +265,22 @@ pub fn start_verify_header<'a>(
         (None, true) => return Err(VerifyError::MissingEpochChangeLog),
     };
 
+    // The signature in the seal applies to the header from where the signature isn't present.
+    // Build the hash that is expected to be signed.
+    let pre_seal_hash = {
+        let mut unsealed_header = config.header;
+        let _popped = unsealed_header.digest.pop();
+        debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
+        unsealed_header.hash()
+    };
+
     // Intermediary object representing the state of the verification at this point.
     let pending = PendingVerify {
-        header: config.header,
-        seal_signature: header.seal_signature,
+        pre_seal_hash,
+        seal_signature: {
+            schnorrkel::Signature::from_bytes(header.seal_signature)
+                .map_err(|_| VerifyError::BadSignature)?
+        },
         epoch_change,
         epoch_number,
         slot_number,
@@ -293,9 +303,9 @@ pub fn start_verify_header<'a>(
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub enum SuccessOrPending<'a> {
+pub enum SuccessOrPending {
     /// Need information about an epoch in order to finish verifying the block.
-    Pending(PendingVerify<'a>),
+    Pending(PendingVerify),
     /// Block has been successfully verified.
     Success(VerifySuccess),
 }
@@ -303,11 +313,11 @@ pub enum SuccessOrPending<'a> {
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub struct PendingVerify<'a> {
-    /// Header of the block to verify.
-    header: header::HeaderRef<'a>,
+pub struct PendingVerify {
+    /// Hash of the block header without its seal.
+    pre_seal_hash: [u8; 32],
     /// Block signature contained in the header that we verify.
-    seal_signature: &'a [u8],
+    seal_signature: schnorrkel::Signature,
     /// If `Some`, block is at an epoch transition.
     epoch_change: Option<EpochChangeInformation>,
     /// Epoch number the block belongs to.
@@ -323,7 +333,7 @@ pub struct PendingVerify<'a> {
     vrf_output_and_proof: Option<([u8; 32], [u8; 64])>,
 }
 
-impl<'a> PendingVerify<'a> {
+impl PendingVerify {
     /// Returns the epoch number whose information must be passed to [`PendingVerify::finish`].
     pub fn epoch_number(&self) -> u64 {
         self.epoch_number
@@ -349,22 +359,9 @@ impl<'a> PendingVerify<'a> {
             schnorrkel::PublicKey::from_bytes(&signing_authority.public_key).unwrap();
 
         // Now verifying the signature in the seal.
-        {
-            // The signature in the seal applies to the header from where the signature isn't present.
-            // Build the hash that is expected to be signed.
-            let pre_seal_hash = {
-                let mut unsealed_header = self.header;
-                let _popped = unsealed_header.digest.pop();
-                debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
-                unsealed_header.hash()
-            };
-
-            let signature = schnorrkel::Signature::from_bytes(self.seal_signature)
-                .map_err(|_| VerifyError::BadSignature)?;
-            signing_public_key
-                .verify_simple(b"substrate", &pre_seal_hash, &signature)
-                .map_err(|_| VerifyError::BadSignature)?;
-        }
+        signing_public_key
+            .verify_simple(b"substrate", &self.pre_seal_hash, &self.seal_signature)
+            .map_err(|_| VerifyError::BadSignature)?;
 
         // Now verify the VRF output and proof, if any.
         // The lack of VRF output/proof in the header is checked when we check whether the slot
