@@ -20,6 +20,7 @@ pub mod rpc_server;
 pub mod service;
 pub mod trie;
 
+use core::iter;
 use parity_scale_codec::Encode as _;
 
 /// Calculates the hash of the genesis block from the storage.
@@ -36,22 +37,40 @@ use parity_scale_codec::Encode as _;
 /// The hash of the genesis block depends purely on the initial state of the content.
 /// This function makes it possible to calculate this hash.
 pub fn calculate_genesis_block_hash<'a>(
-    genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])>,
+    genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
 ) -> [u8; 32] {
-    let mut state_trie = trie::Trie::new();
-    for (key, value) in genesis_storage {
-        state_trie.insert(key, value.to_vec());
-    }
+    let state_root = {
+        let mut calculation = trie::calculate_root::root_merkle_value(None);
 
-    let genesis_block_header = block::Header {
-        parent_hash: [0; 32].into(),
-        number: 0,
-        state_root: state_trie.root_merkle_value(None).into(),
-        extrinsics_root: trie::Trie::new().root_merkle_value(None).into(),
-        digest: block::Digest { logs: Vec::new() },
+        loop {
+            match calculation {
+                trie::calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => {
+                    break hash
+                },
+                trie::calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+                    calculation = keys.inject(genesis_storage.clone().map(|(k, _)| k.iter().cloned()));
+                },
+                trie::calculate_root::RootMerkleValueCalculation::StorageValue(val) => {
+                    // TODO: don't allocate
+                    let key = val.key().collect::<Vec<_>>();
+                    let value = genesis_storage.clone()
+                        .find(|(k, v)| k == &key)
+                        .map(|(k, v)| v);
+                    calculation = val.inject(value);
+                }
+            }
+        }
     };
 
-    genesis_block_header.block_hash().0
+    let genesis_block_header = header::HeaderRef {
+        parent_hash: &[0; 32],
+        number: 0,
+        state_root: &state_root,
+        extrinsics_root: &trie::empty_trie_merkle_value(),
+        digest: header::DigestRef::empty(),
+    };
+
+    genesis_block_header.hash()
 }
 
 /// Turns a [`database::DatabaseOpen`] into a [`database::Database`], either by inserting the

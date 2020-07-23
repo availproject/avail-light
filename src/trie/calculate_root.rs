@@ -72,7 +72,7 @@ struct CacheEntry {
 
 impl CalculationCache {
     /// Builds a new empty cache.
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         CalculationCache { structure: None }
     }
 

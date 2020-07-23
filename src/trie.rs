@@ -26,7 +26,7 @@
 //! size of the trie.
 
 use alloc::collections::BTreeMap;
-use core::mem;
+use core::{iter, mem};
 
 mod nibble;
 
@@ -120,6 +120,25 @@ impl Trie {
     }
 }
 
+/// Returns the Merkle value of the root of an empty trie.
+pub fn empty_trie_merkle_value() -> [u8; 32] {
+    let mut calculation = calculate_root::root_merkle_value(None);
+
+    loop {
+        match calculation {
+            calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => {
+                break hash
+            },
+            calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+                calculation = keys.inject(iter::empty::<iter::Empty<u8>>());
+            },
+            calculate_root::RootMerkleValueCalculation::StorageValue(val) => {
+                calculation = val.inject(None::<&[u8]>);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Trie;
@@ -198,5 +217,12 @@ mod tests {
 
         let expected = blake2_rfc::blake2b::blake2b(32, &[], &ex);
         assert_eq!(trie.root_merkle_value(None), expected.as_bytes());
+    }
+
+    #[test]
+    fn empty_trie() {
+        let obtained = super::empty_trie_merkle_value();
+        let expected = blake2_rfc::blake2b::blake2b(32, &[], &[0x0]);
+        assert_eq!(obtained, expected.as_bytes());
     }
 }

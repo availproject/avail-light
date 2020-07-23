@@ -181,6 +181,14 @@ pub struct DigestRef<'a> {
 }
 
 impl<'a> DigestRef<'a> {
+    /// Returns a digest with empty logs.
+    pub const fn empty() -> DigestRef<'a> {
+        DigestRef {
+            digest_logs_len: 0,
+            digest: &[],
+        }
+    }
+
     /// Pops the last element of the [`DigestRef`].
     pub fn pop(&mut self) -> Option<DigestItemRef<'a>> {
         let digest_logs_len_minus_one = self.digest_logs_len.checked_sub(1)?;
