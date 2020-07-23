@@ -52,11 +52,11 @@ bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 log = "0.4"  # TODO: we don't need logging
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
-sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "5862ef152edd3f1875faf31278145fe8454f6e9d" }
+sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "16fdfc4a80a14a26221d17b8a1b9a95421a1576c" }
 void = "1.0"    # TODO: remove
 
 [dependencies.libp2p]
-version = "0.21.1"
+version = "0.22.0"
 default-features = false
 features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
 
