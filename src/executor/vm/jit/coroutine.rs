@@ -53,8 +53,10 @@ struct Shared<TInt, TRes> {
     ///
     /// Must point somewhere within [`Coroutine::stack`]. Will contain null before initialization.
     ///
-    /// Must point to a memory location that contains the values of the following registers in
-    /// order: r15, r14, r13, r12, rbp, rbx, rsi, rip
+    /// On initialization, must point to a memory location that contains the second parameter of
+    /// `start_call`.
+    /// Afterwards, must point to a memory location that contains the value 0 then
+    /// the saved value of `rbp`, then the value of `rip` to return to.
     ///
     /// In order to resume the coroutine, set `rsp` to this value then pop all the registers.
     coroutine_stack_pointer: Cell<usize>,
@@ -133,18 +135,11 @@ impl<TInt, TRes> CoroutineBuilder<TInt, TRes> {
         });
 
         unsafe {
-            // Starting the stack of top, we virtually push a fake return address, plus our 8 saved
-            // registers.
-            // The fake return address is important is order to guarantee the proper alignment of
-            // the stack.
             let stack_top = (stack.as_mut_ptr() as *mut u64)
                 .add(self.stack_size / 8)
-                .sub(9);
-
-            stack_top.add(6).write(to_actually_exec as usize as u64); // RSI
-            let rip = start_call as extern "C" fn(usize, usize) as usize as u64;
-            stack_top.add(7).write(rip);
-            stack_top.add(8).write(0);
+                .sub(1);
+            debug_assert!(!to_actually_exec.is_null());
+            stack_top.add(0).write(to_actually_exec as usize as u64);
 
             self.state.coroutine_stack_pointer.set(stack_top as usize);
         }
@@ -261,49 +256,66 @@ extern "C" fn start_call(caller_stack_pointer: usize, to_exec: usize) {
     }
 }
 
-extern "C" {
-    /// Pushes the current processor's state on the stack, then sets the stack pointer to the
-    /// given value and pops the processor's state back. The "processor's state" includes the
-    /// %rip register, which means that we're essentially returning somewhere else than where this
-    /// function has been called.
-    ///
-    /// Before returning, this function sets the `%rax` and `%rdi` registers to the stack pointer
-    /// that contains the state of the caller. This is shown here as a return value, but it also
-    /// means that the poped `%rip` can be the entry point of a function that will thus accept
-    /// as first parameter the value of this stack pointer.
-    ///
-    /// The state of the caller can later be restored by calling this function again with the
-    /// value that it produced.
-    ///
-    /// Contrary to pre-emptive multitasking systems, we don't need to save the entire state. We
-    /// only need to save the registers that the caller expects to not change, as defined by the
-    /// ABI.
-    fn coroutine_switch_stack(stack: usize) -> usize;
+#[cfg(target_arch = "x86_64")]
+unsafe fn coroutine_switch_stack(stack: usize) -> usize {
+    let stack_out;
+    asm!(r#"
+        // Push rip on the stack.
+        call 1f
+
+        // At label `2` we will jump back here, which is why we need to jump to `3`.
+        jmp 3f
+
+    1:  push rbp
+
+        // As seen later, after a stack change we always check the value at the top of the stack
+        // to determine whether `start_call` must be called. Push a 0 to signify that no.
+        push 0
+
+        // Keep the current stack for later.
+        mov rax, rsp
+
+        // Set the stack to the request one.
+        mov rsp, rdi
+
+        // At the top of this new stack there must always be the value of rsi
+        pop rsi
+
+        // This value of rsi must always be 0 unless it is the entrance of the coroutine, in
+        // which case rsi is the parameter to pass to `start_call`. We call `start_call` with the
+        // appropriate parameters.
+        cmp rsi, 0
+        je 2f
+        mov rdi, rax
+        call {}
+        int 3
+
+        // If we reach here, it means that we are about to return to a code that has indeed called
+        // `coroutine_switch_stack` earlier.
+        // Pop rip.
+        // Since we will eventually jump to label `3` below it may seem like we could just do
+        // `add rsp, 8`, but since this inline assembly can exist in multiple versions in the final
+        // binary, it is not guaranteed that the label `3` below is the same as the one we will
+        // end up jumping to after the `ret`.
+    2:  pop rbp
+        ret
+
+        3: nop
+    "#,
+        sym start_call,
+        inout("rdi") stack => _, out("rsi") _,
+        out("rax") stack_out, out("rcx") _, out("rdx") _, out("rbx") _,
+        out("r8") _, out("r9") _, out("r10") _, out("r11") _,
+        out("r12") _, out("r13") _, out("r14") _, out("r15") _,
+        out("xmm0") _, out("xmm1") _, out("xmm2") _, out("xmm3") _,
+        out("xmm4") _, out("xmm5") _, out("xmm6") _, out("xmm7") _,
+        out("xmm8") _, out("xmm9") _, out("xmm10") _, out("xmm11") _,
+        out("xmm12") _, out("xmm13") _, out("xmm14") _, out("xmm15") _
+        // TODO: do we have all registers?
+    );
+
+    stack_out
 }
-// TODO: we would like to use a naked function in order to have mangled function name and possibly
-// avoid collisions, but if we do so the compiler still inserts a `mov %rdi, ...` at the top.
-global_asm! {r#"
-.global coroutine_switch_stack
-coroutine_switch_stack:
-    push %rsi
-    push %rbx
-    push %rbp
-    push %r12
-    push %r13
-    push %r14
-    push %r15
-    mov %rsp, %rax
-    mov %rdi, %rsp
-    mov %rax, %rdi
-    pop %r15
-    pop %r14
-    pop %r13
-    pop %r12
-    pop %rbp
-    pop %rbx
-    pop %rsi
-    ret
-"#}
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,7 @@
 //#![cfg_attr(not(test), no_std)]
 #![recursion_limit = "512"]
 #![feature(new_uninit)] // TODO:
-#![feature(global_asm)] // TODO:
+#![feature(asm)] // TODO:
 
 extern crate alloc;
 
