@@ -126,6 +126,7 @@ pub async fn run_block_import_task(mut config: Config) {
     );
 
     // Load the slot number of block #1, or `None` if the database doesn't contain block #1.
+    // TODO: this should be some sort of fork-tree, in case there are multiple block 1s
     let mut block1_slot_number = match config.database.block_hash_by_number(1).unwrap() {
         Some(block_hash) => {
             let block1_header = config
@@ -144,6 +145,7 @@ pub async fn run_block_import_task(mut config: Config) {
     };
 
     // Cache of the information about BABE epochs.
+    // TODO: this should be some sort of fork-tree
     let mut babe_epoch_info_cache: lru::LruCache<u64, babe::EpochInformation> =
         lru::LruCache::new(4);
 
@@ -225,17 +227,18 @@ pub async fn run_block_import_task(mut config: Config) {
                                     a.extend_from_slice(b.as_ref());
                                     a
                                 });
-                                let value = local_storage_cache.get(&key).cloned();
+                                let value = local_storage_cache.get(&key);
                                 process = get.inject_value(value.as_ref().map(|v| &v[..])).run();
                             }
                             block_import::Verify::PrefixKeys(mut prefix_keys) => {
-                                // TODO: we need to collect into a Vec because of multiple borrows of prefix_keys
+                                // We need to clone the prefix in order to not borrow
+                                // `prefix_keys` multiple times.
+                                let prefix = prefix_keys.prefix().to_vec();
                                 let ret = local_storage_cache
-                                    .range(prefix_keys.prefix().to_vec()..)
-                                    .take_while(|(k, _)| k.starts_with(prefix_keys.prefix()))
-                                    .map(|(k, _)| k.to_vec())
-                                    .collect::<Vec<_>>();
-                                process = prefix_keys.inject_keys(ret.into_iter()).run();
+                                    .range(prefix.clone()..)
+                                    .take_while(|(k, _)| k.starts_with(&prefix))
+                                    .map(|(k, _)| k.to_vec());
+                                process = prefix_keys.inject_keys(ret).run();
                             }
                             block_import::Verify::NextKey(mut next_key) => {
                                 struct CustomBound(Vec<u8>);
