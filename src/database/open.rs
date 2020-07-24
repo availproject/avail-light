@@ -16,6 +16,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
     let database = sled::Config::default()
         // We put a `/v1/` behind the path in case we change the schema.
         .path(config.path.join("v1"))
+        .use_compression(true)
         .open()?;
 
     let meta_tree = database.open_tree(b"meta")?;

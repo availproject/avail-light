@@ -89,12 +89,28 @@
 //!
 //! # Usage
 //!
+//! Before any block can be verified, to need to create a [`BabeGenesisConfiguration`] using the
+//! genesis block. See the documentation of [`BabeGenesisConfiguration`] for more information.
+//!
 //! Verifying a BABE block is done in two phases:
 //!
 //! - First, call [`start_verify_header`] to start the verification process. This returns a
 //! [`SuccessOrPending`] enum.
 //! - If [`SuccessOrPending::Pending`] has been returned, you need to provide a specific
 //! [`EpochInformation`] struct.
+//!
+//! The information to keep in memory is:
+//!
+//! - The slot number of block 1. When block number 1 is verified, one needs to keep in memory
+//! slot number that is returned with [`VerifySuccess::slot_number`]. This value must later be
+//! provided as part of the [`VerifyConfig`].
+//! - The [`EpochInformation`] structs corresponding to each epoch number. An [`EpochInformation`]
+//! can be extracted from a block's header, therefore for long-term storage you only need to store
+//! which block contains the information about each epoch number, and that block's header.
+//!
+//! In both situations, you need to be aware of forks. There can be multiple block 1s, and
+//! multiple blocks which contain an [`EpochInformation`] for a given epoch number. Only the
+//! information contained in an ancestor of the block being verified must be provided.
 //!
 
 use crate::header;

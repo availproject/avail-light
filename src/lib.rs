@@ -46,14 +46,16 @@ pub fn calculate_genesis_block_hash<'a>(
             match calculation {
                 trie::calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => {
                     break hash
-                },
+                }
                 trie::calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
-                    calculation = keys.inject(genesis_storage.clone().map(|(k, _)| k.iter().cloned()));
-                },
+                    calculation =
+                        keys.inject(genesis_storage.clone().map(|(k, _)| k.iter().cloned()));
+                }
                 trie::calculate_root::RootMerkleValueCalculation::StorageValue(val) => {
                     // TODO: don't allocate
                     let key = val.key().collect::<Vec<_>>();
-                    let value = genesis_storage.clone()
+                    let value = genesis_storage
+                        .clone()
                         .find(|(k, v)| k == &key)
                         .map(|(k, v)| v);
                     calculation = val.inject(value);

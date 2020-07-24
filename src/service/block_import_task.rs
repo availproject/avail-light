@@ -144,8 +144,8 @@ pub async fn run_block_import_task(mut config: Config) {
     };
 
     // Cache of the information about BABE epochs.
-    // TODO: should be an LRU cache
-    let mut babe_epoch_info_cache: HashMap<u64, babe::EpochInformation> = HashMap::new();
+    let mut babe_epoch_info_cache: lru::LruCache<u64, babe::EpochInformation> =
+        lru::LruCache::new(4);
 
     // Main loop of the task. Processes received messages.
     while let Some(event) = config.to_block_import.next().await {
@@ -208,13 +208,16 @@ pub async fn run_block_import_task(mut config: Config) {
                                 process = run.run();
                             }
                             block_import::Verify::EpochInformation(epoch_info) => {
-                                let epoch =
-                                    match babe_epoch_info_cache.entry(epoch_info.epoch_number()) {
-                                        Entry::Occupied(e) => e.get().clone(),
-                                        Entry::Vacant(e) => {
-                                            todo!() // TODO:
-                                        }
-                                    };
+                                // TODO: don't unwrap
+                                let epoch = babe_epoch_info_cache
+                                    .get(&epoch_info.epoch_number())
+                                    .unwrap();
+                                /*match babe_epoch_info_cache.entry(epoch_info.epoch_number()) {
+                                    Entry::Occupied(e) => e.get().clone(),
+                                    Entry::Vacant(e) => {
+                                        todo!() // TODO:
+                                    }
+                                };*/
                                 process = epoch_info.inject_epoch(&epoch).run();
                             }
                             block_import::Verify::StorageGet(mut get) => {
@@ -291,7 +294,9 @@ pub async fn run_block_import_task(mut config: Config) {
                     block1_slot_number = Some(import_result.slot_number);
                 }
                 if let Some(epoch_change) = import_result.babe_epoch_change {
-                    babe_epoch_info_cache.insert(epoch_change.info_epoch_number, epoch_change.info);
+                    let _was_in = babe_epoch_info_cache
+                        .put(epoch_change.info_epoch_number, epoch_change.info);
+                    debug_assert!(_was_in.is_none());
                 }
 
                 let current_best_hash = best_block_hash.clone();

@@ -126,12 +126,10 @@ pub fn empty_trie_merkle_value() -> [u8; 32] {
 
     loop {
         match calculation {
-            calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => {
-                break hash
-            },
+            calculate_root::RootMerkleValueCalculation::Finished { hash, .. } => break hash,
             calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
                 calculation = keys.inject(iter::empty::<iter::Empty<u8>>());
-            },
+            }
             calculate_root::RootMerkleValueCalculation::StorageValue(val) => {
                 calculation = val.inject(None::<&[u8]>);
             }
