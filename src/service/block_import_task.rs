@@ -210,17 +210,30 @@ pub async fn run_block_import_task(mut config: Config) {
                                 process = run.run();
                             }
                             block_import::Verify::EpochInformation(epoch_info) => {
-                                // TODO: don't unwrap
-                                let epoch = babe_epoch_info_cache
-                                    .get(&epoch_info.epoch_number())
-                                    .unwrap();
-                                /*match babe_epoch_info_cache.entry(epoch_info.epoch_number()) {
-                                    Entry::Occupied(e) => e.get().clone(),
-                                    Entry::Vacant(e) => {
-                                        todo!() // TODO:
-                                    }
-                                };*/
-                                process = epoch_info.inject_epoch(&epoch).run();
+                                if let Some(epoch) =
+                                    babe_epoch_info_cache.get(&epoch_info.epoch_number())
+                                {
+                                    process = epoch_info.inject_epoch(&epoch).run();
+                                } else {
+                                    let blocks = config
+                                        .database
+                                        .babe_epoch_information_block_hashes(
+                                            epoch_info.epoch_number(),
+                                        )
+                                        .unwrap();
+                                    let block_hash = blocks.iter().next().unwrap(); // TODO: do that correctly
+                                    let header = config
+                                        .database
+                                        .block_scale_encoded_header(&block_hash)
+                                        .unwrap()
+                                        .unwrap();
+                                    let decoded = header::decode(&header).unwrap();
+                                    let babe_info =
+                                        babe::header_info::header_information(decoded).unwrap();
+                                    process = epoch_info
+                                        .inject_epoch(&babe_info.epoch_change.unwrap().0)
+                                        .run();
+                                }
                             }
                             block_import::Verify::StorageGet(mut get) => {
                                 let key = get.key().fold(Vec::new(), |mut a, b| {
@@ -296,6 +309,10 @@ pub async fn run_block_import_task(mut config: Config) {
                     assert!(block1_slot_number.is_none());
                     block1_slot_number = Some(import_result.slot_number);
                 }
+                let babe_epoch_change_number = import_result
+                    .babe_epoch_change
+                    .as_ref()
+                    .map(|e| e.info_epoch_number);
                 if let Some(epoch_change) = import_result.babe_epoch_change {
                     let _was_in = babe_epoch_info_cache
                         .put(epoch_change.info_epoch_number, epoch_change.info);
@@ -329,6 +346,7 @@ pub async fn run_block_import_task(mut config: Config) {
                             storage_top_trie_changes
                                 .iter()
                                 .map(|(k, v)| (k.clone(), v.clone())),
+                            babe_epoch_change_number,
                         );
 
                         match db_import_result {

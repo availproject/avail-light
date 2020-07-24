@@ -5,7 +5,7 @@
 // TODO: gate this module in no_std contexts
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::ops;
+use core::{convert::TryFrom as _, fmt, iter, ops};
 use parity_scale_codec::DecodeAll as _;
 use sled::Transactional as _;
 
@@ -46,6 +46,14 @@ pub struct Database {
     ///
     /// Keys are storage keys, and values are storage values.
     storage_top_trie_tree: sled::Tree,
+
+    /// For each BABE epoch number encoded, the list of block hashes containing the information
+    /// about that epoch.
+    ///
+    /// Keys in that tree are 64-bits-big-endian epoch numbers, and values are a concatenation of
+    /// 32-bytes block hashes (without any encoding). In other words, the length of values is
+    /// always a multiple of 32.
+    babe_epochs_tree: sled::Tree,
 }
 
 impl Database {
@@ -140,6 +148,7 @@ impl Database {
         new_best_body: impl Iterator<Item = Vec<u8>>,
         // TODO: pass trie by references
         storage_top_trie_changes: impl Iterator<Item = (Vec<u8>, Option<Vec<u8>>)> + Clone,
+        contains_babe_epoch_information: Option<u64>,
     ) -> Result<(), InsertNewBestError> {
         // Calculate the hash of the new best block.
         let new_best_hash = {
@@ -172,6 +181,7 @@ impl Database {
             &self.block_bodies_tree,
             &self.storage_top_trie_tree,
             &self.meta_tree,
+            &self.babe_epochs_tree,
         )
             .transaction(
                 move |(
@@ -180,6 +190,7 @@ impl Database {
                     block_bodies,
                     storage_top_trie,
                     meta,
+                    babe_epochs,
                 )| {
                     if meta.get(b"best")?.map_or(true, |v| v != &current_best[..]) {
                         return Err(sled::ConflictableTransactionError::Abort(()));
@@ -198,6 +209,17 @@ impl Database {
 
                     block_headers.insert(&new_best_hash[..], new_best_scale_header)?;
                     block_bodies.insert(&new_best_hash[..], &encoded_body[..])?;
+
+                    if let Some(epoch_number) = contains_babe_epoch_information {
+                        let epoch_number = u64::to_be_bytes(epoch_number);
+                        if let Some(existing) = babe_epochs.get(&epoch_number)? {
+                            let mut new_value = existing.as_ref().to_vec();
+                            new_value.extend_from_slice(&new_best_hash[..]);
+                            babe_epochs.insert(&epoch_number, new_value)?;
+                        } else {
+                            babe_epochs.insert(&epoch_number, &new_best_hash[..])?;
+                        }
+                    }
 
                     meta.insert(b"best", &new_best_hash[..])?;
                     Ok(())
@@ -235,6 +257,23 @@ impl Database {
         // TODO: block isn't checked
         Ok(self.storage_top_trie_tree.get(key)?.map(VarLenBytes))
     }
+
+    pub fn babe_epoch_information_block_hashes(
+        &self,
+        epoch_number: u64,
+    ) -> Result<BabeEpochInformationBlockHashes, AccessError> {
+        let value = self
+            .babe_epochs_tree
+            .get(&u64::to_be_bytes(epoch_number)[..])?;
+        if let Some(value) = &value {
+            if value.is_empty() || value.len() % 32 != 0 {
+                return Err(AccessError::Corrupted(
+                    CorruptedError::BabeEpochInformationWrongLength,
+                ));
+            }
+        }
+        Ok(BabeEpochInformationBlockHashes(value))
+    }
 }
 
 /// Bytes in the database.
@@ -246,6 +285,27 @@ impl ops::Deref for VarLenBytes {
 
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
+    }
+}
+
+/// List of block hashes that contain an epoch information.
+pub struct BabeEpochInformationBlockHashes(Option<sled::IVec>);
+
+impl BabeEpochInformationBlockHashes {
+    /// Returns the list of block hashes.
+    pub fn iter<'a>(&'a self) -> impl ExactSizeIterator<Item = &[u8; 32]> + 'a {
+        if let Some(value) = &self.0 {
+            either::Either::Left(value.chunks(32).map(|s| <&[u8; 32]>::try_from(s).unwrap()))
+        } else {
+            either::Either::Right(iter::empty())
+        }
+    }
+}
+
+impl fmt::Debug for BabeEpochInformationBlockHashes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: map hashes with Hex encoding
+        f.debug_list().entries(self.iter()).finish()
     }
 }
 
@@ -279,4 +339,5 @@ pub enum CorruptedError {
     BestBlockHeaderCorrupted(parity_scale_codec::Error),
     BlockHashLenInHashNumberMapping,
     BlockBodyCorrupted(parity_scale_codec::Error),
+    BabeEpochInformationWrongLength,
 }

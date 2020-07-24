@@ -24,6 +24,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
     let block_headers_tree = database.open_tree(b"block_headers")?;
     let block_bodies_tree = database.open_tree(b"block_bodies")?;
     let storage_top_trie_tree = database.open_tree(b"storage_top_trie")?;
+    let babe_epochs_tree = database.open_tree(b"babe_epochs")?;
 
     Ok(if meta_tree.get(b"best")?.is_some() {
         DatabaseOpen::Open(Database {
@@ -32,6 +33,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
             block_headers_tree,
             block_bodies_tree,
             storage_top_trie_tree,
+            babe_epochs_tree,
         })
     } else {
         DatabaseOpen::Empty(DatabaseEmpty {
@@ -40,6 +42,7 @@ pub fn open(config: Config) -> Result<DatabaseOpen, sled::Error> {
             block_headers_tree,
             block_bodies_tree,
             storage_top_trie_tree,
+            babe_epochs_tree,
         })
     })
 }
@@ -80,6 +83,9 @@ pub struct DatabaseEmpty {
 
     /// See the similar field in [`Database`].
     storage_top_trie_tree: sled::Tree,
+
+    /// See the similar field in [`Database`].
+    babe_epochs_tree: sled::Tree,
 }
 
 impl DatabaseEmpty {
@@ -141,6 +147,7 @@ impl DatabaseEmpty {
                 block_headers_tree: self.block_headers_tree,
                 block_bodies_tree: self.block_bodies_tree,
                 storage_top_trie_tree: self.storage_top_trie_tree,
+                babe_epochs_tree: self.babe_epochs_tree,
             }),
             Err(sled::TransactionError::Abort(())) => unreachable!(),
             Err(sled::TransactionError::Storage(err)) => Err(AccessError::Database(err)),
