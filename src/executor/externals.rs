@@ -348,6 +348,13 @@ impl ExternalsVm {
                             resolve: Resume { inner: done },
                         }
                     }
+                    externalities::State::OffchainStorageSetNeeded { key, value, done } => {
+                        return State::ExternalOffchainStorageSet {
+                            storage_key: key,
+                            new_storage_value: value,
+                            resolve: Resume { inner: done },
+                        }
+                    }
                     externalities::State::CallRuntimeVersionNeeded { wasm_blob, done } => {
                         return State::CallRuntimeVersion {
                             wasm_blob,
@@ -455,6 +462,14 @@ pub enum State<'a> {
         storage_key: &'a [u8],
         /// Object to use to finish the call
         resolve: Resume<'a, Option<Vec<u8>>>,
+    },
+    ExternalOffchainStorageSet {
+        /// Which key to change.
+        storage_key: &'a [u8],
+        /// Which value to set. `None` if the value must be removed.
+        new_storage_value: Option<&'a [u8]>,
+        /// Object to use to finish the call
+        resolve: Resume<'a, ()>,
     },
     /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
     /// still SCALE-encoded), or an error if the call has failed.

@@ -118,6 +118,7 @@ define_internal_interface! {
     StorageRoot => fn storage_root() -> [u8; 32];
     StorageChangesRoot => fn storage_changes_root(parent_hash: Vec<u8>) -> Option<[u8; 32]>;
     StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
+    OffchainStorageSet => fn offchain_storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
     CallRuntimeVersion => fn call_runtime_version(wasm_blob: Vec<u8>) -> Result<Vec<u8>, ()>;
 }
 
@@ -237,6 +238,13 @@ impl CallState {
                 key,
                 done: Resume { sender: result },
             },
+            CallStateInner::OffchainStorageSet { key, value, result } => {
+                State::OffchainStorageSetNeeded {
+                    key,
+                    value: value.as_ref().map(|v| &**v),
+                    done: Resume { sender: result },
+                }
+            }
             CallStateInner::CallRuntimeVersion { wasm_blob, result } => {
                 State::CallRuntimeVersionNeeded {
                     wasm_blob,
@@ -329,6 +337,12 @@ pub enum State<'a> {
     StorageNextKeyNeeded {
         key: &'a [u8],
         done: Resume<'a, Option<Vec<u8>>>,
+    },
+
+    OffchainStorageSetNeeded {
+        key: &'a [u8],
+        value: Option<&'a [u8]>,
+        done: Resume<'a, ()>,
     },
 
     /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
@@ -945,6 +959,32 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     let dest_ptr = interface.allocate(32).await;
                     interface.write_memory(dest_ptr, out_value).await;
                     Ok(Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))))
+                })
+            },
+        }),
+
+        "ext_offchain_index_set_version_1" => Some(Externality {
+            name: "ext_offchain_index_set_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(2, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    let value = expect_pointer_size(&params[1], &*interface).await?;
+                    interface.offchain_storage_set(key, Some(value)).await;
+                    Ok(None)
+                })
+            },
+        }),
+        "ext_offchain_index_clear_version_1" => Some(Externality {
+            name: "ext_offchain_index_clear_version_1",
+            call: |interface, params| {
+                let params = params.to_vec();
+                Box::pin(async move {
+                    expect_num_params(1, &params)?;
+                    let key = expect_pointer_size(&params[0], &*interface).await?;
+                    interface.offchain_storage_set(key, None).await;
+                    Ok(None)
                 })
             },
         }),
