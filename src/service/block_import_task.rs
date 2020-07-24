@@ -230,9 +230,10 @@ pub async fn run_block_import_task(mut config: Config) {
                                     let decoded = header::decode(&header).unwrap();
                                     let babe_info =
                                         babe::header_info::header_information(decoded).unwrap();
-                                    process = epoch_info
-                                        .inject_epoch(&babe_info.epoch_change.unwrap().0)
-                                        .run();
+                                    let epoch_change = &babe_info.epoch_change.unwrap().0;
+                                    babe_epoch_info_cache
+                                        .put(epoch_info.epoch_number(), epoch_change.clone());
+                                    process = epoch_info.inject_epoch(epoch_change).run();
                                 }
                             }
                             block_import::Verify::StorageGet(mut get) => {
