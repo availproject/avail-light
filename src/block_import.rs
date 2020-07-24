@@ -78,6 +78,9 @@ pub struct Success {
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
 
+    /// List of changes to the offchain storage that this block performs.
+    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
     // TOOD: logs written by the runtime
@@ -209,6 +212,7 @@ impl ReadyToRun {
                     babe_epoch_change: babe_success.epoch_change,
                     slot_number: babe_success.slot_number,
                     storage_top_trie_changes: success.storage_top_trie_changes,
+                    offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                 })),
                 unsealed::Verify::ReadyToRun(inner) => Verify::ReadyToRun(ReadyToRun {

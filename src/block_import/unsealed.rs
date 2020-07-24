@@ -37,6 +37,8 @@ pub struct Success {
     pub parent_runtime: executor::WasmVmPrototype,
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    /// List of changes to the offchain storage that this block performs.
+    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
     // TOOD: logs written by the runtime
@@ -90,6 +92,7 @@ pub fn verify_unsealed_block<'a>(
     Ok(ReadyToRun {
         vm,
         top_trie_changes: Default::default(),
+        offchain_storage_changes: Default::default(),
         top_trie_root_calculation_cache: Some(
             config.top_trie_root_calculation_cache.unwrap_or_default(),
         ),
@@ -120,6 +123,9 @@ pub struct ReadyToRun {
     /// Pending changes to the top storage trie that this block performs.
     top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
 
+    /// Pending changes to the offchain storage that this block performs.
+    offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+
     /// Cache passed by the user in the [`Config`]. Always `Some` except when we are currently
     /// calculating the trie state root.
     top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
@@ -141,6 +147,7 @@ impl ReadyToRun {
                     return Verify::Finished(Ok(Success {
                         parent_runtime: self.vm.into_prototype(),
                         storage_top_trie_changes: self.top_trie_changes,
+                        offchain_storage_changes: self.offchain_storage_changes,
                         top_trie_root_calculation_cache: self
                             .top_trie_root_calculation_cache
                             .unwrap(),
@@ -265,6 +272,16 @@ impl ReadyToRun {
                     storage_key,
                     resolve,
                 } => return Verify::NextKey(NextKey { inner: self }),
+
+                executor::State::ExternalOffchainStorageSet {
+                    storage_key,
+                    new_storage_value,
+                    resolve,
+                } => {
+                    self.offchain_storage_changes
+                        .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
+                    resolve.finish_call(());
+                }
 
                 executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
                     // TODO: is there maybe a better way to handle that?
