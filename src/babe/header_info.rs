@@ -7,6 +7,8 @@ use parity_scale_codec::DecodeAll as _;
 // TODO: move these definitions locally
 pub use definitions::{NextConfigDescriptor, PreDigest};
 
+// TODO: merge this with the `crate::header` module
+
 /// Information successfully extracted from the header.
 #[derive(Debug)]
 pub struct HeaderInfo<'a> {

@@ -9,6 +9,7 @@ use parity_scale_codec::DecodeAll as _;
 /// The way a chain configures BABE is stored in its runtime.
 pub struct BabeGenesisConfiguration {
     inner: definitions::BabeGenesisConfiguration,
+    epoch0_information: header_info::EpochInformation,
 }
 
 impl BabeGenesisConfiguration {
@@ -40,12 +41,12 @@ impl BabeGenesisConfiguration {
             .run_no_param("BabeApi_configuration")
             .map_err(BabeChainConfigurationError::VmInitialization)?;
 
-        let outcome = loop {
+        let inner = loop {
             match vm.state() {
                 executor::State::ReadyToRun(r) => r.run(),
                 executor::State::Finished(data) => {
                     break match definitions::BabeGenesisConfiguration::decode_all(&data) {
-                        Ok(cfg) => BabeGenesisConfiguration { inner: cfg },
+                        Ok(cfg) => cfg,
                         Err(err) => return Err(BabeChainConfigurationError::OutputDecode(err)),
                     };
                 }
@@ -79,26 +80,9 @@ impl BabeGenesisConfiguration {
             }
         };
 
-        Ok((outcome, vm.into_prototype()))
-    }
-
-    // TODO: docs
-    pub fn slot_duration(&self) -> u64 {
-        self.inner.slot_duration
-    }
-
-    // TODO: docs
-    pub fn slots_per_epoch(&self) -> u64 {
-        self.inner.epoch_length
-    }
-
-    // TODO: docs
-    // TODO: build this initially and return a reference instead
-    pub fn epoch0_configuration(&self) -> header_info::EpochInformation {
-        header_info::EpochInformation {
-            randomness: self.inner.randomness,
-            authorities: self
-                .inner
+        let epoch0_information = header_info::EpochInformation {
+            randomness: inner.randomness,
+            authorities: inner
                 .genesis_authorities
                 .iter()
                 .map(
@@ -108,7 +92,32 @@ impl BabeGenesisConfiguration {
                     },
                 )
                 .collect(),
-        }
+        };
+
+        let outcome = BabeGenesisConfiguration {
+            inner,
+            epoch0_information,
+        };
+
+        Ok((outcome, vm.into_prototype()))
+    }
+
+    // TODO: docs
+    // TODO: should be part of a `BabeConfiguration` struct instead
+    pub fn slot_duration(&self) -> u64 {
+        self.inner.slot_duration
+    }
+
+    // TODO: docs
+    // TODO: should be part of a `BabeConfiguration` struct instead
+    pub fn slots_per_epoch(&self) -> u64 {
+        self.inner.epoch_length
+    }
+
+    /// Returns the information about epoch number 0, which starts at block number 1. Block number
+    /// 1 contains the information about epoch number 1.
+    pub fn epoch0_information(&self) -> &header_info::EpochInformation {
+        &self.epoch0_information
     }
 }
 
