@@ -22,14 +22,27 @@
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, iter};
 
-/// Returns a hash of the SCALE-encoded header.
+/// Returns a hash of a SCALE-encoded header.
 ///
 /// Does not verify the validity of the header.
-pub fn hash_from_scale_encoded_header(header: &[u8]) -> [u8; 32] {
+pub fn hash_from_scale_encoded_header(header: impl AsRef<[u8]>) -> [u8; 32] {
+    hash_from_scale_encoded_header_vectored(iter::once(header))
+}
+
+/// Returns a hash of a SCALE-encoded header.
+///
+/// Can be passed a list of buffers, which, when concatenated, form the SCALE-encoded header.
+///
+/// Does not verify the validity of the header.
+pub fn hash_from_scale_encoded_header_vectored(
+    header: impl Iterator<Item = impl AsRef<[u8]>>,
+) -> [u8; 32] {
     let mut out = [0; 32];
 
     let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
-    hasher.input(header);
+    for buf in header {
+        hasher.input(buf.as_ref());
+    }
     hasher.variable_result(|result| {
         debug_assert_eq!(result.len(), 32);
         out.copy_from_slice(result)
@@ -154,18 +167,7 @@ impl<'a> HeaderRef<'a> {
 
     /// Builds the hash of the header.
     pub fn hash(&self) -> [u8; 32] {
-        let mut out = [0; 32];
-
-        let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
-        for buffer in self.scale_encoding() {
-            hasher.input(buffer.as_ref());
-        }
-        hasher.variable_result(|result| {
-            debug_assert_eq!(result.len(), 32);
-            out.copy_from_slice(result)
-        });
-
-        out
+        hash_from_scale_encoded_header_vectored(self.scale_encoding())
     }
 }
 
