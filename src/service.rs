@@ -33,10 +33,10 @@ use futures::{
 };
 use network::PeerId;
 
-pub use builder::{builder, ServiceBuilder};
+pub use config::{ChainInfoConfig, Config};
 
 mod block_import_task;
-mod builder;
+mod config;
 mod database_task;
 mod keystore_task;
 mod network_task;
@@ -73,9 +73,6 @@ pub struct Service {
 
     /// Hash of the latest finalized block. Only updated by receiving events.
     finalized_block_hash: [u8; 32],
-
-    /// Optional threads pool that is used to dispatch tasks and that we keep alive.
-    _threads_pool: Option<ThreadPool>,
 }
 
 /// Event that happened on the service.

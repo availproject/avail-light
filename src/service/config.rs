@@ -5,58 +5,41 @@ use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
 use futures::{
     channel::{mpsc, oneshot},
-    executor::ThreadPool,
     prelude::*,
 };
 
 /// Prototype for a service.
-// TODO: replace with a config pattern
-pub struct ServiceBuilder {
+pub struct Config<'a> {
     /// Database where the chain data is stored. If `None`, data is kept in memory.
-    database: Option<database::Database>,
-
-    /// BABE configuration of the chain, as retreived from the genesis block.
-    babe_genesis_config: Option<babe::BabeGenesisConfiguration>,
+    pub database: Option<database::Database>,
 
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
-    // TODO: shouldn't be optional
-    tasks_executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>>,
+    pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>,
 
-    /// Prototype for the network.
-    network: network::builder::NetworkBuilder,
+    /// Information related to the chain.
+    pub chain_info: ChainInfoConfig<'a>,
 }
 
-/// Creates a new prototype of the service.
-pub fn builder() -> ServiceBuilder {
-    ServiceBuilder {
-        database: None,
-        babe_genesis_config: None,
-        tasks_executor: None,
-        network: network::builder(),
-    }
+/// Information related to the chain.
+pub struct ChainInfoConfig<'a> {
+    /// BABE configuration of the chain, as retreived from the genesis block.
+    pub babe_genesis_config: babe::BabeGenesisConfiguration,
+
+    /// List of peer ids and their addresses that we know are part of the peer-to-peer network.
+    pub network_known_addresses: Vec<(network::PeerId, network::Multiaddr)>,
+
+    /// Small string identifying the name of the chain, in order to detect incompatible nodes
+    /// earlier.
+    pub chain_spec_protocol_id: &'a str,
+
+    /// Hash of the genesis block of the local node.
+    pub local_genesis_hash: [u8; 32],
 }
 
-impl<'a> From<&'a ChainSpec> for ServiceBuilder {
-    fn from(specs: &'a ChainSpec) -> ServiceBuilder {
-        let mut builder = builder();
-        builder.load_chain_specs(specs);
-        builder
-    }
-}
-
-impl ServiceBuilder {
-    /// Overwrites the current configuration with values from the given chain specs.
-    pub fn load_chain_specs(&mut self, specs: &ChainSpec) {
-        // TODO: chain specs should use stronger typing for bootnodes
-        self.network.set_boot_nodes(
-            specs
-                .boot_nodes()
-                .iter()
-                .map(|bootnode_str| network::builder::parse_str_addr(bootnode_str).unwrap()),
-        );
-
-        self.babe_genesis_config = Some({
+impl<'a> From<&'a ChainSpec> for ChainInfoConfig<'a> {
+    fn from(specs: &'a ChainSpec) -> ChainInfoConfig {
+        let babe_genesis_config = {
             let wasm_code = specs
                 .genesis_storage()
                 .find(|(k, _)| k == b":code")
@@ -71,66 +54,30 @@ impl ServiceBuilder {
                     .map(|(_, v)| v.to_owned())
             })
             .unwrap()
-        });
+        };
 
-        self.network
-            .set_chain_spec_protocol_id(specs.protocol_id().unwrap());
+        ChainInfoConfig {
+            babe_genesis_config,
+            network_known_addresses: specs
+                .boot_nodes()
+                .iter()
+                .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
+                .collect(),
 
-        self.network
-            .set_genesis_hash(crate::calculate_genesis_block_hash(specs.genesis_storage()).into());
-    }
-
-    /// Sets how the service should spawn background tasks.
-    pub fn with_tasks_executor(
-        mut self,
-        executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>,
-    ) -> Self {
-        self.tasks_executor = Some(executor);
-        self
-    }
-
-    /// Sets the name of the chain to use on the network to identify incompatible peers earlier.
-    pub fn with_chain_spec_protocol_id(self, id: impl AsRef<[u8]>) -> Self {
-        ServiceBuilder {
-            database: self.database,
-            babe_genesis_config: self.babe_genesis_config,
-            tasks_executor: self.tasks_executor,
-            network: self.network.with_chain_spec_protocol_id(id),
+            chain_spec_protocol_id: specs.protocol_id().unwrap(),
+            local_genesis_hash: crate::calculate_genesis_block_hash(specs.genesis_storage()).into(),
         }
     }
+}
 
-    /// Sets the database where to load and save the chain's information.
-    pub fn with_database(mut self, database: database::Database) -> Self {
-        self.database = Some(database);
-        self
-    }
-
+impl<'a> Config<'a> {
     /// Builds the actual service, starting everything.
     pub async fn build(mut self) -> Service {
         // TODO: check that chain specs match database?
 
-        // Start by building the function that will spawn tasks. Since the user is allowed to
-        // not specify an executor, we also spawn a supporting threads pool if necessary.
-        let (threads_pool, tasks_executor) = match self.tasks_executor {
-            Some(tasks_executor) => {
-                let tasks_executor = Arc::new(tasks_executor)
-                    as Arc<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>>;
-                (None, tasks_executor)
-            }
-            None => {
-                let threads_pool = ThreadPool::builder()
-                    .name_prefix("thread-")
-                    .create()
-                    .unwrap(); // TODO: don't unwrap
-                let tasks_executor = {
-                    let threads_pool = threads_pool.clone();
-                    let exec =
-                        Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>;
-                    Arc::new(exec)
-                };
-                (Some(threads_pool), tasks_executor)
-            }
-        };
+        // Turn the `Box<Executor>` into an `Arc`.
+        let tasks_executor: Arc<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync> =
+            Arc::from(self.tasks_executor);
 
         // This is when we actually create all the channels between the various tasks.
         // TODO: eventually this should be tweaked so that we are able to measure the congestion
@@ -148,10 +95,19 @@ impl ServiceBuilder {
             network_task::run_networking_task(network_task::Config {
                 to_network: to_network_rx,
                 to_service_out: to_service_out.clone(),
-                network_builder: self.network.with_executor({
-                    let tasks_executor = tasks_executor.clone();
-                    Box::new(move |task| (*tasks_executor)(task))
-                }),
+                network_config: network::Config {
+                    known_addresses: self.chain_info.network_known_addresses,
+                    chain_spec_protocol_id: self
+                        .chain_info
+                        .chain_spec_protocol_id
+                        .as_bytes()
+                        .to_owned(),
+                    tasks_executor: Box::new({
+                        let tasks_executor = tasks_executor.clone();
+                        Box::new(move |task| tasks_executor(task))
+                    }),
+                    local_genesis_hash: self.chain_info.local_genesis_hash,
+                },
                 num_connections_store: num_connections_store.clone(),
             })
             .boxed(),
@@ -194,7 +150,7 @@ impl ServiceBuilder {
             block_import_task::run_block_import_task(block_import_task::Config {
                 database: database.clone(),
                 // TODO: this unwraps if the service builder isn't properly configured; service builder should just be a Config struct instead
-                babe_genesis_config: self.babe_genesis_config.take().unwrap(),
+                babe_genesis_config: self.chain_info.babe_genesis_config,
                 tasks_executor: Box::new({
                     let tasks_executor = tasks_executor.clone();
                     Box::new(move |task| tasks_executor(task))
@@ -221,9 +177,8 @@ impl ServiceBuilder {
             local_peer_id,
             best_block_number: database.best_block_number().unwrap(),
             best_block_hash: database.best_block_hash().unwrap(),
-            finalized_block_number: 0,     // TODO: wrong
-            finalized_block_hash: [0; 32], // TODO:
-            _threads_pool: threads_pool,
+            finalized_block_number: 0, // TODO: wrong
+            finalized_block_hash: self.chain_info.local_genesis_hash, // TODO: wrong
         }
     }
 }

@@ -34,7 +34,7 @@ pub enum ToNetwork {
 /// Configuration for that task.
 pub struct Config {
     /// Prototype for the network worker.
-    pub network_builder: network::builder::NetworkBuilder,
+    pub network_config: network::Config,
 
     /// Sender that reports messages to the outside of the service.
     pub to_service_out: mpsc::Sender<super::Event>,
@@ -50,7 +50,7 @@ pub struct Config {
 
 /// Runs the task.
 pub async fn run_networking_task(mut config: Config) {
-    let mut network = config.network_builder.build().await;
+    let mut network = network::Network::start(config.network_config).await;
 
     // Associates network-assigned block request ids to senders.
     let mut pending_blocks_requests = HashMap::<_, oneshot::Sender<_>>::new();

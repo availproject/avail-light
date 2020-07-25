@@ -26,10 +26,21 @@ async fn async_main() {
         substrate_lite::database_open_match_chain_specs(database, &chain_spec).unwrap()
     };
 
-    let mut service = substrate_lite::service::ServiceBuilder::from(&chain_spec)
-        .with_database(database)
-        .build()
-        .await;
+    let threads_pool = futures::executor::ThreadPool::builder()
+        .name_prefix("thread-")
+        .create()
+        .unwrap();
+
+    let mut service = substrate_lite::service::Config {
+        database: Some(database),
+        tasks_executor: {
+            let threads_pool = threads_pool.clone();
+            Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>
+        },
+        chain_info: From::from(&chain_spec),
+    }
+    .build()
+    .await;
 
     let mut rpc_server = {
         let rpc_config = substrate_lite::rpc_server::Config {
@@ -76,11 +87,10 @@ async fn async_main() {
         substrate_lite::telemetry::init_telemetry(substrate_lite::telemetry::TelemetryConfig {
             endpoints: substrate_lite::telemetry::TelemetryEndpoints::new(endpoints).unwrap(),
             wasm_external_transport: None,
-            tasks_executor: Box::new(|task| {
-                // TODO: use the same threads pool as the service, but the service doesn't really
-                // allow you to modify that
-                async_std::task::spawn(task);
-            }),
+            tasks_executor: {
+                let threads_pool = threads_pool.clone();
+                Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>
+            },
         })
     };
 

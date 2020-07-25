@@ -103,23 +103,25 @@ pub enum BlocksRequestConfigStart {
 }
 
 /// Configuration for starting the network.
-///
-/// Internal to the `network` module.
-pub(super) struct Config {
+pub struct Config {
     /// List of peer ids and their addresses that we know are part of the peer-to-peer network.
-    pub(super) known_addresses: Vec<(PeerId, Multiaddr)>,
+    // TODO: better type
+    pub known_addresses: Vec<(PeerId, Multiaddr)>,
+
     /// Small string identifying the name of the chain, in order to detect incompatible nodes
     /// earlier.
-    pub(super) chain_spec_protocol_id: Vec<u8>,
-    /// How to spawn libp2p background tasks. If `None`, then a threads pool will be used by
-    /// default.
-    pub(super) executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+    // TODO: better type
+    pub chain_spec_protocol_id: Vec<u8>,
+
+    /// How to spawn libp2p background tasks.
+    pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+
     /// Hash of the genesis block of the local node.
-    pub(super) local_genesis_hash: [u8; 32],
+    pub local_genesis_hash: [u8; 32],
 }
 
 impl Network {
-    pub(super) async fn start(config: Config) -> Self {
+    pub async fn start(config: Config) -> Self {
         let local_key_pair = libp2p::identity::Keypair::generate_ed25519();
         let local_public_key = local_key_pair.public();
         let local_peer_id = local_public_key.clone().into_peer_id();
@@ -154,15 +156,14 @@ impl Network {
                 .peer_connection_limit(2)
                 .notify_handler_buffer_size(NonZeroUsize::new(64).unwrap())
                 .connection_event_buffer_size(256);
-            if let Some(spawner) = config.executor {
-                struct SpawnImpl<F>(F);
-                impl<F: Fn(Pin<Box<dyn Future<Output = ()> + Send>>)> libp2p::core::Executor for SpawnImpl<F> {
-                    fn exec(&self, f: Pin<Box<dyn Future<Output = ()> + Send>>) {
-                        (self.0)(f)
-                    }
+
+            struct SpawnImpl<F>(F);
+            impl<F: Fn(Pin<Box<dyn Future<Output = ()> + Send>>)> libp2p::core::Executor for SpawnImpl<F> {
+                fn exec(&self, f: Pin<Box<dyn Future<Output = ()> + Send>>) {
+                    (self.0)(f)
                 }
-                builder = builder.executor(Box::new(SpawnImpl(spawner)));
             }
+            builder = builder.executor(Box::new(SpawnImpl(config.tasks_executor)));
             builder.build()
         };
 
