@@ -2,7 +2,7 @@
 //!
 //! The so-called informant is a line of text typically printed at a regular interval on stdout.
 //!
-//! You can make the informant overwrite itself by printing only a `\r` at the end.
+//! You can make the informant overwrite itself by printing a `\r` at the end of it.
 //!
 //! This code intentionally doesn't perform any printing and only provides some helping code to
 //! make the printing straight-forward.
@@ -13,7 +13,7 @@
 //!
 //! ```
 //! use substrate_lite::informant::InformantLine;
-//! eprint!("{}", InformantLine {
+//! eprint!("{}\r", InformantLine {
 //!     chain_name: "My chain",
 //!     max_line_width: 80,
 //!     num_network_connections: 12,
