@@ -135,6 +135,9 @@ async fn async_main() {
                     substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
                         rpc_server.notify_new_chain_head(hash.into(), modified_keys.iter().map(|k| &k[..]));
 
+                        // When major syncing, the rate at which this event is generated is pretty
+                        // high and sending a message to the telemetry server every single time
+                        // would use a lot of bandwidth.
                         // TODO: make this cleaner
                         if rand::Rng::gen_bool(&mut rand::thread_rng(), 0.01) {
                             telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
@@ -149,21 +152,23 @@ async fn async_main() {
             telemetry_event = telemetry.next_event().fuse() => {
                 telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
-                    name: String::from("substrate-lite").into_boxed_str(),  // TODO: node name
-                    implementation: String::from("substrate-lite").into_boxed_str(),
+                    name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
+                    implementation: String::from("Secret projet 🤫").into_boxed_str(),  // TODO:
                     version: String::from("1.0.0").into_boxed_str(),   // TODO: version
                     validator: None,
                     network_id: Some(service.local_peer_id().to_base58().into_boxed_str()),
                 }));
             },
             _ = telemetry_timer.next() => {
+                // Some of the fields below are set to `None` because there is no plan to
+                // implement reporting accurate metrics about the node.
                 telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemInterval(substrate_lite::telemetry::message::SystemInterval {
                     stats: substrate_lite::telemetry::message::NodeStats {
                         peers: service.num_network_connections(),
                         txcount: 0,  // TODO:
                     },
-                    memory: Some(0.0), // TODO:
-                    cpu: Some(0.0), // TODO:
+                    memory: None,
+                    cpu: None,
                     bandwidth_upload: Some(0.0), // TODO:
                     bandwidth_download: Some(0.0), // TODO:
                     finalized_height: Some(service.finalized_block_number()),
@@ -172,10 +177,10 @@ async fn async_main() {
                         hash: service.best_block_hash().into(),
                         height: service.best_block_number(),
                     },
-                    used_state_cache_size: Some(0.0), // TODO:
-                    used_db_cache_size: Some(0.0), // TODO:
-                    disk_read_per_sec: Some(0.0), // TODO:
-                    disk_write_per_sec: Some(0.0), // TODO:
+                    used_state_cache_size: None,
+                    used_db_cache_size: None,
+                    disk_read_per_sec: None,
+                    disk_write_per_sec: None,
                 }));
             }
         }
