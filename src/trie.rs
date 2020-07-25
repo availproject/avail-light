@@ -4,6 +4,48 @@
 //! associates keys with values, and that allows efficient verification of the integrity of the
 //! data.
 //!
+//! # Overview
+//!
+//! The key-value storage that the blockchain maintains can be represented by
+//! [a tree](https://en.wikipedia.org/wiki/Tree_data_structure), where each key-value pair in the
+//! storage corresponds to a node in that tree.
+//!
+//! Each node in the tree has what is called a Merkle value associated to it. This Merkle value
+//! consists, in its essence, in the combination of the storage value associated to that node and
+//! the Merkle values of all of the node's children. If the resulting Merkle value would be too
+//! long, it is first hashed.
+//!
+//! Since the Merkle values of a node's children depend, in turn, of the Merkle value of their
+//! own children, we can say that the Merkle value of a node depends on all of the node's
+//! descendants.
+//!
+//! Consequently, the Merkle value of the root node of the tree depends on the storage values of
+//! all the nodes in the tree.
+//!
+//! See also [the Wikipedia page for Merkle tree for a different
+//! explanation](https://en.wikipedia.org/wiki/Merkle_tree).
+//!
+//! ## Efficient updates
+//!
+//! When a storage value gets modified, the Merkle value of the root node of the tree also gets
+//! modified. Thanks to the tree layout, we don't need to recalculate the Merkle value of the
+//! entire tree, but only of the ancestors of the node which has been modified.
+//!
+//! If the storage consists of N entries, recalculating the Merkle value of the trie root requires
+//! on average only `log16(N)` operations.
+//!
+//! ## Proof of storage entry
+//!
+//! In the situation where we want to know the storage value associated to a node, but we only
+//! know the Merkle value of the root of the trie, it is possible to ask a third-party for the
+//! unhashed Merkle values of the desired node and all its ancestors.
+//!
+//! After having verified that the third-party has provided correct values, and that they match
+//! the expected root node Merkle value known locally, we can extract the storage value from the
+//! Merkle value of the desired node.
+//!
+//! # Details
+//!
 //! This data structure is a tree composed of nodes, each node being identified by a key. A key
 //! consists in a sequence of 4-bits values called *nibbles*. Example key: `[3, 12, 7, 0]`.
 //!
