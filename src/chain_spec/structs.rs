@@ -33,7 +33,7 @@ pub(super) struct ClientSpec {
     #[serde(default)]
     pub(super) chain_type: ChainType,
     pub(super) boot_nodes: Vec<String>,
-    pub(super) telemetry_endpoints: Option<TelemetryEndpoints>,
+    pub(super) telemetry_endpoints: Option<Vec<(String, u8)>>,
     pub(super) protocol_id: Option<String>,
     pub(super) properties: Option<Properties>,
     // TODO: make use of this
@@ -59,9 +59,6 @@ impl Default for ChainType {
         Self::Live
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(super) struct TelemetryEndpoints(Vec<(String, u8)>);
 
 pub(super) type Properties = serde_json::map::Map<String, serde_json::Value>;
 

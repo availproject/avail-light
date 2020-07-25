@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "1024"]
 
 use futures::{channel::oneshot, prelude::*};
 use std::{cmp, path::PathBuf, thread, time::Duration};
@@ -67,8 +67,27 @@ async fn async_main() {
         server
     };
 
+    let mut telemetry = {
+        let endpoints = chain_spec.telemetry_endpoints().map(|addr| (addr.as_ref().to_owned(), 0)).collect::<Vec<_>>();
+
+        substrate_lite::telemetry::init_telemetry(substrate_lite::telemetry::TelemetryConfig {
+            endpoints: substrate_lite::telemetry::TelemetryEndpoints::new(endpoints).unwrap(),
+            wasm_external_transport: None,
+            tasks_executor: Box::new(|task| {
+                // TODO: use the same threads pool as the service, but the service doesn't really
+                // allow you to modify that
+                async_std::task::spawn(task);
+            }),
+        })
+    };
+
     let mut informant_timer = stream::unfold((), move |_| {
         futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
+    })
+    .map(|_| ());
+
+    let mut telemetry_timer = stream::unfold((), move |_| {
+        futures_timer::Delay::new(Duration::from_secs(5)).map(|_| Some(((), ())))
     })
     .map(|_| ());
 
@@ -76,7 +95,7 @@ async fn async_main() {
 
     loop {
         futures::select! {
-            informant = informant_timer.next() => {
+            _ = informant_timer.next() => {
                 // We end the informant line with a `\r` so that it overwrites itself every time.
                 // If any other line gets printed, it will overwrite the informant, and the
                 // informant will then print itself below, which is a fine behaviour.
@@ -112,9 +131,53 @@ async fn async_main() {
                     },
                     substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
                         rpc_server.notify_new_chain_head(hash.into(), modified_keys.iter().map(|k| &k[..]));
+
+                        // TODO: only send it when not major syncing!
+                        /*telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
+                            hash: hash.into(),
+                            height: number,
+                        }));*/
                     },
                     _ => {}
                 }
+            }
+            telemetry_event = telemetry.next_event().fuse() => {
+                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
+                    chain: chain_spec.name().to_owned().into_boxed_str(),
+                    name: String::from("substrate-lite").into_boxed_str(),  // TODO: node name
+                    implementation: String::from("substrate-lite").into_boxed_str(),
+                    version: String::from("1.0.0").into_boxed_str(),   // TODO: version
+                    validator: None,
+                    network_id: Some(service.local_peer_id().to_base58().into_boxed_str()),
+                }));
+            },
+            _ = telemetry_timer.next() => {
+                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemInterval(substrate_lite::telemetry::message::SystemInterval {
+                    stats: substrate_lite::telemetry::message::NodeStats {
+                        peers: service.num_network_connections(),
+                        txcount: 0,  // TODO:
+                    },
+                    memory: Some(0.0), // TODO:
+                    cpu: Some(0.0), // TODO:
+                    bandwidth_upload: Some(0.0), // TODO:
+                    bandwidth_download: Some(0.0), // TODO:
+                    finalized_height: Some(service.finalized_block_number()),
+                    finalized_hash: Some(service.finalized_block_hash().into()),
+                    block: substrate_lite::telemetry::message::Block {
+                        hash: service.best_block_hash().into(),
+                        height: service.finalized_block_number(),
+                    },
+                    used_state_cache_size: Some(0.0), // TODO:
+                    used_db_cache_size: Some(0.0), // TODO:
+                    disk_read_per_sec: Some(0.0), // TODO:
+                    disk_write_per_sec: Some(0.0), // TODO:
+                }));
+
+                // TODO: hack
+                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
+                    hash: service.best_block_hash().into(),
+                    height: service.finalized_block_number(),
+                }));
             }
         }
     }

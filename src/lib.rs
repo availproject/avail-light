@@ -96,9 +96,9 @@ pub mod keystore;
 pub mod network;
 pub mod rpc_server;
 pub mod service;
+pub mod telemetry;
 pub mod trie;
 
-use core::iter;
 use parity_scale_codec::Encode as _;
 
 /// Calculates the hash of the genesis block from the storage.

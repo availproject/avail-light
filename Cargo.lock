@@ -575,6 +575,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c74d84029116787153e02106bf53e66828452a4b325cc8652b788b5967c0a0b6"
+dependencies = [
+ "num-integer",
+ "num-traits",
+ "serde",
+ "time",
+]
+
+[[package]]
 name = "cloudabi"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3216,6 +3228,7 @@ dependencies = [
  "blake2 0.8.1",
  "blake2-rfc",
  "bytes",
+ "chrono",
  "derive_more",
  "either",
  "env_logger",

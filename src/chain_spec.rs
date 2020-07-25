@@ -71,6 +71,16 @@ impl ChainSpec {
         &self.client_spec.boot_nodes
     }
 
+    /// Returns the list of libp2p multiaddresses of the default telemetry servers of the chain.
+    // TODO: more strongly typed?
+    pub fn telemetry_endpoints<'a>(&'a self) -> impl Iterator<Item = impl AsRef<str> + 'a> + 'a {
+        self.client_spec
+            .telemetry_endpoints
+            .as_ref()
+            .into_iter()
+            .flat_map(|ep| ep.iter().map(|e| &e.0))
+    }
+
     /// Network protocol id. Used to prevent nodes from multiple networks from connecting with each
     /// other. Returns `None` if the chain specs don't specify any.
     pub fn protocol_id(&self) -> Option<&str> {

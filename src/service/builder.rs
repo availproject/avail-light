@@ -20,6 +20,7 @@ pub struct ServiceBuilder {
 
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.
+    // TODO: shouldn't be optional
     tasks_executor: Option<Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send + Sync>>,
 
     /// Prototype for the network.

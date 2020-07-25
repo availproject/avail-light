@@ -12,6 +12,7 @@ app_dirs = "1.2.1"
 arrayvec = "0.5.1"
 async-trait = "0.1"
 blake2-rfc = { version = "0.2.18", default-features = false }
+chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
 either = "1.5.3"
 env_logger = "0.7.1"
@@ -19,7 +20,7 @@ fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures_codec = "0.3.3"
 futures-timer = "3.0"
-hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }
+hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
@@ -47,6 +48,7 @@ wasm-timer = "0.2.4"
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
+async-std = "1.6"  # TODO: we use it as a quick hack for spawning a task
 bitflags = "1.2.1"  # TODO: I hate bitflags
 blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
@@ -71,6 +73,8 @@ prost-build = "0.6.1"
 async-std = "1.6.2"
 libp2p = { version = "0.21.1", default-features = false, features = ["secio"] }
 
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
 [profile.dev]
 opt-level = 2
