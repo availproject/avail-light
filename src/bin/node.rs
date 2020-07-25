@@ -68,7 +68,10 @@ async fn async_main() {
     };
 
     let mut telemetry = {
-        let endpoints = chain_spec.telemetry_endpoints().map(|addr| (addr.as_ref().to_owned(), 0)).collect::<Vec<_>>();
+        let endpoints = chain_spec
+            .telemetry_endpoints()
+            .map(|addr| (addr.as_ref().to_owned(), 0))
+            .collect::<Vec<_>>();
 
         substrate_lite::telemetry::init_telemetry(substrate_lite::telemetry::TelemetryConfig {
             endpoints: substrate_lite::telemetry::TelemetryEndpoints::new(endpoints).unwrap(),
@@ -132,11 +135,13 @@ async fn async_main() {
                     substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
                         rpc_server.notify_new_chain_head(hash.into(), modified_keys.iter().map(|k| &k[..]));
 
-                        // TODO: only send it when not major syncing!
-                        /*telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
-                            hash: hash.into(),
-                            height: number,
-                        }));*/
+                        // TODO: make this cleaner
+                        if rand::Rng::gen_bool(&mut rand::thread_rng(), 0.01) {
+                            telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
+                                hash: hash.into(),
+                                height: number,
+                            }));
+                        }
                     },
                     _ => {}
                 }
@@ -171,12 +176,6 @@ async fn async_main() {
                     used_db_cache_size: Some(0.0), // TODO:
                     disk_read_per_sec: Some(0.0), // TODO:
                     disk_write_per_sec: Some(0.0), // TODO:
-                }));
-
-                // TODO: hack
-                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
-                    hash: service.best_block_hash().into(),
-                    height: service.finalized_block_number(),
                 }));
             }
         }

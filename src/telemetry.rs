@@ -16,6 +16,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// TODO: add docs and clean everything up
+
 use futures::{channel::mpsc, prelude::*};
 use libp2p::{wasm_ext, Multiaddr};
 use serde::{Deserialize, Deserializer, Serialize};
