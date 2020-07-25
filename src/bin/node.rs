@@ -170,7 +170,7 @@ async fn async_main() {
                     finalized_hash: Some(service.finalized_block_hash().into()),
                     block: substrate_lite::telemetry::message::Block {
                         hash: service.best_block_hash().into(),
-                        height: service.finalized_block_number(),
+                        height: service.best_block_number(),
                     },
                     used_state_cache_size: Some(0.0), // TODO:
                     used_db_cache_size: Some(0.0), // TODO:
