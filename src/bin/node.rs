@@ -230,7 +230,7 @@ async fn open_database(
         futures::select! {
             res = rx => return res.unwrap(),
             _ = progress_timer.next() => {
-                eprint!("  Opening database... {}\r", next_progress_icon.next().unwrap());
+                eprint!("    Opening database... {}\r", next_progress_icon.next().unwrap());
             }
         }
     }
