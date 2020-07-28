@@ -263,9 +263,7 @@ impl ReadyToRun {
                     parent_hash: _,
                     resolve,
                 } => {
-                    // TODO: this is probably one of the most complicated things to implement
-                    // TODO: must return None iff `state_at(parent_block).exists_storage(&well_known_keys::CHANGES_TRIE_CONFIG).unwrap() == false`
-                    resolve.finish_call(None);
+                    return Verify::StorageGet(StorageGet { inner: self });
                 }
 
                 executor::State::ExternalStorageNextKey {
@@ -350,6 +348,10 @@ impl StorageGet {
                 }
             }
 
+            executor::State::ExternalStorageChangesRoot { .. } => {
+                either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
+            }
+
             // We only create a `StorageGet` if the state is one of the above.
             _ => unreachable!(),
         }
@@ -399,6 +401,14 @@ impl StorageGet {
                 } else {
                     // We only create a `StorageGet` if the state is `StorageValue`.
                     panic!()
+                }
+            }
+            executor::State::ExternalStorageChangesRoot { resolve, .. } => {
+                if value.is_none() {
+                    resolve.finish_call(None);
+                } else {
+                    // TODO: this is probably one of the most complicated things to implement
+                    todo!()
                 }
             }
 
