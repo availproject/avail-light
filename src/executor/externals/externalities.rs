@@ -120,6 +120,7 @@ define_internal_interface! {
     StorageNextKey => fn storage_next_key(key: Vec<u8>) -> Option<Vec<u8>>;
     OffchainStorageSet => fn offchain_storage_set(key: Vec<u8>, value: Option<Vec<u8>>) -> ();
     CallRuntimeVersion => fn call_runtime_version(wasm_blob: Vec<u8>) -> Result<Vec<u8>, ()>;
+    EmitLog => fn emit_log(message: String) -> ();
 }
 
 impl Externality {
@@ -251,6 +252,10 @@ impl CallState {
                     done: Resume { sender: result },
                 }
             }
+            CallStateInner::EmitLog { message, result } => State::LogEmit {
+                message,
+                done: Resume { sender: result },
+            },
         }
     }
 }
@@ -350,6 +355,12 @@ pub enum State<'a> {
     CallRuntimeVersionNeeded {
         wasm_blob: &'a [u8],
         done: Resume<'a, Result<Vec<u8>, ()>>,
+    },
+
+    /// A message has been emitted by the runtime.
+    LogEmit {
+        message: &'a str,
+        done: Resume<'a, ()>,
     },
 }
 
@@ -1154,13 +1165,12 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
         }),
         "ext_misc_print_num_version_1" => Some(Externality {
             name: "ext_misc_print_num_version_1",
-            call: |_interface, params| {
+            call: |interface, params| {
                 let params = params.to_vec();
                 Box::pin(async move {
                     expect_num_params(1, &params)?;
                     let num = expect_u64(&params[0])?;
-                    // TODO: properly print message
-                    println!("print_num: {}", num);
+                    interface.emit_log(format!("{}", num)).await;
                     Ok(None)
                 })
             },
@@ -1173,9 +1183,10 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(1, &params)?;
                     let message = expect_pointer_size(&params[0], &*interface).await?;
 
-                    // TODO: properly print message
                     if let Ok(message) = core::str::from_utf8(&message) {
-                        println!("print_utf8: {:?}", message);
+                        interface.emit_log(message.to_owned()).await;
+                    } else {
+                        // TODO:
                     }
 
                     Ok(None)
@@ -1190,9 +1201,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                     expect_num_params(1, &params)?;
                     let data = expect_pointer_size(&params[0], &*interface).await?;
                     let message = hex::encode(&data);
-
-                    // TODO: properly print message
-                    println!("print_hex: {}", message);
+                    interface.emit_log(message).await;
                     Ok(None)
                 })
             },

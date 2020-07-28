@@ -361,6 +361,12 @@ impl ExternalsVm {
                             resolve: Resume { inner: done },
                         }
                     }
+                    externalities::State::LogEmit { message, done } => {
+                        return State::LogEmit {
+                            message,
+                            resolve: Resume { inner: done },
+                        }
+                    }
 
                     // These variants are handled above.
                     externalities::State::Finished { .. }
@@ -478,6 +484,13 @@ pub enum State<'a> {
         wasm_blob: &'a [u8],
         /// Object to use to finish the call.
         resolve: Resume<'a, Result<Vec<u8>, ()>>,
+    },
+    /// Runtime has emitted a log entry.
+    LogEmit {
+        /// Message emitted by the runtime.
+        message: &'a str,
+        /// Object to use to finish the call.
+        resolve: Resume<'a, ()>,
     },
 }
 

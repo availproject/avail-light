@@ -303,6 +303,14 @@ impl ReadyToRun {
                     }
                 }
 
+                executor::State::LogEmit {
+                    message: _,
+                    resolve,
+                } => {
+                    // TODO: do something with message?
+                    resolve.finish_call(());
+                }
+
                 s => unimplemented!("unimplemented externality: {:?}", s),
             }
         }
