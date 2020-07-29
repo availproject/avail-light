@@ -27,6 +27,9 @@ jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
 libsecp256k1 = "0.3.5"
 lru = "0.5.3"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
+num-bigint = "0.2.3"
+num-rational = "0.2.2"
+num-traits = "0.2.8"
 parking_lot = "0.10.2"
 parity-scale-codec = { version = "1.0.0", features = ["derive"] }
 pin-project = "0.4"

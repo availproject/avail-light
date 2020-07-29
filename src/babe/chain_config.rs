@@ -104,6 +104,12 @@ impl BabeGenesisConfiguration {
 
     // TODO: docs
     // TODO: should be part of a `BabeConfiguration` struct instead
+    pub fn c(&self) -> (u64, u64) {
+        self.inner.c
+    }
+
+    // TODO: docs
+    // TODO: should be part of a `BabeConfiguration` struct instead
     pub fn slot_duration(&self) -> u64 {
         self.inner.slot_duration
     }

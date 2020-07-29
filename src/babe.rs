@@ -114,7 +114,9 @@
 //!
 
 use crate::header;
+
 use core::{convert::TryFrom as _, time::Duration};
+use num_traits::{cast::ToPrimitive as _, identities::One as _};
 
 mod definitions;
 mod runtime;
@@ -198,6 +200,8 @@ pub enum VerifyError {
     BadVrfProof,
     /// Block is a secondary slot claim and its author is not the expected author.
     BadSecondarySlotAuthor,
+    /// VRF output is over threshold required to claim the primary slot.
+    OverPrimaryClaimThreshold,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
@@ -292,6 +296,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 
     // Intermediary object representing the state of the verification at this point.
     let pending = PendingVerify {
+        c: config.genesis_configuration.c(),
         pre_seal_hash,
         seal_signature: {
             schnorrkel::Signature::from_bytes(header.seal_signature)
@@ -330,6 +335,8 @@ pub enum SuccessOrPending {
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
 pub struct PendingVerify {
+    /// Value of `c` found in the Babe configuration.
+    c: (u64, u64),
     /// Hash of the block header without its seal.
     pre_seal_hash: [u8; 32],
     /// Block signature contained in the header that we verify.
@@ -405,7 +412,16 @@ impl PendingVerify {
             // If this is a primary slot claim, we need to make sure that the VRF output is below
             // a certain threshold, otherwise all the authorities could claim all the slots.
             if self.primary_slot_claim {
-                // TODO: not implemented
+                let threshold = calculate_primary_threshold(
+                    self.c,
+                    epoch_info.authorities.iter().map(|a| a.weight),
+                    signing_authority.weight,
+                );
+                if u128::from_le_bytes(vrf_in_out.make_bytes::<[u8; 16]>(b"substrate-babe-vrf"))
+                    >= threshold
+                {
+                    return Err(VerifyError::OverPrimaryClaimThreshold);
+                }
             }
         } else {
             debug_assert!(self.primary_slot_claim);
@@ -456,73 +472,37 @@ fn slot_number_to_epoch(
     Ok(slots_diff / genesis_config.slots_per_epoch())
 }
 
-// TODO:
-
-/*
-
-
 /// Calculates the primary selection threshold for a given authority, taking
 /// into account `c` (`1 - c` represents the probability of a slot being empty).
-pub(super) fn calculate_primary_threshold(
+///
+/// The value of `c` can be found in the current Babe configuration.
+///
+/// `authorities_weights` must be the list of all weights of all autorities.
+/// `authority_weight` must be the weight of the authority whose threshold to calculate.
+///
+/// # Panic
+///
+/// Panics if `authorities_weights` is empty.
+/// Panics if `authority_weight` is 0.
+///
+fn calculate_primary_threshold(
     c: (u64, u64),
-    authorities: &[(AuthorityId, BabeAuthorityWeight)],
-    authority_index: usize,
+    authorities_weights: impl ExactSizeIterator<Item = u64>,
+    authority_weight: u64,
 ) -> u128 {
-    use num_bigint::BigUint;
-    use num_rational::BigRational;
-    use num_traits::{cast::ToPrimitive, identities::One};
+    assert!(authorities_weights.len() != 0);
 
     let c = c.0 as f64 / c.1 as f64;
+    assert!(c.is_finite());
 
-    let theta =
-        authorities[authority_index].1 as f64 /
-        authorities.iter().map(|(_, weight)| weight).sum::<u64>() as f64;
+    let theta = authority_weight as f64 / authorities_weights.sum::<u64>() as f64;
+    assert!(theta > 0.0);
 
-    assert!(theta > 0.0, "authority with weight 0.");
-
-    // NOTE: in the equation `p = 1 - (1 - c)^theta` the value of `p` is always
-    // capped by `c`. For all pratical purposes `c` should always be set to a
-    // value < 0.5, as such in the computations below we should never be near
-    // edge cases like `0.999999`.
-
-    let p = BigRational::from_float(1f64 - (1f64 - c).powf(theta)).expect(
-        "returns None when the given value is not finite; \
-         c is a configuration parameter defined in (0, 1]; \
-         theta must be > 0 if the given authority's weight is > 0; \
-         theta represents the validator's relative weight defined in (0, 1]; \
-         powf will always return values in (0, 1] given both the \
-         base and exponent are in that domain; \
-         qed.",
-    );
-
-    let numer = p.numer().to_biguint().expect(
-        "returns None when the given value is negative; \
-         p is defined as `1 - n` where n is defined in (0, 1]; \
-         p must be a value in [0, 1); \
-         qed."
-    );
-
-    let denom = p.denom().to_biguint().expect(
-        "returns None when the given value is negative; \
-         p is defined as `1 - n` where n is defined in (0, 1]; \
-         p must be a value in [0, 1); \
-         qed."
-    );
-
-    ((BigUint::one() << 128) * numer / denom).to_u128().expect(
-        "returns None if the underlying value cannot be represented with 128 bits; \
-         we start with 2^128 which is one more than can be represented with 128 bits; \
-         we multiple by p which is defined in [0, 1); \
-         the result must be lower than 2^128 by at least one and thus representable with 128 bits; \
-         qed.",
-    )
+    // The calculations below has been copy-pasted from Substrate and is guaranteed to not panic.
+    let p = num_rational::BigRational::from_float(1f64 - (1f64 - c).powf(theta)).unwrap();
+    let numer = p.numer().to_biguint().unwrap();
+    let denom = p.denom().to_biguint().unwrap();
+    ((num_bigint::BigUint::one() << 128) * numer / denom)
+        .to_u128()
+        .unwrap()
 }
-
-
-*/
-
-/*/// Returns true if the given VRF output is lower than the given threshold,
-/// false otherwise.
-pub(super) fn check_primary_threshold(inout: &VRFInOut, threshold: u128) -> bool {
-    u128::from_le_bytes(inout.make_bytes::<[u8; 16]>(BABE_VRF_PREFIX)) < threshold
-}*/
