@@ -120,6 +120,8 @@ pub enum Error {
     DigestItemDecodeError(parity_scale_codec::Error),
     /// Digest log item with an unrecognized type.
     UnknownDigestLogType(u8),
+    /// Bad length of a BABE seal.
+    BadBabeSealLength,
 }
 
 /// Header of a block, after decoding.
@@ -270,7 +272,11 @@ pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
     PreRuntime(&'a [u8; 4], &'a [u8]),
     Consensus(&'a [u8; 4], &'a [u8]),
-    Seal(&'a [u8; 4], &'a [u8]),
+    /// Block signature made using the BABE consensus engine.
+    ///
+    /// Guaranteed to be 64 bytes long.
+    // TODO: we don't use a &[u8; 64] because traits aren't defined on this type; need to fix after Rust gets proper support
+    BabeSeal(&'a [u8]),
     ChangesTrieSignal(ChangesTrieSignal),
     Other(&'a [u8]),
 }
@@ -285,7 +291,7 @@ impl<'a> DigestItemRef<'a> {
             DigestItemRef::ChangesTrieRoot(_) => 2,
             DigestItemRef::PreRuntime(_, _) => 6,
             DigestItemRef::Consensus(_, _) => 4,
-            DigestItemRef::Seal(_, _) => 5,
+            DigestItemRef::BabeSeal(_) => 5,
             DigestItemRef::ChangesTrieSignal(_) => 7,
             DigestItemRef::Other(_) => 0,
         }]);
@@ -301,8 +307,7 @@ impl<'a> DigestItemRef<'a> {
         // TODO: don't use Vecs?
         match *self {
             DigestItemRef::PreRuntime(engine_id, data)
-            | DigestItemRef::Consensus(engine_id, data)
-            | DigestItemRef::Seal(engine_id, data) => {
+            | DigestItemRef::Consensus(engine_id, data) => {
                 let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
                     u64::try_from(data.len()).unwrap(),
                 ));
@@ -316,6 +321,21 @@ impl<'a> DigestItemRef<'a> {
                     ))))
                     .chain(iter::once(either::Either::Right(either::Either::Right(
                         data,
+                    ))));
+
+                either::Either::Left(either::Either::Left(iter))
+            }
+            DigestItemRef::BabeSeal(seal) => {
+                assert_eq!(seal.len(), 64);
+                let iter = iter::once(either::Either::Left(index))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
+                        &b"BABE"[..],
+                    ))))
+                    .chain(iter::once(either::Either::Right(either::Either::Left(
+                        parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(64u32)),
+                    ))))
+                    .chain(iter::once(either::Either::Right(either::Either::Right(
+                        &seal[..],
                     ))));
 
                 either::Either::Left(either::Either::Left(iter))
@@ -432,13 +452,7 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]),
             let content = &slice[..len];
             slice = &slice[len..];
 
-            let item = match index {
-                4 => DigestItemRef::Consensus(engine_id, content),
-                5 => DigestItemRef::Seal(engine_id, content),
-                6 => DigestItemRef::PreRuntime(engine_id, content),
-                _ => unreachable!(),
-            };
-
+            let item = decode_item_from_parts(index, engine_id, content)?;
             Ok((item, slice))
         }
         2 => {
@@ -457,4 +471,23 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]),
         }
         ty => Err(Error::UnknownDigestLogType(ty)),
     }
+}
+
+/// When we know the index, engine id, and content of an item, we can finish decoding.
+fn decode_item_from_parts<'a>(
+    index: u8,
+    engine_id: &'a [u8; 4],
+    mut content: &'a [u8],
+) -> Result<DigestItemRef<'a>, Error> {
+    Ok(match (index, engine_id) {
+        (4, _) => DigestItemRef::Consensus(engine_id, content),
+        (5, b"BABE") => DigestItemRef::BabeSeal({
+            if content.len() != 64 {
+                return Err(Error::BadBabeSealLength);
+            }
+            content
+        }),
+        (6, _) => DigestItemRef::PreRuntime(engine_id, content),
+        _ => unreachable!(),
+    })
 }

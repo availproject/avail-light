@@ -72,7 +72,7 @@ impl<'a> From<&'a ChainSpec> for ChainInfoConfig<'a> {
 
 impl<'a> Config<'a> {
     /// Builds the actual service, starting everything.
-    pub async fn build(mut self) -> Service {
+    pub async fn build(self) -> Service {
         // TODO: check that chain specs match database?
 
         // Turn the `Box<Executor>` into an `Arc`.

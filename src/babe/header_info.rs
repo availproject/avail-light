@@ -125,7 +125,7 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
         .logs()
         .last()
         .and_then(|l| match l {
-            header::DigestItemRef::Seal(engine, signature) if engine == b"BABE" => Some(signature),
+            header::DigestItemRef::BabeSeal(signature) => Some(signature),
             _ => None,
         })
         .ok_or(Error::MissingSeal)?;

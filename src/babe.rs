@@ -290,7 +290,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     let pre_seal_hash = {
         let mut unsealed_header = config.header;
         let _popped = unsealed_header.digest.pop();
-        debug_assert!(matches!(_popped, Some(header::DigestItemRef::Seal(_, _))));
+        debug_assert!(matches!(_popped, Some(header::DigestItemRef::BabeSeal(_))));
         unsealed_header.hash()
     };
 
