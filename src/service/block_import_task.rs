@@ -138,6 +138,7 @@ pub async fn run_block_import_task(mut config: Config) {
             Some(
                 babe::header_info::header_information(decoded)
                     .unwrap()
+                    .pre_runtime
                     .slot_number(),
             )
         }

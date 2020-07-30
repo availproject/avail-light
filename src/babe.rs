@@ -220,20 +220,20 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 
     // Gather the BABE-related information from the header.
     let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
-        header_info::PreDigest::Primary(digest) => (
+        header::BabePreDigestRef::Primary(digest) => (
             digest.authority_index,
             digest.slot_number,
             true,
-            Some((digest.vrf_output, digest.vrf_proof)),
+            Some((*digest.vrf_output, *digest.vrf_proof)),
         ),
-        header_info::PreDigest::SecondaryPlain(digest) => {
+        header::BabePreDigestRef::SecondaryPlain(digest) => {
             (digest.authority_index, digest.slot_number, false, None)
         }
-        header_info::PreDigest::SecondaryVRF(digest) => (
+        header::BabePreDigestRef::SecondaryVRF(digest) => (
             digest.authority_index,
             digest.slot_number,
             false,
-            Some((digest.vrf_output, digest.vrf_proof)),
+            Some((*digest.vrf_output, *digest.vrf_proof)),
         ),
     };
 
@@ -251,13 +251,13 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
         let parent_info =
             header_info::header_information(config.parent_block_header.clone()).unwrap();
 
-        if slot_number <= parent_info.slot_number() {
+        if slot_number <= parent_info.pre_runtime.slot_number() {
             return Err(VerifyError::SlotNumberNotIncreasing);
         }
 
         Some(
             slot_number_to_epoch(
-                parent_info.slot_number(),
+                parent_info.pre_runtime.slot_number(),
                 config.genesis_configuration,
                 config.block1_slot_number.unwrap(),
             )

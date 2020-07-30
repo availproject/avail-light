@@ -20,7 +20,8 @@
 //! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec).
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::{convert::TryFrom, iter};
+use core::{cmp, convert::TryFrom, fmt, iter, mem};
+use parity_scale_codec::DecodeAll as _;
 
 /// Returns a hash of a SCALE-encoded header.
 ///
@@ -122,6 +123,9 @@ pub enum Error {
     UnknownDigestLogType(u8),
     /// Bad length of a BABE seal.
     BadBabeSealLength,
+    BadBabePreDigestRefType,
+    /// Unknown consensus engine specified in a digest log.
+    UnknownConsensusEngine,
 }
 
 /// Header of a block, after decoding.
@@ -270,8 +274,9 @@ impl<'a> ExactSizeIterator for LogsIter<'a> {}
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
-    PreRuntime(&'a [u8; 4], &'a [u8]),
+    BabePreDigest(BabePreDigestRef<'a>),
     Consensus(&'a [u8; 4], &'a [u8]),
+
     /// Block signature made using the BABE consensus engine.
     ///
     /// Guaranteed to be 64 bytes long.
@@ -287,85 +292,58 @@ impl<'a> DigestItemRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        let index = One([match self {
-            DigestItemRef::ChangesTrieRoot(_) => 2,
-            DigestItemRef::PreRuntime(_, _) => 6,
-            DigestItemRef::Consensus(_, _) => 4,
-            DigestItemRef::BabeSeal(_) => 5,
-            DigestItemRef::ChangesTrieSignal(_) => 7,
-            DigestItemRef::Other(_) => 0,
-        }]);
-
-        #[derive(Clone)]
-        struct One([u8; 1]);
-        impl AsRef<[u8]> for One {
-            fn as_ref(&self) -> &[u8] {
-                &self.0[..]
-            }
-        }
-
         // TODO: don't use Vecs?
         match *self {
-            DigestItemRef::PreRuntime(engine_id, data)
-            | DigestItemRef::Consensus(engine_id, data) => {
-                let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-                    u64::try_from(data.len()).unwrap(),
+            DigestItemRef::BabePreDigest(ref babe_pre_digest) => {
+                let encoded = babe_pre_digest
+                    .scale_encoding()
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
+                let mut ret = vec![6];
+                ret.extend_from_slice(b"BABE");
+                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
+                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
                 ));
-
-                let iter = iter::once(either::Either::Left(index))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        &engine_id[..],
-                    ))))
-                    .chain(iter::once(either::Either::Right(either::Either::Left(
-                        encoded_len,
-                    ))))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        data,
-                    ))));
-
-                either::Either::Left(either::Either::Left(iter))
+                ret.extend_from_slice(&encoded);
+                iter::once(ret)
+            }
+            DigestItemRef::Consensus(engine_id, data) => {
+                let mut ret = vec![4];
+                ret.extend_from_slice(engine_id);
+                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
+                    &parity_scale_codec::Compact(u64::try_from(data.len()).unwrap()),
+                ));
+                ret.extend_from_slice(&data);
+                iter::once(ret)
             }
             DigestItemRef::BabeSeal(seal) => {
                 assert_eq!(seal.len(), 64);
-                let iter = iter::once(either::Either::Left(index))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        &b"BABE"[..],
-                    ))))
-                    .chain(iter::once(either::Either::Right(either::Either::Left(
-                        parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(64u32)),
-                    ))))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        &seal[..],
-                    ))));
 
-                either::Either::Left(either::Either::Left(iter))
+                let mut ret = vec![5];
+                ret.extend_from_slice(b"BABE");
+                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
+                    &parity_scale_codec::Compact(64u32),
+                ));
+                ret.extend_from_slice(&seal);
+                iter::once(ret)
             }
             DigestItemRef::ChangesTrieSignal(ref changes) => {
-                let encoded = parity_scale_codec::Encode::encode(changes);
-                let iter = iter::once(either::Either::Left(index)).chain(iter::once(
-                    either::Either::Right(either::Either::Left(encoded)),
-                ));
-                either::Either::Left(either::Either::Right(iter))
+                let mut ret = vec![7];
+                ret.extend_from_slice(&parity_scale_codec::Encode::encode(changes));
+                iter::once(ret)
             }
             DigestItemRef::ChangesTrieRoot(data) => {
-                let iter = iter::once(either::Either::Left(index)).chain(iter::once(
-                    either::Either::Right(either::Either::Right(&data[..])),
-                ));
-                either::Either::Right(either::Either::Left(iter))
+                let mut ret = vec![2];
+                ret.extend_from_slice(data);
+                iter::once(ret)
             }
             DigestItemRef::Other(data) => {
-                let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-                    u64::try_from(data.len()).unwrap(),
-                ));
-
-                let iter = iter::once(either::Either::Left(index))
-                    .chain(iter::once(either::Either::Right(either::Either::Left(
-                        encoded_len,
-                    ))))
-                    .chain(iter::once(either::Either::Right(either::Either::Right(
-                        data,
-                    ))));
-                either::Either::Right(either::Either::Right(iter))
+                let mut ret = vec![0];
+                ret.extend_from_slice(data);
+                iter::once(ret)
             }
         }
     }
@@ -407,6 +385,256 @@ pub struct ChangesTrieConfiguration {
     /// && maximal digests interval will be truncated to the last interval that fits
     /// `u32` limits.
     pub digest_levels: u32,
+}
+
+/// A BABE pre-runtime digest. This contains all data required to validate a
+/// block and for the BABE runtime module. Slots can be assigned to a primary
+/// (VRF based) and to a secondary (slot number based).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BabePreDigestRef<'a> {
+    /// A primary VRF-based slot assignment.
+    Primary(BabePrimaryPreDigestRef<'a>),
+    /// A secondary deterministic slot assignment.
+    SecondaryPlain(BabeSecondaryPlainPreDigest),
+    /// A secondary deterministic slot assignment with VRF outputs.
+    SecondaryVRF(BabeSecondaryVRFPreDigestRef<'a>),
+}
+
+impl<'a> BabePreDigestRef<'a> {
+    /// Decodes a [`BabePreDigestRef`] from a slice of bytes.
+    pub fn from_slice(slice: &'a [u8]) -> Result<Self, Error> {
+        Ok(match slice.get(0) {
+            Some(1) => BabePreDigestRef::Primary(BabePrimaryPreDigestRef::from_slice(&slice[1..])?),
+            Some(2) => BabePreDigestRef::SecondaryPlain(BabeSecondaryPlainPreDigest::from_slice(
+                &slice[1..],
+            )?),
+            Some(3) => BabePreDigestRef::SecondaryVRF(BabeSecondaryVRFPreDigestRef::from_slice(
+                &slice[1..],
+            )?),
+            Some(_) => return Err(Error::BadBabePreDigestRefType),
+            None => return Err(Error::TooShort),
+        })
+    }
+
+    /// Returns the slot number stored in the header.
+    pub fn slot_number(&self) -> u64 {
+        match self {
+            BabePreDigestRef::Primary(digest) => digest.slot_number,
+            BabePreDigestRef::SecondaryPlain(digest) => digest.slot_number,
+            BabePreDigestRef::SecondaryVRF(digest) => digest.slot_number,
+        }
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        #[derive(Clone)]
+        struct One([u8; 1]);
+        impl AsRef<[u8]> for One {
+            fn as_ref(&self) -> &[u8] {
+                &self.0[..]
+            }
+        }
+
+        let index = iter::once(One(match self {
+            BabePreDigestRef::Primary(_) => [1],
+            BabePreDigestRef::SecondaryPlain(_) => [2],
+            BabePreDigestRef::SecondaryVRF(_) => [3],
+        }));
+
+        let body = match self {
+            BabePreDigestRef::Primary(digest) => either::Either::Left(either::Either::Left(
+                digest
+                    .scale_encoding()
+                    .map(|buf| either::Either::Left(either::Either::Left(buf))),
+            )),
+            BabePreDigestRef::SecondaryPlain(digest) => {
+                either::Either::Left(either::Either::Right(
+                    digest
+                        .scale_encoding()
+                        .map(|buf| either::Either::Left(either::Either::Right(buf))),
+                ))
+            }
+            BabePreDigestRef::SecondaryVRF(digest) => {
+                either::Either::Right(digest.scale_encoding().map(either::Either::Right))
+            }
+        };
+
+        index
+            .map(either::Either::Left)
+            .chain(body.map(either::Either::Right))
+    }
+}
+
+/// Raw BABE primary slot assignment pre-digest.
+#[derive(Clone)]
+pub struct BabePrimaryPreDigestRef<'a> {
+    /// Authority index
+    pub authority_index: u32,
+    /// Slot number
+    pub slot_number: u64,
+    /// VRF output
+    pub vrf_output: &'a [u8; 32],
+    /// VRF proof
+    pub vrf_proof: &'a [u8; 64],
+}
+
+impl<'a> BabePrimaryPreDigestRef<'a> {
+    /// Decodes a [`BabePrimaryPreDigestRef`] from a slice of bytes.
+    pub fn from_slice(slice: &'a [u8]) -> Result<Self, Error> {
+        if slice.len() != 4 + 8 + 32 + 64 {
+            return Err(Error::TooShort);
+        }
+
+        Ok(BabePrimaryPreDigestRef {
+            authority_index: u32::from_le_bytes(<[u8; 4]>::try_from(&slice[0..4]).unwrap()),
+            slot_number: u64::from_le_bytes(<[u8; 8]>::try_from(&slice[4..12]).unwrap()),
+            vrf_output: TryFrom::try_from(&slice[12..44]).unwrap(),
+            vrf_proof: unsafe {
+                // TODO: ugh, how do you even get a &[u8; 64] from a &[u8]
+                &*(slice[44..108].as_ptr() as *const [u8; 64])
+            },
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        // TODO: don't allocate
+        let header = iter::once(either::Either::Left(parity_scale_codec::Encode::encode(&(
+            self.authority_index,
+            self.slot_number,
+        ))));
+
+        header
+            .chain(iter::once(either::Either::Right(&self.vrf_output[..])))
+            .chain(iter::once(either::Either::Right(&self.vrf_proof[..])))
+    }
+}
+
+impl<'a> cmp::PartialEq<BabePrimaryPreDigestRef<'a>> for BabePrimaryPreDigestRef<'a> {
+    fn eq(&self, other: &BabePrimaryPreDigestRef<'a>) -> bool {
+        self.authority_index == other.authority_index
+            && self.slot_number == other.slot_number
+            && &self.vrf_output[..] == &other.vrf_output[..]
+            && &self.vrf_proof[..] == &other.vrf_proof[..]
+    }
+}
+
+impl<'a> cmp::Eq for BabePrimaryPreDigestRef<'a> {}
+
+// This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
+impl<'a> fmt::Debug for BabePrimaryPreDigestRef<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BabePrimaryPreDigestRef").finish()
+    }
+}
+
+/// BABE secondary slot assignment pre-digest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BabeSecondaryPlainPreDigest {
+    /// Authority index
+    ///
+    /// This is not strictly-speaking necessary, since the secondary slots
+    /// are assigned based on slot number and epoch randomness. But including
+    /// it makes things easier for higher-level users of the chain data to
+    /// be aware of the author of a secondary-slot block.
+    pub authority_index: u32,
+
+    /// Slot number
+    pub slot_number: u64,
+}
+
+impl BabeSecondaryPlainPreDigest {
+    /// Decodes a [`BabeSecondaryPlainPreDigest`] from a slice of bytes.
+    pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
+        let (authority_index, slot_number) =
+            <(u32, u64)>::decode_all(slice).map_err(|e| Error::DigestItemDecodeError(e))?;
+        Ok(BabeSecondaryPlainPreDigest {
+            authority_index,
+            slot_number,
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + Clone> + Clone {
+        // TODO: don't allocate
+        iter::once(parity_scale_codec::Encode::encode(&(
+            self.authority_index,
+            self.slot_number,
+        )))
+    }
+}
+
+/// BABE secondary deterministic slot assignment with VRF outputs.
+#[derive(Clone)]
+pub struct BabeSecondaryVRFPreDigestRef<'a> {
+    /// Authority index
+    pub authority_index: u32,
+    /// Slot number
+    pub slot_number: u64,
+    /// VRF output
+    pub vrf_output: &'a [u8; 32],
+    /// VRF proof
+    pub vrf_proof: &'a [u8; 64],
+}
+
+impl<'a> BabeSecondaryVRFPreDigestRef<'a> {
+    /// Decodes a [`BabeSecondaryVRFPreDigestRef`] from a slice of bytes.
+    pub fn from_slice(slice: &'a [u8]) -> Result<Self, Error> {
+        if slice.len() != 4 + 8 + 32 + 64 {
+            return Err(Error::TooShort);
+        }
+
+        Ok(BabeSecondaryVRFPreDigestRef {
+            authority_index: u32::from_le_bytes(<[u8; 4]>::try_from(&slice[0..4]).unwrap()),
+            slot_number: u64::from_le_bytes(<[u8; 8]>::try_from(&slice[4..12]).unwrap()),
+            vrf_output: TryFrom::try_from(&slice[12..44]).unwrap(),
+            vrf_proof: unsafe {
+                // TODO: ugh, how do you even get a &[u8; 64] from a &[u8]
+                &*(slice[44..108].as_ptr() as *const [u8; 64])
+            },
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        // TODO: don't allocate
+        let header = iter::once(either::Either::Left(parity_scale_codec::Encode::encode(&(
+            self.authority_index,
+            self.slot_number,
+        ))));
+
+        header
+            .chain(iter::once(either::Either::Right(&self.vrf_output[..])))
+            .chain(iter::once(either::Either::Right(&self.vrf_proof[..])))
+    }
+}
+
+impl<'a> cmp::PartialEq<BabeSecondaryVRFPreDigestRef<'a>> for BabeSecondaryVRFPreDigestRef<'a> {
+    fn eq(&self, other: &BabeSecondaryVRFPreDigestRef<'a>) -> bool {
+        self.authority_index == other.authority_index
+            && self.slot_number == other.slot_number
+            && &self.vrf_output[..] == &other.vrf_output[..]
+            && &self.vrf_proof[..] == &other.vrf_proof[..]
+    }
+}
+
+impl<'a> cmp::Eq for BabeSecondaryVRFPreDigestRef<'a> {}
+
+// This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
+impl<'a> fmt::Debug for BabeSecondaryVRFPreDigestRef<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BabeSecondaryVRFPreDigestRef").finish()
+    }
 }
 
 /// Decodes a single digest log item. On success, returns the item and the data that remains
@@ -487,7 +715,9 @@ fn decode_item_from_parts<'a>(
             }
             content
         }),
-        (6, _) => DigestItemRef::PreRuntime(engine_id, content),
+        (5, _) => return Err(Error::UnknownConsensusEngine),
+        (6, b"BABE") => DigestItemRef::BabePreDigest(BabePreDigestRef::from_slice(content)?),
+        (6, _) => return Err(Error::UnknownConsensusEngine),
         _ => unreachable!(),
     })
 }

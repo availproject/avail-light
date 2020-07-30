@@ -4,9 +4,6 @@ use super::definitions;
 use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
-// TODO: move this definitions locally
-pub use definitions::PreDigest;
-
 // TODO: merge this with the `crate::header` module
 
 /// Information successfully extracted from the header.
@@ -14,27 +11,15 @@ pub use definitions::PreDigest;
 pub struct HeaderInfo<'a> {
     /// Block signature stored in the header.
     ///
-    /// Part of the rules is that the last digest log of the header must always be the seal,
-    /// containing a signature of the rest of the header and made by the author of the block.
+    /// Guaranteed to be 64 bytes long.
+    // TODO: we don't use a &[u8; 64] because traits aren't defined on this type; need to fix after Rust gets proper support
     pub seal_signature: &'a [u8],
 
     /// Information about the slot claim made by the block author.
-    // TODO: use a different type
-    pub pre_runtime: PreDigest,
+    pub pre_runtime: header::BabePreDigestRef<'a>,
 
     /// Information about an epoch change, and additionally potentially to the BABE configuration.
     pub epoch_change: Option<(EpochInformation, Option<ConfigurationChange>)>,
-}
-
-impl<'a> HeaderInfo<'a> {
-    /// Returns the slot number stored in the header.
-    pub fn slot_number(&self) -> u64 {
-        match &self.pre_runtime {
-            PreDigest::Primary(digest) => digest.slot_number,
-            PreDigest::SecondaryPlain(digest) => digest.slot_number,
-            PreDigest::SecondaryVRF(digest) => digest.slot_number,
-        }
-    }
 }
 
 /// Information about an epoch.
@@ -132,9 +117,9 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
 
     // Additionally, one of the digest logs of the header must be a BABE pre-runtime digest whose
     // content contains the slot claim made by the author.
-    let pre_runtime: PreDigest = {
+    let pre_runtime: header::BabePreDigestRef = {
         let mut pre_runtime_digests = header.digest.logs().filter_map(|l| match l {
-            header::DigestItemRef::PreRuntime(engine, data) if engine == b"BABE" => Some(data),
+            header::DigestItemRef::BabePreDigest(item) => Some(item),
             _ => None,
         });
         let pre_runtime = pre_runtime_digests
@@ -143,7 +128,7 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
         if pre_runtime_digests.next().is_some() {
             return Err(Error::MultiplePreRuntimeDigests);
         }
-        PreDigest::decode_all(&pre_runtime).map_err(Error::PreRuntimeDigestDecodeError)?
+        pre_runtime
     };
 
     // Finally, the header can contain consensus digest logs, indicating an epoch transition or
