@@ -4,8 +4,8 @@ use super::definitions;
 use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
-// TODO: move these definitions locally
-pub use definitions::{NextConfigDescriptor, PreDigest};
+// TODO: move this definitions locally
+pub use definitions::PreDigest;
 
 // TODO: merge this with the `crate::header` module
 
@@ -23,8 +23,7 @@ pub struct HeaderInfo<'a> {
     pub pre_runtime: PreDigest,
 
     /// Information about an epoch change, and additionally potentially to the BABE configuration.
-    // TODO: replace `NextConfigDescriptor` with different type
-    pub epoch_change: Option<(EpochInformation, Option<NextConfigDescriptor>)>,
+    pub epoch_change: Option<(EpochInformation, Option<ConfigurationChange>)>,
 }
 
 impl<'a> HeaderInfo<'a> {
@@ -66,6 +65,34 @@ pub struct EpochInformationAuthority {
     /// authority with twice the weight value as another authority will be able to claim twice as
     /// many slots.
     pub weight: u64,
+}
+
+/// Change in the configuration at an epoch transition.
+#[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub struct ConfigurationChange {
+    /// A constant value that is used in the threshold calculation formula.
+    /// Expressed as a rational where the first member of the tuple is the numerator and the
+    /// second is the denominator. The rational should represent a value between 0 and 1.
+    ///
+    /// In the threshold formula calculation, `1 - c` represents the probability of a slot being
+    /// empty.
+    pub c: (u64, u64),
+
+    /// Whether this chain should run with secondary slot claims.
+    pub allowed_slots: AllowedSlots,
+}
+
+/// Types of allowed slots.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub enum AllowedSlots {
+    /// Only allow primary slot claims.
+    PrimarySlots,
+    /// Allow primary and secondary plain slot claims.
+    PrimaryAndSecondaryPlainSlots,
+    /// Allow primary and secondary VRF slot claims.
+    PrimaryAndSecondaryVRFSlots,
 }
 
 /// Failure to get the information from the header.
@@ -162,6 +189,11 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
                 .into_iter()
                 .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
                 .collect(),
+        });
+
+        let config_change = config_change.map(|cfg| {
+            let definitions::NextConfigDescriptor::V1 { c, allowed_slots } = cfg;
+            ConfigurationChange { c, allowed_slots }
         });
 
         match (epoch_change, config_change) {
