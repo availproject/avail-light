@@ -1,5 +1,5 @@
-use super::{definitions, header_info};
-use crate::executor;
+use super::header_info;
+use crate::{executor, header};
 
 use core::convert::TryFrom as _;
 use parity_scale_codec::DecodeAll as _;
@@ -8,7 +8,7 @@ use parity_scale_codec::DecodeAll as _;
 ///
 /// The way a chain configures BABE is stored in its runtime.
 pub struct BabeGenesisConfiguration {
-    inner: definitions::BabeGenesisConfiguration,
+    inner: OwnedGenesisConfiguration,
     epoch0_information: header_info::EpochInformation,
 }
 
@@ -45,7 +45,7 @@ impl BabeGenesisConfiguration {
             match vm.state() {
                 executor::State::ReadyToRun(r) => r.run(),
                 executor::State::Finished(data) => {
-                    break match definitions::BabeGenesisConfiguration::decode_all(&data) {
+                    break match OwnedGenesisConfiguration::decode_all(&data) {
                         Ok(cfg) => cfg,
                         Err(err) => return Err(BabeChainConfigurationError::OutputDecode(err)),
                     };
@@ -138,4 +138,14 @@ pub enum BabeChainConfigurationError {
     ExternalityNotAllowed,
     /// Error while decoding the output of the virtual machine.
     OutputDecode(parity_scale_codec::Error),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+struct OwnedGenesisConfiguration {
+    slot_duration: u64,
+    epoch_length: u64,
+    c: (u64, u64),
+    genesis_authorities: Vec<([u8; 32], u64)>,
+    randomness: [u8; 32],
+    allowed_slots: header::BabeAllowedSlots,
 }

@@ -118,7 +118,6 @@ use crate::header;
 use core::{convert::TryFrom as _, time::Duration};
 use num_traits::{cast::ToPrimitive as _, identities::One as _};
 
-mod definitions;
 mod runtime;
 
 pub mod chain_config;

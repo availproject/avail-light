@@ -1,10 +1,9 @@
 //! Information extraction from a block header.
 
-use super::definitions;
 use crate::header;
 use parity_scale_codec::DecodeAll as _;
 
-// TODO: merge this with the `crate::header` module
+// TODO: remove this module altogether
 
 /// Information successfully extracted from the header.
 #[derive(Debug)]
@@ -78,10 +77,6 @@ pub enum Error {
     MissingPreRuntimeDigest,
     /// There are multiple pre-runtime digests in the block header.
     MultiplePreRuntimeDigests,
-    /// Failed to decode pre-runtime digest.
-    PreRuntimeDigestDecodeError(parity_scale_codec::Error),
-    /// Failed to decode a consensus digest.
-    ConsensusDigestDecodeError(parity_scale_codec::Error),
     /// There are multiple epoch descriptor digests in the block header.
     MultipleEpochDescriptors,
     /// There are multiple configuration descriptor digests in the block header.
