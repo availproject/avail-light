@@ -20,8 +20,8 @@
 //! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec).
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::{cmp, convert::TryFrom, fmt, iter, mem};
-use parity_scale_codec::DecodeAll as _;
+use core::{cmp, convert::TryFrom, fmt, iter, mem, slice};
+use parity_scale_codec::{Decode as _, DecodeAll as _};
 
 /// Returns a hash of a SCALE-encoded header.
 ///
@@ -124,6 +124,7 @@ pub enum Error {
     /// Bad length of a BABE seal.
     BadBabeSealLength,
     BadBabePreDigestRefType,
+    BadBabeConsensusRefType,
     /// Unknown consensus engine specified in a digest log.
     UnknownConsensusEngine,
 }
@@ -275,7 +276,7 @@ impl<'a> ExactSizeIterator for LogsIter<'a> {}
 pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
     BabePreDigest(BabePreDigestRef<'a>),
-    Consensus(&'a [u8; 4], &'a [u8]),
+    BabeConsensus(BabeConsensusLogRef<'a>),
 
     /// Block signature made using the BABE consensus engine.
     ///
@@ -310,13 +311,20 @@ impl<'a> DigestItemRef<'a> {
                 ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
-            DigestItemRef::Consensus(engine_id, data) => {
+            DigestItemRef::BabeConsensus(ref babe_consensus) => {
+                let encoded = babe_consensus
+                    .scale_encoding()
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
                 let mut ret = vec![4];
-                ret.extend_from_slice(engine_id);
+                ret.extend_from_slice(b"BABE");
                 ret.extend_from_slice(&parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(u64::try_from(data.len()).unwrap()),
+                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
                 ));
-                ret.extend_from_slice(&data);
+                ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
             DigestItemRef::BabeSeal(seal) => {
@@ -347,6 +355,216 @@ impl<'a> DigestItemRef<'a> {
             }
         }
     }
+}
+
+/// An consensus log item for BABE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BabeConsensusLogRef<'a> {
+    /// The epoch has changed. This provides information about the _next_
+    /// epoch - information about the _current_ epoch (i.e. the one we've just
+    /// entered) should already be available earlier in the chain.
+    NextEpochData(BabeNextEpochRef<'a>),
+    /// Disable the authority with given index.
+    OnDisabled(u32),
+    /// The epoch has changed, and the epoch after the current one will
+    /// enact different epoch configurations.
+    NextConfigData(BabeNextConfig),
+}
+
+impl<'a> BabeConsensusLogRef<'a> {
+    /// Decodes a [`BabeConsensusLogRef`] from a slice of bytes.
+    pub fn from_slice(slice: &'a [u8]) -> Result<Self, Error> {
+        Ok(match slice.get(0) {
+            Some(1) => {
+                BabeConsensusLogRef::NextEpochData(BabeNextEpochRef::from_slice(&slice[1..])?)
+            }
+            Some(2) => BabeConsensusLogRef::OnDisabled(
+                u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+            ),
+            Some(3) => BabeConsensusLogRef::NextConfigData(
+                BabeNextConfig::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+            ),
+            Some(_) => return Err(Error::BadBabeConsensusRefType),
+            None => return Err(Error::TooShort),
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        #[derive(Clone)]
+        struct One([u8; 1]);
+        impl AsRef<[u8]> for One {
+            fn as_ref(&self) -> &[u8] {
+                &self.0[..]
+            }
+        }
+
+        let index = iter::once(One(match self {
+            BabeConsensusLogRef::NextEpochData(_) => [1],
+            BabeConsensusLogRef::OnDisabled(_) => [2],
+            BabeConsensusLogRef::NextConfigData(_) => [3],
+        }));
+
+        let body = match self {
+            BabeConsensusLogRef::NextEpochData(digest) => {
+                either::Either::Left(digest.scale_encoding().map(either::Either::Left))
+            }
+            BabeConsensusLogRef::OnDisabled(digest) => either::Either::Right(iter::once(
+                either::Either::Right(parity_scale_codec::Encode::encode(digest)),
+            )),
+            BabeConsensusLogRef::NextConfigData(digest) => either::Either::Right(iter::once(
+                either::Either::Right(parity_scale_codec::Encode::encode(digest)),
+            )),
+        };
+
+        index
+            .map(either::Either::Left)
+            .chain(body.map(either::Either::Right))
+    }
+}
+
+/// Information about the next epoch. This is broadcast in the first block
+/// of the epoch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BabeNextEpochRef<'a> {
+    /// The authorities.
+    pub authorities: BabeAuthoritiesIter<'a>,
+
+    /// The value of randomness to use for the slot-assignment.
+    pub randomness: &'a [u8; 32],
+}
+
+impl<'a> BabeNextEpochRef<'a> {
+    /// Decodes a [`BabePreDigestRef`] from a slice of bytes.
+    pub fn from_slice(mut slice: &'a [u8]) -> Result<Self, Error> {
+        // TODO: don't unwrap on decode fail
+        let authorities_len = usize::try_from(
+            parity_scale_codec::Compact::<u64>::decode(&mut slice)
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+
+        if slice.len() != authorities_len * 40 + 32 {
+            return Err(Error::TooShort);
+        }
+
+        Ok(BabeNextEpochRef {
+            authorities: BabeAuthoritiesIter(slice[0..authorities_len * 40].chunks(40)),
+            randomness: <&[u8; 32]>::try_from(&slice[authorities_len * 40..]).unwrap(),
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        // TODO: don't allocate
+        let header = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+            u64::try_from(self.authorities.len()).unwrap(),
+        ));
+
+        iter::once(either::Either::Left(header))
+            .chain(
+                self.authorities
+                    .clone()
+                    .flat_map(|a| a.scale_encoding())
+                    .map(|buf| either::Either::Right(either::Either::Left(buf))),
+            )
+            .chain(iter::once(either::Either::Right(either::Either::Right(
+                &self.randomness[..],
+            ))))
+    }
+}
+
+/// List of authorities in a BABE context.
+#[derive(Debug, Clone)]
+pub struct BabeAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
+
+impl<'a> Iterator for BabeAuthoritiesIter<'a> {
+    type Item = BabeAuthorityRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.0.next()?;
+        assert_eq!(item.len(), 40);
+        Some(BabeAuthorityRef {
+            public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
+            weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl<'a> ExactSizeIterator for BabeAuthoritiesIter<'a> {}
+
+impl<'a> cmp::PartialEq<BabeAuthoritiesIter<'a>> for BabeAuthoritiesIter<'a> {
+    fn eq(&self, other: &BabeAuthoritiesIter<'a>) -> bool {
+        let mut a = self.clone();
+        let mut b = other.clone();
+        loop {
+            match (a.next(), b.next()) {
+                (Some(a), Some(b)) if a == b => {}
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+}
+
+impl<'a> cmp::Eq for BabeAuthoritiesIter<'a> {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct BabeAuthorityRef<'a> {
+    /// sr25519 public key.
+    pub public_key: &'a [u8; 32],
+    /// Arbitrary number indicating the weight of the authority.
+    ///
+    /// This value can only be compared to other weight values.
+    pub weight: u64,
+}
+
+impl<'a> BabeAuthorityRef<'a> {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        iter::once(either::Either::Right(self.public_key)).chain(iter::once(either::Either::Left(
+            parity_scale_codec::Encode::encode(&self.weight),
+        )))
+    }
+}
+
+/// Information about the next epoch config, if changed. This is broadcast in the first
+/// block of the epoch, and applies using the same rules as `NextEpochDescriptor`.
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub struct BabeNextConfig {
+    /// Value of `c` in `BabeEpochConfiguration`.
+    pub c: (u64, u64),
+    /// Value of `allowed_slots` in `BabeEpochConfiguration`.
+    pub allowed_slots: BabeAllowedSlots,
+}
+
+/// Types of allowed slots.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub enum BabeAllowedSlots {
+    /// Only allow primary slot claims.
+    PrimarySlots,
+    /// Allow primary and secondary plain slot claims.
+    PrimaryAndSecondaryPlainSlots,
+    /// Allow primary and secondary VRF slot claims.
+    PrimaryAndSecondaryVRFSlots,
 }
 
 /// Available changes trie signals.
@@ -708,7 +926,8 @@ fn decode_item_from_parts<'a>(
     mut content: &'a [u8],
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
-        (4, _) => DigestItemRef::Consensus(engine_id, content),
+        (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),
+        (4, _) => return Err(Error::UnknownConsensusEngine),
         (5, b"BABE") => DigestItemRef::BabeSeal({
             if content.len() != 64 {
                 return Err(Error::BadBabeSealLength);

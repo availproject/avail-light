@@ -218,6 +218,8 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     let header =
         header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
 
+    // TODO: handle OnDisabled
+
     // Gather the BABE-related information from the header.
     let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
         header::BabePreDigestRef::Primary(digest) => (

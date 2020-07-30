@@ -1,8 +1,8 @@
 //! Definitions copy-pasted from Substrate
 
-// TODO: decide what to do with this module; it's obviously not great
+// TODO: remove this module altogether
 
-use super::header_info::AllowedSlots;
+use crate::header::BabeAllowedSlots;
 
 use core::fmt;
 use parity_scale_codec::{Decode, Encode};
@@ -34,7 +34,7 @@ pub struct BabeGenesisConfiguration {
     pub randomness: [u8; 32],
 
     /// Type of allowed slots.
-    pub allowed_slots: AllowedSlots,
+    pub allowed_slots: BabeAllowedSlots,
 }
 
 /// An consensus log item for BABE.
@@ -75,7 +75,7 @@ pub enum NextConfigDescriptor {
         /// Value of `c` in `BabeEpochConfiguration`.
         c: (u64, u64),
         /// Value of `allowed_slots` in `BabeEpochConfiguration`.
-        allowed_slots: AllowedSlots,
+        allowed_slots: BabeAllowedSlots,
     },
 }
 

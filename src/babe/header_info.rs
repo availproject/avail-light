@@ -64,20 +64,7 @@ pub struct ConfigurationChange {
     pub c: (u64, u64),
 
     /// Whether this chain should run with secondary slot claims.
-    pub allowed_slots: AllowedSlots,
-}
-
-/// Types of allowed slots.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode,
-)]
-pub enum AllowedSlots {
-    /// Only allow primary slot claims.
-    PrimarySlots,
-    /// Allow primary and secondary plain slot claims.
-    PrimaryAndSecondaryPlainSlots,
-    /// Allow primary and secondary VRF slot claims.
-    PrimaryAndSecondaryVRFSlots,
+    pub allowed_slots: header::BabeAllowedSlots,
 }
 
 /// Failure to get the information from the header.
@@ -131,54 +118,45 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
         pre_runtime
     };
 
-    // Finally, the header can contain consensus digest logs, indicating an epoch transition or
-    // a configuration change.
-    let consensus_logs: Vec<definitions::ConsensusLog> = {
-        let list = header.digest.logs().filter_map(|l| match l {
-            header::DigestItemRef::Consensus(engine, data) if engine == b"BABE" => Some(data),
-            _ => None,
-        });
-
-        let mut consensus_logs = Vec::with_capacity(header.digest.logs().len());
-        for digest in list {
-            let decoded = definitions::ConsensusLog::decode_all(&digest)
-                .map_err(Error::ConsensusDigestDecodeError)?;
-            consensus_logs.push(decoded);
-        }
-        consensus_logs
-    };
-
-    // Amongst `consensus_logs`, try to find the epoch and config change logs.
+    // Amongst BABE consensus logs, try to find the epoch and config change logs.
     let epoch_change = {
         let mut epoch_change = None;
         let mut config_change = None;
 
+        let consensus_logs = header.digest.logs().filter_map(|l| match l {
+            header::DigestItemRef::BabeConsensus(item) => Some(item),
+            _ => None,
+        });
+
         for consensus_log in consensus_logs {
             match consensus_log {
-                definitions::ConsensusLog::NextEpochData(_) if epoch_change.is_some() => {
+                header::BabeConsensusLogRef::NextEpochData(_) if epoch_change.is_some() => {
                     return Err(Error::MultipleEpochDescriptors)
                 }
-                definitions::ConsensusLog::NextEpochData(data) => epoch_change = Some(data),
-                definitions::ConsensusLog::NextConfigData(_) if config_change.is_some() => {
+                header::BabeConsensusLogRef::NextEpochData(data) => epoch_change = Some(data),
+                header::BabeConsensusLogRef::NextConfigData(_) if config_change.is_some() => {
                     return Err(Error::MultipleConfigDescriptors)
                 }
-                definitions::ConsensusLog::NextConfigData(data) => config_change = Some(data),
-                definitions::ConsensusLog::OnDisabled(_) => todo!(), // TODO: unimplemented
+                header::BabeConsensusLogRef::NextConfigData(data) => config_change = Some(data),
+                header::BabeConsensusLogRef::OnDisabled(_) => todo!(), // TODO: unimplemented
             }
         }
 
         let epoch_change = epoch_change.map(|epoch| EpochInformation {
-            randomness: epoch.randomness,
+            randomness: *epoch.randomness,
             authorities: epoch
                 .authorities
                 .into_iter()
-                .map(|(public_key, weight)| EpochInformationAuthority { public_key, weight })
+                .map(|auth| EpochInformationAuthority {
+                    public_key: *auth.public_key,
+                    weight: auth.weight,
+                })
                 .collect(),
         });
 
-        let config_change = config_change.map(|cfg| {
-            let definitions::NextConfigDescriptor::V1 { c, allowed_slots } = cfg;
-            ConfigurationChange { c, allowed_slots }
+        let config_change = config_change.map(|cfg| ConfigurationChange {
+            c: cfg.c,
+            allowed_slots: cfg.allowed_slots,
         });
 
         match (epoch_change, config_change) {
