@@ -166,7 +166,7 @@ pub async fn run_block_import_task(mut config: Config) {
                     Ok(h) => h,
                     Err(err) => {
                         let _ = send_back.send(Err(ImportError::InvalidHeader(err)));
-                        return;
+                        continue;
                     }
                 };
 
