@@ -5,7 +5,6 @@ use core::time::Duration;
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
-// TODO: don't pass functions to the Config; instead, have a state-machine-like API
 pub struct Config<'a, TBody> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
