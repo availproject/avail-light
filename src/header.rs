@@ -126,7 +126,8 @@ pub enum Error {
     BadBabePreDigestRefType,
     BadBabeConsensusRefType,
     /// Unknown consensus engine specified in a digest log.
-    UnknownConsensusEngine,
+    #[display(fmt = "Unknown consensus engine specified in a digest log: {:?}", _0)]
+    UnknownConsensusEngine([u8; 4]),
 }
 
 /// Header of a block, after decoding.
@@ -927,16 +928,16 @@ fn decode_item_from_parts<'a>(
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
         (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),
-        (4, _) => return Err(Error::UnknownConsensusEngine),
+        (4, e) => return Err(Error::UnknownConsensusEngine(*e)),
         (5, b"BABE") => DigestItemRef::BabeSeal({
             if content.len() != 64 {
                 return Err(Error::BadBabeSealLength);
             }
             content
         }),
-        (5, _) => return Err(Error::UnknownConsensusEngine),
+        (5, e) => return Err(Error::UnknownConsensusEngine(*e)),
         (6, b"BABE") => DigestItemRef::BabePreDigest(BabePreDigestRef::from_slice(content)?),
-        (6, _) => return Err(Error::UnknownConsensusEngine),
+        (6, e) => return Err(Error::UnknownConsensusEngine(*e)),
         _ => unreachable!(),
     })
 }
