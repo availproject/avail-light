@@ -2,7 +2,8 @@
 //!
 //! This module handles the persistent storage of the chain on disk.
 
-// TODO: gate this module in no_std contexts
+#![cfg(feature = "database")]
+#![cfg_attr(docsrs, doc(cfg(feature = "database")))]
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom as _, fmt, iter, ops};

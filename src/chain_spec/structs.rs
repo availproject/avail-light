@@ -39,7 +39,7 @@ pub(super) struct ClientSpec {
     // TODO: make use of this
     pub(super) fork_blocks: Option<Vec<(u64, H256)>>,
     // TODO: make use of this
-    pub(super) bad_blocks: Option<HashSet<H256>>,
+    pub(super) bad_blocks: Option<HashSet<H256, FnvBuildHasher>>,
     // Unused but for some reason still part of the chain specs.
     pub(super) consensus_engine: (),
     // TODO: looks deprecated?

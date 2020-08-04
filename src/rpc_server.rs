@@ -1,5 +1,8 @@
 //! RPC servers.
 
+#![cfg(feature = "rpc-server")]
+#![cfg_attr(docsrs, doc(cfg(feature = "rpc-server")))]
+
 // TODO: write docs
 
 use crate::{executor, service};

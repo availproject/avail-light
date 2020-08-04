@@ -4,7 +4,19 @@ version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL; can probably be removed if we remove all of Substrate's code
 edition = "2018"
+keywords = ["blockchain", "peer-to-peer"]
 default-run = "node"
+
+[features]
+default = ["database", "os-networking", "rpc-server"]
+database = ["sled"]
+os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
+rpc-server = ["jsonrpsee"]
+wasm-bindings = ["js-sys", "wasm-bindgen", "web-sys"]
+
+[[bin]]
+name = "node"
+required-features = ["database", "os-networking", "rpc-server"]
 
 [dependencies]
 ansi_term = "0.12.1"
@@ -23,7 +35,6 @@ futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
-jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee" }
 libsecp256k1 = "0.3.5"
 lru = "0.5.3"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
@@ -39,7 +50,6 @@ schnorrkel = { version = "0.9.1", default-features = false }
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 slab = "0.4.2"
-sled = { version = "0.31.0", features = ["compression"] }
 smallvec = "0.6.10"
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
@@ -48,10 +58,20 @@ unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"
 
+# `database` feature
+sled = { version = "0.31.0", features = ["compression"], optional = true }
+
+# `rpc-server` feature
+jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", optional = true }
+
+# `wasm-bindings` feature
+js-sys = { version = "0.3.44", optional = true }
+wasm-bindgen = { version = "0.2.67", optional = true }
+web-sys = { version = "0.3.44", optional = true }
+
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
-async-std = "1.6"  # TODO: we use it as a quick hack for spawning a task
 bitflags = "1.2.1"  # TODO: I hate bitflags
 blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
@@ -64,7 +84,7 @@ void = "1.0"    # TODO: remove
 [dependencies.libp2p]
 version = "0.22.0"
 default-features = false
-features = ["dns", "identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "tcp-async-std", "wasm-ext", "websocket", "yamux"]
+features = ["identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "wasm-ext", "yamux"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 wasmtime = { version = "0.18.0", default-features = false }

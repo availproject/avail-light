@@ -36,9 +36,9 @@ pub struct Success {
     /// Runtime that was passed by [`Config`].
     pub parent_runtime: executor::WasmVmPrototype,
     /// List of changes to the storage top trie that the block performs.
-    pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     /// List of changes to the offchain storage that this block performs.
-    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
     // TOOD: logs written by the runtime
@@ -121,10 +121,10 @@ pub struct ReadyToRun {
     vm: executor::WasmVm,
 
     /// Pending changes to the top storage trie that this block performs.
-    top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
     /// Pending changes to the offchain storage that this block performs.
-    offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
     /// Cache passed by the user in the [`Config`]. Always `Some` except when we are currently
     /// calculating the trie state root.
@@ -489,7 +489,7 @@ impl PrefixKeys {
                                 .map_or(true, |v| v.is_some())
                         })
                         .map(|v| v.as_ref().to_vec())
-                        .collect::<HashSet<_>>();
+                        .collect::<HashSet<_, fnv::FnvBuildHasher>>();
                     // TODO: slow to iterate over everything?
                     for (key, value) in self.inner.top_trie_changes.iter() {
                         if value.is_none() {

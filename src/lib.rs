@@ -98,6 +98,7 @@ pub mod rpc_server;
 pub mod service;
 pub mod telemetry;
 pub mod trie;
+pub mod wasm_bindings;
 
 use parity_scale_codec::Encode as _;
 
@@ -156,6 +157,8 @@ pub fn calculate_genesis_block_hash<'a>(
 /// Turns a [`database::DatabaseOpen`] into a [`database::Database`], either by inserting the
 /// genesis block into a newly-created database, or by checking when the existing database matches
 /// the chain specs.
+#[cfg(feature = "database")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
 pub fn database_open_match_chain_specs(
     database: database::DatabaseOpen,
     chain_spec: &chain_spec::ChainSpec,
