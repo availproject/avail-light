@@ -86,7 +86,7 @@ impl TelemetryWorker {
         // The main transport is the `wasm_external_transport`, but if we're on desktop we add
         // support for TCP+WebSocket+DNS as a fallback. In practice, you're not expected to pass
         // an external transport on desktop and the fallback is used all the time.
-        #[cfg(not(feature = "os-networking"))]
+        #[cfg(feature = "os-networking")]
         let transport = transport.or_transport({
             let inner = libp2p::dns::DnsConfig::new(libp2p::tcp::TcpConfig::new())?;
             libp2p::websocket::framed::WsConfig::new(inner).and_then(|connec, _| {

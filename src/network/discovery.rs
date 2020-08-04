@@ -60,11 +60,11 @@ use libp2p::kad::record::{
 use libp2p::kad::GetClosestPeersError;
 use libp2p::kad::QueryId;
 use libp2p::kad::{Kademlia, KademliaConfig, KademliaEvent, QueryResult, Quorum, Record};
-#[cfg(not(feature = "os-networking"))]
+#[cfg(feature = "os-networking")]
 use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::protocols_handler::multi::MultiHandler;
-#[cfg(not(feature = "os-networking"))]
+#[cfg(feature = "os-networking")]
 use libp2p::swarm::toggle::Toggle;
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters, ProtocolsHandler};
 use log::{debug, info, trace, warn};
@@ -191,7 +191,7 @@ impl DiscoveryConfig {
             num_connections: 0,
             allow_private_ipv4: self.allow_private_ipv4,
             discovery_only_if_under_num: self.discovery_only_if_under_num,
-            #[cfg(not(feature = "os-networking"))]
+            #[cfg(feature = "os-networking")]
             mdns: if self.enable_mdns {
                 match Mdns::new() {
                     Ok(mdns) => Some(mdns).into(),
@@ -216,7 +216,7 @@ pub struct DiscoveryBehaviour {
     /// Kademlia requests and answers.
     kademlias: HashMap<Vec<u8>, Kademlia<MemoryStore>>,
     /// Discovers nodes on the local network.
-    #[cfg(not(feature = "os-networking"))]
+    #[cfg(feature = "os-networking")]
     mdns: Toggle<Mdns>,
     /// Stream that fires when we need to perform the next random Kademlia query.
     next_kad_random_query: Delay,
@@ -412,7 +412,7 @@ impl NetworkBehaviour for DiscoveryBehaviour {
                 list_to_filter.extend(k.addresses_of_peer(peer_id))
             }
 
-            #[cfg(not(feature = "os-networking"))]
+            #[cfg(feature = "os-networking")]
             list_to_filter.extend(self.mdns.addresses_of_peer(peer_id));
 
             if !self.allow_private_ipv4 {
@@ -696,7 +696,7 @@ impl NetworkBehaviour for DiscoveryBehaviour {
         }
 
         // Poll mDNS.
-        #[cfg(not(feature = "os-networking"))]
+        #[cfg(feature = "os-networking")]
         while let Poll::Ready(ev) = self.mdns.poll(cx, params) {
             match ev {
                 NetworkBehaviourAction::GenerateEvent(event) => match event {

@@ -12,7 +12,7 @@ default = ["database", "os-networking", "rpc-server"]
 database = ["sled"]
 os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
 rpc-server = ["jsonrpsee"]
-wasm-bindings = ["js-sys", "wasm-bindgen", "web-sys"]
+wasm-bindings = ["js-sys", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
 
 [[bin]]
 name = "node"
@@ -67,6 +67,7 @@ jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", optional = true }
 # `wasm-bindings` feature
 js-sys = { version = "0.3.44", optional = true }
 wasm-bindgen = { version = "0.2.67", optional = true }
+wasm-bindgen-futures = { version = "0.4.17", optional = true }
 web-sys = { version = "0.3.44", optional = true }
 
 # BELOW: DEPENDENCIES TO REMOVE

@@ -28,7 +28,7 @@ use libp2p::{
     },
     identity, mplex, noise, wasm_ext, InboundUpgradeExt, OutboundUpgradeExt, PeerId, Transport,
 };
-#[cfg(not(feature = "os-networking"))]
+#[cfg(feature = "os-networking")]
 use libp2p::{dns, tcp, websocket};
 use std::{io, sync::Arc, time::Duration, usize};
 
@@ -96,7 +96,7 @@ pub fn build_transport(
     } else {
         OptionalTransport::none()
     };
-    #[cfg(not(feature = "os-networking"))]
+    #[cfg(feature = "os-networking")]
     let transport = transport.or_transport(if !memory_only {
         let desktop_trans = tcp::TcpConfig::new();
         let desktop_trans =
