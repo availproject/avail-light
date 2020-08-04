@@ -59,7 +59,7 @@ pub enum ImportError {
         current_best_hash: [u8; 32],
     },
     /// The block verification has failed. The block is invalid and should be thrown away.
-    VerificationFailed(block_import::Error),
+    VerificationFailed(block_import::header_body::Error),
 }
 
 /// Configuration for that task.
@@ -190,27 +190,28 @@ pub async fn run_block_import_task(mut config: Config) {
                 // Now perform the actual block verification.
                 // Note that this does **not** modify `local_storage_cache`.
                 let import_result = {
-                    let mut process = block_import::verify_block(block_import::Config {
-                        parent_runtime: runtime_wasm_blob,
-                        babe_genesis_configuration: &config.babe_genesis_config,
-                        block1_slot_number,
-                        now_from_unix_epoch: {
-                            // TODO: is it reasonable to use the stdlib here?
-                            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                        },
-                        block_header: decoded_header.clone(),
-                        block_body: body.iter().map(|e| &e[..]),
-                        parent_block_header: header::decode(&best_block_header).unwrap(),
-                        top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
-                    });
+                    let mut process =
+                        block_import::header_body::verify(block_import::header_body::Config {
+                            parent_runtime: runtime_wasm_blob,
+                            babe_genesis_configuration: &config.babe_genesis_config,
+                            block1_slot_number,
+                            now_from_unix_epoch: {
+                                // TODO: is it reasonable to use the stdlib here?
+                                std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                            },
+                            block_header: decoded_header.clone(),
+                            block_body: body.iter().map(|e| &e[..]),
+                            parent_block_header: header::decode(&best_block_header).unwrap(),
+                            top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
+                        });
 
                     loop {
                         match process {
-                            block_import::Verify::Finished(result) => break result,
-                            block_import::Verify::ReadyToRun(run) => {
+                            block_import::header_body::Verify::Finished(result) => break result,
+                            block_import::header_body::Verify::ReadyToRun(run) => {
                                 process = run.run();
                             }
-                            block_import::Verify::EpochInformation(epoch_info) => {
+                            block_import::header_body::Verify::EpochInformation(epoch_info) => {
                                 if let Some(epoch) =
                                     babe_epoch_info_cache.get(&epoch_info.epoch_number())
                                 {
@@ -237,7 +238,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     process = epoch_info.inject_epoch(epoch_change).run();
                                 }
                             }
-                            block_import::Verify::StorageGet(mut get) => {
+                            block_import::header_body::Verify::StorageGet(mut get) => {
                                 let key = get.key().fold(Vec::new(), |mut a, b| {
                                     a.extend_from_slice(b.as_ref());
                                     a
@@ -245,7 +246,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                 let value = local_storage_cache.get(&key);
                                 process = get.inject_value(value.as_ref().map(|v| &v[..])).run();
                             }
-                            block_import::Verify::PrefixKeys(mut prefix_keys) => {
+                            block_import::header_body::Verify::PrefixKeys(mut prefix_keys) => {
                                 // We need to clone the prefix in order to not borrow
                                 // `prefix_keys` multiple times.
                                 let prefix = prefix_keys.prefix().to_vec();
@@ -255,7 +256,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     .map(|(k, _)| k.to_vec());
                                 process = prefix_keys.inject_keys(ret).run();
                             }
-                            block_import::Verify::NextKey(mut next_key) => {
+                            block_import::header_body::Verify::NextKey(mut next_key) => {
                                 struct CustomBound(Vec<u8>);
                                 impl core::ops::RangeBounds<Vec<u8>> for CustomBound {
                                     fn start_bound(&self) -> core::ops::Bound<&Vec<u8>> {
