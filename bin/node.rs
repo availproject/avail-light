@@ -38,6 +38,7 @@ async fn async_main() {
             Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>
         },
         chain_info: From::from(&chain_spec),
+        wasm_external_transport: None,
     }
     .build()
     .await;

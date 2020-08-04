@@ -1660,30 +1660,6 @@ checksum = "bd7d4bd64732af4bf3a67f367c27df8520ad7e230c5817b8ff485864d80242b9"
 
 [[package]]
 name = "libp2p"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d743d03fab397cde23925a17cb87b35b25994f44ab8c6a9e46a7e953ec739cd"
-dependencies = [
- "bytes",
- "futures",
- "lazy_static",
- "libp2p-core",
- "libp2p-core-derive",
- "libp2p-dns",
- "libp2p-secio",
- "libp2p-swarm",
- "libp2p-tcp",
- "libp2p-websocket",
- "multihash",
- "parity-multiaddr",
- "parking_lot 0.10.2",
- "pin-project",
- "smallvec 1.4.1",
- "wasm-timer",
-]
-
-[[package]]
-name = "libp2p"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0306a49ee6a89468f96089906f36b0eef82c988dcfc8acf3e2dcd6ad1c859f85"
@@ -1701,6 +1677,7 @@ dependencies = [
  "libp2p-noise",
  "libp2p-ping",
  "libp2p-request-response",
+ "libp2p-secio",
  "libp2p-swarm",
  "libp2p-tcp",
  "libp2p-wasm-ext",
@@ -2901,7 +2878,7 @@ version = "2.0.0-rc5"
 source = "git+https://github.com/paritytech/substrate?rev=16fdfc4a80a14a26221d17b8a1b9a95421a1576c#16fdfc4a80a14a26221d17b8a1b9a95421a1576c"
 dependencies = [
  "futures",
- "libp2p 0.22.0",
+ "libp2p",
  "log",
  "serde_json",
  "sp-utils",
@@ -3251,8 +3228,7 @@ dependencies = [
  "ip_network",
  "js-sys",
  "jsonrpsee",
- "libp2p 0.21.1",
- "libp2p 0.22.0",
+ "libp2p",
  "libsecp256k1",
  "log",
  "lru",

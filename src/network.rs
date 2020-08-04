@@ -55,6 +55,7 @@ pub use worker::{
 
 #[doc(inline)]
 pub use libp2p::multiaddr;
+pub use libp2p::wasm_ext;
 
 mod behaviour;
 mod debug_info;

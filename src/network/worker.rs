@@ -9,7 +9,7 @@ use core::{
 };
 use libp2p::{
     swarm::{SwarmBuilder, SwarmEvent},
-    Multiaddr, PeerId, Swarm,
+    wasm_ext, Multiaddr, PeerId, Swarm,
 };
 use parity_scale_codec::{DecodeAll, Encode};
 use primitive_types::H256;
@@ -118,6 +118,14 @@ pub struct Config {
 
     /// Hash of the genesis block of the local node.
     pub local_genesis_hash: [u8; 32],
+
+    /// Optional external implementation of a libp2p transport. Used in WASM contexts where we
+    /// need some binding between the networking provided by the operating system or environment
+    /// and libp2p.
+    ///
+    /// This parameter exists whatever the target platform is, but it is expected to be set to
+    /// `Some` only when compiling for WASM.
+    pub wasm_external_transport: Option<wasm_ext::ExtTransport>,
 }
 
 impl Network {
@@ -125,7 +133,8 @@ impl Network {
         let local_key_pair = libp2p::identity::Keypair::generate_ed25519();
         let local_public_key = local_key_pair.public();
         let local_peer_id = local_public_key.clone().into_peer_id();
-        let (transport, _) = transport::build_transport(local_key_pair, false, None, true);
+        let (transport, _) =
+            transport::build_transport(local_key_pair, false, config.wasm_external_transport, true);
         let behaviour = behaviour::Behaviour::new(
             "substrate-lite".to_string(),
             config.chain_spec_protocol_id,

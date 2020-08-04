@@ -24,6 +24,9 @@ name = "node"
 path = "bin/node.rs"
 required-features = ["database", "os-networking", "rpc-server"]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 ansi_term = "0.12.1"
 app_dirs = "1.2.1"
@@ -102,7 +105,8 @@ prost-build = "0.6.1"
 
 [dev-dependencies]
 async-std = "1.6.2"
-libp2p = { version = "0.21.1", default-features = false, features = ["secio"] }
+# TODO: remove
+libp2p = { version = "0.22.0", default-features = false, features = ["secio"] }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

@@ -19,6 +19,14 @@ pub struct Config<'a> {
 
     /// Information related to the chain.
     pub chain_info: ChainInfoConfig<'a>,
+
+    /// Optional external implementation of a libp2p transport. Used in WASM contexts where we
+    /// need some binding between the networking provided by the operating system or environment
+    /// and libp2p.
+    ///
+    /// This parameter exists whatever the target platform is, but it is expected to be set to
+    /// `Some` only when compiling for WASM.
+    pub wasm_external_transport: Option<network::wasm_ext::ExtTransport>,
 }
 
 /// Information related to the chain.
@@ -107,6 +115,7 @@ impl<'a> Config<'a> {
                         Box::new(move |task| tasks_executor(task))
                     }),
                     local_genesis_hash: self.chain_info.local_genesis_hash,
+                    wasm_external_transport: self.wasm_external_transport,
                 },
                 num_connections_store: num_connections_store.clone(),
             })
