@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+	<meta http-equiv="Content-type" content="text/html; charset=utf-8"/>
+	<title>Substrate-lite node</title>
+	<link rel="shortcut icon" href="/favicon.png" />
+	<script type="module">
+import { start_client, default as init } from './pkg/substrate_lite.js';
+
+function log(msg) {
+	document.getElementsByTagName('body')[0].innerHTML += msg + '\n';
+}
+
+async function start() {
+	log('Loading WASM');
+	await init('./pkg/substrate_lite_bg.wasm');
+	log('Fetching chain spec');
+	const chain_spec_response = await fetch("https://raw.githubusercontent.com/paritytech/polkadot/19b88fffbc93b8c47233af4e5c27d1bb95e94e76/service/res/polkadot.json");
+	const chain_spec_text = await chain_spec_response.text();
+
+	let client = await start_client(chain_spec_text);
+	log('Client started');
+
+	client.rpcSubscribe('{"method":"chain_subscribeNewHead","params":[],"id":1,"jsonrpc":"2.0"}',
+		(r) => log("New chain head: " + r));
+
+	setInterval(() => {
+		client
+			.rpcSend('{"method":"system_networkState","params":[],"id":1,"jsonrpc":"2.0"}')
+			.then((r) => log("Network state: " + r));
+	}, 20000);
+}
+
+start();
+	</script>
+  </head>
+  <body style="white-space: pre"></body>
+</html>

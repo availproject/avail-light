@@ -10,7 +10,7 @@ fn main() {
 
 async fn async_main() {
     let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(
-        &include_bytes!("../../polkadot.json")[..],
+        &include_bytes!("../polkadot.json")[..],
     )
     .unwrap();
 

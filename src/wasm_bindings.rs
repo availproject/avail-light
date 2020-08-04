@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 pub struct BrowserLightClient {}
 
 #[wasm_bindgen]
-pub async fn start_client(chain_spec: &str) -> BrowserLightClient {
+pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     BrowserLightClient {}
 }
 
