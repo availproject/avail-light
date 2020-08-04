@@ -91,6 +91,7 @@ pub mod chain_spec;
 pub mod database;
 pub mod executor;
 pub mod header;
+pub mod indexed_db_light;
 pub mod informant;
 pub mod keystore;
 pub mod network;
