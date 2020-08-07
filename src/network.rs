@@ -67,6 +67,8 @@ mod schema;
 mod transport;
 mod worker;
 
+pub mod task;
+
 /// Parses a string address and splits it into Multiaddress and PeerId, if
 /// valid.
 pub fn parse_str_addr(addr_str: &str) -> Result<(PeerId, Multiaddr), ParseErr> {

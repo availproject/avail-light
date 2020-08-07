@@ -90,6 +90,7 @@ pub mod block_import;
 pub mod chain_spec;
 pub mod database;
 pub mod executor;
+pub mod fork_tree;
 pub mod header;
 pub mod indexed_db_light;
 pub mod informant;

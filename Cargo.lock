@@ -280,6 +280,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64f46ca51dca4837f1520754d1c8c36636356b81553d928dc9c177025369a06e"
+
+[[package]]
 name = "atomic-waker"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3210,6 +3216,7 @@ dependencies = [
  "arrayvec 0.5.1",
  "async-std",
  "async-trait",
+ "atomic",
  "bitflags",
  "blake2 0.8.1",
  "blake2-rfc",
