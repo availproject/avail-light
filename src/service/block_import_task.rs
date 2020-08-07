@@ -8,6 +8,8 @@
 //! if so appends them to the head of the chain. Only blocks whose parent is the current head of
 //! the chain are considered, and the others discarded.
 
+// TODO: REMOVE THIS CODE
+
 use crate::{babe, block_import, database, executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};

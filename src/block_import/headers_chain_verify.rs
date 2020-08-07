@@ -23,7 +23,7 @@
 //! >           final, and rebuild a new [`HeadersChainVerify`] if that assumption turned out to
 //! >           not be true.
 
-use crate::{babe, block_import, database, executor, fork_tree, header, trie::calculate_root};
+use crate::{babe, block_import, executor, fork_tree, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -190,9 +190,7 @@ impl HeadersChainVerify {
                     block_import::header_only::Verify::Finished(Err(err)) => {
                         return Err(VerifyError::VerificationFailed(err))
                     }
-                    block_import::header_only::Verify::ReadyToRun(run) => {
-                        process = run.run();
-                    }
+                    block_import::header_only::Verify::ReadyToRun(run) => process = run.run(),
                     block_import::header_only::Verify::EpochInformation(epoch_info_rq) => {
                         if let Some(info) = self
                             .babe_known_epoch_information

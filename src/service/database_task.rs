@@ -4,6 +4,8 @@
 //! Any piece of code that requires access to the database is encouraged to maintain a cache in
 //! order to avoid accessing it too often.
 
+// TODO: REMOVE THIS CODE
+
 use crate::database;
 
 use alloc::sync::Arc;

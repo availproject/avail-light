@@ -3,6 +3,8 @@
 //! Contrary to the [crate::network] module, this module is aware of the other tasks of the
 //! service.
 
+// TODO: REMOVE THIS CODE
+
 use crate::{block, network};
 
 use alloc::sync::Arc;
