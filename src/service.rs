@@ -28,7 +28,6 @@ use alloc::sync::Arc;
 use core::sync::atomic;
 use futures::{
     channel::{mpsc, oneshot},
-    executor::ThreadPool,
     prelude::*,
 };
 use network::PeerId;

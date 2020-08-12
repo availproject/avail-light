@@ -92,11 +92,6 @@ impl<TTrans: Transport> Node<TTrans> {
             transport,
         }
     }
-
-    /// Returns the address that was passed to `new`.
-    pub fn addr(&self) -> &Multiaddr {
-        &self.addr
-    }
 }
 
 impl<TTrans: Transport, TSinkErr> Node<TTrans>

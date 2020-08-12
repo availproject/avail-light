@@ -20,7 +20,7 @@
 //! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec).
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::{cmp, convert::TryFrom, fmt, iter, mem, slice};
+use core::{cmp, convert::TryFrom, fmt, iter, slice};
 use parity_scale_codec::{Decode as _, DecodeAll as _};
 
 /// Returns a hash of a SCALE-encoded header.
