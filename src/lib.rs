@@ -96,6 +96,7 @@ pub mod indexed_db_light;
 pub mod informant;
 pub mod keystore;
 pub mod network;
+pub mod remote_sync;
 pub mod rpc_server;
 pub mod service;
 pub mod telemetry;

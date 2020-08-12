@@ -69,7 +69,8 @@ async fn run_networking_task(
     num_connections_store: Arc<atomic::Atomic<u64>>,
 ) {
     // Associates network-assigned block request ids to senders.
-    let mut pending_blocks_requests = HashMap::<_, oneshot::Sender<_>, fnv::FnvBuildHasher>::new();
+    let mut pending_blocks_requests: HashMap<_, oneshot::Sender<_>, fnv::FnvBuildHasher> =
+        HashMap::default();
 
     loop {
         futures::select! {
