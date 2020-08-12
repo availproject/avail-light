@@ -6,11 +6,11 @@
 //!
 //! # Overview
 //!
-//! The key-value storage that the blockchain maintains can be represented by
+//! The key-value storage that the blockchain maintains is represented by
 //! [a tree](https://en.wikipedia.org/wiki/Tree_data_structure), where each key-value pair in the
 //! storage corresponds to a node in that tree.
 //!
-//! Each node in the tree has what is called a Merkle value associated to it. This Merkle value
+//! Each node in this tree has what is called a Merkle value associated to it. This Merkle value
 //! consists, in its essence, in the combination of the storage value associated to that node and
 //! the Merkle values of all of the node's children. If the resulting Merkle value would be too
 //! long, it is first hashed.

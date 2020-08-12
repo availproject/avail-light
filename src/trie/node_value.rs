@@ -1,4 +1,53 @@
 //! Calculation of the Merkle value of a node given the information about it.
+//!
+//! Use the [`calculate_merkle_root`] function to calculate the Merkle value. The [`Config`]
+//! struct contains all the input required for the calculation.
+//!
+//! # Example
+//!
+//! ```
+//! use substrate_lite::trie::{Nibble, node_value};
+//!
+//! let merkle_value = {
+//!     // The example node whose value we calculate has three children.
+//!     let children = {
+//!         let mut children = Vec::new();
+//!         for _ in 0..2 {
+//!             children.push(None);
+//!         }
+//!         children.push(Some(node_value::Output::from_bytes(b"foo")));
+//!         for _ in 0..7 {
+//!             children.push(None);
+//!         }
+//!         children.push(Some(node_value::Output::from_bytes(b"bar")));
+//!         for _ in 0..5 {
+//!             children.push(None);
+//!         }
+//!         children
+//!     };
+//!
+//!     node_value::calculate_merke_root(node_value::Config {
+//!         is_root: false,
+//!         children: children.iter().map(|opt| opt.as_ref()),
+//!         partial_key: [
+//!             Nibble::try_from(8).unwrap(),
+//!             Nibble::try_from(12).unwrap(),
+//!             Nibble::try_from(1).unwrap(),
+//!         ]
+//!         .iter()
+//!         .cloned(),
+//!         stored_value: Some(b"hello world"),
+//!     })
+//! };
+//!
+//! assert_eq!(
+//!     merkle_value.as_ref(),
+//!     &[
+//!         195, 8, 193, 4, 4, 12, 102, 111, 111, 12, 98, 97, 114, 44, 104, 101, 108, 108, 111,
+//!         32, 119, 111, 114, 108, 100
+//!     ]
+//! );
+//! ```
 
 use super::nibble::Nibble;
 

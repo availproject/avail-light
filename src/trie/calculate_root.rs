@@ -5,7 +5,7 @@
 //! # Usage
 //!
 //! Calling the [`root_merkle_value`] function creates a [`RootMerkleValueCalculation`] object
-//! which you have to drive to completion by repeatedly calling
+//! which you have to drive to completion.
 //!
 //! Example:
 //!
