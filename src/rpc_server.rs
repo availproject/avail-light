@@ -6,7 +6,7 @@
 // TODO: write docs
 
 use crate::{executor, service};
-use core::{convert::TryFrom as _, fmt, iter};
+use core::{convert::TryFrom as _, fmt};
 use std::{io, net::SocketAddr};
 
 pub use raw::RequestId;
@@ -595,10 +595,7 @@ fn metadata(wasm_blob: &[u8]) -> Result<Vec<u8>, ()> {
     loop {
         match inner_vm.state() {
             executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(data) => {
-                break Ok(data.to_owned());
-            }
-            executor::State::Finished(_) => unreachable!(),
+            executor::State::Finished(data) => break Ok(data.to_owned()),
             executor::State::Trapped => break Err(()),
 
             // Since there are potential ambiguities we don't allow any storage access

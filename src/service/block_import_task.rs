@@ -10,7 +10,7 @@
 
 // TODO: REMOVE THIS CODE
 
-use crate::{babe, verify, database, executor, header, trie::calculate_root};
+use crate::{babe, database, executor, header, trie::calculate_root, verify};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -18,7 +18,6 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use hashbrown::{hash_map::Entry, HashMap};
 
 /// Message that can be sent to the block import task by the other parts of the code.
 pub enum ToBlockImport {
@@ -192,20 +191,19 @@ pub async fn run_block_import_task(mut config: Config) {
                 // Now perform the actual block verification.
                 // Note that this does **not** modify `local_storage_cache`.
                 let import_result = {
-                    let mut process =
-                        verify::header_body::verify(verify::header_body::Config {
-                            parent_runtime: runtime_wasm_blob,
-                            babe_genesis_configuration: &config.babe_genesis_config,
-                            block1_slot_number,
-                            now_from_unix_epoch: {
-                                // TODO: is it reasonable to use the stdlib here?
-                                std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                            },
-                            block_header: decoded_header.clone(),
-                            block_body: body.iter().map(|e| &e[..]),
-                            parent_block_header: header::decode(&best_block_header).unwrap(),
-                            top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
-                        });
+                    let mut process = verify::header_body::verify(verify::header_body::Config {
+                        parent_runtime: runtime_wasm_blob,
+                        babe_genesis_configuration: &config.babe_genesis_config,
+                        block1_slot_number,
+                        now_from_unix_epoch: {
+                            // TODO: is it reasonable to use the stdlib here?
+                            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                        },
+                        block_header: decoded_header.clone(),
+                        block_body: body.iter().map(|e| &e[..]),
+                        parent_block_header: header::decode(&best_block_header).unwrap(),
+                        top_trie_root_calculation_cache: top_trie_root_calculation_cache.take(),
+                    });
 
                     loop {
                         match process {

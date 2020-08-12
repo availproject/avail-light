@@ -23,15 +23,7 @@
 //! >           final, and rebuild a new [`HeadersChainVerify`] if that assumption turned out to
 //! >           not be true.
 
-use crate::{babe, verify, executor, fork_tree, header, trie::calculate_root};
-
-use alloc::{collections::BTreeMap, sync::Arc};
-use core::pin::Pin;
-use futures::{
-    channel::{mpsc, oneshot},
-    prelude::*,
-};
-use hashbrown::{hash_map::Entry, HashMap};
+use crate::{babe, fork_tree, header, verify};
 
 /// Configuration for the [`HeadersChainVerify`].
 pub struct Config {
@@ -172,17 +164,16 @@ impl HeadersChainVerify {
 
         // Now perform the actual block verification.
         let import_success = {
-            let mut process =
-                verify::header_only::verify(verify::header_only::Config {
-                    babe_genesis_configuration: &self.babe_genesis_config,
-                    block1_slot_number,
-                    now_from_unix_epoch: {
-                        // TODO: is it reasonable to use the stdlib here?
-                        std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                    },
-                    block_header: decoded_header.clone(),
-                    parent_block_header,
-                });
+            let mut process = verify::header_only::verify(verify::header_only::Config {
+                babe_genesis_configuration: &self.babe_genesis_config,
+                block1_slot_number,
+                now_from_unix_epoch: {
+                    // TODO: is it reasonable to use the stdlib here?
+                    std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                },
+                block_header: decoded_header.clone(),
+                parent_block_header,
+            });
 
             loop {
                 match process {

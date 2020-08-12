@@ -16,12 +16,10 @@
 
 //! Network packet message types. These get serialized and put into the lower level protocol payload.
 
-use block::*;
 use bitflags::bitflags;
+use block::*;
 use core::fmt;
-use parity_scale_codec::{
-    Decode, Encode, EncodeAsRef, EncodeLike, Error, HasCompact, Input, Output,
-};
+use parity_scale_codec::{Decode, Encode, Error, Input, Output};
 use primitive_types::H256;
 
 mod block;

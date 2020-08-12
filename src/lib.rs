@@ -102,8 +102,6 @@ pub mod trie;
 pub mod verify;
 pub mod wasm_bindings;
 
-use parity_scale_codec::Encode as _;
-
 /// Calculates the hash of the genesis block from the storage.
 ///
 /// # Context
@@ -137,8 +135,8 @@ pub fn calculate_genesis_block_hash<'a>(
                     let key = val.key().collect::<Vec<_>>();
                     let value = genesis_storage
                         .clone()
-                        .find(|(k, v)| k == &key)
-                        .map(|(k, v)| v);
+                        .find(|(k, _)| k == &key)
+                        .map(|(_, v)| v);
                     calculation = val.inject(value);
                 }
             }
@@ -185,7 +183,10 @@ pub fn database_open_match_chain_specs(
                 digest: header::DigestRef::empty(),
             }
             .scale_encoding()
-            .fold(Vec::new(), |mut a, b| { a.extend_from_slice(b.as_ref()); a });
+            .fold(Vec::new(), |mut a, b| {
+                a.extend_from_slice(b.as_ref());
+                a
+            });
 
             empty.insert_genesis_block(&genesis_block_header, chain_spec.genesis_storage())
         }

@@ -9,7 +9,6 @@ use crate::header;
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom as _, fmt, iter, ops};
-use parity_scale_codec::DecodeAll as _;
 use sled::Transactional as _;
 
 pub use open::{open, Config, DatabaseOpen};

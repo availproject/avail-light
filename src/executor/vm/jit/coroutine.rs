@@ -32,7 +32,7 @@ pub struct CoroutineBuilder<TInt, TRes> {
 /// Runnable coroutine.
 pub struct Coroutine<TExec, TInt, TRes> {
     /// We use a `u128` because the stack must be 16-bytes-aligned.
-    stack: Pin<Box<[u128]>>,
+    _stack: Pin<Box<[u128]>>,
     /// State shared between the coroutine and the interrupters.
     state: Rc<Shared<TInt, TRes>>,
     /// True if the coroutine has been run at least once.
@@ -145,7 +145,7 @@ impl<TInt, TRes> CoroutineBuilder<TInt, TRes> {
         }
 
         Coroutine {
-            stack,
+            _stack: stack,
             state: self.state.clone(),
             has_run_once: false,
             has_finished: false,

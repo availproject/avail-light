@@ -13,10 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use super::{ExecOutcome, GlobalValueErr, NewErr, RunErr, Signature, StartErr, WasmValue};
+use super::{ExecOutcome, GlobalValueErr, NewErr, RunErr, Signature, WasmValue};
 
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
-use core::{cell::RefCell, cmp, convert::TryFrom, fmt};
+use alloc::{boxed::Box, vec::Vec};
+use core::{cmp, convert::TryFrom, fmt};
 
 mod coroutine;
 

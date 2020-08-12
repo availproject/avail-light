@@ -3,14 +3,12 @@ use crate::network;
 // TODO: work in progress
 
 use alloc::sync::Arc;
-use core::sync::atomic::Ordering;
 use futures::{
     channel::{mpsc, oneshot},
     lock::Mutex,
     prelude::*,
 };
 use hashbrown::HashMap;
-use network::PeerId;
 
 /// Starts the network service.
 pub fn start_network_service(

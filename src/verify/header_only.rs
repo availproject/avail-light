@@ -1,7 +1,6 @@
 use crate::{babe, header};
 
 use core::time::Duration;
-use hashbrown::HashMap;
 
 /// Configuration for a block verification.
 pub struct Config<'a> {

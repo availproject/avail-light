@@ -23,11 +23,9 @@ use super::{
 use alloc::{borrow::Cow, collections::VecDeque};
 use core::{
     iter,
-    num::NonZeroU64,
     task::{Context, Poll},
     time::Duration,
 };
-use hashbrown::HashMap;
 use libp2p::core::{Multiaddr, PeerId, PublicKey};
 use libp2p::kad::record;
 use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};

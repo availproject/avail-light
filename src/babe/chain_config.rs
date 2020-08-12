@@ -50,7 +50,6 @@ impl BabeGenesisConfiguration {
                         Err(err) => return Err(BabeChainConfigurationError::OutputDecode(err)),
                     };
                 }
-                executor::State::Finished(_) => unreachable!(),
                 executor::State::Trapped => return Err(BabeChainConfigurationError::Trapped),
 
                 executor::State::ExternalStorageGet {

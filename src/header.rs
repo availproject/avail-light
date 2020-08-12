@@ -924,7 +924,7 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]),
 fn decode_item_from_parts<'a>(
     index: u8,
     engine_id: &'a [u8; 4],
-    mut content: &'a [u8],
+    content: &'a [u8],
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
         (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),

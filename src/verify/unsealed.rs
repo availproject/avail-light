@@ -216,10 +216,7 @@ impl ReadyToRun {
                     }
                 }
 
-                executor::State::ExternalStorageClearPrefix {
-                    storage_key,
-                    resolve,
-                } => {
+                executor::State::ExternalStorageClearPrefix { .. } => {
                     return Verify::PrefixKeys(PrefixKeys { inner: self });
                 }
 
@@ -259,17 +256,13 @@ impl ReadyToRun {
                     }
                 }
 
-                executor::State::ExternalStorageChangesRoot {
-                    parent_hash: _,
-                    resolve,
-                } => {
+                executor::State::ExternalStorageChangesRoot { .. } => {
                     return Verify::StorageGet(StorageGet { inner: self });
                 }
 
-                executor::State::ExternalStorageNextKey {
-                    storage_key,
-                    resolve,
-                } => return Verify::NextKey(NextKey { inner: self }),
+                executor::State::ExternalStorageNextKey { .. } => {
+                    return Verify::NextKey(NextKey { inner: self })
+                }
 
                 executor::State::ExternalOffchainStorageSet {
                     storage_key,
@@ -362,10 +355,10 @@ impl StorageGet {
     pub fn inject_value(mut self, value: Option<&[u8]>) -> ReadyToRun {
         match self.inner.vm.state() {
             executor::State::ExternalStorageGet {
-                storage_key,
                 offset,
                 max_size,
                 resolve,
+                ..
             } => {
                 if let Some(mut value) = value {
                     if usize::try_from(offset).unwrap() < value.len() {

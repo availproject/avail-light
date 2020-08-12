@@ -1,7 +1,6 @@
 //! Information extraction from a block header.
 
 use crate::header;
-use parity_scale_codec::DecodeAll as _;
 
 // TODO: remove this module altogether
 
