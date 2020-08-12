@@ -908,7 +908,7 @@ pub enum GrandpaConsensusLogRef<'a> {
     ForcedChange(u32, GrandpaScheduledChangeRef<'a>),
 
     /// Note that the authority with given index is disabled until the next change.
-    OnDisabled(u32),
+    OnDisabled(u64),
 
     /// A signal to pause the current authority set after the given delay.
     /// After finalizing the block at _delay_ the authorities should stop voting.
@@ -932,7 +932,7 @@ impl<'a> GrandpaConsensusLogRef<'a> {
                 GrandpaConsensusLogRef::ForcedChange(n, changes)
             }
             Some(3) => GrandpaConsensusLogRef::OnDisabled(
-                u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+                u64::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
             ),
             Some(4) => GrandpaConsensusLogRef::Pause(
                 u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
