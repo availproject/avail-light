@@ -1,7 +1,7 @@
 //! Service task that tries to download blocks from the network.
 
 use super::{block_import_task, network_task};
-use crate::{block, header, network};
+use crate::{header, network};
 
 use alloc::collections::VecDeque;
 use core::num::NonZeroU64;

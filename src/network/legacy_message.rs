@@ -16,14 +16,15 @@
 
 //! Network packet message types. These get serialized and put into the lower level protocol payload.
 
-use crate::block::*; // TODO: precise imports
-
+use block::*;
 use bitflags::bitflags;
 use core::fmt;
 use parity_scale_codec::{
     Decode, Encode, EncodeAsRef, EncodeLike, Error, HasCompact, Input, Output,
 };
 use primitive_types::H256;
+
+mod block;
 
 /// A unique ID of a request.
 pub type RequestId = u64;

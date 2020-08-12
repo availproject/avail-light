@@ -5,6 +5,8 @@
 #![cfg(feature = "database")]
 #![cfg_attr(docsrs, doc(cfg(feature = "database")))]
 
+use crate::header;
+
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom as _, fmt, iter, ops};
 use parity_scale_codec::DecodeAll as _;
@@ -85,8 +87,7 @@ impl Database {
             .ok_or(AccessError::Corrupted(
                 CorruptedError::BestBlockHeaderNotInDatabase,
             ))?;
-        // TODO: ideally we wouldn't use this `crate::block` module
-        let decoded = crate::block::Header::decode_all(header.as_ref())
+        let decoded = header::decode(header.as_ref())
             .map_err(|err| AccessError::Corrupted(CorruptedError::BestBlockHeaderCorrupted(err)))?;
         Ok(decoded.number)
     }
@@ -165,7 +166,7 @@ impl Database {
 
         let new_block_number = {
             // TODO: weird way to get the block number
-            let header = crate::block::Header::decode_all(&new_best_scale_header).unwrap();
+            let header = header::decode(&new_best_scale_header).unwrap();
             header.number
         };
 
@@ -337,7 +338,7 @@ pub enum CorruptedError {
     BestBlockHashNotFound,
     BestBlockHashBadLength,
     BestBlockHeaderNotInDatabase,
-    BestBlockHeaderCorrupted(parity_scale_codec::Error),
+    BestBlockHeaderCorrupted(header::Error),
     BlockHashLenInHashNumberMapping,
     BlockBodyCorrupted(parity_scale_codec::Error),
     BabeEpochInformationWrongLength,
