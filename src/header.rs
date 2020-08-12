@@ -16,8 +16,16 @@
 
 //! Parsing SCALE-encoded header.
 //!
-//! The standard format for block headers is the
-//! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec).
+//! Each block of a chain is composed of two parts: its header, and its body.
+//!
+//! The header of a block consists in a list of hardcoded fields such as the parent block's hash
+//! or the block number, and a variable-sized list of log items.
+//!
+//! The standard format of a block header is the
+//! [SCALE encoding](https://substrate.dev/docs/en/knowledgebase/advanced/codec). It is typically
+//! under this encoding that block headers are for example transferred over the network or stored
+//! in the database. Use the [`decode`] function in order to decompose a SCALE-encoded header
+//! into a usable [`HeaderRef`].
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{cmp, convert::TryFrom, fmt, iter, slice};
@@ -32,7 +40,7 @@ pub fn hash_from_scale_encoded_header(header: impl AsRef<[u8]>) -> [u8; 32] {
 
 /// Returns a hash of a SCALE-encoded header.
 ///
-/// Can be passed a list of buffers, which, when concatenated, form the SCALE-encoded header.
+/// Must be passed a list of buffers, which, when concatenated, form the SCALE-encoded header.
 ///
 /// Does not verify the validity of the header.
 pub fn hash_from_scale_encoded_header_vectored(
@@ -125,6 +133,7 @@ pub enum Error {
     BadBabeSealLength,
     BadBabePreDigestRefType,
     BadBabeConsensusRefType,
+    BadGrandpaConsensusRefType,
     /// Unknown consensus engine specified in a digest log.
     #[display(fmt = "Unknown consensus engine specified in a digest log: {:?}", _0)]
     UnknownConsensusEngine([u8; 4]),
@@ -183,8 +192,8 @@ impl<'a> HeaderRef<'a> {
 #[derive(Debug, Clone)]
 pub struct DigestRef<'a> {
     /// Number of log items in the header.
-    /// Must always match the actual number of items in `digest`. The validity must be verified
-    /// before a [`DigestRef`] object is instantiated.
+    /// Must always match the actual number of items in [`DigestRef::digest`]. The validity must
+    /// be verified before a [`DigestRef`] object is instantiated.
     digest_logs_len: u64,
     /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is instantiated.
     digest: &'a [u8],
@@ -278,14 +287,14 @@ pub enum DigestItemRef<'a> {
     ChangesTrieRoot(&'a [u8; 32]),
     BabePreDigest(BabePreDigestRef<'a>),
     BabeConsensus(BabeConsensusLogRef<'a>),
+    GrandpaConsensus(GrandpaConsensusLogRef<'a>),
 
     /// Block signature made using the BABE consensus engine.
     ///
     /// Guaranteed to be 64 bytes long.
-    // TODO: we don't use a &[u8; 64] because traits aren't defined on this type; need to fix after Rust gets proper support
+    // TODO: we don't use a &[u8; 64] because traits aren't defined on this type; need to fix after Rust gets proper support or use a newtype
     BabeSeal(&'a [u8]),
     ChangesTrieSignal(ChangesTrieSignal),
-    Other(&'a [u8]),
 }
 
 impl<'a> DigestItemRef<'a> {
@@ -328,6 +337,20 @@ impl<'a> DigestItemRef<'a> {
                 ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
+            DigestItemRef::GrandpaConsensus(ref gp_consensus) => {
+                let encoded = gp_consensus.scale_encoding().fold(Vec::new(), |mut a, b| {
+                    a.extend_from_slice(b.as_ref());
+                    a
+                });
+
+                let mut ret = vec![4];
+                ret.extend_from_slice(b"FRNK");
+                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
+                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
+                ));
+                ret.extend_from_slice(&encoded);
+                iter::once(ret)
+            }
             DigestItemRef::BabeSeal(seal) => {
                 assert_eq!(seal.len(), 64);
 
@@ -346,11 +369,6 @@ impl<'a> DigestItemRef<'a> {
             }
             DigestItemRef::ChangesTrieRoot(data) => {
                 let mut ret = vec![2];
-                ret.extend_from_slice(data);
-                iter::once(ret)
-            }
-            DigestItemRef::Other(data) => {
-                let mut ret = vec![0];
                 ret.extend_from_slice(data);
                 iter::once(ret)
             }
@@ -856,6 +874,234 @@ impl<'a> fmt::Debug for BabeSecondaryVRFPreDigestRef<'a> {
     }
 }
 
+/// An consensus log item for GrandPa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrandpaConsensusLogRef<'a> {
+    /// Schedule an authority set change.
+    ///
+    /// The earliest digest of this type in a single block will be respected,
+    /// provided that there is no `ForcedChange` digest. If there is, then the
+    /// `ForcedChange` will take precedence.
+    ///
+    /// No change should be scheduled if one is already and the delay has not
+    /// passed completely.
+    ///
+    /// This should be a pure function: i.e. as long as the runtime can interpret
+    /// the digest type it should return the same result regardless of the current
+    /// state.
+    ScheduledChange(GrandpaScheduledChangeRef<'a>),
+
+    /// Force an authority set change.
+    ///
+    /// Forced changes are applied after a delay of _imported_ blocks,
+    /// while pending changes are applied after a delay of _finalized_ blocks.
+    ///
+    /// The earliest digest of this type in a single block will be respected,
+    /// with others ignored.
+    ///
+    /// No change should be scheduled if one is already and the delay has not
+    /// passed completely.
+    ///
+    /// This should be a pure function: i.e. as long as the runtime can interpret
+    /// the digest type it should return the same result regardless of the current
+    /// state.
+    ForcedChange(u32, GrandpaScheduledChangeRef<'a>),
+
+    /// Note that the authority with given index is disabled until the next change.
+    OnDisabled(u32),
+
+    /// A signal to pause the current authority set after the given delay.
+    /// After finalizing the block at _delay_ the authorities should stop voting.
+    Pause(u32),
+
+    /// A signal to resume the current authority set after the given delay.
+    /// After authoring the block at _delay_ the authorities should resume voting.
+    Resume(u32),
+}
+
+impl<'a> GrandpaConsensusLogRef<'a> {
+    /// Decodes a [`GrandpaConsensusLogRef`] from a slice of bytes.
+    pub fn from_slice(slice: &'a [u8]) -> Result<Self, Error> {
+        Ok(match slice.get(0) {
+            Some(1) => GrandpaConsensusLogRef::ScheduledChange(
+                GrandpaScheduledChangeRef::from_slice(&slice[1..])?,
+            ),
+            Some(2) => {
+                let n = u32::decode_all(&slice[1..9]).map_err(Error::DigestItemDecodeError)?;
+                let changes = GrandpaScheduledChangeRef::from_slice(&slice[9..])?;
+                GrandpaConsensusLogRef::ForcedChange(n, changes)
+            }
+            Some(3) => GrandpaConsensusLogRef::OnDisabled(
+                u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+            ),
+            Some(4) => GrandpaConsensusLogRef::Pause(
+                u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+            ),
+            Some(5) => GrandpaConsensusLogRef::Resume(
+                u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
+            ),
+            Some(_) => return Err(Error::BadGrandpaConsensusRefType),
+            None => return Err(Error::TooShort),
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        #[derive(Clone)]
+        struct One([u8; 1]);
+        impl AsRef<[u8]> for One {
+            fn as_ref(&self) -> &[u8] {
+                &self.0[..]
+            }
+        }
+
+        let index = iter::once(One(match self {
+            GrandpaConsensusLogRef::ScheduledChange(_) => [1],
+            GrandpaConsensusLogRef::ForcedChange(_, _) => [2],
+            GrandpaConsensusLogRef::OnDisabled(_) => [3],
+            GrandpaConsensusLogRef::Pause(_) => [4],
+            GrandpaConsensusLogRef::Resume(_) => [5],
+        }));
+
+        let body = match self {
+            GrandpaConsensusLogRef::ScheduledChange(change) => {
+                either::Either::Left(change.scale_encoding().map(either::Either::Left))
+            }
+            GrandpaConsensusLogRef::ForcedChange(n, change) => todo!(), // TODO:
+            GrandpaConsensusLogRef::OnDisabled(n) => either::Either::Right(iter::once(
+                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+            )),
+            GrandpaConsensusLogRef::Pause(n) => either::Either::Right(iter::once(
+                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+            )),
+            GrandpaConsensusLogRef::Resume(n) => either::Either::Right(iter::once(
+                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+            )),
+        };
+
+        index
+            .map(either::Either::Left)
+            .chain(body.map(either::Either::Right))
+    }
+}
+
+/// A scheduled change of authority set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrandpaScheduledChangeRef<'a> {
+    /// The new authorities after the change, along with their respective weights.
+    pub next_authorities: GrandpaAuthoritiesIter<'a>,
+    /// The number of blocks to delay.
+    pub delay: u32,
+}
+
+impl<'a> GrandpaScheduledChangeRef<'a> {
+    /// Decodes a [`GrandpaScheduledChangeRef`] from a slice of bytes.
+    pub fn from_slice(mut slice: &'a [u8]) -> Result<Self, Error> {
+        // TODO: don't unwrap on decode fail
+        let authorities_len = usize::try_from(
+            parity_scale_codec::Compact::<u64>::decode(&mut slice)
+                .unwrap()
+                .0,
+        )
+        .unwrap();
+
+        if slice.len() != authorities_len * 40 + 4 {
+            return Err(Error::TooShort);
+        }
+
+        Ok(GrandpaScheduledChangeRef {
+            next_authorities: GrandpaAuthoritiesIter(slice[0..authorities_len * 40].chunks(40)),
+            delay: u32::from_le_bytes(<[u8; 4]>::try_from(&slice[authorities_len * 40..]).unwrap()),
+        })
+    }
+
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        // TODO: don't allocate
+        let header = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+            u64::try_from(self.next_authorities.len()).unwrap(),
+        ));
+
+        iter::once(either::Either::Left(header))
+            .chain(
+                self.next_authorities
+                    .clone()
+                    .flat_map(|a| a.scale_encoding())
+                    .map(|buf| either::Either::Right(buf)),
+            )
+            .chain(iter::once(either::Either::Left(
+                self.delay.to_le_bytes().to_vec(), // TODO: don't allocate
+            )))
+    }
+}
+
+/// List of authorities in a GrandPa context.
+#[derive(Debug, Clone)]
+pub struct GrandpaAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
+
+impl<'a> Iterator for GrandpaAuthoritiesIter<'a> {
+    type Item = GrandpaAuthorityRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.0.next()?;
+        assert_eq!(item.len(), 40);
+        Some(GrandpaAuthorityRef {
+            public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
+            weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl<'a> ExactSizeIterator for GrandpaAuthoritiesIter<'a> {}
+
+impl<'a> cmp::PartialEq<GrandpaAuthoritiesIter<'a>> for GrandpaAuthoritiesIter<'a> {
+    fn eq(&self, other: &GrandpaAuthoritiesIter<'a>) -> bool {
+        let mut a = self.clone();
+        let mut b = other.clone();
+        loop {
+            match (a.next(), b.next()) {
+                (Some(a), Some(b)) if a == b => {}
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+}
+
+impl<'a> cmp::Eq for GrandpaAuthoritiesIter<'a> {}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct GrandpaAuthorityRef<'a> {
+    /// ed25519 public key.
+    pub public_key: &'a [u8; 32],
+    /// Arbitrary number indicating the weight of the authority.
+    ///
+    /// This value can only be compared to other weight values.
+    pub weight: u64,
+}
+
+impl<'a> GrandpaAuthorityRef<'a> {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        iter::once(either::Either::Right(self.public_key)).chain(iter::once(either::Either::Left(
+            parity_scale_codec::Encode::encode(&self.weight),
+        )))
+    }
+}
+
 /// Decodes a single digest log item. On success, returns the item and the data that remains
 /// after the item.
 fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]), Error> {
@@ -863,21 +1109,6 @@ fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]),
     slice = &slice[1..];
 
     match index {
-        0 => {
-            let len: parity_scale_codec::Compact<u64> =
-                parity_scale_codec::Decode::decode(&mut slice)
-                    .map_err(Error::DigestItemLenDecodeError)?;
-
-            let len = TryFrom::try_from(len.0).map_err(|_| Error::TooShort)?;
-
-            if slice.len() < len {
-                return Err(Error::TooShort);
-            }
-
-            let content = &slice[..len];
-            slice = &slice[len..];
-            Ok((DigestItemRef::Other(content), slice))
-        }
         4 | 5 | 6 => {
             if slice.len() < 4 {
                 return Err(Error::TooShort);
@@ -928,6 +1159,9 @@ fn decode_item_from_parts<'a>(
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
         (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),
+        (4, b"FRNK") => {
+            DigestItemRef::GrandpaConsensus(GrandpaConsensusLogRef::from_slice(content)?)
+        }
         (4, e) => return Err(Error::UnknownConsensusEngine(*e)),
         (5, b"BABE") => DigestItemRef::BabeSeal({
             if content.len() != 64 {
