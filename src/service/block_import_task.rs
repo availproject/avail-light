@@ -10,7 +10,7 @@
 
 // TODO: REMOVE THIS CODE
 
-use crate::{babe, block_import, database, executor, header, trie::calculate_root};
+use crate::{babe, verify, database, executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -61,7 +61,7 @@ pub enum ImportError {
         current_best_hash: [u8; 32],
     },
     /// The block verification has failed. The block is invalid and should be thrown away.
-    VerificationFailed(block_import::header_body::Error),
+    VerificationFailed(verify::header_body::Error),
 }
 
 /// Configuration for that task.
@@ -193,7 +193,7 @@ pub async fn run_block_import_task(mut config: Config) {
                 // Note that this does **not** modify `local_storage_cache`.
                 let import_result = {
                     let mut process =
-                        block_import::header_body::verify(block_import::header_body::Config {
+                        verify::header_body::verify(verify::header_body::Config {
                             parent_runtime: runtime_wasm_blob,
                             babe_genesis_configuration: &config.babe_genesis_config,
                             block1_slot_number,
@@ -209,11 +209,11 @@ pub async fn run_block_import_task(mut config: Config) {
 
                     loop {
                         match process {
-                            block_import::header_body::Verify::Finished(result) => break result,
-                            block_import::header_body::Verify::ReadyToRun(run) => {
+                            verify::header_body::Verify::Finished(result) => break result,
+                            verify::header_body::Verify::ReadyToRun(run) => {
                                 process = run.run();
                             }
-                            block_import::header_body::Verify::EpochInformation(epoch_info) => {
+                            verify::header_body::Verify::EpochInformation(epoch_info) => {
                                 if let Some(epoch) =
                                     babe_epoch_info_cache.get(&epoch_info.epoch_number())
                                 {
@@ -240,7 +240,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     process = epoch_info.inject_epoch(epoch_change).run();
                                 }
                             }
-                            block_import::header_body::Verify::StorageGet(mut get) => {
+                            verify::header_body::Verify::StorageGet(mut get) => {
                                 let key = get.key().fold(Vec::new(), |mut a, b| {
                                     a.extend_from_slice(b.as_ref());
                                     a
@@ -248,7 +248,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                 let value = local_storage_cache.get(&key);
                                 process = get.inject_value(value.as_ref().map(|v| &v[..])).run();
                             }
-                            block_import::header_body::Verify::PrefixKeys(mut prefix_keys) => {
+                            verify::header_body::Verify::PrefixKeys(mut prefix_keys) => {
                                 // We need to clone the prefix in order to not borrow
                                 // `prefix_keys` multiple times.
                                 let prefix = prefix_keys.prefix().to_vec();
@@ -258,7 +258,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     .map(|(k, _)| k.to_vec());
                                 process = prefix_keys.inject_keys(ret).run();
                             }
-                            block_import::header_body::Verify::NextKey(mut next_key) => {
+                            verify::header_body::Verify::NextKey(mut next_key) => {
                                 struct CustomBound(Vec<u8>);
                                 impl core::ops::RangeBounds<Vec<u8>> for CustomBound {
                                     fn start_bound(&self) -> core::ops::Bound<&Vec<u8>> {

@@ -23,7 +23,7 @@
 //! >           final, and rebuild a new [`HeadersChainVerify`] if that assumption turned out to
 //! >           not be true.
 
-use crate::{babe, block_import, executor, fork_tree, header, trie::calculate_root};
+use crate::{babe, verify, executor, fork_tree, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;
@@ -173,7 +173,7 @@ impl HeadersChainVerify {
         // Now perform the actual block verification.
         let import_success = {
             let mut process =
-                block_import::header_only::verify(block_import::header_only::Config {
+                verify::header_only::verify(verify::header_only::Config {
                     babe_genesis_configuration: &self.babe_genesis_config,
                     block1_slot_number,
                     now_from_unix_epoch: {
@@ -186,12 +186,12 @@ impl HeadersChainVerify {
 
             loop {
                 match process {
-                    block_import::header_only::Verify::Finished(Ok(result)) => break result,
-                    block_import::header_only::Verify::Finished(Err(err)) => {
+                    verify::header_only::Verify::Finished(Ok(result)) => break result,
+                    verify::header_only::Verify::Finished(Err(err)) => {
                         return Err(VerifyError::VerificationFailed(err))
                     }
-                    block_import::header_only::Verify::ReadyToRun(run) => process = run.run(),
-                    block_import::header_only::Verify::EpochInformation(epoch_info_rq) => {
+                    verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
+                    verify::header_only::Verify::EpochInformation(epoch_info_rq) => {
                         if let Some(info) = self
                             .babe_known_epoch_information
                             .iter()
@@ -276,7 +276,7 @@ pub enum VerifyError {
         parent_hash: [u8; 32],
     },
     /// The block verification has failed. The block is invalid and should be thrown away.
-    VerificationFailed(block_import::header_only::Error),
+    VerificationFailed(verify::header_only::Error),
     /// Babe epoch information couldn't be determined.
     UnknownBabeEpoch,
 }

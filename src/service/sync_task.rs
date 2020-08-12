@@ -106,7 +106,7 @@ pub async fn run_sync_task(mut config: Config) {
         }
 
         // Make sure the `select!` below doesn't block forever.
-        // TODO: can panic if something else submits blocks to the block_import queue; is this important?
+        // TODO: can panic if something else submits blocks to the block import queue; is this important?
         assert!(!pending_downloads.get_ref().is_empty() || !pending_imports.get_ref().is_empty());
 
         futures::select! {

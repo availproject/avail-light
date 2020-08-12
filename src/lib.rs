@@ -85,7 +85,6 @@
 extern crate alloc;
 
 pub mod babe;
-pub mod block_import;
 pub mod chain_spec;
 pub mod database;
 pub mod executor;
@@ -100,6 +99,7 @@ pub mod rpc_server;
 pub mod service;
 pub mod telemetry;
 pub mod trie;
+pub mod verify;
 pub mod wasm_bindings;
 
 use parity_scale_codec::Encode as _;
