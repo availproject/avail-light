@@ -73,7 +73,7 @@ pub enum BlockNumberOrHash {
 /// Configuration for that task.
 pub struct Config {
     /// Database to load data from.
-    pub database: Arc<database::Database>,
+    pub database: Arc<database::sled::Database>,
     /// Receiver for messages that the database task will process.
     pub to_database: mpsc::Receiver<ToDatabase>,
 }
@@ -88,8 +88,8 @@ pub async fn run_database_task(mut config: Config) {
 
 fn handle_single_event(
     event: ToDatabase,
-    database: &database::Database,
-) -> Result<(), database::AccessError> {
+    database: &database::sled::Database,
+) -> Result<(), database::sled::AccessError> {
     match event {
         ToDatabase::BlockHashGet {
             block_number,

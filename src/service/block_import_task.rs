@@ -66,7 +66,7 @@ pub enum ImportError {
 /// Configuration for that task.
 pub struct Config {
     /// Database where to import blocks to.
-    pub database: Arc<database::Database>,
+    pub database: Arc<database::sled::Database>,
     /// Configuration for BABE, retreived from the genesis block.
     pub babe_genesis_config: babe::BabeGenesisConfiguration,
     /// How to spawn other background tasks.
@@ -354,7 +354,7 @@ pub async fn run_block_import_task(mut config: Config) {
 
                         match db_import_result {
                             Ok(()) => {}
-                            Err(database::InsertNewBestError::ObsoleteCurrentHead) => {
+                            Err(database::sled::InsertNewBestError::ObsoleteCurrentHead) => {
                                 // TODO: look into the implications for the parent task
                                 // We have already checked above whether the parent of the block to import
                                 // was indeed the best block in the database. However the import can still
@@ -365,7 +365,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     .send(Err(ImportError::ParentIsntBest { current_best_hash }));
                                 return;
                             }
-                            Err(database::InsertNewBestError::Access(err)) => {
+                            Err(database::sled::InsertNewBestError::Access(err)) => {
                                 panic!("Database internal error: {}", err);
                             }
                         }

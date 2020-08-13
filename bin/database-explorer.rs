@@ -13,14 +13,15 @@ async fn async_main() {
     let database = {
         let db_path =
             app_dirs::app_dir(app_dirs::AppDataType::UserData, &APP_INFO, "database").unwrap();
-        let database = substrate_lite::database::open(substrate_lite::database::Config {
-            path: &db_path.join("polkadot"),
-        })
-        .unwrap();
+        let database =
+            substrate_lite::database::sled::open(substrate_lite::database::sled::Config {
+                path: &db_path.join("polkadot"),
+            })
+            .unwrap();
 
         match database {
-            substrate_lite::database::DatabaseOpen::Open(db) => db,
-            substrate_lite::database::DatabaseOpen::Empty(_) => {
+            substrate_lite::database::sled::DatabaseOpen::Open(db) => db,
+            substrate_lite::database::sled::DatabaseOpen::Empty(_) => {
                 println!("No database yet.");
                 return;
             }

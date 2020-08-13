@@ -90,7 +90,6 @@ pub mod database;
 pub mod executor;
 pub mod fork_tree;
 pub mod header;
-pub mod indexed_db_light;
 pub mod informant;
 pub mod keystore;
 pub mod network;
@@ -154,21 +153,21 @@ pub fn calculate_genesis_block_hash<'a>(
     genesis_block_header.hash()
 }
 
-/// Turns a [`database::DatabaseOpen`] into a [`database::Database`], either by inserting the
+/// Turns a [`database::sled::DatabaseOpen`] into a [`database::sled::Database`], either by inserting the
 /// genesis block into a newly-created database, or by checking when the existing database matches
 /// the chain specs.
-#[cfg(feature = "database")]
-#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
+#[cfg(feature = "database-sled")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database-sled")))]
 pub fn database_open_match_chain_specs(
-    database: database::DatabaseOpen,
+    database: database::sled::DatabaseOpen,
     chain_spec: &chain_spec::ChainSpec,
-) -> Result<database::Database, database::AccessError> {
+) -> Result<database::sled::Database, database::sled::AccessError> {
     match database {
-        database::DatabaseOpen::Open(database) => {
+        database::sled::DatabaseOpen::Open(database) => {
             // TODO: verify that the database matches the chain spec
             Ok(database)
         }
-        database::DatabaseOpen::Empty(empty) => {
+        database::sled::DatabaseOpen::Empty(empty) => {
             // TODO: quite a bit of code duplication here
             let mut state_trie = trie::Trie::new();
             for (key, value) in chain_spec.genesis_storage() {

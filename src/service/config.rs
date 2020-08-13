@@ -11,7 +11,7 @@ use futures::{
 /// Prototype for a service.
 pub struct Config<'a> {
     /// Database where the chain data is stored. If `None`, data is kept in memory.
-    pub database: Option<database::Database>,
+    pub database: Option<database::sled::Database>,
 
     /// How to spawn background tasks. If you pass `None`, then a threads pool will be used by
     /// default.

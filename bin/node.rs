@@ -203,7 +203,7 @@ async fn async_main() {
 // TODO: shouldn't expose `sled`
 async fn open_database(
     path: PathBuf,
-) -> Result<substrate_lite::database::DatabaseOpen, sled::Error> {
+) -> Result<substrate_lite::database::sled::DatabaseOpen, sled::Error> {
     let (tx, rx) = oneshot::channel();
     let mut rx = rx.fuse();
 
@@ -211,13 +211,17 @@ async fn open_database(
         let path = path.clone();
         move || {
             let result =
-                substrate_lite::database::open(substrate_lite::database::Config { path: &path });
+                substrate_lite::database::sled::open(substrate_lite::database::sled::Config {
+                    path: &path,
+                });
             let _ = tx.send(result);
         }
     });
 
     if thread_spawn_result.is_err() {
-        return substrate_lite::database::open(substrate_lite::database::Config { path: &path });
+        return substrate_lite::database::sled::open(substrate_lite::database::sled::Config {
+            path: &path,
+        });
     }
 
     let mut progress_timer = stream::unfold((), move |_| {
