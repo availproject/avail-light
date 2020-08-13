@@ -15,7 +15,8 @@ async function start() {
 	log('Loading WASM');
 	await init('./pkg/substrate_lite_bg.wasm');
 	log('Fetching chain spec');
-	const chain_spec_response = await fetch("https://raw.githubusercontent.com/paritytech/polkadot/19b88fffbc93b8c47233af4e5c27d1bb95e94e76/service/res/polkadot.json");
+	// TODO: we use kusama.json because polkadot.json doesn't have /ws bootnodes
+	const chain_spec_response = await fetch("https://raw.githubusercontent.com/paritytech/polkadot/ae445efc70ee7f9b27807e763ee0155cec8551e6/service/res/kusama.json");
 	const chain_spec_text = await chain_spec_response.text();
 
 	let client = await start_client(chain_spec_text);

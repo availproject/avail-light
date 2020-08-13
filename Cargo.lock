@@ -586,10 +586,12 @@ version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c74d84029116787153e02106bf53e66828452a4b325cc8652b788b5967c0a0b6"
 dependencies = [
+ "js-sys",
  "num-integer",
  "num-traits",
  "serde",
  "time",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -608,6 +610,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f83c06aff61f2d899eb87c379df3cbf7876f14471dcab474e0b6dc90ab96c080"
 dependencies = [
  "cache-padded",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8d976903543e0c48546a91908f21588a680a8c8f984df9a5d69feccb2b2a211"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1162,6 +1174,10 @@ name = "futures-timer"
 version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e64b03909df88034c26dc1547e8970b91f98bdb65165d6a4e9110d94263dbb2c"
+dependencies = [
+ "gloo-timers",
+ "send_wrapper 0.4.0",
+]
 
 [[package]]
 name = "futures-util"
@@ -1272,6 +1288,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1317,6 +1334,19 @@ dependencies = [
  "fnv",
  "log",
  "regex",
+]
+
+[[package]]
+name = "gloo-timers"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47204a46aaff920a1ea58b11d03dec6f704287d27561724a4631e450654a891f"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -3222,6 +3252,7 @@ dependencies = [
  "blake2-rfc",
  "bytes",
  "chrono",
+ "console_error_panic_hook",
  "derive_more",
  "either",
  "env_logger",
@@ -3236,6 +3267,7 @@ dependencies = [
  "js-sys",
  "jsonrpsee",
  "libp2p",
+ "libp2p-wasm-ext",
  "libsecp256k1",
  "log",
  "lru",

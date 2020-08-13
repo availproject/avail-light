@@ -12,7 +12,7 @@ default = ["database-sled", "os-networking", "rpc-server"]
 database-sled = ["sled"]
 os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
 rpc-server = ["jsonrpsee"]
-wasm-bindings = ["js-sys", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+wasm-bindings = ["chrono/wasmbind", "futures-timer/wasm-bindgen", "js-sys", "rand/wasm-bindgen", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
 
 [[bin]]
 name = "database-explorer"
@@ -76,10 +76,11 @@ sled = { version = "0.31.0", features = ["compression"], optional = true }
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", optional = true }
 
 # `wasm-bindings` feature
+console_error_panic_hook = "0.1.6"
 js-sys = { version = "0.3.44", optional = true }
 wasm-bindgen = { version = "0.2.67", optional = true }
 wasm-bindgen-futures = { version = "0.4.17", optional = true }
-web-sys = { version = "0.3.44", optional = true, features = ["DomException", "IdbDatabase", "IdbObjectStore", "IdbRequest", "IdbTransaction", "IdbTransactionMode"] }
+web-sys = { version = "0.3.44", optional = true, features = ["console", "DomException", "IdbDatabase", "IdbObjectStore", "IdbRequest", "IdbTransaction", "IdbTransactionMode"] }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
@@ -88,6 +89,7 @@ bitflags = "1.2.1"  # TODO: I hate bitflags
 blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
+libp2p-wasm-ext = { version = "0.20.1", features = ["websocket"] }  # TODO: activating the "websocket" feature because the libp2p font doesn't provide a way
 log = "0.4"  # TODO: we don't need logging
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
 sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "16fdfc4a80a14a26221d17b8a1b9a95421a1576c" }
