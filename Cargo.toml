@@ -17,12 +17,12 @@ wasm-bindings = ["js-sys", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
 [[bin]]
 name = "database-explorer"
 path = "bin/database-explorer.rs"
-required-features = ["database"]
+required-features = ["database-sled"]
 
 [[bin]]
 name = "node"
 path = "bin/node.rs"
-required-features = ["database", "os-networking", "rpc-server"]
+required-features = ["database-sled", "os-networking", "rpc-server"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
