@@ -95,6 +95,7 @@ pub mod keystore;
 pub mod network;
 pub mod remote_sync;
 pub mod rpc_server;
+#[cfg(not(target_arch = "wasm32"))]  // TODO: complete hack; remove
 pub mod service;
 pub mod telemetry;
 pub mod trie;

@@ -22,6 +22,22 @@ jobs:
     - name: Run tests, with all features
       run: cargo test --workspace --all-features
 
+  browser-node-check:
+    name: Check browser node compilation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - run: cargo install wasm-bindgen-cli
+    - run: cargo +nightly build --release --target wasm32-unknown-unknown --no-default-features --features wasm-bindings
+    - run: wasm-bindgen ./target/wasm32-unknown-unknown/release/substrate_lite.wasm --out-dir pkg --target web
+    
   check-features:
     name: Check that combination of features compiles
     needs: test
