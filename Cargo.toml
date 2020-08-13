@@ -5,7 +5,7 @@ authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
 license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL; can probably be removed if we remove all of Substrate's code
 edition = "2018"
 keywords = ["blockchain", "peer-to-peer"]
-default-run = "node"
+default-run = "full-node"
 
 [features]
 default = ["database-sled", "os-networking", "rpc-server"]
@@ -20,8 +20,8 @@ path = "bin/database-explorer.rs"
 required-features = ["database-sled"]
 
 [[bin]]
-name = "node"
-path = "bin/node.rs"
+name = "full-node"
+path = "bin/full-node.rs"
 required-features = ["database-sled", "os-networking", "rpc-server"]
 
 [lib]
