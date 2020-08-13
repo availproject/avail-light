@@ -8,7 +8,7 @@
 
 use crate::{chain_spec, network};
 
-use libp2p::wasm_ext::{ExtTransport, ffi};
+use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -33,16 +33,18 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                 .collect(),
             chain_spec_protocol_id: chain_spec.protocol_id().unwrap().as_bytes().to_vec(),
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-            local_genesis_hash: crate::calculate_genesis_block_hash(chain_spec.genesis_storage()).into(),
+            local_genesis_hash: crate::calculate_genesis_block_hash(chain_spec.genesis_storage())
+                .into(),
             wasm_external_transport: Some(ExtTransport::new(ffi::websocket_transport())),
-        }).await;
+        })
+        .await;
 
         async move {
             loop {
                 match network.next_event().await {
                     ev => {
                         web_sys::console::log_1(&JsValue::from_str(&format!("{:?}", ev)));
-                    },
+                    }
                 }
             }
         }
@@ -67,6 +69,6 @@ impl BrowserLightClient {
     /// Subscribes to an RPC pubsub endpoint.
     #[wasm_bindgen(js_name = "rpcSubscribe")]
     pub fn rpc_subscribe(&mut self, rpc: &str, callback: js_sys::Function) {
-        // TODO: 
+        // TODO:
     }
 }

@@ -132,7 +132,7 @@ pub fn header_information(header: header::HeaderRef) -> Result<HeaderInfo, Error
                     return Err(Error::MultipleConfigDescriptors)
                 }
                 header::BabeConsensusLogRef::NextConfigData(data) => config_change = Some(data),
-                header::BabeConsensusLogRef::OnDisabled(_) => {}, // TODO: unimplemented
+                header::BabeConsensusLogRef::OnDisabled(_) => {} // TODO: unimplemented
             }
         }
 

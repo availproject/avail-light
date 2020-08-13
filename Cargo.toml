@@ -12,7 +12,15 @@ default = ["database-sled", "os-networking", "rpc-server"]
 database-sled = ["sled"]
 os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
 rpc-server = ["jsonrpsee"]
-wasm-bindings = ["chrono/wasmbind", "futures-timer/wasm-bindgen", "js-sys", "rand/wasm-bindgen", "wasm-bindgen", "wasm-bindgen-futures", "web-sys"]
+wasm-bindings = [
+    "chrono/wasmbind",
+    "futures-timer/wasm-bindgen",
+    "js-sys",
+    "rand/wasm-bindgen",
+    "wasm-bindgen",
+    "wasm-bindgen-futures",
+    "web-sys"
+]
 
 [[bin]]
 name = "database-explorer"
