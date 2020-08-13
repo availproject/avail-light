@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn can_decode_polkadot_genesis() {
-        let spec = &include_bytes!("chain_spec/polkadot.json")[..];
+        let spec = &include_bytes!("chain_spec/example.json")[..];
         let specs = ChainSpec::from_json_bytes(&spec).unwrap();
         assert_eq!(specs.id(), "polkadot");
     }
