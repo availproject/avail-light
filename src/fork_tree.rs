@@ -62,8 +62,6 @@ impl<T> ForkTree<T> {
     /// Panics if the [`NodeIndex`] is invalid.
     ///
     pub fn prune_ancestors(&mut self, node_index: NodeIndex) {
-        // TODO: this function is completely untested
-
         // The implementation consists in ultimately replacing the content of `self.first_root`
         // with the content of `self.nodes[node_index].first_child` and updating everything else
         // accordingly. Save the value here for later.
@@ -196,3 +194,61 @@ impl<T> Default for ForkTree<T> {
 /// Index of a node within a [`ForkTree`]. Never invalidated unless the node is removed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeIndex(usize);
+
+#[cfg(test)]
+mod tests {
+    use super::ForkTree;
+
+    #[test]
+    fn basic() {
+        let mut tree = ForkTree::new();
+
+        let node0 = tree.insert(None, 0);
+        let node1 = tree.insert(Some(node0), 1);
+        let node2 = tree.insert(Some(node1), 2);
+        let node3 = tree.insert(Some(node2), 3);
+        let node4 = tree.insert(Some(node2), 4);
+        let node5 = tree.insert(Some(node0), 5);
+
+        assert_eq!(tree.find(|v| *v == 0), Some(node0));
+        assert_eq!(tree.find(|v| *v == 1), Some(node1));
+        assert_eq!(tree.find(|v| *v == 2), Some(node2));
+        assert_eq!(tree.find(|v| *v == 3), Some(node3));
+        assert_eq!(tree.find(|v| *v == 4), Some(node4));
+        assert_eq!(tree.find(|v| *v == 5), Some(node5));
+
+        assert_eq!(
+            tree.node_to_root_path(node3).collect::<Vec<_>>(),
+            &[node3, node2, node1, node0]
+        );
+        assert_eq!(
+            tree.node_to_root_path(node4).collect::<Vec<_>>(),
+            &[node4, node2, node1, node0]
+        );
+        assert_eq!(
+            tree.node_to_root_path(node1).collect::<Vec<_>>(),
+            &[node1, node0]
+        );
+        assert_eq!(
+            tree.node_to_root_path(node5).collect::<Vec<_>>(),
+            &[node5, node0]
+        );
+
+        tree.prune_ancestors(node1);
+        assert!(tree.get(node0).is_none());
+        assert!(tree.get(node1).is_none());
+        assert_eq!(tree.get(node2), Some(&2));
+        assert_eq!(tree.get(node3), Some(&3));
+        assert_eq!(tree.get(node4), Some(&4));
+        assert!(tree.get(node5).is_none());
+
+        assert_eq!(
+            tree.node_to_root_path(node3).collect::<Vec<_>>(),
+            &[node3, node2]
+        );
+        assert_eq!(
+            tree.node_to_root_path(node4).collect::<Vec<_>>(),
+            &[node4, node2]
+        );
+    }
+}
