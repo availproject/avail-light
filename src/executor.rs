@@ -41,17 +41,11 @@
 //! # Example
 //!
 //! ```no_run
-//! // Create the `WasmBlob`.
 //! let wasm_binary: &[u8] = unimplemented!();
-//! let wasm_blob = substrate_lite::executor::WasmBlob::from_bytes(wasm_binary).unwrap();
 //!
 //! // Start executing a function on the runtime.
-//! let vm = {
-//!     let to_call = substrate_lite::executor::FunctionToCall::CoreVersion;
-//!     // Errors can happen only if the Wasm code is wrong/non-conforming, or if the input data
-//!     // can't fit in the virtual machine (which usually means that it is blatently wrong).
-//!     substrate_lite::executor::WasmVm::new(&wasm_blob, to_call).unwrap()
-//! };
+//! let vm = substrate_lite::executor::WasmVmPrototype::new(&wasm_binary).unwrap()
+//!     .run_no_param("Core_version").unwrap();
 //!
 //! // We need to answer the calls that the runtime might perform.
 //! loop {
@@ -61,15 +55,10 @@
 //!         substrate_lite::executor::State::ReadyToRun(runner) => runner.run(),
 //!
 //!         substrate_lite::executor::State::Finished(value) => {
-//!             // `value` here is an enum of type `Success`, whose variant depends on which
-//!             // function has been called. Since we call `CoreVersion`, we know that this is
-//!             // a `CoreVersion` return value.
-//!             let info = match value {
-//!                 substrate_lite::executor::Success::CoreVersion(info) => info,
-//!                 _ => unreachable!()
-//!             };
-//!
-//!             println!("Success! Returned value: {:?}", info);
+//!             // `value` here is an opaque blob of bytes returned by the runtime.
+//!             // In the case of a call to `"Core_version"`, we know that it must be empty.
+//!             assert!(value.is_empty());
+//!             println!("Success!");
 //!             break;
 //!         },
 //!

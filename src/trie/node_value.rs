@@ -6,6 +6,7 @@
 //! # Example
 //!
 //! ```
+//! use std::convert::TryFrom as _;
 //! use substrate_lite::trie::{Nibble, node_value};
 //!
 //! let merkle_value = {
