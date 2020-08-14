@@ -27,7 +27,6 @@ pub struct Database {
     meta_tree: sled::Tree,
 
     /// Tree named "block_hashes_by_number" in the database.
-    /// Contains all the meta-information about the content.
     ///
     /// Keys in that tree are 64-bits-big-endian block numbers, and values are 32-bytes block
     /// hashes (without any encoding).

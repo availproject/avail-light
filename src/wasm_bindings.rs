@@ -6,7 +6,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{chain_spec, network};
+use crate::{chain_spec, database, network};
 
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
@@ -22,7 +22,12 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     // TODO: this is just some temporary code before we figure out where to put it
     let chain_spec = chain_spec::ChainSpec::from_json_bytes(&chain_spec).unwrap();
 
-    // TODO: let database = crate::database::indexed_db_light::open().await;
+    let database = {
+        let db_name = format!("substrate-lite-{}", chain_spec.id());
+        database::indexed_db_light::Database::open(&db_name)
+            .await
+            .unwrap()
+    };
 
     wasm_bindgen_futures::spawn_local({
         let mut network = network::Network::start(network::Config {

@@ -16,6 +16,55 @@ pub struct Database {
 }
 
 impl Database {
+    /// Tries to open the database from the browser environment.
+    pub async fn open(db_name: &str) -> Result<Self, OpenError> {
+        // TODO: also allow `WorkerGlobalScope`
+        let window = web_sys::window().ok_or(OpenError::NoWindow)?;
+        let idb_factory = window
+            .indexed_db()
+            .map_err(OpenError::IndexedDbNotSupported)?
+            .unwrap();
+        let open_request = idb_factory.open_with_u32(db_name, 1).unwrap();
+
+        // Used to signal when the open request is complete.
+        let (tx, rx) = oneshot::channel();
+
+        let on_finish = Closure::once_into_js(move |_: &Event| {
+            let _ = tx.send(());
+        });
+        open_request.set_onsuccess(Some(&on_finish.dyn_ref().unwrap()));
+        open_request.set_onerror(Some(&on_finish.dyn_ref().unwrap()));
+
+        let on_upgrade_needed = Closure::once(move |event: &Event| {
+            let database = event
+                .target()
+                .unwrap()
+                .dyn_into::<web_sys::IdbRequest>()
+                .unwrap()
+                .result()
+                .unwrap()
+                .dyn_into::<IdbDatabase>()
+                .unwrap();
+
+            // TODO: do the multiple versions handling properly?
+            // Keys are block hashes, and values are SCALE-encoded block headers.
+            database.create_object_store("block_headers").unwrap();
+        });
+        open_request.set_onupgradeneeded(Some(&on_upgrade_needed.as_ref().dyn_ref().unwrap()));
+
+        // Block until either `onsuccess` or `onerror` happens.
+        let _ = rx.await.unwrap();
+
+        // `result()` would return an error if the request wasn't complete yet.
+        let result = open_request.result().unwrap();
+        match result.dyn_into::<IdbDatabase>() {
+            Ok(db) => Ok(Database {
+                inner: send_wrapper::SendWrapper::new(db),
+            }),
+            Err(err) => Err(OpenError::OpenError(err)),
+        }
+    }
+
     /// Reads one value at the given key.
     ///
     /// # Panic
@@ -67,6 +116,18 @@ impl Drop for Database {
     fn drop(&mut self) {
         self.inner.close();
     }
+}
+
+/// Error when opening the database.
+#[derive(Debug, derive_more::Display)]
+pub enum OpenError {
+    NoWindow,
+    /// IndexedDB is not supported by the environment.
+    #[display(fmt = "IndexedDB is not supported by the environment: {:?}", _0)]
+    IndexedDbNotSupported(JsValue),
+    /// The `IDBOpenDBRequest` produced an error.
+    #[display(fmt = "The `IDBOpenDBRequest` produced an error: {:?}", _0)]
+    OpenError(JsValue),
 }
 
 #[derive(Debug, derive_more::Display)]
