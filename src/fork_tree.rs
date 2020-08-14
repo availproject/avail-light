@@ -6,7 +6,7 @@
 //! In this schema, the finalized block is **not** part of the `ForkTree` data structure. Only
 //! its descendants are.
 
-use core::iter;
+use core::{fmt, iter};
 
 /// Tree of nodes. Each node contains a value of type `T`.
 pub struct ForkTree<T> {
@@ -188,6 +188,17 @@ impl<T> ForkTree<T> {
 impl<T> Default for ForkTree<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> fmt::Debug for ForkTree<T>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list()
+            .entries(self.nodes.iter().map(|(_, v)| &v.data))
+            .finish()
     }
 }
 
