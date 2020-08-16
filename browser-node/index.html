@@ -12,7 +12,7 @@ function log(msg) {
 }
 
 async function start() {
-	log('Loading WASM');
+	log('Loading node script');
 	await init('./pkg/substrate_lite_bg.wasm');
 	log('Fetching chain spec');
 	// TODO: we use kusama.json because polkadot.json doesn't have /ws bootnodes

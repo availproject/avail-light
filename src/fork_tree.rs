@@ -41,6 +41,11 @@ impl<T> ForkTree<T> {
         }
     }
 
+    /// Returns the number of elements in the tree.
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Returns the value of the node with the given index.
     pub fn get(&self, index: NodeIndex) -> Option<&T> {
         self.nodes.get(index.0).map(|n| &n.data)
@@ -113,7 +118,64 @@ impl<T> ForkTree<T> {
         self.first_root = new_first_root;
     }
 
-    /// Returns all the nodes, starting from the the given node, to the root. Each element
+    /// Returns the common ancestor between `node1` and `node2`, if any is known.
+    ///
+    /// # Panic
+    ///
+    /// Panics if one of the [`NodeIndex`]s is invalid.
+    ///
+    pub fn common_ancestor(&self, node1: NodeIndex, node2: NodeIndex) -> Option<NodeIndex> {
+        let dist_to_root1 = self.node_to_root_path(node1).count();
+        let dist_to_root2 = self.node_to_root_path(node2).count();
+
+        let mut iter1 = self
+            .node_to_root_path(node1)
+            .skip(dist_to_root1.saturating_sub(dist_to_root2));
+        let mut iter2 = self
+            .node_to_root_path(node2)
+            .skip(dist_to_root2.saturating_sub(dist_to_root1));
+
+        loop {
+            match (iter1.next(), iter2.next()) {
+                (Some(a), Some(b)) if a == b => return Some(a),
+                (Some(_), Some(_)) => continue,
+                (None, None) => return None,
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    /// Returns two iterators: the first iterator enumerates the nodes from `node1` to the common
+    /// ancestor of `node1` and `node2`. The second iterator enumerates the nodes from that common
+    /// ancestor to `node2`. The common ancestor isn't included in either iterator. If `node1` and
+    /// `node2` are equal then both iterators are empty, otherwise `node1` is always included in
+    /// the first iterator and `node2` always included in the second iterator.
+    ///
+    /// # Panic
+    ///
+    /// Panics if one of the [`NodeIndex`]s is invalid.
+    ///
+    pub fn ascend_and_descend<'a>(
+        &'a self,
+        node1: NodeIndex,
+        node2: NodeIndex,
+    ) -> (
+        impl Iterator<Item = NodeIndex> + 'a,
+        impl Iterator<Item = NodeIndex> + 'a,
+    ) {
+        let common_ancestor = self.common_ancestor(node1, node2);
+
+        let iter1 = self
+            .node_to_root_path(node1)
+            .take_while(move |v| Some(*v) != common_ancestor);
+        let iter2 = self
+            .node_to_root_path(node2)
+            .take_while(move |v| Some(*v) != common_ancestor);
+
+        (iter1, iter2)
+    }
+
+    /// Enumerates all the nodes, starting from the the given node, to the root. Each element
     /// returned by the iterator is a parent of the previous one. The iterator does include the
     /// node itself.
     ///

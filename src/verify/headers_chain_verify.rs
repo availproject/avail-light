@@ -68,6 +68,9 @@ pub struct HeadersChainVerify {
     babe_finalized_block1_slot_number: Option<u64>,
     /// Container for non-finalized blocks.
     blocks: fork_tree::ForkTree<Block>,
+    /// Index within [`HeadersChainVerify::blocks`] of the current best block. `None` if and only
+    /// if the fork tree is empty.
+    current_best: Option<fork_tree::NodeIndex>,
 }
 
 #[derive(Debug)]
@@ -101,6 +104,7 @@ impl HeadersChainVerify {
             babe_epoch_info_cache: lru::LruCache::new(4),
             babe_finalized_block1_slot_number: config.babe_finalized_block1_slot_number,
             blocks: fork_tree::ForkTree::with_capacity(config.capacity),
+            current_best: None,
         }
     }
 
@@ -228,13 +232,66 @@ impl HeadersChainVerify {
             )
         };
 
+        let is_new_best = if let Some(current_best) = self.current_best {
+            // In order to determine whether the new block is our new best:
+            //
+            // - Find the common ancestor between the current best and the new block.
+            // - Count the number of Babe primary slot claims between the common ancestor and the
+            //   current best.
+            // - Count the number of Babe primary slot claims between the common ancestor and the
+            //   new block.
+            // - If the number for the new block is strictly superior, then the new block is our
+            //   new best.
+            //
+            let (ascend, descend) = self.blocks.ascend_and_descend(current_best, new_node_index);
+
+            let curr_best_primary_slots: usize = ascend
+                .map(|i| {
+                    let decoded =
+                        header::decode(&self.blocks.get(i).unwrap().scale_encoded_header).unwrap();
+                    let decoded = babe::header_info::header_information(decoded).unwrap();
+                    if decoded.pre_runtime.is_primary() {
+                        1
+                    } else {
+                        0
+                    }
+                })
+                .sum();
+
+            let new_block_primary_slots: usize = descend
+                .map(|i| {
+                    let decoded =
+                        header::decode(&self.blocks.get(i).unwrap().scale_encoded_header).unwrap();
+                    let decoded = babe::header_info::header_information(decoded).unwrap();
+                    if decoded.pre_runtime.is_primary() {
+                        1
+                    } else {
+                        0
+                    }
+                })
+                .sum();
+
+            // Note the strictly superior. If there is an equality, we keep the current best.
+            new_block_primary_slots > curr_best_primary_slots
+        } else {
+            debug_assert_eq!(self.blocks.len(), 1);
+            true
+        };
+
+        if is_new_best {
+            self.current_best = Some(new_node_index);
+        }
+
         Ok(VerifySuccess {
-            is_new_best: true, // TODO: wrong! needs some help from Babe
-            scale_encoded_header: &self
-                .blocks
-                .get(new_node_index)
-                .unwrap()
-                .scale_encoded_header,
+            is_new_best,
+            scale_encoded_header: header::decode(
+                &&self
+                    .blocks
+                    .get(new_node_index)
+                    .unwrap()
+                    .scale_encoded_header,
+            )
+            .unwrap(),
         })
     }
 
@@ -252,7 +309,7 @@ pub struct VerifySuccess<'a> {
     /// True if the verified block is considered as the new "best" block.
     pub is_new_best: bool,
     /// Same value as the parameter passed to [`HeadersChainVerify::verify`].
-    pub scale_encoded_header: &'a [u8],
+    pub scale_encoded_header: header::HeaderRef<'a>,
 }
 
 /// Error that can happen when importing a block.

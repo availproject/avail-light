@@ -653,6 +653,14 @@ impl<'a> BabePreDigestRef<'a> {
         })
     }
 
+    /// Returns `true` for [`BabePreDigestRef::Primary`].
+    pub fn is_primary(&self) -> bool {
+        match self {
+            BabePreDigestRef::Primary(_) => true,
+            _ => false,
+        }
+    }
+
     /// Returns the slot number stored in the header.
     pub fn slot_number(&self) -> u64 {
         match self {
