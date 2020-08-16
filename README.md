@@ -46,7 +46,7 @@ Other example: the module that verifies whether a block respects the Babe algori
 
 While the guidelines here a blurry, here are a few points:
 
-- Dependency injection is almost always a bad thing.
+- Dependency injection is almost always a bad thing. As such, any complex trait definition ("complex" here meaning "more complex than the ones found in the standard library such as `Clone` or `Eq`") is forbidden.
 - Exposing `Arc`s in your public API is almost always a bad thing.
 
 ## Assumption that specs will not change
@@ -55,7 +55,7 @@ This project is implemented following the current state of the Substrate/Polkado
 
 For example, the code that decodes block headers in written in a way that would be quite annoying (though straight-forward) to modify if the format of a block header ever changes. However, we simply assume that the format of block headers will rarely, if ever, change.
 
-In particular, there is an assumption that the list of consensus algorithms is known in advance and will rarely change. Substrate-lite prefers the explicitness of code specific to every single consensus code, rather than giving the fake impression to the user that they can simply plug their own algorithm and expect it to work.
+In particular, there is an assumption that the list of consensus algorithms is known in advance and will rarely change. Substrate-lite prefers the explicitness of code specific to every single consensus code, rather than giving the fake impression to the user that they can simply plug their own algorithm and expect everything to work.
 
 ## Fail fast
 
@@ -64,3 +64,5 @@ Code **must not** panic as a result of unexpected input from the user or from th
 However, code **must** panic if its internal consistency is compromised. In other words, if the only possible reason for the panic is a bug in the logic of the code.
 
 The author of this crate considers that it is dangerous to try to continue running the program if it is known that it does not run according to expectations.
+
+While there is no rule in this source code about `unwrap`, the programmer is expected to think about every single `unwrap()` that they write and is concious that a `None` or an `Err` cannot happen unless a bug is present.
