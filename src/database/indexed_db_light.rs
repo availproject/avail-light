@@ -130,13 +130,13 @@ impl Drop for Database {
 ///
 /// Called by the `onupgradeneeded` handle of the database.
 fn create_schema(database: &IdbDatabase, old_version: u32) {
-    if old_version == 0 {
+    if old_version <= 0 {
         // Keys are block hashes, and values are SCALE-encoded block headers.
         database.create_object_store("block-headers").unwrap();
     }
 
     // Note: add new versions with something like:
-    // if current_version = N {
+    // if current_version <= N {
     //     database.create_object_store("...").unwrap();
     // }
 }
