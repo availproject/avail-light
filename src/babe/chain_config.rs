@@ -17,6 +17,7 @@ impl BabeGenesisConfiguration {
     ///
     /// Must be passed a closure that returns the storage value corresponding to the given key in
     /// the genesis block storage.
+    // TODO: why is `wasm_code` a separate parameter? it could grabbed with `genesis_storage_access`
     pub fn from_runtime_code(
         wasm_code: impl AsRef<[u8]>,
         genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,

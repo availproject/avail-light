@@ -117,6 +117,14 @@ pub mod wasm_bindings;
 pub fn calculate_genesis_block_hash<'a>(
     genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
 ) -> [u8; 32] {
+    let header = calculate_genesis_block_scale_encoded_header(genesis_storage);
+    header::hash_from_scale_encoded_header(&header)
+}
+
+/// Returns the SCALE encoding of the genesis block, from the storage.
+pub fn calculate_genesis_block_scale_encoded_header<'a>(
+    genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
+) -> Vec<u8> {
     let state_root = {
         let mut calculation = trie::calculate_root::root_merkle_value(None);
 
@@ -150,9 +158,13 @@ pub fn calculate_genesis_block_hash<'a>(
         digest: header::DigestRef::empty(),
     };
 
-    genesis_block_header.hash()
+    genesis_block_header
+        .scale_encoding()
+        .fold(Vec::new(), |mut a, b| {
+            a.extend_from_slice(b.as_ref());
+            a
+        })
 }
-
 /// Turns a [`database::sled::DatabaseOpen`] into a [`database::sled::Database`], either by inserting the
 /// genesis block into a newly-created database, or by checking when the existing database matches
 /// the chain specs.
