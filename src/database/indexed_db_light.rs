@@ -36,6 +36,17 @@ impl Database {
         open_request.set_onerror(Some(&on_finish.dyn_ref().unwrap()));
 
         let on_upgrade_needed = Closure::once(move |event: &Event| {
+            let old_version = {
+                let old_version = event
+                    .dyn_ref::<web_sys::IdbVersionChangeEvent>()
+                    .unwrap()
+                    .old_version();
+                assert_eq!(old_version.fract(), 0.0);
+                assert!(old_version >= 0.0);
+                assert!(old_version < u32::max_value() as f64);
+                old_version as u32
+            };
+
             let database = event
                 .target()
                 .unwrap()
@@ -45,10 +56,7 @@ impl Database {
                 .unwrap()
                 .dyn_into::<IdbDatabase>()
                 .unwrap();
-
-            // TODO: do the multiple versions handling properly?
-            // Keys are block hashes, and values are SCALE-encoded block headers.
-            database.create_object_store("block_headers").unwrap();
+            create_schema(&database, old_version);
         });
         open_request.set_onupgradeneeded(Some(&on_upgrade_needed.as_ref().dyn_ref().unwrap()));
 
@@ -116,6 +124,21 @@ impl Drop for Database {
     fn drop(&mut self) {
         self.inner.close();
     }
+}
+
+/// Updates a database to the latest version.
+///
+/// Called by the `onupgradeneeded` handle of the database.
+fn create_schema(database: &IdbDatabase, old_version: u32) {
+    if old_version == 0 {
+        // Keys are block hashes, and values are SCALE-encoded block headers.
+        database.create_object_store("block-headers").unwrap();
+    }
+
+    // Note: add new versions with something like:
+    // if current_version = N {
+    //     database.create_object_store("...").unwrap();
+    // }
 }
 
 /// Error when opening the database.
