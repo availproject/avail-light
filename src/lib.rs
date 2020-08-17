@@ -165,6 +165,7 @@ pub fn calculate_genesis_block_scale_encoded_header<'a>(
             a
         })
 }
+
 /// Turns a [`database::sled::DatabaseOpen`] into a [`database::sled::Database`], either by inserting the
 /// genesis block into a newly-created database, or by checking when the existing database matches
 /// the chain specs.

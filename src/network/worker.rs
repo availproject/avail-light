@@ -5,6 +5,7 @@ use core::{
     future::Future,
     num::{NonZeroU64, NonZeroUsize},
     pin::Pin,
+    str,
     time::Duration,
 };
 use libp2p::{
@@ -21,6 +22,7 @@ pub use request_responses::RequestId;
 /// State machine representing the network currently running.
 pub struct Network {
     swarm: Swarm<behaviour::Behaviour>,
+    chain_spec_protocol_id: String,
 }
 
 /// Event that can happen on the network.
@@ -135,6 +137,11 @@ impl Network {
         let local_peer_id = local_public_key.clone().into_peer_id();
         let (transport, _) =
             transport::build_transport(local_key_pair, false, config.wasm_external_transport, true);
+
+        let chain_spec_protocol_id = str::from_utf8(&config.chain_spec_protocol_id)
+            .unwrap()
+            .to_owned(); // TODO: don't unwrap
+
         let behaviour = behaviour::Behaviour::new(
             "substrate-lite".to_string(),
             config.chain_spec_protocol_id,
@@ -146,7 +153,7 @@ impl Network {
             {
                 let mut protocols = Vec::new();
                 protocols.push(request_responses::ProtocolConfig {
-                    name: "/dot/sync/2".into(),
+                    name: format!("/{}/sync/2", chain_spec_protocol_id).into(),
                     max_request_size: 1024 * 1024,
                     max_response_size: 16 * 1024 * 1024,
                     request_timeout: Duration::from_secs(10),
@@ -176,7 +183,10 @@ impl Network {
             builder.build()
         };
 
-        Network { swarm }
+        Network {
+            swarm,
+            chain_spec_protocol_id,
+        }
     }
 
     /// Returns the [`PeerId`] of the local node.
@@ -247,7 +257,11 @@ impl Network {
         };
 
         self.swarm
-            .send_request(&target, "/dot/sync/2", request_bytes)
+            .send_request(
+                &target,
+                &format!("/{}/sync/2", self.chain_spec_protocol_id),
+                request_bytes,
+            )
             .map_err(|_| ())
     }
 

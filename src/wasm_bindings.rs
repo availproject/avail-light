@@ -8,6 +8,7 @@
 
 use crate::{babe, chain_spec, database, network, verify};
 
+use core::num::NonZeroU64;
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
@@ -65,13 +66,21 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
         },
     );
 
-    wasm_bindgen_futures::spawn_local({
-        let mut network = network::Network::start(network::Config {
-            known_addresses: chain_spec
-                .boot_nodes()
-                .iter()
-                .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
-                .collect(),
+    let network = {
+        let mut known_addresses = chain_spec
+            .boot_nodes()
+            .iter()
+            .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
+            .collect::<Vec<_>>();
+        known_addresses.push((
+            "12D3KooWQ9CbBChpa5HH5mADDgwRVdFUGXN3HHsBstbg7Gjhb4ge"
+                .parse()
+                .unwrap(),
+            "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap(),
+        ));
+
+        let worker = network::Network::start(network::Config {
+            known_addresses,
             chain_spec_protocol_id: chain_spec.protocol_id().unwrap().as_bytes().to_vec(),
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
             local_genesis_hash: crate::calculate_genesis_block_hash(chain_spec.genesis_storage())
@@ -80,15 +89,38 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
         })
         .await;
 
-        async move {
-            loop {
-                match network.next_event().await {
-                    ev => {
-                        web_sys::console::log_1(&JsValue::from_str(&format!("{:?}", ev)));
-                    }
+        let (service, future) = network::task::start_network_service(worker);
+        wasm_bindgen_futures::spawn_local(future);
+        service
+    };
+
+    wasm_bindgen_futures::spawn_local(async move {
+        let res = loop {
+            let res = network
+                .block_request(network::BlocksRequestConfig {
+                    start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
+                    desired_count: u32::max_value(),
+                    direction: network::BlocksRequestDirection::Ascending,
+                    fields: network::BlocksRequestFields {
+                        header: true,
+                        body: false,
+                        justification: false,
+                    },
+                })
+                .await;
+
+            match res {
+                Ok(r) => break r,
+                Err(_) => {
+                    wasm_timer::Delay::new(core::time::Duration::from_secs(1))
+                        .await
+                        .unwrap();
+                    continue;
                 }
             }
-        }
+        };
+
+        panic!("{:?}", res);
     });
 
     BrowserLightClient {}

@@ -13,14 +13,14 @@ use hashbrown::HashMap;
 /// Starts the network service.
 pub fn start_network_service(
     worker: network::Network,
-) -> (Arc<NetworkService>, impl Future<Output = ()>) {
+) -> (NetworkService, impl Future<Output = ()>) {
     let (tx, rx) = mpsc::channel(8);
     let num_connections_store = Arc::new(atomic::Atomic::new(0));
     let task = run_networking_task(worker, rx, num_connections_store.clone());
-    let service = Arc::new(NetworkService {
+    let service = NetworkService {
         sender: Mutex::new(tx),
         num_connections_store,
-    });
+    };
 
     (service, task)
 }
@@ -98,7 +98,6 @@ async fn run_networking_task(
                     network::Event::Disconnected(peer_id) => {
                         num_connections_store.fetch_sub(1, atomic::Ordering::Relaxed);
                     },
-                    // TODO: send out `service::Event::NewNetworkExternalAddress`
                 }
             }
             ev = from_service.next() => {
