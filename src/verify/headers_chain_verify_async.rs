@@ -73,6 +73,11 @@ where
                             queue.set_finalized_block(&block_hash);
                         }
                     }
+
+                    // We do the equivalent of "std::thread::yield_now()" here to ensure that,
+                    // especially in a single-threaded context, other tasks can potentially get
+                    // progress.
+                    futures::pending!();
                 }
             })
         });
