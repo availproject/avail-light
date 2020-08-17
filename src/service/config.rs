@@ -1,5 +1,5 @@
-use super::{block_import_task, database_task, keystore_task, network_task, sync_task, Service};
-use crate::{babe, chain_spec::ChainSpec, database, keystore, network};
+use super::{block_import_task, database_task, network_task, sync_task, Service};
+use crate::{babe, chain_spec::ChainSpec, database, network};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};
@@ -92,7 +92,6 @@ impl<'a> Config<'a> {
         let (to_service_out, events_in) = mpsc::channel(16);
         let (mut to_network_tx, to_network_rx) = mpsc::channel(256);
         let (to_block_import_tx, to_block_import_rx) = mpsc::channel(16);
-        let (_to_keystore_tx, to_keystore_rx) = mpsc::channel(16);
         let (to_database_tx, to_database_rx) = mpsc::channel(64);
 
         let num_connections_store = Arc::new(atomic::AtomicU64::new(0));
@@ -142,15 +141,6 @@ impl<'a> Config<'a> {
                 to_block_import: to_block_import_tx,
                 to_network: to_network_tx.clone(),
                 to_service_out,
-            })
-            .boxed(),
-        );
-
-        // TODO: unused at the moment, maybe out of scope of this project
-        tasks_executor(
-            keystore_task::run_keystore_task(keystore_task::Config {
-                keystore: keystore::Keystore::empty(),
-                to_keystore: to_keystore_rx,
             })
             .boxed(),
         );

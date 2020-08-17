@@ -37,7 +37,6 @@ pub use config::{ChainInfoConfig, Config};
 mod block_import_task;
 mod config;
 mod database_task;
-mod keystore_task;
 mod network_task;
 mod sync_task;
 

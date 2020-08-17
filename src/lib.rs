@@ -91,7 +91,6 @@ pub mod executor;
 pub mod fork_tree;
 pub mod header;
 pub mod informant;
-pub mod keystore;
 pub mod network;
 pub mod remote_sync;
 pub mod rpc_server;
