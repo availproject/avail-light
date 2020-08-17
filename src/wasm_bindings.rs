@@ -8,7 +8,8 @@
 
 use crate::{babe, chain_spec, database, header, network, verify};
 
-use core::num::NonZeroU64;
+use core::{convert::TryFrom as _, num::NonZeroU64};
+use futures::prelude::*;
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
@@ -97,53 +98,66 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     };
 
     wasm_bindgen_futures::spawn_local(async move {
-        let blocks = loop {
-            let res = network
-                .block_request(network::BlocksRequestConfig {
-                    start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
-                    desired_count: u32::max_value(),
-                    direction: network::BlocksRequestDirection::Ascending,
-                    fields: network::BlocksRequestFields {
-                        header: true,
-                        body: false,
-                        justification: false,
-                    },
-                })
-                .await;
-
-            match res {
-                Ok(r) => break r,
-                Err(_) => {
-                    wasm_timer::Delay::new(core::time::Duration::from_secs(1))
-                        .await
-                        .unwrap();
-                    continue;
-                }
-            }
-        };
-
-        for block in blocks {
-            import_queue.verify(block.header.unwrap().0, ()).await;
-        }
+        let mut next_to_dl = 1;
 
         loop {
-            match import_queue.next_event().await {
-                verify::headers_chain_verify_async::Event::VerifyOutcome {
-                    scale_encoded_header,
-                    result,
-                    user_data,
-                } => {
-                    match result {
-                        Ok(s) if s.is_new_best => {}
-                        _ => continue,
-                    };
+            let blocks = loop {
+                let res = network
+                    .block_request(network::BlocksRequestConfig {
+                        start: network::BlocksRequestConfigStart::Number(
+                            NonZeroU64::new(next_to_dl).unwrap(),
+                        ),
+                        desired_count: u32::max_value(),
+                        direction: network::BlocksRequestDirection::Ascending,
+                        fields: network::BlocksRequestFields {
+                            header: true,
+                            body: false,
+                            justification: false,
+                        },
+                    })
+                    .await;
 
-                    let decoded = header::decode(&scale_encoded_header).unwrap();
-                    // TODO: remove this logging
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Imported block #{}!",
-                        decoded.number
-                    )));
+                match res {
+                    Ok(r) => break r,
+                    Err(_) => {
+                        wasm_timer::Delay::new(core::time::Duration::from_secs(1))
+                            .await
+                            .unwrap();
+                        continue;
+                    }
+                }
+            };
+
+            next_to_dl += u64::try_from(blocks.len()).unwrap();
+            let mut blocks_in_queue = blocks.len();
+
+            for block in blocks {
+                import_queue.verify(block.header.unwrap().0, ()).await;
+            }
+
+            while blocks_in_queue >= 1 {
+                match import_queue.next_event().await {
+                    verify::headers_chain_verify_async::Event::VerifyOutcome {
+                        scale_encoded_header,
+                        result,
+                        user_data,
+                    } => {
+                        blocks_in_queue -= 1;
+
+                        match result {
+                            Ok(s) if s.is_new_best => {}
+                            _ => continue,
+                        };
+
+                        let decoded = header::decode(&scale_encoded_header).unwrap();
+                        // TODO: remove this logging
+                        if decoded.number % 200 == 0 {
+                            web_sys::console::log_1(&JsValue::from_str(&format!(
+                                "Imported block #{}!",
+                                decoded.number
+                            )));
+                        }
+                    }
                 }
             }
         }
