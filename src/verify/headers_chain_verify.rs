@@ -178,7 +178,9 @@ impl HeadersChainVerify {
                 block1_slot_number,
                 now_from_unix_epoch: {
                     // TODO: is it reasonable to use the stdlib here?
-                    std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                    // TODO: this is commented out because of Wasm support
+                    core::time::Duration::new(0, 0)
                 },
                 block_header: decoded_header.clone(),
                 parent_block_header,

@@ -50,7 +50,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     };
 
     // TODO: remove `<()>`
-    verify::headers_chain_verify_async::HeadersChainVerifyAsync::<()>::new(
+    let import_queue = verify::headers_chain_verify_async::HeadersChainVerifyAsync::new(
         verify::headers_chain_verify_async::Config {
             chain_config: verify::headers_chain_verify::Config {
                 finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
@@ -72,6 +72,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             .iter()
             .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
             .collect::<Vec<_>>();
+        // TODO: remove this; temporary because bootnode is apparently full
         known_addresses.push((
             "12D3KooWQ9CbBChpa5HH5mADDgwRVdFUGXN3HHsBstbg7Gjhb4ge"
                 .parse()
@@ -95,7 +96,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     };
 
     wasm_bindgen_futures::spawn_local(async move {
-        let res = loop {
+        let blocks = loop {
             let res = network
                 .block_request(network::BlocksRequestConfig {
                     start: network::BlocksRequestConfigStart::Number(NonZeroU64::new(1).unwrap()),
@@ -120,7 +121,14 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             }
         };
 
-        panic!("{:?}", res);
+        for block in blocks {
+            import_queue.verify(block.header.unwrap().0, ()).await;
+        }
+
+        // TODO: remove
+        loop {
+            futures::pending!()
+        }
     });
 
     BrowserLightClient {}
