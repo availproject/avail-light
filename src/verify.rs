@@ -36,3 +36,4 @@ mod unsealed;
 pub mod header_body;
 pub mod header_only;
 pub mod headers_chain_verify;
+pub mod headers_chain_verify_async;

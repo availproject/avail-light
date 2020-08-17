@@ -112,6 +112,11 @@ impl HeadersChainVerify {
     pub fn verify(&mut self, scale_encoded_header: Vec<u8>) -> Result<VerifySuccess, VerifyError> {
         let decoded_header =
             header::decode(&scale_encoded_header).map_err(VerifyError::InvalidHeader)?;
+        let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
+
+        if self.blocks.find(|b| b.hash == hash).is_some() {
+            return Err(VerifyError::Duplicate);
+        }
 
         // Try to find the parent block in the tree of known blocks.
         // `Some` with an index of the parent within the tree of unfinalized blocks.
@@ -215,7 +220,6 @@ impl HeadersChainVerify {
 
         // Verification is successful, inserting in tree.
         let new_node_index = {
-            let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
             let babe_block1_slot_number = block1_slot_number.unwrap_or_else(|| {
                 debug_assert_eq!(decoded_header.number, 1);
                 import_success.slot_number
@@ -315,6 +319,8 @@ pub struct VerifySuccess<'a> {
 /// Error that can happen when importing a block.
 #[derive(Debug, derive_more::Display)]
 pub enum VerifyError {
+    /// Block is already known.
+    Duplicate,
     /// Error while decoding header.
     InvalidHeader(header::Error),
     /// The parent of the block isn't known.
