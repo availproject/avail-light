@@ -39,8 +39,8 @@ enum ToBackground<T> {
 enum ToForeground<T> {
     VerifyOutcome {
         scale_encoded_header: Vec<u8>,
-        // TODO: include result of the verification
         user_data: T,
+        result: Result<VerifySuccess, headers_chain_verify::VerifyErrorDetail>,
     },
 }
 
@@ -66,20 +66,25 @@ where
                             user_data,
                         }) => {
                             let outcome = queue.verify(scale_encoded_header);
-                            let scale_encoded_header = match outcome {
+                            let (scale_encoded_header, result) = match outcome {
                                 Ok(headers_chain_verify::VerifySuccess {
                                     scale_encoded_header,
+                                    is_new_best,
                                     ..
-                                }) => scale_encoded_header.to_owned(),
+                                }) => (
+                                    scale_encoded_header.to_owned(),
+                                    Ok(VerifySuccess { is_new_best }),
+                                ),
                                 Err(headers_chain_verify::VerifyError {
                                     scale_encoded_header,
-                                    ..
-                                }) => scale_encoded_header,
+                                    detail,
+                                }) => (scale_encoded_header, Err(detail)),
                             };
                             let _ = to_foreground
                                 .send(ToForeground::VerifyOutcome {
                                     scale_encoded_header,
                                     user_data,
+                                    result,
                                 })
                                 .await;
                         }
@@ -88,7 +93,7 @@ where
                         }
                     }
 
-                    // We do the equivalent of "std::thread::yield_now()" here to ensure that,
+                    // We do the equivalent of `std::thread::yield_now()` here to ensure that,
                     // especially in a single-threaded context, other tasks can potentially get
                     // progress.
                     // TODO: in the wasm-browser node, make sure that this doesn't slow things down too much
@@ -158,20 +163,31 @@ where
             ToForeground::VerifyOutcome {
                 scale_encoded_header,
                 user_data,
+                result,
             } => Event::VerifyOutcome {
                 scale_encoded_header,
                 user_data,
+                result,
             },
         }
     }
 }
 
+/// Event that happened in the verifications queue.
+#[derive(Debug)]
 pub enum Event<T> {
     VerifyOutcome {
         /// Copy of the header that was passed to [`HeadersChainVerifyAsync::verify`].
         scale_encoded_header: Vec<u8>,
         /// Custom value that was passed to [`HeadersChainVerifyAsync::verify`].
-        // TODO: include result of the verification
         user_data: T,
+        /// Whether the block import has been successful.
+        result: Result<VerifySuccess, headers_chain_verify::VerifyErrorDetail>,
     },
+}
+
+#[derive(Debug)]
+pub struct VerifySuccess {
+    /// If true, the block is considered as the new best block of the chain.
+    pub is_new_best: bool,
 }

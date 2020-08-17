@@ -130,8 +130,14 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             match import_queue.next_event().await {
                 verify::headers_chain_verify_async::Event::VerifyOutcome {
                     scale_encoded_header,
+                    result,
                     user_data,
                 } => {
+                    match result {
+                        Ok(s) if s.is_new_best => {}
+                        _ => continue,
+                    };
+
                     let decoded = header::decode(&scale_encoded_header).unwrap();
                     // TODO: remove this logging
                     web_sys::console::log_1(&JsValue::from_str(&format!(

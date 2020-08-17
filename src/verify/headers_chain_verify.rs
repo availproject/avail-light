@@ -262,46 +262,54 @@ impl HeadersChainVerify {
         };
 
         let is_new_best = if let Some(current_best) = self.current_best {
-            // In order to determine whether the new block is our new best:
-            //
-            // - Find the common ancestor between the current best and the new block.
-            // - Count the number of Babe primary slot claims between the common ancestor and the
-            //   current best.
-            // - Count the number of Babe primary slot claims between the common ancestor and the
-            //   new block.
-            // - If the number for the new block is strictly superior, then the new block is our
-            //   new best.
-            //
-            let (ascend, descend) = self.blocks.ascend_and_descend(current_best, new_node_index);
+            if self.blocks.is_ancestor(current_best, new_node_index) {
+                // A descendant is always preferred to its ancestor.
+                true
+            } else {
+                // In order to determine whether the new block is our new best:
+                //
+                // - Find the common ancestor between the current best and the new block.
+                // - Count the number of Babe primary slot claims between the common ancestor and the
+                //   current best.
+                // - Count the number of Babe primary slot claims between the common ancestor and the
+                //   new block.
+                // - If the number for the new block is strictly superior, then the new block is our
+                //   new best.
+                //
+                let (ascend, descend) =
+                    self.blocks.ascend_and_descend(current_best, new_node_index);
 
-            let curr_best_primary_slots: usize = ascend
-                .map(|i| {
-                    let decoded =
-                        header::decode(&self.blocks.get(i).unwrap().scale_encoded_header).unwrap();
-                    let decoded = babe::header_info::header_information(decoded).unwrap();
-                    if decoded.pre_runtime.is_primary() {
-                        1
-                    } else {
-                        0
-                    }
-                })
-                .sum();
+                let curr_best_primary_slots: usize = ascend
+                    .map(|i| {
+                        let decoded =
+                            header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
+                                .unwrap();
+                        let decoded = babe::header_info::header_information(decoded).unwrap();
+                        if decoded.pre_runtime.is_primary() {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .sum();
 
-            let new_block_primary_slots: usize = descend
-                .map(|i| {
-                    let decoded =
-                        header::decode(&self.blocks.get(i).unwrap().scale_encoded_header).unwrap();
-                    let decoded = babe::header_info::header_information(decoded).unwrap();
-                    if decoded.pre_runtime.is_primary() {
-                        1
-                    } else {
-                        0
-                    }
-                })
-                .sum();
+                let new_block_primary_slots: usize = descend
+                    .map(|i| {
+                        let decoded =
+                            header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
+                                .unwrap();
+                        let decoded = babe::header_info::header_information(decoded).unwrap();
+                        if decoded.pre_runtime.is_primary() {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .sum();
 
-            // Note the strictly superior. If there is an equality, we keep the current best.
-            new_block_primary_slots > curr_best_primary_slots
+                // Note the strictly superior. If there is an equality, we keep the current best.
+                new_block_primary_slots > curr_best_primary_slots
+            }
         } else {
             debug_assert_eq!(self.blocks.len(), 1);
             true

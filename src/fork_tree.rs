@@ -145,6 +145,31 @@ impl<T> ForkTree<T> {
         }
     }
 
+    /// Returns true if `maybe_ancestor` is an ancestor of `maybe_descendant`. Also returns `true`
+    /// if the two [`NodeIndex`] are equal.
+    ///
+    /// # Panic
+    ///
+    /// Panics if one of the [`NodeIndex`]s is invalid.
+    ///
+    pub fn is_ancestor(&self, maybe_ancestor: NodeIndex, maybe_descendant: NodeIndex) -> bool {
+        // Do this check separately, otherwise the code below would successfully return `true`
+        // if `maybe_ancestor` and `descendant` are invalid but equal.
+        assert!(self.nodes.contains(maybe_descendant.0));
+
+        let mut iter = maybe_descendant.0;
+        loop {
+            if iter == maybe_ancestor.0 {
+                return true;
+            }
+
+            iter = match self.nodes[iter].parent {
+                Some(p) => p,
+                None => return false,
+            };
+        }
+    }
+
     /// Returns two iterators: the first iterator enumerates the nodes from `node1` to the common
     /// ancestor of `node1` and `node2`. The second iterator enumerates the nodes from that common
     /// ancestor to `node2`. The common ancestor isn't included in either iterator. If `node1` and
