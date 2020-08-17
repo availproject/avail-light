@@ -21,6 +21,7 @@ pub struct Config {
 /// Holds state about the current state of the chain for the purpose of verifying headers.
 pub struct HeadersChainVerifyAsync<T> {
     to_background: Mutex<mpsc::Sender<ToBackground<T>>>,
+    from_background: Mutex<mpsc::Receiver<ToForeground<T>>>,
 }
 
 #[derive(Debug)]
@@ -34,6 +35,14 @@ enum ToBackground<T> {
     },
 }
 
+#[derive(Debug)]
+enum ToForeground<T> {
+    VerifyOutcome {
+        // TODO: include result of the verification
+        user_data: T,
+    },
+}
+
 impl<T> HeadersChainVerifyAsync<T>
 where
     T: Send + 'static,
@@ -41,6 +50,7 @@ where
     /// Initializes a new queue.
     pub fn new(config: Config) -> Self {
         let (to_background, mut from_foreground) = mpsc::channel(config.queue_size);
+        let (mut to_foreground, from_background) = mpsc::channel(16);
 
         (config.tasks_executor)({
             let mut queue = headers_chain_verify::HeadersChainVerify::new(config.chain_config);
@@ -55,6 +65,9 @@ where
                             user_data,
                         }) => {
                             queue.verify(scale_encoded_header);
+                            let _ = to_foreground
+                                .send(ToForeground::VerifyOutcome { user_data })
+                                .await;
                         }
                         Some(ToBackground::SetFinalizedBlock { block_hash }) => {
                             queue.set_finalized_block(&block_hash);
@@ -66,6 +79,7 @@ where
 
         HeadersChainVerifyAsync {
             to_background: Mutex::new(to_background),
+            from_background: Mutex::new(from_background),
         }
     }
 
@@ -97,4 +111,26 @@ where
             .await
             .unwrap();
     }
+
+    /// Returns the next event that happened in the queue.
+    ///
+    /// > **Note**: While it is technically possible to have multiple simultaneous pending calls
+    /// >           `next_event`, doing so would be unwise.
+    pub async fn next_event(&self) -> Event<T> {
+        let mut from_background = self.from_background.lock().await;
+        // `unwrap` can panic iff the background task has terminated, which is never supposed to
+        // happen for as long as the `HeadersChainVerifyAsync` is alive.
+        let event = from_background.next().await.unwrap();
+
+        match event {
+            ToForeground::VerifyOutcome { user_data } => Event::VerifyOutcome { user_data },
+        }
+    }
+}
+
+pub enum Event<T> {
+    VerifyOutcome {
+        // TODO: include result of the verification
+        user_data: T,
+    },
 }
