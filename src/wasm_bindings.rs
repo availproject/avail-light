@@ -6,7 +6,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{babe, chain_spec, database, network, verify};
+use crate::{babe, chain_spec, database, header, network, verify};
 
 use core::num::NonZeroU64;
 use libp2p::wasm_ext::{ffi, ExtTransport};
@@ -32,39 +32,40 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             .unwrap()
     };
 
-    let babe_genesis_config = {
-        let wasm_code = chain_spec
-            .genesis_storage()
-            .find(|(k, _)| k == b":code")
-            .unwrap()
-            .1
-            .to_owned();
-
-        babe::BabeGenesisConfiguration::from_runtime_code(&wasm_code, |k| {
-            chain_spec
+    let import_queue = {
+        let babe_genesis_config = {
+            let wasm_code = chain_spec
                 .genesis_storage()
-                .find(|(k2, _)| *k2 == k)
-                .map(|(_, v)| v.to_owned())
-        })
-        .unwrap()
-    };
+                .find(|(k, _)| k == b":code")
+                .unwrap()
+                .1
+                .to_owned();
 
-    // TODO: remove `<()>`
-    let import_queue = verify::headers_chain_verify_async::HeadersChainVerifyAsync::new(
-        verify::headers_chain_verify_async::Config {
-            chain_config: verify::headers_chain_verify::Config {
-                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                    chain_spec.genesis_storage(),
-                ),
-                babe_finalized_block1_slot_number: None, // TODO:
-                babe_known_epoch_information: Vec::new(), // TODO:
-                babe_genesis_config,
-                capacity: 16,
+            babe::BabeGenesisConfiguration::from_runtime_code(&wasm_code, |k| {
+                chain_spec
+                    .genesis_storage()
+                    .find(|(k2, _)| *k2 == k)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .unwrap()
+        };
+
+        verify::headers_chain_verify_async::HeadersChainVerifyAsync::new(
+            verify::headers_chain_verify_async::Config {
+                chain_config: verify::headers_chain_verify::Config {
+                    finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                        chain_spec.genesis_storage(),
+                    ),
+                    babe_finalized_block1_slot_number: None, // TODO:
+                    babe_known_epoch_information: Vec::new(), // TODO:
+                    babe_genesis_config,
+                    capacity: 16,
+                },
+                queue_size: 256,
+                tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
             },
-            queue_size: 256,
-            tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-        },
-    );
+        )
+    };
 
     let network = {
         let mut known_addresses = chain_spec
@@ -125,9 +126,20 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             import_queue.verify(block.header.unwrap().0, ()).await;
         }
 
-        // TODO: remove
         loop {
-            futures::pending!()
+            match import_queue.next_event().await {
+                verify::headers_chain_verify_async::Event::VerifyOutcome {
+                    scale_encoded_header,
+                    user_data,
+                } => {
+                    let decoded = header::decode(&scale_encoded_header).unwrap();
+                    // TODO: remove this logging
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Imported block #{}!",
+                        decoded.number
+                    )));
+                }
+            }
         }
     });
 

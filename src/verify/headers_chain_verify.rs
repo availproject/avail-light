@@ -110,12 +110,23 @@ impl HeadersChainVerify {
 
     /// Verifies the given block.
     pub fn verify(&mut self, scale_encoded_header: Vec<u8>) -> Result<VerifySuccess, VerifyError> {
-        let decoded_header =
-            header::decode(&scale_encoded_header).map_err(VerifyError::InvalidHeader)?;
+        let decoded_header = match header::decode(&scale_encoded_header) {
+            Ok(h) => h,
+            Err(err) => {
+                return Err(VerifyError {
+                    scale_encoded_header,
+                    detail: VerifyErrorDetail::InvalidHeader(err),
+                })
+            }
+        };
+
         let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
 
         if self.blocks.find(|b| b.hash == hash).is_some() {
-            return Err(VerifyError::Duplicate);
+            return Err(VerifyError {
+                scale_encoded_header,
+                detail: VerifyErrorDetail::Duplicate,
+            });
         }
 
         // Try to find the parent block in the tree of known blocks.
@@ -125,13 +136,16 @@ impl HeadersChainVerify {
             None
         } else {
             // TODO: cache the best block? most likely, the new block is either a child or a sibling of the best block
-            Some(
-                self.blocks
-                    .find(|b| b.hash == *decoded_header.parent_hash)
-                    .ok_or_else(|| VerifyError::UnknownParent {
-                        parent_hash: *decoded_header.parent_hash,
-                    })?,
-            )
+            let parent_hash = *decoded_header.parent_hash;
+            match self.blocks.find(|b| b.hash == parent_hash) {
+                Some(parent) => Some(parent),
+                None => {
+                    return Err(VerifyError {
+                        scale_encoded_header,
+                        detail: VerifyErrorDetail::UnknownParent { parent_hash },
+                    })
+                }
+            }
         };
 
         let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
@@ -190,7 +204,10 @@ impl HeadersChainVerify {
                 match process {
                     verify::header_only::Verify::Finished(Ok(result)) => break result,
                     verify::header_only::Verify::Finished(Err(err)) => {
-                        return Err(VerifyError::VerificationFailed(err))
+                        return Err(VerifyError {
+                            scale_encoded_header,
+                            detail: VerifyErrorDetail::VerificationFailed(err),
+                        });
                     }
                     verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
                     verify::header_only::Verify::EpochInformation(epoch_info_rq) => {
@@ -210,10 +227,16 @@ impl HeadersChainVerify {
                             {
                                 process = epoch_info_rq.inject_epoch(&info.info).run();
                             } else {
-                                return Err(VerifyError::UnknownBabeEpoch);
+                                return Err(VerifyError {
+                                    scale_encoded_header,
+                                    detail: VerifyErrorDetail::UnknownBabeEpoch,
+                                });
                             }
                         } else {
-                            return Err(VerifyError::UnknownBabeEpoch);
+                            return Err(VerifyError {
+                                scale_encoded_header,
+                                detail: VerifyErrorDetail::UnknownBabeEpoch,
+                            });
                         }
                     }
                 }
@@ -288,16 +311,18 @@ impl HeadersChainVerify {
             self.current_best = Some(new_node_index);
         }
 
-        Ok(VerifySuccess {
-            is_new_best,
-            scale_encoded_header: header::decode(
-                &&self
-                    .blocks
-                    .get(new_node_index)
-                    .unwrap()
-                    .scale_encoded_header,
-            )
-            .unwrap(),
+        Ok({
+            let scale_encoded_header = &self
+                .blocks
+                .get(new_node_index)
+                .unwrap()
+                .scale_encoded_header[..];
+
+            VerifySuccess {
+                is_new_best,
+                scale_encoded_header,
+                header: header::decode(scale_encoded_header).unwrap(),
+            }
         })
     }
 
@@ -315,12 +340,24 @@ pub struct VerifySuccess<'a> {
     /// True if the verified block is considered as the new "best" block.
     pub is_new_best: bool,
     /// Same value as the parameter passed to [`HeadersChainVerify::verify`].
-    pub scale_encoded_header: header::HeaderRef<'a>,
+    pub scale_encoded_header: &'a [u8],
+    /// Same value as the parameter passed to [`HeadersChainVerify::verify`].
+    pub header: header::HeaderRef<'a>,
 }
 
 /// Error that can happen when importing a block.
 #[derive(Debug, derive_more::Display)]
-pub enum VerifyError {
+#[display(fmt = "{}", detail)]
+pub struct VerifyError {
+    /// Same value as the parameter passed to [`HeadersChainVerify::verify`].
+    pub scale_encoded_header: Vec<u8>,
+    /// Reason for the failure.
+    pub detail: VerifyErrorDetail,
+}
+
+/// Error that can happen when importing a block.
+#[derive(Debug, derive_more::Display)]
+pub enum VerifyErrorDetail {
     /// Block is already known.
     Duplicate,
     /// Error while decoding header.

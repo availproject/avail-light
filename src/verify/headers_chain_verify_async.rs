@@ -5,7 +5,7 @@
 use super::headers_chain_verify;
 
 use alloc::boxed::Box;
-use core::pin::Pin;
+use core::{pin::Pin, task::Poll};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 
 /// Configuration for the [`HeadersChainVerifyAsync`].
@@ -38,6 +38,7 @@ enum ToBackground<T> {
 #[derive(Debug)]
 enum ToForeground<T> {
     VerifyOutcome {
+        scale_encoded_header: Vec<u8>,
         // TODO: include result of the verification
         user_data: T,
     },
@@ -64,9 +65,22 @@ where
                             scale_encoded_header,
                             user_data,
                         }) => {
-                            queue.verify(scale_encoded_header);
+                            let outcome = queue.verify(scale_encoded_header);
+                            let scale_encoded_header = match outcome {
+                                Ok(headers_chain_verify::VerifySuccess {
+                                    scale_encoded_header,
+                                    ..
+                                }) => scale_encoded_header.to_owned(),
+                                Err(headers_chain_verify::VerifyError {
+                                    scale_encoded_header,
+                                    ..
+                                }) => scale_encoded_header,
+                            };
                             let _ = to_foreground
-                                .send(ToForeground::VerifyOutcome { user_data })
+                                .send(ToForeground::VerifyOutcome {
+                                    scale_encoded_header,
+                                    user_data,
+                                })
                                 .await;
                         }
                         Some(ToBackground::SetFinalizedBlock { block_hash }) => {
@@ -77,7 +91,20 @@ where
                     // We do the equivalent of "std::thread::yield_now()" here to ensure that,
                     // especially in a single-threaded context, other tasks can potentially get
                     // progress.
-                    futures::pending!();
+                    // TODO: in the wasm-browser node, make sure that this doesn't slow things down too much
+                    future::poll_fn({
+                        let mut ready = false;
+                        move |cx| {
+                            if ready {
+                                Poll::Ready(())
+                            } else {
+                                ready = true;
+                                cx.waker().wake_by_ref();
+                                Poll::Pending
+                            }
+                        }
+                    })
+                    .await;
                 }
             })
         });
@@ -128,13 +155,22 @@ where
         let event = from_background.next().await.unwrap();
 
         match event {
-            ToForeground::VerifyOutcome { user_data } => Event::VerifyOutcome { user_data },
+            ToForeground::VerifyOutcome {
+                scale_encoded_header,
+                user_data,
+            } => Event::VerifyOutcome {
+                scale_encoded_header,
+                user_data,
+            },
         }
     }
 }
 
 pub enum Event<T> {
     VerifyOutcome {
+        /// Copy of the header that was passed to [`HeadersChainVerifyAsync::verify`].
+        scale_encoded_header: Vec<u8>,
+        /// Custom value that was passed to [`HeadersChainVerifyAsync::verify`].
         // TODO: include result of the verification
         user_data: T,
     },
