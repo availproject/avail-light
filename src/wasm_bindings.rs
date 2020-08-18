@@ -144,6 +144,8 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                     } => {
                         blocks_in_queue -= 1;
 
+                        database.insert_header(&scale_encoded_header).await.unwrap();
+
                         match result {
                             Ok(s) if s.is_new_best => {}
                             _ => continue,

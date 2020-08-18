@@ -5,10 +5,12 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
+use crate::header;
+
 use futures::channel::oneshot;
 use js_sys::{Array, ArrayBuffer, Uint8Array};
 use wasm_bindgen::{prelude::*, JsCast as _};
-use web_sys::{DomException, Event, IdbDatabase, IdbTransactionMode};
+use web_sys::{DomException, Event, IdbDatabase, IdbTransaction, IdbTransactionMode};
 
 /// An open database.
 pub struct Database {
@@ -73,6 +75,65 @@ impl Database {
         }
     }
 
+    /// Inserts the given header in the database.
+    pub async fn insert_header(&self, scale_encoded_header: &[u8]) -> Result<(), AccessError> {
+        let key = {
+            let bytes = header::hash_from_scale_encoded_header(scale_encoded_header);
+            let hex = hex::encode(&bytes);
+            JsValue::from_str(&hex)
+        };
+
+        let number = {
+            let height = header::decode(&scale_encoded_header).unwrap().number;
+            JsValue::from_f64(height as f64)
+        };
+
+        let value = {
+            let hex = hex::encode(scale_encoded_header);
+            JsValue::from_str(&hex)
+        };
+
+        let transaction = {
+            let obj_stores_list = js_sys::Array::new();
+            obj_stores_list.push(&JsValue::from_str("block-headers"));
+            obj_stores_list.push(&JsValue::from_str("best-chain"));
+
+            self.inner
+                .transaction_with_str_sequence_and_mode(
+                    obj_stores_list.as_ref(),
+                    IdbTransactionMode::Readwrite,
+                )
+                .unwrap()
+        };
+
+        match transaction
+            .object_store("block-headers")
+            .unwrap()
+            .add_with_key(&value, &key) // Note: the order of parameters is indeed value then key
+        {
+            Ok(_) => {}
+            Err(err) => {
+                let err = err.dyn_into::<DomException>().unwrap();
+                if err.name() == "ConstraintError" {
+                    // Entry already exists in database.
+                    return Ok(());
+                }
+                return Err(AccessError::TransactionError(err));
+            }
+        }
+
+        // TODO: don't insert if not best; this needs brainstorming because of reorgs
+        transaction
+            .object_store("best-chain")
+            .unwrap()
+            .put_with_key(&key, &number) // Note: the order of parameters is indeed value then key
+            .unwrap();
+
+        wait_transaction(transaction)
+            .await
+            .map_err(AccessError::TransactionError)
+    }
+
     /// Reads one value at the given key.
     ///
     /// # Panic
@@ -131,14 +192,38 @@ impl Drop for Database {
 /// Called by the `onupgradeneeded` handle of the database.
 fn create_schema(database: &IdbDatabase, old_version: u32) {
     if old_version <= 0 {
-        // Keys are block hashes, and values are SCALE-encoded block headers.
+        // Keys are hex-encoded block hashes, and values are hex-encoded SCALE-encoded block
+        // headers.
         database.create_object_store("block-headers").unwrap();
+
+        // Keys are block numbers, and values are hex-encoded block hashes.
+        database.create_object_store("best-chain").unwrap();
     }
 
     // Note: add new versions with something like:
     // if current_version <= N {
     //     database.create_object_store("...").unwrap();
     // }
+}
+
+/// Waits for the given transaction to complete.
+async fn wait_transaction(transaction: IdbTransaction) -> Result<(), DomException> {
+    let (tx, rx) = oneshot::channel();
+
+    let on_finish = Closure::once_into_js(move |_: &Event| {
+        let _ = tx.send(());
+    });
+
+    transaction.set_oncomplete(Some(&on_finish.dyn_ref().unwrap()));
+    transaction.set_onabort(Some(&on_finish.dyn_ref().unwrap()));
+    transaction.set_onerror(Some(&on_finish.dyn_ref().unwrap()));
+
+    let _ = rx.await.unwrap();
+
+    match transaction.error() {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 /// Error when opening the database.
@@ -153,9 +238,12 @@ pub enum OpenError {
     OpenError(JsValue),
 }
 
+/// Error accessing the database.
 #[derive(Debug, derive_more::Display)]
 pub enum AccessError {
     Corrupted(CorruptedError),
+    #[display(fmt = "Error while committing transaction: {:?}", _0)]
+    TransactionError(DomException),
 }
 
 #[derive(Debug, derive_more::Display)]
