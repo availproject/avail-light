@@ -94,7 +94,11 @@ pub async fn run_sync_task(mut config: Config) {
             // TODO: for debugging only
             if let Some(justification) = block.justification {
                 let j = crate::justification::decode(&justification).unwrap();
-                println!("{:?}", j);
+                println!(
+                    "rx at {:?} {:?}",
+                    crate::header::decode(&header.0).unwrap().number,
+                    j
+                );
             }
 
             config

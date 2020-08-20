@@ -59,12 +59,29 @@ pub struct JustificationRef<'a> {
     pub precommits: PrecommitsRef<'a>,
 }
 
+/// Decoded justification.
+// TODO: document and explain
+// TODO: #[derive(Debug)]
+pub struct Justification {
+    pub round: u64,
+    pub precommits: Vec<Precommit>,
+}
+
+impl<'a> From<JustificationRef<'a>> for Justification {
+    fn from(j: JustificationRef<'a>) -> Justification {
+        Justification {
+            round: j.round,
+            precommits: j.precommits.iter().map(Into::into).collect(),
+        }
+    }
+}
+
 pub struct PrecommitsRef<'a> {
     inner: &'a [u8],
 }
 
 impl<'a> PrecommitsRef<'a> {
-    pub fn iter(&self) -> impl Iterator<Item = PrecommitRef<'a>> + 'a {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = PrecommitRef<'a>> + 'a {
         debug_assert_eq!(self.inner.len() % PRECOMMIT_ENCODED_LEN, 0);
         self.inner
             .chunks(PRECOMMIT_ENCODED_LEN)
@@ -80,14 +97,17 @@ impl<'a> fmt::Debug for PrecommitsRef<'a> {
 
 #[derive(Debug)]
 pub struct PrecommitRef<'a> {
+    /// Hash of the block concerned by the pre-commit.
     pub target_hash: &'a [u8; 32],
+    /// Height of the block concerned by the pre-commit.
     pub target_number: u32,
 
     /// Ed25519 signature made with [`PrecommitRef::authority_public_key`].
     ///
     /// Guaranteed to be 64 bytes. We can't use a `&[u8; 64]` because of limitations in the Rust
     /// type system.
-    // TODO: mention what is signed
+    // TODO: document what is being signed
+    // TODO: use &[u8; 64] when possible
     pub signature: &'a [u8],
 
     /// Authority that signed the precommit. Must be part of the authority set for the
@@ -107,6 +127,39 @@ impl<'a> PrecommitRef<'a> {
             signature: &encoded[36..100],
             authority_public_key: TryFrom::try_from(&encoded[100..132]).unwrap(),
         })
+    }
+}
+
+// TODO: Debug
+pub struct Precommit {
+    /// Hash of the block concerned by the pre-commit.
+    pub target_hash: [u8; 32],
+    /// Height of the block concerned by the pre-commit.
+    pub target_number: u32,
+
+    /// Ed25519 signature made with [`PrecommitRef::authority_public_key`].
+    // TODO: document what is being signed
+    // TODO: use &[u8; 64] when possible
+    pub signature: [u8; 64],
+
+    /// Authority that signed the precommit. Must be part of the authority set for the
+    /// justification to be valid.
+    pub authority_public_key: [u8; 32],
+}
+
+impl<'a> From<PrecommitRef<'a>> for Precommit {
+    fn from(pc: PrecommitRef<'a>) -> Precommit {
+        Precommit {
+            target_hash: *pc.target_hash,
+            target_number: pc.target_number,
+            signature: {
+                // TODO: ugh
+                let mut v = [0; 64];
+                v.copy_from_slice(pc.signature);
+                v
+            },
+            authority_public_key: *pc.authority_public_key,
+        }
     }
 }
 
