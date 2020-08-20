@@ -60,7 +60,7 @@ pub async fn run_sync_task(mut config: Config) {
                 fields: network::BlocksRequestFields {
                     header: true,
                     body: true,
-                    justification: false,
+                    justification: true,
                 },
             };
 
@@ -90,6 +90,12 @@ pub async fn run_sync_task(mut config: Config) {
             let (tx, rx) = oneshot::channel();
             let header = block.header.unwrap();
             let body = block.body.unwrap();
+
+            // TODO: for debugging only
+            if let Some(justification) = block.justification {
+                let j = crate::justification::decode(&justification).unwrap();
+                println!("{:?}", j);
+            }
 
             config
                 .to_block_import

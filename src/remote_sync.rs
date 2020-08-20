@@ -1,14 +1,15 @@
-//! State machine for syncing blocks from a remote.
+//! State machine for syncing blocks from remotes.
 //!
 //! The [`RemoteSync`] struct manages a list of *sources* representing potential sources of
 //! blocks.
 //!
-//! The word "remote" typically means "a node on the network", but this struct is in no way
-//! specific to downloading blocks over a network.
+//! The words "source" or "remote" typically designate a node on the peer-to-peer network, but
+//! this module is in no way specific to downloading blocks over a network.
 //!
 //! # Context
 //!
 //! In a blockchain network, blocks can appear at any time.
+// TODO: finish doc ^
 
 use crate::fork_tree;
 
