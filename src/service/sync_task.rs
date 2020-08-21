@@ -91,14 +91,12 @@ pub async fn run_sync_task(mut config: Config) {
             let header = block.header.unwrap();
             let body = block.body.unwrap();
 
-            // TODO: for debugging only
+            // TODO: for debugging `justification::verify`; remove this
             if let Some(justification) = block.justification {
-                let j = crate::justification::decode(&justification).unwrap();
-                println!(
-                    "rx at {:?} {:?}",
-                    crate::header::decode(&header.0).unwrap().number,
-                    j
-                );
+                crate::justification::verify::verify(crate::justification::verify::Config {
+                    scale_encoded_justification: &justification,
+                })
+                .unwrap();
             }
 
             config

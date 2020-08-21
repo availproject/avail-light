@@ -44,6 +44,7 @@ atomic = "0.4.6"
 blake2-rfc = { version = "0.2.18", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
+ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch"] }
 either = "1.5.3"
 env_logger = "0.7.1"
 fnv = "1.0"
