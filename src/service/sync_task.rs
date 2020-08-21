@@ -93,11 +93,13 @@ pub async fn run_sync_task(mut config: Config) {
 
             // TODO: for debugging `justification::verify`; remove this
             if let Some(justification) = block.justification {
+                println!("justification from header {:?}", crate::header::decode(&header.0).unwrap());
                 crate::justification::verify::verify(crate::justification::verify::Config {
                     scale_encoded_justification: &justification,
                     authorities_set_id: 0, // TODO: wrong
                 })
                 .unwrap();
+                println!("verified justification");
             }
 
             config

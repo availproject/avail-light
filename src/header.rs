@@ -189,7 +189,7 @@ impl<'a> HeaderRef<'a> {
 }
 
 /// Generic header digest.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DigestRef<'a> {
     /// Number of log items in the header.
     /// Must always match the actual number of items in [`DigestRef::digest`]. The validity must
@@ -245,6 +245,12 @@ impl<'a> DigestRef<'a> {
             self.logs()
                 .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
         )
+    }
+}
+
+impl<'a> fmt::Debug for DigestRef<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list().entries(self.logs()).finish()
     }
 }
 
@@ -501,7 +507,7 @@ impl<'a> BabeNextEpochRef<'a> {
 }
 
 /// List of authorities in a BABE context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BabeAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
 
 impl<'a> Iterator for BabeAuthoritiesIter<'a> {
@@ -538,6 +544,12 @@ impl<'a> cmp::PartialEq<BabeAuthoritiesIter<'a>> for BabeAuthoritiesIter<'a> {
 }
 
 impl<'a> cmp::Eq for BabeAuthoritiesIter<'a> {}
+
+impl<'a> fmt::Debug for BabeAuthoritiesIter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list().entries(self.clone()).finish()
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BabeAuthorityRef<'a> {
@@ -1050,7 +1062,7 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
 }
 
 /// List of authorities in a GrandPa context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GrandpaAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
 
 impl<'a> Iterator for GrandpaAuthoritiesIter<'a> {
@@ -1087,6 +1099,12 @@ impl<'a> cmp::PartialEq<GrandpaAuthoritiesIter<'a>> for GrandpaAuthoritiesIter<'
 }
 
 impl<'a> cmp::Eq for GrandpaAuthoritiesIter<'a> {}
+
+impl<'a> fmt::Debug for GrandpaAuthoritiesIter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list().entries(self.clone()).finish()
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct GrandpaAuthorityRef<'a> {
