@@ -95,6 +95,7 @@ pub async fn run_sync_task(mut config: Config) {
             if let Some(justification) = block.justification {
                 crate::justification::verify::verify(crate::justification::verify::Config {
                     scale_encoded_justification: &justification,
+                    authorities_set_id: 0, // TODO: wrong
                 })
                 .unwrap();
             }

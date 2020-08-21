@@ -41,6 +41,8 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, E
 
     Ok(JustificationRef {
         round,
+        target_hash,
+        target_number,
         precommits: PrecommitsRef {
             inner: precommits_data,
         },
@@ -54,6 +56,8 @@ const PRECOMMIT_ENCODED_LEN: usize = 32 + 4 + 64 + 32;
 #[derive(Debug)]
 pub struct JustificationRef<'a> {
     pub round: u64,
+    pub target_hash: &'a [u8; 32],
+    pub target_number: u32,
     pub precommits: PrecommitsRef<'a>,
 }
 
@@ -62,6 +66,8 @@ pub struct JustificationRef<'a> {
 #[derive(Debug)]
 pub struct Justification {
     pub round: u64,
+    pub target_hash: [u8; 32],
+    pub target_number: u32,
     pub precommits: Vec<Precommit>,
 }
 
@@ -69,6 +75,8 @@ impl<'a> From<JustificationRef<'a>> for Justification {
     fn from(j: JustificationRef<'a>) -> Justification {
         Justification {
             round: j.round,
+            target_hash: *j.target_hash,
+            target_number: j.target_number,
             precommits: j.precommits.iter().map(Into::into).collect(),
         }
     }
