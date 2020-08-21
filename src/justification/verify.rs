@@ -1,27 +1,43 @@
 use crate::justification::decode;
 use core::convert::TryFrom as _;
 
+/// Configuration for a justification verification process.
 #[derive(Debug)]
-pub struct Config<'a> {
-    /// Justification in SCALE encoding.
-    pub scale_encoded_justification: &'a [u8],
+pub struct Config<'a, I> {
+    /// Justification to verify.
+    pub justification: decode::JustificationRef<'a>,
 
     // TODO: document
     pub authorities_set_id: u64,
+
+    /// List of authorities that are allowed to emit pre-commits for the block referred to by
+    /// the justification. Must implement `Iterator<Item = impl AsRef<[u8]>> + Clone`, where
+    /// each item is the public key of an authority.
+    pub authorities_list: I,
 }
 
-/// Verifies that a justification is valid.
-pub fn verify<'a>(config: Config<'a>) -> Result<(), Error> {
-    let decoded = decode::decode(&config.scale_encoded_justification).map_err(Error::Decode)?;
+// TODO: rewrite as a generator-style process?
 
+/// Verifies that a justification is valid.
+pub fn verify<'a>(
+    config: Config<'a, impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
+) -> Result<(), Error> {
     // Verifying all the signatures together brings better performances than verifying them one
     // by one.
-    let mut messages = Vec::with_capacity(decoded.precommits.iter().len());
-    let mut signatures = Vec::with_capacity(decoded.precommits.iter().len());
-    let mut public_keys = Vec::with_capacity(decoded.precommits.iter().len());
+    let mut messages = Vec::with_capacity(config.justification.precommits.iter().len());
+    let mut signatures = Vec::with_capacity(config.justification.precommits.iter().len());
+    let mut public_keys = Vec::with_capacity(config.justification.precommits.iter().len());
 
-    for precommit in decoded.precommits.iter() {
-        // TODO: must check whether public key is actually authority
+    for precommit in config.justification.precommits.iter() {
+        if !config
+            .authorities_list
+            .clone()
+            .any(|a| a.as_ref() == precommit.authority_public_key)
+        {
+            // TODO: restore
+            //return Err(Error::NotAuthority(*precommit.authority_public_key));
+        }
+
         // TODO: must check signed block ancestry using `votes_ancestries`
 
         messages.push({
@@ -29,7 +45,7 @@ pub fn verify<'a>(config: Config<'a>) -> Result<(), Error> {
             msg.push(1u8); // This `1` indicates which kind of message is being signed.
             msg.extend_from_slice(&precommit.target_hash[..]);
             msg.extend_from_slice(&u32::to_le_bytes(precommit.target_number)[..]);
-            msg.extend_from_slice(&u64::to_le_bytes(decoded.round)[..]);
+            msg.extend_from_slice(&u64::to_le_bytes(config.justification.round)[..]);
             msg.extend_from_slice(&u64::to_le_bytes(config.authorities_set_id)[..]);
             debug_assert_eq!(msg.len(), msg.capacity());
             msg
@@ -67,10 +83,11 @@ pub fn verify<'a>(config: Config<'a>) -> Result<(), Error> {
 /// Error that can happen while verifying a justification.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
-    /// Error while decoding the justification.
-    Decode(decode::Error),
     /// One of the public keys is invalid.
     BadPublicKey,
     /// One of the signatures can't be verified.
     BadSignature,
+    /// One of the public keys isn't in the list of authorities.
+    #[display(fmt = "One of the public keys isn't in the list of authorities")]
+    NotAuthority([u8; 32]),
 }

@@ -13,5 +13,3 @@
 
 pub mod decode;
 pub mod verify;
-
-pub use decode::decode;
