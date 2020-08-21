@@ -1,4 +1,4 @@
-use crate::justification::decode;
+use crate::finality::justification::decode;
 use core::convert::TryFrom as _;
 
 /// Configuration for a justification verification process.

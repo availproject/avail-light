@@ -97,11 +97,16 @@ pub async fn run_sync_task(mut config: Config) {
                     "justification from header {:?}",
                     crate::header::decode(&header.0).unwrap()
                 );
-                crate::justification::verify::verify(crate::justification::verify::Config {
-                    justification: crate::justification::decode::decode(&justification).unwrap(),
-                    authorities_set_id: 0, // TODO: wrong
-                    authorities_list: core::iter::empty::<Vec<u8>>(),
-                })
+                crate::finality::justification::verify::verify(
+                    crate::finality::justification::verify::Config {
+                        justification: crate::finality::justification::decode::decode(
+                            &justification,
+                        )
+                        .unwrap(),
+                        authorities_set_id: 0, // TODO: wrong
+                        authorities_list: core::iter::empty::<Vec<u8>>(),
+                    },
+                )
                 .unwrap();
                 println!("verified justification");
             }

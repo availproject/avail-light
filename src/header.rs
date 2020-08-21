@@ -925,7 +925,10 @@ pub enum GrandpaConsensusLogRef<'a> {
     /// This should be a pure function: i.e. as long as the runtime can interpret
     /// the digest type it should return the same result regardless of the current
     /// state.
-    ForcedChange(u32, GrandpaScheduledChangeRef<'a>),
+    ForcedChange {
+        reset_block_height: u32,
+        change: GrandpaScheduledChangeRef<'a>,
+    },
 
     /// Note that the authority with given index is disabled until the next change.
     OnDisabled(u64),
@@ -947,9 +950,13 @@ impl<'a> GrandpaConsensusLogRef<'a> {
                 GrandpaScheduledChangeRef::from_slice(&slice[1..])?,
             ),
             Some(2) => {
-                let n = u32::decode_all(&slice[1..9]).map_err(Error::DigestItemDecodeError)?;
-                let changes = GrandpaScheduledChangeRef::from_slice(&slice[9..])?;
-                GrandpaConsensusLogRef::ForcedChange(n, changes)
+                let reset_block_height =
+                    u32::decode_all(&slice[1..9]).map_err(Error::DigestItemDecodeError)?;
+                let change = GrandpaScheduledChangeRef::from_slice(&slice[9..])?;
+                GrandpaConsensusLogRef::ForcedChange {
+                    reset_block_height,
+                    change,
+                }
             }
             Some(3) => GrandpaConsensusLogRef::OnDisabled(
                 u64::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
@@ -980,7 +987,7 @@ impl<'a> GrandpaConsensusLogRef<'a> {
 
         let index = iter::once(One(match self {
             GrandpaConsensusLogRef::ScheduledChange(_) => [1],
-            GrandpaConsensusLogRef::ForcedChange(_, _) => [2],
+            GrandpaConsensusLogRef::ForcedChange { .. } => [2],
             GrandpaConsensusLogRef::OnDisabled(_) => [3],
             GrandpaConsensusLogRef::Pause(_) => [4],
             GrandpaConsensusLogRef::Resume(_) => [5],
@@ -990,7 +997,7 @@ impl<'a> GrandpaConsensusLogRef<'a> {
             GrandpaConsensusLogRef::ScheduledChange(change) => {
                 either::Either::Left(change.scale_encoding().map(either::Either::Left))
             }
-            GrandpaConsensusLogRef::ForcedChange(n, change) => todo!(), // TODO:
+            GrandpaConsensusLogRef::ForcedChange { .. } => todo!(), // TODO:
             GrandpaConsensusLogRef::OnDisabled(n) => either::Either::Right(iter::once(
                 either::Either::Right(parity_scale_codec::Encode::encode(n)),
             )),
