@@ -147,7 +147,7 @@ impl<T> Chain<T> {
                 None => {
                     return Err(VerifyError {
                         scale_encoded_header,
-                        detail: VerifyErrorDetail::UnknownParent { parent_hash },
+                        detail: VerifyErrorDetail::BadParent { parent_hash },
                     })
                 }
             }
@@ -436,7 +436,7 @@ pub enum VerifyErrorDetail {
     InvalidHeader(header::Error),
     /// The parent of the block isn't known.
     #[display(fmt = "The parent of the block isn't known.")]
-    UnknownParent {
+    BadParent {
         /// Hash of the current block in question.
         parent_hash: [u8; 32],
     },
