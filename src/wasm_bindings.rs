@@ -6,7 +6,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{babe, chain_spec, database, header, network, verify};
+use crate::{babe, chain, chain_spec, database, header, network};
 
 use core::{convert::TryFrom as _, num::NonZeroU64};
 use futures::prelude::*;
@@ -51,8 +51,8 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             .unwrap()
         };
 
-        verify::headers_async::ChainAsync::new(verify::headers_async::Config {
-            chain_config: verify::headers::Config {
+        chain::headers_async::ChainAsync::new(chain::headers_async::Config {
+            chain_config: chain::headers::Config {
                 finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
                     chain_spec.genesis_storage(),
                 ),
@@ -135,7 +135,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
 
             while blocks_in_queue >= 1 {
                 match import_queue.next_event().await {
-                    verify::headers_async::Event::VerifyOutcome {
+                    chain::headers_async::Event::VerifyOutcome {
                         scale_encoded_header,
                         result,
                         user_data,
