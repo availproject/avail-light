@@ -46,6 +46,11 @@ impl<T> ForkTree<T> {
         self.nodes.len()
     }
 
+    /// Returns an iterator to all the node values without any specific order.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.nodes.iter().map(|n| &n.1.data)
+    }
+
     /// Returns the value of the node with the given index.
     pub fn get(&self, index: NodeIndex) -> Option<&T> {
         self.nodes.get(index.0).map(|n| &n.data)

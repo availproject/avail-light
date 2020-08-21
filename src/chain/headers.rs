@@ -23,9 +23,13 @@
 //! >           final, and rebuild a new [`Chain`] if that assumption turned out to
 //! >           not be true.
 
+// TODO: rethink this doc ^
+
 use crate::{babe, fork_tree, header, verify};
+use core::fmt;
 
 /// Configuration for the [`Chain`].
+// TODO: #[derive(Debug)]
 pub struct Config {
     /// SCALE encoding of the header of the highest known finalized block.
     ///
@@ -73,7 +77,6 @@ pub struct Chain<T> {
     current_best: Option<fork_tree::NodeIndex>,
 }
 
-#[derive(Debug)]
 struct Block<T> {
     // TODO: should be owned header
     scale_encoded_header: Vec<u8>,
@@ -111,6 +114,12 @@ impl<T> Chain<T> {
     }
 
     /// Verifies the given block.
+    ///
+    /// The verification is performed in the context of the chain. In particular, the
+    /// verification will fail if the parent block isn't already in the chain.
+    ///
+    /// If the verification succeeds, an [`Insert`] object might be returned which can be used to
+    /// then insert the block in the chain.
     #[must_use]
     pub fn verify(
         &mut self,
@@ -137,10 +146,16 @@ impl<T> Chain<T> {
         // Try to find the parent block in the tree of known blocks.
         // `Some` with an index of the parent within the tree of unfinalized blocks.
         // `None` means that the parent is the finalized block.
-        let parent_tree_index = if *decoded_header.parent_hash == self.finalized_block_hash {
+        //
+        // The parent hash is first checked against `self.current_best`, as it is most likely that
+        // new blocks are built on top of the current best.
+        let parent_tree_index = if self.current_best.map_or(false, |best| {
+            *decoded_header.parent_hash == self.blocks.get(best).unwrap().hash
+        }) {
+            Some(self.current_best.unwrap())
+        } else if *decoded_header.parent_hash == self.finalized_block_hash {
             None
         } else {
-            // TODO: cache the best block? most likely, the new block is either a child or a sibling of the best block
             let parent_hash = *decoded_header.parent_hash;
             match self.blocks.find(|b| b.hash == parent_hash) {
                 Some(parent) => Some(parent),
@@ -167,8 +182,9 @@ impl<T> Chain<T> {
         };
 
         // Try to find the slot number of block 1.
-        // If block 1 is finalized, this information is found in `babe_finalized_block1_slot_number`,
-        // otherwise we find the information in the parent node in the fork tree.
+        // If block 1 is finalized, this information is found in
+        // `babe_finalized_block1_slot_number`, otherwise the information is found in the parent
+        // node in the fork tree.
         let block1_slot_number = if let Some(val) = self.babe_finalized_block1_slot_number {
             debug_assert!(parent_tree_index.map_or(true, |p_idx| self
                 .blocks
@@ -350,7 +366,19 @@ impl<T> Chain<T> {
     }
 }
 
+impl<T> fmt::Debug for Chain<T>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_map()
+            .entries(self.blocks.iter().map(|v| (&v.hash, &v.user_data)))
+            .finish()
+    }
+}
+
 ///
+#[derive(Debug)]
 pub enum VerifySuccess<'a, T> {
     /// Block is already known.
     Duplicate {
@@ -359,7 +387,7 @@ pub enum VerifySuccess<'a, T> {
     },
     /// Block wasn't known and is ready to be inserted.
     Insert {
-        /// True if the verified block is considered as the new "best" block.
+        /// True if the verified block will become the new "best" block after being inserted.
         is_new_best: bool,
         /// Use this struct to insert the block in the chain after its successful verification.
         insert: Insert<'a, T>,
@@ -409,6 +437,18 @@ impl<'a, T> Insert<'a, T> {
             header: header::decode(scale_encoded_header).unwrap(),
         }
     }
+
+    /// Destroys the object without inserting the block in the chain. Returns the SCALE-encoded
+    /// block header.
+    pub fn into_scale_encoded_header(self) -> Vec<u8> {
+        self.scale_encoded_header
+    }
+}
+
+impl<'a, T> fmt::Debug for Insert<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Insert").finish()
+    }
 }
 
 /// Verification is successful.
@@ -443,6 +483,7 @@ pub enum VerifyErrorDetail {
     /// The block verification has failed. The block is invalid and should be thrown away.
     VerificationFailed(verify::header_only::Error),
     /// Babe epoch information couldn't be determined.
+    // TODO: how can that happen?
     UnknownBabeEpoch,
 }
 
