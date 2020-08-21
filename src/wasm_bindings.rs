@@ -84,7 +84,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
 
         let worker = network::Network::start(network::Config {
             known_addresses,
-            chain_spec_protocol_id: chain_spec.protocol_id().unwrap().as_bytes().to_vec(),
+            chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
             local_genesis_hash: crate::calculate_genesis_block_hash(chain_spec.genesis_storage())
                 .into(),

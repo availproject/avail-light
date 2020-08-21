@@ -72,7 +72,7 @@ impl<'a> From<&'a ChainSpec> for ChainInfoConfig<'a> {
                 .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
                 .collect(),
 
-            chain_spec_protocol_id: specs.protocol_id().unwrap(),
+            chain_spec_protocol_id: specs.protocol_id(),
             local_genesis_hash: crate::calculate_genesis_block_hash(specs.genesis_storage()).into(),
         }
     }

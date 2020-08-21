@@ -53,14 +53,14 @@ impl ChainSpec {
         Ok(ChainSpec { client_spec })
     }
 
-    /// Name of the chain that is specified.
+    /// Returns the name of the chain. Meant to be displayed to the user.
     pub fn name(&self) -> &str {
         &self.client_spec.name
     }
 
-    /// Spec id. This is similar to the name, but a bit more "system-looking". For example, if the
-    /// name is "Flaming Fir 7", then the id could be "flamingfir7". To be used in file system
-    /// paths for example.
+    /// Returns the identifier of the chain. Similar to the name, but a bit more "system-looking".
+    /// For example, if the name is "Flaming Fir 7", then the id could be "flamingfir7". To be
+    /// used for example in file system paths.
     pub fn id(&self) -> &str {
         &self.client_spec.id
     }
@@ -81,10 +81,17 @@ impl ChainSpec {
             .flat_map(|ep| ep.iter().map(|e| &e.0))
     }
 
-    /// Network protocol id. Used to prevent nodes from multiple networks from connecting with each
-    /// other. Returns `None` if the chain specs don't specify any.
-    pub fn protocol_id(&self) -> Option<&str> {
-        self.client_spec.protocol_id.as_ref().map(String::as_str)
+    /// Returns the network protocol id that uniquely identifies a chain. Used to prevent nodes
+    /// from different blockchain networks from accidentally connecting to each other.
+    ///
+    /// It is possible for the JSON chain specs to not specify any protocol id, in which case a
+    /// default value is returned.
+    pub fn protocol_id(&self) -> &str {
+        self.client_spec
+            .protocol_id
+            .as_ref()
+            .map(String::as_str)
+            .unwrap_or("sup")
     }
 
     /// Returns the list of storage keys and values of the genesis block.
@@ -93,10 +100,11 @@ impl ChainSpec {
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }
 
-    /// The chain specs contain a list of arbitrary properties, such as the name of the token
-    /// of the number of decimals.
-    /// The values of these properties is never interpreted by the local node, but they are
-    /// usually served through the RPC node.
+    /// Returns a list of arbitrary properties contained in the chain specs, such as the name of
+    /// the token or the number of decimals.
+    ///
+    /// The value of these properties is never interpreted by the local node, but can be served
+    /// to a UI.
     pub fn properties(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
         self.client_spec
             .properties
