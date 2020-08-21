@@ -51,21 +51,19 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             .unwrap()
         };
 
-        verify::headers_chain_verify_async::HeadersChainVerifyAsync::new(
-            verify::headers_chain_verify_async::Config {
-                chain_config: verify::headers_chain_verify::Config {
-                    finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                        chain_spec.genesis_storage(),
-                    ),
-                    babe_finalized_block1_slot_number: None, // TODO:
-                    babe_known_epoch_information: Vec::new(), // TODO:
-                    babe_genesis_config,
-                    capacity: 16,
-                },
-                queue_size: 256,
-                tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
+        verify::headers_async::ChainAsync::new(verify::headers_async::Config {
+            chain_config: verify::headers::Config {
+                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                    chain_spec.genesis_storage(),
+                ),
+                babe_finalized_block1_slot_number: None, // TODO:
+                babe_known_epoch_information: Vec::new(), // TODO:
+                babe_genesis_config,
+                capacity: 16,
             },
-        )
+            queue_size: 256,
+            tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
+        })
     };
 
     let network = {
@@ -137,7 +135,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
 
             while blocks_in_queue >= 1 {
                 match import_queue.next_event().await {
-                    verify::headers_chain_verify_async::Event::VerifyOutcome {
+                    verify::headers_async::Event::VerifyOutcome {
                         scale_encoded_header,
                         result,
                         user_data,

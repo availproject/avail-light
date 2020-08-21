@@ -85,6 +85,7 @@
 extern crate alloc;
 
 pub mod babe;
+pub mod chain;
 pub mod chain_spec;
 pub mod database;
 pub mod executor;

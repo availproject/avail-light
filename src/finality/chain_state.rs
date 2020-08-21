@@ -1,49 +1,33 @@
-//! Holds the state of the finality of a chain.
+//! State of the finalization of a chain.
+//!
+//! The [`FinalizationChainState`] struct holds the state of the chain when it comes to
+//! finalization.
 
-pub struct FinalityChainState {}
-/*
-impl FinalityChainState {
-    pub fn
+pub struct FinalizationChainState {
+    finalized_height: u64,
+    scheduled_changes: Vec<(u64, Vec<Authority>)>,
 }
 
-    /// Schedule an authority set change.
-    ///
-    /// The earliest digest of this type in a single block will be respected,
-    /// provided that there is no `ForcedChange` digest. If there is, then the
-    /// `ForcedChange` will take precedence.
-    ///
-    /// No change should be scheduled if one is already and the delay has not
-    /// passed completely.
-    ///
-    /// This should be a pure function: i.e. as long as the runtime can interpret
-    /// the digest type it should return the same result regardless of the current
-    /// state.
-    ScheduledChange(GrandpaScheduledChangeRef<'a>),
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Authority {
+    /// Ed25519 public key.
+    pub public_key: [u8; 32],
 
-    /// Force an authority set change.
+    /// Arbitrary number indicating the weight of the authority.
     ///
-    /// Forced changes are applied after a delay of _imported_ blocks,
-    /// while pending changes are applied after a delay of _finalized_ blocks.
-    ///
-    /// The earliest digest of this type in a single block will be respected,
-    /// with others ignored.
-    ///
-    /// No change should be scheduled if one is already and the delay has not
-    /// passed completely.
-    ///
-    /// This should be a pure function: i.e. as long as the runtime can interpret
-    /// the digest type it should return the same result regardless of the current
-    /// state.
-    ForcedChange(u32, GrandpaScheduledChangeRef<'a>),
+    /// This value can only be compared to other weight values.
+    pub weight: u64,
+}
 
-    /// Note that the authority with given index is disabled until the next change.
-    OnDisabled(u64),
+impl FinalizationChainState {
+    pub fn set_finalized_block(&mut self, new_height: u64) {
+        self.finalized_height = new_height;
+    }
 
-    /// A signal to pause the current authority set after the given delay.
-    /// After finalizing the block at _delay_ the authorities should stop voting.
-    Pause(u32),
-
-    /// A signal to resume the current authority set after the given delay.
-    /// After authoring the block at _delay_ the authorities should resume voting.
-    Resume(u32),
-*/
+    pub fn add_scheduled_change(
+        &mut self,
+        triggered_block_height: u64,
+        authorities: Vec<Authority>,
+    ) {
+    }
+}

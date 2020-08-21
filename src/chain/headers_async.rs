@@ -1,17 +1,17 @@
-//! Asynchronous version of [../headers_chain_verify].
+//! Asynchronous version of [../headers].
 //!
-//! Please consult the documentation of [../headers_chain_verify].
+//! Please consult the documentation of [../headers].
 
-use super::headers_chain_verify;
+use super::headers;
 
 use alloc::boxed::Box;
 use core::{pin::Pin, task::Poll};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 
-/// Configuration for the [`HeadersChainVerifyAsync`].
+/// Configuration for the [`ChainAsync`].
 pub struct Config {
     /// Configuration for the actual queue.
-    pub chain_config: headers_chain_verify::Config,
+    pub chain_config: headers::Config,
     /// Number of elements in the queue to verify.
     pub queue_size: usize,
     /// How to spawn other background tasks.
@@ -19,7 +19,7 @@ pub struct Config {
 }
 
 /// Holds state about the current state of the chain for the purpose of verifying headers.
-pub struct HeadersChainVerifyAsync<T> {
+pub struct ChainAsync<T> {
     to_background: Mutex<mpsc::Sender<ToBackground<T>>>,
     from_background: Mutex<mpsc::Receiver<ToForeground<T>>>,
 }
@@ -40,11 +40,11 @@ enum ToForeground<T> {
     VerifyOutcome {
         scale_encoded_header: Vec<u8>,
         user_data: T,
-        result: Result<VerifySuccess, headers_chain_verify::VerifyErrorDetail>,
+        result: Result<VerifySuccess, headers::VerifyErrorDetail>,
     },
 }
 
-impl<T> HeadersChainVerifyAsync<T>
+impl<T> ChainAsync<T>
 where
     T: Send + 'static,
 {
@@ -54,7 +54,7 @@ where
         let (mut to_foreground, from_background) = mpsc::channel(16);
 
         (config.tasks_executor)({
-            let mut queue = headers_chain_verify::HeadersChainVerify::new(config.chain_config);
+            let mut queue = headers::Chain::new(config.chain_config);
             Box::pin(async move {
                 loop {
                     match from_foreground.next().await {
@@ -67,15 +67,23 @@ where
                         }) => {
                             let outcome = queue.verify(scale_encoded_header);
                             let (scale_encoded_header, result) = match outcome {
-                                Ok(headers_chain_verify::VerifySuccess {
-                                    scale_encoded_header,
+                                Ok(headers::VerifySuccess::Insert {
+                                    insert,
                                     is_new_best,
-                                    ..
+                                }) => {
+                                    let inserted = insert.insert(());
+                                    (
+                                        inserted.scale_encoded_header.to_owned(),
+                                        Ok(VerifySuccess { is_new_best }),
+                                    )
+                                }
+                                Ok(headers::VerifySuccess::Duplicate {
+                                    scale_encoded_header,
                                 }) => (
-                                    scale_encoded_header.to_owned(),
-                                    Ok(VerifySuccess { is_new_best }),
+                                    scale_encoded_header,
+                                    Ok(VerifySuccess { is_new_best: false }), // TODO: weird
                                 ),
-                                Err(headers_chain_verify::VerifyError {
+                                Err(headers::VerifyError {
                                     scale_encoded_header,
                                     detail,
                                 }) => (scale_encoded_header, Err(detail)),
@@ -114,7 +122,7 @@ where
             })
         });
 
-        HeadersChainVerifyAsync {
+        ChainAsync {
             to_background: Mutex::new(to_background),
             from_background: Mutex::new(from_background),
         }
@@ -139,7 +147,7 @@ where
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
     /// that block will fail.
     ///
-    /// The block must have been passed to [`HeadersChainVerifyAsync::verify`].
+    /// The block must have been passed to [`ChainAsync::verify`].
     pub async fn set_finalized_block(&self, block_hash: [u8; 32]) {
         let mut to_background = self.to_background.lock().await;
         // TODO: this blocks if queue is full?
@@ -156,7 +164,7 @@ where
     pub async fn next_event(&self) -> Event<T> {
         let mut from_background = self.from_background.lock().await;
         // `unwrap` can panic iff the background task has terminated, which is never supposed to
-        // happen for as long as the `HeadersChainVerifyAsync` is alive.
+        // happen for as long as the `ChainAsync` is alive.
         let event = from_background.next().await.unwrap();
 
         match event {
@@ -177,12 +185,12 @@ where
 #[derive(Debug)]
 pub enum Event<T> {
     VerifyOutcome {
-        /// Copy of the header that was passed to [`HeadersChainVerifyAsync::verify`].
+        /// Copy of the header that was passed to [`ChainAsync::verify`].
         scale_encoded_header: Vec<u8>,
-        /// Custom value that was passed to [`HeadersChainVerifyAsync::verify`].
+        /// Custom value that was passed to [`ChainAsync::verify`].
         user_data: T,
         /// Whether the block import has been successful.
-        result: Result<VerifySuccess, headers_chain_verify::VerifyErrorDetail>,
+        result: Result<VerifySuccess, headers::VerifyErrorDetail>,
     },
 }
 
