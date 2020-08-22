@@ -41,6 +41,11 @@ impl<T> ForkTree<T> {
         }
     }
 
+    /// Shrink the capacity of the tree as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.nodes.shrink_to_fit()
+    }
+
     /// Returns the number of elements in the tree.
     pub fn len(&self) -> usize {
         self.nodes.len()

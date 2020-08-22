@@ -54,7 +54,7 @@ pub struct Config {
     /// Configuration for BABE, retreived from the genesis block.
     pub babe_genesis_config: babe::BabeGenesisConfiguration,
 
-    /// Pre-allocated size of the chain, in number of blocks.
+    /// Pre-allocated size of the chain, in number of non-finalized blocks.
     pub capacity: usize,
 }
 
@@ -118,6 +118,16 @@ impl<T> Chain<T> {
         }
     }
 
+    /// Returns the number of non-finalized blocks in the chain.
+    pub fn len(&self) -> usize {
+        self.blocks.len()
+    }
+
+    /// Shrink the capacity of the chain as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.blocks.shrink_to_fit()
+    }
+
     /// Verifies the given block.
     ///
     /// The verification is performed in the context of the chain. In particular, the
@@ -126,7 +136,7 @@ impl<T> Chain<T> {
     /// If the verification succeeds, an [`Insert`] object might be returned which can be used to
     /// then insert the block in the chain.
     #[must_use]
-    pub fn verify(
+    pub fn verify_header(
         &mut self,
         scale_encoded_header: Vec<u8>,
     ) -> Result<VerifySuccess<T>, VerifyError> {

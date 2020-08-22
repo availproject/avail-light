@@ -130,7 +130,9 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             let mut blocks_in_queue = blocks.len();
 
             for block in blocks {
-                import_queue.verify(block.header.unwrap().0, ()).await;
+                import_queue
+                    .verify_header(block.header.unwrap().0, ())
+                    .await;
             }
 
             while blocks_in_queue >= 1 {

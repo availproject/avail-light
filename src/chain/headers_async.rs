@@ -65,7 +65,7 @@ where
                             scale_encoded_header,
                             user_data,
                         }) => {
-                            let outcome = queue.verify(scale_encoded_header);
+                            let outcome = queue.verify_header(scale_encoded_header);
                             let (scale_encoded_header, result) = match outcome {
                                 Ok(headers::VerifySuccess::Insert {
                                     insert,
@@ -132,7 +132,7 @@ where
     ///
     /// In addition to the header to verify, an opaque `user_data` can be associated with the
     /// header and will be provided back during the feedback.
-    pub async fn verify(&self, scale_encoded_header: Vec<u8>, user_data: T) {
+    pub async fn verify_header(&self, scale_encoded_header: Vec<u8>, user_data: T) {
         let mut to_background = self.to_background.lock().await;
         // TODO: this blocks if queue is full?
         to_background
