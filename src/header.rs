@@ -462,16 +462,17 @@ impl<'a> ExactSizeIterator for LogsIter<'a> {}
 // TODO: document
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DigestItemRef<'a> {
-    ChangesTrieRoot(&'a [u8; 32]),
     BabePreDigest(BabePreDigestRef<'a>),
     BabeConsensus(BabeConsensusLogRef<'a>),
-    GrandpaConsensus(GrandpaConsensusLogRef<'a>),
-
     /// Block signature made using the BABE consensus engine.
     ///
     /// Guaranteed to be 64 bytes long.
     // TODO: we don't use a &[u8; 64] because traits aren't defined on this type; need to fix after Rust gets proper support or use a newtype
     BabeSeal(&'a [u8]),
+
+    GrandpaConsensus(GrandpaConsensusLogRef<'a>),
+
+    ChangesTrieRoot(&'a [u8; 32]),
     ChangesTrieSignal(ChangesTrieSignal),
 }
 
@@ -552,6 +553,44 @@ impl<'a> DigestItemRef<'a> {
             }
         }
     }
+}
+
+/// Available changes trie signals.
+// TODO: review documentation
+#[derive(Debug, PartialEq, Eq, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
+pub enum ChangesTrieSignal {
+    /// New changes trie configuration is enacted, starting from **next block**.
+    ///
+    /// The block that emits this signal will contain changes trie (CT) that covers
+    /// blocks range [BEGIN; current block], where BEGIN is (order matters):
+    /// - LAST_TOP_LEVEL_DIGEST_BLOCK+1 if top level digest CT has ever been created
+    ///   using current configuration AND the last top level digest CT has been created
+    ///   at block LAST_TOP_LEVEL_DIGEST_BLOCK;
+    /// - LAST_CONFIGURATION_CHANGE_BLOCK+1 if there has been CT configuration change
+    ///   before and the last configuration change happened at block
+    ///   LAST_CONFIGURATION_CHANGE_BLOCK;
+    /// - 1 otherwise.
+    NewConfiguration(Option<ChangesTrieConfiguration>),
+}
+
+/// Substrate changes trie configuration.
+// TODO: review documentation
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, parity_scale_codec::Encode, parity_scale_codec::Decode,
+)]
+pub struct ChangesTrieConfiguration {
+    /// Interval (in blocks) at which level1-digests are created. Digests are not
+    /// created when this is less or equal to 1.
+    pub digest_interval: u32,
+
+    /// Maximal number of digest levels in hierarchy. 0 means that digests are not
+    /// created at all (even level1 digests). 1 means only level1-digests are created.
+    /// 2 means that every digest_interval^2 there will be a level2-digest, and so on.
+    /// Please ensure that maximum digest interval (i.e. digest_interval^digest_levels)
+    /// is within `u32` limits. Otherwise you'll never see digests covering such intervals
+    /// && maximal digests interval will be truncated to the last interval that fits
+    /// `u32` limits.
+    pub digest_levels: u32,
 }
 
 /// Decodes a single digest log item. On success, returns the item and the data that remains

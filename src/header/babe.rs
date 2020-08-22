@@ -89,6 +89,40 @@ impl<'a> BabeConsensusLogRef<'a> {
     }
 }
 
+impl<'a> From<&'a BabeConsensusLog> for BabeConsensusLogRef<'a> {
+    fn from(a: &'a BabeConsensusLog) -> Self {
+        match a {
+            BabeConsensusLog::NextEpochData(v) => BabeConsensusLogRef::NextEpochData(v.into()),
+            BabeConsensusLog::OnDisabled(v) => BabeConsensusLogRef::OnDisabled(*v),
+            BabeConsensusLog::NextConfigData(v) => BabeConsensusLogRef::NextConfigData(v.clone()),
+        }
+    }
+}
+
+/// A consensus log item for BABE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BabeConsensusLog {
+    /// The epoch has changed. This provides information about the _next_
+    /// epoch - information about the _current_ epoch (i.e. the one we've just
+    /// entered) should already be available earlier in the chain.
+    NextEpochData(BabeNextEpoch),
+    /// Disable the authority with given index.
+    OnDisabled(u32),
+    /// The epoch has changed, and the epoch after the current one will
+    /// enact different epoch configurations.
+    NextConfigData(BabeNextConfig),
+}
+
+impl<'a> From<BabeConsensusLogRef<'a>> for BabeConsensusLog {
+    fn from(a: BabeConsensusLogRef<'a>) -> Self {
+        match a {
+            BabeConsensusLogRef::NextEpochData(v) => BabeConsensusLog::NextEpochData(v.into()),
+            BabeConsensusLogRef::OnDisabled(v) => BabeConsensusLog::OnDisabled(v),
+            BabeConsensusLogRef::NextConfigData(v) => BabeConsensusLog::NextConfigData(v.clone()),
+        }
+    }
+}
+
 /// Information about the next epoch. This is broadcast in the first block
 /// of the epoch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,44 +341,6 @@ pub enum BabeAllowedSlots {
     PrimaryAndSecondaryPlainSlots,
     /// Allow primary and secondary VRF slot claims.
     PrimaryAndSecondaryVRFSlots,
-}
-
-/// Available changes trie signals.
-// TODO: review documentation
-#[derive(Debug, PartialEq, Eq, Clone, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub enum ChangesTrieSignal {
-    /// New changes trie configuration is enacted, starting from **next block**.
-    ///
-    /// The block that emits this signal will contain changes trie (CT) that covers
-    /// blocks range [BEGIN; current block], where BEGIN is (order matters):
-    /// - LAST_TOP_LEVEL_DIGEST_BLOCK+1 if top level digest CT has ever been created
-    ///   using current configuration AND the last top level digest CT has been created
-    ///   at block LAST_TOP_LEVEL_DIGEST_BLOCK;
-    /// - LAST_CONFIGURATION_CHANGE_BLOCK+1 if there has been CT configuration change
-    ///   before and the last configuration change happened at block
-    ///   LAST_CONFIGURATION_CHANGE_BLOCK;
-    /// - 1 otherwise.
-    NewConfiguration(Option<ChangesTrieConfiguration>),
-}
-
-/// Substrate changes trie configuration.
-// TODO: review documentation
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, parity_scale_codec::Encode, parity_scale_codec::Decode,
-)]
-pub struct ChangesTrieConfiguration {
-    /// Interval (in blocks) at which level1-digests are created. Digests are not
-    /// created when this is less or equal to 1.
-    pub digest_interval: u32,
-
-    /// Maximal number of digest levels in hierarchy. 0 means that digests are not
-    /// created at all (even level1 digests). 1 means only level1-digests are created.
-    /// 2 means that every digest_interval^2 there will be a level2-digest, and so on.
-    /// Please ensure that maximum digest interval (i.e. digest_interval^digest_levels)
-    /// is within `u32` limits. Otherwise you'll never see digests covering such intervals
-    /// && maximal digests interval will be truncated to the last interval that fits
-    /// `u32` limits.
-    pub digest_levels: u32,
 }
 
 /// A BABE pre-runtime digest. This contains all data required to validate a
