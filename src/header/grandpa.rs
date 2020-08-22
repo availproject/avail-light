@@ -194,6 +194,24 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
     }
 }
 
+/// A scheduled change of authority set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrandpaScheduledChange {
+    /// The new authorities after the change, along with their respective weights.
+    pub next_authorities: Vec<GrandpaAuthority>,
+    /// The number of blocks to delay.
+    pub delay: u32,
+}
+
+impl<'a> From<GrandpaScheduledChangeRef<'a>> for GrandpaScheduledChange {
+    fn from(gp: GrandpaScheduledChangeRef<'a>) -> Self {
+        GrandpaScheduledChange {
+            next_authorities: gp.next_authorities.map(Into::into).collect(),
+            delay: gp.delay,
+        }
+    }
+}
+
 /// List of authorities in a GrandPa context.
 #[derive(Clone)]
 pub struct GrandpaAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
@@ -256,8 +274,46 @@ impl<'a> GrandpaAuthorityRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        iter::once(either::Either::Right(self.public_key)).chain(iter::once(either::Either::Left(
-            self.weight.to_le_bytes(),
-        )))
+        iter::once(either::Either::Right(self.public_key))
+            .chain(iter::once(either::Either::Left(self.weight.to_le_bytes())))
+    }
+}
+
+impl<'a> From<&'a GrandpaAuthority> for GrandpaAuthorityRef<'a> {
+    fn from(gp: &'a GrandpaAuthority) -> Self {
+        GrandpaAuthorityRef {
+            public_key: &gp.public_key,
+            weight: gp.weight,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct GrandpaAuthority {
+    /// Ed25519 public key.
+    pub public_key: [u8; 32],
+
+    /// Arbitrary number indicating the weight of the authority.
+    ///
+    /// This value can only be compared to other weight values.
+    pub weight: u64,
+}
+
+impl GrandpaAuthority {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        GrandpaAuthorityRef::from(self).scale_encoding()
+    }
+}
+
+impl<'a> From<GrandpaAuthorityRef<'a>> for GrandpaAuthority {
+    fn from(gp: GrandpaAuthorityRef<'a>) -> Self {
+        GrandpaAuthority {
+            public_key: *gp.public_key,
+            weight: gp.weight,
+        }
     }
 }

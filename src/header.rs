@@ -29,7 +29,6 @@
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, fmt, iter};
-use parity_scale_codec::{Decode as _, DecodeAll as _};
 
 mod babe;
 mod grandpa;
