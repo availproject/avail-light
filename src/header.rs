@@ -87,33 +87,14 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
     let extrinsics_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];
 
-    let digest_logs_len: parity_scale_codec::Compact<u64> =
-        parity_scale_codec::Decode::decode(&mut scale_encoded)
-            .map_err(Error::DigestLenDecodeError)?;
-    let digest = scale_encoded;
-
-    // Iterate through the log items to see if anything is wrong.
-    {
-        let mut digest = digest;
-        for _ in 0..digest_logs_len.0 {
-            let (_, next) = decode_item(digest)?;
-            digest = next;
-        }
-
-        if !digest.is_empty() {
-            return Err(Error::TooLong);
-        }
-    }
+    let digest = DigestRef::from_slice(scale_encoded)?;
 
     Ok(HeaderRef {
         parent_hash,
         number: number.0,
         state_root,
         extrinsics_root,
-        digest: DigestRef {
-            digest_logs_len: digest_logs_len.0,
-            digest,
-        },
+        digest,
     })
 }
 
@@ -250,6 +231,31 @@ impl<'a> DigestRef<'a> {
             self.logs()
                 .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
         )
+    }
+
+    /// Try to decode a list of digest items, from their SCALE encoding.
+    fn from_slice(mut scale_encoded: &'a [u8]) -> Result<Self, Error> {
+        let digest_logs_len: parity_scale_codec::Compact<u64> =
+            parity_scale_codec::Decode::decode(&mut scale_encoded)
+                .map_err(Error::DigestLenDecodeError)?;
+
+        // Iterate through the log items to see if anything is wrong.
+        {
+            let mut digest = scale_encoded;
+            for _ in 0..digest_logs_len.0 {
+                let (_, next) = decode_item(digest)?;
+                digest = next;
+            }
+
+            if !digest.is_empty() {
+                return Err(Error::TooLong);
+            }
+        }
+
+        Ok(DigestRef {
+            digest_logs_len: digest_logs_len.0,
+            digest: scale_encoded,
+        })
     }
 }
 
