@@ -26,6 +26,46 @@
 //! under this encoding that block headers are for example transferred over the network or stored
 //! in the database. Use the [`decode`] function in order to decompose a SCALE-encoded header
 //! into a usable [`HeaderRef`].
+//!
+//! # Example
+//!
+//! ```
+//! // Example encoded header.
+//! let scale_encoded_header: &[u8] = &[
+//!     246, 90, 76, 223, 195, 230, 202, 111, 120, 197, 6, 9, 90, 164, 170, 8, 194, 57, 184, 75,
+//!     95, 67, 240, 169, 62, 244, 171, 95, 237, 85, 86, 1, 122, 169, 8, 0, 138, 149, 72, 185, 56,
+//!     62, 30, 76, 117, 134, 123, 62, 4, 132, 23, 143, 200, 150, 171, 42, 63, 19, 173, 21, 89, 98,
+//!     38, 175, 43, 132, 69, 75, 96, 168, 82, 108, 19, 182, 130, 230, 161, 43, 7, 225, 20, 229,
+//!     92, 103, 57, 188, 151, 170, 16, 8, 126, 122, 98, 131, 121, 43, 181, 19, 180, 228, 8, 6, 66,
+//!     65, 66, 69, 181, 1, 3, 1, 0, 0, 0, 250, 8, 207, 15, 0, 0, 0, 0, 86, 157, 105, 202, 151,
+//!     254, 95, 169, 249, 150, 219, 194, 195, 143, 181, 39, 43, 87, 179, 157, 152, 191, 40, 255,
+//!     23, 66, 18, 249, 93, 170, 58, 15, 178, 210, 130, 18, 66, 244, 232, 119, 74, 190, 92, 145,
+//!     33, 192, 195, 176, 125, 217, 124, 33, 167, 97, 64, 63, 149, 200, 220, 191, 64, 134, 232, 9,
+//!     3, 178, 186, 150, 130, 105, 25, 148, 218, 35, 208, 226, 112, 85, 184, 237, 23, 243, 86, 81,
+//!     27, 127, 188, 223, 162, 244, 26, 77, 234, 116, 24, 11, 5, 66, 65, 66, 69, 1, 1, 112, 68,
+//!     111, 83, 145, 78, 98, 96, 247, 64, 179, 237, 113, 175, 125, 177, 110, 39, 185, 55, 156,
+//!     197, 177, 225, 226, 90, 238, 223, 115, 193, 185, 35, 67, 216, 98, 25, 55, 225, 224, 19, 43,
+//!     255, 226, 125, 22, 160, 33, 182, 222, 213, 150, 40, 108, 108, 124, 254, 140, 228, 155, 29,
+//!     250, 193, 65, 140,
+//! ];
+//!
+//! // Decoding the header can panic if it is malformed. Do not unwrap if, for example, the
+//! // header has been received from a remote!
+//! let decoded_header = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+//!
+//! println!("Block hash: {:?}", decoded_header.hash());
+//! println!("Header number: {}", decoded_header.number);
+//! println!("Parent block hash: {:?}", decoded_header.parent_hash);
+//! for item in decoded_header.digest.logs() {
+//!     println!("Digest item: {:?}", item);
+//! }
+//!
+//! // Call `scale_encoding` to produce the header encoding.
+//! let reencoded: Vec<u8> = decoded_header
+//!     .scale_encoding()
+//!     .fold(Vec::new(), |mut a, b| { a.extend_from_slice(b.as_ref()); a });
+//! assert_eq!(reencoded, scale_encoded_header);
+//! ```
 
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, fmt, iter};
