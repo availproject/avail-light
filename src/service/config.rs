@@ -1,5 +1,5 @@
 use super::{block_import_task, database_task, network_task, sync_task, Service};
-use crate::{babe, chain_spec::ChainSpec, database, network};
+use crate::{chain_spec::ChainSpec, database, network, verify::babe};
 
 use alloc::sync::Arc;
 use core::{future::Future, pin::Pin, sync::atomic};

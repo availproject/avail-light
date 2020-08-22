@@ -6,7 +6,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{babe, chain, chain_spec, database, header, network};
+use crate::{chain, chain_spec, database, header, network, verify::babe};
 
 use core::{convert::TryFrom as _, num::NonZeroU64};
 use futures::prelude::*;

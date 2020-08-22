@@ -1,5 +1,5 @@
 use super::unsealed;
-use crate::{babe, executor, header, trie::calculate_root};
+use crate::{executor, header, trie::calculate_root, verify::babe};
 
 use core::time::Duration;
 use hashbrown::HashMap;

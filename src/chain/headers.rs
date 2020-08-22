@@ -25,7 +25,7 @@
 
 // TODO: rethink this doc ^
 
-use crate::{babe, finality::justification, fork_tree, header, verify};
+use crate::{finality::justification, fork_tree, header, verify::{self, babe}};
 use core::fmt;
 
 /// Configuration for the [`Chain`].

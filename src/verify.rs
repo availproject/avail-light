@@ -33,5 +33,6 @@
 
 mod unsealed;
 
+pub mod babe;
 pub mod header_body;
 pub mod header_only;

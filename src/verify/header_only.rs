@@ -1,4 +1,4 @@
-use crate::{babe, header};
+use crate::{header, verify::babe};
 
 use core::time::Duration;
 
