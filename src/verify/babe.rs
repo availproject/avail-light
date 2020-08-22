@@ -84,8 +84,9 @@
 //!
 //! The information about an epoch `N` is provided by the first block of the epoch `N-1`.
 //!
-//! Because of this, we need to special-case epochs 0 and 1. The information about these two
-//! epochs in particular is contained in the chain-wide BABE configuration found in the runtime.
+//! Because of this, we need to special-case epoch 0. The information about epoch 0 is contained
+//! in the chain-wide BABE configuration found in the runtime. The first block of epoch 0 is the
+//! block number #1. The information about epoch 1 is therefore contained in block #1.
 //!
 //! # Usage
 //!
@@ -309,7 +310,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 
     // Intermediary object representing the state of the verification at this point.
     let pending = PendingVerify {
-        c: config.genesis_configuration.c(),
+        c: config.genesis_configuration.epoch0_configuration().c,
         pre_seal_hash,
         seal_signature,
         epoch_change,
@@ -346,6 +347,7 @@ pub enum SuccessOrPending {
 #[must_use]
 pub struct PendingVerify {
     /// Value of `c` found in the Babe configuration.
+    // TODO: should be asked from user, since it can change
     c: (u64, u64),
     /// Hash of the block header without its seal.
     pre_seal_hash: [u8; 32],

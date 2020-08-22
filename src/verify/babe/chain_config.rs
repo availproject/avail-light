@@ -99,26 +99,20 @@ impl BabeGenesisConfiguration {
         Ok((outcome, vm.into_prototype()))
     }
 
-    // TODO: docs
-    // TODO: should be part of a `BabeConfiguration` struct instead
-    pub fn c(&self) -> (u64, u64) {
-        self.inner.c
-    }
-
-    // TODO: docs
-    // TODO: should be part of a `BabeConfiguration` struct instead
-    pub fn slot_duration(&self) -> u64 {
-        self.inner.slot_duration
-    }
-
-    // TODO: docs
-    // TODO: should be part of a `BabeConfiguration` struct instead
+    /// Returns the number of slots contained in each epoch.
     pub fn slots_per_epoch(&self) -> u64 {
         self.inner.epoch_length
     }
 
-    /// Returns the information about epoch number 0, which starts at block number 1. Block number
-    /// 1 contains the information about epoch number 1.
+    /// Returns the configuration of epoch number 0.
+    pub fn epoch0_configuration(&self) -> header::BabeNextConfig {
+        header::BabeNextConfig {
+            c: self.inner.c,
+            allowed_slots: self.inner.allowed_slots,
+        }
+    }
+
+    /// Returns the information about epoch number 0.
     pub fn epoch0_information(&self) -> header::BabeNextEpochRef {
         From::from(&self.epoch0_information)
     }
