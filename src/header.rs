@@ -277,48 +277,29 @@ impl<'a> DigestRef<'a> {
         }
     }
 
-    /// Pops the last element of the [`DigestRef`].
-    // TODO: turn into `pop_seal`
-    pub fn pop(&mut self) -> Option<DigestItemRef<'a>> {
-        let digest_logs_len_minus_one = self.digest_logs_len.checked_sub(1)?;
+    /// If the last element of the list is a Babe seal, removes it from the [`DigestRef`].
+    // TODO: guaranteed 64 bytes
+    // TODO: have a `Seal` enum or something, maybe?
+    pub fn pop_babe_seal(&mut self) -> Option<&'a [u8]> {
+        let seal_pos = self.babe_seal_index?;
+        debug_assert_eq!(seal_pos, self.digest_logs_len - 1);
 
         let mut iter = self.logs();
-        for _ in 0..digest_logs_len_minus_one {
+        for _ in 0..seal_pos {
             let _item = iter.next();
             debug_assert!(_item.is_some());
         }
 
-        self.digest_logs_len = digest_logs_len_minus_one;
+        self.digest_logs_len -= 1;
         self.digest = &self.digest[..self.digest.len() - iter.pointer.len()];
-
-        if self
-            .babe_seal_index
-            .map_or(false, |n| n == digest_logs_len_minus_one)
-        {
-            self.babe_seal_index = None;
-        }
-        if self
-            .babe_predigest_index
-            .map_or(false, |n| n == digest_logs_len_minus_one)
-        {
-            self.babe_predigest_index = None;
-        }
-        if self
-            .babe_next_epoch_data_index
-            .map_or(false, |n| n == digest_logs_len_minus_one)
-        {
-            // TODO: what if `babe_next_config_data_index` stays `Some`? we probably have to turn `pop()` into `pop_seal()` or something
-            self.babe_next_epoch_data_index = None;
-        }
-        if self
-            .babe_next_config_data_index
-            .map_or(false, |n| n == digest_logs_len_minus_one)
-        {
-            self.babe_next_config_data_index = None;
-        }
+        self.babe_seal_index = None;
 
         debug_assert_eq!(iter.remaining_len, 1);
-        Some(iter.next().unwrap())
+
+        match iter.next() {
+            Some(DigestItemRef::BabeSeal(seal)) => Some(seal),
+            _ => unreachable!(),
+        }
     }
 
     /// Returns an iterator to the log items in this digest.
