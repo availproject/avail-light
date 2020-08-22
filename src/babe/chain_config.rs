@@ -1,4 +1,3 @@
-use super::header_info;
 use crate::{executor, header};
 
 use core::convert::TryFrom as _;
@@ -9,7 +8,7 @@ use parity_scale_codec::DecodeAll as _;
 /// The way a chain configures BABE is stored in its runtime.
 pub struct BabeGenesisConfiguration {
     inner: OwnedGenesisConfiguration,
-    epoch0_information: header_info::EpochInformation,
+    epoch0_information: header::BabeNextEpoch,
 }
 
 impl BabeGenesisConfiguration {
@@ -80,17 +79,15 @@ impl BabeGenesisConfiguration {
             }
         };
 
-        let epoch0_information = header_info::EpochInformation {
+        let epoch0_information = header::BabeNextEpoch {
             randomness: inner.randomness,
             authorities: inner
                 .genesis_authorities
                 .iter()
-                .map(
-                    |(public_key, weight)| header_info::EpochInformationAuthority {
-                        public_key: *public_key,
-                        weight: *weight,
-                    },
-                )
+                .map(|(public_key, weight)| header::BabeAuthority {
+                    public_key: *public_key,
+                    weight: *weight,
+                })
                 .collect(),
         };
 
@@ -122,8 +119,8 @@ impl BabeGenesisConfiguration {
 
     /// Returns the information about epoch number 0, which starts at block number 1. Block number
     /// 1 contains the information about epoch number 1.
-    pub fn epoch0_information(&self) -> &header_info::EpochInformation {
-        &self.epoch0_information
+    pub fn epoch0_information(&self) -> header::BabeNextEpochRef {
+        From::from(&self.epoch0_information)
     }
 }
 

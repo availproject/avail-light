@@ -44,7 +44,7 @@ pub struct Config {
     pub babe_finalized_block1_slot_number: Option<u64>,
 
     /// Known Babe epoch transitions coming from the finalized block and its ancestors.
-    pub babe_known_epoch_information: Vec<(u64, babe::EpochInformation)>,
+    pub babe_known_epoch_information: Vec<(u64, header::BabeNextEpoch)>,
 
     /// Configuration for BABE, retreived from the genesis block.
     pub babe_genesis_config: babe::BabeGenesisConfiguration,
@@ -65,9 +65,9 @@ pub struct Chain<T> {
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// Known Babe epoch transitions coming from the finalized block and its ancestors.
-    babe_known_epoch_information: Vec<(u64, babe::EpochInformation)>,
+    babe_known_epoch_information: Vec<(u64, header::BabeNextEpoch)>,
 
-    babe_epoch_info_cache: lru::LruCache<u64, babe::EpochInformation>,
+    babe_epoch_info_cache: lru::LruCache<u64, header::BabeNextEpoch>,
     /// If block 1 is finalized, contains its slot number.
     babe_finalized_block1_slot_number: Option<u64>,
     /// Container for non-finalized blocks.
@@ -237,7 +237,7 @@ impl<T> Chain<T> {
                             .iter()
                             .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
                         {
-                            process = epoch_info_rq.inject_epoch(&info.1).run();
+                            process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
                         } else if let Some(parent_tree_index) = parent_tree_index {
                             if let Some(info) = self
                                 .blocks
@@ -246,7 +246,7 @@ impl<T> Chain<T> {
                                 .filter_map(|ei| ei.as_ref())
                                 .find(|e| e.info_epoch_number == epoch_info_rq.epoch_number())
                             {
-                                process = epoch_info_rq.inject_epoch(&info.info).run();
+                                process = epoch_info_rq.inject_epoch(From::from(&info.info)).run();
                             } else {
                                 return Err(VerifyError {
                                     scale_encoded_header,
@@ -288,13 +288,18 @@ impl<T> Chain<T> {
                     .blocks
                     .ascend_and_descend(current_best, parent_tree_index.unwrap());
 
+                // TODO: what if there's a mix of Babe and non-Babe blocks here?
+
                 let curr_best_primary_slots: usize = ascend
                     .map(|i| {
                         let decoded =
                             header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
                                 .unwrap();
-                        let decoded = babe::header_info::header_information(decoded).unwrap();
-                        if decoded.pre_runtime.is_primary() {
+                        if decoded
+                            .digest
+                            .babe_pre_runtime()
+                            .map_or(false, |pr| pr.is_primary())
+                        {
                             1
                         } else {
                             0
@@ -303,9 +308,11 @@ impl<T> Chain<T> {
                     .sum();
 
                 let new_block_primary_slots = {
-                    let decoded =
-                        babe::header_info::header_information(decoded_header.clone()).unwrap();
-                    if decoded.pre_runtime.is_primary() {
+                    if decoded_header
+                        .digest
+                        .babe_pre_runtime()
+                        .map_or(false, |pr| pr.is_primary())
+                    {
                         1
                     } else {
                         0
@@ -317,8 +324,11 @@ impl<T> Chain<T> {
                         let decoded =
                             header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
                                 .unwrap();
-                        let decoded = babe::header_info::header_information(decoded).unwrap();
-                        if decoded.pre_runtime.is_primary() {
+                        if decoded
+                            .digest
+                            .babe_pre_runtime()
+                            .map_or(false, |pr| pr.is_primary())
+                        {
                             1
                         } else {
                             0

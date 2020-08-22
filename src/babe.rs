@@ -97,19 +97,19 @@
 //! - First, call [`start_verify_header`] to start the verification process. This returns a
 //! [`SuccessOrPending`] enum.
 //! - If [`SuccessOrPending::Pending`] has been returned, you need to provide a specific
-//! [`EpochInformation`] struct.
+//! [`header::BabeNextEpoch`] struct.
 //!
 //! The information to keep in memory is:
 //!
 //! - The slot number of block 1. When block number 1 is verified, one needs to keep in memory
 //! slot number that is returned with [`VerifySuccess::slot_number`]. This value must later be
 //! provided as part of the [`VerifyConfig`].
-//! - The [`EpochInformation`] structs corresponding to each epoch number. An [`EpochInformation`]
+//! - The [`header::BabeNextEpoch`] structs corresponding to each epoch number. An [`header::BabeNextEpoch`]
 //! can be extracted from a block's header, therefore for long-term storage you only need to store
 //! which block contains the information about each epoch number, and that block's header.
 //!
 //! In both situations, you need to be aware of forks. There can be multiple block 1s, and
-//! multiple blocks which contain an [`EpochInformation`] for a given epoch number. Only the
+//! multiple blocks which contain an [`header::BabeNextEpoch`] for a given epoch number. Only the
 //! information contained in an ancestor of the block being verified must be provided.
 //!
 
@@ -119,10 +119,8 @@ use core::{convert::TryFrom as _, time::Duration};
 use num_traits::{cast::ToPrimitive as _, identities::One as _};
 
 pub mod chain_config;
-pub mod header_info;
 
 pub use chain_config::BabeGenesisConfiguration;
-pub use header_info::{EpochInformation, EpochInformationAuthority};
 
 /// Configuration for [`start_verify_header`].
 pub struct VerifyConfig<'a> {
@@ -175,14 +173,18 @@ pub struct EpochChangeInformation {
     /// Information about the next epoch.
     ///
     /// > **Note**: This is **not** the epoch that we have just entered, but the next one.
-    pub info: EpochInformation,
+    pub info: header::BabeNextEpoch,
 }
 
 /// Failure to verify a block.
 #[derive(Debug, derive_more::Display)]
 pub enum VerifyError {
-    /// Error while reading information from the header.
-    BadHeader(header_info::Error),
+    /// The seal (containing the signature of the authority) is missing from the header.
+    MissingSeal,
+    /// No pre-runtime digest in the block header.
+    MissingPreRuntimeDigest,
+    /// Parent block doesn't contain any Babe information.
+    ParentIsntBabeConsensus,
     /// Slot number must be strictly increasing between a parent and its child.
     SlotNumberNotIncreasing,
     /// Block contains an epoch change digest log, but no epoch change is to be performed.
@@ -212,31 +214,30 @@ pub enum VerifyError {
 /// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
 ///
 pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPending, VerifyError> {
-    let header =
-        header_info::header_information(config.header.clone()).map_err(VerifyError::BadHeader)?;
-
     // TODO: handle OnDisabled
 
     // Gather the BABE-related information from the header.
-    let (authority_index, slot_number, primary, vrf) = match header.pre_runtime {
-        header::BabePreDigestRef::Primary(digest) => (
+    let (authority_index, slot_number, primary, vrf) = match config.header.digest.babe_pre_runtime()
+    {
+        Some(header::BabePreDigestRef::Primary(digest)) => (
             digest.authority_index,
             digest.slot_number,
             true,
             Some((*digest.vrf_output, *digest.vrf_proof)),
         ),
-        header::BabePreDigestRef::SecondaryPlain(digest) => {
+        Some(header::BabePreDigestRef::SecondaryPlain(digest)) => {
             (digest.authority_index, digest.slot_number, false, None)
         }
-        header::BabePreDigestRef::SecondaryVRF(digest) => (
+        Some(header::BabePreDigestRef::SecondaryVRF(digest)) => (
             digest.authority_index,
             digest.slot_number,
             false,
             Some((*digest.vrf_output, *digest.vrf_proof)),
         ),
+        None => return Err(VerifyError::MissingPreRuntimeDigest),
     };
 
-    // Determine the epoch number of the block that we verify.
+    // Determine the epoch number the block we verify belongs to.
     let epoch_number = match (slot_number, config.block1_slot_number) {
         (curr, Some(block1)) => {
             slot_number_to_epoch(curr, config.genesis_configuration, block1).unwrap()
@@ -247,16 +248,18 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 
     // Determine the epoch number of the parent block. `None` if the parent is the genesis block.
     let parent_epoch_number = if config.parent_block_header.number != 0 {
-        let parent_info =
-            header_info::header_information(config.parent_block_header.clone()).unwrap();
+        let parent_slot_number = match config.parent_block_header.digest.babe_pre_runtime() {
+            Some(pr) => pr.slot_number(),
+            None => return Err(VerifyError::ParentIsntBabeConsensus),
+        };
 
-        if slot_number <= parent_info.pre_runtime.slot_number() {
+        if slot_number <= parent_slot_number {
             return Err(VerifyError::SlotNumberNotIncreasing);
         }
 
         Some(
             slot_number_to_epoch(
-                parent_info.pre_runtime.slot_number(),
+                parent_slot_number,
                 config.genesis_configuration,
                 config.block1_slot_number.unwrap(),
             )
@@ -267,10 +270,14 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     };
 
     // Extract the epoch change information stored in the header, if any.
-    let epoch_change = header.epoch_change.map(|(info, _)| EpochChangeInformation {
-        info_epoch_number: epoch_number + 1,
-        info,
-    });
+    let epoch_change = config
+        .header
+        .digest
+        .babe_epoch_information()
+        .map(|(info, _)| EpochChangeInformation {
+            info_epoch_number: epoch_number + 1,
+            info: info.into(),
+        });
 
     // TODO: in case of epoch change, should also check the randomness value; while the runtime
     //       checks that the randomness value is correct, light clients in particular do not
@@ -282,6 +289,13 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
         (None, false) => {}
         (Some(_), false) => return Err(VerifyError::UnexpectedEpochChangeLog),
         (None, true) => return Err(VerifyError::MissingEpochChangeLog),
+    };
+
+    let seal_signature = match config.header.digest.babe_seal() {
+        Some(seal) => {
+            schnorrkel::Signature::from_bytes(seal).map_err(|_| VerifyError::BadSignature)?
+        }
+        None => return Err(VerifyError::MissingSeal),
     };
 
     // The signature in the seal applies to the header from where the signature isn't present.
@@ -297,10 +311,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     let pending = PendingVerify {
         c: config.genesis_configuration.c(),
         pre_seal_hash,
-        seal_signature: {
-            schnorrkel::Signature::from_bytes(header.seal_signature)
-                .map_err(|_| VerifyError::BadSignature)?
-        },
+        seal_signature,
         epoch_change,
         epoch_number,
         slot_number,
@@ -313,7 +324,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     // the BABE genesis configuration.
     Ok(if epoch_number == 0 {
         SuccessOrPending::Success(
-            pending.finish(&config.genesis_configuration.epoch0_information())?,
+            pending.finish(config.genesis_configuration.epoch0_information())?,
         )
     } else {
         SuccessOrPending::Pending(pending)
@@ -363,13 +374,17 @@ impl PendingVerify {
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`PendingVerify::epoch_number`].
-    pub fn finish(self, epoch_info: &EpochInformation) -> Result<VerifySuccess, VerifyError> {
+    pub fn finish(
+        self,
+        epoch_info: header::BabeNextEpochRef,
+    ) -> Result<VerifySuccess, VerifyError> {
         // TODO: check that slot type is allowed by BABE config
 
         // Fetch the authority that has supposedly signed the block.
         let signing_authority = epoch_info
             .authorities
-            .get(
+            .clone()
+            .nth(
                 usize::try_from(self.authority_index)
                     .map_err(|_| VerifyError::InvalidAuthorityIndex)?,
             )
@@ -378,7 +393,7 @@ impl PendingVerify {
         // This `unwrap()` can only panic if `public_key` is the wrong length, which we know can't
         // happen as it's of type `[u8; 32]`.
         let signing_public_key =
-            schnorrkel::PublicKey::from_bytes(&signing_authority.public_key).unwrap();
+            schnorrkel::PublicKey::from_bytes(signing_authority.public_key).unwrap();
 
         // Now verifying the signature in the seal.
         signing_public_key
@@ -413,7 +428,7 @@ impl PendingVerify {
             if self.primary_slot_claim {
                 let threshold = calculate_primary_threshold(
                     self.c,
-                    epoch_info.authorities.iter().map(|a| a.weight),
+                    epoch_info.authorities.clone().map(|a| a.weight),
                     signing_authority.weight,
                 );
                 if u128::from_le_bytes(vrf_in_out.make_bytes::<[u8; 16]>(b"substrate-babe-vrf"))
@@ -433,7 +448,7 @@ impl PendingVerify {
             // Expected author is determined based on `blake2(randomness | slot_number)`.
             let hash = {
                 let mut hash = blake2_rfc::blake2b::Blake2b::new(32);
-                hash.update(&epoch_info.randomness);
+                hash.update(epoch_info.randomness);
                 hash.update(&self.slot_number.to_le_bytes());
                 hash.finalize()
             };
@@ -442,7 +457,7 @@ impl PendingVerify {
             let expected_authority_index = {
                 let hash = primitive_types::U256::from_big_endian(hash.as_bytes());
                 let authorities_len = primitive_types::U256::from(epoch_info.authorities.len());
-                debug_assert!(!epoch_info.authorities.is_empty());
+                debug_assert_ne!(epoch_info.authorities.len(), 0);
                 hash % authorities_len
             };
 

@@ -116,7 +116,9 @@ impl<'a> BabeNextEpochRef<'a> {
         }
 
         Ok(BabeNextEpochRef {
-            authorities: BabeAuthoritiesIter(slice[0..authorities_len * 40].chunks(40)),
+            authorities: BabeAuthoritiesIter(BabeAuthoritiesIterInner::Raw(
+                slice[0..authorities_len * 40].chunks(40),
+            )),
             randomness: <&[u8; 32]>::try_from(&slice[authorities_len * 40..]).unwrap(),
         })
     }
@@ -144,24 +146,67 @@ impl<'a> BabeNextEpochRef<'a> {
     }
 }
 
+impl<'a> From<&'a BabeNextEpoch> for BabeNextEpochRef<'a> {
+    fn from(a: &'a BabeNextEpoch) -> Self {
+        BabeNextEpochRef {
+            authorities: BabeAuthoritiesIter(BabeAuthoritiesIterInner::List(a.authorities.iter())),
+            randomness: &a.randomness,
+        }
+    }
+}
+
+/// Information about the next epoch. This is broadcast in the first block
+/// of the epoch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BabeNextEpoch {
+    /// The authorities.
+    pub authorities: Vec<BabeAuthority>,
+
+    /// The value of randomness to use for the slot-assignment.
+    pub randomness: [u8; 32],
+}
+
+impl<'a> From<BabeNextEpochRef<'a>> for BabeNextEpoch {
+    fn from(a: BabeNextEpochRef<'a>) -> Self {
+        BabeNextEpoch {
+            authorities: a.authorities.map(Into::into).collect(),
+            randomness: *a.randomness,
+        }
+    }
+}
+
 /// List of authorities in a BABE context.
 #[derive(Clone)]
-pub struct BabeAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
+pub struct BabeAuthoritiesIter<'a>(BabeAuthoritiesIterInner<'a>);
+
+#[derive(Clone)]
+enum BabeAuthoritiesIterInner<'a> {
+    List(slice::Iter<'a, BabeAuthority>),
+    Raw(slice::Chunks<'a, u8>),
+}
 
 impl<'a> Iterator for BabeAuthoritiesIter<'a> {
     type Item = BabeAuthorityRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self.0.next()?;
-        assert_eq!(item.len(), 40);
-        Some(BabeAuthorityRef {
-            public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
-            weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
-        })
+        match &mut self.0 {
+            BabeAuthoritiesIterInner::List(l) => l.next().map(Into::into),
+            BabeAuthoritiesIterInner::Raw(l) => {
+                let item = l.next()?;
+                assert_eq!(item.len(), 40);
+                Some(BabeAuthorityRef {
+                    public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
+                    weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
+                })
+            }
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        match &self.0 {
+            BabeAuthoritiesIterInner::List(l) => l.size_hint(),
+            BabeAuthoritiesIterInner::Raw(l) => l.size_hint(),
+        }
     }
 }
 
@@ -191,7 +236,7 @@ impl<'a> fmt::Debug for BabeAuthoritiesIter<'a> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BabeAuthorityRef<'a> {
-    /// sr25519 public key.
+    /// Sr25519 public key.
     pub public_key: &'a [u8; 32],
     /// Arbitrary number indicating the weight of the authority.
     ///
@@ -208,6 +253,34 @@ impl<'a> BabeAuthorityRef<'a> {
         iter::once(either::Either::Right(self.public_key)).chain(iter::once(either::Either::Left(
             parity_scale_codec::Encode::encode(&self.weight),
         )))
+    }
+}
+
+impl<'a> From<&'a BabeAuthority> for BabeAuthorityRef<'a> {
+    fn from(a: &'a BabeAuthority) -> Self {
+        BabeAuthorityRef {
+            public_key: &a.public_key,
+            weight: a.weight,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct BabeAuthority {
+    /// Sr25519 public key.
+    pub public_key: [u8; 32],
+    /// Arbitrary number indicating the weight of the authority.
+    ///
+    /// This value can only be compared to other weight values.
+    pub weight: u64,
+}
+
+impl<'a> From<BabeAuthorityRef<'a>> for BabeAuthority {
+    fn from(a: BabeAuthorityRef<'a>) -> Self {
+        BabeAuthority {
+            public_key: *a.public_key,
+            weight: a.weight,
+        }
     }
 }
 

@@ -136,19 +136,14 @@ pub async fn run_block_import_task(mut config: Config) {
                 .unwrap()
                 .unwrap();
             let decoded = header::decode(&block1_header).unwrap();
-            Some(
-                babe::header_info::header_information(decoded)
-                    .unwrap()
-                    .pre_runtime
-                    .slot_number(),
-            )
+            Some(decoded.digest.babe_pre_runtime().unwrap().slot_number())
         }
         None => None,
     };
 
     // Cache of the information about BABE epochs.
     // TODO: this should be some sort of fork-tree
-    let mut babe_epoch_info_cache: lru::LruCache<u64, babe::EpochInformation> =
+    let mut babe_epoch_info_cache: lru::LruCache<u64, header::BabeNextEpoch> =
         lru::LruCache::new(4);
 
     // Main loop of the task. Processes received messages.
@@ -215,7 +210,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                 if let Some(epoch) =
                                     babe_epoch_info_cache.get(&epoch_info.epoch_number())
                                 {
-                                    process = epoch_info.inject_epoch(&epoch).run();
+                                    process = epoch_info.inject_epoch(From::from(epoch)).run();
                                 } else {
                                     let blocks = config
                                         .database
@@ -230,11 +225,12 @@ pub async fn run_block_import_task(mut config: Config) {
                                         .unwrap()
                                         .unwrap();
                                     let decoded = header::decode(&header).unwrap();
-                                    let babe_info =
-                                        babe::header_info::header_information(decoded).unwrap();
-                                    let epoch_change = &babe_info.epoch_change.unwrap().0;
-                                    babe_epoch_info_cache
-                                        .put(epoch_info.epoch_number(), epoch_change.clone());
+                                    let epoch_change =
+                                        decoded.digest.babe_epoch_information().unwrap().0;
+                                    babe_epoch_info_cache.put(
+                                        epoch_info.epoch_number(),
+                                        epoch_change.clone().into(),
+                                    );
                                     process = epoch_info.inject_epoch(epoch_change).run();
                                 }
                             }
