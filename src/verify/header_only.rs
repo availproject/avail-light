@@ -66,6 +66,9 @@ pub fn verify<'a>(config: Config<'a>) -> Verify {
         }
     };
 
+    // TODO: need to verify the changes trie stuff maybe?
+    // TODO: need to verify that there's no grandpa scheduled change header if there's already an active grandpa scheduled change
+
     Verify::ReadyToRun(ReadyToRun {
         inner: ReadyToRunInner::Babe(babe_verification),
     })
