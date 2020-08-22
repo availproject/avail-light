@@ -115,10 +115,20 @@ pub enum Error {
     DigestItemDecodeError(parity_scale_codec::Error),
     /// Digest log item with an unrecognized type.
     UnknownDigestLogType(u8),
+    /// Found a seal that isn't the last item in the list.
+    SealIsntLastItem,
     /// Bad length of a BABE seal.
     BadBabeSealLength,
     BadBabePreDigestRefType,
     BadBabeConsensusRefType,
+    /// There are multiple Babe pre-runtime digests in the block header.
+    MultipleBabePreRuntimeDigests,
+    /// There are multiple Babe epoch descriptor digests in the block header.
+    MultipleBabeEpochDescriptors,
+    /// There are multiple Babe configuration descriptor digests in the block header.
+    MultipleBabeConfigDescriptors,
+    /// Found a Babe configuration change digest without an epoch change digest.
+    UnexpectedBabeConfigDescriptor,
     BadGrandpaConsensusRefType,
     /// Unknown consensus engine specified in a digest log.
     #[display(fmt = "Unknown consensus engine specified in a digest log: {:?}", _0)]
@@ -180,9 +190,19 @@ pub struct DigestRef<'a> {
     /// Number of log items in the header.
     /// Must always match the actual number of items in [`DigestRef::digest`]. The validity must
     /// be verified before a [`DigestRef`] object is instantiated.
-    digest_logs_len: u64,
+    digest_logs_len: usize,
     /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is instantiated.
     digest: &'a [u8],
+    /// Index of the [`DigestItemRef::BabeSeal`] item, if any.
+    babe_seal_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabePreDigest`] item, if any.
+    babe_predigest_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabeConsensus`] item containing a
+    /// [`BabeConsensusLogRef::NextEpochData`], if any.
+    babe_next_epoch_data_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabeConsensus`] item containing a
+    /// [`BabeConsensusLogRef::NextConfigData`], if any.
+    babe_next_config_data_index: Option<usize>,
 }
 
 impl<'a> DigestRef<'a> {
@@ -191,10 +211,74 @@ impl<'a> DigestRef<'a> {
         DigestRef {
             digest_logs_len: 0,
             digest: &[],
+            babe_seal_index: None,
+            babe_predigest_index: None,
+            babe_next_epoch_data_index: None,
+            babe_next_config_data_index: None,
+        }
+    }
+
+    /// Returns the Babe seal digest item, if any.
+    // TODO: guaranteed to be 64 bytes long; type system stupidity again
+    pub fn babe_seal(&self) -> Option<&'a [u8]> {
+        if let Some(babe_seal_index) = self.babe_seal_index {
+            if let DigestItemRef::BabeSeal(seal) = self.logs().nth(babe_seal_index).unwrap() {
+                Some(seal)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Returns the Babe pre-runtime digest item, if any.
+    pub fn babe_pre_runtime(&self) -> Option<BabePreDigestRef<'a>> {
+        if let Some(babe_predigest_index) = self.babe_predigest_index {
+            if let DigestItemRef::BabePreDigest(item) =
+                self.logs().nth(babe_predigest_index).unwrap()
+            {
+                Some(item)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Returns the Babe epoch information stored in the header, if any.
+    ///
+    /// It is guaranteed that a configuration change is present only if an epoch change is
+    /// present too.
+    pub fn babe_epoch_information(&self) -> Option<(BabeNextEpochRef<'a>, Option<BabeNextConfig>)> {
+        if let Some(babe_next_epoch_data_index) = self.babe_next_epoch_data_index {
+            if let DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(epoch)) =
+                self.logs().nth(babe_next_epoch_data_index).unwrap()
+            {
+                if let Some(babe_next_config_data_index) = self.babe_next_config_data_index {
+                    if let DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(
+                        config,
+                    )) = self.logs().nth(babe_next_config_data_index).unwrap()
+                    {
+                        Some((epoch, Some(config)))
+                    } else {
+                        panic!()
+                    }
+                } else {
+                    Some((epoch, None))
+                }
+            } else {
+                unreachable!()
+            }
+        } else {
+            debug_assert!(self.babe_next_config_data_index.is_none());
+            None
         }
     }
 
     /// Pops the last element of the [`DigestRef`].
+    // TODO: turn into `pop_seal`
     pub fn pop(&mut self) -> Option<DigestItemRef<'a>> {
         let digest_logs_len_minus_one = self.digest_logs_len.checked_sub(1)?;
 
@@ -206,6 +290,32 @@ impl<'a> DigestRef<'a> {
 
         self.digest_logs_len = digest_logs_len_minus_one;
         self.digest = &self.digest[..self.digest.len() - iter.pointer.len()];
+
+        if self
+            .babe_seal_index
+            .map_or(false, |n| n == digest_logs_len_minus_one)
+        {
+            self.babe_seal_index = None;
+        }
+        if self
+            .babe_predigest_index
+            .map_or(false, |n| n == digest_logs_len_minus_one)
+        {
+            self.babe_predigest_index = None;
+        }
+        if self
+            .babe_next_epoch_data_index
+            .map_or(false, |n| n == digest_logs_len_minus_one)
+        {
+            // TODO: what if `babe_next_config_data_index` stays `Some`? we probably have to turn `pop()` into `pop_seal()` or something
+            self.babe_next_epoch_data_index = None;
+        }
+        if self
+            .babe_next_config_data_index
+            .map_or(false, |n| n == digest_logs_len_minus_one)
+        {
+            self.babe_next_config_data_index = None;
+        }
 
         debug_assert_eq!(iter.remaining_len, 1);
         Some(iter.next().unwrap())
@@ -225,8 +335,8 @@ impl<'a> DigestRef<'a> {
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         // TODO: don't allocate?
-        let encoded_len =
-            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(self.digest_logs_len));
+        let len = u64::try_from(self.digest_logs_len).unwrap();
+        let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(len));
         iter::once(either::Either::Left(encoded_len)).chain(
             self.logs()
                 .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
@@ -235,16 +345,60 @@ impl<'a> DigestRef<'a> {
 
     /// Try to decode a list of digest items, from their SCALE encoding.
     fn from_slice(mut scale_encoded: &'a [u8]) -> Result<Self, Error> {
-        let digest_logs_len: parity_scale_codec::Compact<u64> =
-            parity_scale_codec::Decode::decode(&mut scale_encoded)
-                .map_err(Error::DigestLenDecodeError)?;
+        let digest_logs_len = {
+            let len: parity_scale_codec::Compact<u64> =
+                parity_scale_codec::Decode::decode(&mut scale_encoded)
+                    .map_err(Error::DigestLenDecodeError)?;
+            // If the number of digest items can't fit in a `usize`, we know that the buffer can't
+            // be large enough to hold all these items, hence the `TooShort`.
+            usize::try_from(len.0).map_err(|_| Error::TooShort)?
+        };
+
+        let mut babe_seal_index = None;
+        let mut babe_predigest_index = None;
+        let mut babe_next_epoch_data_index = None;
+        let mut babe_next_config_data_index = None;
 
         // Iterate through the log items to see if anything is wrong.
         {
             let mut digest = scale_encoded;
-            for _ in 0..digest_logs_len.0 {
-                let (_, next) = decode_item(digest)?;
+            for item_num in 0..digest_logs_len {
+                let (item, next) = decode_item(digest)?;
                 digest = next;
+
+                match item {
+                    DigestItemRef::ChangesTrieRoot(_) => {}
+                    DigestItemRef::BabePreDigest(_) if babe_predigest_index.is_none() => {
+                        babe_predigest_index = Some(item_num);
+                    }
+                    DigestItemRef::BabePreDigest(_) => {
+                        return Err(Error::MultipleBabePreRuntimeDigests)
+                    }
+                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_))
+                        if babe_next_epoch_data_index.is_none() =>
+                    {
+                        babe_next_epoch_data_index = Some(item_num);
+                    }
+                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_)) => {
+                        return Err(Error::MultipleBabeEpochDescriptors);
+                    }
+                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_))
+                        if babe_next_config_data_index.is_none() =>
+                    {
+                        babe_next_config_data_index = Some(item_num);
+                    }
+                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_)) => {
+                        return Err(Error::MultipleBabeConfigDescriptors);
+                    }
+                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::OnDisabled(_)) => {}
+                    DigestItemRef::GrandpaConsensus(_) => {}
+                    DigestItemRef::BabeSeal(_) if item_num == digest_logs_len - 1 => {
+                        debug_assert!(babe_seal_index.is_none());
+                        babe_seal_index = Some(item_num);
+                    }
+                    DigestItemRef::BabeSeal(_) => return Err(Error::SealIsntLastItem),
+                    DigestItemRef::ChangesTrieSignal(_) => {}
+                }
             }
 
             if !digest.is_empty() {
@@ -252,9 +406,17 @@ impl<'a> DigestRef<'a> {
             }
         }
 
+        if babe_next_config_data_index.is_some() && babe_next_epoch_data_index.is_none() {
+            return Err(Error::UnexpectedBabeConfigDescriptor);
+        }
+
         Ok(DigestRef {
-            digest_logs_len: digest_logs_len.0,
+            digest_logs_len,
             digest: scale_encoded,
+            babe_seal_index,
+            babe_predigest_index,
+            babe_next_epoch_data_index,
+            babe_next_config_data_index,
         })
     }
 }
@@ -271,7 +433,7 @@ pub struct LogsIter<'a> {
     /// Encoded digest.
     pointer: &'a [u8],
     /// Number of log items remaining.
-    remaining_len: u64,
+    remaining_len: usize,
 }
 
 impl<'a> Iterator for LogsIter<'a> {
@@ -291,8 +453,7 @@ impl<'a> Iterator for LogsIter<'a> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let num = usize::try_from(self.remaining_len).unwrap();
-        (num, Some(num))
+        (self.remaining_len, Some(self.remaining_len))
     }
 }
 
