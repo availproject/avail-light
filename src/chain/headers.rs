@@ -25,7 +25,7 @@
 
 // TODO: rethink this doc ^
 
-use crate::{babe, fork_tree, header, verify};
+use crate::{babe, finality::justification, fork_tree, header, verify};
 use core::fmt;
 
 /// Configuration for the [`Chain`].
@@ -353,7 +353,27 @@ impl<T> Chain<T> {
         })
     }
 
-    pub fn verify_justification(&mut self, scale_encoded_justification: &[u8]) -> Result<(), ()> {
+    /// Verifies the given justification.
+    ///
+    /// The verification is performed in the context of the chain. In particular, the
+    /// verification will fail if the target block isn't already in the chain.
+    ///
+    /// If the verification succeeds, a [`JustificationApply`] object might be returned which can
+    /// be used to then insert the block in the chain.
+    pub fn verify_justification(
+        &mut self,
+        scale_encoded_justification: &[u8],
+    ) -> Result<(), JustificationVerifyError> {
+        let decoded = justification::decode::decode(&scale_encoded_justification)
+            .map_err(JustificationVerifyError::InvalidJustification)?;
+
+        let verif_result = justification::verify::verify(justification::verify::Config {
+            justification: decoded,
+            authorities_set_id: 0,                           // TODO:
+            authorities_list: std::iter::empty::<Vec<u8>>(), // TODO:
+        })
+        .map_err(JustificationVerifyError::VerificationFailed)?;
+
         todo!()
     }
 
@@ -459,7 +479,7 @@ pub struct InsertSuccess<'a> {
     pub header: header::HeaderRef<'a>,
 }
 
-/// Error that can happen when importing a block.
+/// Error that can happen when verifying a block.
 #[derive(Debug, derive_more::Display)]
 #[display(fmt = "{}", detail)]
 pub struct VerifyError {
@@ -469,10 +489,10 @@ pub struct VerifyError {
     pub detail: VerifyErrorDetail,
 }
 
-/// Error that can happen when importing a block.
+/// Error that can happen when verifying a block.
 #[derive(Debug, derive_more::Display)]
 pub enum VerifyErrorDetail {
-    /// Error while decoding header.
+    /// Error while decoding the header.
     InvalidHeader(header::Error),
     /// The parent of the block isn't known.
     #[display(fmt = "The parent of the block isn't known.")]
@@ -485,6 +505,36 @@ pub enum VerifyErrorDetail {
     /// Babe epoch information couldn't be determined.
     // TODO: how can that happen?
     UnknownBabeEpoch,
+}
+
+// TODO: doc and all
+#[must_use]
+pub struct JustificationApply<'a, T> {
+    chain: &'a mut Chain<T>,
+}
+
+impl<'a, T> JustificationApply<'a, T> {
+    /// Applies the justification, finalizing the given block.
+    // TODO: return type?
+    pub fn apply(self) {
+        todo!()
+    }
+}
+
+impl<'a, T> fmt::Debug for JustificationApply<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("JustificationApply").finish()
+    }
+}
+
+/// Error that can happen when verifying a justification.
+#[derive(Debug, derive_more::Display)]
+pub enum JustificationVerifyError {
+    /// Error while decoding the justification.
+    InvalidJustification(justification::decode::Error),
+    /// The justification verification has failed. The justification is invalid and should be
+    /// thrown away.
+    VerificationFailed(justification::verify::Error),
 }
 
 /// Error that can happen when setting the finalized block.
