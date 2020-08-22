@@ -10,7 +10,11 @@
 
 // TODO: REMOVE THIS CODE
 
-use crate::{database, executor, header, trie::calculate_root, verify::{self, babe}};
+use crate::{
+    database, executor, header,
+    trie::calculate_root,
+    verify::{self, babe},
+};
 
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::pin::Pin;

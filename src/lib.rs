@@ -89,7 +89,6 @@ pub mod chain_spec;
 pub mod database;
 pub mod executor;
 pub mod finality;
-pub mod fork_tree;
 pub mod header;
 pub mod informant;
 pub mod network;

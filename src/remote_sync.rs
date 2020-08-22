@@ -11,7 +11,7 @@
 //! In a blockchain network, blocks can appear at any time.
 // TODO: finish doc ^
 
-use crate::fork_tree;
+use crate::chain::fork_tree;
 
 use core::hash::Hash;
 use hashbrown::HashMap;
