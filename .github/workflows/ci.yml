@@ -10,6 +10,8 @@ jobs:
   test:
     name: Build and test
     runs-on: ubuntu-latest
+    container:
+      image: rust
     steps:
     - uses: actions/checkout@v2
     - uses: actions/cache@v2
@@ -25,6 +27,8 @@ jobs:
   browser-node-check:
     name: Check browser node compilation
     runs-on: ubuntu-latest
+    container:
+      image: rust
     steps:
     - uses: actions/checkout@v2
     - uses: actions/cache@v2
@@ -42,6 +46,8 @@ jobs:
     name: Check that combination of features compiles
     needs: test
     runs-on: ubuntu-latest
+    container:
+      image: rust
     steps:
     - uses: actions/checkout@v2
     - uses: actions/cache@v2
