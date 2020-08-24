@@ -43,7 +43,7 @@ impl Database {
                     .dyn_ref::<web_sys::IdbVersionChangeEvent>()
                     .unwrap()
                     .old_version();
-                assert_eq!(old_version.fract(), 0.0);
+                assert!(old_version.fract() < f64::EPSILON);
                 assert!(old_version >= 0.0);
                 assert!(old_version < u32::max_value() as f64);
                 old_version as u32
