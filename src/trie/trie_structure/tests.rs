@@ -347,11 +347,11 @@ fn fuzzing() {
 
             // Insert in `operations` a tuple of an insertion and removal.
             for _ in 0..uniform_sample(0, 24) {
-                let mut base_key = operations
-                    .choose(&mut rand::thread_rng())
-                    .unwrap()
-                    .0
-                    .clone();
+                let mut base_key = match operations.choose(&mut rand::thread_rng()) {
+                    Some(op) => op.0.clone(),
+                    None => continue,
+                };
+
                 for _ in 0..uniform_sample(0, 2) {
                     base_key.push(Nibble::try_from(uniform_sample(0, 15)).unwrap());
                 }
