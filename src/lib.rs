@@ -76,11 +76,13 @@
 //! # TODO: what's a justification?
 //!
 
-// TODO: fix all the compilation errors caused by the copy-pasted code
+// TODO: for `no_std`, fix all the compilation errors caused by the copy-pasted code
 //#![cfg_attr(not(test), no_std)]
 #![recursion_limit = "512"]
-#![feature(new_uninit)] // TODO:
-#![feature(asm)] // TODO:
+
+// TODO: get rid of these nightly-only features and remove the `wasmtime` feature
+#![cfg_attr(feature = "wasmtime", feature(new_uninit))]
+#![cfg_attr(feature = "wasmtime", feature(asm))]
 
 extern crate alloc;
 
@@ -142,7 +144,7 @@ pub fn calculate_genesis_block_scale_encoded_header<'a>(
                     let key = val.key().collect::<Vec<_>>();
                     let value = genesis_storage
                         .clone()
-                        .find(|(k, _)| k == &key)
+                        .find(|(k, _)| *k == &key[..])
                         .map(|(_, v)| v);
                     calculation = val.inject(value);
                 }

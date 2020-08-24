@@ -247,7 +247,7 @@ pub struct DigestRef<'a> {
 
 impl<'a> DigestRef<'a> {
     /// Returns a digest with empty logs.
-    pub const fn empty() -> DigestRef<'a> {
+    pub fn empty() -> DigestRef<'a> {
         DigestRef {
             digest_logs_len: 0,
             digest: &[],

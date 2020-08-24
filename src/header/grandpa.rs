@@ -16,7 +16,6 @@
 
 use super::Error;
 
-use blake2::digest::{Input as _, VariableOutput as _};
 use core::{cmp, convert::TryFrom, fmt, iter, slice};
 use parity_scale_codec::{Decode as _, DecodeAll as _};
 

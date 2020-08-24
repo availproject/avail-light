@@ -41,7 +41,7 @@ jobs:
     - run: cargo install wasm-bindgen-cli
     - run: cargo +nightly build --release --target wasm32-unknown-unknown --no-default-features --features wasm-bindings
     - run: wasm-bindgen ./target/wasm32-unknown-unknown/release/substrate_lite.wasm --out-dir pkg --target web
-    
+
   check-features:
     name: Check that combination of features compiles
     needs: test
@@ -60,7 +60,7 @@ jobs:
     - run: cargo check --workspace --no-default-features
     - run: cargo check --workspace --no-default-features --features rpc-server
     # TODO: finish here
-    
+
   check-rustdoc-links:
     name: Check rustdoc intra-doc links
     runs-on: ubuntu-latest
