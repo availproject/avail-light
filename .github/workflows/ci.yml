@@ -39,7 +39,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: cargo install wasm-bindgen-cli
-    - run: cargo +nightly build --release --target wasm32-unknown-unknown --no-default-features --features wasm-bindings
+    - run: cargo build --release --target wasm32-unknown-unknown --no-default-features --features wasm-bindings
     - run: wasm-bindgen ./target/wasm32-unknown-unknown/release/substrate_lite.wasm --out-dir pkg --target web
 
   check-features:
@@ -70,10 +70,10 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install nightly Rust
       # TODO: intra-doc links are available on nightly only
-      # see https://doc.rust-lang.org/nightly/rustdoc/lints.html#intra_doc_link_resolution_failure
+      # see https://doc.rust-lang.org/nightly/rustdoc/lints.html#broken_intra_doc_links
       run: rustup default nightly
     - name: Check rustdoc links
-      run: RUSTDOCFLAGS="--deny intra_doc_link_resolution_failure" cargo +nightly doc --verbose --workspace --no-deps --document-private-items
+      run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo +nightly doc --verbose --workspace --no-deps --document-private-items
 
   fmt:
     name: Rustfmt
