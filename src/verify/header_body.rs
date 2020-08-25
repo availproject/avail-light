@@ -131,13 +131,13 @@ pub enum Verify {
     /// Verification is ready to continue.
     ReadyToRun(ReadyToRun),
     /// Fetching an epoch information is required in order to continue.
-    EpochInformation(EpochInformation),
+    BabeEpochInformation(BabeEpochInformation),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.
-    PrefixKeys(PrefixKeys),
+    StoragePrefixKeys(StoragePrefixKeys),
     /// Fetching the key that follows a given one is required in order to continue.
-    NextKey(NextKey),
+    StorageNextKey(StorageNextKey),
 }
 
 /// Verification is ready to continue.
@@ -176,7 +176,7 @@ impl ReadyToRun {
                     },
                 }),
                 babe::SuccessOrPending::Pending(pending) => {
-                    Verify::EpochInformation(EpochInformation {
+                    Verify::BabeEpochInformation(BabeEpochInformation {
                         inner: pending,
                         import_process,
                     })
@@ -206,11 +206,13 @@ impl ReadyToRun {
                     inner,
                     babe_success,
                 }),
-                unsealed::Verify::PrefixKeys(inner) => Verify::PrefixKeys(PrefixKeys {
-                    inner,
-                    babe_success,
-                }),
-                unsealed::Verify::NextKey(inner) => Verify::NextKey(NextKey {
+                unsealed::Verify::PrefixKeys(inner) => {
+                    Verify::StoragePrefixKeys(StoragePrefixKeys {
+                        inner,
+                        babe_success,
+                    })
+                }
+                unsealed::Verify::NextKey(inner) => Verify::StorageNextKey(StorageNextKey {
                     inner,
                     babe_success,
                 }),
@@ -221,12 +223,12 @@ impl ReadyToRun {
 
 /// Fetching an epoch information is required in order to continue.
 #[must_use]
-pub struct EpochInformation {
+pub struct BabeEpochInformation {
     inner: babe::PendingVerify,
     import_process: unsealed::ReadyToRun,
 }
 
-impl EpochInformation {
+impl BabeEpochInformation {
     /// Returns the epoch number whose information must be passed to
     /// [`EpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {
@@ -278,12 +280,12 @@ impl StorageGet {
 
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
-pub struct PrefixKeys {
+pub struct StoragePrefixKeys {
     inner: unsealed::PrefixKeys,
     babe_success: babe::VerifySuccess,
 }
 
-impl PrefixKeys {
+impl StoragePrefixKeys {
     /// Returns the prefix whose keys to load.
     // TODO: don't take &mut mut but &self
     pub fn prefix(&mut self) -> &[u8] {
@@ -303,12 +305,12 @@ impl PrefixKeys {
 
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
-pub struct NextKey {
+pub struct StorageNextKey {
     inner: unsealed::NextKey,
     babe_success: babe::VerifySuccess,
 }
 
-impl NextKey {
+impl StorageNextKey {
     /// Returns the key whose next key must be passed back.
     // TODO: don't take &mut mut but &self
     pub fn key(&mut self) -> &[u8] {

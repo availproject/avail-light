@@ -210,7 +210,7 @@ pub async fn run_block_import_task(mut config: Config) {
                             verify::header_body::Verify::ReadyToRun(run) => {
                                 process = run.run();
                             }
-                            verify::header_body::Verify::EpochInformation(epoch_info) => {
+                            verify::header_body::Verify::BabeEpochInformation(epoch_info) => {
                                 if let Some(epoch) =
                                     babe_epoch_info_cache.get(&epoch_info.epoch_number())
                                 {
@@ -246,7 +246,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                 let value = local_storage_cache.get(&key);
                                 process = get.inject_value(value.as_ref().map(|v| &v[..])).run();
                             }
-                            verify::header_body::Verify::PrefixKeys(mut prefix_keys) => {
+                            verify::header_body::Verify::StoragePrefixKeys(mut prefix_keys) => {
                                 // We need to clone the prefix in order to not borrow
                                 // `prefix_keys` multiple times.
                                 let prefix = prefix_keys.prefix().to_vec();
@@ -256,7 +256,7 @@ pub async fn run_block_import_task(mut config: Config) {
                                     .map(|(k, _)| k.to_vec());
                                 process = prefix_keys.inject_keys(ret).run();
                             }
-                            verify::header_body::Verify::NextKey(mut next_key) => {
+                            verify::header_body::Verify::StorageNextKey(mut next_key) => {
                                 struct CustomBound(Vec<u8>);
                                 impl core::ops::RangeBounds<Vec<u8>> for CustomBound {
                                     fn start_bound(&self) -> core::ops::Bound<&Vec<u8>> {

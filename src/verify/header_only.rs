@@ -82,7 +82,7 @@ pub enum Verify {
     /// Verification is ready to continue.
     ReadyToRun(ReadyToRun),
     /// Fetching an epoch information is required in order to continue.
-    EpochInformation(EpochInformation),
+    BabeEpochInformation(BabeEpochInformation),
 }
 
 /// Verification is ready to continue.
@@ -107,7 +107,7 @@ impl ReadyToRun {
                     inner: ReadyToRunInner::Finished(Ok(babe_success)),
                 }),
                 babe::SuccessOrPending::Pending(pending) => {
-                    Verify::EpochInformation(EpochInformation { inner: pending })
+                    Verify::BabeEpochInformation(BabeEpochInformation { inner: pending })
                 }
             },
             ReadyToRunInner::Finished(Ok(s)) => Verify::Finished(Ok(Success {
@@ -123,11 +123,11 @@ impl ReadyToRun {
 
 /// Fetching an epoch information is required in order to continue.
 #[must_use]
-pub struct EpochInformation {
+pub struct BabeEpochInformation {
     inner: babe::PendingVerify,
 }
 
-impl EpochInformation {
+impl BabeEpochInformation {
     /// Returns the epoch number whose information must be passed to
     /// [`EpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {

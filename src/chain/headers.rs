@@ -246,7 +246,7 @@ impl<T> Chain<T> {
                         });
                     }
                     verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
-                    verify::header_only::Verify::EpochInformation(epoch_info_rq) => {
+                    verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
                         if let Some(info) = self
                             .babe_known_epoch_information
                             .iter()
