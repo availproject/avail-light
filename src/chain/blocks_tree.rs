@@ -201,10 +201,8 @@ impl<T> NonFinalizedTree<T> {
         scale_encoded_header: &[u8],
     ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
         match self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>) {
-            BodyVerifyStep1::InvalidHeader(err) => Err(HeaderVerifyError::InvalidHeader(err)),
-            BodyVerifyStep1::ParentRuntimeRequired(_) => unreachable!(),
-            BodyVerifyStep1::Duplicate => Ok(HeaderVerifySuccess::Duplicate),
-            _ => todo!(),
+            BodyOrHeader::Header(v) => v,
+            BodyOrHeader::Body(_) => unreachable!(),
         }
     }
 
@@ -213,20 +211,30 @@ impl<T> NonFinalizedTree<T> {
         &'c mut self,
         scale_encoded_header: &'h [u8],
         body: Option<I>,
-    ) -> BodyVerifyStep1<'c, 'h, T, I>
+    ) -> BodyOrHeader<'c, 'h, T, I>
     where
         I: ExactSizeIterator<Item = E> + Clone,
         E: AsRef<[u8]> + Clone,
     {
         let decoded_header = match header::decode(&scale_encoded_header) {
             Ok(h) => h,
-            Err(err) => return BodyVerifyStep1::InvalidHeader(err),
+            Err(err) => {
+                return if body.is_some() {
+                    BodyOrHeader::Body(BodyVerifyStep1::InvalidHeader(err))
+                } else {
+                    BodyOrHeader::Header(Err(HeaderVerifyError::InvalidHeader(err)))
+                }
+            }
         };
 
         let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
 
         if self.blocks.find(|b| b.hash == hash).is_some() {
-            return BodyVerifyStep1::Duplicate;
+            return if body.is_some() {
+                BodyOrHeader::Body(BodyVerifyStep1::Duplicate)
+            } else {
+                BodyOrHeader::Header(Ok(HeaderVerifySuccess::Duplicate))
+            };
         }
 
         // Try to find the parent block in the tree of known blocks.
@@ -245,7 +253,13 @@ impl<T> NonFinalizedTree<T> {
             let parent_hash = *decoded_header.parent_hash;
             match self.blocks.find(|b| b.hash == parent_hash) {
                 Some(parent) => Some(parent),
-                None => return BodyVerifyStep1::BadParent { parent_hash },
+                None => {
+                    return if body.is_some() {
+                        BodyOrHeader::Body(BodyVerifyStep1::BadParent { parent_hash })
+                    } else {
+                        BodyOrHeader::Header(Err(HeaderVerifyError::BadParent { parent_hash }))
+                    }
+                }
             }
         };
 
@@ -275,14 +289,80 @@ impl<T> NonFinalizedTree<T> {
         };
 
         if let Some(body) = body {
-            BodyVerifyStep1::ParentRuntimeRequired(BodyVerifyRuntimeRequired {
-                chain: self,
-                header: decoded_header,
-                parent_tree_index,
-                body,
-                block1_slot_number,
-            })
+            BodyOrHeader::Body(BodyVerifyStep1::ParentRuntimeRequired(
+                BodyVerifyRuntimeRequired {
+                    chain: self,
+                    header: decoded_header,
+                    parent_tree_index,
+                    body,
+                    block1_slot_number,
+                },
+            ))
         } else {
+            let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
+                header::decode(
+                    &self
+                        .blocks
+                        .get(parent_tree_index)
+                        .unwrap()
+                        .scale_encoded_header,
+                )
+                .unwrap()
+            } else {
+                header::decode(&self.finalized_block_header).unwrap()
+            };
+
+            let mut process = verify::header_only::verify(verify::header_only::Config {
+                babe_genesis_configuration: &self.babe_genesis_config,
+                block1_slot_number,
+                now_from_unix_epoch: {
+                    // TODO: is it reasonable to use the stdlib here?
+                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                    // TODO: this is commented out because of Wasm support
+                    core::time::Duration::new(0, 0)
+                },
+                block_header: decoded_header.clone(),
+                parent_block_header,
+            });
+
+            let result = loop {
+                match process {
+                    verify::header_only::Verify::Finished(Ok(result)) => break result,
+                    verify::header_only::Verify::Finished(Err(err)) => {
+                        return BodyOrHeader::Header(Err(HeaderVerifyError::VerificationFailed(
+                            err,
+                        )));
+                    }
+                    verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
+                    verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
+                        if let Some(info) = self
+                            .babe_known_epoch_information
+                            .iter()
+                            .rev()
+                            .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
+                        {
+                            process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
+                        } else if let Some(parent_tree_index) = parent_tree_index {
+                            if let Some(info) = self
+                                .blocks
+                                .node_to_root_path(parent_tree_index)
+                                .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
+                                .filter_map(|ei| ei.as_ref())
+                                .find(|e| e.0 == epoch_info_rq.epoch_number())
+                            {
+                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
+                            } else {
+                                return BodyOrHeader::Header(Err(
+                                    HeaderVerifyError::UnknownBabeEpoch,
+                                ));
+                            }
+                        } else {
+                            return BodyOrHeader::Header(Err(HeaderVerifyError::UnknownBabeEpoch));
+                        }
+                    }
+                }
+            };
+
             todo!()
         }
     }
@@ -636,6 +716,11 @@ where
     }
 }
 
+enum BodyOrHeader<'c, 'h, T, I> {
+    Header(Result<HeaderVerifySuccess<'c, T>, HeaderVerifyError>),
+    Body(BodyVerifyStep1<'c, 'h, T, I>),
+}
+
 ///
 #[derive(Debug)]
 pub enum BodyVerifyStep1<'c, 'h, T, I> {
@@ -751,38 +836,39 @@ impl<'c, 'h, T> BodyVerifyStep2<'c, 'h, T> {
                     inner = i.run();
                     continue;
                 }
-                verify::header_body::Verify::BabeEpochInformation(_) => {
-                    /*
-                        if let Some(info) = self
-                            .babe_known_epoch_information
-                            .iter()
-                            .rev()
-                            .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
+                verify::header_body::Verify::BabeEpochInformation(epoch_info_rq) => {
+                    if let Some(info) = chain
+                        .chain
+                        .babe_known_epoch_information
+                        .iter()
+                        .rev()
+                        .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
+                    {
+                        inner = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
+                    } else if let Some(parent_tree_index) = chain.parent_tree_index {
+                        if let Some(info) = chain
+                            .chain
+                            .blocks
+                            .node_to_root_path(parent_tree_index)
+                            .map(|ni| &chain.chain.blocks.get(ni).unwrap().babe_epoch_change)
+                            .filter_map(|ei| ei.as_ref())
+                            .find(|e| e.0 == epoch_info_rq.epoch_number())
                         {
-                            process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                        } else if let Some(parent_tree_index) = parent_tree_index {
-                            if let Some(info) = self
-                                .blocks
-                                .node_to_root_path(parent_tree_index)
-                                .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
-                                .filter_map(|ei| ei.as_ref())
-                                .find(|e| e.0 == epoch_info_rq.epoch_number())
-                            {
-                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                            } else {
-                                return Err(HeaderVerifyError {
-                                    scale_encoded_header,
-                                    detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
-                                });
-                            }
+                            inner = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
                         } else {
-                            return Err(HeaderVerifyError {
+                            todo!()
+                            /*return Err(HeaderVerifyError {
                                 scale_encoded_header,
                                 detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
-                            });
+                            });*/
                         }
-                    */
-                    todo!()
+                    } else {
+                        todo!()
+                        /*return Err(HeaderVerifyError {
+                            scale_encoded_header,
+                            detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
+                        });*/
+                    }
                 }
                 verify::header_body::Verify::StorageGet(inner) => {
                     return BodyVerifyStep2::StorageGet(StorageGet { chain, inner })
