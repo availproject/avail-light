@@ -318,9 +318,11 @@ pub async fn run_block_import_task(mut config: Config) {
                     .map(|e| e.info_epoch_number);
                 if let Some(epoch_change) = import_result.babe_epoch_change {
                     let _was_in = babe_epoch_info_cache
-                        .put(epoch_change.info_epoch_number, epoch_change.info);
+                        .put(epoch_change.info_epoch_number, epoch_change.info.into());
                     debug_assert!(_was_in.is_none());
                 }
+
+                let storage_top_trie_changes = import_result.storage_top_trie_changes;
 
                 let current_best_hash = best_block_hash.clone();
                 best_block_hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
@@ -330,7 +332,6 @@ pub async fn run_block_import_task(mut config: Config) {
                 (config.tasks_executor)({
                     let best_block_hash = best_block_hash.clone();
                     let database = config.database.clone();
-                    let storage_top_trie_changes = import_result.storage_top_trie_changes;
 
                     let previous_block_db_import = previous_block_database_import_finished.take();
                     let (finished_tx, finished_rx) = oneshot::channel();

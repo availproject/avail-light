@@ -32,10 +32,10 @@ pub struct Config<'a> {
 }
 
 /// Block successfully verified.
-pub struct Success {
+pub struct Success<'a> {
     /// If `Some`, the block is the first block of a new BABE epoch. Returns the information about
     /// the epoch.
-    pub babe_epoch_change: Option<babe::EpochChangeInformation>,
+    pub babe_epoch_change: Option<babe::EpochChangeInformation<'a>>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
@@ -49,7 +49,7 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a>(config: Config<'a>) -> Verify {
+pub fn verify<'a>(config: Config<'a>) -> Verify<'a> {
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {
@@ -76,31 +76,31 @@ pub fn verify<'a>(config: Config<'a>) -> Verify {
 
 /// Current state of the verification.
 #[must_use]
-pub enum Verify {
+pub enum Verify<'a> {
     /// Verification is over.
-    Finished(Result<Success, Error>),
+    Finished(Result<Success<'a>, Error>),
     /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun),
+    ReadyToRun(ReadyToRun<'a>),
     /// Fetching an epoch information is required in order to continue.
-    BabeEpochInformation(BabeEpochInformation),
+    BabeEpochInformation(BabeEpochInformation<'a>),
 }
 
 /// Verification is ready to continue.
 #[must_use]
-pub struct ReadyToRun {
-    inner: ReadyToRunInner,
+pub struct ReadyToRun<'a> {
+    inner: ReadyToRunInner<'a>,
 }
 
-enum ReadyToRunInner {
+enum ReadyToRunInner<'a> {
     /// Verification finished
-    Finished(Result<babe::VerifySuccess, babe::VerifyError>),
+    Finished(Result<babe::VerifySuccess<'a>, babe::VerifyError>),
     /// Verifying BABE.
-    Babe(babe::SuccessOrPending),
+    Babe(babe::SuccessOrPending<'a>),
 }
 
-impl ReadyToRun {
+impl<'a> ReadyToRun<'a> {
     /// Continues the verification.
-    pub fn run(self) -> Verify {
+    pub fn run(self) -> Verify<'a> {
         match self.inner {
             ReadyToRunInner::Babe(babe_verification) => match babe_verification {
                 babe::SuccessOrPending::Success(babe_success) => Verify::ReadyToRun(ReadyToRun {
@@ -123,11 +123,11 @@ impl ReadyToRun {
 
 /// Fetching an epoch information is required in order to continue.
 #[must_use]
-pub struct BabeEpochInformation {
-    inner: babe::PendingVerify,
+pub struct BabeEpochInformation<'a> {
+    inner: babe::PendingVerify<'a>,
 }
 
-impl BabeEpochInformation {
+impl<'a> BabeEpochInformation<'a> {
     /// Returns the epoch number whose information must be passed to
     /// [`EpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {
@@ -136,7 +136,7 @@ impl BabeEpochInformation {
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`EpochInformation::epoch_number`].
-    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun {
+    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun<'a> {
         match self.inner.finish(epoch_info) {
             Ok(success) => ReadyToRun {
                 inner: ReadyToRunInner::Finished(Ok(success)),

@@ -89,8 +89,9 @@ struct Block<T> {
     /// If this block is block #1 of the chain, contains its babe slot number. Otherwise, contains
     /// the slot number of the block #1 that is an ancestor of this block.
     babe_block1_slot_number: u64,
-    /// If the block contains a Babe epoch change information, this is it.
-    babe_epoch_change: Option<babe::EpochChangeInformation>,
+    /// If the block contains a Babe epoch change information, contains the epoch number of the
+    /// change, and the information about this epoch).
+    babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
     /// Opaque data decided by the user.
     user_data: T,
 }
@@ -259,9 +260,9 @@ impl<T> Chain<T> {
                                 .node_to_root_path(parent_tree_index)
                                 .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
                                 .filter_map(|ei| ei.as_ref())
-                                .find(|e| e.info_epoch_number == epoch_info_rq.epoch_number())
+                                .find(|e| e.0 == epoch_info_rq.epoch_number())
                             {
-                                process = epoch_info_rq.inject_epoch(From::from(&info.info)).run();
+                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
                             } else {
                                 return Err(VerifyError {
                                     scale_encoded_header,
@@ -364,6 +365,10 @@ impl<T> Chain<T> {
             import_success.slot_number
         });
 
+        let babe_epoch_change = import_success
+            .babe_epoch_change
+            .map(|e| (e.info_epoch_number, e.info.into()));
+
         Ok(VerifySuccess::Insert {
             is_new_best,
             insert: Insert {
@@ -373,7 +378,7 @@ impl<T> Chain<T> {
                 scale_encoded_header,
                 hash,
                 babe_block1_slot_number,
-                babe_epoch_change: import_success.babe_epoch_change,
+                babe_epoch_change,
             },
         })
     }
@@ -450,7 +455,7 @@ pub struct Insert<'a, T> {
     scale_encoded_header: Vec<u8>,
     hash: [u8; 32],
     babe_block1_slot_number: u64,
-    babe_epoch_change: Option<babe::EpochChangeInformation>,
+    babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
 }
 
 impl<'a, T> Insert<'a, T> {

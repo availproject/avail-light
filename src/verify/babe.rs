@@ -153,19 +153,20 @@ pub struct VerifyConfig<'a> {
 
 /// Information yielded back after successfully verifying a block.
 #[derive(Debug)]
-pub struct VerifySuccess {
+pub struct VerifySuccess<'a> {
     /// If `Some`, the verified block contains an epoch transition. This epoch transition must
     /// later be provided back as part of the [`VerifyConfig`] of the blocks that are part of
     /// that epoch.
-    pub epoch_change: Option<EpochChangeInformation>,
+    pub epoch_change: Option<EpochChangeInformation<'a>>,
 
     /// Slot number the block belongs to.
+    // TODO: the info is already in the header, maybe replace this field with a `header::BabePreDigestRef`?
     pub slot_number: u64,
 }
 
 /// Information about a change of epoch.
 #[derive(Debug)]
-pub struct EpochChangeInformation {
+pub struct EpochChangeInformation<'a> {
     /// Number of the new epoch that `info` described.
     ///
     /// > **Note**: This is **not** the epoch that we have just entered.
@@ -174,7 +175,7 @@ pub struct EpochChangeInformation {
     /// Information about the next epoch.
     ///
     /// > **Note**: This is **not** the epoch that we have just entered, but the next one.
-    pub info: header::BabeNextEpoch,
+    pub info: header::BabeNextEpochRef<'a>,
 }
 
 /// Failure to verify a block.
@@ -214,7 +215,9 @@ pub enum VerifyError {
 /// Panics if `config.parent_block_header` is invalid.
 /// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
 ///
-pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPending, VerifyError> {
+pub fn start_verify_header<'a>(
+    config: VerifyConfig<'a>,
+) -> Result<SuccessOrPending<'a>, VerifyError> {
     // TODO: handle OnDisabled
 
     // Gather the BABE-related information from the header.
@@ -277,7 +280,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
         .babe_epoch_information()
         .map(|(info, _)| EpochChangeInformation {
             info_epoch_number: epoch_number + 1,
-            info: info.into(),
+            info,
         });
 
     // TODO: in case of epoch change, should also check the randomness value; while the runtime
@@ -335,17 +338,17 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub enum SuccessOrPending {
+pub enum SuccessOrPending<'a> {
     /// Need information about an epoch in order to finish verifying the block.
-    Pending(PendingVerify),
+    Pending(PendingVerify<'a>),
     /// Block has been successfully verified.
-    Success(VerifySuccess),
+    Success(VerifySuccess<'a>),
 }
 
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub struct PendingVerify {
+pub struct PendingVerify<'a> {
     /// Value of `c` found in the Babe configuration.
     // TODO: should be asked from user, since it can change
     c: (u64, u64),
@@ -354,7 +357,7 @@ pub struct PendingVerify {
     /// Block signature contained in the header that we verify.
     seal_signature: schnorrkel::Signature,
     /// If `Some`, block is at an epoch transition.
-    epoch_change: Option<EpochChangeInformation>,
+    epoch_change: Option<EpochChangeInformation<'a>>,
     /// Epoch number the block belongs to.
     epoch_number: u64,
     /// Slot number the block belongs to.
@@ -368,7 +371,7 @@ pub struct PendingVerify {
     vrf_output_and_proof: Option<([u8; 32], [u8; 64])>,
 }
 
-impl PendingVerify {
+impl<'a> PendingVerify<'a> {
     /// Returns the epoch number whose information must be passed to [`PendingVerify::finish`].
     pub fn epoch_number(&self) -> u64 {
         self.epoch_number
@@ -379,7 +382,7 @@ impl PendingVerify {
     pub fn finish(
         self,
         epoch_info: header::BabeNextEpochRef,
-    ) -> Result<VerifySuccess, VerifyError> {
+    ) -> Result<VerifySuccess<'a>, VerifyError> {
         // TODO: check that slot type is allowed by BABE config
 
         // Fetch the authority that has supposedly signed the block.
