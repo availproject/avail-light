@@ -68,7 +68,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             .collect::<Vec<_>>();
         // TODO: remove this; temporary because bootnode is apparently full
         known_addresses.push((
-            "12D3KooWQ9CbBChpa5HH5mADDgwRVdFUGXN3HHsBstbg7Gjhb4ge"
+            "12D3KooWNEA9HAKRA2Rqyx7EgCL6J8M6zaXVLpJsuF4ZbkQDRRnL"
                 .parse()
                 .unwrap(),
             "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap(),
@@ -104,7 +104,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                         fields: network::BlocksRequestFields {
                             header: true,
                             body: false,
-                            justification: false,
+                            justification: true,
                         },
                     })
                     .await;

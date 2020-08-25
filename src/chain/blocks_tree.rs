@@ -33,7 +33,7 @@ use crate::{
 };
 
 use alloc::collections::VecDeque;
-use core::{fmt, iter, mem};
+use core::{cmp, fmt, iter, mem};
 
 /// Configuration for the [`NonFinalizedTree`].
 #[derive(Debug)]
@@ -478,16 +478,16 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// If the verification succeeds, a [`JustificationApply`] object might be returned which can
     /// be used to then insert the block in the chain.
+    #[must_use]
     pub fn verify_justification(
         &mut self,
         scale_encoded_justification: &[u8],
-    ) -> Result<(), JustificationVerifyError> {
+    ) -> Result<JustificationApply<T>, JustificationVerifyError> {
         // Turn justification into a strongly-typed struct.
         let decoded = justification::decode::decode(&scale_encoded_justification)
             .map_err(JustificationVerifyError::InvalidJustification)?;
 
-        // Find in the list of non-finalized blocks the one targeted by the justification
-        // in `self.blocks`.
+        // Find in the list of non-finalized blocks the one targeted by the justification.
         let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
             Some(idx) => idx,
             None => return Err(JustificationVerifyError::UnknownTargetBlock),
@@ -497,12 +497,55 @@ impl<T> NonFinalizedTree<T> {
         // authorities change, then we need to finalize that triggering block (or any block
         // after or including the one that schedules these changes) before finalizing the one
         // targeted by the justification.
-        if let Some(earliest_trigger) = self
-            .grandpa_finalized_scheduled_changes
-            .front()
-            .map(|sc| sc.trigger_block_height)
-        {
-            if earliest_trigger < u64::from(decoded.target_number) {
+
+        // Find out the next block height where an authority change will be triggered.
+        let earliest_trigger = {
+            // Scheduled change that is already finalized.
+            let already_finalized = self
+                .grandpa_finalized_scheduled_changes
+                .front()
+                .map(|sc| sc.trigger_block_height);
+
+            // First change that would be scheduled if we finalize the target block.
+            let would_happen = {
+                let mut trigger_height = None;
+                // TODO: lot of boilerplate code here
+                for node in self.blocks.root_to_node_path(block_index) {
+                    let header =
+                        header::decode(&self.blocks.get(node).unwrap().scale_encoded_header)
+                            .unwrap();
+                    for grandpa_digest_item in header.digest.logs().filter_map(|d| match d {
+                        header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                        _ => None,
+                    }) {
+                        match grandpa_digest_item {
+                            header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                                let trigger_block_height =
+                                    header.number.checked_add(u64::from(change.delay)).unwrap();
+                                match trigger_height {
+                                    Some(_) => panic!("invalid block!"), // TODO: do better? also, this problem is not checked during block verification
+                                    None => trigger_height = Some(trigger_block_height),
+                                }
+                            }
+                            _ => unimplemented!(), // TODO: unimplemented
+                        }
+                    }
+                }
+                trigger_height
+            };
+
+            match (already_finalized, would_happen) {
+                (Some(a), Some(b)) => Some(cmp::min(a, b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            }
+        };
+
+        // As explained above, `target_number` must be < `earliest_trigger`, otherwise the
+        // finalization is unsecure.
+        if let Some(earliest_trigger) = earliest_trigger {
+            if u64::from(decoded.target_number) >= earliest_trigger {
                 let block_to_finalize_hash = self
                     .blocks
                     .node_to_root_path(block_index)
@@ -536,7 +579,7 @@ impl<T> NonFinalizedTree<T> {
         // As per above check, we know that the authorities of the target block are either the
         // same as the ones of the latest finalized block, or the ones contained in the header of
         // the latest finalized block.
-        let verif_result = justification::verify::verify(justification::verify::Config {
+        justification::verify::verify(justification::verify::Config {
             justification: decoded,
             authorities_set_id: self.grandpa_after_finalized_block_authorities_set_id,
             authorities_list: authorities_list.iter().map(|a| a.public_key),
@@ -544,9 +587,10 @@ impl<T> NonFinalizedTree<T> {
         .map_err(JustificationVerifyError::VerificationFailed)?;
 
         // Justification has been successfully verified!
-        // We can now update the finalized block.
-        self.set_finalized_block_inner(block_index);
-        Ok(())
+        Ok(JustificationApply {
+            chain: self,
+            to_finalize: block_index,
+        })
     }
 
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
@@ -771,13 +815,14 @@ pub enum VerifyErrorDetail {
 #[must_use]
 pub struct JustificationApply<'a, T> {
     chain: &'a mut NonFinalizedTree<T>,
+    to_finalize: fork_tree::NodeIndex,
 }
 
 impl<'a, T> JustificationApply<'a, T> {
     /// Applies the justification, finalizing the given block.
     // TODO: return type?
     pub fn apply(self) {
-        todo!()
+        self.chain.set_finalized_block_inner(self.to_finalize)
     }
 }
 
