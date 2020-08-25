@@ -42,7 +42,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                 .1
                 .to_owned();
 
-            babe::BabeGenesisConfiguration::from_runtime_code(&wasm_code, |k| {
+            babe::BabeGenesisConfiguration::from_genesis_storage(&wasm_code, |k| {
                 chain_spec
                     .genesis_storage()
                     .find(|(k2, _)| *k2 == k)

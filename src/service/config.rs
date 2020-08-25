@@ -47,15 +47,9 @@ pub struct ChainInfoConfig<'a> {
 
 impl<'a> From<&'a ChainSpec> for ChainInfoConfig<'a> {
     fn from(specs: &'a ChainSpec) -> ChainInfoConfig {
+        // TODO: don't unwrap
         let babe_genesis_config = {
-            let wasm_code = specs
-                .genesis_storage()
-                .find(|(k, _)| k == b":code")
-                .unwrap()
-                .1
-                .to_owned();
-
-            babe::BabeGenesisConfiguration::from_runtime_code(&wasm_code, |k| {
+            babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
                 specs
                     .genesis_storage()
                     .find(|(k2, _)| *k2 == k)

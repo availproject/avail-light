@@ -16,14 +16,16 @@ impl BabeGenesisConfiguration {
     ///
     /// Must be passed a closure that returns the storage value corresponding to the given key in
     /// the genesis block storage.
-    // TODO: why is `wasm_code` a separate parameter? it could grabbed with `genesis_storage_access`
-    pub fn from_runtime_code(
-        wasm_code: impl AsRef<[u8]>,
-        genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,
-    ) -> Result<Self, BabeChainConfigurationError> {
-        let vm = executor::WasmVmPrototype::new(wasm_code)
-            .map_err(BabeChainConfigurationError::VmInitialization)?;
-        let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)?;
+    pub fn from_genesis_storage(
+        mut genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,
+    ) -> Result<Self, FromGenesisStorageError> {
+        let wasm_code =
+            genesis_storage_access(b":code").ok_or(FromGenesisStorageError::RuntimeNotFound)?;
+        let vm = executor::WasmVmPrototype::new(&wasm_code)
+            .map_err(FromVmPrototypeError::VmInitialization)
+            .map_err(FromGenesisStorageError::VmError)?;
+        let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
+            .map_err(FromGenesisStorageError::VmError)?;
         Ok(cfg)
     }
 
@@ -36,10 +38,10 @@ impl BabeGenesisConfiguration {
     pub fn from_virtual_machine_prototype(
         vm: executor::WasmVmPrototype,
         mut genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,
-    ) -> Result<(Self, executor::WasmVmPrototype), BabeChainConfigurationError> {
+    ) -> Result<(Self, executor::WasmVmPrototype), FromVmPrototypeError> {
         let mut vm = vm
             .run_no_param("BabeApi_configuration")
-            .map_err(BabeChainConfigurationError::VmInitialization)?;
+            .map_err(FromVmPrototypeError::VmInitialization)?;
 
         let inner = loop {
             match vm.state() {
@@ -47,10 +49,10 @@ impl BabeGenesisConfiguration {
                 executor::State::Finished(data) => {
                     break match OwnedGenesisConfiguration::decode_all(&data) {
                         Ok(cfg) => cfg,
-                        Err(err) => return Err(BabeChainConfigurationError::OutputDecode(err)),
+                        Err(err) => return Err(FromVmPrototypeError::OutputDecode(err)),
                     };
                 }
-                executor::State::Trapped => return Err(BabeChainConfigurationError::Trapped),
+                executor::State::Trapped => return Err(FromVmPrototypeError::Trapped),
 
                 executor::State::ExternalStorageGet {
                     storage_key,
@@ -75,7 +77,7 @@ impl BabeGenesisConfiguration {
                     resolve.finish_call(value);
                 }
 
-                _ => return Err(BabeChainConfigurationError::ExternalityNotAllowed),
+                _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
             }
         };
 
@@ -120,7 +122,16 @@ impl BabeGenesisConfiguration {
 
 /// Error when retrieving the BABE configuration.
 #[derive(Debug, derive_more::Display)]
-pub enum BabeChainConfigurationError {
+pub enum FromGenesisStorageError {
+    /// Runtime couldn't be found in the genesis storage.
+    RuntimeNotFound,
+    /// Error while executing the runtime.
+    VmError(FromVmPrototypeError),
+}
+
+/// Error when retrieving the BABE configuration.
+#[derive(Debug, derive_more::Display)]
+pub enum FromVmPrototypeError {
     /// Error when initializing the virtual machine.
     VmInitialization(executor::NewErr),
     /// Crash while running the virtual machine.
