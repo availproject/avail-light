@@ -31,7 +31,7 @@ use crate::{
     header,
     verify::{self, babe},
 };
-use core::fmt;
+use core::{fmt, iter};
 
 /// Configuration for the [`NonFinalizedTree`].
 #[derive(Debug)]
@@ -49,13 +49,34 @@ pub struct Config {
     pub babe_finalized_block1_slot_number: Option<u64>,
 
     /// Known Babe epoch transitions coming from the finalized block and its ancestors.
+    // TODO: turn into iterator
     pub babe_known_epoch_information: Vec<(u64, header::BabeNextEpoch)>,
 
     /// Configuration for BABE, retreived from the genesis block.
     pub babe_genesis_config: babe::BabeGenesisConfiguration,
 
+    /// Grandpa authorities set ID of the block right after finalized block.
+    ///
+    /// If the finalized block is the genesis, should be 0. Otherwise,
+    // TODO: document how to know this
+    pub grandpa_after_finalized_block_authorities_set_id: u64,
+
+    /// List of GrandPa authorities that need to finalize the block right after the finalized
+    /// block.
+    pub grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
+
+    /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
+    /// are already finalized but not triggered yet. These changes will for sure happen.
+    pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
+
     /// Pre-allocated size of the chain, in number of non-finalized blocks.
-    pub capacity: usize,
+    pub blocks_capacity: usize,
+}
+
+#[derive(Debug)]
+pub struct FinalizedScheduledChange {
+    pub trigger_block_height: u64,
+    pub new_authorities_list: Vec<header::GrandpaAuthority>,
 }
 
 /// Holds state about the current state of the chain for the purpose of verifying headers.
@@ -65,6 +86,16 @@ pub struct NonFinalizedTree<T> {
     finalized_block_header: Vec<u8>,
     /// Hash of [`NonFinalizedTree::finalized_block_header`].
     finalized_block_hash: [u8; 32],
+    /// Grandpa authorities set ID of the block right after the finalized block.
+    grandpa_after_finalized_block_authorities_set_id: u64,
+    /// List of GrandPa authorities that need to finalize the block right after the finalized
+    /// block.
+    grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
+    /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
+    /// are already finalized. These changes will for sure happen.
+    /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
+    /// by block height.
+    grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
 
     /// Configuration for BABE, retreived from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
@@ -85,6 +116,8 @@ pub struct NonFinalizedTree<T> {
 struct Block<T> {
     // TODO: should be owned header
     scale_encoded_header: Vec<u8>,
+    /// Cache of the hash of the block. Always equal to the hash of the header stored in this
+    /// same struct.
     hash: [u8; 32],
     /// If this block is block #1 of the chain, contains its babe slot number. Otherwise, contains
     /// the slot number of the block #1 that is an ancestor of this block.
@@ -98,23 +131,36 @@ struct Block<T> {
 
 impl<T> NonFinalizedTree<T> {
     /// Initializes a new queue.
-    pub fn new(config: Config) -> Self {
+    pub fn new(mut config: Config) -> Self {
         let finalized_header = header::decode(&config.finalized_block_header).unwrap();
         if finalized_header.number >= 1 {
             assert!(config.babe_finalized_block1_slot_number.is_some());
+        } else {
+            assert_eq!(config.grandpa_after_finalized_block_authorities_set_id, 0);
         }
 
         let finalized_block_hash =
             header::hash_from_scale_encoded_header(&config.finalized_block_header);
 
+        config
+            .grandpa_finalized_scheduled_changes
+            .retain(|sc| sc.trigger_block_height > finalized_header.number);
+        config
+            .grandpa_finalized_scheduled_changes
+            .sort_by(|a, b| a.trigger_block_height.cmp(&b.trigger_block_height));
+
         NonFinalizedTree {
             finalized_block_header: config.finalized_block_header,
             finalized_block_hash,
+            grandpa_after_finalized_block_authorities_set_id: config
+                .grandpa_after_finalized_block_authorities_set_id,
+            grandpa_finalized_triggered_authorities: config.grandpa_finalized_triggered_authorities,
+            grandpa_finalized_scheduled_changes: config.grandpa_finalized_scheduled_changes,
             babe_genesis_config: config.babe_genesis_config,
             babe_known_epoch_information: config.babe_known_epoch_information,
             babe_epoch_info_cache: lru::LruCache::new(4),
             babe_finalized_block1_slot_number: config.babe_finalized_block1_slot_number,
-            blocks: fork_tree::ForkTree::with_capacity(config.capacity),
+            blocks: fork_tree::ForkTree::with_capacity(config.blocks_capacity),
             current_best: None,
         }
     }
@@ -140,6 +186,15 @@ impl<T> NonFinalizedTree<T> {
     pub fn verify_header(
         &mut self,
         scale_encoded_header: Vec<u8>,
+    ) -> Result<VerifySuccess<T>, VerifyError> {
+        self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>)
+    }
+
+    /// Underlying implementation of both header and header+body verification.
+    fn verify_inner(
+        &mut self,
+        scale_encoded_header: Vec<u8>,
+        body: Option<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
     ) -> Result<VerifySuccess<T>, VerifyError> {
         let decoded_header = match header::decode(&scale_encoded_header) {
             Ok(h) => h,
@@ -223,7 +278,26 @@ impl<T> NonFinalizedTree<T> {
         };
 
         // Now perform the actual block verification.
-        let import_success = {
+        let import_success = if let Some(body) = body {
+            // TODO: finish here
+            let mut process = verify::header_body::verify(verify::header_body::Config {
+                parent_runtime: todo!(),
+                babe_genesis_configuration: &self.babe_genesis_config,
+                block1_slot_number,
+                now_from_unix_epoch: {
+                    // TODO: is it reasonable to use the stdlib here?
+                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                    // TODO: this is commented out because of Wasm support
+                    core::time::Duration::new(0, 0)
+                },
+                block_header: decoded_header.clone(),
+                parent_block_header,
+                block_body: body,
+                top_trie_root_calculation_cache: None,
+            });
+
+            todo!()
+        } else {
             let mut process = verify::header_only::verify(verify::header_only::Config {
                 babe_genesis_configuration: &self.babe_genesis_config,
                 block1_slot_number,
@@ -394,17 +468,71 @@ impl<T> NonFinalizedTree<T> {
         &mut self,
         scale_encoded_justification: &[u8],
     ) -> Result<(), JustificationVerifyError> {
+        // Turn justification into a strongly-typed struct.
         let decoded = justification::decode::decode(&scale_encoded_justification)
             .map_err(JustificationVerifyError::InvalidJustification)?;
 
+        // Find in the list of non-finalized blocks the one targeted by the justification
+        // in `self.blocks`.
+        let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
+            Some(idx) => idx,
+            None => return Err(JustificationVerifyError::UnknownTargetBlock),
+        };
+
+        // If any block between the latest finalized one and the target block trigger any GrandPa
+        // authorities change, then we need to finalize that triggering block (or any block
+        // after or including the one that schedules these changes) before finalizing the one
+        // targeted by the justification.
+        if let Some(earliest_trigger) = self
+            .grandpa_finalized_scheduled_changes
+            .first()
+            .map(|sc| sc.trigger_block_height)
+        {
+            if earliest_trigger < u64::from(decoded.target_number) {
+                let block_to_finalize_hash = self
+                    .blocks
+                    .node_to_root_path(block_index)
+                    .filter_map(|b| {
+                        let b = self.blocks.get(b).unwrap();
+                        if header::decode(&b.scale_encoded_header).unwrap().number
+                            == earliest_trigger
+                        {
+                            Some(b.hash)
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+                    .unwrap();
+                return Err(JustificationVerifyError::TooFarAhead {
+                    block_to_finalize_hash,
+                });
+            }
+        }
+
+        // Find which authorities are supposed to finalize the target block.
+        let authorities_list = self
+            .grandpa_finalized_scheduled_changes
+            .iter()
+            .filter(|sc| sc.trigger_block_height < u64::from(decoded.target_number))
+            .last()
+            .map(|sc| &sc.new_authorities_list)
+            .unwrap_or(&self.grandpa_finalized_triggered_authorities);
+
+        // As per above check, we know that the authorities of the target block are either the
+        // same as the ones of the latest finalized block, or the ones contained in the header of
+        // the latest finalized block.
         let verif_result = justification::verify::verify(justification::verify::Config {
             justification: decoded,
-            authorities_set_id: 0,                           // TODO:
-            authorities_list: std::iter::empty::<Vec<u8>>(), // TODO:
+            authorities_set_id: self.grandpa_after_finalized_block_authorities_set_id,
+            authorities_list: authorities_list.iter().map(|a| a.public_key),
         })
         .map_err(JustificationVerifyError::VerificationFailed)?;
 
-        todo!()
+        // Justification has been successfully verified!
+        // We can now update the finalized block.
+        self.set_finalized_block_inner(block_index);
+        Ok(())
     }
 
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
@@ -412,6 +540,17 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// The block must have been passed to [`NonFinalizedTree::verify_header`].
     pub fn set_finalized_block(&mut self, block_hash: &[u8; 32]) -> Result<(), SetFinalizedError> {
+        let block_index = match self.blocks.find(|b| b.hash == *block_hash) {
+            Some(idx) => idx,
+            None => return Err(SetFinalizedError::UnknownBlock),
+        };
+
+        self.set_finalized_block_inner(block_index);
+        Ok(())
+    }
+
+    /// Private function that does the same as [`NonFinalizedTree::set_finalized_block`].
+    fn set_finalized_block_inner(&mut self, block_index: fork_tree::NodeIndex) {
         todo!()
     }
 }
@@ -562,6 +701,14 @@ impl<'a, T> fmt::Debug for JustificationApply<'a, T> {
 pub enum JustificationVerifyError {
     /// Error while decoding the justification.
     InvalidJustification(justification::decode::Error),
+    /// Justification targets a block that isn't in the chain.
+    UnknownTargetBlock,
+    /// There exists a block in-between the latest finalized block and the block targeted by the
+    /// justification that must first be finalized.
+    TooFarAhead {
+        /// Hash of the block to finalize first.
+        block_to_finalize_hash: [u8; 32],
+    },
     /// The justification verification has failed. The justification is invalid and should be
     /// thrown away.
     VerificationFailed(justification::verify::Error),

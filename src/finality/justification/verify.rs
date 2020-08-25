@@ -34,8 +34,7 @@ pub fn verify<'a>(
             .clone()
             .any(|a| a.as_ref() == precommit.authority_public_key)
         {
-            // TODO: restore
-            //return Err(Error::NotAuthority(*precommit.authority_public_key));
+            return Err(Error::NotAuthority(*precommit.authority_public_key));
         }
 
         // TODO: must check signed block ancestry using `votes_ancestries`
