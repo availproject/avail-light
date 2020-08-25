@@ -1,6 +1,6 @@
 use crate::{executor, header};
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, fmt};
 use parity_scale_codec::DecodeAll as _;
 
 /// BABE configuration of a chain, as extracted from the genesis block.
@@ -117,6 +117,13 @@ impl BabeGenesisConfiguration {
     /// Returns the information about epoch number 0.
     pub fn epoch0_information(&self) -> header::BabeNextEpochRef {
         From::from(&self.epoch0_information)
+    }
+}
+
+impl fmt::Debug for BabeGenesisConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO: better
+        f.debug_struct("BabeGenesisConfiguration").finish()
     }
 }
 

@@ -31,6 +31,7 @@
 //! blocks, the *best block* is the one that will be voted for finalization. If there isn't any
 //! non-finalized block, the latest finalized block is also the best block.
 
+pub mod blocks_tree;
 pub mod fork_tree;
-pub mod headers;
 pub mod headers_async;
+pub mod sync;

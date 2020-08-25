@@ -1,8 +1,10 @@
-//! Asynchronous version of [../headers].
+//! Asynchronous version of [../blocks_tree].
 //!
-//! Please consult the documentation of [../headers].
+//! Please consult the documentation of [../blocks_tree].
 
-use super::headers;
+// TODO: rethink this module?
+
+use super::blocks_tree;
 
 use alloc::boxed::Box;
 use core::{pin::Pin, task::Poll};
@@ -11,7 +13,7 @@ use futures::{channel::mpsc, lock::Mutex, prelude::*};
 /// Configuration for the [`ChainAsync`].
 pub struct Config {
     /// Configuration for the actual queue.
-    pub chain_config: headers::Config,
+    pub chain_config: blocks_tree::Config,
     /// Number of elements in the queue to verify.
     pub queue_size: usize,
     /// How to spawn other background tasks.
@@ -40,7 +42,7 @@ enum ToForeground<T> {
     VerifyOutcome {
         scale_encoded_header: Vec<u8>,
         user_data: T,
-        result: Result<VerifySuccess, headers::VerifyErrorDetail>,
+        result: Result<VerifySuccess, blocks_tree::VerifyErrorDetail>,
     },
 }
 
@@ -54,7 +56,7 @@ where
         let (mut to_foreground, from_background) = mpsc::channel(16);
 
         (config.tasks_executor)({
-            let mut queue = headers::Chain::new(config.chain_config);
+            let mut queue = blocks_tree::NonFinalizedTree::new(config.chain_config);
             Box::pin(async move {
                 loop {
                     match from_foreground.next().await {
@@ -67,7 +69,7 @@ where
                         }) => {
                             let outcome = queue.verify_header(scale_encoded_header);
                             let (scale_encoded_header, result) = match outcome {
-                                Ok(headers::VerifySuccess::Insert {
+                                Ok(blocks_tree::VerifySuccess::Insert {
                                     insert,
                                     is_new_best,
                                 }) => {
@@ -77,13 +79,13 @@ where
                                         Ok(VerifySuccess { is_new_best }),
                                     )
                                 }
-                                Ok(headers::VerifySuccess::Duplicate {
+                                Ok(blocks_tree::VerifySuccess::Duplicate {
                                     scale_encoded_header,
                                 }) => (
                                     scale_encoded_header,
                                     Ok(VerifySuccess { is_new_best: false }), // TODO: weird
                                 ),
-                                Err(headers::VerifyError {
+                                Err(blocks_tree::VerifyError {
                                     scale_encoded_header,
                                     detail,
                                 }) => (scale_encoded_header, Err(detail)),
@@ -190,7 +192,7 @@ pub enum Event<T> {
         /// Custom value that was passed to [`ChainAsync::verify`].
         user_data: T,
         /// Whether the block import has been successful.
-        result: Result<VerifySuccess, headers::VerifyErrorDetail>,
+        result: Result<VerifySuccess, blocks_tree::VerifyErrorDetail>,
     },
 }
 

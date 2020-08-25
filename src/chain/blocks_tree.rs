@@ -1,9 +1,9 @@
 //! Chain of block headers.
 //!
-//! This module provides the [`Chain`] struct. It contains the state necessary to maintain a
+//! This module provides the [`NonFinalizedTree`] struct. It contains the state necessary to maintain a
 //! chain of block headers.
 //!
-//! The state in the [`Chain`] consists of:
+//! The state in the [`NonFinalizedTree`] consists of:
 //!
 //! - One "latest finalized" block.
 //! - Zero or more blocks that descend from the latest finalized block.
@@ -12,15 +12,15 @@
 //! can always be set to the genesis block of the chain, it is preferable, in order to reduce
 //! memory utilization, to maintain it to a block that is as high as possible in the chain.
 //!
-//! A block can be added to the chain by calling [`Chain::verify`]. You are
+//! A block can be added to the chain by calling [`NonFinalizedTree::verify_header`]. You are
 //! encouraged to regularly update the latest finalized block using
-//! [`Chain::set_finalized_block`].
+//! [`NonFinalizedTree::set_finalized_block`].
 //!
 //! > **Note**: While the GrandPa protocol provides a network-wide way to designate a block as
 //! >           final, the concept of GrandPa-provided finality doesn't have to be the same as
-//! >           the finality decided for the [`Chain`]. For example, an API user
+//! >           the finality decided for the [`NonFinalizedTree`]. For example, an API user
 //! >           might decide that the block whose number is `latest_block - 5` will always be
-//! >           final, and rebuild a new [`Chain`] if that assumption turned out to
+//! >           final, and rebuild a new [`NonFinalizedTree`] if that assumption turned out to
 //! >           not be true.
 
 // TODO: rethink this doc ^
@@ -33,13 +33,13 @@ use crate::{
 };
 use core::fmt;
 
-/// Configuration for the [`Chain`].
-// TODO: #[derive(Debug)]
+/// Configuration for the [`NonFinalizedTree`].
+#[derive(Debug)]
 pub struct Config {
     /// SCALE encoding of the header of the highest known finalized block.
     ///
     /// Once the queue is created, it is as if you had called
-    /// [`Chain::set_finalized_block`] with this block.
+    /// [`NonFinalizedTree::set_finalized_block`] with this block.
     // TODO: should be an owned decoded header?
     pub finalized_block_header: Vec<u8>,
 
@@ -59,11 +59,11 @@ pub struct Config {
 }
 
 /// Holds state about the current state of the chain for the purpose of verifying headers.
-pub struct Chain<T> {
+pub struct NonFinalizedTree<T> {
     /// SCALE encoding of the header of the highest known finalized block.
     // TODO: should be an owned decoded header
     finalized_block_header: Vec<u8>,
-    /// Hash of [`Chain::finalized_block_header`].
+    /// Hash of [`NonFinalizedTree::finalized_block_header`].
     finalized_block_hash: [u8; 32],
 
     /// Configuration for BABE, retreived from the genesis block.
@@ -77,7 +77,7 @@ pub struct Chain<T> {
     babe_finalized_block1_slot_number: Option<u64>,
     /// Container for non-finalized blocks.
     blocks: fork_tree::ForkTree<Block<T>>,
-    /// Index within [`Chain::blocks`] of the current best block. `None` if and only
+    /// Index within [`NonFinalizedTree::blocks`] of the current best block. `None` if and only
     /// if the fork tree is empty.
     current_best: Option<fork_tree::NodeIndex>,
 }
@@ -96,7 +96,7 @@ struct Block<T> {
     user_data: T,
 }
 
-impl<T> Chain<T> {
+impl<T> NonFinalizedTree<T> {
     /// Initializes a new queue.
     pub fn new(config: Config) -> Self {
         let finalized_header = header::decode(&config.finalized_block_header).unwrap();
@@ -107,7 +107,7 @@ impl<T> Chain<T> {
         let finalized_block_hash =
             header::hash_from_scale_encoded_header(&config.finalized_block_header);
 
-        Chain {
+        NonFinalizedTree {
             finalized_block_header: config.finalized_block_header,
             finalized_block_hash,
             babe_genesis_config: config.babe_genesis_config,
@@ -410,13 +410,13 @@ impl<T> Chain<T> {
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
     /// that block will fail.
     ///
-    /// The block must have been passed to [`Chain::verify`].
+    /// The block must have been passed to [`NonFinalizedTree::verify_header`].
     pub fn set_finalized_block(&mut self, block_hash: &[u8; 32]) -> Result<(), SetFinalizedError> {
         todo!()
     }
 }
 
-impl<T> fmt::Debug for Chain<T>
+impl<T> fmt::Debug for NonFinalizedTree<T>
 where
     T: fmt::Debug,
 {
@@ -444,13 +444,13 @@ pub enum VerifySuccess<'a, T> {
     },
 }
 
-/// Mutably borrows the [`Chain`] and allows insert a successfully-verified block into it.
+/// Mutably borrows the [`NonFinalizedTree`] and allows insert a successfully-verified block into it.
 #[must_use]
 pub struct Insert<'a, T> {
-    chain: &'a mut Chain<T>,
+    chain: &'a mut NonFinalizedTree<T>,
     /// Copy of the value in [`VerifySuccess::is_new_best`].
     is_new_best: bool,
-    /// Index of the parent in [`Chain::blocks`].
+    /// Index of the parent in [`NonFinalizedTree::blocks`].
     parent_tree_index: Option<fork_tree::NodeIndex>,
     scale_encoded_header: Vec<u8>,
     hash: [u8; 32],
@@ -503,9 +503,9 @@ impl<'a, T> fmt::Debug for Insert<'a, T> {
 
 /// Verification is successful.
 pub struct InsertSuccess<'a> {
-    /// Same value as the parameter passed to [`Chain::verify`].
+    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
     pub scale_encoded_header: &'a [u8],
-    /// Same value as the parameter passed to [`Chain::verify`].
+    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
     pub header: header::HeaderRef<'a>,
 }
 
@@ -513,7 +513,7 @@ pub struct InsertSuccess<'a> {
 #[derive(Debug, derive_more::Display)]
 #[display(fmt = "{}", detail)]
 pub struct VerifyError {
-    /// Same value as the parameter passed to [`Chain::verify`].
+    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
     pub scale_encoded_header: Vec<u8>,
     /// Reason for the failure.
     pub detail: VerifyErrorDetail,
@@ -540,7 +540,7 @@ pub enum VerifyErrorDetail {
 // TODO: doc and all
 #[must_use]
 pub struct JustificationApply<'a, T> {
-    chain: &'a mut Chain<T>,
+    chain: &'a mut NonFinalizedTree<T>,
 }
 
 impl<'a, T> JustificationApply<'a, T> {
@@ -570,6 +570,6 @@ pub enum JustificationVerifyError {
 /// Error that can happen when setting the finalized block.
 #[derive(Debug, derive_more::Display)]
 pub enum SetFinalizedError {
-    /// Block must have been passed to [`Chain::verify`] in the past.
+    /// Block must have been passed to [`NonFinalizedTree::verify_header`] in the past.
     UnknownBlock,
 }
