@@ -5,7 +5,7 @@ use core::time::Duration;
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
-pub struct Config<'a, TBody> {
+pub struct Config<'a, 'b, TBody> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
     pub parent_runtime: executor::WasmVmPrototype,
@@ -18,7 +18,7 @@ pub struct Config<'a, TBody> {
     /// BABE configuration retrieved from the genesis block.
     ///
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
+    pub babe_genesis_configuration: &'b babe::BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -76,9 +76,9 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a>(
-    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
-) -> Verify {
+pub fn verify<'a, 'b>(
+    config: Config<'a, 'b, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+) -> Verify<'a> {
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {

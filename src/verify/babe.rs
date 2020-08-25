@@ -124,7 +124,7 @@ pub mod chain_config;
 pub use chain_config::BabeGenesisConfiguration;
 
 /// Configuration for [`start_verify_header`].
-pub struct VerifyConfig<'a> {
+pub struct VerifyConfig<'a, 'b> {
     /// Header of the block to verify.
     pub header: header::HeaderRef<'a>,
 
@@ -144,7 +144,7 @@ pub struct VerifyConfig<'a> {
     ///
     /// Can be obtained by calling [`BabeGenesisConfiguration::from_virtual_machine_prototype`]
     /// with the runtime of the genesis block.
-    pub genesis_configuration: &'a BabeGenesisConfiguration,
+    pub genesis_configuration: &'b BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -215,8 +215,8 @@ pub enum VerifyError {
 /// Panics if `config.parent_block_header` is invalid.
 /// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
 ///
-pub fn start_verify_header<'a>(
-    config: VerifyConfig<'a>,
+pub fn start_verify_header<'a, 'b>(
+    config: VerifyConfig<'a, 'b>,
 ) -> Result<SuccessOrPending<'a>, VerifyError> {
     // TODO: handle OnDisabled
 

@@ -3,7 +3,7 @@ use crate::{header, verify::babe};
 use core::time::Duration;
 
 /// Configuration for a block verification.
-pub struct Config<'a> {
+pub struct Config<'a, 'b> {
     /// Header of the parent of the block to verify.
     ///
     /// The hash of this header must be the one referenced in [`Config::block_header`].
@@ -12,7 +12,7 @@ pub struct Config<'a> {
     /// BABE configuration retrieved from the genesis block.
     ///
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
+    pub babe_genesis_configuration: &'b babe::BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -49,7 +49,7 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a>(config: Config<'a>) -> Verify<'a> {
+pub fn verify<'a, 'b>(config: Config<'a, 'b>) -> Verify<'a> {
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {
