@@ -1,1 +1,2 @@
-pub mod optimistic;
+// TODO: restore; doesn't compile on Wasm
+//pub mod optimistic;

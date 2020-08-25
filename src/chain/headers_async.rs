@@ -28,9 +28,12 @@ pub struct ChainAsync<T> {
 
 #[derive(Debug)]
 enum ToBackground<T> {
-    Verify {
+    VerifyHeader {
         scale_encoded_header: Vec<u8>,
         user_data: T,
+    },
+    VerifyJustification {
+        scale_encoded_justification: Vec<u8>,
     },
     SetFinalizedBlock {
         block_hash: [u8; 32],
@@ -63,7 +66,7 @@ where
                         // Channel closed. Task end.
                         None => break,
 
-                        Some(ToBackground::Verify {
+                        Some(ToBackground::VerifyHeader {
                             scale_encoded_header,
                             user_data,
                         }) => {
@@ -97,6 +100,14 @@ where
                                     result,
                                 })
                                 .await;
+                        }
+                        Some(ToBackground::VerifyJustification {
+                            scale_encoded_justification,
+                        }) => {
+                            // TODO: don't unwrap
+                            queue
+                                .verify_justification(&scale_encoded_justification)
+                                .unwrap();
                         }
                         Some(ToBackground::SetFinalizedBlock { block_hash }) => {
                             queue.set_finalized_block(&block_hash);
@@ -138,9 +149,21 @@ where
         let mut to_background = self.to_background.lock().await;
         // TODO: this blocks if queue is full?
         to_background
-            .send(ToBackground::Verify {
+            .send(ToBackground::VerifyHeader {
                 scale_encoded_header,
                 user_data,
+            })
+            .await
+            .unwrap();
+    }
+
+    /// Push the given justificatio to the queue for verification.
+    pub async fn verify_justification(&self, scale_encoded_justification: Vec<u8>) {
+        let mut to_background = self.to_background.lock().await;
+        // TODO: this blocks if queue is full?
+        to_background
+            .send(ToBackground::VerifyJustification {
+                scale_encoded_justification,
             })
             .await
             .unwrap();

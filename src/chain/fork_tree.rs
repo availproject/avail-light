@@ -227,6 +227,29 @@ impl<T> ForkTree<T> {
         })
     }
 
+    /// Same as [`ForkTree::node_to_root_path`], but gives the path in the reverse order.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`NodeIndex`] is invalid.
+    ///
+    pub fn root_to_node_path<'a>(
+        &'a self,
+        node_index: NodeIndex,
+    ) -> impl Iterator<Item = NodeIndex> + 'a {
+        debug_assert!(self.nodes.get(usize::max_value()).is_none());
+
+        // First element is an invalid key, each successor is the last element of
+        // `node_to_root_path(node_index)` that isn't equal to `current`.
+        // Since the first element is invalid, we skip it.
+        iter::successors(Some(NodeIndex(usize::max_value())), move |&current| {
+            self.node_to_root_path(node_index)
+                .take_while(move |n| *n != current)
+                .last()
+        })
+        .skip(1)
+    }
+
     /// Finds the first node in the tree that matches the given condition.
     pub fn find(&self, mut cond: impl FnMut(&T) -> bool) -> Option<NodeIndex> {
         self.nodes

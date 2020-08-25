@@ -31,7 +31,9 @@ use crate::{
     header,
     verify::{self, babe},
 };
-use core::{fmt, iter};
+
+use alloc::collections::VecDeque;
+use core::{fmt, iter, mem};
 
 /// Configuration for the [`NonFinalizedTree`].
 #[derive(Debug)]
@@ -95,15 +97,16 @@ pub struct NonFinalizedTree<T> {
     /// are already finalized. These changes will for sure happen.
     /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
     /// by block height.
-    grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
+    grandpa_finalized_scheduled_changes: VecDeque<FinalizedScheduledChange>,
 
     /// Configuration for BABE, retreived from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// Known Babe epoch transitions coming from the finalized block and its ancestors.
-    babe_known_epoch_information: Vec<(u64, header::BabeNextEpoch)>,
+    /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
+    /// by epoch number.
+    babe_known_epoch_information: VecDeque<(u64, header::BabeNextEpoch)>,
 
-    babe_epoch_info_cache: lru::LruCache<u64, header::BabeNextEpoch>,
     /// If block 1 is finalized, contains its slot number.
     babe_finalized_block1_slot_number: Option<u64>,
     /// Container for non-finalized blocks.
@@ -125,6 +128,8 @@ struct Block<T> {
     /// If the block contains a Babe epoch change information, contains the epoch number of the
     /// change, and the information about this epoch).
     babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
+    /// Babe epoch number the block belongs to.
+    babe_epoch_number: u64,
     /// Opaque data decided by the user.
     user_data: T,
 }
@@ -147,7 +152,10 @@ impl<T> NonFinalizedTree<T> {
             .retain(|sc| sc.trigger_block_height > finalized_header.number);
         config
             .grandpa_finalized_scheduled_changes
-            .sort_by(|a, b| a.trigger_block_height.cmp(&b.trigger_block_height));
+            .sort_by_key(|sc| sc.trigger_block_height);
+        config
+            .babe_known_epoch_information
+            .sort_by_key(|(epoch_num, _)| *epoch_num);
 
         NonFinalizedTree {
             finalized_block_header: config.finalized_block_header,
@@ -155,10 +163,12 @@ impl<T> NonFinalizedTree<T> {
             grandpa_after_finalized_block_authorities_set_id: config
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: config.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: config.grandpa_finalized_scheduled_changes,
+            grandpa_finalized_scheduled_changes: config
+                .grandpa_finalized_scheduled_changes
+                .into_iter()
+                .collect(),
             babe_genesis_config: config.babe_genesis_config,
-            babe_known_epoch_information: config.babe_known_epoch_information,
-            babe_epoch_info_cache: lru::LruCache::new(4),
+            babe_known_epoch_information: config.babe_known_epoch_information.into_iter().collect(),
             babe_finalized_block1_slot_number: config.babe_finalized_block1_slot_number,
             blocks: fork_tree::ForkTree::with_capacity(config.blocks_capacity),
             current_best: None,
@@ -325,6 +335,7 @@ impl<T> NonFinalizedTree<T> {
                         if let Some(info) = self
                             .babe_known_epoch_information
                             .iter()
+                            .rev()
                             .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
                         {
                             process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
@@ -443,6 +454,8 @@ impl<T> NonFinalizedTree<T> {
             .babe_epoch_change
             .map(|e| (e.info_epoch_number, e.info.into()));
 
+        let babe_epoch_number = import_success.epoch_number;
+
         Ok(VerifySuccess::Insert {
             is_new_best,
             insert: Insert {
@@ -453,6 +466,7 @@ impl<T> NonFinalizedTree<T> {
                 hash,
                 babe_block1_slot_number,
                 babe_epoch_change,
+                babe_epoch_number,
             },
         })
     }
@@ -485,7 +499,7 @@ impl<T> NonFinalizedTree<T> {
         // targeted by the justification.
         if let Some(earliest_trigger) = self
             .grandpa_finalized_scheduled_changes
-            .first()
+            .front()
             .map(|sc| sc.trigger_block_height)
         {
             if earliest_trigger < u64::from(decoded.target_number) {
@@ -551,7 +565,82 @@ impl<T> NonFinalizedTree<T> {
 
     /// Private function that does the same as [`NonFinalizedTree::set_finalized_block`].
     fn set_finalized_block_inner(&mut self, block_index: fork_tree::NodeIndex) {
-        todo!()
+        // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
+        //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
+
+        // Update the list of scheduled GrandPa changes with the ones contained in the
+        // newly-finalized blocks.
+        for node in self.blocks.root_to_node_path(block_index) {
+            let node = self.blocks.get(node).unwrap();
+            let decoded = header::decode(&node.scale_encoded_header).unwrap();
+            for grandpa_digest_item in decoded.digest.logs().filter_map(|d| match d {
+                header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                _ => None,
+            }) {
+                match grandpa_digest_item {
+                    header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                        let trigger_block_height =
+                            decoded.number.checked_add(u64::from(change.delay)).unwrap();
+                        self.grandpa_finalized_scheduled_changes.push_back(
+                            FinalizedScheduledChange {
+                                trigger_block_height,
+                                new_authorities_list: change
+                                    .next_authorities
+                                    .map(Into::into)
+                                    .collect(),
+                            },
+                        );
+                    }
+                    _ => unimplemented!(), // TODO: unimplemented
+                }
+            }
+        }
+
+        // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
+        //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
+
+        let new_finalized_block = self.blocks.get_mut(block_index).unwrap();
+        self.finalized_block_header =
+            mem::replace(&mut new_finalized_block.scale_encoded_header, Vec::new());
+        self.finalized_block_hash =
+            header::hash_from_scale_encoded_header(&self.finalized_block_header);
+
+        let new_finalized_block_decoded = header::decode(&self.finalized_block_header).unwrap();
+
+        // Remove the changes that have been triggered by the newly-finalized blocks.
+        while let Some(next_change) = self.grandpa_finalized_scheduled_changes.front() {
+            if next_change.trigger_block_height <= new_finalized_block_decoded.number {
+                let next_change = self
+                    .grandpa_finalized_scheduled_changes
+                    .pop_front()
+                    .unwrap();
+                self.grandpa_finalized_triggered_authorities = next_change.new_authorities_list;
+                self.grandpa_after_finalized_block_authorities_set_id += 1;
+            }
+        }
+
+        if self.babe_finalized_block1_slot_number.is_none() {
+            debug_assert!(new_finalized_block_decoded.number >= 1);
+            self.babe_finalized_block1_slot_number =
+                Some(new_finalized_block.babe_block1_slot_number);
+        }
+
+        let new_finalized_block_babe_epoch_number = new_finalized_block.babe_epoch_number;
+
+        self.blocks.prune_ancestors(block_index);
+
+        // If the current best was removed from the list, we need to update it.
+        if self
+            .current_best
+            .map_or(true, |b| self.blocks.get(b).is_none())
+        {
+            // TODO: no; should try to find best block
+            self.current_best = None;
+        }
+
+        // Purge the Babe epoch information from now-useless epochs.
+        self.babe_known_epoch_information
+            .retain(|(num, _)| *num >= new_finalized_block_babe_epoch_number);
     }
 }
 
@@ -595,6 +684,7 @@ pub struct Insert<'a, T> {
     hash: [u8; 32],
     babe_block1_slot_number: u64,
     babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
+    babe_epoch_number: u64,
 }
 
 impl<'a, T> Insert<'a, T> {
@@ -607,6 +697,7 @@ impl<'a, T> Insert<'a, T> {
                 hash: self.hash,
                 babe_block1_slot_number: self.babe_block1_slot_number,
                 babe_epoch_change: self.babe_epoch_change,
+                babe_epoch_number: self.babe_epoch_number,
                 user_data,
             },
         );
@@ -705,6 +796,10 @@ pub enum JustificationVerifyError {
     UnknownTargetBlock,
     /// There exists a block in-between the latest finalized block and the block targeted by the
     /// justification that must first be finalized.
+    #[display(
+        fmt = "There exists a block in-between the latest finalized block and the block \
+                     targeted by the justification that must first be finalized"
+    )]
     TooFarAhead {
         /// Hash of the block to finalize first.
         block_to_finalize_hash: [u8; 32],

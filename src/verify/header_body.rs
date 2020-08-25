@@ -55,6 +55,9 @@ pub struct Success<'a> {
     /// Slot number the block belongs to.
     pub slot_number: u64,
 
+    /// Epoch number the block belongs to.
+    pub epoch_number: u64,
+
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
@@ -192,6 +195,7 @@ impl<'a> ReadyToRun<'a> {
                     parent_runtime: success.parent_runtime,
                     babe_epoch_change: babe_success.epoch_change,
                     slot_number: babe_success.slot_number,
+                    epoch_number: babe_success.epoch_number,
                     storage_top_trie_changes: success.storage_top_trie_changes,
                     offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,

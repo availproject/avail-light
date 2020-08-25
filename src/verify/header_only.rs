@@ -39,6 +39,9 @@ pub struct Success<'a> {
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
+
+    /// Epoch number the block belongs to.
+    pub epoch_number: u64,
 }
 
 /// Error that can happen during the verification.
@@ -113,6 +116,7 @@ impl<'a> ReadyToRun<'a> {
             ReadyToRunInner::Finished(Ok(s)) => Verify::Finished(Ok(Success {
                 babe_epoch_change: s.epoch_change,
                 slot_number: s.slot_number,
+                epoch_number: s.epoch_number,
             })),
             ReadyToRunInner::Finished(Err(err)) => {
                 Verify::Finished(Err(Error::BabeVerification(err)))

@@ -34,32 +34,26 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
     };
 
     let import_queue = {
-        let babe_genesis_config = {
-            let wasm_code = chain_spec
+        let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
+            chain_spec
                 .genesis_storage()
-                .find(|(k, _)| k == b":code")
-                .unwrap()
-                .1
-                .to_owned();
-
-            babe::BabeGenesisConfiguration::from_genesis_storage(&wasm_code, |k| {
-                chain_spec
-                    .genesis_storage()
-                    .find(|(k2, _)| *k2 == k)
-                    .map(|(_, v)| v.to_owned())
-            })
-            .unwrap()
-        };
+                .find(|(k2, _)| *k2 == k)
+                .map(|(_, v)| v.to_owned())
+        })
+        .unwrap();
 
         chain::headers_async::ChainAsync::new(chain::headers_async::Config {
-            chain_config: chain::headers::Config {
+            chain_config: chain::blocks_tree::Config {
                 finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
                     chain_spec.genesis_storage(),
                 ),
                 babe_finalized_block1_slot_number: None, // TODO:
                 babe_known_epoch_information: Vec::new(), // TODO:
                 babe_genesis_config,
-                capacity: 16,
+                grandpa_after_finalized_block_authorities_set_id: 0, // TODO:
+                grandpa_finalized_scheduled_changes: Vec::new(),     // TODO:
+                grandpa_finalized_triggered_authorities: Vec::new(), // TODO: wrong
+                blocks_capacity: 16,
             },
             queue_size: 256,
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
@@ -133,6 +127,10 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                 import_queue
                     .verify_header(block.header.unwrap().0, ())
                     .await;
+
+                if let Some(justification) = block.justification {
+                    import_queue.verify_justification(justification).await;
+                }
             }
 
             while blocks_in_queue >= 1 {

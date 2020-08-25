@@ -162,6 +162,9 @@ pub struct VerifySuccess<'a> {
     /// Slot number the block belongs to.
     // TODO: the info is already in the header, maybe replace this field with a `header::BabePreDigestRef`?
     pub slot_number: u64,
+
+    /// Epoch number the block belongs to.
+    pub epoch_number: u64,
 }
 
 /// Information about a change of epoch.
@@ -475,6 +478,7 @@ impl<'a> PendingVerify<'a> {
         Ok(VerifySuccess {
             epoch_change: self.epoch_change,
             slot_number: self.slot_number,
+            epoch_number: self.epoch_number,
         })
     }
 }
