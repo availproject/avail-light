@@ -27,6 +27,7 @@
 
 use crate::{
     chain::fork_tree,
+    executor,
     finality::justification,
     header,
     verify::{self, babe},
@@ -97,6 +98,7 @@ pub struct NonFinalizedTree<T> {
     /// are already finalized. These changes will for sure happen.
     /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
     /// by block height.
+    // TODO: doesn't have to be a collection; refactor into a single value
     grandpa_finalized_scheduled_changes: VecDeque<FinalizedScheduledChange>,
 
     /// Configuration for BABE, retreived from the genesis block.
@@ -105,6 +107,7 @@ pub struct NonFinalizedTree<T> {
     /// Known Babe epoch transitions coming from the finalized block and its ancestors.
     /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
     /// by epoch number.
+    // TODO: doesn't have to be a collection; refactor into a single value
     babe_known_epoch_information: VecDeque<(u64, header::BabeNextEpoch)>,
 
     /// If block 1 is finalized, contains its slot number.
@@ -195,41 +198,43 @@ impl<T> NonFinalizedTree<T> {
     #[must_use]
     pub fn verify_header(
         &mut self,
-        scale_encoded_header: Vec<u8>,
-    ) -> Result<VerifySuccess<T>, VerifyError> {
-        self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>)
+        scale_encoded_header: &[u8],
+    ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
+        match self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>) {
+            BodyVerifyStep1::InvalidHeader(err) => Err(HeaderVerifyError::InvalidHeader(err)),
+            BodyVerifyStep1::ParentRuntimeRequired(_) => unreachable!(),
+            BodyVerifyStep1::Duplicate => Ok(HeaderVerifySuccess::Duplicate),
+            _ => todo!(),
+        }
     }
 
     /// Underlying implementation of both header and header+body verification.
-    fn verify_inner(
-        &mut self,
-        scale_encoded_header: Vec<u8>,
-        body: Option<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
-    ) -> Result<VerifySuccess<T>, VerifyError> {
+    fn verify_inner<'c, 'h, I, E>(
+        &'c mut self,
+        scale_encoded_header: &'h [u8],
+        body: Option<I>,
+    ) -> BodyVerifyStep1<'c, 'h, T, I>
+    where
+        I: ExactSizeIterator<Item = E> + Clone,
+        E: AsRef<[u8]> + Clone,
+    {
         let decoded_header = match header::decode(&scale_encoded_header) {
             Ok(h) => h,
-            Err(err) => {
-                return Err(VerifyError {
-                    scale_encoded_header,
-                    detail: VerifyErrorDetail::InvalidHeader(err),
-                })
-            }
+            Err(err) => return BodyVerifyStep1::InvalidHeader(err),
         };
 
         let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
 
         if self.blocks.find(|b| b.hash == hash).is_some() {
-            return Ok(VerifySuccess::Duplicate {
-                scale_encoded_header,
-            });
+            return BodyVerifyStep1::Duplicate;
         }
 
         // Try to find the parent block in the tree of known blocks.
         // `Some` with an index of the parent within the tree of unfinalized blocks.
         // `None` means that the parent is the finalized block.
         //
-        // The parent hash is first checked against `self.current_best`, as it is most likely that
-        // new blocks are built on top of the current best.
+        // The parent hash is first checked against `self.current_best`, as it is most likely
+        // that new blocks are built on top of the current best.
         let parent_tree_index = if self.current_best.map_or(false, |best| {
             *decoded_header.parent_hash == self.blocks.get(best).unwrap().hash
         }) {
@@ -240,26 +245,8 @@ impl<T> NonFinalizedTree<T> {
             let parent_hash = *decoded_header.parent_hash;
             match self.blocks.find(|b| b.hash == parent_hash) {
                 Some(parent) => Some(parent),
-                None => {
-                    return Err(VerifyError {
-                        scale_encoded_header,
-                        detail: VerifyErrorDetail::BadParent { parent_hash },
-                    })
-                }
+                None => return BodyVerifyStep1::BadParent { parent_hash },
             }
-        };
-
-        let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
-            header::decode(
-                &self
-                    .blocks
-                    .get(parent_tree_index)
-                    .unwrap()
-                    .scale_encoded_header,
-            )
-            .unwrap()
-        } else {
-            header::decode(&self.finalized_block_header).unwrap()
         };
 
         // Try to find the slot number of block 1.
@@ -287,6 +274,26 @@ impl<T> NonFinalizedTree<T> {
             None
         };
 
+        if let Some(body) = body {
+            BodyVerifyStep1::ParentRuntimeRequired(BodyVerifyRuntimeRequired {
+                chain: self,
+                header: decoded_header,
+                parent_tree_index,
+                body,
+                block1_slot_number,
+            })
+        } else {
+            todo!()
+        }
+    }
+
+    /*
+    /// Underlying implementation of both header and header+body verification.
+    fn verify_inner(
+        &mut self,
+        scale_encoded_header: Vec<u8>,
+        body: Option<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+    ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
         // Now perform the actual block verification.
         let import_success = if let Some(body) = body {
             // TODO: finish here
@@ -325,9 +332,9 @@ impl<T> NonFinalizedTree<T> {
                 match process {
                     verify::header_only::Verify::Finished(Ok(result)) => break result,
                     verify::header_only::Verify::Finished(Err(err)) => {
-                        return Err(VerifyError {
+                        return Err(HeaderVerifyError {
                             scale_encoded_header,
-                            detail: VerifyErrorDetail::VerificationFailed(err),
+                            detail: HeaderVerifyErrorDetail::VerificationFailed(err),
                         });
                     }
                     verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
@@ -349,15 +356,15 @@ impl<T> NonFinalizedTree<T> {
                             {
                                 process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
                             } else {
-                                return Err(VerifyError {
+                                return Err(HeaderVerifyError {
                                     scale_encoded_header,
-                                    detail: VerifyErrorDetail::UnknownBabeEpoch,
+                                    detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
                                 });
                             }
                         } else {
-                            return Err(VerifyError {
+                            return Err(HeaderVerifyError {
                                 scale_encoded_header,
-                                detail: VerifyErrorDetail::UnknownBabeEpoch,
+                                detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
                             });
                         }
                     }
@@ -369,77 +376,7 @@ impl<T> NonFinalizedTree<T> {
 
         // Determine if block would be new best.
         let is_new_best = if let Some(current_best) = self.current_best {
-            if parent_tree_index.map_or(false, |p_idx| self.blocks.is_ancestor(current_best, p_idx))
-            {
-                // A descendant is always preferred to its ancestor.
-                true
-            } else {
-                // In order to determine whether the new block is our new best:
-                //
-                // - Find the common ancestor between the current best and the new block's parent.
-                // - Count the number of Babe primary slot claims between the common ancestor and
-                //   the current best.
-                // - Count the number of Babe primary slot claims between the common ancestor and
-                //   the new block's parent. Add one if the new block has a Babe primary slot
-                //   claim.
-                // - If the number for the new block is strictly superior, then the new block is
-                //   out new best.
-                //
-                let (ascend, descend) = self
-                    .blocks
-                    .ascend_and_descend(current_best, parent_tree_index.unwrap());
-
-                // TODO: what if there's a mix of Babe and non-Babe blocks here?
-
-                let curr_best_primary_slots: usize = ascend
-                    .map(|i| {
-                        let decoded =
-                            header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
-                                .unwrap();
-                        if decoded
-                            .digest
-                            .babe_pre_runtime()
-                            .map_or(false, |pr| pr.is_primary())
-                        {
-                            1
-                        } else {
-                            0
-                        }
-                    })
-                    .sum();
-
-                let new_block_primary_slots = {
-                    if decoded_header
-                        .digest
-                        .babe_pre_runtime()
-                        .map_or(false, |pr| pr.is_primary())
-                    {
-                        1
-                    } else {
-                        0
-                    }
-                };
-
-                let parent_primary_slots: usize = descend
-                    .map(|i| {
-                        let decoded =
-                            header::decode(&self.blocks.get(i).unwrap().scale_encoded_header)
-                                .unwrap();
-                        if decoded
-                            .digest
-                            .babe_pre_runtime()
-                            .map_or(false, |pr| pr.is_primary())
-                        {
-                            1
-                        } else {
-                            0
-                        }
-                    })
-                    .sum();
-
-                // Note the strictly superior. If there is an equality, we keep the current best.
-                parent_primary_slots + new_block_primary_slots > curr_best_primary_slots
-            }
+            is_better_block(&self.blocks, current_best, parent_tree_index, decoded_header)
         } else {
             debug_assert_eq!(self.blocks.len(), 1);
             true
@@ -456,7 +393,7 @@ impl<T> NonFinalizedTree<T> {
 
         let babe_epoch_number = import_success.epoch_number;
 
-        Ok(VerifySuccess::Insert {
+        Ok(HeaderVerifySuccess::Insert {
             is_new_best,
             insert: Insert {
                 chain: self,
@@ -469,7 +406,7 @@ impl<T> NonFinalizedTree<T> {
                 babe_epoch_number,
             },
         })
-    }
+    }*/
 
     /// Verifies the given justification.
     ///
@@ -701,25 +638,269 @@ where
 
 ///
 #[derive(Debug)]
-pub enum VerifySuccess<'a, T> {
+pub enum BodyVerifyStep1<'c, 'h, T, I> {
     /// Block is already known.
-    Duplicate {
-        /// Header that was requested to be verified.
-        scale_encoded_header: Vec<u8>,
+    Duplicate,
+
+    /// Error while decoding the header.
+    InvalidHeader(header::Error),
+
+    /// The parent of the block isn't known.
+    BadParent {
+        /// Hash of the parent block in question.
+        parent_hash: [u8; 32],
     },
+
+    /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the
+    /// runtime of the parent block must be provided.
+    ParentRuntimeRequired(BodyVerifyRuntimeRequired<'c, 'h, T, I>),
+}
+
+/// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the runtime
+/// of the parent block must be provided.
+#[derive(Debug)]
+pub struct BodyVerifyRuntimeRequired<'c, 'h, T, I> {
+    chain: &'c mut NonFinalizedTree<T>,
+    header: header::HeaderRef<'h>,
+    parent_tree_index: Option<fork_tree::NodeIndex>,
+    body: I,
+    block1_slot_number: Option<u64>,
+}
+
+impl<'c, 'h, T, I, E> BodyVerifyRuntimeRequired<'c, 'h, T, I>
+where
+    I: ExactSizeIterator<Item = E> + Clone,
+    E: AsRef<[u8]> + Clone,
+{
+    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<'c, 'h, T> {
+        let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
+            header::decode(
+                &self
+                    .chain
+                    .blocks
+                    .get(parent_tree_index)
+                    .unwrap()
+                    .scale_encoded_header,
+            )
+            .unwrap()
+        } else {
+            header::decode(&self.chain.finalized_block_header).unwrap()
+        };
+
+        let process = verify::header_body::verify(verify::header_body::Config {
+            parent_runtime,
+            babe_genesis_configuration: &self.chain.babe_genesis_config,
+            block1_slot_number: self.block1_slot_number,
+            now_from_unix_epoch: {
+                // TODO: is it reasonable to use the stdlib here?
+                //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                // TODO: this is commented out because of Wasm support
+                core::time::Duration::new(0, 0)
+            },
+            block_header: self.header.clone(),
+            parent_block_header,
+            block_body: self.body,
+            top_trie_root_calculation_cache: None,
+        });
+
+        BodyVerifyStep2::from_inner(
+            process,
+            BodyVerifyShared {
+                chain: self.chain,
+                parent_tree_index: self.parent_tree_index,
+            },
+        )
+    }
+}
+
+/// Header and body verification in progress.
+pub enum BodyVerifyStep2<'c, 'h, T> {
+    /// Verification is over.
+    Finished {
+        /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
+        parent_runtime: executor::WasmVmPrototype,
+        /// Outcome of the verification.
+        result: Result<Insert<'c, T>, HeaderVerifyError>,
+    },
+    /// Loading a storage value is required in order to continue.
+    StorageGet(StorageGet<'c, 'h, T>),
+    /// Fetching the list of keys with a given prefix is required in order to continue.
+    StoragePrefixKeys(StoragePrefixKeys<'c, 'h, T>),
+    /// Fetching the key that follows a given one is required in order to continue.
+    StorageNextKey(StorageNextKey<'c, 'h, T>),
+}
+
+struct BodyVerifyShared<'c, T> {
+    chain: &'c mut NonFinalizedTree<T>,
+    parent_tree_index: Option<fork_tree::NodeIndex>,
+}
+
+impl<'c, 'h, T> BodyVerifyStep2<'c, 'h, T> {
+    fn from_inner(
+        mut inner: verify::header_body::Verify<'h>,
+        chain: BodyVerifyShared<'c, T>,
+    ) -> Self {
+        loop {
+            match inner {
+                verify::header_body::Verify::Finished(Ok(_)) => {
+                    // Block verification is successful!
+                    todo!()
+                }
+                verify::header_body::Verify::Finished(Err(err)) => todo!(),
+                verify::header_body::Verify::ReadyToRun(i) => {
+                    inner = i.run();
+                    continue;
+                }
+                verify::header_body::Verify::BabeEpochInformation(_) => {
+                    /*
+                        if let Some(info) = self
+                            .babe_known_epoch_information
+                            .iter()
+                            .rev()
+                            .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
+                        {
+                            process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
+                        } else if let Some(parent_tree_index) = parent_tree_index {
+                            if let Some(info) = self
+                                .blocks
+                                .node_to_root_path(parent_tree_index)
+                                .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
+                                .filter_map(|ei| ei.as_ref())
+                                .find(|e| e.0 == epoch_info_rq.epoch_number())
+                            {
+                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
+                            } else {
+                                return Err(HeaderVerifyError {
+                                    scale_encoded_header,
+                                    detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
+                                });
+                            }
+                        } else {
+                            return Err(HeaderVerifyError {
+                                scale_encoded_header,
+                                detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
+                            });
+                        }
+                    */
+                    todo!()
+                }
+                verify::header_body::Verify::StorageGet(inner) => {
+                    return BodyVerifyStep2::StorageGet(StorageGet { chain, inner })
+                }
+                verify::header_body::Verify::StorageNextKey(inner) => {
+                    return BodyVerifyStep2::StorageNextKey(StorageNextKey { chain, inner })
+                }
+                verify::header_body::Verify::StoragePrefixKeys(inner) => {
+                    return BodyVerifyStep2::StoragePrefixKeys(StoragePrefixKeys { chain, inner })
+                }
+            }
+        }
+    }
+}
+
+/// Loading a storage value is required in order to continue.
+#[must_use]
+pub struct StorageGet<'c, 'h, T> {
+    inner: verify::header_body::StorageGet<'h>,
+    chain: BodyVerifyShared<'c, T>,
+}
+
+impl<'c, 'h, T> StorageGet<'c, 'h, T> {
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    // TODO: shouldn't be mut
+    pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
+        self.inner.key()
+    }
+
+    /// Returns the user data associated to the block whose storage must be accessed.
+    pub fn block_user_data(&mut self) -> Option<&mut T> {
+        if let Some(parent_tree_index) = self.chain.parent_tree_index {
+            Some(
+                &mut self
+                    .chain
+                    .chain
+                    .blocks
+                    .get_mut(parent_tree_index)
+                    .unwrap()
+                    .user_data,
+            )
+        } else {
+            None
+        }
+    }
+
+    /// Injects the corresponding storage value.
+    // TODO: change API, see unsealed::StorageGet
+    pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<'c, 'h, T> {
+        let inner = self.inner.inject_value(value);
+        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+    }
+}
+
+/// Fetching the list of keys with a given prefix is required in order to continue.
+#[must_use]
+pub struct StoragePrefixKeys<'c, 'h, T> {
+    inner: verify::header_body::StoragePrefixKeys<'h>,
+    chain: BodyVerifyShared<'c, T>,
+}
+
+impl<'c, 'h, T> StoragePrefixKeys<'c, 'h, T> {
+    /// Returns the prefix whose keys to load.
+    // TODO: don't take &mut mut but &self
+    pub fn prefix(&mut self) -> &[u8] {
+        self.inner.prefix()
+    }
+
+    /// Injects the list of keys.
+    pub fn inject_keys(
+        self,
+        keys: impl Iterator<Item = impl AsRef<[u8]>>,
+    ) -> BodyVerifyStep2<'c, 'h, T> {
+        let inner = self.inner.inject_keys(keys);
+        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+    }
+}
+
+/// Fetching the key that follows a given one is required in order to continue.
+#[must_use]
+pub struct StorageNextKey<'c, 'h, T> {
+    inner: verify::header_body::StorageNextKey<'h>,
+    chain: BodyVerifyShared<'c, T>,
+}
+
+impl<'c, 'h, T> StorageNextKey<'c, 'h, T> {
+    /// Returns the key whose next key must be passed back.
+    // TODO: don't take &mut mut but &self
+    pub fn key(&mut self) -> &[u8] {
+        self.inner.key()
+    }
+
+    /// Injects the key.
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<'c, 'h, T> {
+        let inner = self.inner.inject_key(key);
+        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+    }
+}
+
+///
+#[derive(Debug)]
+pub enum HeaderVerifySuccess<'c, T> {
+    /// Block is already known.
+    Duplicate,
     /// Block wasn't known and is ready to be inserted.
     Insert {
         /// True if the verified block will become the new "best" block after being inserted.
         is_new_best: bool,
         /// Use this struct to insert the block in the chain after its successful verification.
-        insert: Insert<'a, T>,
+        insert: Insert<'c, T>,
     },
 }
 
-/// Mutably borrows the [`NonFinalizedTree`] and allows insert a successfully-verified block into it.
+/// Mutably borrows the [`NonFinalizedTree`] and allows insert a successfully-verified block
+/// into it.
 #[must_use]
-pub struct Insert<'a, T> {
-    chain: &'a mut NonFinalizedTree<T>,
+pub struct Insert<'c, T> {
+    chain: &'c mut NonFinalizedTree<T>,
     /// Copy of the value in [`VerifySuccess::is_new_best`].
     is_new_best: bool,
     /// Index of the parent in [`NonFinalizedTree::blocks`].
@@ -731,9 +912,9 @@ pub struct Insert<'a, T> {
     babe_epoch_number: u64,
 }
 
-impl<'a, T> Insert<'a, T> {
+impl<'c, T> Insert<'c, T> {
     /// Inserts the block with the given user data.
-    pub fn insert(self, user_data: T) -> InsertSuccess<'a> {
+    pub fn insert(self, user_data: T) {
         let new_node_index = self.chain.blocks.insert(
             self.parent_tree_index,
             Block {
@@ -749,17 +930,6 @@ impl<'a, T> Insert<'a, T> {
         if self.is_new_best {
             self.chain.current_best = Some(new_node_index);
         }
-
-        let scale_encoded_header = &self
-            .chain
-            .blocks
-            .get(new_node_index)
-            .unwrap()
-            .scale_encoded_header[..];
-        InsertSuccess {
-            scale_encoded_header,
-            header: header::decode(scale_encoded_header).unwrap(),
-        }
     }
 
     /// Destroys the object without inserting the block in the chain. Returns the SCALE-encoded
@@ -769,39 +939,21 @@ impl<'a, T> Insert<'a, T> {
     }
 }
 
-impl<'a, T> fmt::Debug for Insert<'a, T> {
+impl<'c, T> fmt::Debug for Insert<'c, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Insert").finish()
     }
 }
 
-/// Verification is successful.
-pub struct InsertSuccess<'a> {
-    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
-    pub scale_encoded_header: &'a [u8],
-    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
-    pub header: header::HeaderRef<'a>,
-}
-
 /// Error that can happen when verifying a block.
 #[derive(Debug, derive_more::Display)]
-#[display(fmt = "{}", detail)]
-pub struct VerifyError {
-    /// Same value as the parameter passed to [`NonFinalizedTree::verify_header`].
-    pub scale_encoded_header: Vec<u8>,
-    /// Reason for the failure.
-    pub detail: VerifyErrorDetail,
-}
-
-/// Error that can happen when verifying a block.
-#[derive(Debug, derive_more::Display)]
-pub enum VerifyErrorDetail {
+pub enum HeaderVerifyError {
     /// Error while decoding the header.
     InvalidHeader(header::Error),
     /// The parent of the block isn't known.
     #[display(fmt = "The parent of the block isn't known.")]
     BadParent {
-        /// Hash of the current block in question.
+        /// Hash of the parent block in question.
         parent_hash: [u8; 32],
     },
     /// The block verification has failed. The block is invalid and should be thrown away.
@@ -813,12 +965,12 @@ pub enum VerifyErrorDetail {
 
 // TODO: doc and all
 #[must_use]
-pub struct JustificationApply<'a, T> {
-    chain: &'a mut NonFinalizedTree<T>,
+pub struct JustificationApply<'c, T> {
+    chain: &'c mut NonFinalizedTree<T>,
     to_finalize: fork_tree::NodeIndex,
 }
 
-impl<'a, T> JustificationApply<'a, T> {
+impl<'c, T> JustificationApply<'c, T> {
     /// Applies the justification, finalizing the given block.
     // TODO: return type?
     pub fn apply(self) {
@@ -826,7 +978,7 @@ impl<'a, T> JustificationApply<'a, T> {
     }
 }
 
-impl<'a, T> fmt::Debug for JustificationApply<'a, T> {
+impl<'c, T> fmt::Debug for JustificationApply<'c, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("JustificationApply").finish()
     }
@@ -859,4 +1011,85 @@ pub enum JustificationVerifyError {
 pub enum SetFinalizedError {
     /// Block must have been passed to [`NonFinalizedTree::verify_header`] in the past.
     UnknownBlock,
+}
+
+/// Accepts as parameter a container of blocks and indices within this container.
+///
+/// Returns true if `maybe_new_best` on top of `maybe_new_best_parent` is a better block compared
+/// to `old_best`.
+fn is_better_block<T>(
+    blocks: &mut fork_tree::ForkTree<Block<T>>,
+    old_best: fork_tree::NodeIndex,
+    maybe_new_best_parent: Option<fork_tree::NodeIndex>,
+    maybe_new_best: header::HeaderRef,
+) -> bool {
+    debug_assert!(
+        maybe_new_best_parent.map_or(true, |p_idx| blocks.get(p_idx).unwrap().hash
+            == *maybe_new_best.parent_hash)
+    );
+
+    if maybe_new_best_parent.map_or(false, |p_idx| blocks.is_ancestor(old_best, p_idx)) {
+        // A descendant is always preferred to its ancestor.
+        true
+    } else {
+        // In order to determine whether the new block is our new best:
+        //
+        // - Find the common ancestor between the current best and the new block's parent.
+        // - Count the number of Babe primary slot claims between the common ancestor and
+        //   the current best.
+        // - Count the number of Babe primary slot claims between the common ancestor and
+        //   the new block's parent. Add one if the new block has a Babe primary slot
+        //   claim.
+        // - If the number for the new block is strictly superior, then the new block is
+        //   out new best.
+        //
+        let (ascend, descend) = blocks.ascend_and_descend(old_best, maybe_new_best_parent.unwrap());
+
+        // TODO: what if there's a mix of Babe and non-Babe blocks here?
+
+        let curr_best_primary_slots: usize = ascend
+            .map(|i| {
+                let decoded = header::decode(&blocks.get(i).unwrap().scale_encoded_header).unwrap();
+                if decoded
+                    .digest
+                    .babe_pre_runtime()
+                    .map_or(false, |pr| pr.is_primary())
+                {
+                    1
+                } else {
+                    0
+                }
+            })
+            .sum();
+
+        let new_block_primary_slots = {
+            if maybe_new_best
+                .digest
+                .babe_pre_runtime()
+                .map_or(false, |pr| pr.is_primary())
+            {
+                1
+            } else {
+                0
+            }
+        };
+
+        let parent_primary_slots: usize = descend
+            .map(|i| {
+                let decoded = header::decode(&blocks.get(i).unwrap().scale_encoded_header).unwrap();
+                if decoded
+                    .digest
+                    .babe_pre_runtime()
+                    .map_or(false, |pr| pr.is_primary())
+                {
+                    1
+                } else {
+                    0
+                }
+            })
+            .sum();
+
+        // Note the strictly superior. If there is an equality, we keep the current best.
+        parent_primary_slots + new_block_primary_slots > curr_best_primary_slots
+    }
 }

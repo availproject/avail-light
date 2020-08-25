@@ -7,7 +7,7 @@ pub struct Config<'a, 'b> {
     /// Header of the parent of the block to verify.
     ///
     /// The hash of this header must be the one referenced in [`Config::block_header`].
-    pub parent_block_header: header::HeaderRef<'a>,
+    pub parent_block_header: header::HeaderRef<'b>,
 
     /// BABE configuration retrieved from the genesis block.
     ///

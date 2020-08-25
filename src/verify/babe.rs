@@ -138,7 +138,7 @@ pub struct VerifyConfig<'a, 'b> {
     /// [`start_verify_header`] assumes that this block has been successfully verified before.
     ///
     /// The hash of this header must be the one referenced in [`VerifyConfig::header`].
-    pub parent_block_header: header::HeaderRef<'a>,
+    pub parent_block_header: header::HeaderRef<'b>,
 
     /// BABE configuration retrieved from the genesis block.
     ///

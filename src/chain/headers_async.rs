@@ -45,7 +45,7 @@ enum ToForeground<T> {
     VerifyOutcome {
         scale_encoded_header: Vec<u8>,
         user_data: T,
-        result: Result<VerifySuccess, blocks_tree::VerifyErrorDetail>,
+        result: Result<VerifySuccess, blocks_tree::HeaderVerifyError>,
     },
 }
 
@@ -70,28 +70,19 @@ where
                             scale_encoded_header,
                             user_data,
                         }) => {
-                            let outcome = queue.verify_header(scale_encoded_header);
-                            let (scale_encoded_header, result) = match outcome {
-                                Ok(blocks_tree::VerifySuccess::Insert {
+                            let outcome = queue.verify_header(&scale_encoded_header);
+                            let result = match outcome {
+                                Ok(blocks_tree::HeaderVerifySuccess::Insert {
                                     insert,
                                     is_new_best,
                                 }) => {
-                                    let inserted = insert.insert(());
-                                    (
-                                        inserted.scale_encoded_header.to_owned(),
-                                        Ok(VerifySuccess { is_new_best }),
-                                    )
+                                    insert.insert(());
+                                    Ok(VerifySuccess { is_new_best })
                                 }
-                                Ok(blocks_tree::VerifySuccess::Duplicate {
-                                    scale_encoded_header,
-                                }) => (
-                                    scale_encoded_header,
-                                    Ok(VerifySuccess { is_new_best: false }), // TODO: weird
-                                ),
-                                Err(blocks_tree::VerifyError {
-                                    scale_encoded_header,
-                                    detail,
-                                }) => (scale_encoded_header, Err(detail)),
+                                Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => {
+                                    Ok(VerifySuccess { is_new_best: false })
+                                } // TODO: weird
+                                Err(err) => Err(err),
                             };
                             let _ = to_foreground
                                 .send(ToForeground::VerifyOutcome {
@@ -215,7 +206,7 @@ pub enum Event<T> {
         /// Custom value that was passed to [`ChainAsync::verify`].
         user_data: T,
         /// Whether the block import has been successful.
-        result: Result<VerifySuccess, blocks_tree::VerifyErrorDetail>,
+        result: Result<VerifySuccess, blocks_tree::HeaderVerifyError>,
     },
 }
 
