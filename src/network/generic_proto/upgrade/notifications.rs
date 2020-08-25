@@ -36,7 +36,6 @@ use bytes::BytesMut;
 use futures::{prelude::*, ready};
 use futures_codec::Framed;
 use libp2p::core::{upgrade, InboundUpgrade, OutboundUpgrade, UpgradeInfo};
-use log::error;
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -168,7 +167,6 @@ where
     /// Sends the handshake in order to inform the remote that we accept the substream.
     pub fn send_handshake(&mut self, message: impl Into<Vec<u8>>) {
         if !matches!(self.handshake, NotificationsInSubstreamHandshake::NotSent) {
-            error!(target: "sub-libp2p", "Tried to send handshake twice");
             return;
         }
 
@@ -233,9 +231,6 @@ impl NotificationsOut {
         initial_message: impl Into<Vec<u8>>,
     ) -> Self {
         let initial_message = initial_message.into();
-        if initial_message.len() > MAX_HANDSHAKE_SIZE {
-            error!(target: "sub-libp2p", "Outbound networking handshake is above allowed protocol limit");
-        }
 
         NotificationsOut {
             protocol_name: protocol_name.into(),
@@ -390,10 +385,7 @@ impl From<unsigned_varint::io::ReadError> for NotificationsHandshakeError {
             unsigned_varint::io::ReadError::Decode(err) => {
                 NotificationsHandshakeError::VarintDecode(err)
             }
-            _ => {
-                log::warn!("Unrecognized varint decoding error");
-                NotificationsHandshakeError::Io(From::from(io::ErrorKind::InvalidData))
-            }
+            _ => NotificationsHandshakeError::Io(From::from(io::ErrorKind::InvalidData)),
         }
     }
 }

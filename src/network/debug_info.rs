@@ -24,7 +24,6 @@ use libp2p::ping::{Ping, PingConfig, PingEvent, PingSuccess};
 use libp2p::swarm::{IntoProtocolsHandler, IntoProtocolsHandlerSelect, ProtocolsHandler};
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, PollParameters};
 use libp2p::Multiaddr;
-use log::{debug, error, trace};
 use smallvec::SmallVec;
 use std::collections::hash_map::Entry;
 use std::pin::Pin;
@@ -111,24 +110,16 @@ impl DebugInfoBehaviour {
     /// Inserts a ping time in the cache. Has no effect if we don't have any entry for that node,
     /// which shouldn't happen.
     fn handle_ping_report(&mut self, peer_id: &PeerId, ping_time: Duration) {
-        trace!(target: "sub-libp2p", "Ping time with {:?}: {:?}", peer_id, ping_time);
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.latest_ping = Some(ping_time);
-        } else {
-            error!(target: "sub-libp2p",
-				"Received ping from node we're not connected to {:?}", peer_id);
         }
     }
 
     /// Inserts an identify record in the cache. Has no effect if we don't have any entry for that
     /// node, which shouldn't happen.
     fn handle_identify_report(&mut self, peer_id: &PeerId, info: &IdentifyInfo) {
-        trace!(target: "sub-libp2p", "Identified {:?} => {:?}", peer_id, info);
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.client_version = Some(info.agent_version.clone());
-        } else {
-            error!(target: "sub-libp2p",
-				"Received pong from node we're not connected to {:?}", peer_id);
         }
     }
 }
@@ -231,9 +222,6 @@ impl NetworkBehaviour for DebugInfoBehaviour {
 
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.endpoints.retain(|ep| ep != endpoint)
-        } else {
-            error!(target: "sub-libp2p",
-				"Unknown connection to {:?} closed: {:?}", peer_id, endpoint);
         }
     }
 
@@ -243,9 +231,6 @@ impl NetworkBehaviour for DebugInfoBehaviour {
 
         if let Some(entry) = self.nodes_info.get_mut(peer_id) {
             entry.info_expire = Some(Instant::now() + CACHE_EXPIRE);
-        } else {
-            error!(target: "sub-libp2p",
-				"Disconnected from node we were not connected to {:?}", peer_id);
         }
     }
 
@@ -356,9 +341,7 @@ impl NetworkBehaviour for DebugInfoBehaviour {
                         let event = DebugInfoEvent::Identified { peer_id, info };
                         return Poll::Ready(NetworkBehaviourAction::GenerateEvent(event));
                     }
-                    IdentifyEvent::Error { peer_id, error } => {
-                        debug!(target: "sub-libp2p", "Identification with peer {:?} failed => {}", peer_id, error)
-                    }
+                    IdentifyEvent::Error { peer_id, error } => {}
                     IdentifyEvent::Sent { .. } => {}
                 },
                 Poll::Ready(NetworkBehaviourAction::DialAddress { address }) => {

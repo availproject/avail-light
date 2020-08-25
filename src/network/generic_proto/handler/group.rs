@@ -73,7 +73,6 @@ use libp2p::swarm::{
     IntoProtocolsHandler, KeepAlive, NegotiatedSubstream, ProtocolsHandler, ProtocolsHandlerEvent,
     ProtocolsHandlerUpgrErr, SubstreamProtocol,
 };
-use log::{debug, error};
 use std::{
     borrow::Cow,
     error, io, str,
@@ -349,16 +348,13 @@ impl ProtocolsHandler for NotifsHandler {
             (EitherOutput::Second(out), None) => {
                 self.legacy.inject_fully_negotiated_outbound(out, ())
             }
-            _ => error!("inject_fully_negotiated_outbound called with wrong parameters"),
+            _ => panic!(),
         }
     }
 
     fn inject_event(&mut self, message: NotifsHandlerIn) {
         match message {
             NotifsHandlerIn::Enable => {
-                if let EnabledState::Enabled = self.enabled {
-                    debug!("enabling already-enabled handler");
-                }
                 self.enabled = EnabledState::Enabled;
                 self.legacy.inject_event(LegacyProtoHandlerIn::Enable);
                 for (handler, initial_message) in &mut self.out_handlers {
@@ -374,9 +370,6 @@ impl ProtocolsHandler for NotifsHandler {
                 }
             }
             NotifsHandlerIn::Disable => {
-                if let EnabledState::Disabled = self.enabled {
-                    debug!("disabling already-disabled handler");
-                }
                 self.legacy.inject_event(LegacyProtoHandlerIn::Disable);
                 // The notifications protocols start in the disabled state. If we were in the
                 // "Initial" state, then we shouldn't disable the notifications protocols again.
@@ -477,7 +470,7 @@ impl ProtocolsHandler for NotifsHandler {
                     ProtocolsHandlerUpgrErr::Upgrade(UpgradeError::Apply(err)),
                 )
             }
-            _ => error!("inject_dial_upgrade_error called with bad parameters"),
+            _ => panic!(),
         }
     }
 
@@ -569,9 +562,7 @@ impl ProtocolsHandler for NotifsHandler {
         for (handler_num, (handler, handshake_message)) in self.in_handlers.iter_mut().enumerate() {
             while let Poll::Ready(ev) = handler.poll(cx) {
                 match ev {
-                    ProtocolsHandlerEvent::OutboundSubstreamRequest { .. } => {
-                        error!("Incoming substream handler tried to open a substream")
-                    }
+                    ProtocolsHandlerEvent::OutboundSubstreamRequest { .. } => {}
                     ProtocolsHandlerEvent::Close(err) => void::unreachable(err),
                     ProtocolsHandlerEvent::Custom(NotifsInHandlerOut::OpenRequest(_)) => match self
                         .enabled

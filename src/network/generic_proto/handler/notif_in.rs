@@ -32,7 +32,6 @@ use libp2p::swarm::{
     IntoProtocolsHandler, KeepAlive, NegotiatedSubstream, ProtocolsHandler, ProtocolsHandlerEvent,
     ProtocolsHandlerUpgrErr, SubstreamProtocol,
 };
-use log::{error, warn};
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -175,13 +174,10 @@ impl ProtocolsHandler for NotifsInHandler {
         self.events_queue.push_back(ProtocolsHandlerEvent::Custom(
             NotifsInHandlerOut::OpenRequest(msg),
         ));
-        self.pending_accept_refuses =
-            self.pending_accept_refuses
-                .checked_add(1)
-                .unwrap_or_else(|| {
-                    error!(target: "sub-libp2p", "Overflow in pending_accept_refuses");
-                    usize::max_value()
-                });
+        self.pending_accept_refuses = self
+            .pending_accept_refuses
+            .checked_add(1)
+            .unwrap_or_else(|| usize::max_value());
     }
 
     fn inject_fully_negotiated_outbound(
@@ -197,10 +193,6 @@ impl ProtocolsHandler for NotifsInHandler {
         self.pending_accept_refuses = match self.pending_accept_refuses.checked_sub(1) {
             Some(v) => v,
             None => {
-                error!(
-                    target: "sub-libp2p",
-                    "Inconsistent state: received Accept/Refuse when no pending request exists"
-                );
                 return;
             }
         };
@@ -218,9 +210,7 @@ impl ProtocolsHandler for NotifsInHandler {
         }
     }
 
-    fn inject_dial_upgrade_error(&mut self, _: (), _: ProtocolsHandlerUpgrErr<void::Void>) {
-        error!(target: "sub-libp2p", "Received dial upgrade error in inbound-only handler");
-    }
+    fn inject_dial_upgrade_error(&mut self, _: (), _: ProtocolsHandlerUpgrErr<void::Void>) {}
 
     fn connection_keep_alive(&self) -> KeepAlive {
         if self.substream.is_some() {
@@ -253,12 +243,6 @@ impl ProtocolsHandler for NotifsInHandler {
         {
             None | Some(Poll::Pending) => {}
             Some(Poll::Ready(Some(Ok(msg)))) => {
-                if self.pending_accept_refuses != 0 {
-                    warn!(
-                        target: "sub-libp2p",
-                        "Bad state in inbound-only handler: notif before accepting substream"
-                    );
-                }
                 return Poll::Ready(ProtocolsHandlerEvent::Custom(NotifsInHandlerOut::Notif(
                     msg,
                 )));

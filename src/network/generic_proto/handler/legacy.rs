@@ -26,7 +26,6 @@ use libp2p::swarm::{
     IntoProtocolsHandler, KeepAlive, NegotiatedSubstream, ProtocolsHandler, ProtocolsHandlerEvent,
     ProtocolsHandlerUpgrErr, SubstreamProtocol,
 };
-use log::{debug, error};
 use smallvec::{smallvec, SmallVec};
 use std::{borrow::Cow, collections::VecDeque, error, fmt, io, mem, time::Duration};
 use std::{
@@ -273,11 +272,7 @@ impl LegacyProtoHandler {
     /// Enables the handler.
     fn enable(&mut self) {
         self.state = match mem::replace(&mut self.state, ProtocolState::Poisoned) {
-            ProtocolState::Poisoned => {
-                error!(target: "sub-libp2p", "Handler with {:?} is in poisoned state",
-					self.remote_peer_id);
-                ProtocolState::Poisoned
-            }
+            ProtocolState::Poisoned => ProtocolState::Poisoned,
 
             ProtocolState::Init {
                 substreams: incoming,
@@ -322,11 +317,7 @@ impl LegacyProtoHandler {
     /// Disables the handler.
     fn disable(&mut self) {
         self.state = match mem::replace(&mut self.state, ProtocolState::Poisoned) {
-            ProtocolState::Poisoned => {
-                error!(target: "sub-libp2p", "Handler with {:?} is in poisoned state",
-					self.remote_peer_id);
-                ProtocolState::Poisoned
-            }
+            ProtocolState::Poisoned => ProtocolState::Poisoned,
 
             ProtocolState::Init {
                 substreams: mut shutdown,
@@ -370,8 +361,6 @@ impl LegacyProtoHandler {
     > {
         match mem::replace(&mut self.state, ProtocolState::Poisoned) {
             ProtocolState::Poisoned => {
-                error!(target: "sub-libp2p", "Handler with {:?} is in poisoned state",
-					self.remote_peer_id);
                 self.state = ProtocolState::Poisoned;
                 None
             }
@@ -382,8 +371,6 @@ impl LegacyProtoHandler {
             } => {
                 match Pin::new(&mut init_deadline).poll(cx) {
                     Poll::Ready(()) => {
-                        error!(target: "sub-libp2p", "Handler initialization process is too long \
-							with {:?}", self.remote_peer_id);
                         self.state = ProtocolState::KillAsap;
                     }
                     Poll::Pending => {
@@ -464,8 +451,6 @@ impl LegacyProtoHandler {
                                     reenable: true,
                                 };
                                 return Some(ProtocolsHandlerEvent::Custom(event));
-                            } else {
-                                debug!(target: "sub-libp2p", "Error on extra substream: {:?}", err);
                             }
                         }
                     }
@@ -510,20 +495,12 @@ impl LegacyProtoHandler {
         mut substream: RegisteredProtocolSubstream<NegotiatedSubstream>,
     ) {
         self.state = match mem::replace(&mut self.state, ProtocolState::Poisoned) {
-            ProtocolState::Poisoned => {
-                error!(target: "sub-libp2p", "Handler with {:?} is in poisoned state",
-					self.remote_peer_id);
-                ProtocolState::Poisoned
-            }
+            ProtocolState::Poisoned => ProtocolState::Poisoned,
 
             ProtocolState::Init {
                 mut substreams,
                 init_deadline,
             } => {
-                if substream.endpoint() == Endpoint::Dialer {
-                    error!(target: "sub-libp2p", "Opened dialing substream with {:?} before \
-						initialization", self.remote_peer_id);
-                }
                 substreams.push(substream);
                 ProtocolState::Init {
                     substreams,
@@ -575,8 +552,7 @@ impl LegacyProtoHandler {
                 ref mut substreams, ..
             } => substreams[0].send_message(message),
 
-            _ => debug!(target: "sub-libp2p", "Tried to send message over closed protocol \
-				with {:?}", self.remote_peer_id),
+            _ => {}
         }
     }
 }

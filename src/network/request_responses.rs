@@ -316,10 +316,6 @@ impl NetworkBehaviour for RequestResponsesBehaviour {
         if let Some((proto, _)) = self.protocols.get_mut(&*p_name) {
             return proto.inject_event(peer_id, connection, event);
         }
-
-        log::warn!(target: "sub-libp2p",
-			"inject_node_event: no request-response instance registered for protocol {:?}",
-			p_name)
     }
 
     fn inject_new_external_addr(&mut self, addr: &Multiaddr) {

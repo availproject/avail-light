@@ -30,7 +30,6 @@ use libp2p::core::{Multiaddr, PeerId, PublicKey};
 use libp2p::kad::record;
 use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
 use libp2p::NetworkBehaviour;
-use log::debug;
 use parity_scale_codec::{DecodeAll, Encode};
 use primitive_types::H256;
 
@@ -198,10 +197,6 @@ impl NetworkBehaviourEventProcess<debug_info::DebugInfoEvent> for Behaviour {
     fn inject_event(&mut self, event: debug_info::DebugInfoEvent) {
         let debug_info::DebugInfoEvent::Identified { peer_id, mut info } = event;
         if info.listen_addrs.len() > 30 {
-            debug!(target: "sub-libp2p", "Node {:?} has reported more than 30 addresses; \
-                it is identified by {:?} and {:?}", peer_id, info.protocol_version,
-                info.agent_version
-            );
             info.listen_addrs.truncate(30);
         }
         for addr in &info.listen_addrs {
