@@ -476,8 +476,8 @@ impl<T> NonFinalizedTree<T> {
     /// The verification is performed in the context of the chain. In particular, the
     /// verification will fail if the target block isn't already in the chain.
     ///
-    /// If the verification succeeds, a [`JustificationApply`] object might be returned which can
-    /// be used to then insert the block in the chain.
+    /// If the verification succeeds, a [`JustificationApply`] object will be returned which can
+    /// be used to apply the finalization.
     #[must_use]
     pub fn verify_justification(
         &mut self,
