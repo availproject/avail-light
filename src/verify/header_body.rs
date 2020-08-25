@@ -196,12 +196,6 @@ impl<'a> ReadyToRun<'a> {
                     offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                 })),
-                unsealed::Verify::ReadyToRun(inner) => Verify::ReadyToRun(ReadyToRun {
-                    inner: ReadyToRunInner::Unsealed {
-                        inner,
-                        babe_success,
-                    },
-                }),
                 unsealed::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
                     inner,
                     babe_success,

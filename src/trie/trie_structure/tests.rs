@@ -1,12 +1,12 @@
 #![cfg(test)]
 
-use super::{super::bytes_to_nibbles, Nibble, TrieStructure};
+use super::{Nibble, TrieStructure};
 
 use rand::{
     distributions::{Distribution as _, Uniform},
     seq::SliceRandom as _,
 };
-use std::{collections::HashSet, convert::TryFrom as _, mem};
+use std::{collections::HashSet, convert::TryFrom as _};
 
 #[test]
 fn remove_turns_storage_into_branch() {
@@ -317,7 +317,7 @@ fn fuzzing() {
     // We run the test a couple times because of randomness.
     for _ in 0..16 {
         // Generate a set of keys that will find themselves in the tries in the end.
-        let mut final_storage: HashSet<Vec<Nibble>> = {
+        let final_storage: HashSet<Vec<Nibble>> = {
             let mut list = vec![Vec::new()];
             for _ in 0..5 {
                 for elem in list.clone().into_iter() {
@@ -332,9 +332,6 @@ fn fuzzing() {
             }
             list.into_iter().skip(1).collect()
         };
-
-        // Maximum length of a key in `final_storage`.
-        let final_storage_max_key_len = final_storage.iter().max_by_key(|v| v.len());
 
         // Create multiple tries, each with a different order of insertion for the nodes.
         let mut tries = Vec::new();

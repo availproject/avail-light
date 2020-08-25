@@ -123,7 +123,7 @@ where
         self.socket = loop {
             match socket {
                 NodeSocket::Connected(mut conn) => {
-                    match NodeSocketConnected::poll(Pin::new(&mut conn), cx, &self.addr) {
+                    match NodeSocketConnected::poll(Pin::new(&mut conn), cx) {
                         Poll::Ready(Ok(v)) => match v {},
                         Poll::Pending => break NodeSocket::Connected(conn),
                         Poll::Ready(Err(err)) => {
@@ -145,7 +145,7 @@ where
                         return Poll::Ready(NodeEvent::Connected);
                     }
                     Poll::Pending => break NodeSocket::Dialing(s),
-                    Poll::Ready(Err(err)) => {
+                    Poll::Ready(Err(_)) => {
                         let timeout = gen_rand_reconnect_delay();
                         socket = NodeSocket::WaitingReconnect(timeout);
                     }
@@ -154,7 +154,7 @@ where
                     Ok(d) => {
                         socket = NodeSocket::Dialing(d);
                     }
-                    Err(err) => {
+                    Err(_) => {
                         let timeout = gen_rand_reconnect_delay();
                         socket = NodeSocket::WaitingReconnect(timeout);
                     }
@@ -183,26 +183,20 @@ fn gen_rand_reconnect_delay() -> Delay {
     Delay::new(Duration::from_secs(random_delay))
 }
 
-impl<TTrans: Transport, TSinkErr> NodeSocketConnected<TTrans>
+impl<TTrans: Transport, TSinkErr> Future for NodeSocketConnected<TTrans>
 where
     TTrans::Output:
         Sink<Vec<u8>, Error = TSinkErr> + Stream<Item = Result<Vec<u8>, TSinkErr>> + Unpin,
 {
-    /// Processes the queue of messages for the connected socket.
-    ///
-    /// The address is passed for logging purposes only.
-    fn poll(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        my_addr: &Multiaddr,
-    ) -> Poll<Result<futures::never::Never, ConnectionError<TSinkErr>>> {
+    type Output = Result<futures::never::Never, ConnectionError<TSinkErr>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         while let Some(item) = self.pending.pop_front() {
             if let Poll::Ready(result) = Sink::poll_ready(Pin::new(&mut self.sink), cx) {
                 if let Err(err) = result {
                     return Poll::Ready(Err(ConnectionError::Sink(err)));
                 }
 
-                let item_len = item.len();
                 if let Err(err) = Sink::start_send(Pin::new(&mut self.sink), item) {
                     return Poll::Ready(Err(ConnectionError::Sink(err)));
                 }

@@ -105,8 +105,6 @@ pub fn verify_unsealed_block<'a>(
 pub enum Verify {
     /// Verification is over.
     Finished(Result<Success, Error>),
-    /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.

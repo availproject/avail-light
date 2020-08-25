@@ -155,7 +155,7 @@ impl TelemetryWorker {
         })
         .unwrap();
 
-        for (node, node_max_verbosity) in &mut self.nodes {
+        for (node, _node_max_verbosity) in &mut self.nodes {
             // `send_message` returns an error if we're not connected, which we silently ignore.
             let _ = node.send_message(&serialized[..]);
         }
