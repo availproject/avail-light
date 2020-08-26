@@ -46,7 +46,7 @@ async fn async_main() {
     let mut rpc_server = {
         let rpc_config = substrate_lite::rpc_server::Config {
             chain_name: chain_spec.name().to_owned(),
-            chain_type: "Live".into(), // TODO: temporary
+            chain_type: chain_spec.chain_type().to_owned(),
             chain_properties: chain_spec
                 .properties()
                 .filter_map(|(name, prop)| {

@@ -41,6 +41,11 @@ impl<T> ForkTree<T> {
         }
     }
 
+    /// Reserves additional capacity for at least `additional` new blocks without allocating.
+    pub fn reserve(&mut self, additional: usize) {
+        self.nodes.reserve(additional)
+    }
+
     /// Shrink the capacity of the tree as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.nodes.shrink_to_fit()

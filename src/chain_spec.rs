@@ -65,6 +65,19 @@ impl ChainSpec {
         &self.client_spec.id
     }
 
+    /// Returns a string indicating the type of chain.
+    ///
+    /// This value doesn't have any meaning in the absolute and is only meant to be shown to
+    /// the user.
+    pub fn chain_type(&self) -> &str {
+        match &self.client_spec.chain_type {
+            structs::ChainType::Development => "Development",
+            structs::ChainType::Local => "Local",
+            structs::ChainType::Live => "Live",
+            structs::ChainType::Custom(ty) => ty,
+        }
+    }
+
     /// Returns the list of bootnode addresses in the chain specs.
     // TODO: more strongly typed?
     pub fn boot_nodes(&self) -> &[String] {
