@@ -312,13 +312,10 @@ pub async fn run_block_import_task(mut config: Config) {
                     assert!(block1_slot_number.is_none());
                     block1_slot_number = Some(import_result.slot_number);
                 }
-                let babe_epoch_change_number = import_result
-                    .babe_epoch_change
-                    .as_ref()
-                    .map(|e| e.info_epoch_number);
-                if let Some(epoch_change) = import_result.babe_epoch_change {
-                    let _was_in = babe_epoch_info_cache
-                        .put(epoch_change.info_epoch_number, epoch_change.info.into());
+                let babe_epoch_change_number = import_result.babe_epoch_transition_target;
+                if let Some(epoch_change) = import_result.babe_epoch_transition_target {
+                    let info = decoded_header.digest.babe_epoch_information().unwrap().0;
+                    let _was_in = babe_epoch_info_cache.put(epoch_change, info.into());
                     debug_assert!(_was_in.is_none());
                 }
 

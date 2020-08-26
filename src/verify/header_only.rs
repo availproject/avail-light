@@ -3,16 +3,16 @@ use crate::{header, verify::babe};
 use core::time::Duration;
 
 /// Configuration for a block verification.
-pub struct Config<'a, 'b> {
+pub struct Config<'a> {
     /// Header of the parent of the block to verify.
     ///
     /// The hash of this header must be the one referenced in [`Config::block_header`].
-    pub parent_block_header: header::HeaderRef<'b>,
+    pub parent_block_header: header::HeaderRef<'a>,
 
     /// BABE configuration retrieved from the genesis block.
     ///
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'b babe::BabeGenesisConfiguration,
+    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -32,10 +32,11 @@ pub struct Config<'a, 'b> {
 }
 
 /// Block successfully verified.
-pub struct Success<'a> {
-    /// If `Some`, the block is the first block of a new BABE epoch. Returns the information about
-    /// the epoch.
-    pub babe_epoch_change: Option<babe::EpochChangeInformation<'a>>,
+pub struct Success {
+    /// If `Some`, the verified block contains an epoch transition describing the given epoch.
+    /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
+    /// blocks that are part of that epoch.
+    pub babe_epoch_transition_target: Option<u64>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
@@ -52,7 +53,7 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a, 'b>(config: Config<'a, 'b>) -> Verify<'a> {
+pub fn verify<'a>(config: Config<'a>) -> Verify {
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {
@@ -79,31 +80,31 @@ pub fn verify<'a, 'b>(config: Config<'a, 'b>) -> Verify<'a> {
 
 /// Current state of the verification.
 #[must_use]
-pub enum Verify<'a> {
+pub enum Verify {
     /// Verification is over.
-    Finished(Result<Success<'a>, Error>),
+    Finished(Result<Success, Error>),
     /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun<'a>),
+    ReadyToRun(ReadyToRun),
     /// Fetching an epoch information is required in order to continue.
-    BabeEpochInformation(BabeEpochInformation<'a>),
+    BabeEpochInformation(BabeEpochInformation),
 }
 
 /// Verification is ready to continue.
 #[must_use]
-pub struct ReadyToRun<'a> {
-    inner: ReadyToRunInner<'a>,
+pub struct ReadyToRun {
+    inner: ReadyToRunInner,
 }
 
-enum ReadyToRunInner<'a> {
+enum ReadyToRunInner {
     /// Verification finished
-    Finished(Result<babe::VerifySuccess<'a>, babe::VerifyError>),
+    Finished(Result<babe::VerifySuccess, babe::VerifyError>),
     /// Verifying BABE.
-    Babe(babe::SuccessOrPending<'a>),
+    Babe(babe::SuccessOrPending),
 }
 
-impl<'a> ReadyToRun<'a> {
+impl ReadyToRun {
     /// Continues the verification.
-    pub fn run(self) -> Verify<'a> {
+    pub fn run(self) -> Verify {
         match self.inner {
             ReadyToRunInner::Babe(babe_verification) => match babe_verification {
                 babe::SuccessOrPending::Success(babe_success) => Verify::ReadyToRun(ReadyToRun {
@@ -114,7 +115,7 @@ impl<'a> ReadyToRun<'a> {
                 }
             },
             ReadyToRunInner::Finished(Ok(s)) => Verify::Finished(Ok(Success {
-                babe_epoch_change: s.epoch_change,
+                babe_epoch_transition_target: s.epoch_transition_target,
                 slot_number: s.slot_number,
                 epoch_number: s.epoch_number,
             })),
@@ -127,11 +128,11 @@ impl<'a> ReadyToRun<'a> {
 
 /// Fetching an epoch information is required in order to continue.
 #[must_use]
-pub struct BabeEpochInformation<'a> {
-    inner: babe::PendingVerify<'a>,
+pub struct BabeEpochInformation {
+    inner: babe::PendingVerify,
 }
 
-impl<'a> BabeEpochInformation<'a> {
+impl BabeEpochInformation {
     /// Returns the epoch number whose information must be passed to
     /// [`EpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {
@@ -140,7 +141,7 @@ impl<'a> BabeEpochInformation<'a> {
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`EpochInformation::epoch_number`].
-    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun<'a> {
+    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun {
         match self.inner.finish(epoch_info) {
             Ok(success) => ReadyToRun {
                 inner: ReadyToRunInner::Finished(Ok(success)),

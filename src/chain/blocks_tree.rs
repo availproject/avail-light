@@ -198,7 +198,7 @@ impl<T> NonFinalizedTree<T> {
     #[must_use]
     pub fn verify_header(
         &mut self,
-        scale_encoded_header: &[u8],
+        scale_encoded_header: Vec<u8>,
     ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
         match self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>) {
             BodyOrHeader::Header(v) => v,
@@ -207,11 +207,11 @@ impl<T> NonFinalizedTree<T> {
     }
 
     /// Underlying implementation of both header and header+body verification.
-    fn verify_inner<'c, 'h, I, E>(
+    fn verify_inner<'c, I, E>(
         &'c mut self,
-        scale_encoded_header: &'h [u8],
+        scale_encoded_header: Vec<u8>,
         body: Option<I>,
-    ) -> BodyOrHeader<'c, 'h, T, I>
+    ) -> BodyOrHeader<'c, T, I>
     where
         I: ExactSizeIterator<Item = E> + Clone,
         E: AsRef<[u8]> + Clone,
@@ -292,7 +292,7 @@ impl<T> NonFinalizedTree<T> {
             BodyOrHeader::Body(BodyVerifyStep1::ParentRuntimeRequired(
                 BodyVerifyRuntimeRequired {
                     chain: self,
-                    header: decoded_header,
+                    scale_encoded_header,
                     parent_tree_index,
                     body,
                     block1_slot_number,
@@ -716,14 +716,14 @@ where
     }
 }
 
-enum BodyOrHeader<'c, 'h, T, I> {
+enum BodyOrHeader<'c, T, I> {
     Header(Result<HeaderVerifySuccess<'c, T>, HeaderVerifyError>),
-    Body(BodyVerifyStep1<'c, 'h, T, I>),
+    Body(BodyVerifyStep1<'c, T, I>),
 }
 
 ///
 #[derive(Debug)]
-pub enum BodyVerifyStep1<'c, 'h, T, I> {
+pub enum BodyVerifyStep1<'c, T, I> {
     /// Block is already known.
     Duplicate,
 
@@ -738,26 +738,26 @@ pub enum BodyVerifyStep1<'c, 'h, T, I> {
 
     /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the
     /// runtime of the parent block must be provided.
-    ParentRuntimeRequired(BodyVerifyRuntimeRequired<'c, 'h, T, I>),
+    ParentRuntimeRequired(BodyVerifyRuntimeRequired<'c, T, I>),
 }
 
 /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the runtime
 /// of the parent block must be provided.
 #[derive(Debug)]
-pub struct BodyVerifyRuntimeRequired<'c, 'h, T, I> {
+pub struct BodyVerifyRuntimeRequired<'c, T, I> {
     chain: &'c mut NonFinalizedTree<T>,
-    header: header::HeaderRef<'h>,
+    scale_encoded_header: Vec<u8>, // TODO: should be owned Header
     parent_tree_index: Option<fork_tree::NodeIndex>,
     body: I,
     block1_slot_number: Option<u64>,
 }
 
-impl<'c, 'h, T, I, E> BodyVerifyRuntimeRequired<'c, 'h, T, I>
+impl<'c, T, I, E> BodyVerifyRuntimeRequired<'c, T, I>
 where
     I: ExactSizeIterator<Item = E> + Clone,
     E: AsRef<[u8]> + Clone,
 {
-    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<'c, 'h, T> {
+    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<'c, T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
             header::decode(
                 &self
@@ -782,7 +782,7 @@ where
                 // TODO: this is commented out because of Wasm support
                 core::time::Duration::new(0, 0)
             },
-            block_header: self.header.clone(),
+            block_header: header::decode(&self.scale_encoded_header).unwrap(),
             parent_block_header,
             block_body: self.body,
             top_trie_root_calculation_cache: None,
@@ -799,7 +799,7 @@ where
 }
 
 /// Header and body verification in progress.
-pub enum BodyVerifyStep2<'c, 'h, T> {
+pub enum BodyVerifyStep2<'c, T> {
     /// Verification is over.
     Finished {
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
@@ -808,11 +808,11 @@ pub enum BodyVerifyStep2<'c, 'h, T> {
         result: Result<Insert<'c, T>, HeaderVerifyError>,
     },
     /// Loading a storage value is required in order to continue.
-    StorageGet(StorageGet<'c, 'h, T>),
+    StorageGet(StorageGet<'c, T>),
     /// Fetching the list of keys with a given prefix is required in order to continue.
-    StoragePrefixKeys(StoragePrefixKeys<'c, 'h, T>),
+    StoragePrefixKeys(StoragePrefixKeys<'c, T>),
     /// Fetching the key that follows a given one is required in order to continue.
-    StorageNextKey(StorageNextKey<'c, 'h, T>),
+    StorageNextKey(StorageNextKey<'c, T>),
 }
 
 struct BodyVerifyShared<'c, T> {
@@ -820,11 +820,8 @@ struct BodyVerifyShared<'c, T> {
     parent_tree_index: Option<fork_tree::NodeIndex>,
 }
 
-impl<'c, 'h, T> BodyVerifyStep2<'c, 'h, T> {
-    fn from_inner(
-        mut inner: verify::header_body::Verify<'h>,
-        chain: BodyVerifyShared<'c, T>,
-    ) -> Self {
+impl<'c, T> BodyVerifyStep2<'c, T> {
+    fn from_inner(mut inner: verify::header_body::Verify, chain: BodyVerifyShared<'c, T>) -> Self {
         loop {
             match inner {
                 verify::header_body::Verify::Finished(Ok(_)) => {
@@ -886,12 +883,12 @@ impl<'c, 'h, T> BodyVerifyStep2<'c, 'h, T> {
 
 /// Loading a storage value is required in order to continue.
 #[must_use]
-pub struct StorageGet<'c, 'h, T> {
-    inner: verify::header_body::StorageGet<'h>,
+pub struct StorageGet<'c, T> {
+    inner: verify::header_body::StorageGet,
     chain: BodyVerifyShared<'c, T>,
 }
 
-impl<'c, 'h, T> StorageGet<'c, 'h, T> {
+impl<'c, T> StorageGet<'c, T> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     // TODO: shouldn't be mut
     pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
@@ -917,7 +914,7 @@ impl<'c, 'h, T> StorageGet<'c, 'h, T> {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
-    pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<'c, 'h, T> {
+    pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<'c, T> {
         let inner = self.inner.inject_value(value);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }
@@ -925,12 +922,12 @@ impl<'c, 'h, T> StorageGet<'c, 'h, T> {
 
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
-pub struct StoragePrefixKeys<'c, 'h, T> {
-    inner: verify::header_body::StoragePrefixKeys<'h>,
+pub struct StoragePrefixKeys<'c, T> {
+    inner: verify::header_body::StoragePrefixKeys,
     chain: BodyVerifyShared<'c, T>,
 }
 
-impl<'c, 'h, T> StoragePrefixKeys<'c, 'h, T> {
+impl<'c, T> StoragePrefixKeys<'c, T> {
     /// Returns the prefix whose keys to load.
     // TODO: don't take &mut mut but &self
     pub fn prefix(&mut self) -> &[u8] {
@@ -941,7 +938,7 @@ impl<'c, 'h, T> StoragePrefixKeys<'c, 'h, T> {
     pub fn inject_keys(
         self,
         keys: impl Iterator<Item = impl AsRef<[u8]>>,
-    ) -> BodyVerifyStep2<'c, 'h, T> {
+    ) -> BodyVerifyStep2<'c, T> {
         let inner = self.inner.inject_keys(keys);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }
@@ -949,12 +946,12 @@ impl<'c, 'h, T> StoragePrefixKeys<'c, 'h, T> {
 
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
-pub struct StorageNextKey<'c, 'h, T> {
-    inner: verify::header_body::StorageNextKey<'h>,
+pub struct StorageNextKey<'c, T> {
+    inner: verify::header_body::StorageNextKey,
     chain: BodyVerifyShared<'c, T>,
 }
 
-impl<'c, 'h, T> StorageNextKey<'c, 'h, T> {
+impl<'c, T> StorageNextKey<'c, T> {
     /// Returns the key whose next key must be passed back.
     // TODO: don't take &mut mut but &self
     pub fn key(&mut self) -> &[u8] {
@@ -962,7 +959,7 @@ impl<'c, 'h, T> StorageNextKey<'c, 'h, T> {
     }
 
     /// Injects the key.
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<'c, 'h, T> {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<'c, T> {
         let inner = self.inner.inject_key(key);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }

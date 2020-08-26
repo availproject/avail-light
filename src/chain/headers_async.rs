@@ -70,7 +70,8 @@ where
                             scale_encoded_header,
                             user_data,
                         }) => {
-                            let outcome = queue.verify_header(&scale_encoded_header);
+                            // TODO: don't clone `scale_encoded_header`
+                            let outcome = queue.verify_header(scale_encoded_header.clone());
                             let result = match outcome {
                                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
                                     insert,

@@ -5,7 +5,7 @@ use core::time::Duration;
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
-pub struct Config<'a, 'b, TBody> {
+pub struct Config<'a, TBody> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
     pub parent_runtime: executor::WasmVmPrototype,
@@ -13,12 +13,12 @@ pub struct Config<'a, 'b, TBody> {
     /// Header of the parent of the block to verify.
     ///
     /// The hash of this header must be the one referenced in [`Config::block_header`].
-    pub parent_block_header: header::HeaderRef<'b>,
+    pub parent_block_header: header::HeaderRef<'a>,
 
     /// BABE configuration retrieved from the genesis block.
     ///
     /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'b babe::BabeGenesisConfiguration,
+    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -44,13 +44,14 @@ pub struct Config<'a, 'b, TBody> {
 }
 
 /// Block successfully verified.
-pub struct Success<'a> {
+pub struct Success {
     /// Runtime that was passed by [`Config`].
     pub parent_runtime: executor::WasmVmPrototype,
 
-    /// If `Some`, the block is the first block of a new BABE epoch. Returns the information about
-    /// the epoch.
-    pub babe_epoch_change: Option<babe::EpochChangeInformation<'a>>,
+    /// If `Some`, the verified block contains an epoch transition describing the given epoch.
+    /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
+    /// blocks that are part of that epoch.
+    pub babe_epoch_transition_target: Option<u64>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
@@ -79,9 +80,9 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a, 'b>(
-    config: Config<'a, 'b, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
-) -> Verify<'a> {
+pub fn verify<'a>(
+    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+) -> Verify {
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {
@@ -128,31 +129,31 @@ pub fn verify<'a, 'b>(
 
 /// Current state of the verification.
 #[must_use]
-pub enum Verify<'a> {
+pub enum Verify {
     /// Verification is over.
-    Finished(Result<Success<'a>, Error>),
+    Finished(Result<Success, Error>),
     /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun<'a>),
+    ReadyToRun(ReadyToRun),
     /// Fetching an epoch information is required in order to continue.
-    BabeEpochInformation(BabeEpochInformation<'a>),
+    BabeEpochInformation(BabeEpochInformation),
     /// Loading a storage value is required in order to continue.
-    StorageGet(StorageGet<'a>),
+    StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.
-    StoragePrefixKeys(StoragePrefixKeys<'a>),
+    StoragePrefixKeys(StoragePrefixKeys),
     /// Fetching the key that follows a given one is required in order to continue.
-    StorageNextKey(StorageNextKey<'a>),
+    StorageNextKey(StorageNextKey),
 }
 
 /// Verification is ready to continue.
 #[must_use]
-pub struct ReadyToRun<'a> {
-    inner: ReadyToRunInner<'a>,
+pub struct ReadyToRun {
+    inner: ReadyToRunInner,
 }
 
-enum ReadyToRunInner<'a> {
+enum ReadyToRunInner {
     /// Verifying BABE.
     Babe {
-        babe_verification: babe::SuccessOrPending<'a>,
+        babe_verification: babe::SuccessOrPending,
         import_process: unsealed::ReadyToRun,
     },
     /// Error in BABE verification.
@@ -160,13 +161,13 @@ enum ReadyToRunInner<'a> {
     /// Verifying the unsealed block.
     Unsealed {
         inner: unsealed::ReadyToRun,
-        babe_success: babe::VerifySuccess<'a>,
+        babe_success: babe::VerifySuccess,
     },
 }
 
-impl<'a> ReadyToRun<'a> {
+impl ReadyToRun {
     /// Continues the verification.
-    pub fn run(self) -> Verify<'a> {
+    pub fn run(self) -> Verify {
         match self.inner {
             ReadyToRunInner::Babe {
                 babe_verification,
@@ -193,7 +194,7 @@ impl<'a> ReadyToRun<'a> {
                 unsealed::Verify::Finished(Err(err)) => Verify::Finished(Err(Error::Unsealed(err))),
                 unsealed::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
                     parent_runtime: success.parent_runtime,
-                    babe_epoch_change: babe_success.epoch_change,
+                    babe_epoch_transition_target: babe_success.epoch_transition_target,
                     slot_number: babe_success.slot_number,
                     epoch_number: babe_success.epoch_number,
                     storage_top_trie_changes: success.storage_top_trie_changes,
@@ -221,12 +222,12 @@ impl<'a> ReadyToRun<'a> {
 
 /// Fetching an epoch information is required in order to continue.
 #[must_use]
-pub struct BabeEpochInformation<'a> {
-    inner: babe::PendingVerify<'a>,
+pub struct BabeEpochInformation {
+    inner: babe::PendingVerify,
     import_process: unsealed::ReadyToRun,
 }
 
-impl<'a> BabeEpochInformation<'a> {
+impl BabeEpochInformation {
     /// Returns the epoch number whose information must be passed to
     /// [`EpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {
@@ -235,7 +236,7 @@ impl<'a> BabeEpochInformation<'a> {
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`EpochInformation::epoch_number`].
-    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun<'a> {
+    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun {
         match self.inner.finish(epoch_info) {
             Ok(babe_success) => ReadyToRun {
                 inner: ReadyToRunInner::Unsealed {
@@ -252,12 +253,12 @@ impl<'a> BabeEpochInformation<'a> {
 
 /// Loading a storage value is required in order to continue.
 #[must_use]
-pub struct StorageGet<'a> {
+pub struct StorageGet {
     inner: unsealed::StorageGet,
-    babe_success: babe::VerifySuccess<'a>,
+    babe_success: babe::VerifySuccess,
 }
 
-impl<'a> StorageGet<'a> {
+impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     // TODO: shouldn't be mut
     pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
@@ -266,7 +267,7 @@ impl<'a> StorageGet<'a> {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
-    pub fn inject_value(self, value: Option<&[u8]>) -> ReadyToRun<'a> {
+    pub fn inject_value(self, value: Option<&[u8]>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_value(value),
@@ -278,12 +279,12 @@ impl<'a> StorageGet<'a> {
 
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
-pub struct StoragePrefixKeys<'a> {
+pub struct StoragePrefixKeys {
     inner: unsealed::PrefixKeys,
-    babe_success: babe::VerifySuccess<'a>,
+    babe_success: babe::VerifySuccess,
 }
 
-impl<'a> StoragePrefixKeys<'a> {
+impl StoragePrefixKeys {
     /// Returns the prefix whose keys to load.
     // TODO: don't take &mut mut but &self
     pub fn prefix(&mut self) -> &[u8] {
@@ -291,7 +292,7 @@ impl<'a> StoragePrefixKeys<'a> {
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun<'a> {
+    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_keys(keys),
@@ -303,12 +304,12 @@ impl<'a> StoragePrefixKeys<'a> {
 
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
-pub struct StorageNextKey<'a> {
+pub struct StorageNextKey {
     inner: unsealed::NextKey,
-    babe_success: babe::VerifySuccess<'a>,
+    babe_success: babe::VerifySuccess,
 }
 
-impl<'a> StorageNextKey<'a> {
+impl StorageNextKey {
     /// Returns the key whose next key must be passed back.
     // TODO: don't take &mut mut but &self
     pub fn key(&mut self) -> &[u8] {
@@ -316,7 +317,7 @@ impl<'a> StorageNextKey<'a> {
     }
 
     /// Injects the key.
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun<'a> {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
                 inner: self.inner.inject_key(key),

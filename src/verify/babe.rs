@@ -124,7 +124,7 @@ pub mod chain_config;
 pub use chain_config::BabeGenesisConfiguration;
 
 /// Configuration for [`start_verify_header`].
-pub struct VerifyConfig<'a, 'b> {
+pub struct VerifyConfig<'a> {
     /// Header of the block to verify.
     pub header: header::HeaderRef<'a>,
 
@@ -138,13 +138,13 @@ pub struct VerifyConfig<'a, 'b> {
     /// [`start_verify_header`] assumes that this block has been successfully verified before.
     ///
     /// The hash of this header must be the one referenced in [`VerifyConfig::header`].
-    pub parent_block_header: header::HeaderRef<'b>,
+    pub parent_block_header: header::HeaderRef<'a>,
 
     /// BABE configuration retrieved from the genesis block.
     ///
     /// Can be obtained by calling [`BabeGenesisConfiguration::from_virtual_machine_prototype`]
     /// with the runtime of the genesis block.
-    pub genesis_configuration: &'b BabeGenesisConfiguration,
+    pub genesis_configuration: &'a BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.
@@ -153,32 +153,20 @@ pub struct VerifyConfig<'a, 'b> {
 
 /// Information yielded back after successfully verifying a block.
 #[derive(Debug)]
-pub struct VerifySuccess<'a> {
-    /// If `Some`, the verified block contains an epoch transition. This epoch transition must
-    /// later be provided back as part of the [`VerifyConfig`] of the blocks that are part of
-    /// that epoch.
-    pub epoch_change: Option<EpochChangeInformation<'a>>,
-
+pub struct VerifySuccess {
     /// Slot number the block belongs to.
     // TODO: the info is already in the header, maybe replace this field with a `header::BabePreDigestRef`?
     pub slot_number: u64,
 
     /// Epoch number the block belongs to.
     pub epoch_number: u64,
-}
 
-/// Information about a change of epoch.
-#[derive(Debug)]
-pub struct EpochChangeInformation<'a> {
-    /// Number of the new epoch that `info` described.
+    /// If `Some`, the verified block contains an epoch transition describing the given epoch.
+    /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
+    /// blocks that are part of that epoch.
     ///
     /// > **Note**: This is **not** the epoch that we have just entered.
-    pub info_epoch_number: u64,
-
-    /// Information about the next epoch.
-    ///
-    /// > **Note**: This is **not** the epoch that we have just entered, but the next one.
-    pub info: header::BabeNextEpochRef<'a>,
+    pub epoch_transition_target: Option<u64>,
 }
 
 /// Failure to verify a block.
@@ -218,9 +206,7 @@ pub enum VerifyError {
 /// Panics if `config.parent_block_header` is invalid.
 /// Panics if `config.block1_slot_number` is `None` and `config.header.number` is not 1.
 ///
-pub fn start_verify_header<'a, 'b>(
-    config: VerifyConfig<'a, 'b>,
-) -> Result<SuccessOrPending<'a>, VerifyError> {
+pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPending, VerifyError> {
     // TODO: handle OnDisabled
 
     // Gather the BABE-related information from the header.
@@ -277,21 +263,21 @@ pub fn start_verify_header<'a, 'b>(
     };
 
     // Extract the epoch change information stored in the header, if any.
-    let epoch_change = config
+    let epoch_transition_target = config
         .header
         .digest
         .babe_epoch_information()
-        .map(|(info, _)| EpochChangeInformation {
-            info_epoch_number: epoch_number + 1,
-            info,
-        });
+        .map(|_| epoch_number + 1);
 
     // TODO: in case of epoch change, should also check the randomness value; while the runtime
     //       checks that the randomness value is correct, light clients in particular do not
     //       execute the runtime
 
     // Make sure that the expected epoch transitions correspond to what the blocks report.
-    match (&epoch_change, Some(epoch_number) != parent_epoch_number) {
+    match (
+        &epoch_transition_target,
+        Some(epoch_number) != parent_epoch_number,
+    ) {
         (Some(_), true) => {}
         (None, false) => {}
         (Some(_), false) => return Err(VerifyError::UnexpectedEpochChangeLog),
@@ -319,7 +305,7 @@ pub fn start_verify_header<'a, 'b>(
         c: config.genesis_configuration.epoch0_configuration().c,
         pre_seal_hash,
         seal_signature,
-        epoch_change,
+        epoch_transition_target,
         epoch_number,
         slot_number,
         authority_index,
@@ -341,17 +327,17 @@ pub fn start_verify_header<'a, 'b>(
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub enum SuccessOrPending<'a> {
+pub enum SuccessOrPending {
     /// Need information about an epoch in order to finish verifying the block.
-    Pending(PendingVerify<'a>),
+    Pending(PendingVerify),
     /// Block has been successfully verified.
-    Success(VerifySuccess<'a>),
+    Success(VerifySuccess),
 }
 
 /// Verification in progress. The block is **not** fully verified yet. You must call
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
-pub struct PendingVerify<'a> {
+pub struct PendingVerify {
     /// Value of `c` found in the Babe configuration.
     // TODO: should be asked from user, since it can change
     c: (u64, u64),
@@ -360,7 +346,7 @@ pub struct PendingVerify<'a> {
     /// Block signature contained in the header that we verify.
     seal_signature: schnorrkel::Signature,
     /// If `Some`, block is at an epoch transition.
-    epoch_change: Option<EpochChangeInformation<'a>>,
+    epoch_transition_target: Option<u64>,
     /// Epoch number the block belongs to.
     epoch_number: u64,
     /// Slot number the block belongs to.
@@ -374,7 +360,7 @@ pub struct PendingVerify<'a> {
     vrf_output_and_proof: Option<([u8; 32], [u8; 64])>,
 }
 
-impl<'a> PendingVerify<'a> {
+impl PendingVerify {
     /// Returns the epoch number whose information must be passed to [`PendingVerify::finish`].
     pub fn epoch_number(&self) -> u64 {
         self.epoch_number
@@ -385,7 +371,7 @@ impl<'a> PendingVerify<'a> {
     pub fn finish(
         self,
         epoch_info: header::BabeNextEpochRef,
-    ) -> Result<VerifySuccess<'a>, VerifyError> {
+    ) -> Result<VerifySuccess, VerifyError> {
         // TODO: check that slot type is allowed by BABE config
 
         // Fetch the authority that has supposedly signed the block.
@@ -476,7 +462,7 @@ impl<'a> PendingVerify<'a> {
 
         // Success! 🚀
         Ok(VerifySuccess {
-            epoch_change: self.epoch_change,
+            epoch_transition_target: self.epoch_transition_target,
             slot_number: self.slot_number,
             epoch_number: self.epoch_number,
         })
