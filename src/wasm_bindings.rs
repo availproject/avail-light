@@ -26,12 +26,12 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
 
     let chain_spec = chain_spec::ChainSpec::from_json_bytes(&chain_spec).unwrap();
 
-    let database = {
+    /*let database = {
         let db_name = format!("substrate-lite-{}", chain_spec.id());
         database::indexed_db_light::Database::open(&db_name)
             .await
             .unwrap()
-    };
+    };*/
 
     let import_queue = {
         let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
@@ -151,7 +151,7 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                     } => {
                         blocks_in_queue -= 1;
 
-                        database.insert_header(&scale_encoded_header).await.unwrap();
+                        //database.insert_header(&scale_encoded_header).await.unwrap();
 
                         match result {
                             Ok(s) if s.is_new_best => {}

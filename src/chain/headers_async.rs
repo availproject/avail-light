@@ -70,8 +70,13 @@ where
                             scale_encoded_header,
                             user_data,
                         }) => {
+                            let num = crate::header::decode(&scale_encoded_header).unwrap().number;
                             // TODO: don't clone `scale_encoded_header`
                             let outcome = queue.verify_header(scale_encoded_header.clone());
+                            // TODO: remove this
+                            if let Err(err) = outcome {
+                                panic!("err verifying {:?} => {:?}", num, err);
+                            }
                             let result = match outcome {
                                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
                                     insert,

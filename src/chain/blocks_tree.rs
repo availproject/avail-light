@@ -430,7 +430,12 @@ impl<T> NonFinalizedTree<T> {
         // Find in the list of non-finalized blocks the one targeted by the justification.
         let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
             Some(idx) => idx,
-            None => return Err(JustificationVerifyError::UnknownTargetBlock),
+            None => {
+                return Err(JustificationVerifyError::UnknownTargetBlock {
+                    block_number: From::from(decoded.target_number),
+                    block_hash: *decoded.target_hash,
+                });
+            }
         };
 
         // If any block between the latest finalized one and the target block trigger any GrandPa
@@ -997,7 +1002,13 @@ pub enum JustificationVerifyError {
     /// Error while decoding the justification.
     InvalidJustification(justification::decode::Error),
     /// Justification targets a block that isn't in the chain.
-    UnknownTargetBlock,
+    #[display(fmt = "Justification targets a block that isn't in the chain.")]
+    UnknownTargetBlock {
+        /// Number of the block that isn't in the chain.
+        block_number: u64,
+        /// Hash of the block that isn't in the chain.
+        block_hash: [u8; 32],
+    },
     /// There exists a block in-between the latest finalized block and the block targeted by the
     /// justification that must first be finalized.
     #[display(
