@@ -207,6 +207,8 @@ impl<T> NonFinalizedTree<T> {
     }
 
     /// Underlying implementation of both header and header+body verification.
+    // TODO: should take ownership of `self` to avoid potential lifetime issues in upper layers of
+    // the API
     fn verify_inner<'c, I, E>(
         &'c mut self,
         scale_encoded_header: Vec<u8>,
@@ -363,7 +365,49 @@ impl<T> NonFinalizedTree<T> {
                 }
             };
 
-            todo!()
+            let is_new_best = if let Some(current_best) = self.current_best {
+                is_better_block(
+                    &self.blocks,
+                    current_best,
+                    parent_tree_index,
+                    decoded_header.clone(),
+                )
+            } else {
+                true
+            };
+
+            let babe_block1_slot_number = block1_slot_number.unwrap_or_else(|| {
+                debug_assert_eq!(decoded_header.number, 1);
+                result.slot_number
+            });
+
+            let babe_epoch_change = result.babe_epoch_transition_target.map(|e| {
+                (
+                    e,
+                    decoded_header
+                        .digest
+                        .babe_epoch_information()
+                        .unwrap()
+                        .0
+                        .into(),
+                )
+            });
+
+            let babe_epoch_number = result.epoch_number;
+
+            BodyOrHeader::Header(Ok(HeaderVerifySuccess::Insert {
+                is_new_best,
+                insert: Insert {
+                    chain: self,
+                    parent_tree_index,
+                    is_new_best,
+                    scale_encoded_header,
+                    hash,
+                    babe_block1_slot_number,
+                    babe_epoch_change,
+                    babe_epoch_number,
+                },
+            }))
         }
     }
 
@@ -1101,7 +1145,7 @@ pub enum SetFinalizedError {
 /// Returns true if `maybe_new_best` on top of `maybe_new_best_parent` is a better block compared
 /// to `old_best`.
 fn is_better_block<T>(
-    blocks: &mut fork_tree::ForkTree<Block<T>>,
+    blocks: &fork_tree::ForkTree<Block<T>>,
     old_best: fork_tree::NodeIndex,
     maybe_new_best_parent: Option<fork_tree::NodeIndex>,
     maybe_new_best: header::HeaderRef,
