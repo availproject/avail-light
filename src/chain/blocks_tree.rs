@@ -411,127 +411,6 @@ impl<T> NonFinalizedTree<T> {
         }
     }
 
-    /*
-    /// Underlying implementation of both header and header+body verification.
-    fn verify_inner(
-        &mut self,
-        scale_encoded_header: Vec<u8>,
-        body: Option<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
-    ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
-        // Now perform the actual block verification.
-        let import_success = if let Some(body) = body {
-            // TODO: finish here
-            let mut process = verify::header_body::verify(verify::header_body::Config {
-                parent_runtime: todo!(),
-                babe_genesis_configuration: &self.babe_genesis_config,
-                block1_slot_number,
-                now_from_unix_epoch: {
-                    // TODO: is it reasonable to use the stdlib here?
-                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                    // TODO: this is commented out because of Wasm support
-                    core::time::Duration::new(0, 0)
-                },
-                block_header: decoded_header.clone(),
-                parent_block_header,
-                block_body: body,
-                top_trie_root_calculation_cache: None,
-            });
-
-            todo!()
-        } else {
-            let mut process = verify::header_only::verify(verify::header_only::Config {
-                babe_genesis_configuration: &self.babe_genesis_config,
-                block1_slot_number,
-                now_from_unix_epoch: {
-                    // TODO: is it reasonable to use the stdlib here?
-                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                    // TODO: this is commented out because of Wasm support
-                    core::time::Duration::new(0, 0)
-                },
-                block_header: decoded_header.clone(),
-                parent_block_header,
-            });
-
-            loop {
-                match process {
-                    verify::header_only::Verify::Finished(Ok(result)) => break result,
-                    verify::header_only::Verify::Finished(Err(err)) => {
-                        return Err(HeaderVerifyError {
-                            scale_encoded_header,
-                            detail: HeaderVerifyErrorDetail::VerificationFailed(err),
-                        });
-                    }
-                    verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
-                    verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
-                        if let Some(info) = self
-                            .babe_known_epoch_information
-                            .iter()
-                            .rev()
-                            .find(|(e_num, _)| *e_num == epoch_info_rq.epoch_number())
-                        {
-                            process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                        } else if let Some(parent_tree_index) = parent_tree_index {
-                            if let Some(info) = self
-                                .blocks
-                                .node_to_root_path(parent_tree_index)
-                                .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
-                                .filter_map(|ei| ei.as_ref())
-                                .find(|e| e.0 == epoch_info_rq.epoch_number())
-                            {
-                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                            } else {
-                                return Err(HeaderVerifyError {
-                                    scale_encoded_header,
-                                    detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
-                                });
-                            }
-                        } else {
-                            return Err(HeaderVerifyError {
-                                scale_encoded_header,
-                                detail: HeaderVerifyErrorDetail::UnknownBabeEpoch,
-                            });
-                        }
-                    }
-                }
-            }
-        };
-
-        // Verification is successful!
-
-        // Determine if block would be new best.
-        let is_new_best = if let Some(current_best) = self.current_best {
-            is_better_block(&self.blocks, current_best, parent_tree_index, decoded_header)
-        } else {
-            debug_assert_eq!(self.blocks.len(), 1);
-            true
-        };
-
-        let babe_block1_slot_number = block1_slot_number.unwrap_or_else(|| {
-            debug_assert_eq!(decoded_header.number, 1);
-            import_success.slot_number
-        });
-
-        let babe_epoch_change = import_success
-            .babe_epoch_change
-            .map(|e| (e.info_epoch_number, e.info.into()));
-
-        let babe_epoch_number = import_success.epoch_number;
-
-        Ok(HeaderVerifySuccess::Insert {
-            is_new_best,
-            insert: Insert {
-                chain: self,
-                parent_tree_index,
-                is_new_best,
-                scale_encoded_header,
-                hash,
-                babe_block1_slot_number,
-                babe_epoch_change,
-                babe_epoch_number,
-            },
-        })
-    }*/
-
     /// Verifies the given justification.
     ///
     /// The verification is performed in the context of the chain. In particular, the
@@ -658,6 +537,7 @@ impl<T> NonFinalizedTree<T> {
     /// that block will fail.
     ///
     /// The block must have been passed to [`NonFinalizedTree::verify_header`].
+    // TODO: return the pruned blocks
     pub fn set_finalized_block(&mut self, block_hash: &[u8; 32]) -> Result<(), SetFinalizedError> {
         let block_index = match self.blocks.find(|b| b.hash == *block_hash) {
             Some(idx) => idx,

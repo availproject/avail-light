@@ -99,7 +99,8 @@ where
                             // TODO: don't unwrap
                             queue
                                 .verify_justification(&scale_encoded_justification)
-                                .unwrap();
+                                .unwrap()
+                                .apply();
                         }
                         Some(ToBackground::SetFinalizedBlock { block_hash }) => {
                             queue.set_finalized_block(&block_hash);
