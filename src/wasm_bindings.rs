@@ -6,7 +6,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{chain, chain_spec, database, header, network, verify::babe};
+use crate::{chain, chain_spec, database, finality::grandpa, header, network, verify::babe};
 
 use core::{convert::TryFrom as _, num::NonZeroU64};
 use futures::prelude::*;
@@ -42,6 +42,15 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
         })
         .unwrap();
 
+        let grandpa_genesis_config =
+            grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|k| {
+                chain_spec
+                    .genesis_storage()
+                    .find(|(k2, _)| *k2 == k)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .unwrap();
+
         chain::headers_async::ChainAsync::new(chain::headers_async::Config {
             chain_config: chain::blocks_tree::Config {
                 finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
@@ -52,8 +61,8 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
                 babe_genesis_config,
                 grandpa_after_finalized_block_authorities_set_id: 0, // TODO:
                 grandpa_finalized_scheduled_changes: Vec::new(),     // TODO:
-                grandpa_finalized_triggered_authorities: Vec::new(), // TODO: wrong
-                blocks_capacity: 16,
+                grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+                blocks_capacity: 128,
             },
             queue_size: 256,
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
