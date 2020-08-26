@@ -506,6 +506,7 @@ impl<T> NonFinalizedTree<T> {
                     })
                     .next()
                     .unwrap();
+                // TODO: reached at the moment around Polkadot block #30000
                 return Err(JustificationVerifyError::TooFarAhead {
                     block_to_finalize_hash,
                 });
@@ -558,8 +559,8 @@ impl<T> NonFinalizedTree<T> {
         // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
         //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
 
-        // Update the list of scheduled GrandPa changes with the ones contained in the
-        // newly-finalized blocks.
+        // Update the list of scheduled GrandPa changes and Babe epochs with the ones contained
+        // in the newly-finalized blocks.
         for node in self.blocks.root_to_node_path(block_index) {
             let node = self.blocks.get(node).unwrap();
             let decoded = header::decode(&node.scale_encoded_header).unwrap();
@@ -583,6 +584,15 @@ impl<T> NonFinalizedTree<T> {
                     }
                     _ => unimplemented!(), // TODO: unimplemented
                 }
+            }
+
+            if let Some(epoch_change) = &node.babe_epoch_change {
+                debug_assert!(self
+                    .babe_known_epoch_information
+                    .iter()
+                    .all(|(n, _)| *n != epoch_change.0));
+                self.babe_known_epoch_information
+                    .push_back(epoch_change.clone());
             }
         }
 
