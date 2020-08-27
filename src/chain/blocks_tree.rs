@@ -506,7 +506,6 @@ impl<T> NonFinalizedTree<T> {
                     })
                     .next()
                     .unwrap();
-                // TODO: reached at the moment around Polkadot block #30000
                 return Err(JustificationVerifyError::TooFarAhead {
                     justification_block_number: u64::from(decoded.target_number),
                     justification_block_hash: *decoded.target_hash,
