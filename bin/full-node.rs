@@ -126,7 +126,7 @@ async fn async_main() {
             }
             rpc_rq = rpc_server.next_event().fuse() => {
                 match rpc_rq {
-                    substrate_lite::rpc_server::Event::Request(rq) => {
+                    substrate_lite::json_rpc::Event::Request(rq) => {
                         rq.answer(&service).await;
                     }
                 }
