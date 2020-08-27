@@ -468,11 +468,11 @@ impl<T> NonFinalizedTree<T> {
                                 let trigger_block_height =
                                     header.number.checked_add(u64::from(change.delay)).unwrap();
                                 match trigger_height {
-                                    Some(_) => panic!("invalid block!"), // TODO: do better? also, this problem is not checked during block verification
+                                    Some(_) => panic!("invalid block!"), // TODO: this problem is not checked during block verification
                                     None => trigger_height = Some(trigger_block_height),
                                 }
                             }
-                            _ => unimplemented!(), // TODO: unimplemented
+                            _ => {} // TODO: unimplemented
                         }
                     }
                 }
@@ -487,10 +487,10 @@ impl<T> NonFinalizedTree<T> {
             }
         };
 
-        // As explained above, `target_number` must be < `earliest_trigger`, otherwise the
+        // As explained above, `target_number` must be <= `earliest_trigger`, otherwise the
         // finalization is unsecure.
         if let Some(earliest_trigger) = earliest_trigger {
-            if u64::from(decoded.target_number) >= earliest_trigger {
+            if u64::from(decoded.target_number) > earliest_trigger {
                 let block_to_finalize_hash = self
                     .blocks
                     .node_to_root_path(block_index)
@@ -508,6 +508,9 @@ impl<T> NonFinalizedTree<T> {
                     .unwrap();
                 // TODO: reached at the moment around Polkadot block #30000
                 return Err(JustificationVerifyError::TooFarAhead {
+                    justification_block_number: u64::from(decoded.target_number),
+                    justification_block_hash: *decoded.target_hash,
+                    block_to_finalize_number: earliest_trigger,
                     block_to_finalize_hash,
                 });
             }
@@ -582,7 +585,7 @@ impl<T> NonFinalizedTree<T> {
                             },
                         );
                     }
-                    _ => unimplemented!(), // TODO: unimplemented
+                    _ => {} // TODO: unimplemented
                 }
             }
 
@@ -1026,6 +1029,12 @@ pub enum JustificationVerifyError {
                      targeted by the justification that must first be finalized"
     )]
     TooFarAhead {
+        /// Number of the block contained in the justification.
+        justification_block_number: u64,
+        /// Hash of the block contained in the justification.
+        justification_block_hash: [u8; 32],
+        /// Number of the block to finalize first.
+        block_to_finalize_number: u64,
         /// Hash of the block to finalize first.
         block_to_finalize_hash: [u8; 32],
     },
