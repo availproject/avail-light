@@ -1,7 +1,7 @@
 //! RPC servers.
 
-#![cfg(feature = "rpc-server")]
-#![cfg_attr(docsrs, doc(cfg(feature = "rpc-server")))]
+#![cfg(feature = "json-rpc")]
+#![cfg_attr(docsrs, doc(cfg(feature = "json-rpc")))]
 
 // TODO: write docs
 

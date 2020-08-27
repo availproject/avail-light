@@ -8,10 +8,10 @@ keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
 
 [features]
-default = ["database-sled", "os-networking", "rpc-server"]
+default = ["database-sled", "json-rpc", "os-networking"]
 database-sled = ["sled"]
+json-rpc = ["jsonrpsee"]
 os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
-rpc-server = ["jsonrpsee"]
 wasm-bindings = [
     "chrono/wasmbind",
     "futures-timer/wasm-bindgen",
@@ -30,7 +30,7 @@ required-features = ["database-sled"]
 [[bin]]
 name = "full-node"
 path = "bin/full-node.rs"
-required-features = ["database-sled", "os-networking", "rpc-server"]
+required-features = ["database-sled", "json-rpc", "os-networking"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
