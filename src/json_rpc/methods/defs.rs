@@ -96,3 +96,85 @@ pub(super) enum SerdeParams {
     Array(Vec<serde_json::Value>),
     Map(serde_json::Map<String, serde_json::Value>),
 }
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SerdeSuccess {
+    pub(super) jsonrpc: SerdeVersion,
+    pub(super) result: serde_json::Value,
+    pub(super) id: SerdeId,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SerdeFailure {
+    pub(super) version: SerdeVersion,
+    pub(super) error: SerdeError,
+    pub(super) id: SerdeId,
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+pub(super) enum SerdeOutput {
+    Success(SerdeSuccess),
+    Failure(SerdeFailure),
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct SerdeError {
+    pub(super) code: SerdeErrorCode,
+    pub(super) message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(super) enum SerdeErrorCode {
+    ParseError,
+    InvalidRequest,
+    MethodNotFound,
+    InvalidParams,
+    InternalError,
+    ServerError(i64),
+    MethodError(i64),
+}
+
+impl<'a> serde::Deserialize<'a> for SerdeErrorCode {
+    fn deserialize<D>(deserializer: D) -> Result<SerdeErrorCode, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let code: i64 = serde::Deserialize::deserialize(deserializer)?;
+
+        Ok(match code {
+            -32700 => SerdeErrorCode::ParseError,
+            -32600 => SerdeErrorCode::InvalidRequest,
+            -32601 => SerdeErrorCode::MethodNotFound,
+            -32602 => SerdeErrorCode::InvalidParams,
+            -32603 => SerdeErrorCode::InternalError,
+            -32099..=-32000 => SerdeErrorCode::ServerError(code),
+            code => SerdeErrorCode::MethodError(code),
+        })
+    }
+}
+
+impl serde::Serialize for SerdeErrorCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let code = match *self {
+            SerdeErrorCode::ParseError => -32700,
+            SerdeErrorCode::InvalidRequest => -32600,
+            SerdeErrorCode::MethodNotFound => -32601,
+            SerdeErrorCode::InvalidParams => -32602,
+            SerdeErrorCode::InternalError => -32603,
+            SerdeErrorCode::ServerError(code) => code,
+            SerdeErrorCode::MethodError(code) => code,
+        };
+
+        serializer.serialize_i64(code)
+    }
+}
