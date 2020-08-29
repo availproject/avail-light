@@ -3259,6 +3259,7 @@ dependencies = [
  "app_dirs",
  "arrayvec 0.5.1",
  "async-std",
+ "async-tls 0.7.0",
  "async-trait",
  "atomic",
  "bitflags",
@@ -3304,10 +3305,12 @@ dependencies = [
  "slab",
  "sled",
  "smallvec 0.6.13",
+ "soketto",
  "terminal_size",
  "tiny-keccak",
  "twox-hash",
  "unsigned-varint 0.3.3",
+ "url",
  "void",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -3315,6 +3318,7 @@ dependencies = [
  "wasmi",
  "wasmtime",
  "web-sys",
+ "webpki",
 ]
 
 [[package]]

@@ -1,7 +1,12 @@
-//! Chain of block headers.
+//! Tree of block headers.
 //!
-//! This module provides the [`NonFinalizedTree`] struct. It contains the state necessary to maintain a
-//! chain of block headers.
+//! This module provides the [`NonFinalizedTree`] struct. This struct is a data structure
+//! containing a tree of block headers, plus the state necessary to add new blocks to that tree.
+//!
+//! Each block header additionally holds a user-chosen opaque data which can be used, for example,
+//! to hold the storage or the body of this block. In other words, while the logic of this data
+//! structure is only aware of headers, it is also suitable for situations where the block bodies
+//! are also maintained.
 //!
 //! The state in the [`NonFinalizedTree`] consists of:
 //!
@@ -186,6 +191,11 @@ impl<T> NonFinalizedTree<T> {
     /// Shrink the capacity of the chain as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.blocks.shrink_to_fit()
+    }
+
+    /// Returns the hash of the latest finalized block.
+    pub fn finalized_block_header(&self) -> header::HeaderRef {
+        header::decode(&self.finalized_block_header).unwrap()
     }
 
     /// Verifies the given block.

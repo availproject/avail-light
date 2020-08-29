@@ -14,6 +14,8 @@ pub use raw::RequestId;
 mod methods;
 mod raw;
 
+pub mod websocket_server;
+
 #[derive(Debug)]
 pub struct Config {
     /// Name of the chain being run. Found in the chain specs.

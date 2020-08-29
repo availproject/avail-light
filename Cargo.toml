@@ -10,7 +10,7 @@ default-run = "full-node"
 [features]
 default = ["database-sled", "json-rpc", "os-networking"]
 database-sled = ["sled"]
-json-rpc = ["jsonrpsee"]
+json-rpc = ["async-std", "async-tls", "jsonrpsee", "soketto", "url", "webpki"]
 os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
 wasm-bindings = [
     "chrono/wasmbind",
@@ -81,8 +81,13 @@ wasm-timer = "0.2.4"
 # `database-sled` feature
 sled = { version = "0.31.0", features = ["compression"], optional = true }
 
-# `rpc-server` feature
+# `json-rpc` feature
+async-std = { version = "1.6.2", optional = true }
+async-tls = { version = "0.7.0", optional = true }
 jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", optional = true }
+soketto = { version = "0.4.0", optional = true }
+url = { version = "2.1.1", optional = true }
+webpki = { version = "0.21.0", optional = true }
 
 # `wasm-bindings` feature
 console_error_panic_hook = "0.1.6"
