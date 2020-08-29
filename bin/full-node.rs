@@ -101,8 +101,6 @@ async fn async_main() {
                         }
                     },
                     substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
-                        rpc_server.notify_new_chain_head(hash.into(), modified_keys.iter().map(|k| &k[..]));
-
                         // When major syncing, the rate at which this event is generated is pretty
                         // high and sending a message to the telemetry server every single time
                         // would use a lot of bandwidth.
