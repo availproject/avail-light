@@ -1,10 +1,15 @@
 //! WebSocket server.
 
+#![cfg(feature = "os-networking")]
+#![cfg_attr(docsrs, doc(cfg(feature = "os-networking")))]
+
 use async_std::net::{TcpListener, TcpStream};
 use core::{fmt, pin::Pin, str};
 use futures::{channel::mpsc, prelude::*};
 use soketto::handshake::{server::Response, Server};
 use std::{io, net::SocketAddr};
+
+// TODO: put behind `os-networking` feature
 
 /// Configuration for a [`WsServer`].
 pub struct Config {

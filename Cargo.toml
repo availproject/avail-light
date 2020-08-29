@@ -8,10 +8,18 @@ keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
 
 [features]
-default = ["database-sled", "json-rpc", "os-networking"]
+default = ["database-sled", "os-networking"]
 database-sled = ["sled"]
-json-rpc = ["async-std", "async-tls", "jsonrpsee", "soketto", "url", "webpki"]
-os-networking = ["libp2p/dns", "libp2p/tcp-async-std", "libp2p/websocket"]
+os-networking = [
+    "async-std",
+    "async-tls",
+    "libp2p/dns",
+    "libp2p/tcp-async-std",
+    "libp2p/websocket",
+    "soketto",
+    "url",
+    "webpki"
+]
 wasm-bindings = [
     "chrono/wasmbind",
     "futures-timer/wasm-bindgen",
@@ -30,7 +38,7 @@ required-features = ["database-sled"]
 [[bin]]
 name = "full-node"
 path = "bin/full-node.rs"
-required-features = ["database-sled", "json-rpc", "os-networking"]
+required-features = ["database-sled", "os-networking"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -81,10 +89,9 @@ wasm-timer = "0.2.4"
 # `database-sled` feature
 sled = { version = "0.31.0", features = ["compression"], optional = true }
 
-# `json-rpc` feature
+# `os-networking` feature
 async-std = { version = "1.6.2", optional = true }
 async-tls = { version = "0.7.0", optional = true }
-jsonrpsee = { git = "https://github.com/paritytech/jsonrpsee", optional = true }
 soketto = { version = "0.4.0", optional = true }
 url = { version = "2.1.1", optional = true }
 webpki = { version = "0.21.0", optional = true }

@@ -6,7 +6,9 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{chain, chain_spec, database, finality::grandpa, header, network, verify::babe};
+use crate::{
+    chain, chain_spec, database, finality::grandpa, header, json_rpc, network, verify::babe,
+};
 
 use core::{convert::TryFrom as _, num::NonZeroU64};
 use futures::prelude::*;
@@ -179,18 +181,26 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
 impl BrowserLightClient {
     /// Starts an RPC request. Returns a `Promise` containing the result of that request.
     #[wasm_bindgen(js_name = "rpcSend")]
-    pub fn rpc_send(&mut self, rpc: &str) -> js_sys::Promise {
-        wasm_bindgen_futures::future_to_promise(async move {
+    pub fn rpc_send(&mut self, rpc: &str) -> Result<js_sys::Promise, JsValue> {
+        let call = json_rpc::methods::parse_json_call(rpc)
+            .map_err(|err| JsValue::from_str(&err.to_string()))?;
+
+        // TODO: testing
+        return Err(JsValue::from_str(&format!(" test {:?}", call)));
+
+        Ok(wasm_bindgen_futures::future_to_promise(async move {
             // TODO:
             loop {
                 futures::pending!()
             }
-        })
+        }))
     }
 
     /// Subscribes to an RPC pubsub endpoint.
     #[wasm_bindgen(js_name = "rpcSubscribe")]
-    pub fn rpc_subscribe(&mut self, rpc: &str, callback: js_sys::Function) {
+    pub fn rpc_subscribe(&mut self, rpc: &str, callback: js_sys::Function) -> Result<(), JsValue> {
         // TODO:
+
+        Ok(())
     }
 }

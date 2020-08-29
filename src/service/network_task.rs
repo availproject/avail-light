@@ -55,7 +55,8 @@ pub async fn run_networking_task(mut config: Config) {
     let mut network = network::Network::start(config.network_config).await;
 
     // Associates network-assigned block request ids to senders.
-    let mut pending_blocks_requests = HashMap::<_, oneshot::Sender<_>>::new();
+    let mut pending_blocks_requests =
+        HashMap::<_, oneshot::Sender<_>, fnv::FnvBuildHasher>::default();
 
     loop {
         futures::select! {

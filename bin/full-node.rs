@@ -43,42 +43,6 @@ async fn async_main() {
     .build()
     .await;
 
-    let mut rpc_server = {
-        let rpc_config = substrate_lite::json_rpc::Config {
-            chain_name: chain_spec.name().to_owned(),
-            chain_type: chain_spec.chain_type().to_owned(),
-            chain_properties: chain_spec
-                .properties()
-                .filter_map(|(name, prop)| {
-                    let prop = match prop {
-                        serde_json::Value::String(s) => {
-                            substrate_lite::json_rpc::ChainProperty::String(s.clone())
-                        }
-                        serde_json::Value::Number(n) => {
-                            if let Some(n) = n.as_u64() {
-                                substrate_lite::json_rpc::ChainProperty::Number(n)
-                            } else {
-                                return None;
-                            }
-                        }
-                        _ => return None,
-                    };
-
-                    Some((name.to_owned(), prop))
-                })
-                .collect(),
-            client_name: "Polkadot ✨ lite ✨".to_owned(),
-            client_version: "??".to_owned(),
-        };
-
-        let mut server = substrate_lite::json_rpc::RpcServers::new(rpc_config);
-        server
-            .spawn_ws("0.0.0.0:9944".parse().unwrap())
-            .await
-            .unwrap();
-        server
-    };
-
     let mut telemetry = {
         let endpoints = chain_spec
             .telemetry_endpoints()
@@ -123,13 +87,6 @@ async fn async_main() {
                     finalized_hash: &service.finalized_block_hash(),
                     network_known_best,
                 });
-            }
-            rpc_rq = rpc_server.next_event().fuse() => {
-                match rpc_rq {
-                    substrate_lite::json_rpc::Event::Request(rq) => {
-                        rq.answer(&service).await;
-                    }
-                }
             }
             service_event = service.next_event().fuse() => {
                 match service_event {
