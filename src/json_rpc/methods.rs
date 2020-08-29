@@ -85,6 +85,25 @@ macro_rules! define_methods {
                 $name($ret_ty),
             )*
         }
+
+        impl Response {
+            /// Serializes the response into a JSON string.
+            pub fn to_json_response(&self, id: RequestId) -> String {
+                let def = match self {
+                    $(
+                        Response::$name(out) => {
+                            defs::SerdeOutput::Success(defs::SerdeSuccess {
+                                jsonrpc: defs::SerdeVersion::V2,
+                                result: From::<$ret_ty>::from(out.clone()),
+                                id: id.into(),
+                            })
+                        },
+                    )*
+                };
+
+                serde_json::to_string(&def).unwrap()
+            }
+        }
     };
 }
 
@@ -233,5 +252,61 @@ impl FromSerdeJsonValue for HashHexString {
         let mut out = [0; 32];
         out.copy_from_slice(&bytes);
         Some(HashHexString(out))
+    }
+}
+
+impl From<HashHexString> for serde_json::Value {
+    fn from(str: HashHexString) -> serde_json::Value {
+        serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
+    }
+}
+
+impl From<RpcMethods> for serde_json::Value {
+    fn from(methods: RpcMethods) -> serde_json::Value {
+        serde_json::Value::Object(
+            [
+                (
+                    "version".to_owned(),
+                    serde_json::Value::Number(methods.version.into()),
+                ),
+                (
+                    "methods".to_owned(),
+                    serde_json::Value::Array(
+                        methods
+                            .methods
+                            .iter()
+                            .map(|s| serde_json::Value::String(s.clone()))
+                            .collect(),
+                    ),
+                ),
+            ]
+            .iter()
+            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+            .collect(),
+        )
+    }
+}
+
+impl From<SystemHealth> for serde_json::Value {
+    fn from(health: SystemHealth) -> serde_json::Value {
+        serde_json::Value::Object(
+            [
+                (
+                    "isSyncing".to_owned(),
+                    serde_json::Value::Bool(health.is_syncing),
+                ),
+                (
+                    "peers".to_owned(),
+                    serde_json::Value::Number(From::from(health.peers)),
+                ),
+                (
+                    "shouldHavePeers".to_owned(),
+                    serde_json::Value::Bool(health.should_have_peers),
+                ),
+            ]
+            .iter()
+            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
+            .collect(),
+        )
     }
 }
