@@ -162,10 +162,10 @@ pub struct VerifySuccess {
     pub epoch_number: u64,
 
     /// If `Some`, the verified block contains an epoch transition describing the given epoch.
-    /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
-    /// blocks that are part of that epoch.
+    /// This epoch transition must later be provided back when calling [`PendingVerify::finish`]
+    /// when verifying blocks that are part of that epoch.
     ///
-    /// > **Note**: This is **not** the epoch that we have just entered.
+    /// > **Note**: If `Some`, the value is always equal to [`VerifySuccess::epoch_number`] + 1.
     pub epoch_transition_target: Option<u64>,
 }
 
@@ -346,6 +346,7 @@ pub struct PendingVerify {
     /// Block signature contained in the header that we verify.
     seal_signature: schnorrkel::Signature,
     /// If `Some`, block is at an epoch transition.
+    /// This can only happen for blocks that are the first block of an epoch.
     epoch_transition_target: Option<u64>,
     /// Epoch number the block belongs to.
     epoch_number: u64,
@@ -364,6 +365,11 @@ impl PendingVerify {
     /// Returns the epoch number whose information must be passed to [`PendingVerify::finish`].
     pub fn epoch_number(&self) -> u64 {
         self.epoch_number
+    }
+
+    /// Returns true if the epoch is the same as the parent's.
+    pub fn same_epoch_as_parent(&self) -> bool {
+        self.epoch_transition_target.is_none()
     }
 
     /// Finishes the verification. Must provide the information about the epoch whose number is

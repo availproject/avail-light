@@ -234,6 +234,11 @@ impl BabeEpochInformation {
         self.inner.epoch_number()
     }
 
+    /// Returns true if the epoch is the same as the parent's.
+    pub fn same_epoch_as_parent(&self) -> bool {
+        self.inner.same_epoch_as_parent()
+    }
+
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`EpochInformation::epoch_number`].
     pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun {

@@ -111,7 +111,8 @@ async fn start_sync(
                     chain_spec.genesis_storage(),
                 ), // TODO: load from database
                 babe_finalized_block1_slot_number: None, // TODO: load from database
-                babe_known_epoch_information: Vec::new(), // TODO: load from database
+                babe_finalized_block_epoch_information: None, // TODO: load from database
+                babe_finalized_next_epoch_transition: None, // TODO: load from database
                 babe_genesis_config,
                 grandpa_after_finalized_block_authorities_set_id: 0, // TODO: load from database
                 grandpa_finalized_scheduled_changes: Vec::new(),     // TODO: load from database
