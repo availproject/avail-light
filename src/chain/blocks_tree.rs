@@ -38,7 +38,7 @@ use crate::{
     verify::{self, babe},
 };
 
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, sync::Arc};
 use core::{cmp, fmt, iter, mem};
 
 /// Configuration for the [`NonFinalizedTree`].
@@ -116,10 +116,10 @@ pub struct NonFinalizedTree<T> {
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// See [`Config::babe_finalized_block_epoch_information`].
-    babe_finalized_block_epoch_information: Option<header::BabeNextEpoch>,
+    babe_finalized_block_epoch_information: Option<Arc<header::BabeNextEpoch>>,
 
     /// See [`Config::babe_finalized_next_epoch_transition`].
-    babe_finalized_next_epoch_transition: Option<header::BabeNextEpoch>,
+    babe_finalized_next_epoch_transition: Option<Arc<header::BabeNextEpoch>>,
 
     /// If block 1 is finalized, contains its slot number.
     babe_finalized_block1_slot_number: Option<u64>,
@@ -139,11 +139,11 @@ struct Block<T> {
     /// If this block is block #1 of the chain, contains its babe slot number. Otherwise, contains
     /// the slot number of the block #1 that is an ancestor of this block.
     babe_block1_slot_number: u64,
-    /// If the block contains a Babe epoch change information, contains the epoch number of the
-    /// change, and the information about this epoch).
-    babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
-    /// Babe epoch number the block belongs to.
-    babe_epoch_number: u64,
+    /// Information about the Babe epoch the block belongs to. `None` if the block belongs to
+    /// epoch #0.
+    babe_current_epoch: Option<Arc<header::BabeNextEpoch>>,
+    /// Information about the Babe epoch the block belongs to.
+    babe_next_epoch: Arc<header::BabeNextEpoch>,
     /// Opaque data decided by the user.
     user_data: T,
 }
@@ -180,8 +180,12 @@ impl<T> NonFinalizedTree<T> {
                 .collect(),
             babe_genesis_config: config.babe_genesis_config,
             babe_finalized_block1_slot_number: config.babe_finalized_block1_slot_number,
-            babe_finalized_block_epoch_information: config.babe_finalized_block_epoch_information,
-            babe_finalized_next_epoch_transition: config.babe_finalized_next_epoch_transition,
+            babe_finalized_block_epoch_information: config
+                .babe_finalized_block_epoch_information
+                .map(Arc::new),
+            babe_finalized_next_epoch_transition: config
+                .babe_finalized_next_epoch_transition
+                .map(Arc::new),
             blocks: fork_tree::ForkTree::with_capacity(config.blocks_capacity),
             current_best: None,
         }
@@ -385,61 +389,24 @@ impl<T> NonFinalizedTree<T> {
                     }
                     verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
                     verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
-                        // TODO: a lot of iterations here ; this is a real performance killer
-                        // Try to search through the ancestors for an epoch transition
-                        // corresponding to the requested epoch.
-                        if let Some(parent_tree_index) = parent_tree_index {
-                            if let Some(info) = self
-                                .blocks
-                                .node_to_root_path(parent_tree_index)
-                                .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
-                                .filter_map(|ei| ei.as_ref())
-                                .find(|e| e.0 == epoch_info_rq.epoch_number())
-                            {
-                                process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                                continue;
+                        let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
+                            let parent = self.blocks.get(parent_tree_index).unwrap();
+                            if epoch_info_rq.same_epoch_as_parent() {
+                                parent.babe_current_epoch.as_ref().unwrap()
+                            } else {
+                                &parent.babe_next_epoch
                             }
-                        }
-
-                        // Try to find any epoch change in the block or its ancestors.
-                        // If one is found, then the epoch information is contained in
-                        // `self.babe_finalized_next_epoch_transition`
-                        if !epoch_info_rq.same_epoch_as_parent()
-                            || parent_tree_index.map_or(false, |parent_tree_index| {
-                                self.blocks.node_to_root_path(parent_tree_index).any(|ni| {
-                                    self.blocks.get(ni).unwrap().babe_epoch_change.is_some()
-                                })
-                            })
-                        {
-                            // This debug_assert! checks that there is only one epoch transition
-                            // in the ancestry. If there is more than one transition, this should
-                            // have been covered by the previous check.
-                            debug_assert!(parent_tree_index.map_or(true, |parent_tree_index| {
-                                self.blocks
-                                    .node_to_root_path(parent_tree_index)
-                                    .filter(|ni| {
-                                        self.blocks.get(*ni).unwrap().babe_epoch_change.is_some()
-                                    })
-                                    .count()
-                                    == 1
-                            }));
-                            process = epoch_info_rq
-                                .inject_epoch(From::from(
-                                    self.babe_finalized_next_epoch_transition.as_ref().unwrap(),
-                                ))
-                                .run();
-                            continue;
-                        }
-
-                        // All other possibilities excluded, the block belongs to the same epoch
-                        // as the finalized block.
-                        process = epoch_info_rq
-                            .inject_epoch(From::from(
+                        } else {
+                            if epoch_info_rq.same_epoch_as_parent() {
                                 self.babe_finalized_block_epoch_information
                                     .as_ref()
-                                    .unwrap(),
-                            ))
-                            .run();
+                                    .unwrap()
+                            } else {
+                                self.babe_finalized_next_epoch_transition.as_ref().unwrap()
+                            }
+                        };
+
+                        process = epoch_info_rq.inject_epoch(From::from(&**epoch_info)).run();
                     }
                 }
             };
@@ -460,19 +427,47 @@ impl<T> NonFinalizedTree<T> {
                 result.slot_number
             });
 
-            let babe_epoch_change = result.babe_epoch_transition_target.map(|e| {
-                (
-                    e,
-                    decoded_header
-                        .digest
-                        .babe_epoch_information()
-                        .unwrap()
-                        .0
-                        .into(),
-                )
-            });
+            let babe_current_epoch = if result.babe_epoch_transition_target.is_some() {
+                if let Some(parent_tree_index) = parent_tree_index {
+                    Some(
+                        self.blocks
+                            .get(parent_tree_index)
+                            .unwrap()
+                            .babe_next_epoch
+                            .clone(),
+                    )
+                } else {
+                    self.babe_finalized_next_epoch_transition.clone()
+                }
+            } else if let Some(parent_tree_index) = parent_tree_index {
+                self.blocks
+                    .get(parent_tree_index)
+                    .unwrap()
+                    .babe_current_epoch
+                    .clone()
+            } else {
+                self.babe_finalized_block_epoch_information.clone()
+            };
 
-            let babe_epoch_number = result.epoch_number;
+            let babe_next_epoch =
+                if let Some((new_epoch, _)) = decoded_header.digest.babe_epoch_information() {
+                    Arc::new(new_epoch.into())
+                } else if let Some(parent_tree_index) = parent_tree_index {
+                    self.blocks
+                        .get(parent_tree_index)
+                        .unwrap()
+                        .babe_next_epoch
+                        .clone()
+                } else {
+                    // Block 1 always contains a Babe epoch transition. Consequently, this block
+                    // can't be reached for block 1.
+                    // `babe_finalized_next_epoch_transition` is `None` only if the finalized
+                    // block is 0.
+                    // `babe_finalized_next_epoch_transition` is therefore always `Some`
+                    // Q.E.D.
+                    debug_assert_ne!(decoded_header.number, 1);
+                    self.babe_finalized_next_epoch_transition.clone().unwrap()
+                };
 
             BodyOrHeader::Header(Ok(HeaderVerifySuccess::Insert {
                 block_height: decoded_header.number,
@@ -484,8 +479,8 @@ impl<T> NonFinalizedTree<T> {
                     scale_encoded_header,
                     hash,
                     babe_block1_slot_number,
-                    babe_epoch_change,
-                    babe_epoch_number,
+                    babe_current_epoch,
+                    babe_next_epoch,
                 },
             }))
         }
@@ -667,19 +662,18 @@ impl<T> NonFinalizedTree<T> {
                     _ => {} // TODO: unimplemented
                 }
             }
-
-            if let Some((_, epoch_change)) = &node.babe_epoch_change {
-                self.babe_finalized_block_epoch_information =
-                    self.babe_finalized_next_epoch_transition.take();
-                // TODO: don't clone
-                self.babe_finalized_next_epoch_transition = Some(epoch_change.clone());
-            }
         }
 
         // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
         //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
 
         let new_finalized_block = self.blocks.get_mut(block_index).unwrap();
+
+        self.babe_finalized_block_epoch_information =
+            new_finalized_block.babe_current_epoch.clone();
+        self.babe_finalized_next_epoch_transition =
+            Some(new_finalized_block.babe_next_epoch.clone());
+
         self.finalized_block_header =
             mem::replace(&mut new_finalized_block.scale_encoded_header, Vec::new());
         self.finalized_block_hash =
@@ -704,8 +698,6 @@ impl<T> NonFinalizedTree<T> {
             self.babe_finalized_block1_slot_number =
                 Some(new_finalized_block.babe_block1_slot_number);
         }
-
-        let new_finalized_block_babe_epoch_number = new_finalized_block.babe_epoch_number;
 
         self.blocks.prune_ancestors(block_index);
 
@@ -850,48 +842,25 @@ impl<'c, T> BodyVerifyStep2<'c, T> {
                 }
                 verify::header_body::Verify::BabeEpochInformation(epoch_info_rq) => {
                     todo!() // TODO:
-                            /*// Try to search through the ancestors for an epoch transition
-                            // corresponding to the requested epoch.
-                            if let Some(parent_tree_index) = parent_tree_index {
-                                if let Some(info) = self
-                                    .blocks
-                                    .node_to_root_path(parent_tree_index)
-                                    .map(|ni| &self.blocks.get(ni).unwrap().babe_epoch_change)
-                                    .filter_map(|ei| ei.as_ref())
-                                    .find(|e| e.0 == epoch_info_rq.epoch_number())
-                                {
-                                    process = epoch_info_rq.inject_epoch(From::from(&info.1)).run();
-                                    continue;
-                                }
+                            /*
+                        let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
+                            let parent = self.blocks.get(parent_tree_index).unwrap();
+                            if epoch_info_rq.same_epoch_as_parent() {
+                                parent.babe_current_epoch.as_ref().unwrap()
+                            } else {
+                                &parent.babe_next_epoch
                             }
-
-                            // Try to find any epoch change in the block or its ancestors.
-                            // If one is found, then the epoch information is contained in
-                            // `self.babe_finalized_next_epoch_transition`
-                            if !epoch_info_rq.same_epoch_as_parent()
-                                || parent_tree_index.map_or(true, |parent_tree_index| {
-                                    self.blocks.node_to_root_path(parent_tree_index).any(|ni| {
-                                        self.blocks.get(ni).unwrap().babe_epoch_change.is_some()
-                                    })
-                                })
-                            {
-                                process = epoch_info_rq
-                                    .inject_epoch(From::from(
-                                        self.babe_finalized_next_epoch_transition.as_ref().unwrap(),
-                                    ))
-                                    .run();
-                                continue;
+                        } else {
+                            if epoch_info_rq.same_epoch_as_parent() {
+                                self.babe_finalized_block_epoch_information
+                                    .as_ref()
+                                    .unwrap()
+                            } else {
+                                self.babe_finalized_next_epoch_transition.as_ref().unwrap()
                             }
+                        };
 
-                            // All other possibilities excluded, the block belongs to the same epoch
-                            // as the finalized block.
-                            process = epoch_info_rq
-                                .inject_epoch(From::from(
-                                    self.babe_finalized_block_epoch_information
-                                        .as_ref()
-                                        .unwrap(),
-                                ))
-                                .run();*/
+                        process = epoch_info_rq.inject_epoch(From::from(&**epoch_info)).run();*/
                 }
                 verify::header_body::Verify::StorageGet(inner) => {
                     return BodyVerifyStep2::StorageGet(StorageGet { chain, inner })
@@ -1019,8 +988,8 @@ pub struct Insert<'c, T> {
     scale_encoded_header: Vec<u8>,
     hash: [u8; 32],
     babe_block1_slot_number: u64,
-    babe_epoch_change: Option<(u64, header::BabeNextEpoch)>,
-    babe_epoch_number: u64,
+    babe_current_epoch: Option<Arc<header::BabeNextEpoch>>,
+    babe_next_epoch: Arc<header::BabeNextEpoch>,
 }
 
 impl<'c, T> Insert<'c, T> {
@@ -1032,8 +1001,8 @@ impl<'c, T> Insert<'c, T> {
                 scale_encoded_header: self.scale_encoded_header,
                 hash: self.hash,
                 babe_block1_slot_number: self.babe_block1_slot_number,
-                babe_epoch_change: self.babe_epoch_change,
-                babe_epoch_number: self.babe_epoch_number,
+                babe_current_epoch: self.babe_current_epoch,
+                babe_next_epoch: self.babe_next_epoch,
                 user_data,
             },
         );
