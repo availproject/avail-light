@@ -38,10 +38,10 @@ pub struct Config {
     /// >           protocol enforced limit.
     pub blocks_request_granularity: NonZeroU32,
 
-    /// Number of blocks to download ahead of the finalized block.
+    /// Number of blocks to download ahead of the best block.
     ///
-    /// Whenever the latest finalized block is updated, the state machine will start block
-    /// requests for the block `finalized_block_height + download_ahead_blocks` and all its
+    /// Whenever the latest best block is updated, the state machine will start block
+    /// requests for the block `best_block_height + download_ahead_blocks` and all its
     /// ancestors. Considering that requesting blocks has some latency, downloading blocks ahead
     /// of time ensures that verification isn't blocked waiting for a request to be finished.
     ///
@@ -182,15 +182,15 @@ where
                 *cancelling_requests = false;
             }
 
-            let finalized_block = chain.finalized_block_header().number;
+            let best_block = chain.best_block_header().number;
             while verification_queue.back().map_or(true, |rq| {
                 rq.block_height.get() + u64::from(blocks_request_granularity.get())
-                    < finalized_block + u64::from(download_ahead_blocks)
+                    < best_block + u64::from(download_ahead_blocks)
             }) {
                 let block_height = verification_queue
                     .back()
                     .map(|rq| rq.block_height.get() + u64::from(blocks_request_granularity.get()))
-                    .unwrap_or(finalized_block + 1);
+                    .unwrap_or(best_block + 1);
                 verification_queue.push_back(VerificationQueueEntry {
                     block_height: NonZeroU64::new(block_height).unwrap(),
                     ty: VerificationQueueEntryTy::Missing,
@@ -265,7 +265,7 @@ where
                 _ => None,
             })
             .next()
-            .unwrap();
+            .expect("invalid RequestId");
 
         let blocks = match outcome {
             Ok(blocks) => blocks.collect(),
@@ -306,31 +306,51 @@ where
                     insert,
                 }) => {
                     if !is_new_best || block_height != expected_block_height {
-                        panic!() // TODO: punish source and reset queue
+                        panic!(
+                            "is new best = {:?} block height: {:?} expected = {:?}",
+                            is_new_best, block_height, expected_block_height
+                        );
+                        self.cancelling_requests = true;
+                        self.chain.clear();
+                        break;
                     }
 
                     insert.insert(())
                 } // TODO:
-                Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => panic!(), // TODO: punish source and reset queue
-                Err(_) => {}                                                 // TODO: reset queue
+                Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => {
+                    // TODO: don't really know what this implies and seems to happen in practice; investigate
+                }
+                Err(err) => {
+                    // TODO: remove panic
+                    panic!("verify error: {:?}", err);
+                    self.cancelling_requests = true;
+                    self.chain.clear();
+                    break;
+                }
             }
 
             if let Some(justification) = block.scale_encoded_justification {
                 match self.chain.verify_justification(justification.as_ref()) {
                     Ok(apply) => apply.apply(),
-                    Err(_) => {} // TODO: reset queue
+                    Err(err) => {
+                        // TODO: remove panic
+                        panic!("verify error: {:?}", err);
+                        self.cancelling_requests = true;
+                        self.chain.clear();
+                        break;
+                    }
                 }
             }
 
             expected_block_height += 1;
         }
 
-        // If we reach here, no block in the queue was processed.
-        // TODO: what if response was empty?
-        debug_assert!(!self.verification_queue.is_empty());
+        // TODO: consider finer granularity in report
         Some(ChainStateUpdate {
             finalized_block_hash: self.chain.finalized_block_hash(),
             finalized_block_number: self.chain.finalized_block_header().number,
+            best_block_hash: self.chain.best_block_hash(),
+            best_block_number: self.chain.best_block_header().number,
         })
     }
 }
@@ -400,6 +420,8 @@ pub enum RemoveSourceError {
 
 #[derive(Debug)]
 pub struct ChainStateUpdate {
+    pub best_block_hash: [u8; 32],
+    pub best_block_number: u64,
     pub finalized_block_hash: [u8; 32],
     pub finalized_block_number: u64,
 }

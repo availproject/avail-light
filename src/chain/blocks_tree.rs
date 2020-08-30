@@ -183,6 +183,12 @@ impl<T> NonFinalizedTree<T> {
         }
     }
 
+    /// Removes all non-finalized blocks from the tree.
+    pub fn clear(&mut self) {
+        self.blocks.clear();
+        self.current_best = None;
+    }
+
     /// Returns the number of non-finalized blocks in the chain.
     pub fn len(&self) -> usize {
         self.blocks.len()
@@ -201,6 +207,24 @@ impl<T> NonFinalizedTree<T> {
     /// Returns the hash of the latest finalized block.
     pub fn finalized_block_hash(&self) -> [u8; 32] {
         self.finalized_block_hash
+    }
+
+    /// Returns the header of the best block.
+    pub fn best_block_header(&self) -> header::HeaderRef {
+        if let Some(index) = self.current_best {
+            header::decode(&self.blocks.get(index).unwrap().scale_encoded_header).unwrap()
+        } else {
+            header::decode(&self.finalized_block_header).unwrap()
+        }
+    }
+
+    /// Returns the hash of the best block.
+    pub fn best_block_hash(&self) -> [u8; 32] {
+        if let Some(index) = self.current_best {
+            self.blocks.get(index).unwrap().hash
+        } else {
+            self.finalized_block_hash
+        }
     }
 
     /// Verifies the given block.

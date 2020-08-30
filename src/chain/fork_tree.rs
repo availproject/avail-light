@@ -46,6 +46,11 @@ impl<T> ForkTree<T> {
         self.nodes.reserve(additional)
     }
 
+    /// Removes all elements in the tree, leaving it empty.
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+    }
+
     /// Shrink the capacity of the tree as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.nodes.shrink_to_fit()

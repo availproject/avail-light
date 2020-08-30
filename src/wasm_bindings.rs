@@ -12,7 +12,10 @@ use crate::{
 };
 
 use core::num::{NonZeroU32, NonZeroU64};
-use futures::{channel::mpsc, prelude::*};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+};
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
@@ -117,11 +120,19 @@ async fn start_sync(
             },
             sources_capacity: 32,
             blocks_request_granularity: NonZeroU32::new(128).unwrap(),
-            download_ahead_blocks: 1024,
+            download_ahead_blocks: {
+                // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
+                // the number of blocks to download ahead of time in order to not block is 1000.
+                1024
+            },
         },
     );
 
     async move {
+        // TODO: store request id in a sync user data rather than having this hashmap
+        let mut block_requests_ids = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
+        let mut block_requests_finished = stream::FuturesUnordered::new();
+
         loop {
             for action in sync.requests_actions() {
                 match action {
@@ -131,17 +142,22 @@ async fn start_sync(
                         source,
                         num_blocks,
                     } => {
+                        let (tx, rx) = oneshot::channel();
                         let _ = to_network
                             .send(ToNetwork::StartBlockRequest {
                                 peer_id: source.clone(),
                                 block_height,
                                 num_blocks: num_blocks.get(),
-                                request_id,
+                                send_back: tx,
                             })
                             .await;
+
+                        let (rx, abort) = future::abortable(rx);
+                        block_requests_ids.insert(request_id, abort);
+                        block_requests_finished.push(rx.map(move |r| (request_id, r)));
                     }
                     headers_optimistic::RequestAction::Cancel { request_id, source } => {
-                        // TODO: tricky, because the response might already be in the channel
+                        block_requests_ids.remove(&request_id).unwrap().abort();
                     }
                 }
             }
@@ -160,14 +176,19 @@ async fn start_sync(
                         ToSync::PeerDisconnected(peer_id) => {
                             sync.remove_source(&peer_id).unwrap();
                         },
-                        ToSync::BlockRequestResponse { request_id, result } => {
-                            let _ = sync.finish_request(request_id, result.map(|v| v.into_iter()));
-                        },
+                    }
+                },
+
+                (request_id, result) = block_requests_finished.select_next_some() => {
+                    // `result` is an error if the block request got cancelled by the sync state
+                    // machine.
+                    if let Ok(result) = result {
+                        let _ = sync.finish_request(request_id, result.unwrap().map(|v| v.into_iter()));
                     }
                 },
 
                 // Dummy future that is constantly pending if and only if the sync'ing has
-                // nothing to do.
+                // nothing to process.
                 chain_state_update = async {
                     if let Some(outcome) = sync.process_one() {
                         outcome
@@ -187,11 +208,6 @@ async fn start_sync(
 enum ToSync {
     NewPeer(network::PeerId),
     PeerDisconnected(network::PeerId),
-    BlockRequestResponse {
-        request_id: headers_optimistic::RequestId,
-        result:
-            Result<Vec<headers_optimistic::RequestSuccessBlock>, headers_optimistic::RequestFail>,
-    },
 }
 
 async fn start_network(
@@ -226,8 +242,8 @@ async fn start_network(
     };
 
     async move {
-        // TODO: store request id in a network user data rather than having this hashmap
-        let mut block_requests_ids = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
+        // TODO: store send back channel in a network user data rather than having this hashmap
+        let mut block_requests = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
 
         loop {
             futures::select! {
@@ -238,7 +254,7 @@ async fn start_network(
                     };
 
                     match message {
-                        ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, request_id } => {
+                        ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, send_back } => {
                             let id = network.start_block_request(network::BlocksRequestConfig {
                                 start: network::BlocksRequestConfigStart::Number(block_height),
                                 peer_id,
@@ -251,7 +267,7 @@ async fn start_network(
                                 },
                             }).await.unwrap(); // TODO: don't unwrap
 
-                            block_requests_ids.insert(id, request_id);
+                            block_requests.insert(id, send_back);
                         },
                     }
                 },
@@ -260,22 +276,25 @@ async fn start_network(
                     match event {
                         network::Event::BlockAnnounce(header) => {
                             // TODO:
+                            if let Ok(decoded) = header::decode(&header.0) {
+                                web_sys::console::log_1(&JsValue::from_str(&format!(
+                                    "Received block announce: {}", decoded.number
+                                )));
+                            }
                         }
                         network::Event::BlocksRequestFinished { id, result } => {
-                            let request_id = block_requests_ids.remove(&id).unwrap();
-                            let _ = to_sync.send(ToSync::BlockRequestResponse {
-                                request_id,
-                                result: result
-                                    .map(|list| {
-                                        list.into_iter().map(|block| {
-                                            headers_optimistic::RequestSuccessBlock {
-                                                scale_encoded_header: block.header.unwrap().0,
-                                                scale_encoded_justification: block.justification,
-                                            }
-                                        }).collect()
-                                    })
-                                    .map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable) // TODO:
-                            }).await;
+                            let send_back = block_requests.remove(&id).unwrap();
+                            let _: Result<_, _> = send_back.send(result
+                                .map(|list| {
+                                    list.into_iter().map(|block| {
+                                        headers_optimistic::RequestSuccessBlock {
+                                            scale_encoded_header: block.header.unwrap().0,
+                                            scale_encoded_justification: block.justification,
+                                        }
+                                    }).collect()
+                                })
+                                .map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable) // TODO:
+                            );
                         }
                         network::Event::Connected(peer_id) => {
                             let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
@@ -295,6 +314,8 @@ enum ToNetwork {
         peer_id: network::PeerId,
         block_height: NonZeroU64,
         num_blocks: u32,
-        request_id: headers_optimistic::RequestId,
+        send_back: oneshot::Sender<
+            Result<Vec<headers_optimistic::RequestSuccessBlock>, headers_optimistic::RequestFail>,
+        >,
     },
 }
