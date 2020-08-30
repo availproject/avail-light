@@ -101,8 +101,7 @@ async fn start_sync(
         })
         .unwrap();
 
-    // TODO: remove this explicit generic parameter
-    let mut sync = headers_optimistic::OptimisticHeadersSync::<(), network::PeerId>::new(
+    let mut sync = headers_optimistic::OptimisticHeadersSync::<network::PeerId>::new(
         headers_optimistic::Config {
             chain_config: chain::blocks_tree::Config {
                 finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
@@ -169,13 +168,17 @@ async fn start_sync(
 
                 // Dummy future that is constantly pending if and only if the sync'ing has
                 // nothing to do.
-                _ = async {
+                chain_state_update = async {
                     if let Some(outcome) = sync.process_one() {
                         outcome
                     } else {
                         loop { futures::pending!() }
                     }
-                }.fuse() => {},
+                }.fuse() => {
+                    web_sys::console::log_1(&JsValue::from_str(&format!(
+                        "Chain state update: {:?}", chain_state_update
+                    )));
+                },
             }
         }
     }

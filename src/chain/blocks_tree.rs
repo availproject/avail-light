@@ -193,9 +193,14 @@ impl<T> NonFinalizedTree<T> {
         self.blocks.shrink_to_fit()
     }
 
-    /// Returns the hash of the latest finalized block.
+    /// Returns the header of the latest finalized block.
     pub fn finalized_block_header(&self) -> header::HeaderRef {
         header::decode(&self.finalized_block_header).unwrap()
+    }
+
+    /// Returns the hash of the latest finalized block.
+    pub fn finalized_block_hash(&self) -> [u8; 32] {
+        self.finalized_block_hash
     }
 
     /// Verifies the given block.

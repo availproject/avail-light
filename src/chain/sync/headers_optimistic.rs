@@ -51,8 +51,8 @@ pub struct Config {
 }
 
 /// Optimistic headers-only syncing.
-pub struct OptimisticHeadersSync<TBlock, TSrc> {
-    chain: blocks_tree::NonFinalizedTree<TBlock>,
+pub struct OptimisticHeadersSync<TSrc> {
+    chain: blocks_tree::NonFinalizedTree<()>,
 
     /// List of sources of blocks.
     sources: slab::Slab<Source<TSrc>>,
@@ -92,7 +92,7 @@ enum VerificationQueueEntryTy {
     Queued(Vec<RequestSuccessBlock>),
 }
 
-impl<TBlock, TSrc> OptimisticHeadersSync<TBlock, TSrc>
+impl<TSrc> OptimisticHeadersSync<TSrc>
 where
     TSrc: Eq, // TODO: no
 {
@@ -138,12 +138,13 @@ where
         &mut self,
         source: &TSrc,
     ) -> Result<impl Iterator<Item = RequestId>, RemoveSourceError> {
-        if let Some(pos) = self
+        if let Some(index) = self
             .sources
             .iter()
-            .position(|(_, s)| &s.user_data == source)
+            .find(|(_, s)| &s.user_data == source)
+            .map(|(i, _)| i)
         {
-            self.sources.remove(pos);
+            self.sources.remove(index);
             Ok(iter::empty()) // TODO:
         } else {
             Err(RemoveSourceError::UnknownSource)
@@ -282,7 +283,8 @@ where
     }
 
     /// Process a single block in the queue of verification.
-    pub fn process_one(&mut self) -> Option<()> {
+    // TODO: return value
+    pub fn process_one(&mut self) -> Option<ChainStateUpdate> {
         if self.cancelling_requests {
             return None;
         }
@@ -307,7 +309,7 @@ where
                         panic!() // TODO: punish source and reset queue
                     }
 
-                    insert.insert(todo!())
+                    insert.insert(())
                 } // TODO:
                 Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => panic!(), // TODO: punish source and reset queue
                 Err(_) => {}                                                 // TODO: reset queue
@@ -326,7 +328,10 @@ where
         // If we reach here, no block in the queue was processed.
         // TODO: what if response was empty?
         debug_assert!(!self.verification_queue.is_empty());
-        Some(())
+        Some(ChainStateUpdate {
+            finalized_block_hash: self.chain.finalized_block_hash(),
+            finalized_block_number: self.chain.finalized_block_header().number,
+        })
     }
 }
 
@@ -391,4 +396,10 @@ pub enum AddSourceError {
 pub enum RemoveSourceError {
     /// Source wasn't in the list.
     UnknownSource,
+}
+
+#[derive(Debug)]
+pub struct ChainStateUpdate {
+    pub finalized_block_hash: [u8; 32],
+    pub finalized_block_number: u64,
 }
