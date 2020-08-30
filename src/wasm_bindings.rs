@@ -107,16 +107,20 @@ async fn start_sync(
     let mut sync = headers_optimistic::OptimisticHeadersSync::<network::PeerId>::new(
         headers_optimistic::Config {
             chain_config: chain::blocks_tree::Config {
-                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                    chain_spec.genesis_storage(),
-                ), // TODO: load from database
-                babe_finalized_block1_slot_number: None, // TODO: load from database
-                babe_finalized_block_epoch_information: None, // TODO: load from database
-                babe_finalized_next_epoch_transition: None, // TODO: load from database
+                // TODO: load from database
+                chain_information: chain::blocks_tree::ChainInformation {
+                    finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                        chain_spec.genesis_storage(),
+                    ),
+                    babe_finalized_block1_slot_number: None,
+                    babe_finalized_block_epoch_information: None,
+                    babe_finalized_next_epoch_transition: None,
+                    grandpa_after_finalized_block_authorities_set_id: 0,
+                    grandpa_finalized_scheduled_changes: Vec::new(),
+                    grandpa_finalized_triggered_authorities: grandpa_genesis_config
+                        .initial_authorities,
+                },
                 babe_genesis_config,
-                grandpa_after_finalized_block_authorities_set_id: 0, // TODO: load from database
-                grandpa_finalized_scheduled_changes: Vec::new(),     // TODO: load from database
-                grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
                 blocks_capacity: {
                     // This capacity should be the maximum interval between two justifications.
                     1024

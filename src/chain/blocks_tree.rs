@@ -2,31 +2,26 @@
 //!
 //! This module provides the [`NonFinalizedTree`] struct. This struct is a data structure
 //! containing a tree of block headers, plus the state necessary to add new blocks to that tree.
-//!
-//! Each block header additionally holds a user-chosen opaque data which can be used, for example,
-//! to hold the storage or the body of this block. In other words, while the logic of this data
-//! structure is only aware of headers, it is also suitable for situations where the block bodies
-//! are also maintained.
+//! Each block header additionally holds a user-chosen opaque data.
 //!
 //! The state in the [`NonFinalizedTree`] consists of:
 //!
-//! - One "latest finalized" block.
+//! - One "latest finalized" block, and various states contained in its ancestors.
 //! - Zero or more blocks that descend from the latest finalized block.
 //!
-//! The latest finalized block represents the block that we know will never be reverted. While it
-//! can always be set to the genesis block of the chain, it is preferable, in order to reduce
+//! The latest finalized block is a block that is guaranted to never be reverted. While it can
+//! always be set to the genesis block of the chain, it is preferable, in order to reduce
 //! memory utilization, to maintain it to a block that is as high as possible in the chain.
-//!
-//! A block can be added to the chain by calling [`NonFinalizedTree::verify_header`]. You are
-//! encouraged to regularly update the latest finalized block using
-//! [`NonFinalizedTree::set_finalized_block`].
 //!
 //! > **Note**: While the GrandPa protocol provides a network-wide way to designate a block as
 //! >           final, the concept of GrandPa-provided finality doesn't have to be the same as
-//! >           the finality decided for the [`NonFinalizedTree`]. For example, an API user
-//! >           might decide that the block whose number is `latest_block - 5` will always be
-//! >           final, and rebuild a new [`NonFinalizedTree`] if that assumption turned out to
-//! >           not be true.
+//! >           the concept of finality in the [`NonFinalizedTree`]. For example, an API user
+//! >           might decide to optimistically assume that the block whose number is
+//! >           `highest_block - 5` is automatically finalized, and fall back to rebuilding a new
+//! >           [`NonFinalizedTree`] if that assumption turns out to not be true.
+//!
+//! A block can be added to the chain by calling [`NonFinalizedTree::verify_header`].
+//!
 
 // TODO: rethink this doc ^
 
@@ -44,6 +39,19 @@ use core::{cmp, fmt, iter, mem};
 /// Configuration for the [`NonFinalizedTree`].
 #[derive(Debug)]
 pub struct Config {
+    /// Information about the latest finalized block and its ancestors.
+    pub chain_information: ChainInformation,
+
+    /// Configuration for BABE, retreived from the genesis block.
+    pub babe_genesis_config: babe::BabeGenesisConfiguration,
+
+    /// Pre-allocated size of the chain, in number of non-finalized blocks.
+    pub blocks_capacity: usize,
+}
+
+/// Information about the latest finalized block and state found in its ancestors.
+#[derive(Debug)]
+pub struct ChainInformation {
     /// SCALE encoding of the header of the highest known finalized block.
     ///
     /// Once the queue is created, it is as if you had called
@@ -51,9 +59,9 @@ pub struct Config {
     // TODO: should be an owned decoded header?
     pub finalized_block_header: Vec<u8>,
 
-    /// If the number in [`Config::finalized_block_header`] is superior or equal to 1, then this
-    /// field must contain the slot number of the block whose number is 1 and is an ancestor of
-    /// the finalized block.
+    /// If the number in [`ChainInformation::finalized_block_header`] is superior or equal to 1,
+    /// then this field must contain the slot number of the block whose number is 1 and is an
+    /// ancestor of the finalized block.
     pub babe_finalized_block1_slot_number: Option<u64>,
 
     /// Babe epoch information about the epoch the finalized block belongs to.
@@ -65,9 +73,6 @@ pub struct Config {
     ///
     /// Must be `None` if and only if the finalized block is block #0.
     pub babe_finalized_next_epoch_transition: Option<header::BabeNextEpoch>,
-
-    /// Configuration for BABE, retreived from the genesis block.
-    pub babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// Grandpa authorities set ID of the block right after finalized block.
     ///
@@ -82,12 +87,9 @@ pub struct Config {
     /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
     /// are already finalized but not triggered yet. These changes will for sure happen.
     pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
-
-    /// Pre-allocated size of the chain, in number of non-finalized blocks.
-    pub blocks_capacity: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FinalizedScheduledChange {
     pub trigger_block_height: u64,
     pub new_authorities_list: Vec<header::GrandpaAuthority>,
@@ -107,18 +109,18 @@ pub struct NonFinalizedTree<T> {
     grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
     /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
     /// are already finalized. These changes will for sure happen.
-    /// Contrary to the equivalent field in [`Config`], this list is always known to be ordered
-    /// by block height.
+    /// Contrary to the equivalent field in [`ChainInformation`], this list is always known to be
+    /// ordered by block height.
     // TODO: doesn't have to be a collection; refactor into a single value
     grandpa_finalized_scheduled_changes: VecDeque<FinalizedScheduledChange>,
 
     /// Configuration for BABE, retreived from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
-    /// See [`Config::babe_finalized_block_epoch_information`].
+    /// See [`ChainInformation::babe_finalized_block_epoch_information`].
     babe_finalized_block_epoch_information: Option<Arc<header::BabeNextEpoch>>,
 
-    /// See [`Config::babe_finalized_next_epoch_transition`].
+    /// See [`ChainInformation::babe_finalized_next_epoch_transition`].
     babe_finalized_next_epoch_transition: Option<Arc<header::BabeNextEpoch>>,
 
     /// If block 1 is finalized, contains its slot number.
@@ -150,40 +152,80 @@ struct Block<T> {
 
 impl<T> NonFinalizedTree<T> {
     /// Initializes a new queue.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the chain information is incorrect.
+    ///
     pub fn new(mut config: Config) -> Self {
-        let finalized_header = header::decode(&config.finalized_block_header).unwrap();
+        let finalized_header =
+            header::decode(&config.chain_information.finalized_block_header).unwrap();
+
         if finalized_header.number >= 1 {
-            assert!(config.babe_finalized_block1_slot_number.is_some());
+            assert!(config
+                .chain_information
+                .babe_finalized_block1_slot_number
+                .is_some());
+            assert!(config
+                .chain_information
+                .babe_finalized_next_epoch_transition
+                .is_some());
         } else {
-            assert_eq!(config.grandpa_after_finalized_block_authorities_set_id, 0);
+            assert_eq!(
+                config
+                    .chain_information
+                    .grandpa_after_finalized_block_authorities_set_id,
+                0
+            );
+            assert!(config
+                .chain_information
+                .babe_finalized_next_epoch_transition
+                .is_none());
+            assert!(config
+                .chain_information
+                .babe_finalized_block_epoch_information
+                .is_none());
         }
 
-        let finalized_block_hash =
-            header::hash_from_scale_encoded_header(&config.finalized_block_header);
+        // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
+
+        let finalized_block_hash = header::hash_from_scale_encoded_header(
+            &config.chain_information.finalized_block_header,
+        );
 
         config
+            .chain_information
             .grandpa_finalized_scheduled_changes
             .retain(|sc| sc.trigger_block_height > finalized_header.number);
         config
+            .chain_information
             .grandpa_finalized_scheduled_changes
             .sort_by_key(|sc| sc.trigger_block_height);
 
         NonFinalizedTree {
-            finalized_block_header: config.finalized_block_header,
+            finalized_block_header: config.chain_information.finalized_block_header,
             finalized_block_hash,
             grandpa_after_finalized_block_authorities_set_id: config
+                .chain_information
                 .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: config.grandpa_finalized_triggered_authorities,
+            grandpa_finalized_triggered_authorities: config
+                .chain_information
+                .grandpa_finalized_triggered_authorities,
             grandpa_finalized_scheduled_changes: config
+                .chain_information
                 .grandpa_finalized_scheduled_changes
                 .into_iter()
                 .collect(),
             babe_genesis_config: config.babe_genesis_config,
-            babe_finalized_block1_slot_number: config.babe_finalized_block1_slot_number,
+            babe_finalized_block1_slot_number: config
+                .chain_information
+                .babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: config
+                .chain_information
                 .babe_finalized_block_epoch_information
                 .map(Arc::new),
             babe_finalized_next_epoch_transition: config
+                .chain_information
                 .babe_finalized_next_epoch_transition
                 .map(Arc::new),
             blocks: fork_tree::ForkTree::with_capacity(config.blocks_capacity),
@@ -210,6 +252,34 @@ impl<T> NonFinalizedTree<T> {
     /// Shrink the capacity of the chain as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.blocks.shrink_to_fit()
+    }
+
+    /// Builds a [`ChainInformation`] struct that might later be used to build a new
+    /// [`NonFinalizedTree`].
+    // TODO: return a `ChainInformationRef` instead, so that user can examine it without an expensive copy
+    pub fn to_chain_information(&self) -> ChainInformation {
+        ChainInformation {
+            finalized_block_header: self.finalized_block_header.clone(),
+            babe_finalized_block1_slot_number: self.babe_finalized_block1_slot_number,
+            babe_finalized_block_epoch_information: self
+                .babe_finalized_block_epoch_information
+                .as_ref()
+                .map(|info| (**info).clone()),
+            babe_finalized_next_epoch_transition: self
+                .babe_finalized_next_epoch_transition
+                .as_ref()
+                .map(|info| (**info).clone()),
+            grandpa_after_finalized_block_authorities_set_id: self
+                .grandpa_after_finalized_block_authorities_set_id,
+            grandpa_finalized_triggered_authorities: self
+                .grandpa_finalized_triggered_authorities
+                .clone(),
+            grandpa_finalized_scheduled_changes: self
+                .grandpa_finalized_scheduled_changes
+                .iter()
+                .cloned()
+                .collect(),
+        }
     }
 
     /// Returns the header of the latest finalized block.
@@ -843,24 +913,24 @@ impl<'c, T> BodyVerifyStep2<'c, T> {
                 verify::header_body::Verify::BabeEpochInformation(epoch_info_rq) => {
                     todo!() // TODO:
                             /*
-                        let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
-                            let parent = self.blocks.get(parent_tree_index).unwrap();
-                            if epoch_info_rq.same_epoch_as_parent() {
-                                parent.babe_current_epoch.as_ref().unwrap()
+                            let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
+                                let parent = self.blocks.get(parent_tree_index).unwrap();
+                                if epoch_info_rq.same_epoch_as_parent() {
+                                    parent.babe_current_epoch.as_ref().unwrap()
+                                } else {
+                                    &parent.babe_next_epoch
+                                }
                             } else {
-                                &parent.babe_next_epoch
-                            }
-                        } else {
-                            if epoch_info_rq.same_epoch_as_parent() {
-                                self.babe_finalized_block_epoch_information
-                                    .as_ref()
-                                    .unwrap()
-                            } else {
-                                self.babe_finalized_next_epoch_transition.as_ref().unwrap()
-                            }
-                        };
+                                if epoch_info_rq.same_epoch_as_parent() {
+                                    self.babe_finalized_block_epoch_information
+                                        .as_ref()
+                                        .unwrap()
+                                } else {
+                                    self.babe_finalized_next_epoch_transition.as_ref().unwrap()
+                                }
+                            };
 
-                        process = epoch_info_rq.inject_epoch(From::from(&**epoch_info)).run();*/
+                            process = epoch_info_rq.inject_epoch(From::from(&**epoch_info)).run();*/
                 }
                 verify::header_body::Verify::StorageGet(inner) => {
                     return BodyVerifyStep2::StorageGet(StorageGet { chain, inner })
