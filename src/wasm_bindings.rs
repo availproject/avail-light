@@ -10,7 +10,10 @@ use crate::{
     chain, chain_spec, database, finality::grandpa, header, json_rpc, network, verify::babe,
 };
 
-use core::{convert::TryFrom as _, num::NonZeroU64};
+use core::{
+    convert::TryFrom as _,
+    num::{NonZeroU32, NonZeroU64},
+};
 use futures::prelude::*;
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
@@ -53,22 +56,26 @@ pub async fn start_client(chain_spec: String) -> BrowserLightClient {
             })
             .unwrap();
 
-        chain::headers_async::ChainAsync::new(chain::headers_async::Config {
-            chain_config: chain::blocks_tree::Config {
-                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                    chain_spec.genesis_storage(),
-                ),
-                babe_finalized_block1_slot_number: None, // TODO:
-                babe_known_epoch_information: Vec::new(), // TODO:
-                babe_genesis_config,
-                grandpa_after_finalized_block_authorities_set_id: 0, // TODO:
-                grandpa_finalized_scheduled_changes: Vec::new(),     // TODO:
-                grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-                blocks_capacity: 128,
+        chain::sync::headers_optimistic::OptimisticHeadersSync::new(
+            chain::sync::headers_optimistic::Config {
+                chain_config: chain::blocks_tree::Config {
+                    finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                        chain_spec.genesis_storage(),
+                    ), // TODO: load from database
+                    babe_finalized_block1_slot_number: None, // TODO: load from database
+                    babe_known_epoch_information: Vec::new(), // TODO: load from database
+                    babe_genesis_config,
+                    grandpa_after_finalized_block_authorities_set_id: 0, // TODO: load from database
+                    grandpa_finalized_scheduled_changes: Vec::new(),     // TODO: load from database
+                    grandpa_finalized_triggered_authorities: grandpa_genesis_config
+                        .initial_authorities,
+                    blocks_capacity: 128,
+                },
+                sources_capacity: 32,
+                blocks_request_granularity: NonZeroU32::new(128).unwrap(),
+                download_ahead_blocks: 1024,
             },
-            queue_size: 256,
-            tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-        })
+        )
     };
 
     let network = {

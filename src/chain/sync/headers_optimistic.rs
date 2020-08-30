@@ -31,6 +31,9 @@ pub struct Config {
     pub sources_capacity: usize,
 
     /// Maximum number of blocks returned by a response.
+    ///
+    /// > **Note**: If blocks are requested from the network, this should match the network
+    /// >           protocol enforced limit.
     pub blocks_request_granularity: NonZeroU32,
 
     /// Number of blocks to download ahead of the finalized block.
@@ -346,9 +349,12 @@ pub enum RequestAction<'a, TSrc> {
         num_blocks: NonZeroU32,
     },
 
-    /// The given [`RequestId`] is no longer valid. The request can either be cancelled, or the
-    /// request can be let through while the response is ignored.
+    /// The given [`RequestId`] is no longer valid.
+    ///
+    /// > **Note**: The request can either be cancelled, or the request can be let through but
+    /// >           marked in a way that [`OptimisticHeadersSync::finish_request`] isn't called.
     Cancel {
+        /// Identifier for the request. No longer valid.
         request_id: RequestId,
         /// Source where the request comes from.
         source: &'a TSrc,
