@@ -33,5 +33,4 @@
 
 pub mod blocks_tree;
 pub mod fork_tree;
-pub mod headers_async;
 pub mod sync;
