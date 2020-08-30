@@ -11,6 +11,8 @@
 //! The [`OptimisticHeadersSync`] makes it possible to sync the finalized blocks of a chain, but
 //! not the non-finalized blocks.
 
+// TODO: document usage
+
 use super::super::blocks_tree;
 
 use alloc::collections::VecDeque;

@@ -71,6 +71,8 @@ pub struct Extrinsic(pub Vec<u8>);
 pub struct BlocksRequestConfig {
     /// First block that the remote must return.
     pub start: BlocksRequestConfigStart,
+    /// Peer to ask the block from.
+    pub peer_id: PeerId,
     /// Number of blocks to request. The remote is free to return fewer blocks than requested.
     pub desired_count: u32,
     /// Whether the first block should be the one with the highest number, of the one with the
@@ -208,12 +210,6 @@ impl Network {
         &mut self,
         config: BlocksRequestConfig,
     ) -> Result<RequestId, ()> {
-        // TODO: better peer selection
-        let target = match self.swarm.open_peers().choose(&mut rand::thread_rng()) {
-            Some(p) => p.clone(),
-            None => return Err(()),
-        };
-
         let request = {
             // TODO: don't use legacy stuff
             let mut fields = legacy_message::BlockAttributes::empty();
@@ -258,7 +254,7 @@ impl Network {
 
         self.swarm
             .send_request(
-                &target,
+                &config.peer_id,
                 &format!("/{}/sync/2", self.chain_spec_protocol_id),
                 request_bytes,
             )
