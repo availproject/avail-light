@@ -194,6 +194,11 @@ impl<T> NonFinalizedTree<T> {
         self.blocks.len()
     }
 
+    /// Reserves additional capacity for at least `additional` new blocks without allocating.
+    pub fn reserve(&mut self, additional: usize) {
+        self.blocks.reserve(additional)
+    }
+
     /// Shrink the capacity of the chain as much as possible.
     pub fn shrink_to_fit(&mut self) {
         self.blocks.shrink_to_fit()

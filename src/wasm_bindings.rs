@@ -116,7 +116,10 @@ async fn start_sync(
                 grandpa_after_finalized_block_authorities_set_id: 0, // TODO: load from database
                 grandpa_finalized_scheduled_changes: Vec::new(),     // TODO: load from database
                 grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-                blocks_capacity: 128,
+                blocks_capacity: {
+                    // This capacity should be the maximum interval between two justifications.
+                    1024
+                },
             },
             sources_capacity: 32,
             blocks_request_granularity: NonZeroU32::new(128).unwrap(),
