@@ -12,6 +12,7 @@
 //! not the non-finalized blocks.
 
 // TODO: document usage
+// TODO: the quality of this module's code is sub-par compared to what we want
 
 use super::super::blocks_tree;
 
@@ -353,7 +354,6 @@ where
             finalized_block_number: self.chain.finalized_block_header().number,
             best_block_hash: self.chain.best_block_hash(),
             best_block_number: self.chain.best_block_header().number,
-            test: self.chain.len(),
         })
     }
 }
@@ -427,5 +427,4 @@ pub struct ChainStateUpdate {
     pub best_block_number: u64,
     pub finalized_block_hash: [u8; 32],
     pub finalized_block_number: u64,
-    pub test: usize, // TODO: remove
 }
