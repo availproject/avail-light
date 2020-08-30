@@ -81,6 +81,7 @@ where
                                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
                                     insert,
                                     is_new_best,
+                                    ..
                                 }) => {
                                     insert.insert(());
                                     Ok(VerifySuccess { is_new_best })

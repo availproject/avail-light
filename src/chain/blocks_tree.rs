@@ -406,6 +406,7 @@ impl<T> NonFinalizedTree<T> {
             let babe_epoch_number = result.epoch_number;
 
             BodyOrHeader::Header(Ok(HeaderVerifySuccess::Insert {
+                block_height: decoded_header.number,
                 is_new_best,
                 insert: Insert {
                     chain: self,
@@ -923,6 +924,8 @@ pub enum HeaderVerifySuccess<'c, T> {
     Duplicate,
     /// Block wasn't known and is ready to be inserted.
     Insert {
+        /// Height of the verified block.
+        block_height: u64,
         /// True if the verified block will become the new "best" block after being inserted.
         is_new_best: bool,
         /// Use this struct to insert the block in the chain after its successful verification.
