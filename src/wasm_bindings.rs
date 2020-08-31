@@ -108,7 +108,7 @@ async fn start_sync(
         headers_optimistic::Config {
             chain_config: chain::blocks_tree::Config {
                 // TODO: load from database
-                chain_information: chain::blocks_tree::ChainInformation {
+                chain_information: chain::chain_information::ChainInformation {
                     finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
                         chain_spec.genesis_storage(),
                     ),

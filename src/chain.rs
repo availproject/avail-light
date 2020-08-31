@@ -32,5 +32,6 @@
 //! non-finalized block, the latest finalized block is also the best block.
 
 pub mod blocks_tree;
+pub mod chain_information;
 pub mod fork_tree;
 pub mod sync;
