@@ -55,6 +55,9 @@ pub struct Config {
 
     /// Seed used by the PRNG (Pseudo-Random Number Generator) that selects which source to start
     /// requests with.
+    ///
+    /// You are encouraged to use something like `rand::random()` to fill this field, except in
+    /// situations where determinism/reproducibility is desired.
     pub source_selection_randomness_seed: u64,
 }
 
