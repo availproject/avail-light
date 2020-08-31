@@ -104,7 +104,7 @@ async fn start_sync(
         })
         .unwrap();
 
-    let mut sync = headers_optimistic::OptimisticHeadersSync::<network::PeerId>::new(
+    let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
         headers_optimistic::Config {
             chain_config: chain::blocks_tree::Config {
                 // TODO: load from database
@@ -137,15 +137,13 @@ async fn start_sync(
     );
 
     async move {
-        // TODO: store request id in a sync user data rather than having this hashmap
-        let mut block_requests_ids = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
         let mut block_requests_finished = stream::FuturesUnordered::new();
 
         loop {
             while let Some(action) = sync.next_request_action() {
                 match action {
                     headers_optimistic::RequestAction::Start {
-                        request_id,
+                        start,
                         block_height,
                         source,
                         num_blocks,
@@ -161,11 +159,15 @@ async fn start_sync(
                             .await;
 
                         let (rx, abort) = future::abortable(rx);
-                        block_requests_ids.insert(request_id, abort);
+                        let request_id = start.start(abort);
                         block_requests_finished.push(rx.map(move |r| (request_id, r)));
                     }
-                    headers_optimistic::RequestAction::Cancel { request_id, source } => {
-                        block_requests_ids.remove(&request_id).unwrap().abort();
+                    headers_optimistic::RequestAction::Cancel {
+                        request_id,
+                        source,
+                        user_data,
+                    } => {
+                        user_data.abort();
                     }
                 }
             }

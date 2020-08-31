@@ -20,7 +20,9 @@ use alloc::collections::VecDeque;
 use core::{
     cmp,
     convert::TryFrom as _,
-    iter, mem,
+    fmt, iter,
+    marker::PhantomData,
+    mem,
     num::{NonZeroU32, NonZeroU64},
 };
 
@@ -52,7 +54,7 @@ pub struct Config {
 }
 
 /// Optimistic headers-only syncing.
-pub struct OptimisticHeadersSync<TSrc> {
+pub struct OptimisticHeadersSync<TRq, TSrc> {
     // TODO: to reduce memory usage, keep the finalized block of this chain close to its best block, and maintain a `ChainInformation` in parallel of the actual finalized block
     chain: blocks_tree::NonFinalizedTree<()>,
 
@@ -62,7 +64,7 @@ pub struct OptimisticHeadersSync<TSrc> {
     cancelling_requests: bool,
 
     /// Queue of block requests, either to be started, in progress, or completed.
-    verification_queue: VecDeque<VerificationQueueEntry>,
+    verification_queue: VecDeque<VerificationQueueEntry<TRq>>,
 
     /// Value passed by [`Config::blocks_request_granularity`].
     blocks_request_granularity: NonZeroU32,
@@ -74,9 +76,9 @@ pub struct OptimisticHeadersSync<TSrc> {
     next_request_id: RequestId,
 }
 
-struct VerificationQueueEntry {
+struct VerificationQueueEntry<TRq> {
     block_height: NonZeroU64,
-    ty: VerificationQueueEntryTy,
+    ty: VerificationQueueEntryTy<TRq>,
 }
 
 struct Source<TSrc> {
@@ -84,17 +86,19 @@ struct Source<TSrc> {
     banned: bool, // TODO: ban shouldn't be held forever
 }
 
-enum VerificationQueueEntryTy {
+enum VerificationQueueEntryTy<TRq> {
     Missing,
     Requested {
         id: RequestId,
+        /// User-chosen data for this request.
+        user_data: TRq,
         // Index of this source within [`OptimisticHeadersSync::sources`].
         source: usize,
     },
     Queued(Vec<RequestSuccessBlock>),
 }
 
-impl<TSrc> OptimisticHeadersSync<TSrc>
+impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc>
 where
     TSrc: Eq, // TODO: no
 {
@@ -155,14 +159,19 @@ where
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
     /// need to be cancelled.
-    pub fn next_request_action(&mut self) -> Option<RequestAction<TSrc>> {
+    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc>> {
         if self.cancelling_requests {
             while let Some(queue_elem) = self.verification_queue.pop_back() {
                 match queue_elem.ty {
-                    VerificationQueueEntryTy::Requested { id, source } => {
+                    VerificationQueueEntryTy::Requested {
+                        id,
+                        source,
+                        user_data,
+                    } => {
                         return Some(RequestAction::Cancel {
                             request_id: id,
-                            source: &self.sources[source].user_data,
+                            user_data,
+                            source: &mut self.sources[source].user_data,
                         });
                     }
                     _ => {}
@@ -215,19 +224,17 @@ where
                 self.blocks_request_granularity
             };
 
-            let request_id = self.next_request_id;
-            self.next_request_id.0 += 1;
-
-            self.verification_queue[missing_pos].ty = VerificationQueueEntryTy::Requested {
-                id: request_id,
-                source,
-            };
-
             return Some(RequestAction::Start {
-                request_id,
                 source: &mut self.sources[source].user_data,
                 block_height,
                 num_blocks,
+                start: Start {
+                    verification_queue: &mut self.verification_queue,
+                    missing_pos,
+                    next_request_id: &mut self.next_request_id,
+                    source,
+                    marker: PhantomData,
+                },
             });
         }
 
@@ -235,6 +242,8 @@ where
     }
 
     /// Update the [`OptimisticHeadersSync`] with the outcome of a request.
+    ///
+    /// Returns the user data that was associated to that request.
     ///
     /// # Panic
     ///
@@ -244,13 +253,13 @@ where
         &'a mut self,
         request_id: RequestId,
         outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
-    ) -> FinishRequestOutcome<'a, TSrc> {
+    ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
         let (verification_queue_entry, source_id) = self
             .verification_queue
             .iter()
             .enumerate()
             .filter_map(|(pos, entry)| match entry.ty {
-                VerificationQueueEntryTy::Requested { id, source } if id == request_id => {
+                VerificationQueueEntryTy::Requested { id, source, .. } if id == request_id => {
                     Some((pos, source))
                 }
                 _ => None,
@@ -261,16 +270,32 @@ where
         let blocks = match outcome {
             Ok(blocks) => blocks.collect(),
             Err(_) => {
-                return FinishRequestOutcome::SourcePunished(&mut self.sources[source_id].user_data)
+                let user_data = match mem::replace(
+                    &mut self.verification_queue[verification_queue_entry].ty,
+                    VerificationQueueEntryTy::Missing,
+                ) {
+                    VerificationQueueEntryTy::Requested { user_data, .. } => user_data,
+                    _ => unreachable!(),
+                };
+
+                return (
+                    user_data,
+                    FinishRequestOutcome::SourcePunished(&mut self.sources[source_id].user_data),
+                );
             }
         };
 
         // TODO: handle if blocks.len() < expected_number_of_blocks
 
-        self.verification_queue[verification_queue_entry].ty =
-            VerificationQueueEntryTy::Queued(blocks);
+        let user_data = match mem::replace(
+            &mut self.verification_queue[verification_queue_entry].ty,
+            VerificationQueueEntryTy::Queued(blocks),
+        ) {
+            VerificationQueueEntryTy::Requested { user_data, .. } => user_data,
+            _ => unreachable!(),
+        };
 
-        FinishRequestOutcome::Queued
+        (user_data, FinishRequestOutcome::Queued)
     }
 
     /// Process a single block in the queue of verification.
@@ -354,14 +379,17 @@ pub struct RequestId(u64);
 
 /// Request that should be emitted towards a certain source.
 #[derive(Debug)]
-pub enum RequestAction<'a, TSrc> {
+pub enum RequestAction<'a, TRq, TSrc> {
     /// A request must be emitted for the given source.
+    ///
+    /// The request has **not** been acknowledged when this event is emitted. You **must** call
+    /// [`Start::start`] to notify the [`OptimisticHeadersSync`] that the request has been sent
+    /// out.
     Start {
-        /// Identifier for the request. Must later be passed back to
-        /// [`OptimisticHeadersSync::finish_request`].
-        request_id: RequestId,
         /// Source where to request blocks from.
         source: &'a mut TSrc,
+        /// Must be used to accept the request.
+        start: Start<'a, TRq, TSrc>,
         /// Height of the block to request.
         block_height: NonZeroU64,
         /// Number of blocks to request. Always smaller than the value passed through
@@ -376,9 +404,45 @@ pub enum RequestAction<'a, TSrc> {
     Cancel {
         /// Identifier for the request. No longer valid.
         request_id: RequestId,
+        /// User data associated with the request.
+        user_data: TRq,
         /// Source where the request comes from.
-        source: &'a TSrc,
+        source: &'a mut TSrc,
     },
+}
+
+/// Must be used to accept the request.
+#[must_use]
+pub struct Start<'a, TRq, TSrc> {
+    verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq>>,
+    source: usize,
+    missing_pos: usize,
+    next_request_id: &'a mut RequestId,
+    marker: PhantomData<&'a TSrc>,
+}
+
+impl<'a, TRq, TSrc> Start<'a, TRq, TSrc> {
+    /// Updates the [`OptimisticHeadersSync`] with the fact that the request has actually been
+    /// started. Returns the identifier for the request that must later be passed back to
+    /// [`OptimisticHeadersSync::finish_request`].
+    pub fn start(self, user_data: TRq) -> RequestId {
+        let request_id = *self.next_request_id;
+        self.next_request_id.0 += 1;
+
+        self.verification_queue[self.missing_pos].ty = VerificationQueueEntryTy::Requested {
+            id: request_id,
+            source: self.source,
+            user_data,
+        };
+
+        request_id
+    }
+}
+
+impl<'a, TRq, TSrc> fmt::Debug for Start<'a, TRq, TSrc> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Start").finish()
+    }
 }
 
 pub enum FinishRequestOutcome<'a, TSrc> {
