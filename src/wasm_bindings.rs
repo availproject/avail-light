@@ -137,6 +137,7 @@ async fn start_sync(
     );
 
     async move {
+        let mut peers_source_id_map = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
         let mut block_requests_finished = stream::FuturesUnordered::new();
 
         loop {
@@ -147,6 +148,7 @@ async fn start_sync(
                         block_height,
                         source,
                         num_blocks,
+                        ..
                     } => {
                         let (tx, rx) = oneshot::channel();
                         let _ = to_network
@@ -162,11 +164,7 @@ async fn start_sync(
                         let request_id = start.start(abort);
                         block_requests_finished.push(rx.map(move |r| (request_id, r)));
                     }
-                    headers_optimistic::RequestAction::Cancel {
-                        request_id,
-                        source,
-                        user_data,
-                    } => {
+                    headers_optimistic::RequestAction::Cancel { user_data, .. } => {
                         user_data.abort();
                     }
                 }
@@ -181,10 +179,15 @@ async fn start_sync(
 
                     match message {
                         ToSync::NewPeer(peer_id) => {
-                            sync.add_source(peer_id).unwrap();
+                            let id = sync.add_source(peer_id.clone());
+                            peers_source_id_map.insert(peer_id.clone(), id);
                         },
                         ToSync::PeerDisconnected(peer_id) => {
-                            sync.remove_source(&peer_id).unwrap();
+                            let id = peers_source_id_map.remove(&peer_id).unwrap();
+                            let (_, rq_list) = sync.remove_source(id);
+                            for (_, rq) in rq_list {
+                                rq.abort();
+                            }
                         },
                     }
                 },

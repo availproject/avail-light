@@ -98,10 +98,7 @@ enum VerificationQueueEntryTy<TRq> {
     Queued(Vec<RequestSuccessBlock>),
 }
 
-impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc>
-where
-    TSrc: Eq, // TODO: no
-{
+impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// Builds a new [`OptimisticHeadersSync`].
     pub fn new(config: Config) -> Self {
         OptimisticHeadersSync {
@@ -122,39 +119,28 @@ where
     }
 
     /// Inform the [`OptimisticHeadersSync`] of a new potential source of blocks.
-    pub fn add_source(&mut self, source: TSrc) -> Result<(), AddSourceError> {
-        // TODO: consider not checking this; needs some API rethinking
-        if self.sources.iter().any(|(_, s)| s.user_data == source) {
-            return Err(AddSourceError::Duplicate);
-        }
-
-        self.sources.insert(Source {
+    pub fn add_source(&mut self, source: TSrc) -> SourceId {
+        SourceId(self.sources.insert(Source {
             user_data: source,
             banned: false,
-        });
-
-        Ok(())
+        }))
     }
 
     /// Inform the [`OptimisticHeadersSync`] that a source of blocks is no longer available.
     ///
-    /// This automatically cancels all the [`RequestId`]s that have been emitted for this source.
-    /// This list of [`RequestId`]s is returned as part of this function.
+    /// This automatically cancels all the requests that have been emitted for this source.
+    /// This list of requests is returned as part of this function.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
     pub fn remove_source(
         &mut self,
-        source: &TSrc,
-    ) -> Result<impl Iterator<Item = RequestId>, RemoveSourceError> {
-        if let Some(index) = self
-            .sources
-            .iter()
-            .find(|(_, s)| &s.user_data == source)
-            .map(|(i, _)| i)
-        {
-            self.sources.remove(index);
-            Ok(iter::empty()) // TODO:
-        } else {
-            Err(RemoveSourceError::UnknownSource)
-        }
+        source: SourceId,
+    ) -> (TSrc, impl Iterator<Item = (RequestId, TRq)>) {
+        let src_user_data = self.sources.remove(source.0).user_data;
+        (src_user_data, iter::empty()) // TODO:
     }
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
@@ -171,6 +157,7 @@ where
                         return Some(RequestAction::Cancel {
                             request_id: id,
                             user_data,
+                            source_id: SourceId(source),
                             source: &mut self.sources[source].user_data,
                         });
                     }
@@ -225,6 +212,7 @@ where
             };
 
             return Some(RequestAction::Start {
+                source_id: SourceId(source),
                 source: &mut self.sources[source].user_data,
                 block_height,
                 num_blocks,
@@ -377,6 +365,10 @@ where
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct RequestId(u64);
 
+/// Identifier for a source in the [`OptimisticHeadersSync`].
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct SourceId(usize);
+
 /// Request that should be emitted towards a certain source.
 #[derive(Debug)]
 pub enum RequestAction<'a, TRq, TSrc> {
@@ -387,6 +379,8 @@ pub enum RequestAction<'a, TRq, TSrc> {
     /// out.
     Start {
         /// Source where to request blocks from.
+        source_id: SourceId,
+        /// User data of source where to request blocks from.
         source: &'a mut TSrc,
         /// Must be used to accept the request.
         start: Start<'a, TRq, TSrc>,
@@ -406,7 +400,9 @@ pub enum RequestAction<'a, TRq, TSrc> {
         request_id: RequestId,
         /// User data associated with the request.
         user_data: TRq,
-        /// Source where the request comes from.
+        /// Source where to request blocks from.
+        source_id: SourceId,
+        /// User data of source where to request blocks from.
         source: &'a mut TSrc,
     },
 }
@@ -459,20 +455,6 @@ pub struct RequestSuccessBlock {
 pub enum RequestFail {
     /// Requested blocks aren't available from this source.
     BlocksUnavailable,
-}
-
-/// Possible error when calling [`OptimisticHeadersSync::add_source`].
-#[derive(Debug, derive_more::Display)]
-pub enum AddSourceError {
-    /// Source was already known.
-    Duplicate,
-}
-
-/// Possible error when calling [`OptimisticHeadersSync::remove_source`].
-#[derive(Debug, derive_more::Display)]
-pub enum RemoveSourceError {
-    /// Source wasn't in the list.
-    UnknownSource,
 }
 
 #[derive(Debug)]
