@@ -18,7 +18,7 @@ os-networking = [
     "libp2p/websocket",
     "soketto",
     "url",
-    "webpki"
+    "webpki",
 ]
 wasm-bindings = [
     "chrono/wasmbind",
@@ -27,7 +27,8 @@ wasm-bindings = [
     "rand/wasm-bindgen",
     "wasm-bindgen",
     "wasm-bindgen-futures",
-    "web-sys"
+    "web-sys",
+    "wee_alloc",
 ]
 
 [[bin]]
@@ -102,6 +103,7 @@ js-sys = { version = "0.3.44", optional = true }
 wasm-bindgen = { version = "0.2.67", optional = true }
 wasm-bindgen-futures = { version = "0.4.17", optional = true }
 web-sys = { version = "0.3.44", optional = true, features = ["console", "DomException", "IdbDatabase", "IdbFactory", "IdbObjectStore", "IdbOpenDbRequest", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "Window"] }
+wee_alloc = { version = "0.4.5", optional = true }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:

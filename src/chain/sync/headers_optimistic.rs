@@ -511,7 +511,7 @@ impl<'a, TRq> fmt::Debug for RequestsDrain<'a, TRq> {
 impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
     fn drop(&mut self) {
         // Drain all remaining elements even if the iterator is dropped eagerly.
-        // This is the reason why we need a custom iterator type rather than using combinators.
+        // This is the reason why a custom iterator type is needed, rather than using combinators.
         while let Some(_) = self.next() {}
     }
 }

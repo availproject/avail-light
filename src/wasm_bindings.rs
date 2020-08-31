@@ -19,6 +19,10 @@ use futures::{
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
+// TODO: should t hat be here?
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 #[wasm_bindgen]
 pub struct BrowserLightClient {}
 
@@ -268,7 +272,7 @@ async fn start_network(
 
                     match message {
                         ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, send_back } => {
-                            let id = network.start_block_request(network::BlocksRequestConfig {
+                            let result = network.start_block_request(network::BlocksRequestConfig {
                                 start: network::BlocksRequestConfigStart::Number(block_height),
                                 peer_id,
                                 desired_count: num_blocks,
@@ -278,9 +282,17 @@ async fn start_network(
                                     body: false,
                                     justification: true,
                                 },
-                            }).await.unwrap(); // TODO: don't unwrap
+                            }).await;
 
-                            block_requests.insert(id, send_back);
+                            match result {
+                                Ok(id) => {
+                                    block_requests.insert(id, send_back);
+                                }
+                                Err(()) => {
+                                    // TODO: better error
+                                    let _ = send_back.send(Err(headers_optimistic::RequestFail::BlocksUnavailable));
+                                }
+                            };
                         },
                     }
                 },
