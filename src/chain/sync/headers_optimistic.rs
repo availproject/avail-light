@@ -135,12 +135,16 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     ///
     /// Panics if the [`SourceId`] is invalid.
     ///
-    pub fn remove_source(
-        &mut self,
+    pub fn remove_source<'a>(
+        &'a mut self,
         source: SourceId,
-    ) -> (TSrc, impl Iterator<Item = (RequestId, TRq)>) {
+    ) -> (TSrc, impl Iterator<Item = (RequestId, TRq)> + 'a) {
         let src_user_data = self.sources.remove(source.0).user_data;
-        (src_user_data, iter::empty()) // TODO:
+        let drain = RequestsDrain {
+            iter: self.verification_queue.iter_mut().fuse(),
+            source_index: source.0,
+        };
+        (src_user_data, drain)
     }
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
@@ -463,4 +467,51 @@ pub struct ChainStateUpdate {
     pub best_block_number: u64,
     pub finalized_block_hash: [u8; 32],
     pub finalized_block_number: u64,
+}
+
+/// Iterator that drains requests after a source has been removed.
+pub struct RequestsDrain<'a, TRq> {
+    iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq>>>,
+    source_index: usize,
+}
+
+impl<'a, TRq> Iterator for RequestsDrain<'a, TRq> {
+    type Item = (RequestId, TRq);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let entry = self.iter.next()?;
+            match entry.ty {
+                VerificationQueueEntryTy::Requested { source, .. }
+                    if source == self.source_index =>
+                {
+                    match mem::replace(&mut entry.ty, VerificationQueueEntryTy::Missing) {
+                        VerificationQueueEntryTy::Requested { id, user_data, .. } => {
+                            return Some((id, user_data));
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.iter.size_hint().1)
+    }
+}
+
+impl<'a, TRq> fmt::Debug for RequestsDrain<'a, TRq> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("RequestsDrain").finish()
+    }
+}
+
+impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
+    fn drop(&mut self) {
+        // Drain all remaining elements even if the iterator is dropped eagerly.
+        // This is the reason why we need a custom iterator type rather than using combinators.
+        while let Some(_) = self.next() {}
+    }
 }
