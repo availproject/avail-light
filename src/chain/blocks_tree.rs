@@ -208,31 +208,24 @@ impl<T> NonFinalizedTree<T> {
         self.blocks.shrink_to_fit()
     }
 
-    /// Builds a [`ChainInformation`] struct that might later be used to build a new
-    /// [`NonFinalizedTree`].
-    // TODO: return a `ChainInformationRef` instead, so that user can examine it without an expensive copy
-    pub fn to_chain_information(&self) -> chain_information::ChainInformation {
-        chain_information::ChainInformation {
-            finalized_block_header: self.finalized_block_header.clone(),
+    /// Builds a [`chain_information::ChainInformationRef`] struct that might later be used to
+    /// build a new [`NonFinalizedTree`].
+    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+        chain_information::ChainInformationRef {
+            finalized_block_header: &self.finalized_block_header,
             babe_finalized_block1_slot_number: self.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: self
                 .babe_finalized_block_epoch_information
                 .as_ref()
-                .map(|info| (**info).clone()),
+                .map(|info| (&**info).into()),
             babe_finalized_next_epoch_transition: self
                 .babe_finalized_next_epoch_transition
                 .as_ref()
-                .map(|info| (**info).clone()),
+                .map(|info| (&**info).into()),
             grandpa_after_finalized_block_authorities_set_id: self
                 .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: self
-                .grandpa_finalized_triggered_authorities
-                .clone(),
-            grandpa_finalized_scheduled_changes: self
-                .grandpa_finalized_scheduled_changes
-                .iter()
-                .cloned()
-                .collect(),
+            grandpa_finalized_triggered_authorities: &self.grandpa_finalized_triggered_authorities,
+            grandpa_finalized_scheduled_changes: todo!(), // TODO: requires change in ChainInformationRef
         }
     }
 
