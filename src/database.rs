@@ -4,4 +4,5 @@
 //! persistent way.
 
 pub mod indexed_db_light;
+pub mod local_storage_light;
 pub mod sled;

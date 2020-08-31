@@ -1,6 +1,7 @@
 //! Persistent storage for light-client data based on IndexedDB, the in-brower database.
 
 // TODO: obviously very work-in-progress
+// TODO: remove entirely? turned out to not be super useful
 
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]

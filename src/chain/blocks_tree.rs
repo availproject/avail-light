@@ -225,7 +225,11 @@ impl<T> NonFinalizedTree<T> {
             grandpa_after_finalized_block_authorities_set_id: self
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &self.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: todo!(), // TODO: requires change in ChainInformationRef
+            grandpa_finalized_scheduled_changes: self
+                .grandpa_finalized_scheduled_changes
+                .iter()
+                .cloned()
+                .collect(),
         }
     }
 

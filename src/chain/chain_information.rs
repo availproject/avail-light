@@ -70,7 +70,8 @@ pub struct ChainInformationRef<'a> {
     pub grandpa_finalized_triggered_authorities: &'a [header::GrandpaAuthority],
 
     /// See equivalent field in [`ChanInformation`].
-    pub grandpa_finalized_scheduled_changes: &'a [FinalizedScheduledChange],
+    // TODO: better type, as a Vec is not in the spirit of this struct; however it's likely that this "scheduled changes" field will disappear altogether
+    pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
 }
 
 impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
@@ -89,7 +90,7 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
             grandpa_after_finalized_block_authorities_set_id: info
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &info.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: &info.grandpa_finalized_scheduled_changes,
+            grandpa_finalized_scheduled_changes: info.grandpa_finalized_scheduled_changes.clone(),
         }
     }
 }

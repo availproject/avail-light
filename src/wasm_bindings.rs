@@ -42,18 +42,71 @@ pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsVa
         }
     };
 
-    /*let database = {
-        let db_name = format!("substrate-lite-{}", chain_spec.id());
-        database::indexed_db_light::Database::open(&db_name)
-            .await
-            .unwrap()
-    };*/
+    // Open the browser's local storage.
+    // See https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API
+    // Used to store information about the chain.
+    let local_storage = match database::local_storage_light::LocalStorage::open().await {
+        Ok(ls) => ls,
+        Err(database::local_storage_light::OpenError::LocalStorageNotSupported(err)) => {
+            return Err(err)
+        }
+        Err(database::local_storage_light::OpenError::NoWindow) => {
+            return Err(JsValue::from_str("No window object available"))
+        }
+    };
+
+    // Load the information about the chain from the local storage, or build the information of
+    // the genesis block.
+    let chain_information = match local_storage.chain_information() {
+        Ok(Some(i)) => i,
+        Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
+        // TODO: log why storage access failed?
+        Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {
+            let grandpa_genesis_config =
+                grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|k| {
+                    chain_spec
+                        .genesis_storage()
+                        .find(|(k2, _)| *k2 == k)
+                        .map(|(_, v)| v.to_owned())
+                })
+                .unwrap();
+
+            chain::chain_information::ChainInformation {
+                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                    chain_spec.genesis_storage(),
+                ),
+                babe_finalized_block1_slot_number: None,
+                babe_finalized_block_epoch_information: None,
+                babe_finalized_next_epoch_transition: None,
+                grandpa_after_finalized_block_authorities_set_id: 0,
+                grandpa_finalized_scheduled_changes: Vec::new(),
+                grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+            }
+        }
+    };
 
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_network_tx, to_network_rx) = mpsc::channel(64);
+    let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
     wasm_bindgen_futures::spawn_local(start_network(&chain_spec, to_network_rx, to_sync_tx).await);
-    wasm_bindgen_futures::spawn_local(start_sync(&chain_spec, to_sync_rx, to_network_tx).await);
+    wasm_bindgen_futures::spawn_local(
+        start_sync(
+            &chain_spec,
+            chain_information,
+            to_sync_rx,
+            to_network_tx,
+            to_db_save_tx,
+        )
+        .await,
+    );
+
+    wasm_bindgen_futures::spawn_local(async move {
+        while let Some(info) = to_db_save_rx.next().await {
+            // TODO: how to handle errors?
+            local_storage.set_chain_information((&info).into()).unwrap();
+        }
+    });
 
     Ok(BrowserLightClient {})
 }
@@ -88,8 +141,10 @@ impl BrowserLightClient {
 
 async fn start_sync(
     chain_spec: &chain_spec::ChainSpec,
+    chain_information: chain::chain_information::ChainInformation,
     mut to_sync: mpsc::Receiver<ToSync>,
     mut to_network: mpsc::Sender<ToNetwork>,
+    mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
 ) -> impl Future<Output = ()> {
     let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
         chain_spec
@@ -99,31 +154,10 @@ async fn start_sync(
     })
     .unwrap();
 
-    let grandpa_genesis_config =
-        grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|k| {
-            chain_spec
-                .genesis_storage()
-                .find(|(k2, _)| *k2 == k)
-                .map(|(_, v)| v.to_owned())
-        })
-        .unwrap();
-
     let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
         headers_optimistic::Config {
             chain_config: chain::blocks_tree::Config {
-                // TODO: load from database
-                chain_information: chain::chain_information::ChainInformation {
-                    finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                        chain_spec.genesis_storage(),
-                    ),
-                    babe_finalized_block1_slot_number: None,
-                    babe_finalized_block_epoch_information: None,
-                    babe_finalized_next_epoch_transition: None,
-                    grandpa_after_finalized_block_authorities_set_id: 0,
-                    grandpa_finalized_scheduled_changes: Vec::new(),
-                    grandpa_finalized_triggered_authorities: grandpa_genesis_config
-                        .initial_authorities,
-                },
+                chain_information,
                 babe_genesis_config,
                 blocks_capacity: {
                     // This capacity should be the maximum interval between two justifications.
@@ -217,6 +251,9 @@ async fn start_sync(
                     web_sys::console::log_1(&JsValue::from_str(&format!(
                         "Chain state update: {:?}", chain_state_update
                     )));
+
+                    // TODO: save less often
+                    let _ = to_db_save_tx.send(sync.as_chain_information().into()).await;
                 },
             }
         }

@@ -14,7 +14,7 @@
 // TODO: document usage
 // TODO: the quality of this module's code is sub-par compared to what we want
 
-use super::super::blocks_tree;
+use super::super::{blocks_tree, chain_information};
 
 use alloc::collections::VecDeque;
 use core::{
@@ -130,6 +130,12 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                 config.source_selection_randomness_seed,
             ),
         }
+    }
+
+    /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
+    /// latest finalized block. Can later be used to reconstruct a chain.
+    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+        self.chain.as_chain_information()
     }
 
     /// Inform the [`OptimisticHeadersSync`] of a new potential source of blocks.
