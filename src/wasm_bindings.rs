@@ -142,7 +142,7 @@ async fn start_sync(
         let mut block_requests_finished = stream::FuturesUnordered::new();
 
         loop {
-            for action in sync.requests_actions() {
+            while let Some(action) = sync.next_request_action() {
                 match action {
                     headers_optimistic::RequestAction::Start {
                         request_id,

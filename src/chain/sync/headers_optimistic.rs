@@ -53,6 +53,7 @@ pub struct Config {
 
 /// Optimistic headers-only syncing.
 pub struct OptimisticHeadersSync<TSrc> {
+    // TODO: to reduce memory usage, keep the finalized block of this chain close to its best block, and maintain a `ChainInformation` in parallel of the actual finalized block
     chain: blocks_tree::NonFinalizedTree<()>,
 
     /// List of sources of blocks.
@@ -154,94 +155,83 @@ where
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
     /// need to be cancelled.
-    pub fn requests_actions<'a>(&'a mut self) -> impl Iterator<Item = RequestAction<'a, TSrc>> {
-        // Decompose `self` into its components so shared borrows of the `sources` field can be
-        // returned as part of the `RequestAction`, while the other fields continue to be mutably
-        // borrowed by the iterator itself.
-        let sources = &self.sources;
-        let verification_queue = &mut self.verification_queue;
-        let blocks_request_granularity = self.blocks_request_granularity;
-        let download_ahead_blocks = self.download_ahead_blocks;
-        let next_request_id = &mut self.next_request_id;
-        let cancelling_requests = &mut self.cancelling_requests;
-        let chain = &mut self.chain;
-
-        iter::from_fn(move || {
-            if *cancelling_requests {
-                while let Some(queue_elem) = verification_queue.pop_back() {
-                    match queue_elem.ty {
-                        VerificationQueueEntryTy::Requested { id, source } => {
-                            return Some(RequestAction::Cancel {
-                                request_id: id,
-                                source: &sources[source].user_data,
-                            });
-                        }
-                        _ => {}
+    pub fn next_request_action(&mut self) -> Option<RequestAction<TSrc>> {
+        if self.cancelling_requests {
+            while let Some(queue_elem) = self.verification_queue.pop_back() {
+                match queue_elem.ty {
+                    VerificationQueueEntryTy::Requested { id, source } => {
+                        return Some(RequestAction::Cancel {
+                            request_id: id,
+                            source: &self.sources[source].user_data,
+                        });
                     }
+                    _ => {}
                 }
-
-                *cancelling_requests = false;
             }
 
-            let best_block = chain.best_block_header().number;
-            while verification_queue.back().map_or(true, |rq| {
-                rq.block_height.get() + u64::from(blocks_request_granularity.get())
-                    < best_block + u64::from(download_ahead_blocks)
-            }) {
-                let block_height = verification_queue
-                    .back()
-                    .map(|rq| rq.block_height.get() + u64::from(blocks_request_granularity.get()))
-                    .unwrap_or(best_block + 1);
-                verification_queue.push_back(VerificationQueueEntry {
-                    block_height: NonZeroU64::new(block_height).unwrap(),
-                    ty: VerificationQueueEntryTy::Missing,
-                });
-            }
+            self.cancelling_requests = false;
+        }
 
-            for missing_pos in verification_queue
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
-                .map(|(n, _)| n)
-            {
-                let source = sources.iter().filter(|(_, src)| !src.banned).next()?.0; // TODO: some sort of round-robin source selection
+        let best_block = self.chain.best_block_header().number;
+        while self.verification_queue.back().map_or(true, |rq| {
+            rq.block_height.get() + u64::from(self.blocks_request_granularity.get())
+                < best_block + u64::from(self.download_ahead_blocks)
+        }) {
+            let block_height = self
+                .verification_queue
+                .back()
+                .map(|rq| rq.block_height.get() + u64::from(self.blocks_request_granularity.get()))
+                .unwrap_or(best_block + 1);
+            self.verification_queue.push_back(VerificationQueueEntry {
+                block_height: NonZeroU64::new(block_height).unwrap(),
+                ty: VerificationQueueEntryTy::Missing,
+            });
+        }
 
-                let block_height = verification_queue[missing_pos].block_height;
+        for missing_pos in self
+            .verification_queue
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
+            .map(|(n, _)| n)
+        {
+            let source = self.sources.iter().filter(|(_, src)| !src.banned).next()?.0; // TODO: some sort of round-robin source selection
 
-                let num_blocks = if let Some(next) = verification_queue.get(missing_pos + 1) {
-                    NonZeroU32::new(
-                        u32::try_from(cmp::min(
-                            u64::from(blocks_request_granularity.get()),
-                            next.block_height
-                                .get()
-                                .checked_sub(block_height.get())
-                                .unwrap(),
-                        ))
-                        .unwrap(),
-                    )
-                    .unwrap()
-                } else {
-                    blocks_request_granularity
-                };
+            let block_height = self.verification_queue[missing_pos].block_height;
 
-                let request_id = *next_request_id;
-                next_request_id.0 += 1;
+            let num_blocks = if let Some(next) = self.verification_queue.get(missing_pos + 1) {
+                NonZeroU32::new(
+                    u32::try_from(cmp::min(
+                        u64::from(self.blocks_request_granularity.get()),
+                        next.block_height
+                            .get()
+                            .checked_sub(block_height.get())
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+                )
+                .unwrap()
+            } else {
+                self.blocks_request_granularity
+            };
 
-                verification_queue[missing_pos].ty = VerificationQueueEntryTy::Requested {
-                    id: request_id,
-                    source,
-                };
+            let request_id = self.next_request_id;
+            self.next_request_id.0 += 1;
 
-                return Some(RequestAction::Start {
-                    request_id,
-                    source: &sources[source].user_data,
-                    block_height,
-                    num_blocks,
-                });
-            }
+            self.verification_queue[missing_pos].ty = VerificationQueueEntryTy::Requested {
+                id: request_id,
+                source,
+            };
 
-            None
-        })
+            return Some(RequestAction::Start {
+                request_id,
+                source: &mut self.sources[source].user_data,
+                block_height,
+                num_blocks,
+            });
+        }
+
+        None
     }
 
     /// Update the [`OptimisticHeadersSync`] with the outcome of a request.
@@ -371,7 +361,7 @@ pub enum RequestAction<'a, TSrc> {
         /// [`OptimisticHeadersSync::finish_request`].
         request_id: RequestId,
         /// Source where to request blocks from.
-        source: &'a TSrc,
+        source: &'a mut TSrc,
         /// Height of the block to request.
         block_height: NonZeroU64,
         /// Number of blocks to request. Always smaller than the value passed through
