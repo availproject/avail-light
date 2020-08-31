@@ -131,6 +131,7 @@ async fn start_sync(
                 },
             },
             sources_capacity: 32,
+            source_selection_randomness_seed: rand::random(),
             blocks_request_granularity: NonZeroU32::new(128).unwrap(),
             download_ahead_blocks: {
                 // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,

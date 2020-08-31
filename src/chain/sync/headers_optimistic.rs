@@ -25,6 +25,7 @@ use core::{
     mem,
     num::{NonZeroU32, NonZeroU64},
 };
+use rand::{seq::IteratorRandom as _, SeedableRng as _};
 
 /// Configuration for the [`OptimisticHeadersSync`].
 #[derive(Debug)]
@@ -51,6 +52,10 @@ pub struct Config {
     /// The ideal value here depends on the speed of blocks verification speed and latency of
     /// block requests.
     pub download_ahead_blocks: u32,
+
+    /// Seed used by the PRNG (Pseudo-Random Number Generator) that selects which source to start
+    /// requests with.
+    pub source_selection_randomness_seed: u64,
 }
 
 /// Optimistic headers-only syncing.
@@ -74,6 +79,9 @@ pub struct OptimisticHeadersSync<TRq, TSrc> {
 
     /// Identifier to assign to the next request.
     next_request_id: RequestId,
+
+    /// PRNG used to select the source to start a query with.
+    source_selection_rng: rand_chacha::ChaCha8Rng,
 }
 
 struct VerificationQueueEntry<TRq> {
@@ -115,6 +123,9 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             blocks_request_granularity: config.blocks_request_granularity,
             download_ahead_blocks: config.download_ahead_blocks,
             next_request_id: RequestId(0),
+            source_selection_rng: rand_chacha::ChaCha8Rng::seed_from_u64(
+                config.source_selection_randomness_seed,
+            ),
         }
     }
 
@@ -195,7 +206,12 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             .filter(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
             .map(|(n, _)| n)
         {
-            let source = self.sources.iter().filter(|(_, src)| !src.banned).next()?.0; // TODO: some sort of round-robin source selection
+            let source = self
+                .sources
+                .iter()
+                .filter(|(_, src)| !src.banned)
+                .choose(&mut self.source_selection_rng)?
+                .0;
 
             let block_height = self.verification_queue[missing_pos].block_height;
 

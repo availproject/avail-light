@@ -3090,6 +3090,7 @@ dependencies = [
  "prost",
  "prost-build",
  "rand",
+ "rand_chacha",
  "sc-peerset",
  "schnorrkel",
  "send_wrapper 0.4.0",
