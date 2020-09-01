@@ -146,7 +146,10 @@ impl BabeEpochInformation {
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
     /// obtained with [`EpochInformation::epoch_number`].
-    pub fn inject_epoch(self, epoch_info: header::BabeNextEpochRef) -> ReadyToRun {
+    pub fn inject_epoch(
+        self,
+        epoch_info: (header::BabeNextEpochRef, header::BabeNextConfig),
+    ) -> ReadyToRun {
         match self.inner.finish(epoch_info) {
             Ok(success) => ReadyToRun {
                 inner: ReadyToRunInner::Finished(Ok(success)),

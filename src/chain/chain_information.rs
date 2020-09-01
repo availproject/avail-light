@@ -20,12 +20,14 @@ pub struct ChainInformation {
     /// Babe epoch information about the epoch the finalized block belongs to.
     ///
     /// Must be `None` if and only if the finalized block is block #0 or belongs to epoch #0.
-    pub babe_finalized_block_epoch_information: Option<header::BabeNextEpoch>,
+    pub babe_finalized_block_epoch_information:
+        Option<(header::BabeNextEpoch, header::BabeNextConfig)>,
 
     /// Babe epoch information about the epoch right after the one the finalized block belongs to.
     ///
     /// Must be `None` if and only if the finalized block is block #0.
-    pub babe_finalized_next_epoch_transition: Option<header::BabeNextEpoch>,
+    pub babe_finalized_next_epoch_transition:
+        Option<(header::BabeNextEpoch, header::BabeNextConfig)>,
 
     /// Grandpa authorities set ID of the block right after finalized block.
     ///
@@ -58,10 +60,12 @@ pub struct ChainInformationRef<'a> {
     pub babe_finalized_block1_slot_number: Option<u64>,
 
     /// See equivalent field in [`ChanInformation`].
-    pub babe_finalized_block_epoch_information: Option<header::BabeNextEpochRef<'a>>,
+    pub babe_finalized_block_epoch_information:
+        Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
 
     /// See equivalent field in [`ChanInformation`].
-    pub babe_finalized_next_epoch_transition: Option<header::BabeNextEpochRef<'a>>,
+    pub babe_finalized_next_epoch_transition:
+        Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
 
     /// See equivalent field in [`ChanInformation`].
     pub grandpa_after_finalized_block_authorities_set_id: u64,
@@ -82,11 +86,11 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
             babe_finalized_block_epoch_information: info
                 .babe_finalized_block_epoch_information
                 .as_ref()
-                .map(Into::into),
+                .map(|(i, c)| (i.into(), *c)),
             babe_finalized_next_epoch_transition: info
                 .babe_finalized_next_epoch_transition
                 .as_ref()
-                .map(Into::into),
+                .map(|(i, c)| (i.into(), *c)),
             grandpa_after_finalized_block_authorities_set_id: info
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &info.grandpa_finalized_triggered_authorities,
@@ -102,10 +106,10 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
             babe_finalized_block1_slot_number: info.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: info
                 .babe_finalized_block_epoch_information
-                .map(|info| info.clone().into()),
+                .map(|(e, c)| (e.clone().into(), c)),
             babe_finalized_next_epoch_transition: info
                 .babe_finalized_next_epoch_transition
-                .map(|info| info.clone().into()),
+                .map(|(e, c)| (e.clone().into(), c)),
             grandpa_after_finalized_block_authorities_set_id: info
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: info

@@ -194,6 +194,8 @@ pub enum VerifyError {
     BadSecondarySlotAuthor,
     /// VRF output is over threshold required to claim the primary slot.
     OverPrimaryClaimThreshold,
+    /// Type of slot claim forbidden by current configuration.
+    ForbiddenSlotType,
 }
 
 /// Verifies whether a block header provides a correct proof of the legitimacy of the authorship.
@@ -302,7 +304,6 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
 
     // Intermediary object representing the state of the verification at this point.
     let pending = PendingVerify {
-        c: config.genesis_configuration.epoch0_configuration().c,
         pre_seal_hash,
         seal_signature,
         epoch_transition_target,
@@ -316,9 +317,10 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     // The information about epoch number 0 is never given by any block and is instead found in
     // the BABE genesis configuration.
     Ok(if epoch_number == 0 {
-        SuccessOrPending::Success(
-            pending.finish(config.genesis_configuration.epoch0_information())?,
-        )
+        SuccessOrPending::Success(pending.finish((
+            config.genesis_configuration.epoch0_information(),
+            config.genesis_configuration.epoch0_configuration(),
+        ))?)
     } else {
         SuccessOrPending::Pending(pending)
     })
@@ -338,9 +340,6 @@ pub enum SuccessOrPending {
 /// [`PendingVerify::finish`] in order to finish the verification.
 #[must_use]
 pub struct PendingVerify {
-    /// Value of `c` found in the Babe configuration.
-    // TODO: should be asked from user, since it can change
-    c: (u64, u64),
     /// Hash of the block header without its seal.
     pre_seal_hash: [u8; 32],
     /// Block signature contained in the header that we verify.
@@ -376,12 +375,24 @@ impl PendingVerify {
     /// obtained with [`PendingVerify::epoch_number`].
     pub fn finish(
         self,
-        epoch_info: header::BabeNextEpochRef,
+        epoch_info: (header::BabeNextEpochRef, header::BabeNextConfig),
     ) -> Result<VerifySuccess, VerifyError> {
-        // TODO: check that slot type is allowed by BABE config
+        // Check that the claim is one of the allowed slot types.
+        match (
+            epoch_info.1.allowed_slots,
+            self.primary_slot_claim,
+            self.vrf_output_and_proof,
+        ) {
+            (_, true, None) => unreachable!(),
+            (_, true, Some(_)) => {}
+            (header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots, false, None) => {}
+            (header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots, false, Some(_)) => {}
+            _ => return Err(VerifyError::ForbiddenSlotType),
+        }
 
         // Fetch the authority that has supposedly signed the block.
         let signing_authority = epoch_info
+            .0
             .authorities
             .clone()
             .nth(
@@ -410,7 +421,7 @@ impl PendingVerify {
                 let mut transcript = merlin::Transcript::new(&b"BABE"[..]);
                 transcript.append_u64(b"slot number", self.slot_number);
                 transcript.append_u64(b"current epoch", self.epoch_number);
-                transcript.append_message(b"chain randomness", &epoch_info.randomness[..]);
+                transcript.append_message(b"chain randomness", &epoch_info.0.randomness[..]);
                 transcript
             };
 
@@ -427,8 +438,8 @@ impl PendingVerify {
             // a certain threshold, otherwise all the authorities could claim all the slots.
             if self.primary_slot_claim {
                 let threshold = calculate_primary_threshold(
-                    self.c,
-                    epoch_info.authorities.clone().map(|a| a.weight),
+                    epoch_info.1.c,
+                    epoch_info.0.authorities.clone().map(|a| a.weight),
                     signing_authority.weight,
                 );
                 if u128::from_le_bytes(vrf_in_out.make_bytes::<[u8; 16]>(b"substrate-babe-vrf"))
@@ -448,7 +459,7 @@ impl PendingVerify {
             // Expected author is determined based on `blake2(randomness | slot_number)`.
             let hash = {
                 let mut hash = blake2_rfc::blake2b::Blake2b::new(32);
-                hash.update(epoch_info.randomness);
+                hash.update(epoch_info.0.randomness);
                 hash.update(&self.slot_number.to_le_bytes());
                 hash.finalize()
             };
@@ -456,8 +467,8 @@ impl PendingVerify {
             // The expected authority index is `hash % num_authorities`.
             let expected_authority_index = {
                 let hash = primitive_types::U256::from_big_endian(hash.as_bytes());
-                let authorities_len = primitive_types::U256::from(epoch_info.authorities.len());
-                debug_assert_ne!(epoch_info.authorities.len(), 0);
+                let authorities_len = primitive_types::U256::from(epoch_info.0.authorities.len());
+                debug_assert_ne!(epoch_info.0.authorities.len(), 0);
                 hash % authorities_len
             };
 

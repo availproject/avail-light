@@ -72,10 +72,12 @@ pub struct NonFinalizedTree<T> {
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// See [`ChainInformation::babe_finalized_block_epoch_information`].
-    babe_finalized_block_epoch_information: Option<Arc<header::BabeNextEpoch>>,
+    babe_finalized_block_epoch_information:
+        Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
 
     /// See [`ChainInformation::babe_finalized_next_epoch_transition`].
-    babe_finalized_next_epoch_transition: Option<Arc<header::BabeNextEpoch>>,
+    babe_finalized_next_epoch_transition:
+        Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
 
     /// If block 1 is finalized, contains its slot number.
     babe_finalized_block1_slot_number: Option<u64>,
@@ -97,9 +99,9 @@ struct Block<T> {
     babe_block1_slot_number: u64,
     /// Information about the Babe epoch the block belongs to. `None` if the block belongs to
     /// epoch #0.
-    babe_current_epoch: Option<Arc<header::BabeNextEpoch>>,
+    babe_current_epoch: Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
     /// Information about the Babe epoch the block belongs to.
-    babe_next_epoch: Arc<header::BabeNextEpoch>,
+    babe_next_epoch: Arc<(header::BabeNextEpoch, header::BabeNextConfig)>,
     /// Opaque data decided by the user.
     user_data: T,
 }
@@ -217,11 +219,11 @@ impl<T> NonFinalizedTree<T> {
             babe_finalized_block_epoch_information: self
                 .babe_finalized_block_epoch_information
                 .as_ref()
-                .map(|info| (&**info).into()),
+                .map(|info| ((&info.0).into(), info.1)),
             babe_finalized_next_epoch_transition: self
                 .babe_finalized_next_epoch_transition
                 .as_ref()
-                .map(|info| (&**info).into()),
+                .map(|info| ((&info.0).into(), info.1)),
             grandpa_after_finalized_block_authorities_set_id: self
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &self.grandpa_finalized_triggered_authorities,
@@ -427,7 +429,9 @@ impl<T> NonFinalizedTree<T> {
                             }
                         };
 
-                        process = epoch_info_rq.inject_epoch(From::from(&**epoch_info)).run();
+                        process = epoch_info_rq
+                            .inject_epoch((From::from(&epoch_info.0), epoch_info.1))
+                            .run();
                     }
                 }
             };
@@ -470,16 +474,38 @@ impl<T> NonFinalizedTree<T> {
                 self.babe_finalized_block_epoch_information.clone()
             };
 
-            let babe_next_epoch =
-                if let Some((new_epoch, _)) = decoded_header.digest.babe_epoch_information() {
-                    Arc::new(new_epoch.into())
-                } else if let Some(parent_tree_index) = parent_tree_index {
-                    self.blocks
+            let babe_next_epoch = match (
+                decoded_header.digest.babe_epoch_information(),
+                parent_tree_index,
+                &self.babe_finalized_next_epoch_transition,
+            ) {
+                (Some((ref new_epoch, Some(new_config))), _, _) => {
+                    Arc::new((new_epoch.clone().into(), new_config))
+                }
+                (Some((ref new_epoch, None)), Some(parent_tree_index), _) => {
+                    let new_config = self
+                        .blocks
                         .get(parent_tree_index)
                         .unwrap()
                         .babe_next_epoch
-                        .clone()
-                } else {
+                        .1
+                        .clone();
+                    Arc::new((new_epoch.clone().into(), new_config))
+                }
+                (Some((ref new_epoch, None)), None, Some(finalized_next)) => {
+                    Arc::new((new_epoch.clone().into(), finalized_next.1))
+                }
+                (Some((ref new_epoch, None)), None, None) => Arc::new((
+                    new_epoch.clone().into(),
+                    self.babe_genesis_config.epoch0_configuration(),
+                )),
+                (None, Some(parent_tree_index), _) => self
+                    .blocks
+                    .get(parent_tree_index)
+                    .unwrap()
+                    .babe_next_epoch
+                    .clone(),
+                (None, None, _) => {
                     // Block 1 always contains a Babe epoch transition. Consequently, this block
                     // can't be reached for block 1.
                     // `babe_finalized_next_epoch_transition` is `None` only if the finalized
@@ -488,7 +514,8 @@ impl<T> NonFinalizedTree<T> {
                     // Q.E.D.
                     debug_assert_ne!(decoded_header.number, 1);
                     self.babe_finalized_next_epoch_transition.clone().unwrap()
-                };
+                }
+            };
 
             BodyOrHeader::Header(Ok(HeaderVerifySuccess::Insert {
                 block_height: decoded_header.number,
@@ -1009,8 +1036,8 @@ pub struct Insert<'c, T> {
     scale_encoded_header: Vec<u8>,
     hash: [u8; 32],
     babe_block1_slot_number: u64,
-    babe_current_epoch: Option<Arc<header::BabeNextEpoch>>,
-    babe_next_epoch: Arc<header::BabeNextEpoch>,
+    babe_current_epoch: Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
+    babe_next_epoch: Arc<(header::BabeNextEpoch, header::BabeNextConfig)>,
 }
 
 impl<'c, T> Insert<'c, T> {
