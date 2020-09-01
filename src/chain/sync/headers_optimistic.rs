@@ -322,6 +322,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             return None;
         }
 
+        // Extract the chunk of blocks to process next.
         let blocks = match &mut self.verification_queue.get_mut(0)?.ty {
             VerificationQueueEntryTy::Queued(blocks) => mem::replace(blocks, Default::default()),
             _ => return None,
@@ -333,6 +334,16 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
 
         self.chain.reserve(blocks.len());
 
+        // Verify each block one by one.
+        //
+        // In case something unexpected happens, such as an invalid block, there is unfortunately
+        // no easy way to know which node is misbehaving. Blocks and justifications are valid
+        // only in the context of a specific chain, and it is possible that the presumably invalid
+        // block is invalid only because of an earlier block.
+        //
+        // Consequently, if something unexpected happens, the strategy employed is to clear any
+        // non-finalized block, cancel all requests in progress, and restart from the finalized
+        // block.
         for block in blocks {
             match self.chain.verify_header(block.scale_encoded_header.into()) {
                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
@@ -341,23 +352,25 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     insert,
                 }) => {
                     if !is_new_best || block_height != expected_block_height {
-                        panic!(
-                            "is new best = {:?} block height: {:?} expected = {:?}",
-                            is_new_best, block_height, expected_block_height
-                        );
+                        // Something unexpected happened. See above.
+                        // TODO: report with an event that this has happened
                         self.cancelling_requests = true;
                         self.chain.clear();
                         break;
                     }
 
-                    insert.insert(())
-                } // TODO:
+                    insert.insert(());
+                }
                 Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => {
-                    // TODO: don't really know what this implies and seems to happen in practice; investigate
+                    // Something unexpected happened. See above.
+                    // TODO: report with an event that this has happened
+                    self.cancelling_requests = true;
+                    self.chain.clear();
+                    break;
                 }
                 Err(err) => {
-                    // TODO: remove panic
-                    panic!("verify error: {:?}", err);
+                    // Something unexpected happened. See above.
+                    // TODO: report with an event that this has happened
                     self.cancelling_requests = true;
                     self.chain.clear();
                     break;
@@ -368,8 +381,8 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                 match self.chain.verify_justification(justification.as_ref()) {
                     Ok(apply) => apply.apply(),
                     Err(err) => {
-                        // TODO: remove panic
-                        panic!("verify error: {:?}", err);
+                        // Something unexpected happened. See above.
+                        // TODO: report with an event that this has happened
                         self.cancelling_requests = true;
                         self.chain.clear();
                         break;
