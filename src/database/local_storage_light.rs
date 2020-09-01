@@ -3,7 +3,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{chain::chain_information, header};
+use crate::chain::chain_information;
 
 mod defs;
 
@@ -64,6 +64,21 @@ impl LocalStorage {
         match decoded {
             defs::SerializedChainInformation::V1(decoded) => Ok(Some(decoded.into())),
         }
+    }
+}
+
+impl fmt::Debug for LocalStorage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalStorage")
+            .field(
+                "state",
+                &match self.inner.get_item("chain_information") {
+                    Ok(Some(_)) => "entry-present",
+                    Ok(None) => "entry-absent",
+                    Err(_) => "access-error",
+                },
+            )
+            .finish()
     }
 }
 

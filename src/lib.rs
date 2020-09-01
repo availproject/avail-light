@@ -93,9 +93,10 @@ pub mod finality;
 pub mod header;
 pub mod informant;
 pub mod json_rpc;
+#[allow(warnings)] // TODO: temporary because code has been copy-pasted from Substrate
 pub mod network;
-#[cfg(not(target_arch = "wasm32"))] // TODO: complete hack; remove
-pub mod service;
+// TODO: intentionally no longer compiles
+//pub mod service;
 pub mod telemetry;
 pub mod trie;
 pub mod verify;

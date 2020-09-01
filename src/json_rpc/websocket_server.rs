@@ -5,6 +5,9 @@
 #![cfg(feature = "os-networking")]
 #![cfg_attr(docsrs, doc(cfg(feature = "os-networking")))]
 
+#[cfg(test)]
+mod tests;
+
 use async_std::net::{TcpListener, TcpStream};
 use core::{fmt, pin::Pin, str};
 use futures::{channel::mpsc, prelude::*};
