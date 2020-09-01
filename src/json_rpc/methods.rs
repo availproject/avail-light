@@ -59,7 +59,8 @@ macro_rules! define_methods {
                         $(
                             let $p_name: $p_ty = {
                                 let json_value = match params {
-                                    defs::SerdeParams::None => return None,
+                                    defs::SerdeParams::None => &serde_json::Value::Null,
+                                    // TODO: don't return an error if param doesn't exist but try decoding Null instead
                                     defs::SerdeParams::Array(params) => &params.get(_param_num)?,
                                     defs::SerdeParams::Map(params) => params.get(stringify!($p_name))?,
                                 };
@@ -109,73 +110,65 @@ macro_rules! define_methods {
 
 // TODO: some of these methods have aliases
 define_methods! {
-    account_nextIndex() -> (),
-    author_hasKey() -> (),
-    author_hasSessionKeys() -> (),
-    author_insertKey() -> (),
-    author_pendingExtrinsics() -> (),
-    author_removeExtrinsic() -> (),
-    author_rotateKeys() -> (),
-    author_submitAndWatchExtrinsic() -> (),
-    author_submitExtrinsic() -> (),
-    author_unwatchExtrinsic() -> (),
-    babe_epochAuthorship() -> (),
-    chain_getBlock() -> (),
-    chain_getBlockHash(height: u64) -> HashHexString,
-    chain_getFinalizedHead() -> () [chain_getFinalisedHead],
-    chain_getHead() -> (),
-    chain_getHeader() -> (),
-    chain_getRuntimeVersion() -> (),
+    account_nextIndex() -> (), // TODO:
+    author_hasKey() -> (), // TODO:
+    author_hasSessionKeys() -> (), // TODO:
+    author_insertKey() -> (), // TODO:
+    author_pendingExtrinsics() -> (), // TODO:
+    author_removeExtrinsic() -> (), // TODO:
+    author_rotateKeys() -> (), // TODO:
+    author_submitAndWatchExtrinsic() -> (), // TODO:
+    author_submitExtrinsic() -> (), // TODO:
+    author_unwatchExtrinsic() -> (), // TODO:
+    babe_epochAuthorship() -> (), // TODO:
+    chain_getBlock(hash: Option<HashHexString>) -> (), // TODO: bad return type
+    chain_getBlockHash(height: u64) -> HashHexString [chain_getHead], // TODO: wrong param
+    chain_getFinalizedHead() -> HashHexString [chain_getFinalisedHead],
+    chain_getHeader(hash: Option<HashHexString>) -> (), // TODO: bad return type
     chain_subscribeAllHeads() -> String,
     chain_subscribeFinalizedHeads() -> String [chain_subscribeFinalisedHeads],
     chain_subscribeNewHeads() -> String [subscribe_newHead, chain_subscribeNewHead],
     chain_unsubscribeAllHeads(subscription: String) -> bool,
     chain_unsubscribeFinalizedHeads(subscription: String) -> bool [chain_unsubscribeFinalisedHeads],
     chain_unsubscribeNewHeads(subscription: String) -> bool [unsubscribe_newHead, chain_unsubscribeNewHead],
-    childstate_getKeys() -> (),
-    childstate_getStorage() -> (),
-    childstate_getStorageHash() -> (),
-    childstate_getStorageSize() -> (),
-    grandpa_roundState() -> (),
-    offchain_localStorageGet() -> (),
-    offchain_localStorageSet() -> (),
-    payment_queryInfo() -> (),
+    childstate_getKeys() -> (), // TODO:
+    childstate_getStorage() -> (), // TODO:
+    childstate_getStorageHash() -> (), // TODO:
+    childstate_getStorageSize() -> (), // TODO:
+    grandpa_roundState() -> (), // TODO:
+    offchain_localStorageGet() -> (), // TODO:
+    offchain_localStorageSet() -> (), // TODO:
+    payment_queryInfo() -> (), // TODO:
     rpc_methods() -> RpcMethods,
-    state_call() -> (),
-    state_callAt() -> (),
-    state_getKeys() -> (),
-    state_getKeysPaged() -> (),
-    state_getKeysPagedAt() -> (),
-    state_getMetadata() -> (),
-    state_getPairs() -> (),
-    state_getReadProof() -> (),
-    state_getRuntimeVersion() -> (),
-    state_getStorage() -> (),
-    state_getStorageAt() -> (),
-    state_getStorageHash() -> (),
-    state_getStorageHashAt() -> (),
-    state_getStorageSize() -> (),
-    state_getStorageSizeAt() -> (),
-    state_queryStorage() -> (),
-    state_queryStorageAt() -> (),
+    state_call() -> () [state_callAt],
+    state_getKeys() -> (), // TODO:
+    state_getKeysPaged() -> () [state_getKeysPagedAt], // TODO:
+    state_getMetadata() -> (), // TODO:
+    state_getPairs() -> (), // TODO:
+    state_getReadProof() -> (), // TODO:
+    state_getRuntimeVersion() -> () [chain_getRuntimeVersion], // TODO:
+    state_getStorage() -> () [state_getStorageAt], // TODO:
+    state_getStorageHash() -> () [state_getStorageHashAt], // TODO:
+    state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:
+    state_queryStorage() -> (), // TODO:
+    state_queryStorageAt() -> (), // TODO:
     state_subscribeRuntimeVersion() -> String [chain_subscribeRuntimeVersion],
     state_subscribeStorage() -> String [state_unsubscribeStorage],
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
-    system_accountNextIndex() -> (),
-    system_addReservedPeer() -> (),
-    system_chain() -> (),
-    system_chainType() -> (),
-    system_dryRun() -> (),
-    system_dryRunAt() -> (),
+    system_accountNextIndex() -> (), // TODO:
+    system_addReservedPeer() -> (), // TODO:
+    system_chain() -> String,
+    system_chainType() -> String,
+    system_dryRun() -> () [system_dryRunAt], // TODO:
     system_health() -> SystemHealth,
-    system_localListenAddresses() -> (),
-    system_localPeerId() -> (),
+    system_localListenAddresses() -> Vec<String>,
+    system_localPeerId() -> String,
     system_name() -> String,
-    system_networkState() -> (),
-    system_nodeRoles() -> (),
-    system_peers() -> (),
-    system_properties() -> (),
-    system_removeReservedPeer() -> (),
+    system_networkState() -> (), // TODO:
+    system_nodeRoles() -> (), // TODO:
+    system_peers() -> (), // TODO:
+    system_properties() -> serde_json::Map<String, serde_json::Value>,
+    system_removeReservedPeer() -> (), // TODO:
     system_version() -> String,
 }
 
@@ -234,6 +227,16 @@ impl FromSerdeJsonValue for String {
 impl FromSerdeJsonValue for u64 {
     fn decode(value: &serde_json::Value) -> Option<Self> {
         value.as_u64()
+    }
+}
+
+impl<T: FromSerdeJsonValue> FromSerdeJsonValue for Option<T> {
+    fn decode(value: &serde_json::Value) -> Option<Self> {
+        if value.is_null() {
+            Some(None)
+        } else {
+            T::decode(value).map(Some)
+        }
     }
 }
 
