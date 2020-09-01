@@ -11,19 +11,25 @@ fn basic_works() {
             send_buffer_len: 32,
             max_clean_rejected_sockets_shutdowns: 256,
             capacity: 32,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let server_addr = server.local_addr().unwrap();
 
         let client_task = async_std::task::spawn(async move {
             let (mut sender, mut receiver) = {
                 let mut client = {
-                    let socket = async_std::net::TcpStream::connect(server_addr).await.unwrap();
+                    let socket = async_std::net::TcpStream::connect(server_addr)
+                        .await
+                        .unwrap();
                     let io = BufReader::new(BufWriter::new(socket));
                     soketto::handshake::Client::new(io, "example.com", "/")
                 };
 
-                assert!(matches!(client.handshake().await.unwrap(), soketto::handshake::ServerResponse::Accepted {..}));
+                assert!(
+                    matches!(client.handshake().await.unwrap(), soketto::handshake::ServerResponse::Accepted {..})
+                );
                 client.into_builder().finish()
             };
 
@@ -34,34 +40,41 @@ fn basic_works() {
             match receiver.receive_data(&mut message).await {
                 Ok(soketto::Data::Text(n)) => {
                     assert_eq!(&message[..n], b"hello back");
-                },
-                _ => panic!()
+                }
+                _ => panic!(),
             }
         });
 
         let id = match server.next_event().await {
             Event::ConnectionOpen { open, .. } => open.accept(12),
-            _ => panic!()
+            _ => panic!(),
         };
 
         match server.next_event().await {
-            Event::TextFrame { connection_id, user_data, message } => {
+            Event::TextFrame {
+                connection_id,
+                user_data,
+                message,
+            } => {
                 assert_eq!(connection_id, id);
                 assert_eq!(*user_data, 12);
                 *user_data += 1;
                 assert_eq!(message, "hello world!");
             }
-            _ => panic!()
+            _ => panic!(),
         };
 
         server.queue_send(id, "hello back".to_owned());
 
         match server.next_event().await {
-            Event::ConnectionError { connection_id, user_data } => {
+            Event::ConnectionError {
+                connection_id,
+                user_data,
+            } => {
                 assert_eq!(connection_id, id);
                 assert_eq!(user_data, 13);
             }
-            _ => panic!()
+            _ => panic!(),
         };
 
         client_task.await;
