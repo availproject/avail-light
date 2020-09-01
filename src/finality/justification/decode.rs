@@ -1,3 +1,4 @@
+use crate::header;
 use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.
@@ -31,10 +32,19 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, E
     let num_votes_ancestries: parity_scale_codec::Compact<u64> =
         parity_scale_codec::Decode::decode(&mut scale_encoded)
             .map_err(Error::NumElementsDecodeError)?;
-    if num_votes_ancestries.0 != 0 {
-        // TODO:
-        unimplemented!()
+
+    let votes_ancestries = VotesAncestriesIter {
+        slice: scale_encoded,
+        num: usize::try_from(num_votes_ancestries.0).map_err(|_| Error::TooLong)?,
+    };
+
+    // Decoding all the headers to make sure that the justification is well formatted.
+    for _ in 0..num_votes_ancestries.0 {
+        let (header, remainder) =
+            header::decode_partial(scale_encoded).map_err(Error::VotesAncestriesDecode)?;
+        scale_encoded = remainder;
     }
+
     if scale_encoded.len() != 0 {
         return Err(Error::TooLong);
     }
@@ -46,6 +56,7 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, E
         precommits: PrecommitsRef {
             inner: precommits_data,
         },
+        votes_ancestries,
     })
 }
 
@@ -59,6 +70,7 @@ pub struct JustificationRef<'a> {
     pub target_hash: &'a [u8; 32],
     pub target_number: u32,
     pub precommits: PrecommitsRef<'a>,
+    pub votes_ancestries: VotesAncestriesIter<'a>,
 }
 
 /// Decoded justification.
@@ -69,6 +81,7 @@ pub struct Justification {
     pub target_hash: [u8; 32],
     pub target_number: u32,
     pub precommits: Vec<Precommit>,
+    // TODO: pub votes_ancestries: Vec<Header>,
 }
 
 impl<'a> From<JustificationRef<'a>> for Justification {
@@ -180,6 +193,38 @@ impl fmt::Debug for Precommit {
     }
 }
 
+/// Iterator towards the headers of the vote ancestries.
+#[derive(Debug, Clone)]
+pub struct VotesAncestriesIter<'a> {
+    /// Encoded headers.
+    slice: &'a [u8],
+    /// Number of headers items remaining.
+    num: usize,
+}
+
+impl<'a> Iterator for VotesAncestriesIter<'a> {
+    type Item = header::HeaderRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.num == 0 {
+            return None;
+        }
+
+        // Validity is guaranteed when the `VotesAncestriesIter` is constructed.
+        let (item, new_slice) = header::decode_partial(self.slice).unwrap();
+        self.slice = new_slice;
+        self.num -= 1;
+
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.num, Some(self.num))
+    }
+}
+
+impl<'a> ExactSizeIterator for VotesAncestriesIter<'a> {}
+
 /// Potential error when decoding a justification.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
@@ -188,6 +233,8 @@ pub enum Error {
     /// Justification is too long.
     TooLong,
     NumElementsDecodeError(parity_scale_codec::Error),
+    /// Error while decoding one of the headers of the votes ancestries.
+    VotesAncestriesDecode(header::Error),
 }
 
 #[cfg(test)]

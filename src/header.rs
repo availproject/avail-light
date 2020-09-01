@@ -106,7 +106,20 @@ pub fn hash_from_scale_encoded_header_vectored(
 }
 
 /// Attempt to decode the given SCALE-encoded header.
-pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
+pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
+    let (header, remainder) = decode_partial(scale_encoded)?;
+    if !remainder.is_empty() {
+        return Err(Error::TooLong);
+    }
+
+    Ok(header)
+}
+
+/// Attempt to decode the given SCALE-encoded header.
+///
+/// Contrary to [`decode`], doesn't return an error if the slice is too long but returns the
+/// remainer.
+pub fn decode_partial<'a>(mut scale_encoded: &'a [u8]) -> Result<(HeaderRef<'a>, &'a [u8]), Error> {
     if scale_encoded.len() < 32 + 1 {
         return Err(Error::TooShort);
     }
@@ -127,15 +140,17 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
     let extrinsics_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];
 
-    let digest = DigestRef::from_slice(scale_encoded)?;
+    let (digest, remainder) = DigestRef::from_slice(scale_encoded)?;
 
-    Ok(HeaderRef {
+    let header = HeaderRef {
         parent_hash,
         number: number.0,
         state_root,
         extrinsics_root,
         digest,
-    })
+    };
+
+    Ok((header, remainder))
 }
 
 /// Potential error when decoding a header.
@@ -365,7 +380,7 @@ impl<'a> DigestRef<'a> {
     }
 
     /// Try to decode a list of digest items, from their SCALE encoding.
-    fn from_slice(mut scale_encoded: &'a [u8]) -> Result<Self, Error> {
+    fn from_slice(mut scale_encoded: &'a [u8]) -> Result<(Self, &'a [u8]), Error> {
         let digest_logs_len = {
             let len: parity_scale_codec::Compact<u64> =
                 parity_scale_codec::Decode::decode(&mut scale_encoded)
@@ -381,49 +396,43 @@ impl<'a> DigestRef<'a> {
         let mut babe_next_config_data_index = None;
 
         // Iterate through the log items to see if anything is wrong.
-        {
-            let mut digest = scale_encoded;
-            for item_num in 0..digest_logs_len {
-                let (item, next) = decode_item(digest)?;
-                digest = next;
+        let mut next_digest = scale_encoded;
+        for item_num in 0..digest_logs_len {
+            let (item, next) = decode_item(next_digest)?;
+            next_digest = next;
 
-                match item {
-                    DigestItemRef::ChangesTrieRoot(_) => {}
-                    DigestItemRef::BabePreDigest(_) if babe_predigest_index.is_none() => {
-                        babe_predigest_index = Some(item_num);
-                    }
-                    DigestItemRef::BabePreDigest(_) => {
-                        return Err(Error::MultipleBabePreRuntimeDigests)
-                    }
-                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_))
-                        if babe_next_epoch_data_index.is_none() =>
-                    {
-                        babe_next_epoch_data_index = Some(item_num);
-                    }
-                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_)) => {
-                        return Err(Error::MultipleBabeEpochDescriptors);
-                    }
-                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_))
-                        if babe_next_config_data_index.is_none() =>
-                    {
-                        babe_next_config_data_index = Some(item_num);
-                    }
-                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_)) => {
-                        return Err(Error::MultipleBabeConfigDescriptors);
-                    }
-                    DigestItemRef::BabeConsensus(BabeConsensusLogRef::OnDisabled(_)) => {}
-                    DigestItemRef::GrandpaConsensus(_) => {}
-                    DigestItemRef::BabeSeal(_) if item_num == digest_logs_len - 1 => {
-                        debug_assert!(babe_seal_index.is_none());
-                        babe_seal_index = Some(item_num);
-                    }
-                    DigestItemRef::BabeSeal(_) => return Err(Error::SealIsntLastItem),
-                    DigestItemRef::ChangesTrieSignal(_) => {}
+            match item {
+                DigestItemRef::ChangesTrieRoot(_) => {}
+                DigestItemRef::BabePreDigest(_) if babe_predigest_index.is_none() => {
+                    babe_predigest_index = Some(item_num);
                 }
-            }
-
-            if !digest.is_empty() {
-                return Err(Error::TooLong);
+                DigestItemRef::BabePreDigest(_) => {
+                    return Err(Error::MultipleBabePreRuntimeDigests)
+                }
+                DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_))
+                    if babe_next_epoch_data_index.is_none() =>
+                {
+                    babe_next_epoch_data_index = Some(item_num);
+                }
+                DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextEpochData(_)) => {
+                    return Err(Error::MultipleBabeEpochDescriptors);
+                }
+                DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_))
+                    if babe_next_config_data_index.is_none() =>
+                {
+                    babe_next_config_data_index = Some(item_num);
+                }
+                DigestItemRef::BabeConsensus(BabeConsensusLogRef::NextConfigData(_)) => {
+                    return Err(Error::MultipleBabeConfigDescriptors);
+                }
+                DigestItemRef::BabeConsensus(BabeConsensusLogRef::OnDisabled(_)) => {}
+                DigestItemRef::GrandpaConsensus(_) => {}
+                DigestItemRef::BabeSeal(_) if item_num == digest_logs_len - 1 => {
+                    debug_assert!(babe_seal_index.is_none());
+                    babe_seal_index = Some(item_num);
+                }
+                DigestItemRef::BabeSeal(_) => return Err(Error::SealIsntLastItem),
+                DigestItemRef::ChangesTrieSignal(_) => {}
             }
         }
 
@@ -431,14 +440,16 @@ impl<'a> DigestRef<'a> {
             return Err(Error::UnexpectedBabeConfigDescriptor);
         }
 
-        Ok(DigestRef {
+        let out = DigestRef {
             digest_logs_len,
             digest: scale_encoded,
             babe_seal_index,
             babe_predigest_index,
             babe_next_epoch_data_index,
             babe_next_config_data_index,
-        })
+        };
+
+        Ok((out, next_digest))
     }
 }
 
