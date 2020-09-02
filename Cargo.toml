@@ -63,9 +63,11 @@ futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
+lazy_static = "1.4.0"
 libsecp256k1 = "0.3.5"
 lru = "0.5.3"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
+nom = "5.1.2"
 num-bigint = "0.2.3"
 num-rational = "0.2.2"
 num-traits = "0.2.8"
@@ -81,6 +83,7 @@ serde = { version = "1.0.101", default-features = false, features = ["alloc", "d
 serde_json = { version = "1.0.48", default-features = false, features = ["alloc"] }
 slab = "0.4.2"
 smallvec = "0.6.10"
+snow = { version = "0.7.1", default-features = false }  # TODO: we have to pick a resolver I think
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.5.0"
