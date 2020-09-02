@@ -15,10 +15,9 @@ fn handshake(i: &[u8]) -> IResult<&[u8], ()> {
 fn command(i: &[u8]) -> IResult<&[u8], Command> {
     alt((
         map(tag(b"ls\n"), |_| Command::Ls),
-        map_res(
-            terminated(take_till(|c| c != b'\n'), tag(b"\n")),
-            |p| str::from_utf8(p).map(Command::Protocol)
-        ),
+        map_res(terminated(take_till(|c| c != b'\n'), tag(b"\n")), |p| {
+            str::from_utf8(p).map(Command::Protocol)
+        }),
     ))(i)
 }
 
@@ -37,7 +36,10 @@ fn response_ls(i: &[u8]) -> IResult<&[u8], ()> {
 /// Returns true if the protocol has been accepted by the remote.
 fn response_protocol<'a>(i: &'a [u8], protocol_name: &str) -> IResult<&'a [u8], bool> {
     alt((
-        map(terminated(tag(protocol_name.as_bytes()), tag(b"\n")), |_| true),
+        map(
+            terminated(tag(protocol_name.as_bytes()), tag(b"\n")),
+            |_| true,
+        ),
         map(tag(b"na\n"), |_| false),
     ))(i)
 }

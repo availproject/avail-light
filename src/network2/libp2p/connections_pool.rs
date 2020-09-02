@@ -27,14 +27,37 @@ impl<T, TRq, P> ConnectionsPool<T, TRq, P> {
     /// Initializes the [`ConnectionsPool`].
     pub fn new(config: Config<impl Iterator<Item = P>>) -> Self {
         ConnectionsPool {
-            connections: HashMap::with_capacity_and_hasher(config.connections_capacity, Default::default()),
+            connections: HashMap::with_capacity_and_hasher(
+                config.connections_capacity,
+                Default::default(),
+            ),
             protocols: config.notification_protocols.collect(),
             requests: Vec::new(),
         }
     }
 
+    /// Adds a new connection to the pool.
+    pub fn insert(&mut self, user_data: T) -> ConnectionId {
+        todo!()
+    }
+
+    /// Notify the [`ConnectionsPool`] of data being inserted on the connection.
+    pub fn push_data<'s, 'd>(
+        &'s mut self,
+        connection: ConnectionId,
+        data: &'d [u8],
+    ) -> (ConnectionEvent<'s, T, TRq, P>, &'d [u8]) {
+        todo!()
+    }
+
     /// Emits a request towards a certain peer.
-    pub async fn start_request(&mut self, target: &PeerId, protocol_name: &str, user_data: TRq, payload: impl Into<Vec<u8>>) -> RequestId {
+    pub fn start_request(
+        &mut self,
+        target: &PeerId,
+        protocol_name: &str,
+        user_data: TRq,
+        payload: impl Into<Vec<u8>>,
+    ) -> RequestId {
         todo!()
     }
 
@@ -43,15 +66,15 @@ impl<T, TRq, P> ConnectionsPool<T, TRq, P> {
         todo!()
     }
 
-    /// 
-    pub async fn write_notification(&mut self, target: &PeerId, protocol_name: &str) {
-        todo!()
-    }
-
-    pub async fn next_event<'a>(&'a mut self) -> Event<'a, T, TRq, P> {
+    ///
+    pub fn write_notification(&mut self, target: &PeerId, protocol_name: &str) {
         todo!()
     }
 }
+
+/// Identifier for a connection within a [`ConnectionsPool`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct ConnectionId(usize);
 
 /// Identifier for an ongoing request within a [`ConnectionsPool`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -59,7 +82,7 @@ pub struct RequestId(usize);
 
 /// Event that happened on the [`ConnectionsPool`].
 #[derive(Debug)]
-pub enum Event<'a, T, TRq, P> {
+pub enum ConnectionEvent<'a, T, TRq, P> {
     RequestFinished {
         peer: &'a mut P,
         user_data: TRq,
@@ -70,7 +93,6 @@ pub enum Event<'a, T, TRq, P> {
         payload: NotificationPayload<'a>,
     },
 }
-
 
 /// Notification data.
 pub struct NotificationPayload<'a> {

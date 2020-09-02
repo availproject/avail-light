@@ -2,7 +2,5 @@ mod frame_header;
 
 enum State {
     HeaderWait,
-    FrameWait {
-        remaining_len: u32,
-    },
+    FrameWait { remaining_len: u32 },
 }

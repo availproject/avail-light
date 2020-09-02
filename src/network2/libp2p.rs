@@ -2,8 +2,8 @@ use core::{fmt, future::Future, pin::Pin};
 use hashbrown::HashMap;
 use rand::{seq::IteratorRandom as _, SeedableRng as _};
 
-pub use libp2p::{Multiaddr, PeerId};
 pub use connections_pool::RequestId;
+pub use libp2p::{Multiaddr, PeerId};
 
 mod connections_pool;
 mod multistream_select;
@@ -55,10 +55,21 @@ impl<T, TRq, P> Network<T, TRq, P> {
     }
 
     /// Emits a request towards a certain peer.
-    pub async fn start_request(&mut self, target: &PeerId, protocol_name: &str, user_data: TRq, payload: impl Into<Vec<u8>>) -> Result<RequestId, StartRequestError> {
-        let pool_id = *self.peers_pools.get(target).ok_or(StartRequestError::NotConnected)?;
+    pub async fn start_request(
+        &mut self,
+        target: &PeerId,
+        protocol_name: &str,
+        user_data: TRq,
+        payload: impl Into<Vec<u8>>,
+    ) -> Result<RequestId, StartRequestError> {
+        let pool_id = *self
+            .peers_pools
+            .get(target)
+            .ok_or(StartRequestError::NotConnected)?;
 
-        Ok(self.pools[pool_id].start_request(target, protocol_name, user_data, payload).await)
+        Ok(self.pools[pool_id]
+            .start_request(target, protocol_name, user_data, payload)
+            .await)
     }
 
     /// Cancels a request. No [`Event::RequestFinished`] will be generated.
@@ -66,7 +77,7 @@ impl<T, TRq, P> Network<T, TRq, P> {
         todo!()
     }
 
-    /// 
+    ///
     pub async fn write_notification(&mut self, target: &PeerId, protocol_name: &str) {
         todo!()
     }
@@ -135,4 +146,3 @@ impl<'a> fmt::Debug for NotificationPayload<'a> {
 pub enum StartRequestError {
     NotConnected,
 }
-
