@@ -5,6 +5,32 @@
 //!
 //! In this schema, the finalized block is **not** part of the `ForkTree` data structure. Only
 //! its descendants are.
+//!
+//! # Example
+//!
+//! ```
+//! use substrate_lite::chain::fork_tree::ForkTree;
+//!
+//! let mut tree = ForkTree::new();
+//!
+//! // Add a first node with no root.
+//! // Note that the user data (`"foo"` here) can be of any type. It can be used to store
+//! // additional information on each node.
+//! let node0 = tree.insert(None, "foo");
+//! // Add a second node, child of the first one.
+//! let node1 = tree.insert(Some(node0), "bar");
+//! // Add a third node, child of the second one.
+//! let node2 = tree.insert(Some(node1), "baz");
+//!
+//! // Removes `node1` and all the nodes that aren't its descendants.
+//! // This is typically called when `node1` gets finalized.
+//! tree.prune_ancestors(node1);
+//!
+//! // Only `node2` remains.
+//! assert!(tree.get(node0).is_none());
+//! assert!(tree.get(node1).is_none());
+//! assert!(tree.get(node2).is_some());
+//! ```
 
 use core::{fmt, iter};
 
