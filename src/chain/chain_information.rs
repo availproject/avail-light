@@ -1,8 +1,9 @@
-use crate::header;
+use crate::{finality::grandpa, header};
 
 use alloc::vec::Vec;
 
 /// Information about the latest finalized block and state found in its ancestors.
+// TODO: should it also contain the babe root configuration?
 #[derive(Debug)]
 pub struct ChainInformation {
     /// SCALE encoding of the header of the highest known finalized block.
@@ -41,6 +42,42 @@ pub struct ChainInformation {
     /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
     /// are already finalized but not triggered yet. These changes will for sure happen.
     pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
+}
+
+impl ChainInformation {
+    /// Must be passed a closure that returns the storage value corresponding to the given key in
+    /// the genesis block storage.
+    pub fn from_genesis_storage<'a>(
+        genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
+    ) -> Result<Self, FromGenesisStorageError> {
+        let grandpa_genesis_config =
+            grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
+                genesis_storage
+                    .clone()
+                    .find(|(k, _)| *k == key)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .unwrap();
+
+        Ok(ChainInformation {
+            finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
+                genesis_storage,
+            ),
+            babe_finalized_block1_slot_number: None,
+            babe_finalized_block_epoch_information: None,
+            babe_finalized_next_epoch_transition: None,
+            grandpa_after_finalized_block_authorities_set_id: 0,
+            grandpa_finalized_scheduled_changes: Vec::new(),
+            grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+        })
+    }
+}
+
+/// Error when building the chain information from the genesis storage.
+#[derive(Debug, derive_more::Display)]
+pub enum FromGenesisStorageError {
+    /// Error when retreiving the GrandPa configuration.
+    GrandpaConfigLoad(grandpa::chain_config::FromGenesisStorageError),
 }
 
 #[derive(Debug, Clone)]

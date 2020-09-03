@@ -40,7 +40,7 @@ pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, E
 
     // Decoding all the headers to make sure that the justification is well formatted.
     for _ in 0..num_votes_ancestries.0 {
-        let (header, remainder) =
+        let (_header, remainder) =
             header::decode_partial(scale_encoded).map_err(Error::VotesAncestriesDecode)?;
         scale_encoded = remainder;
     }

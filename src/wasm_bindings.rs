@@ -7,8 +7,8 @@
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
 use crate::{
-    chain, chain::sync::headers_optimistic, chain_spec, database, finality::grandpa, header,
-    json_rpc, network, verify::babe,
+    chain, chain::sync::headers_optimistic, chain_spec, database, header, json_rpc, network,
+    verify::babe,
 };
 
 use core::num::{NonZeroU32, NonZeroU64};
@@ -69,26 +69,10 @@ pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsVa
         Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
         // TODO: log why storage access failed?
         Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {
-            let grandpa_genesis_config =
-                grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|k| {
-                    chain_spec
-                        .genesis_storage()
-                        .find(|(k2, _)| *k2 == k)
-                        .map(|(_, v)| v.to_owned())
-                })
-                .unwrap();
-
-            chain::chain_information::ChainInformation {
-                finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                    chain_spec.genesis_storage(),
-                ),
-                babe_finalized_block1_slot_number: None,
-                babe_finalized_block_epoch_information: None,
-                babe_finalized_next_epoch_transition: None,
-                grandpa_after_finalized_block_authorities_set_id: 0,
-                grandpa_finalized_scheduled_changes: Vec::new(),
-                grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-            }
+            chain::chain_information::ChainInformation::from_genesis_storage(
+                chain_spec.genesis_storage(),
+            )
+            .unwrap()
         }
     };
 
