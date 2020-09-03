@@ -3,13 +3,13 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::chain::chain_information;
+use crate::{chain::chain_information, header};
 
-mod defs;
-
-use core::fmt;
+use core::{convert::TryFrom, fmt};
 use wasm_bindgen::prelude::*;
 use web_sys::Storage;
+
+mod defs;
 
 /// An open local storage. Corresponds to
 /// [a JavaScript `Storage` object](https://developer.mozilla.org/en-US/docs/Web/API/Storage).
@@ -58,11 +58,15 @@ impl LocalStorage {
         };
 
         let decoded: defs::SerializedChainInformation = serde_json::from_str(&encoded)
-            .map_err(CorruptedError)
+            .map_err(|e| CorruptedError(CorruptedErrorInner::Serde(e)))
             .map_err(AccessError::Corrupted)?;
 
         match decoded {
-            defs::SerializedChainInformation::V1(decoded) => Ok(Some(decoded.into())),
+            defs::SerializedChainInformation::V1(decoded) => {
+                Ok(Some(TryFrom::try_from(decoded).map_err(|err| {
+                    AccessError::Corrupted(CorruptedError(CorruptedErrorInner::HeaderDecode(err)))
+                })?))
+            }
         }
     }
 }
@@ -106,4 +110,13 @@ pub enum AccessError {
 
 /// Opaque error indicating a corruption in the data stored in the local storage.
 #[derive(Debug, derive_more::Display)]
-pub struct CorruptedError(serde_json::Error);
+#[display(fmt = "{}", _0)]
+pub struct CorruptedError(CorruptedErrorInner);
+
+#[derive(Debug, derive_more::Display)]
+enum CorruptedErrorInner {
+    #[display(fmt = "{}", _0)]
+    Serde(serde_json::Error),
+    #[display(fmt = "{}", _0)]
+    HeaderDecode(header::Error),
+}

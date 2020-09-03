@@ -253,7 +253,9 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
         }
 
         Ok(GrandpaScheduledChangeRef {
-            next_authorities: GrandpaAuthoritiesIter(slice[0..authorities_len * 40].chunks(40)),
+            next_authorities: GrandpaAuthoritiesIter(GrandpaAuthoritiesIterInner::Encoded(
+                slice[0..authorities_len * 40].chunks(40),
+            )),
             delay: u32::from_le_bytes(<[u8; 4]>::try_from(&slice[authorities_len * 40..]).unwrap()),
         })
     }
@@ -283,10 +285,12 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
 
 impl<'a> From<&'a GrandpaScheduledChange> for GrandpaScheduledChangeRef<'a> {
     fn from(gp: &'a GrandpaScheduledChange) -> Self {
-        todo!() /*GrandpaScheduledChangeRef {
-                    next_authorities: gp.next_authorities.map(Into::into).collect(),
-                    delay: gp.delay,
-                }*/
+        GrandpaScheduledChangeRef {
+            next_authorities: GrandpaAuthoritiesIter(GrandpaAuthoritiesIterInner::Decoded(
+                gp.next_authorities.iter(),
+            )),
+            delay: gp.delay,
+        }
     }
 }
 
@@ -310,22 +314,36 @@ impl<'a> From<GrandpaScheduledChangeRef<'a>> for GrandpaScheduledChange {
 
 /// List of authorities in a GrandPa context.
 #[derive(Clone)]
-pub struct GrandpaAuthoritiesIter<'a>(slice::Chunks<'a, u8>);
+pub struct GrandpaAuthoritiesIter<'a>(GrandpaAuthoritiesIterInner<'a>);
+
+#[derive(Clone)]
+enum GrandpaAuthoritiesIterInner<'a> {
+    Encoded(slice::Chunks<'a, u8>),
+    Decoded(slice::Iter<'a, GrandpaAuthority>),
+}
 
 impl<'a> Iterator for GrandpaAuthoritiesIter<'a> {
     type Item = GrandpaAuthorityRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self.0.next()?;
-        assert_eq!(item.len(), 40);
-        Some(GrandpaAuthorityRef {
-            public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
-            weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
-        })
+        match &mut self.0 {
+            GrandpaAuthoritiesIterInner::Decoded(inner) => inner.next().map(Into::into),
+            GrandpaAuthoritiesIterInner::Encoded(inner) => {
+                let item = inner.next()?;
+                assert_eq!(item.len(), 40);
+                Some(GrandpaAuthorityRef {
+                    public_key: <&[u8; 32]>::try_from(&item[0..32]).unwrap(),
+                    weight: u64::from_le_bytes(<[u8; 8]>::try_from(&item[32..40]).unwrap()),
+                })
+            }
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        match &self.0 {
+            GrandpaAuthoritiesIterInner::Encoded(inner) => inner.size_hint(),
+            GrandpaAuthoritiesIterInner::Decoded(inner) => inner.size_hint(),
+        }
     }
 }
 

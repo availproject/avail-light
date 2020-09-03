@@ -1,6 +1,7 @@
 //! Type definitions to help with serializing/deserializing from/to the local storage.
 
 use crate::{chain::chain_information, header};
+use core::convert::TryFrom;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version")]
@@ -9,11 +10,13 @@ pub(super) enum SerializedChainInformation {
     V1(SerializedChainInformationV1),
 }
 
-impl From<SerializedChainInformation> for chain_information::ChainInformation {
-    fn from(from: SerializedChainInformation) -> Self {
-        match from {
-            SerializedChainInformation::V1(from) => from.into(),
-        }
+impl TryFrom<SerializedChainInformation> for chain_information::ChainInformation {
+    type Error = header::Error;
+
+    fn try_from(from: SerializedChainInformation) -> Result<Self, Self::Error> {
+        Ok(match from {
+            SerializedChainInformation::V1(from) => TryFrom::try_from(from)?,
+        })
     }
 }
 
@@ -43,7 +46,13 @@ pub(super) struct SerializedChainInformationV1 {
 impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInformationV1 {
     fn from(from: chain_information::ChainInformationRef<'a>) -> Self {
         SerializedChainInformationV1 {
-            finalized_block_header: from.finalized_block_header.to_owned(),
+            finalized_block_header: from.finalized_block_header.scale_encoding().fold(
+                Vec::new(),
+                |mut a, b| {
+                    a.extend_from_slice(b.as_ref());
+                    a
+                },
+            ),
             babe_finalized_block1_slot_number: from.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: from
                 .babe_finalized_block_epoch_information
@@ -68,10 +77,12 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
     }
 }
 
-impl From<SerializedChainInformationV1> for chain_information::ChainInformation {
-    fn from(from: SerializedChainInformationV1) -> Self {
-        chain_information::ChainInformation {
-            finalized_block_header: from.finalized_block_header,
+impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformation {
+    type Error = header::Error;
+
+    fn try_from(from: SerializedChainInformationV1) -> Result<Self, Self::Error> {
+        Ok(chain_information::ChainInformation {
+            finalized_block_header: header::decode(&from.finalized_block_header)?.into(),
             babe_finalized_block1_slot_number: from.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: from
                 .babe_finalized_block_epoch_information
@@ -91,7 +102,7 @@ impl From<SerializedChainInformationV1> for chain_information::ChainInformation 
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-        }
+        })
     }
 }
 

@@ -239,6 +239,63 @@ impl<'a> HeaderRef<'a> {
     }
 }
 
+impl<'a> From<&'a Header> for HeaderRef<'a> {
+    fn from(a: &'a Header) -> HeaderRef<'a> {
+        HeaderRef {
+            parent_hash: &a.parent_hash,
+            number: a.number,
+            state_root: &a.state_root,
+            extrinsics_root: &a.extrinsics_root,
+            digest: (&a.digest).into(),
+        }
+    }
+}
+
+/// Header of a block, after decoding.
+///
+/// Note that the information in there are not guaranteed to be exact. The exactness of the
+/// information depends on the context.
+#[derive(Debug, Clone)]
+pub struct Header {
+    /// Hash of the parent block stored in the header.
+    pub parent_hash: [u8; 32],
+    /// Block number stored in the header.
+    pub number: u64,
+    /// The state trie merkle root
+    pub state_root: [u8; 32],
+    /// The merkle root of the extrinsics.
+    pub extrinsics_root: [u8; 32],
+    /// List of auxiliary data appended to the block header.
+    pub digest: Digest,
+}
+
+impl Header {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of the header.
+    pub fn scale_encoding<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+        HeaderRef::from(self).scale_encoding()
+    }
+
+    /// Builds the hash of the header.
+    pub fn hash(&self) -> [u8; 32] {
+        HeaderRef::from(self).hash()
+    }
+}
+
+impl<'a> From<HeaderRef<'a>> for Header {
+    fn from(a: HeaderRef<'a>) -> Header {
+        Header {
+            parent_hash: *a.parent_hash,
+            number: a.number,
+            state_root: *a.state_root,
+            extrinsics_root: *a.extrinsics_root,
+            digest: a.digest.into(),
+        }
+    }
+}
+
 /// Generic header digest.
 #[derive(Clone)]
 pub struct DigestRef<'a> {
@@ -511,6 +568,81 @@ impl<'a> DigestRef<'a> {
 impl<'a> fmt::Debug for DigestRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_list().entries(self.logs()).finish()
+    }
+}
+
+impl<'a> From<&'a Digest> for DigestRef<'a> {
+    fn from(digest: &'a Digest) -> DigestRef<'a> {
+        DigestRef {
+            inner: DigestRefInner::Parsed(&digest.list),
+            babe_seal_index: digest.babe_seal_index,
+            babe_predigest_index: digest.babe_predigest_index,
+            babe_next_epoch_data_index: digest.babe_next_epoch_data_index,
+            babe_next_config_data_index: digest.babe_next_config_data_index,
+        }
+    }
+}
+
+/// Generic header digest.
+#[derive(Clone)]
+pub struct Digest {
+    /// Actual list of items.
+    list: Vec<DigestItem>,
+    /// Index of the [`DigestItemRef::BabeSeal`] item, if any.
+    babe_seal_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabePreDigest`] item, if any.
+    babe_predigest_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabeConsensus`] item containing a
+    /// [`BabeConsensusLogRef::NextEpochData`], if any.
+    babe_next_epoch_data_index: Option<usize>,
+    /// Index of the [`DigestItemRef::BabeConsensus`] item containing a
+    /// [`BabeConsensusLogRef::NextConfigData`], if any.
+    babe_next_config_data_index: Option<usize>,
+}
+
+impl Digest {
+    /// Returns an iterator to the log items in this digest.
+    pub fn logs(&self) -> LogsIter {
+        DigestRef::from(self).logs()
+    }
+
+    /// Returns the Babe seal digest item, if any.
+    // TODO: [u8; 64]
+    pub fn babe_seal(&self) -> Option<&[u8]> {
+        DigestRef::from(self).babe_seal()
+    }
+
+    /// Returns the Babe pre-runtime digest item, if any.
+    pub fn babe_pre_runtime(&self) -> Option<BabePreDigestRef> {
+        DigestRef::from(self).babe_pre_runtime()
+    }
+
+    /// Returns the Babe epoch information stored in the header, if any.
+    ///
+    /// It is guaranteed that a configuration change is present only if an epoch change is
+    /// present too.
+    pub fn babe_epoch_information(&self) -> Option<(BabeNextEpochRef, Option<BabeNextConfig>)> {
+        DigestRef::from(self).babe_epoch_information()
+    }
+}
+
+impl fmt::Debug for Digest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list()
+            .entries(self.list.iter().map(DigestItemRef::from))
+            .finish()
+    }
+}
+
+impl<'a> From<DigestRef<'a>> for Digest {
+    fn from(digest: DigestRef<'a>) -> Digest {
+        Digest {
+            list: digest.logs().map(Into::into).collect(),
+            babe_seal_index: digest.babe_seal_index,
+            babe_predigest_index: digest.babe_predigest_index,
+            babe_next_epoch_data_index: digest.babe_next_epoch_data_index,
+            babe_next_config_data_index: digest.babe_next_config_data_index,
+        }
     }
 }
 

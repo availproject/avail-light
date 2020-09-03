@@ -51,9 +51,8 @@ pub struct Config {
 
 /// Holds state about the current state of the chain for the purpose of verifying headers.
 pub struct NonFinalizedTree<T> {
-    /// SCALE encoding of the header of the highest known finalized block.
-    // TODO: should be an owned decoded header
-    finalized_block_header: Vec<u8>,
+    /// Header of the highest known finalized block.
+    finalized_block_header: header::Header,
     /// Hash of [`NonFinalizedTree::finalized_block_header`].
     finalized_block_hash: [u8; 32],
     /// Grandpa authorities set ID of the block right after the finalized block.
@@ -89,8 +88,8 @@ pub struct NonFinalizedTree<T> {
 }
 
 struct Block<T> {
-    // TODO: should be owned header
-    scale_encoded_header: Vec<u8>,
+    /// Header of the block.
+    header: header::Header,
     /// Cache of the hash of the block. Always equal to the hash of the header stored in this
     /// same struct.
     hash: [u8; 32],
@@ -114,10 +113,7 @@ impl<T> NonFinalizedTree<T> {
     /// Panics if the chain information is incorrect.
     ///
     pub fn new(mut config: Config) -> Self {
-        let finalized_header =
-            header::decode(&config.chain_information.finalized_block_header).unwrap();
-
-        if finalized_header.number >= 1 {
+        if config.chain_information.finalized_block_header.number >= 1 {
             assert!(config
                 .chain_information
                 .babe_finalized_block1_slot_number
@@ -145,14 +141,15 @@ impl<T> NonFinalizedTree<T> {
 
         // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
 
-        let finalized_block_hash = header::hash_from_scale_encoded_header(
-            &config.chain_information.finalized_block_header,
-        );
+        let finalized_block_hash = config.chain_information.finalized_block_header.hash();
 
         config
             .chain_information
             .grandpa_finalized_scheduled_changes
-            .retain(|sc| sc.trigger_block_height > finalized_header.number);
+            .retain({
+                let n = config.chain_information.finalized_block_header.number;
+                move |sc| sc.trigger_block_height > n
+            });
         config
             .chain_information
             .grandpa_finalized_scheduled_changes
@@ -214,7 +211,7 @@ impl<T> NonFinalizedTree<T> {
     /// build a new [`NonFinalizedTree`].
     pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
         chain_information::ChainInformationRef {
-            finalized_block_header: &self.finalized_block_header,
+            finalized_block_header: (&self.finalized_block_header).into(),
             babe_finalized_block1_slot_number: self.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: self
                 .babe_finalized_block_epoch_information
@@ -237,7 +234,7 @@ impl<T> NonFinalizedTree<T> {
 
     /// Returns the header of the latest finalized block.
     pub fn finalized_block_header(&self) -> header::HeaderRef {
-        header::decode(&self.finalized_block_header).unwrap()
+        (&self.finalized_block_header).into()
     }
 
     /// Returns the hash of the latest finalized block.
@@ -248,9 +245,9 @@ impl<T> NonFinalizedTree<T> {
     /// Returns the header of the best block.
     pub fn best_block_header(&self) -> header::HeaderRef {
         if let Some(index) = self.current_best {
-            header::decode(&self.blocks.get(index).unwrap().scale_encoded_header).unwrap()
+            (&self.blocks.get(index).unwrap().header).into()
         } else {
-            header::decode(&self.finalized_block_header).unwrap()
+            (&self.finalized_block_header).into()
         }
     }
 
@@ -377,16 +374,9 @@ impl<T> NonFinalizedTree<T> {
             ))
         } else {
             let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
-                header::decode(
-                    &self
-                        .blocks
-                        .get(parent_tree_index)
-                        .unwrap()
-                        .scale_encoded_header,
-                )
-                .unwrap()
+                &self.blocks.get(parent_tree_index).unwrap().header
             } else {
-                header::decode(&self.finalized_block_header).unwrap()
+                &self.finalized_block_header
             };
 
             let mut process = verify::header_only::verify(verify::header_only::Config {
@@ -399,7 +389,7 @@ impl<T> NonFinalizedTree<T> {
                     core::time::Duration::new(0, 0)
                 },
                 block_header: decoded_header.clone(),
-                parent_block_header,
+                parent_block_header: parent_block_header.into(),
             });
 
             let result = loop {
@@ -524,7 +514,7 @@ impl<T> NonFinalizedTree<T> {
                     chain: self,
                     parent_tree_index,
                     is_new_best,
-                    scale_encoded_header,
+                    header: decoded_header.into(),
                     hash,
                     babe_block1_slot_number,
                     babe_current_epoch,
@@ -579,9 +569,7 @@ impl<T> NonFinalizedTree<T> {
                 let mut trigger_height = None;
                 // TODO: lot of boilerplate code here
                 for node in self.blocks.root_to_node_path(block_index) {
-                    let header =
-                        header::decode(&self.blocks.get(node).unwrap().scale_encoded_header)
-                            .unwrap();
+                    let header = &self.blocks.get(node).unwrap().header;
                     for grandpa_digest_item in header.digest.logs().filter_map(|d| match d {
                         header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
                         _ => None,
@@ -619,9 +607,7 @@ impl<T> NonFinalizedTree<T> {
                     .node_to_root_path(block_index)
                     .filter_map(|b| {
                         let b = self.blocks.get(b).unwrap();
-                        if header::decode(&b.scale_encoded_header).unwrap().number
-                            == earliest_trigger
-                        {
+                        if b.header.number == earliest_trigger {
                             Some(b.hash)
                         } else {
                             None
@@ -688,15 +674,17 @@ impl<T> NonFinalizedTree<T> {
         // in the newly-finalized blocks.
         for node in self.blocks.root_to_node_path(block_index) {
             let node = self.blocks.get(node).unwrap();
-            let decoded = header::decode(&node.scale_encoded_header).unwrap();
-            for grandpa_digest_item in decoded.digest.logs().filter_map(|d| match d {
+            for grandpa_digest_item in node.header.digest.logs().filter_map(|d| match d {
                 header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
                 _ => None,
             }) {
                 match grandpa_digest_item {
                     header::GrandpaConsensusLogRef::ScheduledChange(change) => {
-                        let trigger_block_height =
-                            decoded.number.checked_add(u64::from(change.delay)).unwrap();
+                        let trigger_block_height = node
+                            .header
+                            .number
+                            .checked_add(u64::from(change.delay))
+                            .unwrap();
                         self.grandpa_finalized_scheduled_changes.push_back(
                             chain_information::FinalizedScheduledChange {
                                 trigger_block_height,
@@ -722,16 +710,15 @@ impl<T> NonFinalizedTree<T> {
         self.babe_finalized_next_epoch_transition =
             Some(new_finalized_block.babe_next_epoch.clone());
 
-        self.finalized_block_header =
-            mem::replace(&mut new_finalized_block.scale_encoded_header, Vec::new());
-        self.finalized_block_hash =
-            header::hash_from_scale_encoded_header(&self.finalized_block_header);
-
-        let new_finalized_block_decoded = header::decode(&self.finalized_block_header).unwrap();
+        mem::swap(
+            &mut self.finalized_block_header,
+            &mut new_finalized_block.header,
+        );
+        self.finalized_block_hash = self.finalized_block_header.hash();
 
         // Remove the changes that have been triggered by the newly-finalized blocks.
         while let Some(next_change) = self.grandpa_finalized_scheduled_changes.front() {
-            if next_change.trigger_block_height <= new_finalized_block_decoded.number {
+            if next_change.trigger_block_height <= self.finalized_block_header.number {
                 let next_change = self
                     .grandpa_finalized_scheduled_changes
                     .pop_front()
@@ -742,7 +729,7 @@ impl<T> NonFinalizedTree<T> {
         }
 
         if self.babe_finalized_block1_slot_number.is_none() {
-            debug_assert!(new_finalized_block_decoded.number >= 1);
+            debug_assert!(self.finalized_block_header.number >= 1);
             self.babe_finalized_block1_slot_number =
                 Some(new_finalized_block.babe_block1_slot_number);
         }
@@ -814,17 +801,9 @@ where
 {
     pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<'c, T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
-            header::decode(
-                &self
-                    .chain
-                    .blocks
-                    .get(parent_tree_index)
-                    .unwrap()
-                    .scale_encoded_header,
-            )
-            .unwrap()
+            &self.chain.blocks.get(parent_tree_index).unwrap().header
         } else {
-            header::decode(&self.chain.finalized_block_header).unwrap()
+            &self.chain.finalized_block_header
         };
 
         let process = verify::header_body::verify(verify::header_body::Config {
@@ -838,7 +817,7 @@ where
                 core::time::Duration::new(0, 0)
             },
             block_header: header::decode(&self.scale_encoded_header).unwrap(),
-            parent_block_header,
+            parent_block_header: parent_block_header.into(),
             block_body: self.body,
             top_trie_root_calculation_cache: None,
         });
@@ -1033,7 +1012,7 @@ pub struct Insert<'c, T> {
     is_new_best: bool,
     /// Index of the parent in [`NonFinalizedTree::blocks`].
     parent_tree_index: Option<fork_tree::NodeIndex>,
-    scale_encoded_header: Vec<u8>,
+    header: header::Header,
     hash: [u8; 32],
     babe_block1_slot_number: u64,
     babe_current_epoch: Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
@@ -1046,7 +1025,7 @@ impl<'c, T> Insert<'c, T> {
         let new_node_index = self.chain.blocks.insert(
             self.parent_tree_index,
             Block {
-                scale_encoded_header: self.scale_encoded_header,
+                header: self.header,
                 hash: self.hash,
                 babe_block1_slot_number: self.babe_block1_slot_number,
                 babe_current_epoch: self.babe_current_epoch,
@@ -1060,16 +1039,15 @@ impl<'c, T> Insert<'c, T> {
         }
     }
 
-    /// Destroys the object without inserting the block in the chain. Returns the SCALE-encoded
-    /// block header.
-    pub fn into_scale_encoded_header(self) -> Vec<u8> {
-        self.scale_encoded_header
+    /// Destroys the object without inserting the block in the chain. Returns the block header.
+    pub fn into_header(self) -> header::Header {
+        self.header
     }
 }
 
 impl<'c, T> fmt::Debug for Insert<'c, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Insert").finish()
+        f.debug_tuple("Insert").field(&self.header).finish()
     }
 }
 
@@ -1189,8 +1167,10 @@ fn is_better_block<T>(
 
         let curr_best_primary_slots: usize = ascend
             .map(|i| {
-                let decoded = header::decode(&blocks.get(i).unwrap().scale_encoded_header).unwrap();
-                if decoded
+                if blocks
+                    .get(i)
+                    .unwrap()
+                    .header
                     .digest
                     .babe_pre_runtime()
                     .map_or(false, |pr| pr.is_primary())
@@ -1216,8 +1196,10 @@ fn is_better_block<T>(
 
         let parent_primary_slots: usize = descend
             .map(|i| {
-                let decoded = header::decode(&blocks.get(i).unwrap().scale_encoded_header).unwrap();
-                if decoded
+                if blocks
+                    .get(i)
+                    .unwrap()
+                    .header
                     .digest
                     .babe_pre_runtime()
                     .map_or(false, |pr| pr.is_primary())

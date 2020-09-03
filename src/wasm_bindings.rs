@@ -19,7 +19,7 @@ use futures::{
 use libp2p::wasm_ext::{ffi, ExtTransport};
 use wasm_bindgen::prelude::*;
 
-// TODO: should t hat be here?
+// TODO: should that be here?
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 

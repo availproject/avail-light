@@ -9,8 +9,7 @@ pub struct ChainInformation {
     ///
     /// Once the queue is created, it is as if you had called
     /// [`NonFinalizedTree::set_finalized_block`] with this block.
-    // TODO: should be an owned decoded header?
-    pub finalized_block_header: Vec<u8>,
+    pub finalized_block_header: header::Header,
 
     /// If the number in [`ChainInformation::finalized_block_header`] is superior or equal to 1,
     /// then this field must contain the slot number of the block whose number is 1 and is an
@@ -54,7 +53,7 @@ pub struct FinalizedScheduledChange {
 #[derive(Debug, Clone)]
 pub struct ChainInformationRef<'a> {
     /// See equivalent field in [`ChanInformation`].
-    pub finalized_block_header: &'a [u8],
+    pub finalized_block_header: header::HeaderRef<'a>,
 
     /// See equivalent field in [`ChanInformation`].
     pub babe_finalized_block1_slot_number: Option<u64>,
@@ -81,7 +80,7 @@ pub struct ChainInformationRef<'a> {
 impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
     fn from(info: &'a ChainInformation) -> ChainInformationRef<'a> {
         ChainInformationRef {
-            finalized_block_header: &info.finalized_block_header,
+            finalized_block_header: (&info.finalized_block_header).into(),
             babe_finalized_block1_slot_number: info.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: info
                 .babe_finalized_block_epoch_information
@@ -102,7 +101,7 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
 impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
     fn from(info: ChainInformationRef<'a>) -> ChainInformation {
         ChainInformation {
-            finalized_block_header: info.finalized_block_header.to_owned(),
+            finalized_block_header: info.finalized_block_header.into(),
             babe_finalized_block1_slot_number: info.babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: info
                 .babe_finalized_block_epoch_information
