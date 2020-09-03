@@ -140,6 +140,94 @@ impl<'a> GrandpaConsensusLogRef<'a> {
     }
 }
 
+impl<'a> From<&'a GrandpaConsensusLog> for GrandpaConsensusLogRef<'a> {
+    fn from(a: &'a GrandpaConsensusLog) -> Self {
+        match a {
+            GrandpaConsensusLog::ScheduledChange(v) => {
+                GrandpaConsensusLogRef::ScheduledChange(v.into())
+            }
+            GrandpaConsensusLog::ForcedChange {
+                reset_block_height,
+                change,
+            } => GrandpaConsensusLogRef::ForcedChange {
+                reset_block_height: *reset_block_height,
+                change: change.into(),
+            },
+            GrandpaConsensusLog::OnDisabled(v) => GrandpaConsensusLogRef::OnDisabled(*v),
+            GrandpaConsensusLog::Pause(v) => GrandpaConsensusLogRef::Pause(*v),
+            GrandpaConsensusLog::Resume(v) => GrandpaConsensusLogRef::Resume(*v),
+        }
+    }
+}
+
+/// A consensus log item for GrandPa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrandpaConsensusLog {
+    /// Schedule an authority set change.
+    ///
+    /// The earliest digest of this type in a single block will be respected,
+    /// provided that there is no `ForcedChange` digest. If there is, then the
+    /// `ForcedChange` will take precedence.
+    ///
+    /// No change should be scheduled if one is already and the delay has not
+    /// passed completely.
+    ///
+    /// This should be a pure function: i.e. as long as the runtime can interpret
+    /// the digest type it should return the same result regardless of the current
+    /// state.
+    ScheduledChange(GrandpaScheduledChange),
+
+    /// Force an authority set change.
+    ///
+    /// Forced changes are applied after a delay of _imported_ blocks,
+    /// while pending changes are applied after a delay of _finalized_ blocks.
+    ///
+    /// The earliest digest of this type in a single block will be respected,
+    /// with others ignored.
+    ///
+    /// No change should be scheduled if one is already and the delay has not
+    /// passed completely.
+    ///
+    /// This should be a pure function: i.e. as long as the runtime can interpret
+    /// the digest type it should return the same result regardless of the current
+    /// state.
+    ForcedChange {
+        reset_block_height: u32,
+        change: GrandpaScheduledChange,
+    },
+
+    /// Note that the authority with given index is disabled until the next change.
+    OnDisabled(u64),
+
+    /// A signal to pause the current authority set after the given delay.
+    /// After finalizing the block at _delay_ the authorities should stop voting.
+    Pause(u32),
+
+    /// A signal to resume the current authority set after the given delay.
+    /// After authoring the block at _delay_ the authorities should resume voting.
+    Resume(u32),
+}
+
+impl<'a> From<GrandpaConsensusLogRef<'a>> for GrandpaConsensusLog {
+    fn from(a: GrandpaConsensusLogRef<'a>) -> Self {
+        match a {
+            GrandpaConsensusLogRef::ScheduledChange(v) => {
+                GrandpaConsensusLog::ScheduledChange(v.into())
+            }
+            GrandpaConsensusLogRef::ForcedChange {
+                reset_block_height,
+                change,
+            } => GrandpaConsensusLog::ForcedChange {
+                reset_block_height,
+                change: change.into(),
+            },
+            GrandpaConsensusLogRef::OnDisabled(v) => GrandpaConsensusLog::OnDisabled(v),
+            GrandpaConsensusLogRef::Pause(v) => GrandpaConsensusLog::Pause(v),
+            GrandpaConsensusLogRef::Resume(v) => GrandpaConsensusLog::Resume(v),
+        }
+    }
+}
+
 /// A scheduled change of authority set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrandpaScheduledChangeRef<'a> {
@@ -190,6 +278,15 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
             .chain(iter::once(either::Either::Left(
                 self.delay.to_le_bytes().to_vec(), // TODO: don't allocate
             )))
+    }
+}
+
+impl<'a> From<&'a GrandpaScheduledChange> for GrandpaScheduledChangeRef<'a> {
+    fn from(gp: &'a GrandpaScheduledChange) -> Self {
+        todo!() /*GrandpaScheduledChangeRef {
+                    next_authorities: gp.next_authorities.map(Into::into).collect(),
+                    delay: gp.delay,
+                }*/
     }
 }
 

@@ -431,6 +431,39 @@ impl<'a> BabePreDigestRef<'a> {
     }
 }
 
+impl<'a> From<BabePreDigestRef<'a>> for BabePreDigest {
+    fn from(a: BabePreDigestRef<'a>) -> Self {
+        match a {
+            BabePreDigestRef::Primary(a) => BabePreDigest::Primary(a.into()),
+            BabePreDigestRef::SecondaryPlain(a) => BabePreDigest::SecondaryPlain(a),
+            BabePreDigestRef::SecondaryVRF(a) => BabePreDigest::SecondaryVRF(a.into()),
+        }
+    }
+}
+
+/// A BABE pre-runtime digest. This contains all data required to validate a
+/// block and for the BABE runtime module. Slots can be assigned to a primary
+/// (VRF based) and to a secondary (slot number based).
+#[derive(Debug, Clone)]
+pub enum BabePreDigest {
+    /// A primary VRF-based slot assignment.
+    Primary(BabePrimaryPreDigest),
+    /// A secondary deterministic slot assignment.
+    SecondaryPlain(BabeSecondaryPlainPreDigest),
+    /// A secondary deterministic slot assignment with VRF outputs.
+    SecondaryVRF(BabeSecondaryVRFPreDigest),
+}
+
+impl<'a> From<&'a BabePreDigest> for BabePreDigestRef<'a> {
+    fn from(a: &'a BabePreDigest) -> Self {
+        match a {
+            BabePreDigest::Primary(a) => BabePreDigestRef::Primary(a.into()),
+            BabePreDigest::SecondaryPlain(a) => BabePreDigestRef::SecondaryPlain(a.clone()),
+            BabePreDigest::SecondaryVRF(a) => BabePreDigestRef::SecondaryVRF(a.into()),
+        }
+    }
+}
+
 /// Raw BABE primary slot assignment pre-digest.
 #[derive(Clone)]
 pub struct BabePrimaryPreDigestRef<'a> {
@@ -490,10 +523,52 @@ impl<'a> cmp::PartialEq<BabePrimaryPreDigestRef<'a>> for BabePrimaryPreDigestRef
 
 impl<'a> cmp::Eq for BabePrimaryPreDigestRef<'a> {}
 
+impl<'a> From<&'a BabePrimaryPreDigest> for BabePrimaryPreDigestRef<'a> {
+    fn from(a: &'a BabePrimaryPreDigest) -> Self {
+        BabePrimaryPreDigestRef {
+            authority_index: a.authority_index,
+            slot_number: a.slot_number,
+            vrf_output: &a.vrf_output,
+            vrf_proof: &a.vrf_proof,
+        }
+    }
+}
+
 // This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
 impl<'a> fmt::Debug for BabePrimaryPreDigestRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("BabePrimaryPreDigestRef").finish()
+    }
+}
+
+/// Raw BABE primary slot assignment pre-digest.
+#[derive(Clone)]
+pub struct BabePrimaryPreDigest {
+    /// Authority index
+    pub authority_index: u32,
+    /// Slot number
+    pub slot_number: u64,
+    /// VRF output
+    pub vrf_output: [u8; 32],
+    /// VRF proof
+    pub vrf_proof: [u8; 64],
+}
+
+impl<'a> From<BabePrimaryPreDigestRef<'a>> for BabePrimaryPreDigest {
+    fn from(a: BabePrimaryPreDigestRef<'a>) -> Self {
+        BabePrimaryPreDigest {
+            authority_index: a.authority_index,
+            slot_number: a.slot_number,
+            vrf_output: *a.vrf_output,
+            vrf_proof: *a.vrf_proof,
+        }
+    }
+}
+
+// This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
+impl fmt::Debug for BabePrimaryPreDigest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BabePrimaryPreDigest").finish()
     }
 }
 
@@ -593,9 +668,51 @@ impl<'a> cmp::PartialEq<BabeSecondaryVRFPreDigestRef<'a>> for BabeSecondaryVRFPr
 
 impl<'a> cmp::Eq for BabeSecondaryVRFPreDigestRef<'a> {}
 
+impl<'a> From<&'a BabeSecondaryVRFPreDigest> for BabeSecondaryVRFPreDigestRef<'a> {
+    fn from(a: &'a BabeSecondaryVRFPreDigest) -> Self {
+        BabeSecondaryVRFPreDigestRef {
+            authority_index: a.authority_index,
+            slot_number: a.slot_number,
+            vrf_output: &a.vrf_output,
+            vrf_proof: &a.vrf_proof,
+        }
+    }
+}
+
 // This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
 impl<'a> fmt::Debug for BabeSecondaryVRFPreDigestRef<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("BabeSecondaryVRFPreDigestRef").finish()
+    }
+}
+
+/// BABE secondary deterministic slot assignment with VRF outputs.
+#[derive(Clone)]
+pub struct BabeSecondaryVRFPreDigest {
+    /// Authority index
+    pub authority_index: u32,
+    /// Slot number
+    pub slot_number: u64,
+    /// VRF output
+    pub vrf_output: [u8; 32],
+    /// VRF proof
+    pub vrf_proof: [u8; 64],
+}
+
+impl<'a> From<BabeSecondaryVRFPreDigestRef<'a>> for BabeSecondaryVRFPreDigest {
+    fn from(a: BabeSecondaryVRFPreDigestRef<'a>) -> Self {
+        BabeSecondaryVRFPreDigest {
+            authority_index: a.authority_index,
+            slot_number: a.slot_number,
+            vrf_output: *a.vrf_output,
+            vrf_proof: *a.vrf_proof,
+        }
+    }
+}
+
+// This custom Debug implementation exists because `[u8; 64]` doesn't implement `Debug`
+impl fmt::Debug for BabeSecondaryVRFPreDigest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BabeSecondaryVRFPreDigest").finish()
     }
 }

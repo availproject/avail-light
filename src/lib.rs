@@ -96,8 +96,6 @@ pub mod json_rpc;
 #[allow(warnings)] // TODO: temporary because code has been copy-pasted from Substrate
 pub mod network;
 pub mod network2;
-// TODO: intentionally no longer compiles
-//pub mod service;
 pub mod telemetry;
 pub mod trie;
 pub mod verify;

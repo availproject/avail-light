@@ -5,7 +5,9 @@ use rand::{seq::IteratorRandom as _, SeedableRng as _};
 pub use connections_pool::RequestId;
 pub use libp2p::{Multiaddr, PeerId};
 
+mod connection;
 mod connections_pool;
+mod multiplexed_connection;
 mod multistream_select;
 mod noise;
 mod yamux;
@@ -67,9 +69,7 @@ impl<T, TRq, P> Network<T, TRq, P> {
             .get(target)
             .ok_or(StartRequestError::NotConnected)?;
 
-        Ok(self.pools[pool_id]
-            .start_request(target, protocol_name, user_data, payload)
-            .await)
+        todo!()
     }
 
     /// Cancels a request. No [`Event::RequestFinished`] will be generated.

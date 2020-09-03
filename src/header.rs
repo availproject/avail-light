@@ -68,7 +68,7 @@
 //! ```
 
 use blake2::digest::{Input as _, VariableOutput as _};
-use core::{convert::TryFrom, fmt, iter};
+use core::{convert::TryFrom, fmt, iter, slice};
 
 mod babe;
 mod grandpa;
@@ -242,12 +242,8 @@ impl<'a> HeaderRef<'a> {
 /// Generic header digest.
 #[derive(Clone)]
 pub struct DigestRef<'a> {
-    /// Number of log items in the header.
-    /// Must always match the actual number of items in [`DigestRef::digest`]. The validity must
-    /// be verified before a [`DigestRef`] object is instantiated.
-    digest_logs_len: usize,
-    /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is instantiated.
-    digest: &'a [u8],
+    /// Actual source of digest items.
+    inner: DigestRefInner<'a>,
     /// Index of the [`DigestItemRef::BabeSeal`] item, if any.
     babe_seal_index: Option<usize>,
     /// Index of the [`DigestItemRef::BabePreDigest`] item, if any.
@@ -260,12 +256,27 @@ pub struct DigestRef<'a> {
     babe_next_config_data_index: Option<usize>,
 }
 
+#[derive(Clone)]
+enum DigestRefInner<'a> {
+    /// Source of data is an undecoded slice of bytes.
+    Undecoded {
+        /// Number of log items in the header.
+        /// Must always match the actual number of items in [`DigestRef::digest`]. The validity
+        /// must be verified before a [`DigestRef`] object is instantiated.
+        digest_logs_len: usize,
+        /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is
+        /// instantiated.
+        digest: &'a [u8],
+    },
+    Parsed(&'a [DigestItem]),
+}
+
 impl<'a> DigestRef<'a> {
     /// Returns a digest with empty logs.
     pub fn empty() -> DigestRef<'a> {
         DigestRef {
-            digest_logs_len: 0,
-            digest: &[],
+            // TODO: Parsed instead
+            inner: DigestRefInner::Parsed(&[]),
             babe_seal_index: None,
             babe_predigest_index: None,
             babe_next_epoch_data_index: None,
@@ -337,31 +348,72 @@ impl<'a> DigestRef<'a> {
     // TODO: have a `Seal` enum or something, maybe?
     pub fn pop_babe_seal(&mut self) -> Option<&'a [u8]> {
         let seal_pos = self.babe_seal_index?;
-        debug_assert_eq!(seal_pos, self.digest_logs_len - 1);
 
-        let mut iter = self.logs();
-        for _ in 0..seal_pos {
-            let _item = iter.next();
-            debug_assert!(_item.is_some());
-        }
+        match &mut self.inner {
+            DigestRefInner::Parsed(list) => {
+                debug_assert!(!list.is_empty());
+                debug_assert_eq!(seal_pos, list.len() - 1);
 
-        self.digest_logs_len -= 1;
-        self.digest = &self.digest[..self.digest.len() - iter.pointer.len()];
-        self.babe_seal_index = None;
+                let item = &list[seal_pos];
+                *list = &list[..seal_pos];
 
-        debug_assert_eq!(iter.remaining_len, 1);
+                match item {
+                    DigestItem::BabeSeal(seal) => Some(&seal[..]),
+                    _ => unreachable!(),
+                }
+            }
 
-        match iter.next() {
-            Some(DigestItemRef::BabeSeal(seal)) => Some(seal),
-            _ => unreachable!(),
+            DigestRefInner::Undecoded {
+                digest,
+                digest_logs_len,
+            } => {
+                debug_assert_eq!(seal_pos, *digest_logs_len - 1);
+
+                let mut iter = LogsIter {
+                    inner: LogsIterInner::Undecoded {
+                        pointer: *digest,
+                        remaining_len: *digest_logs_len,
+                    },
+                };
+                for _ in 0..seal_pos {
+                    let _item = iter.next();
+                    debug_assert!(_item.is_some());
+                }
+
+                if let LogsIterInner::Undecoded {
+                    pointer,
+                    remaining_len,
+                } = iter.inner
+                {
+                    *digest_logs_len -= 1;
+                    *digest = &digest[..digest.len() - pointer.len()];
+                    self.babe_seal_index = None;
+                    debug_assert_eq!(remaining_len, 1);
+                } else {
+                    unreachable!()
+                }
+
+                match iter.next() {
+                    Some(DigestItemRef::BabeSeal(seal)) => Some(seal),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
     /// Returns an iterator to the log items in this digest.
     pub fn logs(&self) -> LogsIter<'a> {
         LogsIter {
-            pointer: self.digest,
-            remaining_len: self.digest_logs_len,
+            inner: match self.inner {
+                DigestRefInner::Parsed(list) => LogsIterInner::Decoded(list.iter()),
+                DigestRefInner::Undecoded {
+                    digest,
+                    digest_logs_len,
+                } => LogsIterInner::Undecoded {
+                    pointer: digest,
+                    remaining_len: digest_logs_len,
+                },
+            },
         }
     }
 
@@ -371,8 +423,9 @@ impl<'a> DigestRef<'a> {
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         // TODO: don't allocate?
-        let len = u64::try_from(self.digest_logs_len).unwrap();
+        let len = u64::try_from(self.logs().len()).unwrap();
         let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(len));
+
         iter::once(either::Either::Left(encoded_len)).chain(
             self.logs()
                 .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
@@ -441,8 +494,10 @@ impl<'a> DigestRef<'a> {
         }
 
         let out = DigestRef {
-            digest_logs_len,
-            digest: scale_encoded,
+            inner: DigestRefInner::Undecoded {
+                digest_logs_len,
+                digest: scale_encoded,
+            },
             babe_seal_index,
             babe_predigest_index,
             babe_next_epoch_data_index,
@@ -460,32 +515,53 @@ impl<'a> fmt::Debug for DigestRef<'a> {
 }
 
 /// Iterator towards the digest log items.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LogsIter<'a> {
-    /// Encoded digest.
-    pointer: &'a [u8],
-    /// Number of log items remaining.
-    remaining_len: usize,
+    inner: LogsIterInner<'a>,
+}
+
+#[derive(Clone)]
+enum LogsIterInner<'a> {
+    Decoded(slice::Iter<'a, DigestItem>),
+    Undecoded {
+        /// Encoded digest.
+        pointer: &'a [u8],
+        /// Number of log items remaining.
+        remaining_len: usize,
+    },
 }
 
 impl<'a> Iterator for LogsIter<'a> {
     type Item = DigestItemRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining_len == 0 {
-            return None;
+        match &mut self.inner {
+            LogsIterInner::Decoded(iter) => iter.next().map(Into::into),
+            LogsIterInner::Undecoded {
+                pointer,
+                remaining_len,
+            } => {
+                if *remaining_len == 0 {
+                    return None;
+                }
+
+                // Validity is guaranteed when the `DigestRef` is constructed.
+                let (item, new_pointer) = decode_item(*pointer).unwrap();
+                *pointer = new_pointer;
+                *remaining_len -= 1;
+
+                Some(item)
+            }
         }
-
-        // Validity is guaranteed when the `DigestRef` is constructed.
-        let (item, new_pointer) = decode_item(self.pointer).unwrap();
-        self.pointer = new_pointer;
-        self.remaining_len -= 1;
-
-        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining_len, Some(self.remaining_len))
+        match &self.inner {
+            LogsIterInner::Decoded(iter) => iter.size_hint(),
+            LogsIterInner::Undecoded { remaining_len, .. } => {
+                (*remaining_len, Some(*remaining_len))
+            }
+        }
     }
 }
 
@@ -583,6 +659,51 @@ impl<'a> DigestItemRef<'a> {
                 ret.extend_from_slice(data);
                 iter::once(ret)
             }
+        }
+    }
+}
+
+impl<'a> From<&'a DigestItem> for DigestItemRef<'a> {
+    fn from(a: &'a DigestItem) -> DigestItemRef<'a> {
+        match a {
+            DigestItem::BabePreDigest(v) => DigestItemRef::BabePreDigest(v.into()),
+            DigestItem::BabeConsensus(v) => DigestItemRef::BabeConsensus(v.into()),
+            DigestItem::BabeSeal(v) => DigestItemRef::BabeSeal(v),
+            DigestItem::GrandpaConsensus(v) => DigestItemRef::GrandpaConsensus(v.into()),
+            DigestItem::ChangesTrieRoot(v) => DigestItemRef::ChangesTrieRoot(v),
+            DigestItem::ChangesTrieSignal(v) => DigestItemRef::ChangesTrieSignal(v.clone()),
+        }
+    }
+}
+
+// TODO: document
+// TODO: Debug impl
+#[derive(Clone)]
+pub enum DigestItem {
+    BabePreDigest(BabePreDigest),
+    BabeConsensus(BabeConsensusLog),
+    /// Block signature made using the BABE consensus engine.
+    BabeSeal([u8; 64]),
+
+    GrandpaConsensus(GrandpaConsensusLog),
+
+    ChangesTrieRoot([u8; 32]),
+    ChangesTrieSignal(ChangesTrieSignal),
+}
+
+impl<'a> From<DigestItemRef<'a>> for DigestItem {
+    fn from(a: DigestItemRef<'a>) -> DigestItem {
+        match a {
+            DigestItemRef::BabePreDigest(v) => DigestItem::BabePreDigest(v.into()),
+            DigestItemRef::BabeConsensus(v) => DigestItem::BabeConsensus(v.into()),
+            DigestItemRef::BabeSeal(v) => {
+                let mut seal = [0; 64];
+                seal.copy_from_slice(v);
+                DigestItem::BabeSeal(seal)
+            }
+            DigestItemRef::GrandpaConsensus(v) => DigestItem::GrandpaConsensus(v.into()),
+            DigestItemRef::ChangesTrieRoot(v) => DigestItem::ChangesTrieRoot(*v),
+            DigestItemRef::ChangesTrieSignal(v) => DigestItem::ChangesTrieSignal(v),
         }
     }
 }
