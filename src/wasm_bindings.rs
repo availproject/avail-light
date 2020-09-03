@@ -314,8 +314,8 @@ async fn start_network(
             known_addresses,
             chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-            local_genesis_hash: crate::calculate_genesis_block_hash(chain_spec.genesis_storage())
-                .into(),
+            local_genesis_hash: crate::calculate_genesis_block_header(chain_spec.genesis_storage())
+                .hash(),
             wasm_external_transport: Some(ExtTransport::new(ffi::websocket_transport())),
         })
         .await

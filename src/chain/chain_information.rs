@@ -45,6 +45,8 @@ pub struct ChainInformation {
 }
 
 impl ChainInformation {
+    /// Builds the chain information corresponding to the genesis block.
+    ///
     /// Must be passed a closure that returns the storage value corresponding to the given key in
     /// the genesis block storage.
     pub fn from_genesis_storage<'a>(
@@ -60,9 +62,7 @@ impl ChainInformation {
             .unwrap();
 
         Ok(ChainInformation {
-            finalized_block_header: crate::calculate_genesis_block_scale_encoded_header(
-                genesis_storage,
-            ),
+            finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
             babe_finalized_block1_slot_number: None,
             babe_finalized_block_epoch_information: None,
             babe_finalized_next_epoch_transition: None,

@@ -101,27 +101,19 @@ pub mod trie;
 pub mod verify;
 pub mod wasm_bindings;
 
-/// Calculates the hash of the genesis block from the storage.
+/// Builds the header of the genesis block, from the values in storage.
 ///
-/// # Context
+/// # Example
 ///
-/// A blockchain is a key-value database. Each block built at the head of the chain updates
-/// entries in this key-value database.
-///
-/// In order to make things easier, there exists a special block whose number is 0 and that
-/// is called the genesis block. Block number 1 while have as parent the genesis block (then,
-/// block number 2 has block number 1 as parent, and so on).
-///
-/// The hash of the genesis block depends purely on the initial state of the content.
-/// This function makes it possible to calculate this hash.
-pub fn calculate_genesis_block_hash<'a>(
-    genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
-) -> [u8; 32] {
-    calculate_genesis_block_scale_encoded_header(genesis_storage).hash()
-}
-
-/// Returns the SCALE encoding of the genesis block, from the storage.
-pub fn calculate_genesis_block_scale_encoded_header<'a>(
+/// ```no_run
+/// # let chain_spec_json: &[u8] = b"";
+/// let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(chain_spec_json)
+///     .unwrap();
+/// let genesis_block_header =
+///     substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage());
+/// println!("{:?}", genesis_block_header);
+/// ```
+pub fn calculate_genesis_block_header<'a>(
     genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
 ) -> header::Header {
     let state_root = {
