@@ -51,7 +51,11 @@ While the guidelines here a blurry, here are a few points:
 
 ## Assumption that specs will not change
 
-This project is implemented following the current state of the Substrate/Polkadot specifications, and assumes that these specifications will never change.
+Substrate is organized around core components that are almost impossible to extract: a database, a client, the networking, a transaction pool, and so on. These components are tightly coupled together.
+
+The blockchain-related logic is plugged on top of these core components and can, however, be changed. One can, for example, remove everything related to the Babe consensus algorithm and replace with by another consensus algorithm.
+
+This project, on the other hand, is implemented following the current state of the Substrate/Polkadot specifications, and assumes that these specifications will never change. This assumption allows, in turn, for better readability and more flexibility when it comes to the purely engineering aspects of the codebase.
 
 For example, the code that decodes block headers in written in a way that would be quite annoying (though straight-forward) to modify if the format of a block header ever changes. However, we simply assume that the format of block headers will rarely, if ever, change.
 
