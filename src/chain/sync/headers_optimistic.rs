@@ -21,8 +21,7 @@ use crate::verify::babe;
 use core::{convert::TryFrom as _, num::NonZeroU32};
 
 pub use optimistic::{
-    FinishRequestOutcome, RequestAction, RequestFail, RequestId, RequestSuccessBlock, SourceId,
-    Start,
+    FinishRequestOutcome, RequestAction, RequestFail, RequestId, SourceId, Start,
 };
 
 /// Configuration for the [`OptimisticHeadersSync`].
@@ -76,7 +75,8 @@ pub struct OptimisticHeadersSync<TRq, TSrc> {
     chain: blocks_tree::NonFinalizedTree<()>,
 
     /// Underlying helper. Manages sources and requests.
-    sync: optimistic::OptimisticSync<TRq, TSrc>,
+    /// Always `Some`, except during some temporary extractions.
+    sync: Option<optimistic::OptimisticSync<TRq, TSrc, RequestSuccessBlock>>,
 }
 
 impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
@@ -95,13 +95,13 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         OptimisticHeadersSync {
             finalized_chain_information: blocks_tree_config,
             chain,
-            sync: optimistic::OptimisticSync::new(optimistic::Config {
+            sync: Some(optimistic::OptimisticSync::new(optimistic::Config {
                 best_block_number,
                 sources_capacity: config.sources_capacity,
                 blocks_request_granularity: config.blocks_request_granularity,
                 download_ahead_blocks: config.download_ahead_blocks,
                 source_selection_randomness_seed: config.source_selection_randomness_seed,
-            }),
+            })),
         }
     }
 
@@ -113,7 +113,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
 
     /// Inform the [`OptimisticHeadersSync`] of a new potential source of blocks.
     pub fn add_source(&mut self, source: TSrc) -> SourceId {
-        self.sync.add_source(source)
+        self.sync.as_mut().unwrap().add_source(source)
     }
 
     /// Inform the [`OptimisticHeadersSync`] that a source of blocks is no longer available.
@@ -129,13 +129,13 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         &'a mut self,
         source: SourceId,
     ) -> (TSrc, impl Iterator<Item = (RequestId, TRq)> + 'a) {
-        self.sync.remove_source(source)
+        self.sync.as_mut().unwrap().remove_source(source)
     }
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
     /// need to be cancelled.
-    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc>> {
-        self.sync.next_request_action()
+    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc, RequestSuccessBlock>> {
+        self.sync.as_mut().unwrap().next_request_action()
     }
 
     /// Update the [`OptimisticHeadersSync`] with the outcome of a request.
@@ -151,13 +151,22 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         request_id: RequestId,
         outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
     ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
-        self.sync.finish_request(request_id, outcome)
+        self.sync
+            .as_mut()
+            .unwrap()
+            .finish_request(request_id, outcome)
     }
 
     /// Process a single block in the queue of verification.
     // TODO: better return value
     pub fn process_one(&mut self) -> Option<ChainStateUpdate> {
-        let mut to_process = self.sync.process_one()?;
+        let mut to_process = match self.sync.take().unwrap().process_one() {
+            Ok(tp) => tp,
+            Err(sync) => {
+                self.sync = Some(sync);
+                return None;
+            }
+        };
 
         self.chain.reserve(to_process.blocks.len());
 
@@ -184,9 +193,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                         self.chain = blocks_tree::NonFinalizedTree::new(
                             self.finalized_chain_information.clone(),
                         );
-                        to_process
+                        let sync = to_process
                             .report
                             .reset_to_finalized(self.chain.finalized_block_header().number);
+                        self.sync = Some(sync);
                         panic!() // TODO: report with an event that this has happened
                     }
 
@@ -198,9 +208,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     self.chain = blocks_tree::NonFinalizedTree::new(
                         self.finalized_chain_information.clone(),
                     );
-                    to_process
+                    let sync = to_process
                         .report
                         .reset_to_finalized(self.chain.finalized_block_header().number);
+                    self.sync = Some(sync);
                     panic!() // TODO: report with an event that this has happened
                 }
                 Err(err) => {
@@ -209,9 +220,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     self.chain = blocks_tree::NonFinalizedTree::new(
                         self.finalized_chain_information.clone(),
                     );
-                    to_process
+                    let sync = to_process
                         .report
                         .reset_to_finalized(self.chain.finalized_block_header().number);
+                    self.sync = Some(sync);
                     panic!("{:?}", err) // TODO: report with an event that this has happened
                 }
             }
@@ -229,9 +241,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                         self.chain = blocks_tree::NonFinalizedTree::new(
                             self.finalized_chain_information.clone(),
                         );
-                        to_process
+                        let sync = to_process
                             .report
                             .reset_to_finalized(self.chain.finalized_block_header().number);
+                        self.sync = Some(sync);
                         panic!() // TODO: report with an event that this has happened
                     }
                 }
@@ -240,9 +253,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             to_process.expected_block_height += 1;
         }
 
-        to_process
+        let sync = to_process
             .report
             .update_block_height(self.chain.best_block_header().number);
+        self.sync = Some(sync);
 
         // As documented, the finalized block tracked by the `chain` field is not the actual
         // finalized block. The optimistic sync state machine tracks the actual finalized block
@@ -267,6 +281,11 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             best_block_number: self.chain.best_block_header().number,
         })
     }
+}
+
+pub struct RequestSuccessBlock {
+    pub scale_encoded_header: Vec<u8>,
+    pub scale_encoded_justification: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]

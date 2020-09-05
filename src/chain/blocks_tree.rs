@@ -272,43 +272,17 @@ impl<T> NonFinalizedTree<T> {
         &mut self,
         scale_encoded_header: Vec<u8>,
     ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
-        match self.verify_inner(scale_encoded_header, None::<iter::Empty<Vec<u8>>>) {
-            BodyOrHeader::Header(v) => v,
-            BodyOrHeader::Body(_) => unreachable!(),
-        }
-    }
-
-    /// Underlying implementation of both header and header+body verification.
-    // TODO: should take ownership of `self` to avoid potential lifetime issues in upper layers of
-    // the API
-    fn verify_inner<'c, I, E>(
-        &'c mut self,
-        scale_encoded_header: Vec<u8>,
-        body: Option<I>,
-    ) -> BodyOrHeader<'c, T, I>
-    where
-        I: ExactSizeIterator<Item = E> + Clone,
-        E: AsRef<[u8]> + Clone,
-    {
         let decoded_header = match header::decode(&scale_encoded_header) {
             Ok(h) => h,
             Err(err) => {
-                return if body.is_some() {
-                    BodyOrHeader::Body(BodyVerifyStep1::InvalidHeader(err))
-                } else {
-                    BodyOrHeader::Header(Err(HeaderVerifyError::InvalidHeader(err)))
-                }
+                return Err(HeaderVerifyError::InvalidHeader(err));
             }
         };
 
         let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
 
         if self.blocks.find(|b| b.hash == hash).is_some() {
-            return if body.is_some() {
-                BodyOrHeader::Body(BodyVerifyStep1::Duplicate)
-            } else {
-                BodyOrHeader::Header(Ok(HeaderVerifySuccess::Duplicate))
-            };
+            return Ok(HeaderVerifySuccess::Duplicate);
         }
 
         // Try to find the parent block in the tree of known blocks.
@@ -328,10 +302,220 @@ impl<T> NonFinalizedTree<T> {
             match self.blocks.find(|b| b.hash == parent_hash) {
                 Some(parent) => Some(parent),
                 None => {
-                    return if body.is_some() {
-                        BodyOrHeader::Body(BodyVerifyStep1::BadParent { parent_hash })
+                    return Err(HeaderVerifyError::BadParent { parent_hash });
+                }
+            }
+        };
+
+        // Try to find the slot number of block 1.
+        // If block 1 is finalized, this information is found in
+        // `babe_finalized_block1_slot_number`, otherwise the information is found in the parent
+        // node in the fork tree.
+        let block1_slot_number = if let Some(val) = self.babe_finalized_block1_slot_number {
+            debug_assert!(parent_tree_index.map_or(true, |p_idx| self
+                .blocks
+                .get(p_idx)
+                .unwrap()
+                .babe_block1_slot_number
+                == val));
+            Some(val)
+        } else if let Some(parent_tree_index) = parent_tree_index {
+            Some(
+                self.blocks
+                    .get(parent_tree_index)
+                    .unwrap()
+                    .babe_block1_slot_number,
+            )
+        } else {
+            // Can only happen if parent is the block #0.
+            assert_eq!(decoded_header.number, 1);
+            None
+        };
+
+        let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
+            &self.blocks.get(parent_tree_index).unwrap().header
+        } else {
+            &self.finalized_block_header
+        };
+
+        let mut process = verify::header_only::verify(verify::header_only::Config {
+            babe_genesis_configuration: &self.babe_genesis_config,
+            block1_slot_number,
+            now_from_unix_epoch: {
+                // TODO: is it reasonable to use the stdlib here?
+                //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
+                // TODO: this is commented out because of Wasm support
+                core::time::Duration::new(0, 0)
+            },
+            block_header: decoded_header.clone(),
+            parent_block_header: parent_block_header.into(),
+        });
+
+        let result = loop {
+            match process {
+                verify::header_only::Verify::Finished(Ok(result)) => break result,
+                verify::header_only::Verify::Finished(Err(err)) => {
+                    return Err(HeaderVerifyError::VerificationFailed(err));
+                }
+                verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
+                verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
+                    let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
+                        let parent = self.blocks.get(parent_tree_index).unwrap();
+                        if epoch_info_rq.same_epoch_as_parent() {
+                            parent.babe_current_epoch.as_ref().unwrap()
+                        } else {
+                            &parent.babe_next_epoch
+                        }
                     } else {
-                        BodyOrHeader::Header(Err(HeaderVerifyError::BadParent { parent_hash }))
+                        if epoch_info_rq.same_epoch_as_parent() {
+                            self.babe_finalized_block_epoch_information
+                                .as_ref()
+                                .unwrap()
+                        } else {
+                            self.babe_finalized_next_epoch_transition.as_ref().unwrap()
+                        }
+                    };
+
+                    process = epoch_info_rq
+                        .inject_epoch((From::from(&epoch_info.0), epoch_info.1))
+                        .run();
+                }
+            }
+        };
+
+        let is_new_best = if let Some(current_best) = self.current_best {
+            is_better_block(
+                &self.blocks,
+                current_best,
+                parent_tree_index,
+                decoded_header.clone(),
+            )
+        } else {
+            true
+        };
+
+        let babe_block1_slot_number = block1_slot_number.unwrap_or_else(|| {
+            debug_assert_eq!(decoded_header.number, 1);
+            result.slot_number
+        });
+
+        let babe_current_epoch = if result.babe_epoch_transition_target.is_some() {
+            if let Some(parent_tree_index) = parent_tree_index {
+                Some(
+                    self.blocks
+                        .get(parent_tree_index)
+                        .unwrap()
+                        .babe_next_epoch
+                        .clone(),
+                )
+            } else {
+                self.babe_finalized_next_epoch_transition.clone()
+            }
+        } else if let Some(parent_tree_index) = parent_tree_index {
+            self.blocks
+                .get(parent_tree_index)
+                .unwrap()
+                .babe_current_epoch
+                .clone()
+        } else {
+            self.babe_finalized_block_epoch_information.clone()
+        };
+
+        let babe_next_epoch = match (
+            decoded_header.digest.babe_epoch_information(),
+            parent_tree_index,
+            &self.babe_finalized_next_epoch_transition,
+        ) {
+            (Some((ref new_epoch, Some(new_config))), _, _) => {
+                Arc::new((new_epoch.clone().into(), new_config))
+            }
+            (Some((ref new_epoch, None)), Some(parent_tree_index), _) => {
+                let new_config = self
+                    .blocks
+                    .get(parent_tree_index)
+                    .unwrap()
+                    .babe_next_epoch
+                    .1
+                    .clone();
+                Arc::new((new_epoch.clone().into(), new_config))
+            }
+            (Some((ref new_epoch, None)), None, Some(finalized_next)) => {
+                Arc::new((new_epoch.clone().into(), finalized_next.1))
+            }
+            (Some((ref new_epoch, None)), None, None) => Arc::new((
+                new_epoch.clone().into(),
+                self.babe_genesis_config.epoch0_configuration(),
+            )),
+            (None, Some(parent_tree_index), _) => self
+                .blocks
+                .get(parent_tree_index)
+                .unwrap()
+                .babe_next_epoch
+                .clone(),
+            (None, None, _) => {
+                // Block 1 always contains a Babe epoch transition. Consequently, this block
+                // can't be reached for block 1.
+                // `babe_finalized_next_epoch_transition` is `None` only if the finalized
+                // block is 0.
+                // `babe_finalized_next_epoch_transition` is therefore always `Some`
+                // Q.E.D.
+                debug_assert_ne!(decoded_header.number, 1);
+                self.babe_finalized_next_epoch_transition.clone().unwrap()
+            }
+        };
+
+        Ok(HeaderVerifySuccess::Insert {
+            block_height: decoded_header.number,
+            is_new_best,
+            insert: Insert {
+                chain: self,
+                parent_tree_index,
+                is_new_best,
+                header: decoded_header.into(),
+                hash,
+                babe_block1_slot_number,
+                babe_current_epoch,
+                babe_next_epoch,
+            },
+        })
+    }
+
+    pub fn verify_body<I, E>(self, scale_encoded_header: Vec<u8>, body: I) -> BodyVerifyStep1<T, I>
+    where
+        I: ExactSizeIterator<Item = E> + Clone,
+        E: AsRef<[u8]> + Clone,
+    {
+        let decoded_header = match header::decode(&scale_encoded_header) {
+            Ok(h) => h,
+            Err(err) => return BodyVerifyStep1::InvalidHeader(self, err),
+        };
+
+        let hash = header::hash_from_scale_encoded_header(&scale_encoded_header);
+
+        if self.blocks.find(|b| b.hash == hash).is_some() {
+            return BodyVerifyStep1::Duplicate(self);
+        }
+
+        // Try to find the parent block in the tree of known blocks.
+        // `Some` with an index of the parent within the tree of unfinalized blocks.
+        // `None` means that the parent is the finalized block.
+        //
+        // The parent hash is first checked against `self.current_best`, as it is most likely
+        // that new blocks are built on top of the current best.
+        let parent_tree_index = if self.current_best.map_or(false, |best| {
+            *decoded_header.parent_hash == self.blocks.get(best).unwrap().hash
+        }) {
+            Some(self.current_best.unwrap())
+        } else if *decoded_header.parent_hash == self.finalized_block_hash {
+            None
+        } else {
+            let parent_hash = *decoded_header.parent_hash;
+            match self.blocks.find(|b| b.hash == parent_hash) {
+                Some(parent) => Some(parent),
+                None => {
+                    return BodyVerifyStep1::BadParent {
+                        chain: self,
+                        parent_hash,
                     }
                 }
             }
@@ -362,166 +546,13 @@ impl<T> NonFinalizedTree<T> {
             None
         };
 
-        if let Some(body) = body {
-            BodyOrHeader::Body(BodyVerifyStep1::ParentRuntimeRequired(
-                BodyVerifyRuntimeRequired {
-                    chain: self,
-                    scale_encoded_header,
-                    parent_tree_index,
-                    body,
-                    block1_slot_number,
-                },
-            ))
-        } else {
-            let parent_block_header = if let Some(parent_tree_index) = parent_tree_index {
-                &self.blocks.get(parent_tree_index).unwrap().header
-            } else {
-                &self.finalized_block_header
-            };
-
-            let mut process = verify::header_only::verify(verify::header_only::Config {
-                babe_genesis_configuration: &self.babe_genesis_config,
-                block1_slot_number,
-                now_from_unix_epoch: {
-                    // TODO: is it reasonable to use the stdlib here?
-                    //std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap()
-                    // TODO: this is commented out because of Wasm support
-                    core::time::Duration::new(0, 0)
-                },
-                block_header: decoded_header.clone(),
-                parent_block_header: parent_block_header.into(),
-            });
-
-            let result = loop {
-                match process {
-                    verify::header_only::Verify::Finished(Ok(result)) => break result,
-                    verify::header_only::Verify::Finished(Err(err)) => {
-                        return BodyOrHeader::Header(Err(HeaderVerifyError::VerificationFailed(
-                            err,
-                        )));
-                    }
-                    verify::header_only::Verify::ReadyToRun(run) => process = run.run(),
-                    verify::header_only::Verify::BabeEpochInformation(epoch_info_rq) => {
-                        let epoch_info = if let Some(parent_tree_index) = parent_tree_index {
-                            let parent = self.blocks.get(parent_tree_index).unwrap();
-                            if epoch_info_rq.same_epoch_as_parent() {
-                                parent.babe_current_epoch.as_ref().unwrap()
-                            } else {
-                                &parent.babe_next_epoch
-                            }
-                        } else {
-                            if epoch_info_rq.same_epoch_as_parent() {
-                                self.babe_finalized_block_epoch_information
-                                    .as_ref()
-                                    .unwrap()
-                            } else {
-                                self.babe_finalized_next_epoch_transition.as_ref().unwrap()
-                            }
-                        };
-
-                        process = epoch_info_rq
-                            .inject_epoch((From::from(&epoch_info.0), epoch_info.1))
-                            .run();
-                    }
-                }
-            };
-
-            let is_new_best = if let Some(current_best) = self.current_best {
-                is_better_block(
-                    &self.blocks,
-                    current_best,
-                    parent_tree_index,
-                    decoded_header.clone(),
-                )
-            } else {
-                true
-            };
-
-            let babe_block1_slot_number = block1_slot_number.unwrap_or_else(|| {
-                debug_assert_eq!(decoded_header.number, 1);
-                result.slot_number
-            });
-
-            let babe_current_epoch = if result.babe_epoch_transition_target.is_some() {
-                if let Some(parent_tree_index) = parent_tree_index {
-                    Some(
-                        self.blocks
-                            .get(parent_tree_index)
-                            .unwrap()
-                            .babe_next_epoch
-                            .clone(),
-                    )
-                } else {
-                    self.babe_finalized_next_epoch_transition.clone()
-                }
-            } else if let Some(parent_tree_index) = parent_tree_index {
-                self.blocks
-                    .get(parent_tree_index)
-                    .unwrap()
-                    .babe_current_epoch
-                    .clone()
-            } else {
-                self.babe_finalized_block_epoch_information.clone()
-            };
-
-            let babe_next_epoch = match (
-                decoded_header.digest.babe_epoch_information(),
-                parent_tree_index,
-                &self.babe_finalized_next_epoch_transition,
-            ) {
-                (Some((ref new_epoch, Some(new_config))), _, _) => {
-                    Arc::new((new_epoch.clone().into(), new_config))
-                }
-                (Some((ref new_epoch, None)), Some(parent_tree_index), _) => {
-                    let new_config = self
-                        .blocks
-                        .get(parent_tree_index)
-                        .unwrap()
-                        .babe_next_epoch
-                        .1
-                        .clone();
-                    Arc::new((new_epoch.clone().into(), new_config))
-                }
-                (Some((ref new_epoch, None)), None, Some(finalized_next)) => {
-                    Arc::new((new_epoch.clone().into(), finalized_next.1))
-                }
-                (Some((ref new_epoch, None)), None, None) => Arc::new((
-                    new_epoch.clone().into(),
-                    self.babe_genesis_config.epoch0_configuration(),
-                )),
-                (None, Some(parent_tree_index), _) => self
-                    .blocks
-                    .get(parent_tree_index)
-                    .unwrap()
-                    .babe_next_epoch
-                    .clone(),
-                (None, None, _) => {
-                    // Block 1 always contains a Babe epoch transition. Consequently, this block
-                    // can't be reached for block 1.
-                    // `babe_finalized_next_epoch_transition` is `None` only if the finalized
-                    // block is 0.
-                    // `babe_finalized_next_epoch_transition` is therefore always `Some`
-                    // Q.E.D.
-                    debug_assert_ne!(decoded_header.number, 1);
-                    self.babe_finalized_next_epoch_transition.clone().unwrap()
-                }
-            };
-
-            BodyOrHeader::Header(Ok(HeaderVerifySuccess::Insert {
-                block_height: decoded_header.number,
-                is_new_best,
-                insert: Insert {
-                    chain: self,
-                    parent_tree_index,
-                    is_new_best,
-                    header: decoded_header.into(),
-                    hash,
-                    babe_block1_slot_number,
-                    babe_current_epoch,
-                    babe_next_epoch,
-                },
-            }))
-        }
+        BodyVerifyStep1::ParentRuntimeRequired(BodyVerifyRuntimeRequired {
+            chain: self,
+            scale_encoded_header,
+            parent_tree_index,
+            body,
+            block1_slot_number,
+        })
     }
 
     /// Verifies the given justification.
@@ -758,48 +789,44 @@ where
     }
 }
 
-enum BodyOrHeader<'c, T, I> {
-    Header(Result<HeaderVerifySuccess<'c, T>, HeaderVerifyError>),
-    Body(BodyVerifyStep1<'c, T, I>),
-}
-
 ///
 #[derive(Debug)]
-pub enum BodyVerifyStep1<'c, T, I> {
+pub enum BodyVerifyStep1<T, I> {
     /// Block is already known.
-    Duplicate,
+    Duplicate(NonFinalizedTree<T>),
 
     /// Error while decoding the header.
-    InvalidHeader(header::Error),
+    InvalidHeader(NonFinalizedTree<T>, header::Error),
 
     /// The parent of the block isn't known.
     BadParent {
+        chain: NonFinalizedTree<T>,
         /// Hash of the parent block in question.
         parent_hash: [u8; 32],
     },
 
     /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the
     /// runtime of the parent block must be provided.
-    ParentRuntimeRequired(BodyVerifyRuntimeRequired<'c, T, I>),
+    ParentRuntimeRequired(BodyVerifyRuntimeRequired<T, I>),
 }
 
 /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the runtime
 /// of the parent block must be provided.
 #[derive(Debug)]
-pub struct BodyVerifyRuntimeRequired<'c, T, I> {
-    chain: &'c mut NonFinalizedTree<T>,
+pub struct BodyVerifyRuntimeRequired<T, I> {
+    chain: NonFinalizedTree<T>,
     scale_encoded_header: Vec<u8>, // TODO: should be owned Header
     parent_tree_index: Option<fork_tree::NodeIndex>,
     body: I,
     block1_slot_number: Option<u64>,
 }
 
-impl<'c, T, I, E> BodyVerifyRuntimeRequired<'c, T, I>
+impl<T, I, E> BodyVerifyRuntimeRequired<T, I>
 where
     I: ExactSizeIterator<Item = E> + Clone,
     E: AsRef<[u8]> + Clone,
 {
-    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<'c, T> {
+    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
             &self.chain.blocks.get(parent_tree_index).unwrap().header
         } else {
@@ -833,29 +860,29 @@ where
 }
 
 /// Header and body verification in progress.
-pub enum BodyVerifyStep2<'c, T> {
+pub enum BodyVerifyStep2<T> {
     /// Verification is over.
     Finished {
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
         parent_runtime: executor::WasmVmPrototype,
-        /// Outcome of the verification.
-        result: Result<Insert<'c, T>, HeaderVerifyError>,
+        ///// Outcome of the verification.
+        // TODO: result: Result<Insert<T>, HeaderVerifyError>,
     },
     /// Loading a storage value is required in order to continue.
-    StorageGet(StorageGet<'c, T>),
+    StorageGet(StorageGet<T>),
     /// Fetching the list of keys with a given prefix is required in order to continue.
-    StoragePrefixKeys(StoragePrefixKeys<'c, T>),
+    StoragePrefixKeys(StoragePrefixKeys<T>),
     /// Fetching the key that follows a given one is required in order to continue.
-    StorageNextKey(StorageNextKey<'c, T>),
+    StorageNextKey(StorageNextKey<T>),
 }
 
-struct BodyVerifyShared<'c, T> {
-    chain: &'c mut NonFinalizedTree<T>,
+struct BodyVerifyShared<T> {
+    chain: NonFinalizedTree<T>,
     parent_tree_index: Option<fork_tree::NodeIndex>,
 }
 
-impl<'c, T> BodyVerifyStep2<'c, T> {
-    fn from_inner(mut inner: verify::header_body::Verify, chain: BodyVerifyShared<'c, T>) -> Self {
+impl<T> BodyVerifyStep2<T> {
+    fn from_inner(mut inner: verify::header_body::Verify, chain: BodyVerifyShared<T>) -> Self {
         loop {
             match inner {
                 verify::header_body::Verify::Finished(Ok(_)) => {
@@ -905,12 +932,12 @@ impl<'c, T> BodyVerifyStep2<'c, T> {
 
 /// Loading a storage value is required in order to continue.
 #[must_use]
-pub struct StorageGet<'c, T> {
+pub struct StorageGet<T> {
     inner: verify::header_body::StorageGet,
-    chain: BodyVerifyShared<'c, T>,
+    chain: BodyVerifyShared<T>,
 }
 
-impl<'c, T> StorageGet<'c, T> {
+impl<T> StorageGet<T> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     // TODO: shouldn't be mut
     pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
@@ -936,7 +963,7 @@ impl<'c, T> StorageGet<'c, T> {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
-    pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<'c, T> {
+    pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_value(value);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }
@@ -944,12 +971,12 @@ impl<'c, T> StorageGet<'c, T> {
 
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
-pub struct StoragePrefixKeys<'c, T> {
+pub struct StoragePrefixKeys<T> {
     inner: verify::header_body::StoragePrefixKeys,
-    chain: BodyVerifyShared<'c, T>,
+    chain: BodyVerifyShared<T>,
 }
 
-impl<'c, T> StoragePrefixKeys<'c, T> {
+impl<T> StoragePrefixKeys<T> {
     /// Returns the prefix whose keys to load.
     // TODO: don't take &mut mut but &self
     pub fn prefix(&mut self) -> &[u8] {
@@ -957,10 +984,7 @@ impl<'c, T> StoragePrefixKeys<'c, T> {
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(
-        self,
-        keys: impl Iterator<Item = impl AsRef<[u8]>>,
-    ) -> BodyVerifyStep2<'c, T> {
+    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_keys(keys);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }
@@ -968,12 +992,12 @@ impl<'c, T> StoragePrefixKeys<'c, T> {
 
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
-pub struct StorageNextKey<'c, T> {
+pub struct StorageNextKey<T> {
     inner: verify::header_body::StorageNextKey,
-    chain: BodyVerifyShared<'c, T>,
+    chain: BodyVerifyShared<T>,
 }
 
-impl<'c, T> StorageNextKey<'c, T> {
+impl<T> StorageNextKey<T> {
     /// Returns the key whose next key must be passed back.
     // TODO: don't take &mut mut but &self
     pub fn key(&mut self) -> &[u8] {
@@ -981,7 +1005,7 @@ impl<'c, T> StorageNextKey<'c, T> {
     }
 
     /// Injects the key.
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<'c, T> {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_key(key);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)
     }

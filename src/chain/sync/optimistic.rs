@@ -49,7 +49,7 @@ pub struct Config {
 }
 
 /// Optimistic headers-only syncing.
-pub struct OptimisticSync<TRq, TSrc> {
+pub struct OptimisticSync<TRq, TSrc, TBl> {
     best_block_number: u64,
 
     /// List of sources of blocks.
@@ -58,7 +58,7 @@ pub struct OptimisticSync<TRq, TSrc> {
     cancelling_requests: bool,
 
     /// Queue of block requests, either to be started, in progress, or completed.
-    verification_queue: VecDeque<VerificationQueueEntry<TRq>>,
+    verification_queue: VecDeque<VerificationQueueEntry<TRq, TBl>>,
 
     /// Value passed by [`Config::blocks_request_granularity`].
     blocks_request_granularity: NonZeroU32,
@@ -73,9 +73,9 @@ pub struct OptimisticSync<TRq, TSrc> {
     source_selection_rng: rand_chacha::ChaCha8Rng,
 }
 
-struct VerificationQueueEntry<TRq> {
+struct VerificationQueueEntry<TRq, TBl> {
     block_height: NonZeroU64,
-    ty: VerificationQueueEntryTy<TRq>,
+    ty: VerificationQueueEntryTy<TRq, TBl>,
 }
 
 struct Source<TSrc> {
@@ -83,7 +83,7 @@ struct Source<TSrc> {
     banned: bool, // TODO: ban shouldn't be held forever
 }
 
-enum VerificationQueueEntryTy<TRq> {
+enum VerificationQueueEntryTy<TRq, TBl> {
     Missing,
     Requested {
         id: RequestId,
@@ -92,10 +92,10 @@ enum VerificationQueueEntryTy<TRq> {
         // Index of this source within [`OptimisticSync::sources`].
         source: usize,
     },
-    Queued(Vec<RequestSuccessBlock>),
+    Queued(Vec<TBl>),
 }
 
-impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
+impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     /// Builds a new [`OptimisticSync`].
     pub fn new(config: Config) -> Self {
         OptimisticSync {
@@ -149,7 +149,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
     /// need to be cancelled.
-    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc>> {
+    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc, TBl>> {
         if self.cancelling_requests {
             while let Some(queue_elem) = self.verification_queue.pop_back() {
                 match queue_elem.ty {
@@ -251,7 +251,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
     pub fn finish_request<'a>(
         &'a mut self,
         request_id: RequestId,
-        outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
+        outcome: Result<impl Iterator<Item = TBl>, RequestFail>,
     ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
         let (verification_queue_entry, source_id) = self
             .verification_queue
@@ -298,22 +298,26 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
     }
 
     /// Process a single block in the queue of verification.
-    pub fn process_one(&mut self) -> Option<ProcessOne<TRq, TSrc>> {
+    ///
+    /// Returns an error if the queue is empty.
+    pub fn process_one(mut self) -> Result<ProcessOne<TRq, TSrc, TBl>, Self> {
         if self.cancelling_requests {
-            return None;
+            return Err(self);
         }
 
         // Extract the chunk of blocks to process next.
-        let blocks = match &mut self.verification_queue.get_mut(0)?.ty {
-            VerificationQueueEntryTy::Queued(blocks) => mem::replace(blocks, Default::default()),
-            _ => return None,
+        let blocks = match &mut self.verification_queue.get_mut(0).map(|b| &mut b.ty) {
+            Some(VerificationQueueEntryTy::Queued(blocks)) => {
+                mem::replace(blocks, Default::default())
+            }
+            _ => return Err(self),
         };
 
         let expected_block_height = self.verification_queue[0].block_height.get();
 
         self.verification_queue.pop_front();
 
-        Some(ProcessOne {
+        Ok(ProcessOne {
             expected_block_height,
             blocks: blocks.into_iter(),
             report: ProcessOneReport { parent: self },
@@ -331,7 +335,7 @@ pub struct SourceId(usize);
 
 /// Request that should be emitted towards a certain source.
 #[derive(Debug)]
-pub enum RequestAction<'a, TRq, TSrc> {
+pub enum RequestAction<'a, TRq, TSrc, TBl> {
     /// A request must be emitted for the given source.
     ///
     /// The request has **not** been acknowledged when this event is emitted. You **must** call
@@ -343,7 +347,7 @@ pub enum RequestAction<'a, TRq, TSrc> {
         /// User data of source where to request blocks from.
         source: &'a mut TSrc,
         /// Must be used to accept the request.
-        start: Start<'a, TRq, TSrc>,
+        start: Start<'a, TRq, TSrc, TBl>,
         /// Height of the block to request.
         block_height: NonZeroU64,
         /// Number of blocks to request. Always smaller than the value passed through
@@ -369,15 +373,15 @@ pub enum RequestAction<'a, TRq, TSrc> {
 
 /// Must be used to accept the request.
 #[must_use]
-pub struct Start<'a, TRq, TSrc> {
-    verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq>>,
+pub struct Start<'a, TRq, TSrc, TBl> {
+    verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq, TBl>>,
     source: usize,
     missing_pos: usize,
     next_request_id: &'a mut RequestId,
     marker: PhantomData<&'a TSrc>,
 }
 
-impl<'a, TRq, TSrc> Start<'a, TRq, TSrc> {
+impl<'a, TRq, TSrc, TBl> Start<'a, TRq, TSrc, TBl> {
     /// Updates the [`OptimisticSync`] with the fact that the request has actually been
     /// started. Returns the identifier for the request that must later be passed back to
     /// [`OptimisticSync::finish_request`].
@@ -395,7 +399,7 @@ impl<'a, TRq, TSrc> Start<'a, TRq, TSrc> {
     }
 }
 
-impl<'a, TRq, TSrc> fmt::Debug for Start<'a, TRq, TSrc> {
+impl<'a, TRq, TSrc, TBl> fmt::Debug for Start<'a, TRq, TSrc, TBl> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Start").finish()
     }
@@ -404,11 +408,6 @@ impl<'a, TRq, TSrc> fmt::Debug for Start<'a, TRq, TSrc> {
 pub enum FinishRequestOutcome<'a, TSrc> {
     Queued,
     SourcePunished(&'a mut TSrc),
-}
-
-pub struct RequestSuccessBlock {
-    pub scale_encoded_header: Vec<u8>,
-    pub scale_encoded_justification: Option<Vec<u8>>,
 }
 
 /// Reason why a request has failed.
@@ -426,12 +425,12 @@ pub struct ChainStateUpdate {
 }
 
 /// Iterator that drains requests after a source has been removed.
-pub struct RequestsDrain<'a, TRq> {
-    iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq>>>,
+pub struct RequestsDrain<'a, TRq, TBl> {
+    iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq, TBl>>>,
     source_index: usize,
 }
 
-impl<'a, TRq> Iterator for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> Iterator for RequestsDrain<'a, TRq, TBl> {
     type Item = (RequestId, TRq);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -458,13 +457,13 @@ impl<'a, TRq> Iterator for RequestsDrain<'a, TRq> {
     }
 }
 
-impl<'a, TRq> fmt::Debug for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> fmt::Debug for RequestsDrain<'a, TRq, TBl> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("RequestsDrain").finish()
     }
 }
 
-impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> Drop for RequestsDrain<'a, TRq, TBl> {
     fn drop(&mut self) {
         // Drain all remaining elements even if the iterator is dropped eagerly.
         // This is the reason why a custom iterator type is needed, rather than using combinators.
@@ -472,24 +471,32 @@ impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
     }
 }
 
-pub struct ProcessOne<'a, TRq, TSrc> {
+pub struct ProcessOne<TRq, TSrc, TBl> {
     pub expected_block_height: u64,
-    pub blocks: vec::IntoIter<RequestSuccessBlock>,
-    pub report: ProcessOneReport<'a, TRq, TSrc>,
+    pub blocks: vec::IntoIter<TBl>,
+    pub report: ProcessOneReport<TRq, TSrc, TBl>,
 }
 
 #[must_use]
-pub struct ProcessOneReport<'a, TRq, TSrc> {
-    parent: &'a mut OptimisticSync<TRq, TSrc>,
+pub struct ProcessOneReport<TRq, TSrc, TBl> {
+    parent: OptimisticSync<TRq, TSrc, TBl>,
 }
 
-impl<'a, TRq, TSrc> ProcessOneReport<'a, TRq, TSrc> {
-    pub fn reset_to_finalized(self, finalized_block_number: u64) {
+impl<TRq, TSrc, TBl> ProcessOneReport<TRq, TSrc, TBl> {
+    pub fn reset_to_finalized(
+        mut self,
+        finalized_block_number: u64,
+    ) -> OptimisticSync<TRq, TSrc, TBl> {
         self.parent.cancelling_requests = true;
         self.parent.best_block_number = finalized_block_number;
+        self.parent
     }
 
-    pub fn update_block_height(self, new_best_block_number: u64) {
+    pub fn update_block_height(
+        mut self,
+        new_best_block_number: u64,
+    ) -> OptimisticSync<TRq, TSrc, TBl> {
         self.parent.best_block_number = new_best_block_number;
+        self.parent
     }
 }
