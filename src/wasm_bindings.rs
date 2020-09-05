@@ -181,14 +181,8 @@ async fn start_sync(
 
     let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
         headers_optimistic::Config {
-            chain_config: chain::blocks_tree::Config {
-                chain_information,
-                babe_genesis_config,
-                blocks_capacity: {
-                    // This capacity should be the maximum interval between two justifications.
-                    1024
-                },
-            },
+            chain_information,
+            babe_genesis_config,
             sources_capacity: 32,
             source_selection_randomness_seed: rand::random(),
             blocks_request_granularity: NonZeroU32::new(128).unwrap(),
