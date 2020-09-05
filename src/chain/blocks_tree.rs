@@ -37,7 +37,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::{cmp, fmt, iter, mem};
 
 /// Configuration for the [`NonFinalizedTree`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
     pub chain_information: chain_information::ChainInformation,

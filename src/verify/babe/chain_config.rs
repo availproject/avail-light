@@ -6,6 +6,7 @@ use parity_scale_codec::DecodeAll as _;
 /// BABE configuration of a chain, as extracted from the genesis block.
 ///
 /// The way a chain configures BABE is stored in its runtime.
+#[derive(Clone)]
 pub struct BabeGenesisConfiguration {
     inner: OwnedGenesisConfiguration,
     epoch0_information: header::BabeNextEpoch,

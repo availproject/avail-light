@@ -14,11 +14,11 @@
 // TODO: document usage
 // TODO: the quality of this module's code is sub-par compared to what we want
 
-use crate::verify::babe;
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
+use crate::verify::babe;
 
-use core::num::NonZeroU32;
+use core::{convert::TryFrom as _, num::NonZeroU32};
 
 pub use optimistic::{
     FinishRequestOutcome, RequestAction, RequestFail, RequestId, RequestSuccessBlock, SourceId,
@@ -64,24 +64,36 @@ pub struct Config {
 
 /// Optimistic headers-only syncing.
 pub struct OptimisticHeadersSync<TRq, TSrc> {
-    // TODO: to reduce memory usage, keep the finalized block of this chain close to its best block, and maintain a `ChainInformation` in parallel of the actual finalized block
+    /// Configuration for the actual finalized block of the chain.
+    /// Used if the `chain` field needs to be recreated.
+    finalized_chain_information: blocks_tree::Config,
+
+    /// Chain containing the state necessary to verify blocks.
+    ///
+    /// Important: the finalized block in this chain is not the actual finalized blocks. In order
+    /// to reduce memory consumption, every block that isn't the best block is discarded. This is
+    /// done by considering the best block as finalized even though it's not actually.
     chain: blocks_tree::NonFinalizedTree<()>,
 
+    /// Underlying helper. Manages sources and requests.
     sync: optimistic::OptimisticSync<TRq, TSrc>,
 }
 
 impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// Builds a new [`OptimisticHeadersSync`].
     pub fn new(config: Config) -> Self {
-        let chain = blocks_tree::NonFinalizedTree::new(blocks_tree::Config {
+        let blocks_tree_config = blocks_tree::Config {
             chain_information: config.chain_information,
             babe_genesis_config: config.babe_genesis_config,
-            blocks_capacity: 1024, // TODO: right now an arbitrary value; decrease to blocks_request_granularity when doing the change where we always consider the best block as finalized
-        });
+            blocks_capacity: usize::try_from(config.blocks_request_granularity.get())
+                .unwrap_or(usize::max_value()),
+        };
 
+        let chain = blocks_tree::NonFinalizedTree::new(blocks_tree_config.clone());
         let best_block_number = chain.best_block_header().number;
 
         OptimisticHeadersSync {
+            finalized_chain_information: blocks_tree_config,
             chain,
             sync: optimistic::OptimisticSync::new(optimistic::Config {
                 best_block_number,
@@ -96,7 +108,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
     /// latest finalized block. Can later be used to reconstruct a chain.
     pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
-        self.chain.as_chain_information()
+        (&self.finalized_chain_information.chain_information).into()
     }
 
     /// Inform the [`OptimisticHeadersSync`] of a new potential source of blocks.
@@ -169,7 +181,9 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     if !is_new_best || block_height != to_process.expected_block_height {
                         // Something unexpected happened. See above.
                         // TODO: report with an event that this has happened
-                        self.chain.clear();
+                        self.chain = blocks_tree::NonFinalizedTree::new(
+                            self.finalized_chain_information.clone(),
+                        );
                         to_process
                             .report
                             .reset_to_finalized(self.chain.finalized_block_header().number);
@@ -181,7 +195,9 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                 Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => {
                     // Something unexpected happened. See above.
                     // TODO: report with an event that this has happened
-                    self.chain.clear();
+                    self.chain = blocks_tree::NonFinalizedTree::new(
+                        self.finalized_chain_information.clone(),
+                    );
                     to_process
                         .report
                         .reset_to_finalized(self.chain.finalized_block_header().number);
@@ -190,21 +206,29 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                 Err(err) => {
                     // Something unexpected happened. See above.
                     // TODO: report with an event that this has happened
-                    self.chain.clear();
+                    self.chain = blocks_tree::NonFinalizedTree::new(
+                        self.finalized_chain_information.clone(),
+                    );
                     to_process
                         .report
                         .reset_to_finalized(self.chain.finalized_block_header().number);
-                    panic!() // TODO: report with an event that this has happened
+                    panic!("{:?}", err) // TODO: report with an event that this has happened
                 }
             }
 
             if let Some(justification) = block.scale_encoded_justification {
                 match self.chain.verify_justification(justification.as_ref()) {
-                    Ok(apply) => apply.apply(),
+                    Ok(apply) => {
+                        apply.apply();
+                        self.finalized_chain_information.chain_information =
+                            self.chain.as_chain_information().into();
+                    }
                     Err(err) => {
                         // Something unexpected happened. See above.
                         // TODO: report with an event that this has happened
-                        self.chain.clear();
+                        self.chain = blocks_tree::NonFinalizedTree::new(
+                            self.finalized_chain_information.clone(),
+                        );
                         to_process
                             .report
                             .reset_to_finalized(self.chain.finalized_block_header().number);
@@ -220,11 +244,26 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             .report
             .update_block_height(self.chain.best_block_header().number);
 
+        // As documented, the finalized block tracked by the `chain` field is not the actual
+        // finalized block. The optimistic sync state machine tracks the actual finalized block
+        // separately, and the finalized block of `chain` is always set to the best block.
+        let best_block_hash = self.chain.best_block_hash();
+        // `set_finalized_block` will error if best block == finalized block.
+        let _ = self.chain.set_finalized_block(&best_block_hash);
+
         // TODO: consider finer granularity in report
         Some(ChainStateUpdate {
-            finalized_block_hash: self.chain.finalized_block_hash(),
-            finalized_block_number: self.chain.finalized_block_header().number,
-            best_block_hash: self.chain.best_block_hash(),
+            finalized_block_hash: self
+                .finalized_chain_information
+                .chain_information
+                .finalized_block_header
+                .hash(), // TODO: expensive to compute for no reason
+            finalized_block_number: self
+                .finalized_chain_information
+                .chain_information
+                .finalized_block_header
+                .number,
+            best_block_hash,
             best_block_number: self.chain.best_block_header().number,
         })
     }

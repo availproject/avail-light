@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 /// Information about the latest finalized block and state found in its ancestors.
 // TODO: should it also contain the babe root configuration?
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChainInformation {
     /// SCALE encoding of the header of the highest known finalized block.
     ///
