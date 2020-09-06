@@ -14,7 +14,7 @@ use crate::{executor, trie::calculate_root, verify::babe};
 
 use alloc::{collections::BTreeMap, vec};
 use core::{iter, num::NonZeroU32};
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 
 pub use optimistic::{
     FinishRequestOutcome, RequestAction, RequestFail, RequestId, SourceId, Start,
@@ -66,7 +66,7 @@ pub struct Config {
 /// Optimistic headers-only syncing.
 pub struct OptimisticFullSync<TRq, TSrc> {
     // TODO: doc
-    chain: blocks_tree::NonFinalizedTree<()>,
+    chain: blocks_tree::NonFinalizedTree<Block>,
 
     /// Changes in the storage of the best block compared to the finalized block.
     /// The `BTreeMap`'s keys are storage keys, and its values are new values or `None` if the
@@ -85,6 +85,18 @@ pub struct OptimisticFullSync<TRq, TSrc> {
     /// Underlying helper. Manages sources and requests.
     /// Always `Some`, except during some temporary extractions.
     sync: Option<optimistic::OptimisticSync<TRq, TSrc, RequestSuccessBlock>>,
+}
+
+struct Block {
+    /// Changes to the storage made by this block compared to its parent.
+    ///
+    /// Not used by this state machine but reported to the user.
+    storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+
+    /// List of changes to the offchain storage that this block performs.
+    ///
+    /// Not used by this state machine but reported to the user.
+    offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 }
 
 impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
@@ -239,9 +251,9 @@ pub enum ProcessOne<TRq, TSrc> {
 }
 
 enum Inner {
-    Start(blocks_tree::NonFinalizedTree<()>),
-    Step1(blocks_tree::BodyVerifyStep1<(), vec::IntoIter<Vec<u8>>>),
-    Step2(blocks_tree::BodyVerifyStep2<()>),
+    Start(blocks_tree::NonFinalizedTree<Block>),
+    Step1(blocks_tree::BodyVerifyStep1<Block, vec::IntoIter<Vec<u8>>>),
+    Step2(blocks_tree::BodyVerifyStep2<Block>),
 }
 
 struct ProcessOneShared<TRq, TSrc> {
@@ -383,20 +395,26 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
                     storage_top_trie_changes,
+                    offchain_storage_changes,
                     top_trie_root_calculation_cache,
                     parent_runtime,
                     result: Ok(success),
                 }) => {
                     // Successfully verified block!
                     // Inserting it into the chain and updated all the caches.
-                    let mut chain = success.insert(());
                     if !storage_top_trie_changes.contains_key(&b":code"[..]) {
                         shared.runtime_code_cache = Some(parent_runtime);
                     }
                     shared.top_trie_root_calculation_cache = Some(top_trie_root_calculation_cache);
-                    for (key, value) in storage_top_trie_changes {
-                        shared.best_to_finalized_storage_diff.insert(key, value);
+                    for (key, value) in &storage_top_trie_changes {
+                        shared
+                            .best_to_finalized_storage_diff
+                            .insert(key.clone(), value.clone());
                     }
+                    let mut chain = success.insert(Block {
+                        storage_top_trie_changes,
+                        offchain_storage_changes,
+                    });
 
                     // `pending_encoded_verification` contains the justification (if any)
                     // corresponding to the block that has just been verified. Verifying the
@@ -488,8 +506,8 @@ pub struct StorageGet<TRq, TBl> {
 }
 
 enum StorageGetTarget {
-    Storage(blocks_tree::StorageGet<()>),
-    Runtime(blocks_tree::BodyVerifyRuntimeRequired<(), vec::IntoIter<Vec<u8>>>),
+    Storage(blocks_tree::StorageGet<Block>),
+    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
 }
 
 impl<TRq, TBl> StorageGet<TRq, TBl> {
@@ -529,7 +547,7 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
 pub struct StoragePrefixKeys<TRq, TBl> {
-    inner: blocks_tree::StoragePrefixKeys<()>,
+    inner: blocks_tree::StoragePrefixKeys<Block>,
     shared: ProcessOneShared<TRq, TBl>,
 }
 
@@ -571,7 +589,7 @@ impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
 pub struct StorageNextKey<TRq, TBl> {
-    inner: blocks_tree::StorageNextKey<()>,
+    inner: blocks_tree::StorageNextKey<Block>,
     shared: ProcessOneShared<TRq, TBl>,
 }
 

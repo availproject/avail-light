@@ -914,6 +914,8 @@ pub enum BodyVerifyStep2<T> {
         // TODO: doc
         storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
         // TODO: doc
+        offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+        // TODO: doc
         top_trie_root_calculation_cache: calculate_root::CalculationCache,
         /// Outcome of the verification.
         result: Result<BodyInsert<T>, HeaderVerifyError>, // TODO: BodyVerifyError, or rename the error to be common
@@ -1035,6 +1037,7 @@ impl<T> BodyVerifyStep2<T> {
                     return BodyVerifyStep2::Finished {
                         parent_runtime: success.parent_runtime,
                         storage_top_trie_changes: success.storage_top_trie_changes,
+                        offchain_storage_changes: success.offchain_storage_changes,
                         top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                         result: Ok(BodyInsert {
                             chain: chain.chain,
