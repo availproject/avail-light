@@ -692,19 +692,28 @@ impl<T> NonFinalizedTree<T> {
     /// that block will fail.
     ///
     /// The block must have been passed to [`NonFinalizedTree::verify_header`].
-    // TODO: return the pruned blocks
-    pub fn set_finalized_block(&mut self, block_hash: &[u8; 32]) -> Result<(), SetFinalizedError> {
+    ///
+    /// Returns an iterator containing the now-finalized blocks.
+    /// The pruning is completely performed, even if the iterator is dropped eagerly.
+    // TODO: defined order of the returned blocks ^
+    // TODO: not true /!\  ^  the iterator also returns blocks that weren't part of the chain
+    pub fn set_finalized_block(
+        &mut self,
+        block_hash: &[u8; 32],
+    ) -> Result<SetFinalizedBlockIter<T>, SetFinalizedError> {
         let block_index = match self.blocks.find(|b| b.hash == *block_hash) {
             Some(idx) => idx,
             None => return Err(SetFinalizedError::UnknownBlock),
         };
 
-        self.set_finalized_block_inner(block_index);
-        Ok(())
+        Ok(self.set_finalized_block_inner(block_index))
     }
 
     /// Private function that does the same as [`NonFinalizedTree::set_finalized_block`].
-    fn set_finalized_block_inner(&mut self, block_index: fork_tree::NodeIndex) {
+    fn set_finalized_block_inner(
+        &mut self,
+        block_index: fork_tree::NodeIndex,
+    ) -> SetFinalizedBlockIter<T> {
         // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
         //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
 
@@ -772,15 +781,9 @@ impl<T> NonFinalizedTree<T> {
                 Some(new_finalized_block.babe_block1_slot_number);
         }
 
-        self.blocks.prune_ancestors(block_index);
-
-        // If the current best was removed from the list, we need to update it.
-        if self
-            .current_best
-            .map_or(true, |b| self.blocks.get(b).is_none())
-        {
-            // TODO: no; should try to find best block
-            self.current_best = None;
+        SetFinalizedBlockIter {
+            iter: self.blocks.prune_ancestors(block_index),
+            current_best: &mut self.current_best,
         }
     }
 }
@@ -1361,8 +1364,10 @@ pub struct JustificationApply<'c, T> {
 
 impl<'c, T> JustificationApply<'c, T> {
     /// Applies the justification, finalizing the given block.
-    // TODO: return type?
-    pub fn apply(self) {
+    ///
+    /// This function, including its return type, behaves in the same way as
+    /// [`NonFinalizedTree::set_finalized_block`].
+    pub fn apply(self) -> SetFinalizedBlockIter<'c, T> {
         self.chain.set_finalized_block_inner(self.to_finalize)
     }
 
@@ -1410,6 +1415,35 @@ pub enum JustificationVerifyError {
     /// The justification verification has failed. The justification is invalid and should be
     /// thrown away.
     VerificationFailed(justification::verify::Error),
+}
+
+/// Iterator producing the newly-finalized blocks removed from the state when the finalized block
+/// is updated.
+pub struct SetFinalizedBlockIter<'a, T> {
+    iter: fork_tree::PruneAncestorsIter<'a, Block<T>>,
+    current_best: &'a mut Option<fork_tree::NodeIndex>,
+}
+
+impl<'a, T> Iterator for SetFinalizedBlockIter<'a, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (node_index, block) = self.iter.next()?;
+        if Some(node_index) == *self.current_best {
+            *self.current_best = None;
+        }
+        Some(block.user_data)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a, T> Drop for SetFinalizedBlockIter<'a, T> {
+    fn drop(&mut self) {
+        // TODO: update current_best with the new best block
+    }
 }
 
 /// Error that can happen when setting the finalized block.

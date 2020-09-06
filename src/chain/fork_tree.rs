@@ -113,60 +113,28 @@ impl<T> ForkTree<T> {
     /// - The ancestors of the node passed as parameter.
     /// - Any node not a descendant of the node passed as parameter.
     ///
+    /// Returns an iterator containing the removed elements in an unspecified order.
+    /// All elements are removed from the tree even if the returned iterator is dropped eagerly.
+    ///
     /// # Panic
     ///
     /// Panics if the [`NodeIndex`] is invalid.
     ///
-    pub fn prune_ancestors(&mut self, node_index: NodeIndex) {
-        // The implementation consists in ultimately replacing the content of `self.first_root`
-        // with the content of `self.nodes[node_index].first_child` and updating everything else
-        // accordingly. Save the value here for later.
-        let new_first_root = self.nodes[node_index.0].first_child;
+    pub fn prune_ancestors(&mut self, node_index: NodeIndex) -> PruneAncestorsIter<T> {
+        // The implementation consists in replacing the content of `self.first_root` with the
+        // content of `self.nodes[node_index].first_child` and updating everything else
+        // accordingly.
 
-        // Traverse all the nodes, starting from the root, and removing them one by one.
-        let mut iter = self.first_root.unwrap();
-        let mut traversing_up = false;
-        loop {
-            let mut iter_node = &mut self.nodes[iter];
+        let iter = self.first_root.unwrap();
+        self.first_root = self.nodes[node_index.0].first_child;
 
-            // If current node is a direct child of `node_index`, then don't remove it.
-            // Instead, just update its parent to be `None` and continue iterating.
-            if iter_node.parent == Some(node_index.0) {
-                debug_assert!(!traversing_up);
-                iter_node.parent = None;
-                iter = if let Some(next_sibling) = iter_node.next_sibling {
-                    next_sibling
-                } else {
-                    traversing_up = true;
-                    node_index.0
-                };
-                continue;
-            }
-
-            // If `traversing_up` is false`, try to go down the hierarchy as deeply as possible.
-            if !traversing_up {
-                if let Some(first_child) = self.nodes[iter].first_child {
-                    iter = first_child;
-                    continue;
-                }
-            }
-
-            // Remove node, then jump either to its next sibling, or, if it was the last sibling,
-            // back to its parent.
-            let iter_node = self.nodes.remove(iter);
-            iter = if let Some(next_sibling) = iter_node.next_sibling {
-                traversing_up = false;
-                next_sibling
-            } else if let Some(parent) = iter_node.parent {
-                traversing_up = true;
-                parent
-            } else {
-                break;
-            };
+        PruneAncestorsIter {
+            finished: false,
+            tree: self,
+            new_final: node_index,
+            iter,
+            traversing_up: false,
         }
-
-        debug_assert!(!self.nodes.contains(node_index.0));
-        self.first_root = new_first_root;
     }
 
     /// Returns the common ancestor between `node1` and `node2`, if any is known.
@@ -360,6 +328,95 @@ where
         f.debug_list()
             .entries(self.nodes.iter().map(|(_, v)| &v.data))
             .finish()
+    }
+}
+
+/// Iterator of elements removed when pruning ancestors.
+pub struct PruneAncestorsIter<'a, T> {
+    /// True if iterator is completed. If true, none of the values of the other fields are relevant
+    /// anymore.
+    finished: bool,
+
+    // Parent object.
+    // Note that `first_root` has already been updated to be the new final, and therefore
+    // shouldn't be relied upon.
+    tree: &'a mut ForkTree<T>,
+
+    /// Current node being iterated.
+    /// Order of iteration is: go down the hierarchy as deep as possible by following the first
+    /// child. If there is no first child, instead go to the next sibling. If there is no next
+    /// sibling, go to the parent.
+    iter: usize,
+
+    /// True if the previous iteration was from a node lower in the hierarchy.
+    traversing_up: bool,
+
+    /// Target of the pruning. Value which `prune_ancestors` has been called with.
+    new_final: NodeIndex,
+}
+
+impl<'a, T> Iterator for PruneAncestorsIter<'a, T> {
+    type Item = (NodeIndex, T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.finished {
+                break None;
+            }
+
+            let mut iter_node = &mut self.tree.nodes[self.iter];
+
+            // If current node is a direct child of `new_final`, then don't remove it.
+            // Instead, just update its parent to be `None` and continue iterating.
+            if iter_node.parent == Some(self.new_final.0) {
+                debug_assert!(!self.traversing_up);
+                iter_node.parent = None;
+                self.iter = if let Some(next_sibling) = iter_node.next_sibling {
+                    next_sibling
+                } else {
+                    self.traversing_up = true;
+                    self.new_final.0
+                };
+                continue;
+            }
+
+            // If `traversing_up` is false`, try to go down the hierarchy as deeply as possible.
+            if !self.traversing_up {
+                if let Some(first_child) = self.tree.nodes[self.iter].first_child {
+                    self.iter = first_child;
+                    continue;
+                }
+            }
+
+            // Remove node.
+            let removed_node_index = NodeIndex(self.iter);
+            let iter_node = self.tree.nodes.remove(self.iter);
+
+            // Jump either to its next sibling, or, if it was the last sibling, back to its
+            // parent.
+            if let Some(next_sibling) = iter_node.next_sibling {
+                self.traversing_up = false;
+                self.iter = next_sibling;
+            } else if let Some(parent) = iter_node.parent {
+                self.traversing_up = true;
+                self.iter = parent;
+            } else {
+                self.finished = true;
+            };
+
+            break Some((removed_node_index, iter_node.data));
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.tree.nodes.len()))
+    }
+}
+
+impl<'a, T> Drop for PruneAncestorsIter<'a, T> {
+    fn drop(&mut self) {
+        // Make sure that all elements are removed.
+        while let Some(_) = self.next() {}
     }
 }
 
