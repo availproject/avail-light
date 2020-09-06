@@ -90,7 +90,6 @@ async fn async_main() {
         }
     });
 
-    /*
     let mut telemetry = {
         let endpoints = chain_spec
             .telemetry_endpoints()
@@ -117,15 +116,14 @@ async fn async_main() {
     })
     .map(|_| ());
 
-    let mut network_known_best = None;
-
     loop {
         futures::select! {
             _ = informant_timer.next() => {
+                // TODO:
                 // We end the informant line with a `\r` so that it overwrites itself every time.
                 // If any other line gets printed, it will overwrite the informant, and the
                 // informant will then print itself below, which is a fine behaviour.
-                eprint!("{}\r", substrate_lite::informant::InformantLine {
+                /*eprint!("{}\r", substrate_lite::informant::InformantLine {
                     chain_name: chain_spec.name(),
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: service.num_network_connections(),
@@ -134,47 +132,22 @@ async fn async_main() {
                     best_hash: &service.best_block_hash(),
                     finalized_hash: &service.finalized_block_hash(),
                     network_known_best,
-                });
-            }
-            service_event = service.next_event().fuse() => {
-                match service_event {
-                    substrate_lite::service::Event::NewNetworkExternalAddress { address } => {
-                        eprintln!("🔍 Discovered new external address for our node: {}", address);
-                    }
-                    substrate_lite::service::Event::BlockAnnounceReceived { number, .. } => {
-                        if let Some(curr_best) = network_known_best {
-                            network_known_best = Some(cmp::max(curr_best, number));
-                        } else {
-                            network_known_best = Some(number);
-                        }
-                    },
-                    substrate_lite::service::Event::NewChainHead { number, hash, head_update, modified_keys } => {
-                        // When major syncing, the rate at which this event is generated is pretty
-                        // high and sending a message to the telemetry server every single time
-                        // would use a lot of bandwidth.
-                        // TODO: make this cleaner
-                        if rand::Rng::gen_bool(&mut rand::thread_rng(), 0.01) {
-                            telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::BlockImport(substrate_lite::telemetry::message::Block {
-                                hash: hash.into(),
-                                height: number,
-                            }));
-                        }
-                    },
-                    _ => {}
-                }
+                });*/
             }
             telemetry_event = telemetry.next_event().fuse() => {
-                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
+                // TODO:
+                /*telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
                     name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
                     implementation: String::from("Secret projet 🤫").into_boxed_str(),  // TODO:
                     version: String::from("1.0.0").into_boxed_str(),   // TODO: version
                     validator: None,
                     network_id: Some(service.local_peer_id().to_base58().into_boxed_str()),
-                }));
+                }));*/
             },
             _ = telemetry_timer.next() => {
-                // Some of the fields below are set to `None` because there is no plan to
+                // TODO:
+                /*// Some of the fields below are set to `None` because there is no plan to
                 // implement reporting accurate metrics about the node.
                 telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemInterval(substrate_lite::telemetry::message::SystemInterval {
                     stats: substrate_lite::telemetry::message::NodeStats {
@@ -195,10 +168,10 @@ async fn async_main() {
                     used_db_cache_size: None,
                     disk_read_per_sec: None,
                     disk_write_per_sec: None,
-                }));
+                }));*/
             }
         }
-    }*/
+    }
 }
 
 async fn start_sync(

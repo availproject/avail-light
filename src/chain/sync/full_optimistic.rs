@@ -172,13 +172,17 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
     /// This method takes ownership of the [`OptimisticFullSync`] and starts a verification
     /// process. The [`OptimisticFullSync`] is yielded back at the end of this process.
     pub fn process_one(mut self) -> ProcessOne<TRq, TSrc> {
-        // TODO: don't unwrap
-        let to_process = self
-            .sync
-            .take()
-            .unwrap()
-            .process_one()
-            .unwrap_or_else(|_| panic!("nothing to do"));
+        let sync = self.sync.take().unwrap();
+
+        let to_process = match sync.process_one() {
+            Ok(tp) => tp,
+            Err(sync) => {
+                self.sync = Some(sync);
+                return ProcessOne::Finished {
+                    sync: self,
+                };
+            }
+        };
 
         self.chain.reserve(to_process.blocks.len());
 
