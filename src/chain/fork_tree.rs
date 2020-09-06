@@ -82,6 +82,11 @@ impl<T> ForkTree<T> {
         self.nodes.shrink_to_fit()
     }
 
+    /// Returns true if there isn't any element in the tree.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     /// Returns the number of elements in the tree.
     pub fn len(&self) -> usize {
         self.nodes.len()

@@ -185,6 +185,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
     ///
     /// This method takes ownership of the [`OptimisticFullSync`] and starts a verification
     /// process. The [`OptimisticFullSync`] is yielded back at the end of this process.
+    // TODO: rename, since we process more than one
     pub fn process_one(mut self) -> ProcessOne<TRq, TSrc> {
         let sync = self.sync.take().unwrap();
 
@@ -201,6 +202,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
         ProcessOne::from(
             Inner::Start(self.chain),
             ProcessOneShared {
+                pending_encoded_justification: None,
                 to_process,
                 best_to_finalized_storage_diff: self.best_to_finalized_storage_diff,
                 runtime_code_cache: self.runtime_code_cache,
@@ -243,6 +245,7 @@ enum Inner {
 }
 
 struct ProcessOneShared<TRq, TSrc> {
+    pending_encoded_justification: Option<Vec<u8>>,
     to_process: optimistic::ProcessOne<TRq, TSrc, RequestSuccessBlock>,
     best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
     runtime_code_cache: Option<executor::WasmVmPrototype>,
@@ -257,10 +260,16 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
         'verif_steps: loop {
             match inner {
                 Inner::Start(chain) => {
-                    // TODO: verify justification
+                    // Start of the verification process.
+                    // The next block needs to be picked.
+
+                    debug_assert!(shared.pending_encoded_justification.is_none());
 
                     if !shared.to_process.blocks.as_slice().is_empty() {
                         let next_block = shared.to_process.blocks.next().unwrap();
+                        if let Some(justification) = next_block.scale_encoded_justification {
+                            shared.pending_encoded_justification = Some(justification);
+                        }
                         inner = Inner::Step1(chain.verify_body(
                             next_block.scale_encoded_header,
                             next_block.scale_encoded_extrinsics.into_iter(),
@@ -378,19 +387,37 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     parent_runtime,
                     result: Ok(success),
                 }) => {
-                    let sync = success.insert(());
-
+                    // Successfully verified block!
+                    // Inserting it into the chain and updated all the caches.
+                    let mut chain = success.insert(());
                     if !storage_top_trie_changes.contains_key(&b":code"[..]) {
                         shared.runtime_code_cache = Some(parent_runtime);
                     }
-
                     shared.top_trie_root_calculation_cache = Some(top_trie_root_calculation_cache);
-
                     for (key, value) in storage_top_trie_changes {
                         shared.best_to_finalized_storage_diff.insert(key, value);
                     }
 
-                    inner = Inner::Start(sync);
+                    // `pending_encoded_verification` contains the justification (if any)
+                    // corresponding to the block that has just been verified. Verifying the
+                    // justification as well.
+                    if let Some(justification) = shared.pending_encoded_justification.take() {
+                        if let Ok(apply) = chain.verify_justification(&justification) {
+                            assert!(apply.is_current_best_block()); // TODO: can legitimately fail in case of malicious node
+                            apply.apply(); // TODO: must provide the list of pruned blocks to the user to save in the database
+                        } else {
+                            todo!() // TODO:
+                        }
+
+                        // Since the best block is now the finalized block, reset the storage
+                        // diff.
+                        debug_assert!(chain.is_empty());
+                        // TODO: makes everything crash at the moment, since the finalized block storage isn't actually tracked in higher level code
+                        // TODO: shared.best_to_finalized_storage_diff.clear();
+                    }
+
+                    // Switching to next stage to pick next block.
+                    inner = Inner::Start(chain);
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {

@@ -194,6 +194,11 @@ impl<T> NonFinalizedTree<T> {
         self.current_best = None;
     }
 
+    /// Returns true if there isn't any non-finalized block in the chain.
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
     /// Returns the number of non-finalized blocks in the chain.
     pub fn len(&self) -> usize {
         self.blocks.len()
@@ -1356,6 +1361,11 @@ impl<'c, T> JustificationApply<'c, T> {
     // TODO: return type?
     pub fn apply(self) {
         self.chain.set_finalized_block_inner(self.to_finalize)
+    }
+
+    /// Returns true if the block to be finalized is the current best block.
+    pub fn is_current_best_block(&self) -> bool {
+        Some(self.to_finalize) == self.chain.current_best
     }
 }
 
