@@ -30,6 +30,7 @@ use crate::{
     executor,
     finality::justification,
     header,
+    trie::calculate_root,
     verify::{self, babe},
 };
 
@@ -860,7 +861,11 @@ where
         u64::try_from(self.chain.blocks.node_to_root_path(parent_index).count()).unwrap()
     }
 
-    pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<T> {
+    pub fn resume(
+        self,
+        parent_runtime: executor::WasmVmPrototype,
+        top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+    ) -> BodyVerifyStep2<T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
             &self.chain.blocks.get(parent_tree_index).unwrap().header
         } else {
@@ -880,7 +885,7 @@ where
             block_header: (&self.header).into(),
             parent_block_header: parent_block_header.into(),
             block_body: self.body,
-            top_trie_root_calculation_cache: None,
+            top_trie_root_calculation_cache,
         });
 
         BodyVerifyStep2::from_inner(
@@ -903,6 +908,8 @@ pub enum BodyVerifyStep2<T> {
         parent_runtime: executor::WasmVmPrototype,
         // TODO: doc
         storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+        // TODO: doc
+        top_trie_root_calculation_cache: calculate_root::CalculationCache,
         /// Outcome of the verification.
         result: Result<BodyInsert<T>, HeaderVerifyError>, // TODO: BodyVerifyError, or rename the error to be common
     },
@@ -1023,6 +1030,7 @@ impl<T> BodyVerifyStep2<T> {
                     return BodyVerifyStep2::Finished {
                         parent_runtime: success.parent_runtime,
                         storage_top_trie_changes: success.storage_top_trie_changes,
+                        top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                         result: Ok(BodyInsert {
                             chain: chain.chain,
                             parent_tree_index: chain.parent_tree_index,

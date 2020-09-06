@@ -39,7 +39,8 @@ pub struct Config<'a, TBody> {
     /// Body of the block to verify.
     pub block_body: TBody,
 
-    /// Optional cache corresponding to the storage trie root hash calculation.
+    /// Optional cache corresponding to the storage trie root hash calculation of the parent
+    /// block.
     pub top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
 }
 

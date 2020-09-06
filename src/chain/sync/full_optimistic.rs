@@ -10,7 +10,7 @@
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
-use crate::{executor, verify::babe};
+use crate::{executor, trie::calculate_root, verify::babe};
 
 use alloc::{collections::BTreeMap, vec};
 use core::{iter, num::NonZeroU32};
@@ -78,6 +78,10 @@ pub struct OptimisticFullSync<TRq, TSrc> {
     /// for the first time.
     runtime_code_cache: Option<executor::WasmVmPrototype>,
 
+    /// Cache of calculation for the storage trie of the best block.
+    /// Providing this value when verifying a block considerably speeds up the verification.
+    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+
     /// Underlying helper. Manages sources and requests.
     /// Always `Some`, except during some temporary extractions.
     sync: Option<optimistic::OptimisticSync<TRq, TSrc, RequestSuccessBlock>>,
@@ -98,6 +102,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             chain,
             best_to_finalized_storage_diff: BTreeMap::new(),
             runtime_code_cache: None,
+            top_trie_root_calculation_cache: None,
             sync: Some(optimistic::OptimisticSync::new(optimistic::Config {
                 best_block_number,
                 sources_capacity: config.sources_capacity,
@@ -199,6 +204,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
                 to_process,
                 best_to_finalized_storage_diff: self.best_to_finalized_storage_diff,
                 runtime_code_cache: self.runtime_code_cache,
+                top_trie_root_calculation_cache: self.top_trie_root_calculation_cache,
             },
         )
     }
@@ -240,6 +246,7 @@ struct ProcessOneShared<TRq, TSrc> {
     to_process: optimistic::ProcessOne<TRq, TSrc, RequestSuccessBlock>,
     best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
     runtime_code_cache: Option<executor::WasmVmPrototype>,
+    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
 }
 
 impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
@@ -270,6 +277,8 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                                 best_to_finalized_storage_diff: shared
                                     .best_to_finalized_storage_diff,
                                 runtime_code_cache: shared.runtime_code_cache,
+                                top_trie_root_calculation_cache: shared
+                                    .top_trie_root_calculation_cache,
                                 sync: Some(sync),
                             },
                         };
@@ -287,6 +296,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             chain,
                             best_to_finalized_storage_diff: Default::default(),
                             runtime_code_cache: None,
+                            top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
                     };
@@ -303,6 +313,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             chain,
                             best_to_finalized_storage_diff: Default::default(),
                             runtime_code_cache: None,
+                            top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
                     };
@@ -319,6 +330,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             chain,
                             best_to_finalized_storage_diff: shared.best_to_finalized_storage_diff,
                             runtime_code_cache: shared.runtime_code_cache,
+                            top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
                     };
@@ -354,11 +366,15 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         }
                     };
 
-                    inner = Inner::Step2(req.resume(parent_runtime));
+                    inner = Inner::Step2(req.resume(
+                        parent_runtime,
+                        shared.top_trie_root_calculation_cache.take(),
+                    ));
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
                     storage_top_trie_changes,
+                    top_trie_root_calculation_cache,
                     parent_runtime,
                     result: Ok(success),
                 }) => {
@@ -368,13 +384,11 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         shared.runtime_code_cache = Some(parent_runtime);
                     }
 
+                    shared.top_trie_root_calculation_cache = Some(top_trie_root_calculation_cache);
+
                     for (key, value) in storage_top_trie_changes {
                         shared.best_to_finalized_storage_diff.insert(key, value);
                     }
-
-                    // TODO: remove
-                    let n = sync.best_block_header().number;
-                    println!("now at {:?}", n);
 
                     inner = Inner::Start(sync);
                 }
@@ -467,7 +481,7 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
-    pub fn inject_value(self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
+    pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
         match self.inner {
             StorageGetTarget::Storage(inner) => {
                 let inner = inner.inject_value(value);
@@ -477,7 +491,8 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
                 let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
                 let wasm_vm =
                     executor::WasmVmPrototype::new(wasm_code).expect("invalid runtime code?!?!"); // TODO: ?!?!
-                let inner = inner.resume(wasm_vm);
+                let inner =
+                    inner.resume(wasm_vm, self.shared.top_trie_root_calculation_cache.take());
                 ProcessOne::from(Inner::Step2(inner), self.shared)
             }
         }
