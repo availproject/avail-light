@@ -178,7 +178,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             .take()
             .unwrap()
             .process_one()
-            .unwrap_or_else(|_| panic!());
+            .unwrap_or_else(|_| panic!("nothing to do"));
 
         self.chain.reserve(to_process.blocks.len());
 

@@ -1,7 +1,21 @@
 #![recursion_limit = "1024"]
 
-use futures::{channel::oneshot, prelude::*};
-use std::{cmp, path::PathBuf, thread, time::Duration};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+};
+use std::{
+    num::{NonZeroU32, NonZeroU64},
+    path::PathBuf,
+    pin::Pin,
+    thread,
+    time::Duration,
+};
+use substrate_lite::{
+    chain::{self, sync::full_optimistic},
+    chain_spec, header, network,
+    verify::babe,
+};
 
 fn main() {
     env_logger::init();
@@ -27,22 +41,56 @@ async fn async_main() {
     };
 
     let threads_pool = futures::executor::ThreadPool::builder()
-        .name_prefix("thread-")
+        .name_prefix("tasks-pool-")
         .create()
         .unwrap();
 
-    let mut service = substrate_lite::service::Config {
-        database: Some(database),
-        tasks_executor: {
-            let threads_pool = threads_pool.clone();
-            Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>
-        },
-        chain_info: From::from(&chain_spec),
-        wasm_external_transport: None,
-    }
-    .build()
-    .await;
+    // Load the information about the chain from the database, or build the information of the
+    // genesis block.
+    // TODO:
+    let chain_information = /*match local_storage.chain_information() {
+        Ok(Some(i)) => i,
+        Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
+        // TODO: log why storage access failed?
+        Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {*/
+            chain::chain_information::ChainInformation::from_genesis_storage(
+                chain_spec.genesis_storage(),
+            )
+            .unwrap()
+        //}
+    ; //};
 
+    let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
+    let (to_network_tx, to_network_rx) = mpsc::channel(64);
+    let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
+
+    threads_pool.spawn_ok({
+        let tasks_executor = Box::new({
+            let threads_pool = threads_pool.clone();
+            move |f| threads_pool.spawn_ok(f)
+        });
+
+        start_network(&chain_spec, tasks_executor, to_network_rx, to_sync_tx).await
+    });
+
+    threads_pool.spawn_ok(
+        start_sync(
+            &chain_spec,
+            chain_information,
+            to_sync_rx,
+            to_network_tx,
+            to_db_save_tx,
+        )
+        .await,
+    );
+
+    threads_pool.spawn_ok(async move {
+        while let Some(info) = to_db_save_rx.next().await {
+            // TODO:
+        }
+    });
+
+    /*
     let mut telemetry = {
         let endpoints = chain_spec
             .telemetry_endpoints()
@@ -150,7 +198,246 @@ async fn async_main() {
                 }));
             }
         }
+    }*/
+}
+
+async fn start_sync(
+    chain_spec: &chain_spec::ChainSpec,
+    chain_information: chain::chain_information::ChainInformation,
+    mut to_sync: mpsc::Receiver<ToSync>,
+    mut to_network: mpsc::Sender<ToNetwork>,
+    mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
+) -> impl Future<Output = ()> {
+    let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
+        chain_spec
+            .genesis_storage()
+            .find(|(k2, _)| *k2 == k)
+            .map(|(_, v)| v.to_owned())
+    })
+    .unwrap();
+
+    let mut sync =
+        full_optimistic::OptimisticFullSync::<_, network::PeerId>::new(full_optimistic::Config {
+            chain_information,
+            babe_genesis_config,
+            sources_capacity: 32,
+            blocks_capacity: {
+                // This is the maximum number of blocks between two consecutive justifications.
+                1024
+            },
+            source_selection_randomness_seed: rand::random(),
+            blocks_request_granularity: NonZeroU32::new(128).unwrap(),
+            download_ahead_blocks: {
+                // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
+                // the number of blocks to download ahead of time in order to not block is 1000.
+                1024
+            },
+        });
+
+    async move {
+        let mut peers_source_id_map = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
+        let mut block_requests_finished = stream::FuturesUnordered::new();
+
+        loop {
+            // Verify blocks that have been fetched from queries.
+            let mut process = sync.process_one();
+            loop {
+                match process {
+                    full_optimistic::ProcessOne::Finished { sync: s } => {
+                        sync = s;
+                        break;
+                    }
+                    full_optimistic::ProcessOne::FinalizedStorageGet(_) => todo!(),
+                    full_optimistic::ProcessOne::FinalizedStorageNextKey(_) => todo!(),
+                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(_) => todo!(),
+                }
+            }
+
+            // Start requests that need to be started.
+            // Note that this is done after calling `process_one`, as the processing of pending
+            // blocks can result in new requests but not the contrary.
+            while let Some(action) = sync.next_request_action() {
+                match action {
+                    full_optimistic::RequestAction::Start {
+                        start,
+                        block_height,
+                        source,
+                        num_blocks,
+                        ..
+                    } => {
+                        let (tx, rx) = oneshot::channel();
+                        let _ = to_network
+                            .send(ToNetwork::StartBlockRequest {
+                                peer_id: source.clone(),
+                                block_height,
+                                num_blocks: num_blocks.get(),
+                                send_back: tx,
+                            })
+                            .await;
+
+                        let (rx, abort) = future::abortable(rx);
+                        let request_id = start.start(abort);
+                        block_requests_finished.push(rx.map(move |r| (request_id, r)));
+                    }
+                    full_optimistic::RequestAction::Cancel { user_data, .. } => {
+                        user_data.abort();
+                    }
+                }
+            }
+
+            futures::select! {
+                message = to_sync.next() => {
+                    let message = match message {
+                        Some(m) => m,
+                        None => return,
+                    };
+
+                    match message {
+                        ToSync::NewPeer(peer_id) => {
+                            let id = sync.add_source(peer_id.clone());
+                            peers_source_id_map.insert(peer_id.clone(), id);
+                        },
+                        ToSync::PeerDisconnected(peer_id) => {
+                            let id = peers_source_id_map.remove(&peer_id).unwrap();
+                            let (_, rq_list) = sync.remove_source(id);
+                            for (_, rq) in rq_list {
+                                rq.abort();
+                            }
+                        },
+                    }
+                },
+
+                (request_id, result) = block_requests_finished.select_next_some() => {
+                    // `result` is an error if the block request got cancelled by the sync state
+                    // machine.
+                    if let Ok(result) = result {
+                        let _ = sync.finish_request(request_id, result.unwrap().map(|v| v.into_iter()));
+                    }
+                },
+            }
+        }
     }
+}
+
+enum ToSync {
+    NewPeer(network::PeerId),
+    PeerDisconnected(network::PeerId),
+}
+
+async fn start_network(
+    chain_spec: &chain_spec::ChainSpec,
+    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    mut to_network: mpsc::Receiver<ToNetwork>,
+    mut to_sync: mpsc::Sender<ToSync>,
+) -> impl Future<Output = ()> {
+    let mut network = {
+        let mut known_addresses = chain_spec
+            .boot_nodes()
+            .iter()
+            .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
+            .collect::<Vec<_>>();
+        // TODO: remove this; temporary because bootnode is apparently full
+        // TODO: to test, run a node with ./target/debug/polkadot --chain kusama --listen-addr /ip4/0.0.0.0/tcp/30333/ws --node-key 0000000000000000000000000000000000000000000000000000000000000000
+        known_addresses.push((
+            "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+                .parse()
+                .unwrap(),
+            "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap(),
+        ));
+
+        network::Network::start(network::Config {
+            known_addresses,
+            chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
+            tasks_executor,
+            local_genesis_hash: substrate_lite::calculate_genesis_block_header(
+                chain_spec.genesis_storage(),
+            )
+            .hash(),
+            wasm_external_transport: None,
+        })
+        .await
+    };
+
+    async move {
+        // TODO: store send back channel in a network user data rather than having this hashmap
+        let mut block_requests = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
+
+        loop {
+            futures::select! {
+                message = to_network.next() => {
+                    let message = match message {
+                        Some(m) => m,
+                        None => return,
+                    };
+
+                    match message {
+                        ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, send_back } => {
+                            let result = network.start_block_request(network::BlocksRequestConfig {
+                                start: network::BlocksRequestConfigStart::Number(block_height),
+                                peer_id,
+                                desired_count: num_blocks,
+                                direction: network::BlocksRequestDirection::Ascending,
+                                fields: network::BlocksRequestFields {
+                                    header: true,
+                                    body: true,
+                                    justification: true,
+                                },
+                            }).await;
+
+                            match result {
+                                Ok(id) => {
+                                    block_requests.insert(id, send_back);
+                                }
+                                Err(()) => {
+                                    // TODO: better error
+                                    let _ = send_back.send(Err(full_optimistic::RequestFail::BlocksUnavailable));
+                                }
+                            };
+                        },
+                    }
+                },
+
+                event = network.next_event().fuse() => {
+                    match event {
+                        network::Event::BlockAnnounce(header) => {
+                        }
+                        network::Event::BlocksRequestFinished { id, result } => {
+                            let send_back = block_requests.remove(&id).unwrap();
+                            let _: Result<_, _> = send_back.send(result
+                                .map(|list| {
+                                    list.into_iter().map(|block| {
+                                        full_optimistic::RequestSuccessBlock {
+                                            scale_encoded_header: block.header.unwrap().0,
+                                            scale_encoded_extrinsics: block.body.unwrap().into_iter().map(|e| e.0).collect(), // TODO: overhead
+                                            scale_encoded_justification: block.justification,
+                                        }
+                                    }).collect()
+                                })
+                                .map_err(|()| full_optimistic::RequestFail::BlocksUnavailable) // TODO:
+                            );
+                        }
+                        network::Event::Connected(peer_id) => {
+                            let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
+                        }
+                        network::Event::Disconnected(peer_id) => {
+                            let _ = to_sync.send(ToSync::PeerDisconnected(peer_id)).await;
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+enum ToNetwork {
+    StartBlockRequest {
+        peer_id: network::PeerId,
+        block_height: NonZeroU64,
+        num_blocks: u32,
+        send_back: oneshot::Sender<
+            Result<Vec<full_optimistic::RequestSuccessBlock>, full_optimistic::RequestFail>,
+        >,
+    },
 }
 
 /// Since opening the database can take a long time, this utility function performs this operation
