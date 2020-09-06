@@ -66,29 +66,21 @@ pub struct Config {
 /// Optimistic headers-only syncing.
 pub struct OptimisticFullSync<TRq, TSrc> {
     // TODO: doc
-    chain: blocks_tree::NonFinalizedTree<Block>,
+    chain: blocks_tree::NonFinalizedTree<()>,
 
-    /// Compiled runtime code of the finalized block.
+    /// Changes in the storage of the best block compared to the finalized block.
+    /// The `BTreeMap`'s keys are storage keys, and its values are new values or `None` if the
+    /// value has been erased from the storage.
+    best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
+
+    /// Compiled runtime code of the best block block.
     /// This field is a cache. As such, it will stay at `None` until this value has been needed
     /// for the first time.
-    finalized_runtime_code_cache: Option<executor::WasmVmPrototype>,
+    runtime_code_cache: Option<executor::WasmVmPrototype>,
 
     /// Underlying helper. Manages sources and requests.
     /// Always `Some`, except during some temporary extractions.
     sync: Option<optimistic::OptimisticSync<TRq, TSrc, RequestSuccessBlock>>,
-}
-
-struct Block {
-    /// Changes in the storage compared to the parent block.
-    /// The `BTreeMap`'s keys are storage keys, and its values are new values or `None` if the
-    /// value has been erased from the storage.
-    storage_parent_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
-
-    /// Compiled runtime code of this block.
-    /// This field is a cache. As such, it will stay at `None` until this value has been needed
-    /// for the first time.
-    /// Can only ever contain `Some` if the runtime code has been modified.
-    runtime_code_cache: Option<executor::WasmVmPrototype>,
 }
 
 impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
@@ -104,7 +96,8 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
 
         OptimisticFullSync {
             chain,
-            finalized_runtime_code_cache: None,
+            best_to_finalized_storage_diff: BTreeMap::new(),
+            runtime_code_cache: None,
             sync: Some(optimistic::OptimisticSync::new(optimistic::Config {
                 best_block_number,
                 sources_capacity: config.sources_capacity,
@@ -204,8 +197,8 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             Inner::Start(self.chain),
             ProcessOneShared {
                 to_process,
-                finalized_runtime_code_cache: self.finalized_runtime_code_cache,
-                extracted_runtime_position: None,
+                best_to_finalized_storage_diff: self.best_to_finalized_storage_diff,
+                runtime_code_cache: self.runtime_code_cache,
             },
         )
     }
@@ -238,15 +231,15 @@ pub enum ProcessOne<TRq, TSrc> {
 }
 
 enum Inner {
-    Start(blocks_tree::NonFinalizedTree<Block>),
-    Step1(blocks_tree::BodyVerifyStep1<Block, vec::IntoIter<Vec<u8>>>),
-    Step2(blocks_tree::BodyVerifyStep2<Block>),
+    Start(blocks_tree::NonFinalizedTree<()>),
+    Step1(blocks_tree::BodyVerifyStep1<(), vec::IntoIter<Vec<u8>>>),
+    Step2(blocks_tree::BodyVerifyStep2<()>),
 }
 
 struct ProcessOneShared<TRq, TSrc> {
     to_process: optimistic::ProcessOne<TRq, TSrc, RequestSuccessBlock>,
-    finalized_runtime_code_cache: Option<executor::WasmVmPrototype>,
-    extracted_runtime_position: Option<u64>,
+    best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
+    runtime_code_cache: Option<executor::WasmVmPrototype>,
 }
 
 impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
@@ -274,7 +267,9 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         break ProcessOne::Finished {
                             sync: OptimisticFullSync {
                                 chain,
-                                finalized_runtime_code_cache: shared.finalized_runtime_code_cache,
+                                best_to_finalized_storage_diff: shared
+                                    .best_to_finalized_storage_diff,
+                                runtime_code_cache: shared.runtime_code_cache,
                                 sync: Some(sync),
                             },
                         };
@@ -290,7 +285,8 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     break ProcessOne::Finished {
                         sync: OptimisticFullSync {
                             chain,
-                            finalized_runtime_code_cache: shared.finalized_runtime_code_cache,
+                            best_to_finalized_storage_diff: Default::default(),
+                            runtime_code_cache: None,
                             sync: Some(sync),
                         },
                     };
@@ -305,7 +301,8 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     break ProcessOne::Finished {
                         sync: OptimisticFullSync {
                             chain,
-                            finalized_runtime_code_cache: shared.finalized_runtime_code_cache,
+                            best_to_finalized_storage_diff: Default::default(),
+                            runtime_code_cache: None,
                             sync: Some(sync),
                         },
                     };
@@ -320,60 +317,35 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     break ProcessOne::Finished {
                         sync: OptimisticFullSync {
                             chain,
-                            finalized_runtime_code_cache: shared.finalized_runtime_code_cache,
+                            best_to_finalized_storage_diff: shared.best_to_finalized_storage_diff,
+                            runtime_code_cache: shared.runtime_code_cache,
                             sync: Some(sync),
                         },
                     };
                 }
 
-                Inner::Step1(blocks_tree::BodyVerifyStep1::ParentRuntimeRequired(mut req)) => {
+                Inner::Step1(blocks_tree::BodyVerifyStep1::ParentRuntimeRequired(req)) => {
                     // The verification process is asking for a Wasm virtual machine containing
                     // the parent block's runtime.
                     //
                     // Since virtual machines are expensive to create, a re-usable virtual machine
-                    // is maintained for the finalized block and for each block that modifies the
-                    // runtime code.
+                    // is maintained for the best block.
                     //
-                    // The code below extracts that re-usable virtual machine, either from a block
-                    // in the ancestry or from the finalized block, with the intention to store it
-                    // back after the verification is over.
-                    let mut search_outcome = None;
-                    for n in 0.. {
-                        let ancestor = match req.nth_ancestor(n).map(|a| a.into_user_data()) {
-                            Some(a) => a,
-                            None => break,
-                        };
-
-                        if let Some(code) = ancestor.runtime_code_cache.take() {
-                            search_outcome = Some((n, code));
-                            break;
-                        }
-                        // TODO: is the block below necessary? should we rather not guarantee that the VM is always there?
-                        if let Some(code) = ancestor.storage_parent_diff.get(&b":code"[..]) {
-                            let code = code.as_ref().unwrap(); // TODO: ?!?!
-                            let vm = executor::WasmVmPrototype::new(code).unwrap();
-                            search_outcome = Some((n, vm));
-                            break;
-                        }
-                    }
-
-                    // `runtime_pos` is the ancestor number the virtual machine was extracted
-                    // from, or `None` if the virtual machine was extracted from the finalized
-                    // block.
-                    // A value of `0` designates the parent of the block being verified. A value
-                    // of `1` designates the parent of the parent. And so on.
-                    let (runtime_pos, parent_runtime) = match search_outcome {
-                        Some((p, r)) => (Some(p), r),
+                    // The code below extracts that re-usable virtual machine with the intention
+                    // to store it back after the verification is over.
+                    let parent_runtime = match shared.runtime_code_cache.take() {
+                        Some(r) => r,
                         None => {
-                            if let Some(finalized_runtime) =
-                                shared.finalized_runtime_code_cache.take()
+                            if let Some(code) =
+                                shared.best_to_finalized_storage_diff.get(&b":code"[..])
                             {
-                                (None, finalized_runtime)
+                                let code = code.as_ref().expect("no runtime code?!?!"); // TODO: what to do?
+                                executor::WasmVmPrototype::new(&code)
+                                    .expect("invalid runtime code?!?!") // TODO: what to do?
                             } else {
                                 // No cache has been found anywhere in the hierarchy.
                                 // The user needs to be asked for the storage entry containing the
                                 // runtime code.
-                                debug_assert!(shared.extracted_runtime_position.is_none());
                                 return ProcessOne::FinalizedStorageGet(StorageGet {
                                     inner: StorageGetTarget::Runtime(req),
                                     shared,
@@ -381,9 +353,6 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             }
                         }
                     };
-
-                    debug_assert!(shared.extracted_runtime_position.is_none());
-                    shared.extracted_runtime_position = runtime_pos;
 
                     inner = Inner::Step2(req.resume(parent_runtime));
                 }
@@ -393,17 +362,15 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     parent_runtime,
                     result: Ok(success),
                 }) => {
-                    if let Some(extracted_runtime_position) = shared.extracted_runtime_position {
-                        todo!("put back runtime") // TODO:
-                    } else {
-                        debug_assert!(shared.finalized_runtime_code_cache.is_none());
-                        shared.finalized_runtime_code_cache = Some(parent_runtime);
+                    let sync = success.insert(());
+
+                    if !storage_top_trie_changes.contains_key(&b":code"[..]) {
+                        shared.runtime_code_cache = Some(parent_runtime);
                     }
 
-                    let sync = success.insert(Block {
-                        storage_parent_diff: storage_top_trie_changes.into_iter().collect(),
-                        runtime_code_cache: None,
-                    });
+                    for (key, value) in storage_top_trie_changes {
+                        shared.best_to_finalized_storage_diff.insert(key, value);
+                    }
 
                     // TODO: remove
                     let n = sync.best_block_header().number;
@@ -420,28 +387,21 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     // The underlying verification process is asking for a storage entry in the
                     // parent block.
                     //
-                    // The [`OptimisticFullSync`] stores, for each block on top of the finalized
-                    // block, the difference between the block's storage and its parent's storage.
-                    // As such, the requested value is either found in one of the ancestor's
-                    // diffs, in which case it can be returned immediately to continue the
-                    // verification, or in the finalized block, in which case the user needs to
-                    // be asked.
+                    // The [`OptimisticFullSync`] stores the difference between the best block's
+                    // storage and the finalized block's storage.
+                    // As such, the requested value is either found in one of this diff, in which
+                    // case it can be returned immediately to continue the verification, or in
+                    // the finalized block, in which case the user needs to be queried.
                     // TODO: a bit stupid to have to allocate for the key
                     let key = req.key().fold(Vec::new(), |mut a, b| {
                         a.extend_from_slice(b.as_ref());
                         a
                     });
-                    for n in 0.. {
-                        let ancestor = match req.nth_ancestor(n).map(|a| a.into_user_data()) {
-                            Some(a) => a,
-                            None => break,
-                        };
 
-                        if let Some(value) = ancestor.storage_parent_diff.get(&key) {
-                            let value = value.clone(); // TODO: necessary for borrowing issues :(
-                            inner = Inner::Step2(req.inject_value(value.as_ref().map(|v| &v[..])));
-                            continue 'verif_steps;
-                        }
+                    if let Some(value) = shared.best_to_finalized_storage_diff.get(&key) {
+                        let value = value.clone(); // TODO: necessary for borrowing issues :(
+                        inner = Inner::Step2(req.inject_value(value.as_ref().map(|v| &v[..])));
+                        continue 'verif_steps;
                     }
 
                     // The value hasn't been found in any of the diffs, meaning that the storage
@@ -487,8 +447,8 @@ pub struct StorageGet<TRq, TBl> {
 }
 
 enum StorageGetTarget {
-    Storage(blocks_tree::StorageGet<Block>),
-    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
+    Storage(blocks_tree::StorageGet<()>),
+    Runtime(blocks_tree::BodyVerifyRuntimeRequired<(), vec::IntoIter<Vec<u8>>>),
 }
 
 impl<TRq, TBl> StorageGet<TRq, TBl> {
@@ -527,7 +487,7 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
 pub struct StoragePrefixKeys<TRq, TBl> {
-    inner: blocks_tree::StoragePrefixKeys<Block>,
+    inner: blocks_tree::StoragePrefixKeys<()>,
     shared: ProcessOneShared<TRq, TBl>,
 }
 
@@ -547,20 +507,17 @@ impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
             .map(|k| k.as_ref().to_owned())
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
 
-        // Iterate from the finalized to the block to verify, updating `keys`.
         let prefix = self.inner.prefix().to_owned(); // TODO: meh
-        for n in (0..self.inner.num_non_finalized_ancestors()).rev() {
-            let ancestor = self.inner.nth_ancestor(n).unwrap().into_user_data();
-            for (k, v) in ancestor
-                .storage_parent_diff
-                .range(prefix.clone()..)
-                .take_while(|(k, _)| k.starts_with(&prefix))
-            {
-                if v.is_some() {
-                    keys.insert(k.clone());
-                } else {
-                    keys.remove(k);
-                }
+        for (k, v) in self
+            .shared
+            .best_to_finalized_storage_diff
+            .range(prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&prefix))
+        {
+            if v.is_some() {
+                keys.insert(k.clone());
+            } else {
+                keys.remove(k);
             }
         }
 
@@ -572,7 +529,7 @@ impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
 pub struct StorageNextKey<TRq, TBl> {
-    inner: blocks_tree::StorageNextKey<Block>,
+    inner: blocks_tree::StorageNextKey<()>,
     shared: ProcessOneShared<TRq, TBl>,
 }
 
