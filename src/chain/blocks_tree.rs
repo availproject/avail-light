@@ -34,7 +34,7 @@ use crate::{
 };
 
 use alloc::{collections::VecDeque, sync::Arc};
-use core::{cmp, fmt, iter, mem};
+use core::{cmp, convert::TryFrom as _, fmt, mem};
 
 /// Configuration for the [`NonFinalizedTree`].
 #[derive(Debug, Clone)]
@@ -826,6 +826,39 @@ where
     I: ExactSizeIterator<Item = E> + Clone,
     E: AsRef<[u8]> + Clone,
 {
+    /// Access to the parent block's information and hierarchy. Returns `None` if the parent is
+    /// the finalized block.
+    pub fn parent_block(&mut self) -> Option<BlockAccess<T>> {
+        Some(BlockAccess {
+            tree: &mut self.chain,
+            node_index: self.parent_tree_index?,
+        })
+    }
+
+    /// Access to the Nth ancestor's information and hierarchy. Returns `None` if `n` is too
+    /// large. A value of `0` for `n` corresponds to the parent block. A value of `1` corresponds
+    /// to the parent's parent. And so on.
+    pub fn nth_ancestor(&mut self, n: u64) -> Option<BlockAccess<T>> {
+        let parent_index = self.parent_tree_index?;
+        let n = usize::try_from(n).ok()?;
+        let ret = self.chain.blocks.node_to_root_path(parent_index).nth(n)?;
+        Some(BlockAccess {
+            tree: &mut self.chain,
+            node_index: ret,
+        })
+    }
+
+    /// Returns the number of non-finalized blocks in the tree that are ancestors to the block
+    /// being verified.
+    pub fn num_non_finalized_ancestors(&self) -> u64 {
+        let parent_index = match self.parent_tree_index {
+            Some(p) => p,
+            None => return 0,
+        };
+
+        u64::try_from(self.chain.blocks.node_to_root_path(parent_index).count()).unwrap()
+    }
+
     pub fn resume(self, parent_runtime: executor::WasmVmPrototype) -> BodyVerifyStep2<T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
             &self.chain.blocks.get(parent_tree_index).unwrap().header
@@ -944,21 +977,40 @@ impl<T> StorageGet<T> {
         self.inner.key()
     }
 
-    /// Returns the user data associated to the block whose storage must be accessed.
-    pub fn block_user_data(&mut self) -> Option<&mut T> {
-        if let Some(parent_tree_index) = self.chain.parent_tree_index {
-            Some(
-                &mut self
-                    .chain
-                    .chain
-                    .blocks
-                    .get_mut(parent_tree_index)
-                    .unwrap()
-                    .user_data,
-            )
-        } else {
-            None
-        }
+    /// Access to the Nth ancestor's information and hierarchy. Returns `None` if `n` is too
+    /// large. A value of `0` for `n` corresponds to the parent block. A value of `1` corresponds
+    /// to the parent's parent. And so on.
+    pub fn nth_ancestor(&mut self, n: u64) -> Option<BlockAccess<T>> {
+        let parent_index = self.chain.parent_tree_index?;
+        let n = usize::try_from(n).ok()?;
+        let ret = self
+            .chain
+            .chain
+            .blocks
+            .node_to_root_path(parent_index)
+            .nth(n)?;
+        Some(BlockAccess {
+            tree: &mut self.chain.chain,
+            node_index: ret,
+        })
+    }
+
+    /// Returns the number of non-finalized blocks in the tree that are ancestors to the block
+    /// being verified.
+    pub fn num_non_finalized_ancestors(&self) -> u64 {
+        let parent_index = match self.chain.parent_tree_index {
+            Some(p) => p,
+            None => return 0,
+        };
+
+        u64::try_from(
+            self.chain
+                .chain
+                .blocks
+                .node_to_root_path(parent_index)
+                .count(),
+        )
+        .unwrap()
     }
 
     /// Injects the corresponding storage value.
@@ -978,9 +1030,45 @@ pub struct StoragePrefixKeys<T> {
 
 impl<T> StoragePrefixKeys<T> {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn prefix(&mut self) -> &[u8] {
         self.inner.prefix()
+    }
+
+    /// Access to the Nth ancestor's information and hierarchy. Returns `None` if `n` is too
+    /// large. A value of `0` for `n` corresponds to the parent block. A value of `1` corresponds
+    /// to the parent's parent. And so on.
+    pub fn nth_ancestor(&mut self, n: u64) -> Option<BlockAccess<T>> {
+        let parent_index = self.chain.parent_tree_index?;
+        let n = usize::try_from(n).ok()?;
+        let ret = self
+            .chain
+            .chain
+            .blocks
+            .node_to_root_path(parent_index)
+            .nth(n)?;
+        Some(BlockAccess {
+            tree: &mut self.chain.chain,
+            node_index: ret,
+        })
+    }
+
+    /// Returns the number of non-finalized blocks in the tree that are ancestors to the block
+    /// being verified.
+    pub fn num_non_finalized_ancestors(&self) -> u64 {
+        let parent_index = match self.chain.parent_tree_index {
+            Some(p) => p,
+            None => return 0,
+        };
+
+        u64::try_from(
+            self.chain
+                .chain
+                .blocks
+                .node_to_root_path(parent_index)
+                .count(),
+        )
+        .unwrap()
     }
 
     /// Injects the list of keys.
@@ -999,9 +1087,45 @@ pub struct StorageNextKey<T> {
 
 impl<T> StorageNextKey<T> {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn key(&mut self) -> &[u8] {
         self.inner.key()
+    }
+
+    /// Access to the Nth ancestor's information and hierarchy. Returns `None` if `n` is too
+    /// large. A value of `0` for `n` corresponds to the parent block. A value of `1` corresponds
+    /// to the parent's parent. And so on.
+    pub fn nth_ancestor(&mut self, n: u64) -> Option<BlockAccess<T>> {
+        let parent_index = self.chain.parent_tree_index?;
+        let n = usize::try_from(n).ok()?;
+        let ret = self
+            .chain
+            .chain
+            .blocks
+            .node_to_root_path(parent_index)
+            .nth(n)?;
+        Some(BlockAccess {
+            tree: &mut self.chain.chain,
+            node_index: ret,
+        })
+    }
+
+    /// Returns the number of non-finalized blocks in the tree that are ancestors to the block
+    /// being verified.
+    pub fn num_non_finalized_ancestors(&self) -> u64 {
+        let parent_index = match self.chain.parent_tree_index {
+            Some(p) => p,
+            None => return 0,
+        };
+
+        u64::try_from(
+            self.chain
+                .chain
+                .blocks
+                .node_to_root_path(parent_index)
+                .count(),
+        )
+        .unwrap()
     }
 
     /// Injects the key.
@@ -1153,6 +1277,43 @@ pub enum JustificationVerifyError {
 pub enum SetFinalizedError {
     /// Block must have been passed to [`NonFinalizedTree::verify_header`] in the past.
     UnknownBlock,
+}
+
+/// Access to a block's information and hierarchy.
+pub struct BlockAccess<'a, T> {
+    tree: &'a mut NonFinalizedTree<T>,
+    node_index: fork_tree::NodeIndex,
+}
+
+impl<'a, T> BlockAccess<'a, T> {
+    /// Access to the parent block's information and hierarchy. Returns an `Err` containing `self`
+    /// if the parent is the finalized block.
+    pub fn parent_block(self) -> Result<BlockAccess<'a, T>, BlockAccess<'a, T>> {
+        let parent = self
+            .tree
+            .blocks
+            .node_to_root_path(self.node_index)
+            .skip(1)
+            .next();
+
+        let parent = match parent {
+            Some(p) => p,
+            None => return Err(self),
+        };
+
+        Ok(BlockAccess {
+            tree: self.tree,
+            node_index: parent,
+        })
+    }
+
+    pub fn into_user_data(self) -> &'a mut T {
+        &mut self.tree.blocks.get_mut(self.node_index).unwrap().user_data
+    }
+
+    pub fn user_data_mut(&mut self) -> &mut T {
+        &mut self.tree.blocks.get_mut(self.node_index).unwrap().user_data
+    }
 }
 
 /// Accepts as parameter a container of blocks and indices within this container.

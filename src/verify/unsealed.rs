@@ -419,7 +419,7 @@ pub struct PrefixKeys {
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn prefix(&mut self) -> &[u8] {
         match self.inner.vm.state() {
             executor::State::ExternalStorageClearPrefix { storage_key, .. } => storage_key,
@@ -512,7 +512,7 @@ pub struct NextKey {
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn key(&mut self) -> &[u8] {
         match self.inner.vm.state() {
             executor::State::ExternalStorageNextKey { storage_key, .. } => storage_key,
@@ -529,6 +529,8 @@ impl NextKey {
             } => {
                 // The next key can be either the one passed by the user or one key in the current
                 // pending storage changes that has been inserted during the verification.
+                // TODO: /!\ this logic is wrong; it is possible for the user-provided key to have
+                //           been erased by the verification in the meanwhile
                 // TODO: not optimized regarding cloning
                 // TODO: also not optimized in terms of searching time ; should really be a BTreeMap or something
                 let in_overlay = self

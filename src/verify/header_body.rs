@@ -294,7 +294,7 @@ pub struct StoragePrefixKeys {
 
 impl StoragePrefixKeys {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn prefix(&mut self) -> &[u8] {
         self.inner.prefix()
     }
@@ -319,7 +319,7 @@ pub struct StorageNextKey {
 
 impl StorageNextKey {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut mut but &self
+    // TODO: don't take &mut self but &self
     pub fn key(&mut self) -> &[u8] {
         self.inner.key()
     }
