@@ -13,7 +13,7 @@ use super::optimistic;
 use crate::{executor, verify::babe};
 
 use alloc::{collections::BTreeMap, vec};
-use core::num::NonZeroU32;
+use core::{iter, num::NonZeroU32};
 use hashbrown::HashSet;
 
 pub use optimistic::{
@@ -121,6 +121,22 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
         self.chain.as_chain_information()
     }
 
+    /// Returns the number of the best block.
+    ///
+    /// > **Note**: This value is provided only for informative purposes. Keep in mind that this
+    /// >           best block might be reverted in the future.
+    pub fn best_block_number(&self) -> u64 {
+        self.chain.best_block_header().number
+    }
+
+    /// Returns the hash of the best block.
+    ///
+    /// > **Note**: This value is provided only for informative purposes. Keep in mind that this
+    /// >           best block might be reverted in the future.
+    pub fn best_block_hash(&self) -> [u8; 32] {
+        self.chain.best_block_hash()
+    }
+
     /// Inform the [`OptimisticFullSync`] of a new potential source of blocks.
     pub fn add_source(&mut self, source: TSrc) -> SourceId {
         self.sync.as_mut().unwrap().add_source(source)
@@ -178,9 +194,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             Ok(tp) => tp,
             Err(sync) => {
                 self.sync = Some(sync);
-                return ProcessOne::Finished {
-                    sync: self,
-                };
+                return ProcessOne::Finished { sync: self };
             }
         };
 
@@ -356,7 +370,14 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             {
                                 (None, finalized_runtime)
                             } else {
-                                todo!() // TODO:
+                                // No cache has been found anywhere in the hierarchy.
+                                // The user needs to be asked for the storage entry containing the
+                                // runtime code.
+                                debug_assert!(shared.extracted_runtime_position.is_none());
+                                return ProcessOne::FinalizedStorageGet(StorageGet {
+                                    inner: StorageGetTarget::Runtime(req),
+                                    shared,
+                                });
                             }
                         }
                     };
@@ -367,17 +388,33 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     inner = Inner::Step2(req.resume(parent_runtime));
                 }
 
-                Inner::Step2(blocks_tree::BodyVerifyStep2::Finished { parent_runtime }) => {
+                Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
+                    storage_top_trie_changes,
+                    parent_runtime,
+                    result: Ok(success),
+                }) => {
                     if let Some(extracted_runtime_position) = shared.extracted_runtime_position {
-                        todo!() // TODO:
+                        todo!("put back runtime") // TODO:
                     } else {
                         debug_assert!(shared.finalized_runtime_code_cache.is_none());
                         shared.finalized_runtime_code_cache = Some(parent_runtime);
                     }
 
-                    // TODO:
-                    inner = Inner::Start(todo!());
+                    let sync = success.insert(Block {
+                        storage_parent_diff: storage_top_trie_changes.into_iter().collect(),
+                        runtime_code_cache: None,
+                    });
+
+                    // TODO: remove
+                    let n = sync.best_block_header().number;
+                    println!("now at {:?}", n);
+
+                    inner = Inner::Start(sync);
                 }
+
+                Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
+                    result: Err(err), ..
+                }) => todo!("verif failure"),
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::StorageGet(mut req)) => {
                     // The underlying verification process is asking for a storage entry in the
@@ -410,7 +447,10 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     // The value hasn't been found in any of the diffs, meaning that the storage
                     // value of the parent is the same as the one of the finalized block. The
                     // user needs to be queried.
-                    break ProcessOne::FinalizedStorageGet(StorageGet { inner: req, shared });
+                    break ProcessOne::FinalizedStorageGet(StorageGet {
+                        inner: StorageGetTarget::Storage(req),
+                        shared,
+                    });
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::StorageNextKey(req)) => {
@@ -442,22 +482,45 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
 /// Loading a storage value is required in order to continue.
 #[must_use]
 pub struct StorageGet<TRq, TBl> {
-    inner: blocks_tree::StorageGet<Block>,
+    inner: StorageGetTarget,
     shared: ProcessOneShared<TRq, TBl>,
+}
+
+enum StorageGetTarget {
+    Storage(blocks_tree::StorageGet<Block>),
+    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
 }
 
 impl<TRq, TBl> StorageGet<TRq, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     // TODO: shouldn't be mut
     pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
-        self.inner.key()
+        match &mut self.inner {
+            StorageGetTarget::Storage(inner) => {
+                either::Either::Left(inner.key().map(either::Either::Left))
+            }
+            StorageGetTarget::Runtime(_) => {
+                either::Either::Right(iter::once(either::Either::Right(b":code")))
+            }
+        }
     }
 
     /// Injects the corresponding storage value.
     // TODO: change API, see unsealed::StorageGet
     pub fn inject_value(self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
-        let inner = self.inner.inject_value(value);
-        ProcessOne::from(Inner::Step2(inner), self.shared)
+        match self.inner {
+            StorageGetTarget::Storage(inner) => {
+                let inner = inner.inject_value(value);
+                ProcessOne::from(Inner::Step2(inner), self.shared)
+            }
+            StorageGetTarget::Runtime(inner) => {
+                let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
+                let wasm_vm =
+                    executor::WasmVmPrototype::new(wasm_code).expect("invalid runtime code?!?!"); // TODO: ?!?!
+                let inner = inner.resume(wasm_vm);
+                ProcessOne::from(Inner::Step2(inner), self.shared)
+            }
+        }
     }
 }
 
@@ -485,10 +548,20 @@ impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
 
         // Iterate from the finalized to the block to verify, updating `keys`.
+        let prefix = self.inner.prefix().to_owned(); // TODO: meh
         for n in (0..self.inner.num_non_finalized_ancestors()).rev() {
             let ancestor = self.inner.nth_ancestor(n).unwrap().into_user_data();
-            // TODO: finish
-            //ancestor.storage_parent_diff.range()
+            for (k, v) in ancestor
+                .storage_parent_diff
+                .range(prefix.clone()..)
+                .take_while(|(k, _)| k.starts_with(&prefix))
+            {
+                if v.is_some() {
+                    keys.insert(k.clone());
+                } else {
+                    keys.remove(k);
+                }
+            }
         }
 
         let inner = self.inner.inject_keys(keys.iter());

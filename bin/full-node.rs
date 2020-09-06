@@ -2,12 +2,15 @@
 
 use futures::{
     channel::{mpsc, oneshot},
+    lock::Mutex,
     prelude::*,
 };
 use std::{
+    collections::BTreeMap,
     num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
     pin::Pin,
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -73,10 +76,16 @@ async fn async_main() {
         start_network(&chain_spec, tasks_executor, to_network_rx, to_sync_tx).await
     });
 
+    let sync_state = Arc::new(Mutex::new(SyncState {
+        best_block_hash: [0; 32], // TODO:
+        best_block_number: 0,     // TODO:
+    }));
+
     threads_pool.spawn_ok(
         start_sync(
             &chain_spec,
             chain_information,
+            sync_state.clone(),
             to_sync_rx,
             to_network_tx,
             to_db_save_tx,
@@ -123,16 +132,17 @@ async fn async_main() {
                 // We end the informant line with a `\r` so that it overwrites itself every time.
                 // If any other line gets printed, it will overwrite the informant, and the
                 // informant will then print itself below, which is a fine behaviour.
-                /*eprint!("{}\r", substrate_lite::informant::InformantLine {
+                let sync_state = sync_state.lock().await;
+                eprint!("{}\r", substrate_lite::informant::InformantLine {
                     chain_name: chain_spec.name(),
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
-                    num_network_connections: service.num_network_connections(),
-                    best_number: service.best_block_number(),
-                    finalized_number: service.finalized_block_number(),
-                    best_hash: &service.best_block_hash(),
-                    finalized_hash: &service.finalized_block_hash(),
-                    network_known_best,
-                });*/
+                    num_network_connections: 0, // TODO: service.num_network_connections(),
+                    best_number: sync_state.best_block_number,
+                    finalized_number: sync_state.best_block_number, // TODO:
+                    best_hash: &sync_state.best_block_hash,
+                    finalized_hash: &sync_state.best_block_hash, // TODO:
+                    network_known_best: None, // TODO:
+                });
             }
             telemetry_event = telemetry.next_event().fuse() => {
                 // TODO:
@@ -177,6 +187,7 @@ async fn async_main() {
 async fn start_sync(
     chain_spec: &chain_spec::ChainSpec,
     chain_information: chain::chain_information::ChainInformation,
+    sync_state: Arc<Mutex<SyncState>>,
     mut to_sync: mpsc::Receiver<ToSync>,
     mut to_network: mpsc::Sender<ToNetwork>,
     mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
@@ -207,6 +218,12 @@ async fn start_sync(
             },
         });
 
+    let mut finalized_block_storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+    // TODO: doesn't necessarily match chain_information; pass this as part of the params of `start_sync` instead
+    for (key, value) in chain_spec.genesis_storage() {
+        finalized_block_storage.insert(key.to_owned(), value.to_owned());
+    }
+
     async move {
         let mut peers_source_id_map = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
         let mut block_requests_finished = stream::FuturesUnordered::new();
@@ -220,10 +237,45 @@ async fn start_sync(
                         sync = s;
                         break;
                     }
-                    full_optimistic::ProcessOne::FinalizedStorageGet(_) => todo!(),
-                    full_optimistic::ProcessOne::FinalizedStorageNextKey(_) => todo!(),
-                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(_) => todo!(),
+                    full_optimistic::ProcessOne::FinalizedStorageGet(mut req) => {
+                        // TODO: we shouldn't have to do this folding
+                        let key = req.key().fold(Vec::new(), |mut a, b| {
+                            a.extend_from_slice(b.as_ref());
+                            a
+                        });
+
+                        let value = finalized_block_storage.get(&key).map(|v| &v[..]);
+                        process = req.inject_value(value);
+                    }
+                    full_optimistic::ProcessOne::FinalizedStorageNextKey(mut req) => {
+                        // TODO: to_vec() :-/
+                        let next_key = finalized_block_storage
+                            .range(req.key().to_vec()..)
+                            .skip(1)
+                            .next()
+                            .map(|(k, _)| k);
+                        process = req.inject_key(next_key);
+                    }
+                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(mut req) => {
+                        // TODO: to_vec() :-/
+                        let prefix = req.prefix().to_vec();
+                        // TODO: to_vec() :-/
+                        let keys = finalized_block_storage
+                            .range(req.prefix().to_vec()..)
+                            .take_while(|(k, _)| k.starts_with(&prefix))
+                            .map(|(k, _)| k);
+                        process = req.inject_keys(keys);
+                    }
                 }
+            }
+
+            // Update the current best block, used for CLI-related purposes.
+            {
+                let mut lock = sync_state.lock().await;
+                *lock = SyncState {
+                    best_block_hash: sync.best_block_hash(),
+                    best_block_number: sync.best_block_number(),
+                };
             }
 
             // Start requests that need to be started.
@@ -295,6 +347,12 @@ async fn start_sync(
 enum ToSync {
     NewPeer(network::PeerId),
     PeerDisconnected(network::PeerId),
+}
+
+#[derive(Debug, Clone)]
+struct SyncState {
+    best_block_number: u64,
+    best_block_hash: [u8; 32],
 }
 
 async fn start_network(
