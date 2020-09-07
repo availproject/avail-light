@@ -68,7 +68,9 @@ pub struct Success {
 
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
-    // TOOD: logs written by the runtime
+
+    /// Concatenation of all the log messages printed by the runtime.
+    pub logs: String,
 }
 
 /// Error that can happen during the verification.
@@ -185,7 +187,9 @@ impl ReadyToRun {
                 inner,
                 babe_success,
             } => match inner {
-                execute_block::Verify::Finished(Err(err)) => Verify::Finished(Err(Error::Unsealed(err))),
+                execute_block::Verify::Finished(Err(err)) => {
+                    Verify::Finished(Err(Error::Unsealed(err)))
+                }
                 execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
                     parent_runtime: success.parent_runtime,
                     babe_epoch_transition_target: babe_success.epoch_transition_target,
@@ -194,6 +198,7 @@ impl ReadyToRun {
                     storage_top_trie_changes: success.storage_top_trie_changes,
                     offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
+                    logs: success.logs,
                 })),
                 execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
                     inner,
