@@ -525,7 +525,7 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: change API, see unsealed::StorageGet
+    // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
         match self.inner {
             StorageGetTarget::Storage(inner) => {

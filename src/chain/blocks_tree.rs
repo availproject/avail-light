@@ -1152,7 +1152,7 @@ impl<T> StorageGet<T> {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: change API, see unsealed::StorageGet
+    // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_value(value);
         BodyVerifyStep2::from_inner(inner.run(), self.chain)

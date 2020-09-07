@@ -31,7 +31,7 @@
 //! correct.
 //!
 
-mod unsealed;
+mod execute_block;
 
 pub mod babe;
 pub mod header_body;

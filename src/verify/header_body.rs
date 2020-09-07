@@ -1,4 +1,4 @@
-use super::unsealed;
+use super::execute_block;
 use crate::{executor, header, trie::calculate_root, verify::babe};
 
 use core::time::Duration;
@@ -75,7 +75,7 @@ pub struct Success {
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Error while verifying the unsealed block.
-    Unsealed(unsealed::Error),
+    Unsealed(execute_block::Error),
     /// Failed to verify the authenticity of the block with the BABE algorithm.
     BabeVerification(babe::VerifyError),
 }
@@ -106,7 +106,7 @@ pub fn verify<'a>(
     let _seal_log = unsealed_header.digest.pop_babe_seal();
     debug_assert!(_seal_log.is_some());
 
-    let import_process = unsealed::verify_unsealed_block(unsealed::Config {
+    let import_process = execute_block::execute_block(execute_block::Config {
         parent_runtime: config.parent_runtime,
         block_header: unsealed_header,
         block_body: config.block_body,
@@ -148,13 +148,13 @@ enum ReadyToRunInner {
     /// Verifying BABE.
     Babe {
         babe_verification: babe::SuccessOrPending,
-        import_process: unsealed::Verify,
+        import_process: execute_block::Verify,
     },
     /// Error in BABE verification.
     BabeError(babe::VerifyError),
     /// Verifying the unsealed block.
     Unsealed {
-        inner: unsealed::Verify,
+        inner: execute_block::Verify,
         babe_success: babe::VerifySuccess,
     },
 }
@@ -185,8 +185,8 @@ impl ReadyToRun {
                 inner,
                 babe_success,
             } => match inner {
-                unsealed::Verify::Finished(Err(err)) => Verify::Finished(Err(Error::Unsealed(err))),
-                unsealed::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
+                execute_block::Verify::Finished(Err(err)) => Verify::Finished(Err(Error::Unsealed(err))),
+                execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
                     parent_runtime: success.parent_runtime,
                     babe_epoch_transition_target: babe_success.epoch_transition_target,
                     slot_number: babe_success.slot_number,
@@ -195,17 +195,17 @@ impl ReadyToRun {
                     offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                 })),
-                unsealed::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
+                execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
                     inner,
                     babe_success,
                 }),
-                unsealed::Verify::PrefixKeys(inner) => {
+                execute_block::Verify::PrefixKeys(inner) => {
                     Verify::StoragePrefixKeys(StoragePrefixKeys {
                         inner,
                         babe_success,
                     })
                 }
-                unsealed::Verify::NextKey(inner) => Verify::StorageNextKey(StorageNextKey {
+                execute_block::Verify::NextKey(inner) => Verify::StorageNextKey(StorageNextKey {
                     inner,
                     babe_success,
                 }),
@@ -218,7 +218,7 @@ impl ReadyToRun {
 #[must_use]
 pub struct BabeEpochInformation {
     inner: babe::PendingVerify,
-    import_process: unsealed::Verify,
+    import_process: execute_block::Verify,
 }
 
 impl BabeEpochInformation {
@@ -256,7 +256,7 @@ impl BabeEpochInformation {
 /// Loading a storage value is required in order to continue.
 #[must_use]
 pub struct StorageGet {
-    inner: unsealed::StorageGet,
+    inner: execute_block::StorageGet,
     babe_success: babe::VerifySuccess,
 }
 
@@ -268,7 +268,7 @@ impl StorageGet {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: change API, see unsealed::StorageGet
+    // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(self, value: Option<&[u8]>) -> ReadyToRun {
         ReadyToRun {
             inner: ReadyToRunInner::Unsealed {
@@ -282,7 +282,7 @@ impl StorageGet {
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
 pub struct StoragePrefixKeys {
-    inner: unsealed::PrefixKeys,
+    inner: execute_block::PrefixKeys,
     babe_success: babe::VerifySuccess,
 }
 
@@ -307,7 +307,7 @@ impl StoragePrefixKeys {
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
 pub struct StorageNextKey {
-    inner: unsealed::NextKey,
+    inner: execute_block::NextKey,
     babe_success: babe::VerifySuccess,
 }
 

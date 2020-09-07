@@ -1,7 +1,7 @@
-//! Unsealed block verification.
+//! Unsealed block execution.
 //!
-//! The [`verify_unsealed_block`] verifies the validity of a block header and body by *executing*
-//! the block. Executing the block consists in running the `Core_execute_block` function of the
+//! The [`execute_block`] verifies the validity of a block header and body by *executing* the
+//! block. Executing the block consists in running the `Core_execute_block` function of the
 //! runtime, passing as parameter the header and the body of the block. The runtime function is
 //! then tasked with verifying the validity of its parameters and calling the external functions
 //! that modify the state of the storage.
@@ -14,8 +14,7 @@
 //!
 //! # Usage
 //!
-//! Calling [`verify_unsealed_block`] returns a [`Verify`] enum containing the state of the
-//! verification.
+//! Calling [`execute_block`] returns a [`Verify`] enum containing the state of the verification.
 //!
 //! If the [`Verify`] is a [`Verify::Finished`], then the verification is over and the result can
 //! be retreived.
@@ -30,8 +29,8 @@ use hashbrown::{HashMap, HashSet};
 
 /// Configuration for an unsealed block verification.
 pub struct Config<'a, TBody> {
-    /// Runtime used to check the new block. Must be built using the `:code` of the parent
-    /// block.
+    /// Runtime used to check the new block. Must be built using the Wasm code found at the
+    /// `:code` key of the parent block storage.
     pub parent_runtime: executor::WasmVmPrototype,
 
     /// Header of the block to verify, in SCALE encoding.
@@ -40,7 +39,7 @@ pub struct Config<'a, TBody> {
     /// the other fields.
     ///
     /// Block headers typically contain a `Seal` item as their last digest log item. When calling
-    /// the [`verify_unsealed_block`] function, this header must **not** contain any `Seal` item.
+    /// the [`execute_block`] function, this header must **not** contain any `Seal` item.
     pub block_header: header::HeaderRef<'a>,
 
     /// Body of the block to verify.
@@ -72,7 +71,7 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify_unsealed_block<'a>(
+pub fn execute_block<'a>(
     config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
     let vm = config
