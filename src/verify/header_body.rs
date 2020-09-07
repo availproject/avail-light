@@ -106,19 +106,12 @@ pub fn verify<'a>(
     let _seal_log = unsealed_header.digest.pop_babe_seal();
     debug_assert!(_seal_log.is_some());
 
-    let import_process = {
-        let result = unsealed::verify_unsealed_block(unsealed::Config {
-            parent_runtime: config.parent_runtime,
-            block_header: unsealed_header,
-            block_body: config.block_body,
-            top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
-        });
-
-        match result {
-            Ok(i) => i,
-            Err(err) => return Verify::Finished(Err(Error::Unsealed(err))),
-        }
-    };
+    let import_process = unsealed::verify_unsealed_block(unsealed::Config {
+        parent_runtime: config.parent_runtime,
+        block_header: unsealed_header,
+        block_body: config.block_body,
+        top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
+    });
 
     Verify::ReadyToRun(ReadyToRun {
         inner: ReadyToRunInner::Babe {
@@ -155,13 +148,13 @@ enum ReadyToRunInner {
     /// Verifying BABE.
     Babe {
         babe_verification: babe::SuccessOrPending,
-        import_process: unsealed::ReadyToRun,
+        import_process: unsealed::Verify,
     },
     /// Error in BABE verification.
     BabeError(babe::VerifyError),
     /// Verifying the unsealed block.
     Unsealed {
-        inner: unsealed::ReadyToRun,
+        inner: unsealed::Verify,
         babe_success: babe::VerifySuccess,
     },
 }
@@ -191,7 +184,7 @@ impl ReadyToRun {
             ReadyToRunInner::Unsealed {
                 inner,
                 babe_success,
-            } => match inner.run() {
+            } => match inner {
                 unsealed::Verify::Finished(Err(err)) => Verify::Finished(Err(Error::Unsealed(err))),
                 unsealed::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
                     parent_runtime: success.parent_runtime,
@@ -225,7 +218,7 @@ impl ReadyToRun {
 #[must_use]
 pub struct BabeEpochInformation {
     inner: babe::PendingVerify,
-    import_process: unsealed::ReadyToRun,
+    import_process: unsealed::Verify,
 }
 
 impl BabeEpochInformation {

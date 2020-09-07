@@ -1,8 +1,27 @@
 //! Unsealed block verification.
 //!
-//! After a block is produced by the runtime, a seal is applied on it. The seal contains a
-//! signature, using a key known only to the author of the block, of the header of the block
-//! without that seal.
+//! The [`verify_unsealed_block`] verifies the validity of a block header and body by *executing*
+//! the block. Executing the block consists in running the `Core_execute_block` function of the
+//! runtime, passing as parameter the header and the body of the block. The runtime function is
+//! then tasked with verifying the validity of its parameters and calling the external functions
+//! that modify the state of the storage.
+//!
+//! The header passed to the runtime must not contain a seal.
+//!
+//! Executing the block does **not** verify the validity of the consensus-related aspects of the
+//! block header. The runtime blindly assumes that the author of the block had indeed the rights
+//! to craft the block.
+//!
+//! # Usage
+//!
+//! Calling [`verify_unsealed_block`] returns a [`Verify`] enum containing the state of the
+//! verification.
+//!
+//! If the [`Verify`] is a [`Verify::Finished`], then the verification is over and the result can
+//! be retreived.
+//! Otherwise, the verification process requires an information from the storage of the parent
+//! block in order to continue.
+//!
 
 use crate::{executor, header, trie::calculate_root};
 
@@ -41,7 +60,7 @@ pub struct Success {
     pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     /// Cache used for calculating the top trie root.
     pub top_trie_root_calculation_cache: calculate_root::CalculationCache,
-    // TOOD: logs written by the runtime
+    // TODO: logs written by the runtime
 }
 
 /// Error that can happen during the verification.
@@ -55,7 +74,7 @@ pub enum Error {
 /// Verifies whether a block is valid.
 pub fn verify_unsealed_block<'a>(
     config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
-) -> Result<ReadyToRun, Error> {
+) -> Verify {
     let vm = config
         .parent_runtime
         .run_vectored("Core_execute_block", {
@@ -89,7 +108,7 @@ pub fn verify_unsealed_block<'a>(
         })
         .unwrap();
 
-    Ok(ReadyToRun {
+    VerifyInner {
         vm,
         top_trie_changes: Default::default(),
         offchain_storage_changes: Default::default(),
@@ -97,7 +116,7 @@ pub fn verify_unsealed_block<'a>(
             config.top_trie_root_calculation_cache.unwrap_or_default(),
         ),
         root_calculation: None,
-    })
+    }.run()
 }
 
 /// Current state of the verification.
@@ -113,9 +132,260 @@ pub enum Verify {
     NextKey(NextKey),
 }
 
-/// Verification is ready to continue.
+/// Loading a storage value is required in order to continue.
 #[must_use]
-pub struct ReadyToRun {
+pub struct StorageGet {
+    inner: VerifyInner,
+}
+
+impl StorageGet {
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    // TODO: shouldn't be mut
+    pub fn key<'a>(&'a mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageGet { storage_key, .. }
+            | executor::State::ExternalStorageAppend { storage_key, .. } => {
+                either::Either::Left(iter::once(either::Either::Left(storage_key)))
+            }
+
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
+                    self.inner.root_calculation.as_ref().unwrap()
+                {
+                    struct One(u8);
+                    impl AsRef<[u8]> for One {
+                        fn as_ref(&self) -> &[u8] {
+                            slice::from_ref(&self.0)
+                        }
+                    }
+                    either::Either::Right(value_request.key().map(One).map(either::Either::Right))
+                } else {
+                    // We only create a `StorageGet` if the state is `StorageValue`.
+                    panic!()
+                }
+            }
+
+            executor::State::ExternalStorageChangesRoot { .. } => {
+                either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
+            }
+
+            // We only create a `StorageGet` if the state is one of the above.
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the corresponding storage value.
+    // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
+    pub fn inject_value(mut self, value: Option<&[u8]>) -> Verify {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageGet {
+                offset,
+                max_size,
+                resolve,
+                ..
+            } => {
+                if let Some(mut value) = value {
+                    if usize::try_from(offset).unwrap() < value.len() {
+                        value = &value[usize::try_from(offset).unwrap()..];
+                        if usize::try_from(max_size).unwrap() < value.len() {
+                            value = &value[..usize::try_from(max_size).unwrap()];
+                        }
+                    }
+
+                    resolve.finish_call(Some(value.to_vec())); // TODO: overhead
+                } else {
+                    resolve.finish_call(None);
+                }
+            }
+            executor::State::ExternalStorageAppend {
+                storage_key,
+                value: to_add,
+                resolve,
+            } => {
+                let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
+                // TODO: could be less overhead?
+                append_to_storage_value(&mut value, to_add);
+                self.inner
+                    .top_trie_changes
+                    .insert(storage_key.to_vec(), Some(value.clone()));
+                resolve.finish_call(());
+            }
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
+                    self.inner.root_calculation.take().unwrap()
+                {
+                    self.inner.root_calculation = Some(value_request.inject(value));
+                } else {
+                    // We only create a `StorageGet` if the state is `StorageValue`.
+                    panic!()
+                }
+            }
+            executor::State::ExternalStorageChangesRoot { resolve, .. } => {
+                if value.is_none() {
+                    resolve.finish_call(None);
+                } else {
+                    // TODO: this is probably one of the most complicated things to implement
+                    todo!()
+                }
+            }
+
+            // We only create a `StorageGet` if the state is one of the above.
+            _ => unreachable!(),
+        };
+
+        self.inner.run()
+    }
+}
+
+/// Fetching the list of keys with a given prefix is required in order to continue.
+#[must_use]
+pub struct PrefixKeys {
+    inner: VerifyInner,
+}
+
+impl PrefixKeys {
+    /// Returns the prefix whose keys to load.
+    // TODO: don't take &mut mut but &self
+    pub fn prefix(&mut self) -> &[u8] {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageClearPrefix { storage_key, .. } => storage_key,
+            executor::State::ExternalStorageRoot { .. } => &[],
+
+            // We only create a `PrefixKeys` if the state is one of the above.
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the list of keys.
+    pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> Verify {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageClearPrefix {
+                storage_key,
+                resolve,
+            } => {
+                // TODO: use prefix_remove_update once optimized
+                //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
+
+                for key in keys {
+                    self.inner
+                        .top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(key.as_ref(), false);
+                    self.inner
+                        .top_trie_changes
+                        .insert(key.as_ref().to_vec(), None);
+                }
+                for (key, value) in self.inner.top_trie_changes.iter_mut() {
+                    if !key.starts_with(&storage_key) {
+                        continue;
+                    }
+                    if value.is_none() {
+                        continue;
+                    }
+                    self.inner
+                        .top_trie_root_calculation_cache
+                        .as_mut()
+                        .unwrap()
+                        .storage_value_update(key, false);
+                    *value = None;
+                }
+                resolve.finish_call(());
+            }
+
+            executor::State::ExternalStorageRoot { .. } => {
+                if let calculate_root::RootMerkleValueCalculation::AllKeys(all_keys) =
+                    self.inner.root_calculation.take().unwrap()
+                {
+                    // TODO: overhead
+                    let mut list = keys
+                        .filter(|v| {
+                            self.inner
+                                .top_trie_changes
+                                .get(v.as_ref())
+                                .map_or(true, |v| v.is_some())
+                        })
+                        .map(|v| v.as_ref().to_vec())
+                        .collect::<HashSet<_, fnv::FnvBuildHasher>>();
+                    // TODO: slow to iterate over everything?
+                    for (key, value) in self.inner.top_trie_changes.iter() {
+                        if value.is_none() {
+                            continue;
+                        }
+                        list.insert(key.clone());
+                    }
+                    self.inner.root_calculation =
+                        Some(all_keys.inject(list.into_iter().map(|k| k.into_iter())));
+                } else {
+                    // We only create a `PrefixKeys` if the state is `AllKeys`.
+                    panic!()
+                }
+            }
+
+            // We only create a `PrefixKeys` if the state is one of the above.
+            _ => unreachable!(),
+        };
+
+        self.inner.run()
+    }
+}
+
+/// Fetching the key that follows a given one is required in order to continue.
+#[must_use]
+pub struct NextKey {
+    inner: VerifyInner,
+}
+
+impl NextKey {
+    /// Returns the key whose next key must be passed back.
+    // TODO: don't take &mut mut but &self
+    pub fn key(&mut self) -> &[u8] {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageNextKey { storage_key, .. } => storage_key,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Injects the key.
+    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> Verify {
+        match self.inner.vm.state() {
+            executor::State::ExternalStorageNextKey {
+                storage_key,
+                resolve,
+            } => {
+                // The next key can be either the one passed by the user or one key in the current
+                // pending storage changes that has been inserted during the verification.
+                // TODO: /!\ this logic is wrong; it is possible for the user-provided key to have
+                //           been erased by the verification in the meanwhile
+                // TODO: not optimized regarding cloning
+                // TODO: also not optimized in terms of searching time ; should really be a BTreeMap or something
+                let in_overlay = self
+                    .inner
+                    .top_trie_changes
+                    .keys()
+                    .filter(|k| &***k > storage_key)
+                    .min();
+                // TODO: `to_vec()` overhead
+                let outcome = match (key, in_overlay) {
+                    (Some(a), Some(b)) => Some(cmp::min(a.as_ref().to_vec(), b.clone())),
+                    (Some(a), None) => Some(a.as_ref().to_vec()),
+                    (None, Some(b)) => Some(b.clone()),
+                    (None, None) => None,
+                };
+                resolve.finish_call(outcome);
+            }
+
+            // We only create a `NextKey` if the state is one of the above.
+            _ => unreachable!(),
+        };
+
+        self.inner.run()
+    }
+}
+
+/// Implementation detail of the verification. Shared by all the variants of [`Verify`] other
+/// than [`Verify::Finished`].
+struct VerifyInner {
     vm: executor::WasmVm,
 
     /// Pending changes to the top storage trie that this block performs.
@@ -132,9 +402,9 @@ pub struct ReadyToRun {
     root_calculation: Option<calculate_root::RootMerkleValueCalculation>,
 }
 
-impl ReadyToRun {
+impl VerifyInner {
     /// Continues the verification.
-    pub fn run(mut self) -> Verify {
+    fn run(mut self) -> Verify {
         loop {
             match self.vm.state() {
                 executor::State::ReadyToRun(r) => r.run(),
@@ -303,257 +573,6 @@ impl ReadyToRun {
                 s => unimplemented!("unimplemented externality: {:?}", s),
             }
         }
-    }
-}
-
-/// Loading a storage value is required in order to continue.
-#[must_use]
-pub struct StorageGet {
-    inner: ReadyToRun,
-}
-
-impl StorageGet {
-    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    // TODO: shouldn't be mut
-    pub fn key<'a>(&'a mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageGet { storage_key, .. }
-            | executor::State::ExternalStorageAppend { storage_key, .. } => {
-                either::Either::Left(iter::once(either::Either::Left(storage_key)))
-            }
-
-            executor::State::ExternalStorageRoot { .. } => {
-                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
-                    self.inner.root_calculation.as_ref().unwrap()
-                {
-                    struct One(u8);
-                    impl AsRef<[u8]> for One {
-                        fn as_ref(&self) -> &[u8] {
-                            slice::from_ref(&self.0)
-                        }
-                    }
-                    either::Either::Right(value_request.key().map(One).map(either::Either::Right))
-                } else {
-                    // We only create a `StorageGet` if the state is `StorageValue`.
-                    panic!()
-                }
-            }
-
-            executor::State::ExternalStorageChangesRoot { .. } => {
-                either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
-            }
-
-            // We only create a `StorageGet` if the state is one of the above.
-            _ => unreachable!(),
-        }
-    }
-
-    /// Injects the corresponding storage value.
-    // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> ReadyToRun {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageGet {
-                offset,
-                max_size,
-                resolve,
-                ..
-            } => {
-                if let Some(mut value) = value {
-                    if usize::try_from(offset).unwrap() < value.len() {
-                        value = &value[usize::try_from(offset).unwrap()..];
-                        if usize::try_from(max_size).unwrap() < value.len() {
-                            value = &value[..usize::try_from(max_size).unwrap()];
-                        }
-                    }
-
-                    resolve.finish_call(Some(value.to_vec())); // TODO: overhead
-                } else {
-                    resolve.finish_call(None);
-                }
-            }
-            executor::State::ExternalStorageAppend {
-                storage_key,
-                value: to_add,
-                resolve,
-            } => {
-                let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
-                // TODO: could be less overhead?
-                append_to_storage_value(&mut value, to_add);
-                self.inner
-                    .top_trie_changes
-                    .insert(storage_key.to_vec(), Some(value.clone()));
-                resolve.finish_call(());
-            }
-            executor::State::ExternalStorageRoot { .. } => {
-                if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
-                    self.inner.root_calculation.take().unwrap()
-                {
-                    self.inner.root_calculation = Some(value_request.inject(value));
-                } else {
-                    // We only create a `StorageGet` if the state is `StorageValue`.
-                    panic!()
-                }
-            }
-            executor::State::ExternalStorageChangesRoot { resolve, .. } => {
-                if value.is_none() {
-                    resolve.finish_call(None);
-                } else {
-                    // TODO: this is probably one of the most complicated things to implement
-                    todo!()
-                }
-            }
-
-            // We only create a `StorageGet` if the state is one of the above.
-            _ => unreachable!(),
-        };
-
-        self.inner
-    }
-}
-
-/// Fetching the list of keys with a given prefix is required in order to continue.
-#[must_use]
-pub struct PrefixKeys {
-    inner: ReadyToRun,
-}
-
-impl PrefixKeys {
-    /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut mut but &self
-    pub fn prefix(&mut self) -> &[u8] {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageClearPrefix { storage_key, .. } => storage_key,
-            executor::State::ExternalStorageRoot { .. } => &[],
-
-            // We only create a `PrefixKeys` if the state is one of the above.
-            _ => unreachable!(),
-        }
-    }
-
-    /// Injects the list of keys.
-    pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageClearPrefix {
-                storage_key,
-                resolve,
-            } => {
-                // TODO: use prefix_remove_update once optimized
-                //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
-
-                for key in keys {
-                    self.inner
-                        .top_trie_root_calculation_cache
-                        .as_mut()
-                        .unwrap()
-                        .storage_value_update(key.as_ref(), false);
-                    self.inner
-                        .top_trie_changes
-                        .insert(key.as_ref().to_vec(), None);
-                }
-                for (key, value) in self.inner.top_trie_changes.iter_mut() {
-                    if !key.starts_with(&storage_key) {
-                        continue;
-                    }
-                    if value.is_none() {
-                        continue;
-                    }
-                    self.inner
-                        .top_trie_root_calculation_cache
-                        .as_mut()
-                        .unwrap()
-                        .storage_value_update(key, false);
-                    *value = None;
-                }
-                resolve.finish_call(());
-            }
-
-            executor::State::ExternalStorageRoot { .. } => {
-                if let calculate_root::RootMerkleValueCalculation::AllKeys(all_keys) =
-                    self.inner.root_calculation.take().unwrap()
-                {
-                    // TODO: overhead
-                    let mut list = keys
-                        .filter(|v| {
-                            self.inner
-                                .top_trie_changes
-                                .get(v.as_ref())
-                                .map_or(true, |v| v.is_some())
-                        })
-                        .map(|v| v.as_ref().to_vec())
-                        .collect::<HashSet<_, fnv::FnvBuildHasher>>();
-                    // TODO: slow to iterate over everything?
-                    for (key, value) in self.inner.top_trie_changes.iter() {
-                        if value.is_none() {
-                            continue;
-                        }
-                        list.insert(key.clone());
-                    }
-                    self.inner.root_calculation =
-                        Some(all_keys.inject(list.into_iter().map(|k| k.into_iter())));
-                } else {
-                    // We only create a `PrefixKeys` if the state is `AllKeys`.
-                    panic!()
-                }
-            }
-
-            // We only create a `PrefixKeys` if the state is one of the above.
-            _ => unreachable!(),
-        };
-
-        self.inner
-    }
-}
-
-/// Fetching the key that follows a given one is required in order to continue.
-#[must_use]
-pub struct NextKey {
-    inner: ReadyToRun,
-}
-
-impl NextKey {
-    /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut mut but &self
-    pub fn key(&mut self) -> &[u8] {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageNextKey { storage_key, .. } => storage_key,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Injects the key.
-    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageNextKey {
-                storage_key,
-                resolve,
-            } => {
-                // The next key can be either the one passed by the user or one key in the current
-                // pending storage changes that has been inserted during the verification.
-                // TODO: /!\ this logic is wrong; it is possible for the user-provided key to have
-                //           been erased by the verification in the meanwhile
-                // TODO: not optimized regarding cloning
-                // TODO: also not optimized in terms of searching time ; should really be a BTreeMap or something
-                let in_overlay = self
-                    .inner
-                    .top_trie_changes
-                    .keys()
-                    .filter(|k| &***k > storage_key)
-                    .min();
-                // TODO: `to_vec()` overhead
-                let outcome = match (key, in_overlay) {
-                    (Some(a), Some(b)) => Some(cmp::min(a.as_ref().to_vec(), b.clone())),
-                    (Some(a), None) => Some(a.as_ref().to_vec()),
-                    (None, Some(b)) => Some(b.clone()),
-                    (None, None) => None,
-                };
-                resolve.finish_call(outcome);
-            }
-
-            // We only create a `NextKey` if the state is one of the above.
-            _ => unreachable!(),
-        };
-
-        self.inner
     }
 }
 
