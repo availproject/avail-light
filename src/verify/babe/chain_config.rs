@@ -13,7 +13,7 @@ pub struct BabeGenesisConfiguration {
 }
 
 impl BabeGenesisConfiguration {
-    /// Retrieves the configuration from the given runtime code.
+    /// Retrieves the configuration from the storage of the genesis block.
     ///
     /// Must be passed a closure that returns the storage value corresponding to the given key in
     /// the genesis block storage.
