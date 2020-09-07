@@ -10,7 +10,7 @@ use parity_scale_codec::DecodeAll as _;
 /// - Stored at the predefined `:grandpa_authorities` key of the storage.
 /// - Retreived by calling the `GrandpaApi_grandpa_authorities` function of the runtime.
 ///
-/// The latter method is soft-deprecated in former of the former. Both methods are still
+/// The latter method is soft-deprecated in favour of the former. Both methods are still
 /// supported.
 ///
 /// > **Note**: Pragmatically speaking, Polkadot, Westend, and any newer chain use the former
@@ -21,8 +21,6 @@ pub struct GrandpaGenesisConfiguration {
     /// Authorities of the authorities set 0. These are the authorities that finalize block #1.
     pub initial_authorities: Vec<header::GrandpaAuthority>,
 }
-
-type ConfigScaleEncoding = Vec<([u8; 32], u64)>;
 
 impl GrandpaGenesisConfiguration {
     /// Retrieves the configuration from the storage of the genesis block.
@@ -133,3 +131,5 @@ pub enum FromVmPrototypeError {
     /// Virtual machine tried to call an externality that isn't valid in this context.
     ExternalityNotAllowed,
 }
+
+type ConfigScaleEncoding = Vec<([u8; 32], u64)>;
