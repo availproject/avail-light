@@ -247,6 +247,16 @@ pub enum ProcessOne<TRq, TSrc> {
         /// Ordered by increasing block number.
         finalized_blocks: Vec<Block>,
     },
+    /// A step in the processing has been completed.
+    ///
+    /// This variant is returned periodically in order to report on the advancement of the
+    /// syncing. No action is required except call [`InProgress::resume`].
+    InProgress {
+        /// Object that resumes the processing.
+        resume: InProgress<TRq, TSrc>,
+        current_best_number: u64,
+        current_best_hash: [u8; 32],
+    },
     /// Loading a storage value of the finalized block is required in order to continue.
     FinalizedStorageGet(StorageGet<TRq, TSrc>),
     /// Fetching the list of keys of the finalized block with a given prefix is required in order
@@ -456,8 +466,17 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         shared.best_to_finalized_storage_diff.clear();
                     }
 
-                    // Switching to next stage to pick next block.
-                    inner = Inner::Start(chain);
+                    // Before looping again, report the progress to the user.
+                    let current_best_hash = chain.best_block_hash();
+                    let current_best_number = chain.best_block_header().number;
+                    break ProcessOne::InProgress {
+                        resume: InProgress {
+                            inner: Inner::Start(chain),
+                            shared,
+                        },
+                        current_best_hash,
+                        current_best_number,
+                    };
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
@@ -627,5 +646,19 @@ impl<TRq, TBl> StorageNextKey<TRq, TBl> {
         // TODO: finish
         let inner = self.inner.inject_key(key);
         ProcessOne::from(Inner::Step2(inner), self.shared)
+    }
+}
+
+/// Resume the processing after a [`ProcessOne::InProgress`].
+#[must_use]
+pub struct InProgress<TRq, TBl> {
+    inner: Inner,
+    shared: ProcessOneShared<TRq, TBl>,
+}
+
+impl<TRq, TBl> InProgress<TRq, TBl> {
+    /// Resume the processing.
+    pub fn resume(self) -> ProcessOne<TRq, TBl> {
+        ProcessOne::from(self.inner, self.shared)
     }
 }

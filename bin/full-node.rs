@@ -251,6 +251,25 @@ async fn start_sync(
                         sync = s;
                         break;
                     }
+
+                    full_optimistic::ProcessOne::InProgress {
+                        current_best_hash,
+                        current_best_number,
+                        resume,
+                    } => {
+                        // Processing has made a step forward.
+                        // There is nothing to do, but this is used to update to best block
+                        // shown on the informant.
+                        let mut lock = sync_state.lock().await;
+                        *lock = SyncState {
+                            best_block_hash: current_best_hash,
+                            best_block_number: current_best_number,
+                        };
+                        drop(lock);
+
+                        process = resume.resume();
+                    }
+
                     full_optimistic::ProcessOne::FinalizedStorageGet(mut req) => {
                         // TODO: we shouldn't have to do this folding
                         let key = req.key().fold(Vec::new(), |mut a, b| {
