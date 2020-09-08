@@ -1,9 +1,8 @@
-use crate::{finality::grandpa, header};
+use crate::{finality::grandpa, header, verify::babe};
 
 use alloc::vec::Vec;
 
 /// Information about the latest finalized block and state found in its ancestors.
-// TODO: should it also contain the babe root configuration?
 #[derive(Debug, Clone)]
 pub struct ChainInformation {
     /// SCALE encoding of the header of the highest known finalized block.
@@ -73,6 +72,27 @@ impl ChainInformation {
     }
 }
 
+impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
+    fn from(info: ChainInformationRef<'a>) -> ChainInformation {
+        ChainInformation {
+            finalized_block_header: info.finalized_block_header.into(),
+            babe_finalized_block1_slot_number: info.babe_finalized_block1_slot_number,
+            babe_finalized_block_epoch_information: info
+                .babe_finalized_block_epoch_information
+                .map(|(e, c)| (e.clone().into(), c)),
+            babe_finalized_next_epoch_transition: info
+                .babe_finalized_next_epoch_transition
+                .map(|(e, c)| (e.clone().into(), c)),
+            grandpa_after_finalized_block_authorities_set_id: info
+                .grandpa_after_finalized_block_authorities_set_id,
+            grandpa_finalized_triggered_authorities: info
+                .grandpa_finalized_triggered_authorities
+                .into(),
+            grandpa_finalized_scheduled_changes: info.grandpa_finalized_scheduled_changes.into(),
+        }
+    }
+}
+
 /// Error when building the chain information from the genesis storage.
 #[derive(Debug, derive_more::Display)]
 pub enum FromGenesisStorageError {
@@ -135,23 +155,37 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
     }
 }
 
-impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
-    fn from(info: ChainInformationRef<'a>) -> ChainInformation {
-        ChainInformation {
-            finalized_block_header: info.finalized_block_header.into(),
-            babe_finalized_block1_slot_number: info.babe_finalized_block1_slot_number,
-            babe_finalized_block_epoch_information: info
-                .babe_finalized_block_epoch_information
-                .map(|(e, c)| (e.clone().into(), c)),
-            babe_finalized_next_epoch_transition: info
-                .babe_finalized_next_epoch_transition
-                .map(|(e, c)| (e.clone().into(), c)),
-            grandpa_after_finalized_block_authorities_set_id: info
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: info
-                .grandpa_finalized_triggered_authorities
-                .into(),
-            grandpa_finalized_scheduled_changes: info.grandpa_finalized_scheduled_changes.into(),
-        }
+/// Includes a [`ChainInformation`] plus some chain-wide configuration.
+#[derive(Debug, Clone)]
+pub struct ChainInformationConfig {
+    /// Information about the latest finalized block.
+    pub chain_information: ChainInformation,
+
+    /// Configuration for BABE, retreived from the genesis block.
+    pub babe_genesis_config: babe::BabeGenesisConfiguration,
+}
+
+impl ChainInformationConfig {
+    /// Builds the [`ChainInformationConfig`] corresponding to the genesis block.
+    ///
+    /// Must be passed a closure that returns the storage value corresponding to the given key in
+    /// the genesis block storage.
+    pub fn from_genesis_storage<'a>(
+        genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
+    ) -> Result<Self, FromGenesisStorageError> {
+        let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
+            genesis_storage
+                .clone()
+                .find(|(k2, _)| *k2 == k)
+                .map(|(_, v)| v.to_owned())
+        })
+        .unwrap(); // TODO: no unwrap
+
+        let chain_information = ChainInformation::from_genesis_storage(genesis_storage)?;
+
+        Ok(ChainInformationConfig {
+            chain_information,
+            babe_genesis_config,
+        })
     }
 }

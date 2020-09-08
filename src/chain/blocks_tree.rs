@@ -43,10 +43,7 @@ use hashbrown::HashMap;
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
-
-    /// Configuration for BABE, retreived from the genesis block.
-    pub babe_genesis_config: babe::BabeGenesisConfiguration,
+    pub chain_information_config: chain_information::ChainInformationConfig,
 
     /// Pre-allocated size of the chain, in number of non-finalized blocks.
     pub blocks_capacity: usize,
@@ -116,27 +113,38 @@ impl<T> NonFinalizedTree<T> {
     /// Panics if the chain information is incorrect.
     ///
     pub fn new(mut config: Config) -> Self {
-        if config.chain_information.finalized_block_header.number >= 1 {
+        if config
+            .chain_information_config
+            .chain_information
+            .finalized_block_header
+            .number
+            >= 1
+        {
             assert!(config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_block1_slot_number
                 .is_some());
             assert!(config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_next_epoch_transition
                 .is_some());
         } else {
             assert_eq!(
                 config
+                    .chain_information_config
                     .chain_information
                     .grandpa_after_finalized_block_authorities_set_id,
                 0
             );
             assert!(config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_next_epoch_transition
                 .is_none());
             assert!(config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_block_epoch_information
                 .is_none());
@@ -144,43 +152,62 @@ impl<T> NonFinalizedTree<T> {
 
         // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
 
-        let finalized_block_hash = config.chain_information.finalized_block_header.hash();
+        let finalized_block_hash = config
+            .chain_information_config
+            .chain_information
+            .finalized_block_header
+            .hash();
 
         config
+            .chain_information_config
             .chain_information
             .grandpa_finalized_scheduled_changes
             .retain({
-                let n = config.chain_information.finalized_block_header.number;
+                let n = config
+                    .chain_information_config
+                    .chain_information
+                    .finalized_block_header
+                    .number;
                 move |sc| sc.trigger_block_height > n
             });
         config
+            .chain_information_config
             .chain_information
             .grandpa_finalized_scheduled_changes
             .sort_by_key(|sc| sc.trigger_block_height);
 
         NonFinalizedTree {
-            finalized_block_header: config.chain_information.finalized_block_header,
+            finalized_block_header: config
+                .chain_information_config
+                .chain_information
+                .finalized_block_header,
             finalized_block_hash,
             grandpa_after_finalized_block_authorities_set_id: config
+                .chain_information_config
                 .chain_information
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: config
+                .chain_information_config
                 .chain_information
                 .grandpa_finalized_triggered_authorities,
             grandpa_finalized_scheduled_changes: config
+                .chain_information_config
                 .chain_information
                 .grandpa_finalized_scheduled_changes
                 .into_iter()
                 .collect(),
-            babe_genesis_config: config.babe_genesis_config,
+            babe_genesis_config: config.chain_information_config.babe_genesis_config,
             babe_finalized_block1_slot_number: config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_block1_slot_number,
             babe_finalized_block_epoch_information: config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_block_epoch_information
                 .map(Arc::new),
             babe_finalized_next_epoch_transition: config
+                .chain_information_config
                 .chain_information
                 .babe_finalized_next_epoch_transition
                 .map(Arc::new),

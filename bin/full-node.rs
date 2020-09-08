@@ -56,7 +56,7 @@ async fn async_main() {
         Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
         // TODO: log why storage access failed?
         Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {*/
-            chain::chain_information::ChainInformation::from_genesis_storage(
+            chain::chain_information::ChainInformationConfig::from_genesis_storage(
                 chain_spec.genesis_storage(),
             )
             .unwrap()
@@ -188,24 +188,15 @@ async fn async_main() {
 
 async fn start_sync(
     chain_spec: &chain_spec::ChainSpec,
-    chain_information: chain::chain_information::ChainInformation,
+    chain_information_config: chain::chain_information::ChainInformationConfig,
     sync_state: Arc<Mutex<SyncState>>,
     mut to_sync: mpsc::Receiver<ToSync>,
     mut to_network: mpsc::Sender<ToNetwork>,
     mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
 ) -> impl Future<Output = ()> {
-    let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
-        chain_spec
-            .genesis_storage()
-            .find(|(k2, _)| *k2 == k)
-            .map(|(_, v)| v.to_owned())
-    })
-    .unwrap();
-
     let mut sync =
         full_optimistic::OptimisticFullSync::<_, network::PeerId>::new(full_optimistic::Config {
-            chain_information,
-            babe_genesis_config,
+            chain_information_config,
             sources_capacity: 32,
             blocks_capacity: {
                 // This is the maximum number of blocks between two consecutive justifications.
