@@ -981,6 +981,8 @@ impl<T> BodyVerifyStep2<T> {
         loop {
             match inner {
                 verify::header_body::Verify::Finished(Ok(success)) => {
+                    // TODO: lots of code in common with header verification
+
                     // Block verification is successful!
                     let is_new_best = if let Some(current_best) = chain.chain.current_best {
                         is_better_block(
