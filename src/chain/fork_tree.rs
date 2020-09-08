@@ -43,10 +43,20 @@ pub struct ForkTree<T> {
 }
 
 struct Node<T> {
+    /// Index within [`ForkTree::nodes`] of the parent of that node. `None` if the node is a root.
     parent: Option<usize>,
+    /// Index within [`ForkTree::nodes`] of the first child of that node. `None` if no children.
     first_child: Option<usize>,
+    /// Index within [`ForkTree::nodes`] of the next sibling of that node. `None` if that node is
+    /// the last child of its parent.
     next_sibling: Option<usize>,
+    /// Index within [`ForkTree::nodes`] of the previous sibling of that node. `None` if the node
+    /// is the first child of its parent.
     previous_sibling: Option<usize>,
+    /// Always `false`, except temporarily set to `true` during the pruning process on nodes that
+    /// are ancestors of the pruning target.
+    is_prune_target_ancestor: bool,
+    /// Data decided by the external API user.
     data: T,
 }
 
@@ -113,8 +123,16 @@ impl<T> ForkTree<T> {
     /// - The ancestors of the node passed as parameter.
     /// - Any node not a descendant of the node passed as parameter.
     ///
-    /// Returns an iterator containing the removed elements in an unspecified order.
+    /// Returns an iterator containing the removed elements.
     /// All elements are removed from the tree even if the returned iterator is dropped eagerly.
+    ///
+    /// Elements are returned in an unspecified order. However, all the elements for which
+    /// [`PrunedNode::is_prune_target_ancestor`] is `true` are guaranteed to be returned from
+    /// child to parent.
+    ///
+    /// In other words, doing `prune_ancestors(...).filter(|n| n.is_prune_target_ancestor)` is
+    /// guaranteed to return the elements in the same order as [`ForkTree::node_to_root_path`]
+    /// does.
     ///
     /// # Panic
     ///
@@ -124,6 +142,19 @@ impl<T> ForkTree<T> {
         // The implementation consists in replacing the content of `self.first_root` with the
         // content of `self.nodes[node_index].first_child` and updating everything else
         // accordingly.
+
+        // Set `is_prune_target_ancestor` to true for `node_index` and all its ancestors.
+        {
+            let mut node = node_index.0;
+            loop {
+                debug_assert!(!self.nodes[node].is_prune_target_ancestor);
+                self.nodes[node].is_prune_target_ancestor = true;
+                node = match self.nodes[node].parent {
+                    Some(n) => n,
+                    None => break,
+                }
+            }
+        }
 
         let iter = self.first_root.unwrap();
         self.first_root = self.nodes[node_index.0].first_child;
@@ -284,6 +315,7 @@ impl<T> ForkTree<T> {
                 first_child: None,
                 next_sibling,
                 previous_sibling: None,
+                is_prune_target_ancestor: false,
                 data: child,
             });
 
@@ -300,6 +332,7 @@ impl<T> ForkTree<T> {
                 first_child: None,
                 next_sibling: self.first_root,
                 previous_sibling: None,
+                is_prune_target_ancestor: false,
                 data: child,
             });
 
@@ -356,7 +389,7 @@ pub struct PruneAncestorsIter<'a, T> {
 }
 
 impl<'a, T> Iterator for PruneAncestorsIter<'a, T> {
-    type Item = (NodeIndex, T);
+    type Item = PrunedNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -404,7 +437,11 @@ impl<'a, T> Iterator for PruneAncestorsIter<'a, T> {
                 self.finished = true;
             };
 
-            break Some((removed_node_index, iter_node.data));
+            break Some(PrunedNode {
+                index: removed_node_index,
+                is_prune_target_ancestor: iter_node.is_prune_target_ancestor,
+                user_data: iter_node.data,
+            });
         }
     }
 
@@ -418,6 +455,16 @@ impl<'a, T> Drop for PruneAncestorsIter<'a, T> {
         // Make sure that all elements are removed.
         while let Some(_) = self.next() {}
     }
+}
+
+/// Node removed by [`ForkTree::prune_ancestors`].
+pub struct PrunedNode<T> {
+    /// Former index of the node. This index is no longer valid.
+    pub index: NodeIndex,
+    /// True if this node is an ancestor of the target of the pruning.
+    pub is_prune_target_ancestor: bool,
+    /// Value that was passed to [`ForkTree::insert`].
+    pub user_data: T,
 }
 
 /// Index of a node within a [`ForkTree`]. Never invalidated unless the node is removed.
@@ -463,7 +510,14 @@ mod tests {
             &[node5, node0]
         );
 
-        tree.prune_ancestors(node1);
+        let iter = tree.prune_ancestors(node1);
+        assert_eq!(
+            iter.filter(|n| n.is_prune_target_ancestor)
+                .map(|n| n.index)
+                .collect::<Vec<_>>(),
+            vec![node1, node0]
+        );
+
         assert!(tree.get(node0).is_none());
         assert!(tree.get(node1).is_none());
         assert_eq!(tree.get(node2), Some(&2));
@@ -480,4 +534,6 @@ mod tests {
             &[node4, node2]
         );
     }
+
+    // TODO: add more testing for the order of elements returned by `prune_ancestors`
 }

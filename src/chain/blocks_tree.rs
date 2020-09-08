@@ -704,10 +704,11 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// The block must have been passed to [`NonFinalizedTree::verify_header`].
     ///
-    /// Returns an iterator containing the now-finalized blocks.
+    /// Returns an iterator containing the now-finalized blocks in child-to-parent order. In
+    /// other words, the first element of the iterator is always the block whose hash is the
+    /// `block_hash` passed as parameter.
+    ///
     /// The pruning is completely performed, even if the iterator is dropped eagerly.
-    // TODO: defined order of the returned blocks ^
-    // TODO: not true /!\  ^  the iterator also returns blocks that weren't part of the chain
     pub fn set_finalized_block(
         &mut self,
         block_hash: &[u8; 32],
@@ -1462,11 +1463,16 @@ impl<'a, T> Iterator for SetFinalizedBlockIter<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (node_index, block) = self.iter.next()?;
-        if Some(node_index) == *self.current_best {
-            *self.current_best = None;
+        loop {
+            let pruned = self.iter.next()?;
+            if Some(pruned.index) == *self.current_best {
+                *self.current_best = None;
+            }
+            if !pruned.is_prune_target_ancestor {
+                continue;
+            }
+            break Some(pruned.user_data.user_data);
         }
-        Some(block.user_data)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

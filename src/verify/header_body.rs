@@ -153,7 +153,7 @@ enum VerifyInner {
 }
 
 impl VerifyInner {
-    fn run(self) -> Verify {
+    fn run(mut self) -> Verify {
         loop {
             break match self {
                 VerifyInner::Babe {
