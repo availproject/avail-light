@@ -1525,6 +1525,9 @@ impl<'a, T> Iterator for SetFinalizedBlockIter<'a, T> {
 
 impl<'a, T> Drop for SetFinalizedBlockIter<'a, T> {
     fn drop(&mut self) {
+        // Make sure the iteration goes to the end.
+        while let Some(_) = self.next() {}
+
         // TODO: update current_best with the new best block
     }
 }

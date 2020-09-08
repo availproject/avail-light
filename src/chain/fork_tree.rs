@@ -454,6 +454,8 @@ impl<'a, T> Drop for PruneAncestorsIter<'a, T> {
     fn drop(&mut self) {
         // Make sure that all elements are removed.
         while let Some(_) = self.next() {}
+
+        debug_assert!(self.tree.get(self.new_final).is_none());
     }
 }
 
