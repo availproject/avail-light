@@ -704,9 +704,14 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// The block must have been passed to [`NonFinalizedTree::verify_header`].
     ///
-    /// Returns an iterator containing the now-finalized blocks in child-to-parent order. In
+    /// Returns an iterator containing the now-finalized blocks in decreasing block numbers. In
     /// other words, the first element of the iterator is always the block whose hash is the
     /// `block_hash` passed as parameter.
+    ///
+    /// > **Note**: This function returns blocks in decreasing block number, because any other
+    /// >           ordering would incur a performance cost. While returning blocks in increasing
+    /// >           block number would often be more convenient, the overhead of doing so is
+    /// >           moved to the user.
     ///
     /// The pruning is completely performed, even if the iterator is dropped eagerly.
     pub fn set_finalized_block(

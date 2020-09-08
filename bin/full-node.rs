@@ -233,7 +233,21 @@ async fn start_sync(
             let mut process = sync.process_one();
             loop {
                 match process {
-                    full_optimistic::ProcessOne::Finished { sync: s } => {
+                    full_optimistic::ProcessOne::Finished {
+                        sync: s,
+                        finalized_blocks,
+                    } => {
+                        for block in finalized_blocks {
+                            for (key, value) in block.storage_top_trie_changes {
+                                if let Some(value) = value {
+                                    finalized_block_storage.insert(key, value);
+                                } else {
+                                    let _was_there = finalized_block_storage.remove(&key);
+                                    // TODO: panics?! assert!(_was_there.is_some());
+                                }
+                            }
+                        }
+
                         sync = s;
                         break;
                     }

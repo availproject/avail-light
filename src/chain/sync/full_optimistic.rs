@@ -65,7 +65,10 @@ pub struct Config {
 
 /// Optimistic headers-only syncing.
 pub struct OptimisticFullSync<TRq, TSrc> {
-    // TODO: doc
+    /// Data structure containing the blocks.
+    ///
+    /// The user data, [`Block`], isn't used internally but stores information later reported
+    /// to the user.
     chain: blocks_tree::NonFinalizedTree<Block>,
 
     /// Changes in the storage of the best block compared to the finalized block.
@@ -87,16 +90,14 @@ pub struct OptimisticFullSync<TRq, TSrc> {
     sync: Option<optimistic::OptimisticSync<TRq, TSrc, RequestSuccessBlock>>,
 }
 
-struct Block {
+// TODO: doc
+pub struct Block {
     /// Changes to the storage made by this block compared to its parent.
-    ///
-    /// Not used by this state machine but reported to the user.
-    storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+    pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
     /// List of changes to the offchain storage that this block performs.
-    ///
-    /// Not used by this state machine but reported to the user.
-    offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+    // TODO: header, body, and justification
 }
 
 impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
@@ -205,7 +206,10 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             Ok(tp) => tp,
             Err(sync) => {
                 self.sync = Some(sync);
-                return ProcessOne::Finished { sync: self };
+                return ProcessOne::Finished {
+                    sync: self,
+                    finalized_blocks: Vec::new(),
+                };
             }
         };
 
@@ -219,6 +223,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
                 best_to_finalized_storage_diff: self.best_to_finalized_storage_diff,
                 runtime_code_cache: self.runtime_code_cache,
                 top_trie_root_calculation_cache: self.top_trie_root_calculation_cache,
+                finalized_blocks: Vec::new(),
             },
         )
     }
@@ -238,7 +243,9 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The [`OptimisticFullSync::process_one`] method takes ownership of the
         /// [`OptimisticFullSync`]. This field yields it back.
         sync: OptimisticFullSync<TRq, TSrc>,
-        // TODO: finalized_advance: ,
+        /// Blocks that have been finalized after the verification.
+        /// Ordered by increasing block number.
+        finalized_blocks: Vec<Block>,
     },
     /// Loading a storage value of the finalized block is required in order to continue.
     FinalizedStorageGet(StorageGet<TRq, TSrc>),
@@ -262,6 +269,8 @@ struct ProcessOneShared<TRq, TSrc> {
     best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
     runtime_code_cache: Option<executor::WasmVmPrototype>,
     top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+    // TODO: make sure we're not throwing this away in case of error
+    finalized_blocks: Vec<Block>,
 }
 
 impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
@@ -302,6 +311,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                                     .top_trie_root_calculation_cache,
                                 sync: Some(sync),
                             },
+                            finalized_blocks: shared.finalized_blocks,
                         };
                     }
                 }
@@ -320,6 +330,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
+                        finalized_blocks: shared.finalized_blocks,
                     };
                 }
 
@@ -337,6 +348,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
+                        finalized_blocks: shared.finalized_blocks,
                     };
                 }
 
@@ -354,6 +366,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             top_trie_root_calculation_cache: None,
                             sync: Some(sync),
                         },
+                        finalized_blocks: shared.finalized_blocks,
                     };
                 }
 
@@ -420,18 +433,27 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     // corresponding to the block that has just been verified. Verifying the
                     // justification as well.
                     if let Some(justification) = shared.pending_encoded_justification.take() {
-                        if let Ok(apply) = chain.verify_justification(&justification) {
-                            assert!(apply.is_current_best_block()); // TODO: can legitimately fail in case of malicious node
-                            apply.apply(); // TODO: must provide the list of pruned blocks to the user to save in the database
-                        } else {
-                            todo!() // TODO:
+                        let apply = match chain.verify_justification(&justification) {
+                            Ok(a) => a,
+                            Err(_) => todo!(), // TODO:
+                        };
+
+                        assert!(apply.is_current_best_block()); // TODO: can legitimately fail in case of malicious node
+
+                        // Applying the finalization and iterating over the now-finalized block.
+                        // Since `apply()` returns the blocks in decreasing block number, we have
+                        // to revert the list in order to get them in increasing block number
+                        // instead.
+                        // While this intermediary buffering is an overhead, the increased code
+                        // complexity to avoid it is probably not worth the speed gain.
+                        for block in apply.apply().collect::<Vec<_>>().into_iter().rev() {
+                            shared.finalized_blocks.push(block);
                         }
 
                         // Since the best block is now the finalized block, reset the storage
                         // diff.
                         debug_assert!(chain.is_empty());
-                        // TODO: makes everything crash at the moment, since the finalized block storage isn't actually tracked in higher level code
-                        // TODO: shared.best_to_finalized_storage_diff.clear();
+                        shared.best_to_finalized_storage_diff.clear();
                     }
 
                     // Switching to next stage to pick next block.
