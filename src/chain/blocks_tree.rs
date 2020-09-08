@@ -279,6 +279,8 @@ impl<T> NonFinalizedTree<T> {
         &mut self,
         scale_encoded_header: Vec<u8>,
     ) -> Result<HeaderVerifySuccess<T>, HeaderVerifyError> {
+        // TODO: lots of code here is duplicated from verify_body
+
         let decoded_header = match header::decode(&scale_encoded_header) {
             Ok(h) => h,
             Err(err) => {
@@ -487,6 +489,16 @@ impl<T> NonFinalizedTree<T> {
         })
     }
 
+    /// Verifies the given block.
+    ///
+    /// The verification is performed in the context of the chain. In particular, the
+    /// verification will fail if the parent block isn't already in the chain.
+    ///
+    /// This method takes ownership of both the block's information and the [`NonFinalizedTree`].
+    /// It turns an object that must be driver by the user, until either the verification is
+    /// finished or the process aborted, at which point the [`NonFinalizedTree`] can be retreived
+    /// back. The state of the [`NonFinalizedTree`] isn't modified until [`BodyInsert::insert`] is
+    /// called after the end of the verification.
     pub fn verify_body<I, E>(self, scale_encoded_header: Vec<u8>, body: I) -> BodyVerifyStep1<T, I>
     where
         I: ExactSizeIterator<Item = E> + Clone,
@@ -569,7 +581,6 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// If the verification succeeds, a [`JustificationApply`] object will be returned which can
     /// be used to apply the finalization.
-    #[must_use]
     pub fn verify_justification(
         &mut self,
         scale_encoded_justification: &[u8],
@@ -799,7 +810,10 @@ where
     }
 }
 
+/// Block verification, either just finished or still in progress.
 ///
+/// Holds ownership of both the block to verify and the [`NonFinalizedTree`].
+#[must_use]
 #[derive(Debug)]
 pub enum BodyVerifyStep1<T, I> {
     /// Block is already known.
@@ -822,6 +836,7 @@ pub enum BodyVerifyStep1<T, I> {
 
 /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the runtime
 /// of the parent block must be provided.
+#[must_use]
 #[derive(Debug)]
 pub struct BodyVerifyRuntimeRequired<T, I> {
     chain: NonFinalizedTree<T>,
@@ -869,6 +884,17 @@ where
         u64::try_from(self.chain.blocks.node_to_root_path(parent_index).count()).unwrap()
     }
 
+    /// Resume the verification process by passing the requested information.
+    ///
+    /// `parent_runtime` must be a Wasm virtual machine containing the runtime code of the parent
+    /// block.
+    ///
+    /// The value of `top_trie_root_calculation_cache` can be the one provided by the
+    /// [`BodyVerifyStep2::finished`] variant when the parent block has been verified. `None` can
+    /// be passed if this information isn't available.
+    ///
+    /// While `top_trie_root_calculation_cache` is optional, providing a value will considerably
+    /// speed up the calculation.
     pub fn resume(
         self,
         parent_runtime: executor::WasmVmPrototype,
@@ -906,19 +932,31 @@ where
             },
         )
     }
+
+    /// Abort the verification and return the unmodified tree.
+    pub fn abort(self) -> NonFinalizedTree<T> {
+        self.chain
+    }
 }
 
-/// Header and body verification in progress.
+/// Block verification, either just finished or still in progress.
+///
+/// Holds ownership of both the block to verify and the [`NonFinalizedTree`].
+#[must_use]
 pub enum BodyVerifyStep2<T> {
     /// Verification is over.
+    ///
+    /// Use the provided [`BodyInsert`] to insert the block in the chain if desired.
     Finished {
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
         parent_runtime: executor::WasmVmPrototype,
-        // TODO: doc
+        /// List of changes to the storage top trie that the block performs.
         storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
-        // TODO: doc
+        /// List of changes to the offchain storage that this block performs.
         offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
-        // TODO: doc
+        /// Cache of calculation for the storage trie of the best block.
+        /// Pass this value to [`BodyVerifyRuntimeRequired::resume`] when verifying a children of
+        /// this block in order to considerably speed up the verification.
         top_trie_root_calculation_cache: calculate_root::CalculationCache,
         /// Outcome of the verification.
         result: Result<BodyInsert<T>, HeaderVerifyError>, // TODO: BodyVerifyError, or rename the error to be common
@@ -1337,7 +1375,7 @@ impl<'c, T> fmt::Debug for HeaderInsert<'c, T> {
     }
 }
 
-/// Error that can happen when verifying a block.
+/// Error that can happen when verifying a block header.
 #[derive(Debug, derive_more::Display)]
 pub enum HeaderVerifyError {
     /// Error while decoding the header.
@@ -1350,12 +1388,12 @@ pub enum HeaderVerifyError {
     },
     /// The block verification has failed. The block is invalid and should be thrown away.
     VerificationFailed(verify::header_only::Error),
-    /// Babe epoch information couldn't be determined.
-    // TODO: how can that happen?
-    UnknownBabeEpoch,
 }
 
-// TODO: doc and all
+/// Returned by [`NonFinalizedTree::verify_justification`] on success.
+///
+/// As long as [`JustificationApply::apply`] isn't called, the underlying [`NonFinalizedTree`]
+/// isn't modified.
 #[must_use]
 pub struct JustificationApply<'c, T> {
     chain: &'c mut NonFinalizedTree<T>,
