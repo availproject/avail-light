@@ -29,6 +29,7 @@ use ansi_term::Colour; // TODO: this crate isn't no_std
 use core::{cmp, convert::TryFrom as _, fmt, iter};
 
 /// Values used to build the informant line. Implements the [`core::fmt::Display`] trait.
+// TODO: some fields here aren't printed; remove them once what is printed is final
 #[derive(Debug)]
 pub struct InformantLine<'a> {
     // TODO: pub enable_colors: bool,

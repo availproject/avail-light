@@ -24,6 +24,7 @@
 //!
 
 // TODO: rethink this doc ^
+// TODO: this module is an essential part of the code and needs clean up and testing
 
 use crate::{
     chain::{chain_information, fork_tree},
@@ -1411,6 +1412,16 @@ impl<'c, T> JustificationApply<'c, T> {
         self.chain.set_finalized_block_inner(self.to_finalize)
     }
 
+    /// Returns the user data of the block about to be justified.
+    pub fn block_user_data(&mut self) -> &mut T {
+        &mut self
+            .chain
+            .blocks
+            .get_mut(self.to_finalize)
+            .unwrap()
+            .user_data
+    }
+
     /// Returns true if the block to be finalized is the current best block.
     pub fn is_current_best_block(&self) -> bool {
         Some(self.to_finalize) == self.chain.current_best
@@ -1514,6 +1525,11 @@ pub struct BodyInsert<T> {
 }
 
 impl<T> BodyInsert<T> {
+    /// Returns the header of the block about to be inserted.
+    pub fn header(&self) -> header::HeaderRef {
+        (&self.header).into()
+    }
+
     /// Inserts the block with the given user data.
     pub fn insert(mut self, user_data: T) -> NonFinalizedTree<T> {
         let new_node_index = self.chain.blocks.insert(

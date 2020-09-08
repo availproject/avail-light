@@ -77,8 +77,10 @@ async fn async_main() {
     });
 
     let sync_state = Arc::new(Mutex::new(SyncState {
-        best_block_hash: [0; 32], // TODO:
-        best_block_number: 0,     // TODO:
+        best_block_hash: [0; 32],      // TODO:
+        best_block_number: 0,          // TODO:
+        finalized_block_hash: [0; 32], // TODO:
+        finalized_block_number: 0,     // TODO:
     }));
 
     threads_pool.spawn_ok(
@@ -138,9 +140,9 @@ async fn async_main() {
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: 0, // TODO: service.num_network_connections(),
                     best_number: sync_state.best_block_number,
-                    finalized_number: sync_state.best_block_number, // TODO:
+                    finalized_number: sync_state.finalized_block_number,
                     best_hash: &sync_state.best_block_hash,
-                    finalized_hash: &sync_state.best_block_hash, // TODO:
+                    finalized_hash: &sync_state.finalized_block_hash,
                     network_known_best: None, // TODO:
                 });
             }
@@ -237,6 +239,12 @@ async fn start_sync(
                         sync: s,
                         finalized_blocks,
                     } => {
+                        if let Some(last_finalized) = finalized_blocks.last() {
+                            let mut lock = sync_state.lock().await;
+                            lock.finalized_block_hash = last_finalized.header.hash();
+                            lock.finalized_block_number = last_finalized.header.number;
+                        }
+
                         for block in finalized_blocks {
                             for (key, value) in block.storage_top_trie_changes {
                                 if let Some(value) = value {
@@ -261,10 +269,8 @@ async fn start_sync(
                         // There is nothing to do, but this is used to update to best block
                         // shown on the informant.
                         let mut lock = sync_state.lock().await;
-                        *lock = SyncState {
-                            best_block_hash: current_best_hash,
-                            best_block_number: current_best_number,
-                        };
+                        lock.best_block_hash = current_best_hash;
+                        lock.best_block_number = current_best_number;
                         drop(lock);
 
                         process = resume.resume();
@@ -305,10 +311,8 @@ async fn start_sync(
             // Update the current best block, used for CLI-related purposes.
             {
                 let mut lock = sync_state.lock().await;
-                *lock = SyncState {
-                    best_block_hash: sync.best_block_hash(),
-                    best_block_number: sync.best_block_number(),
-                };
+                lock.best_block_hash = sync.best_block_hash();
+                lock.best_block_number = sync.best_block_number();
             }
 
             // Start requests that need to be started.
@@ -386,6 +390,8 @@ enum ToSync {
 struct SyncState {
     best_block_number: u64,
     best_block_hash: [u8; 32],
+    finalized_block_number: u64,
+    finalized_block_hash: [u8; 32],
 }
 
 async fn start_network(

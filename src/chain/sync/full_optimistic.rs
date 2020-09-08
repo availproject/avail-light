@@ -7,10 +7,11 @@
 //! storage of the latest finalized block.
 
 // TODO: document better
+// TODO: this entire module needs clean up
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
-use crate::{executor, trie::calculate_root, verify::babe};
+use crate::{executor, header, trie::calculate_root, verify::babe};
 
 use alloc::{collections::BTreeMap, vec};
 use core::{iter, num::NonZeroU32};
@@ -92,12 +93,20 @@ pub struct OptimisticFullSync<TRq, TSrc> {
 
 // TODO: doc
 pub struct Block {
+    /// Header of the block.
+    pub header: header::Header,
+
+    /// List of SCALE-encoded extrinsics that form the block's body.
+    pub body: Vec<Vec<u8>>,
+
+    /// SCALE-encoded justification of this block, if any.
+    pub justification: Option<Vec<u8>>,
+
     /// Changes to the storage made by this block compared to its parent.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
     /// List of changes to the offchain storage that this block performs.
     pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
-    // TODO: header, body, and justification
 }
 
 impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
@@ -434,21 +443,33 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             .best_to_finalized_storage_diff
                             .insert(key.clone(), value.clone());
                     }
-                    let mut chain = success.insert(Block {
-                        storage_top_trie_changes,
-                        offchain_storage_changes,
-                    });
+
+                    let mut chain = {
+                        let header = success.header().into();
+                        success.insert(Block {
+                            header,
+                            body: Vec::new(), // TODO: // FIXME: wrong! dummy!
+                            // Set to `Some` below if the justification check success.
+                            justification: None,
+                            storage_top_trie_changes,
+                            offchain_storage_changes,
+                        })
+                    };
 
                     // `pending_encoded_verification` contains the justification (if any)
                     // corresponding to the block that has just been verified. Verifying the
                     // justification as well.
                     if let Some(justification) = shared.pending_encoded_justification.take() {
-                        let apply = match chain.verify_justification(&justification) {
+                        let mut apply = match chain.verify_justification(&justification) {
                             Ok(a) => a,
                             Err(_) => todo!(), // TODO:
                         };
 
                         assert!(apply.is_current_best_block()); // TODO: can legitimately fail in case of malicious node
+
+                        // As part of the finalization, put the justification in the chain that's
+                        // going to be reported to the user.
+                        apply.block_user_data().justification = Some(justification);
 
                         // Applying the finalization and iterating over the now-finalized block.
                         // Since `apply()` returns the blocks in decreasing block number, we have
