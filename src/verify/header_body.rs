@@ -115,12 +115,11 @@ pub fn verify<'a>(
         top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
     });
 
-    Verify::ReadyToRun(ReadyToRun {
-        inner: ReadyToRunInner::Babe {
-            babe_verification,
-            import_process,
-        },
-    })
+    VerifyInner::Babe {
+        babe_verification,
+        import_process,
+    }
+    .run()
 }
 
 /// Current state of the verification.
@@ -128,8 +127,6 @@ pub fn verify<'a>(
 pub enum Verify {
     /// Verification is over.
     Finished(Result<Success, Error>),
-    /// Verification is ready to continue.
-    ReadyToRun(ReadyToRun),
     /// Fetching an epoch information is required in order to continue.
     BabeEpochInformation(BabeEpochInformation),
     /// Loading a storage value is required in order to continue.
@@ -140,13 +137,7 @@ pub enum Verify {
     StorageNextKey(StorageNextKey),
 }
 
-/// Verification is ready to continue.
-#[must_use]
-pub struct ReadyToRun {
-    inner: ReadyToRunInner,
-}
-
-enum ReadyToRunInner {
+enum VerifyInner {
     /// Verifying BABE.
     Babe {
         babe_verification: babe::SuccessOrPending,
@@ -161,60 +152,64 @@ enum ReadyToRunInner {
     },
 }
 
-impl ReadyToRun {
-    /// Continues the verification.
-    pub fn run(self) -> Verify {
-        match self.inner {
-            ReadyToRunInner::Babe {
-                babe_verification,
-                import_process,
-            } => match babe_verification {
-                babe::SuccessOrPending::Success(babe_success) => Verify::ReadyToRun(ReadyToRun {
-                    inner: ReadyToRunInner::Unsealed {
-                        inner: import_process,
-                        babe_success,
-                    },
-                }),
-                babe::SuccessOrPending::Pending(pending) => {
-                    Verify::BabeEpochInformation(BabeEpochInformation {
-                        inner: pending,
-                        import_process,
-                    })
-                }
-            },
-            ReadyToRunInner::BabeError(err) => Verify::Finished(Err(Error::BabeVerification(err))),
-            ReadyToRunInner::Unsealed {
-                inner,
-                babe_success,
-            } => match inner {
-                execute_block::Verify::Finished(Err(err)) => {
-                    Verify::Finished(Err(Error::Unsealed(err)))
-                }
-                execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
-                    parent_runtime: success.parent_runtime,
-                    babe_epoch_transition_target: babe_success.epoch_transition_target,
-                    slot_number: babe_success.slot_number,
-                    epoch_number: babe_success.epoch_number,
-                    storage_top_trie_changes: success.storage_top_trie_changes,
-                    offchain_storage_changes: success.offchain_storage_changes,
-                    top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
-                    logs: success.logs,
-                })),
-                execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
+impl VerifyInner {
+    fn run(self) -> Verify {
+        loop {
+            break match self {
+                VerifyInner::Babe {
+                    babe_verification,
+                    import_process,
+                } => match babe_verification {
+                    babe::SuccessOrPending::Success(babe_success) => {
+                        self = VerifyInner::Unsealed {
+                            inner: import_process,
+                            babe_success,
+                        };
+                        continue;
+                    }
+                    babe::SuccessOrPending::Pending(pending) => {
+                        Verify::BabeEpochInformation(BabeEpochInformation {
+                            inner: pending,
+                            import_process,
+                        })
+                    }
+                },
+                VerifyInner::BabeError(err) => Verify::Finished(Err(Error::BabeVerification(err))),
+                VerifyInner::Unsealed {
                     inner,
                     babe_success,
-                }),
-                execute_block::Verify::PrefixKeys(inner) => {
-                    Verify::StoragePrefixKeys(StoragePrefixKeys {
+                } => match inner {
+                    execute_block::Verify::Finished(Err(err)) => {
+                        Verify::Finished(Err(Error::Unsealed(err)))
+                    }
+                    execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
+                        parent_runtime: success.parent_runtime,
+                        babe_epoch_transition_target: babe_success.epoch_transition_target,
+                        slot_number: babe_success.slot_number,
+                        epoch_number: babe_success.epoch_number,
+                        storage_top_trie_changes: success.storage_top_trie_changes,
+                        offchain_storage_changes: success.offchain_storage_changes,
+                        top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
+                        logs: success.logs,
+                    })),
+                    execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
                         inner,
                         babe_success,
-                    })
-                }
-                execute_block::Verify::NextKey(inner) => Verify::StorageNextKey(StorageNextKey {
-                    inner,
-                    babe_success,
-                }),
-            },
+                    }),
+                    execute_block::Verify::PrefixKeys(inner) => {
+                        Verify::StoragePrefixKeys(StoragePrefixKeys {
+                            inner,
+                            babe_success,
+                        })
+                    }
+                    execute_block::Verify::NextKey(inner) => {
+                        Verify::StorageNextKey(StorageNextKey {
+                            inner,
+                            babe_success,
+                        })
+                    }
+                },
+            };
         }
     }
 }
@@ -243,17 +238,14 @@ impl BabeEpochInformation {
     pub fn inject_epoch(
         self,
         epoch_info: (header::BabeNextEpochRef, header::BabeNextConfig),
-    ) -> ReadyToRun {
+    ) -> Verify {
         match self.inner.finish(epoch_info) {
-            Ok(babe_success) => ReadyToRun {
-                inner: ReadyToRunInner::Unsealed {
-                    inner: self.import_process,
-                    babe_success,
-                },
-            },
-            Err(err) => ReadyToRun {
-                inner: ReadyToRunInner::BabeError(err),
-            },
+            Ok(babe_success) => VerifyInner::Unsealed {
+                inner: self.import_process,
+                babe_success,
+            }
+            .run(),
+            Err(err) => VerifyInner::BabeError(err).run(),
         }
     }
 }
@@ -273,14 +265,12 @@ impl StorageGet {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: change API, see execute_block::StorageGet
-    pub fn inject_value(self, value: Option<&[u8]>) -> ReadyToRun {
-        ReadyToRun {
-            inner: ReadyToRunInner::Unsealed {
-                inner: self.inner.inject_value(value),
-                babe_success: self.babe_success,
-            },
+    pub fn inject_value(self, value: Option<&[u8]>) -> Verify {
+        VerifyInner::Unsealed {
+            inner: self.inner.inject_value(value),
+            babe_success: self.babe_success,
         }
+        .run()
     }
 }
 
@@ -299,13 +289,12 @@ impl StoragePrefixKeys {
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ReadyToRun {
-        ReadyToRun {
-            inner: ReadyToRunInner::Unsealed {
-                inner: self.inner.inject_keys(keys),
-                babe_success: self.babe_success,
-            },
+    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> Verify {
+        VerifyInner::Unsealed {
+            inner: self.inner.inject_keys(keys),
+            babe_success: self.babe_success,
         }
+        .run()
     }
 }
 
@@ -324,12 +313,11 @@ impl StorageNextKey {
     }
 
     /// Injects the key.
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ReadyToRun {
-        ReadyToRun {
-            inner: ReadyToRunInner::Unsealed {
-                inner: self.inner.inject_key(key),
-                babe_success: self.babe_success,
-            },
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> Verify {
+        VerifyInner::Unsealed {
+            inner: self.inner.inject_key(key),
+            babe_success: self.babe_success,
         }
+        .run()
     }
 }

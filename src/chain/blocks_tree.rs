@@ -1093,10 +1093,6 @@ impl<T> BodyVerifyStep2<T> {
                     };
                 }
                 verify::header_body::Verify::Finished(Err(err)) => todo!("verify err: {:?}", err),
-                verify::header_body::Verify::ReadyToRun(i) => {
-                    inner = i.run();
-                    continue;
-                }
                 verify::header_body::Verify::BabeEpochInformation(epoch_info_rq) => {
                     let epoch_info = if let Some(parent_tree_index) = chain.parent_tree_index {
                         let parent = chain.chain.blocks.get(parent_tree_index).unwrap();
@@ -1121,9 +1117,7 @@ impl<T> BodyVerifyStep2<T> {
                         }
                     };
 
-                    inner = epoch_info_rq
-                        .inject_epoch((From::from(&epoch_info.0), epoch_info.1))
-                        .run();
+                    inner = epoch_info_rq.inject_epoch((From::from(&epoch_info.0), epoch_info.1));
                 }
                 verify::header_body::Verify::StorageGet(inner) => {
                     return BodyVerifyStep2::StorageGet(StorageGet { chain, inner })
@@ -1193,7 +1187,7 @@ impl<T> StorageGet<T> {
     // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(self, value: Option<&[u8]>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_value(value);
-        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+        BodyVerifyStep2::from_inner(inner, self.chain)
     }
 }
 
@@ -1250,7 +1244,7 @@ impl<T> StoragePrefixKeys<T> {
     /// Injects the list of keys.
     pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_keys(keys);
-        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+        BodyVerifyStep2::from_inner(inner, self.chain)
     }
 }
 
@@ -1307,7 +1301,7 @@ impl<T> StorageNextKey<T> {
     /// Injects the key.
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_key(key);
-        BodyVerifyStep2::from_inner(inner.run(), self.chain)
+        BodyVerifyStep2::from_inner(inner, self.chain)
     }
 }
 
