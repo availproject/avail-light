@@ -1,5 +1,6 @@
 #![recursion_limit = "1024"]
 
+use atomic::Atomic;
 use futures::{
     channel::{mpsc, oneshot},
     lock::Mutex,
@@ -10,14 +11,13 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
     pin::Pin,
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     thread,
     time::Duration,
 };
 use substrate_lite::{
     chain::{self, sync::full_optimistic},
     chain_spec, header, network,
-    verify::babe,
 };
 
 fn main() {
@@ -67,13 +67,25 @@ async fn async_main() {
     let (to_network_tx, to_network_rx) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
+    let network_state = Arc::new(NetworkState {
+        best_network_block_height: Atomic::new(0),
+        num_network_connections: Atomic::new(0),
+    });
+
     threads_pool.spawn_ok({
         let tasks_executor = Box::new({
             let threads_pool = threads_pool.clone();
             move |f| threads_pool.spawn_ok(f)
         });
 
-        start_network(&chain_spec, tasks_executor, to_network_rx, to_sync_tx).await
+        start_network(
+            &chain_spec,
+            tasks_executor,
+            network_state.clone(),
+            to_network_rx,
+            to_sync_tx,
+        )
+        .await
     });
 
     let sync_state = Arc::new(Mutex::new(SyncState {
@@ -130,20 +142,22 @@ async fn async_main() {
     loop {
         futures::select! {
             _ = informant_timer.next() => {
-                // TODO:
                 // We end the informant line with a `\r` so that it overwrites itself every time.
                 // If any other line gets printed, it will overwrite the informant, and the
                 // informant will then print itself below, which is a fine behaviour.
-                let sync_state = sync_state.lock().await;
+                let sync_state = sync_state.lock().await.clone();
                 eprint!("{}\r", substrate_lite::informant::InformantLine {
                     chain_name: chain_spec.name(),
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
-                    num_network_connections: 0, // TODO: service.num_network_connections(),
+                    num_network_connections: network_state.num_network_connections.load(Ordering::Relaxed),
                     best_number: sync_state.best_block_number,
                     finalized_number: sync_state.finalized_block_number,
                     best_hash: &sync_state.best_block_hash,
                     finalized_hash: &sync_state.finalized_block_hash,
-                    network_known_best: None, // TODO:
+                    network_known_best: match network_state.best_network_block_height.load(Ordering::Relaxed) {
+                        0 => None,
+                        n => Some(n)
+                    },
                 });
             }
             telemetry_event = telemetry.next_event().fuse() => {
@@ -388,6 +402,7 @@ struct SyncState {
 async fn start_network(
     chain_spec: &chain_spec::ChainSpec,
     tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    network_state: Arc<NetworkState>,
     mut to_network: mpsc::Receiver<ToNetwork>,
     mut to_sync: mpsc::Sender<ToSync>,
 ) -> impl Future<Output = ()> {
@@ -461,6 +476,9 @@ async fn start_network(
                 event = network.next_event().fuse() => {
                     match event {
                         network::Event::BlockAnnounce(header) => {
+                            if let Ok(header) = header::decode(&header.0) {
+                                network_state.best_network_block_height.store(header.number, Ordering::Relaxed);
+                            }
                         }
                         network::Event::CallRequestFinished { .. } => unreachable!(),
                         network::Event::BlocksRequestFinished { id, result } => {
@@ -479,9 +497,11 @@ async fn start_network(
                             );
                         }
                         network::Event::Connected(peer_id) => {
+                            network_state.num_network_connections.fetch_add(1, Ordering::Relaxed);
                             let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
                         }
                         network::Event::Disconnected(peer_id) => {
+                            network_state.num_network_connections.fetch_sub(1, Ordering::Relaxed);
                             let _ = to_sync.send(ToSync::PeerDisconnected(peer_id)).await;
                         }
                     }
@@ -489,6 +509,13 @@ async fn start_network(
             }
         }
     }
+}
+
+#[derive(Debug)]
+struct NetworkState {
+    /// 0 means "unknown".
+    best_network_block_height: Atomic<u64>,
+    num_network_connections: Atomic<u64>,
 }
 
 enum ToNetwork {
