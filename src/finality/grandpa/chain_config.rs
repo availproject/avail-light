@@ -102,6 +102,8 @@ impl GrandpaGenesisConfiguration {
                     resolve.finish_call(value);
                 }
 
+                executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
+
                 _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
             }
         })

@@ -63,6 +63,7 @@ pub struct Externality {
     name: &'static str,
 }
 
+// TODO: remove this machinery
 macro_rules! define_internal_interface {
     ($($variant:ident => fn $name:ident($($param_name:ident: $param_ty:ty),*) -> $ret:ty;)*) => {
         trait InternalInterface {
@@ -422,15 +423,37 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Box::pin(async move {
                     expect_num_params(1, &params)?;
                     let key = expect_pointer_size(&params[0], &*interface).await?;
-                    let value = interface.storage_get(key, 0, u32::max_value()).await;
-                    // TODO: we SCALE-encode an option, meaning we just memcpy the value, this is
-                    // extremely stupid
-                    let value_encoded = parity_scale_codec::Encode::encode(&value);
-                    // TODO: don't unwrap?
-                    let value_len = u32::try_from(value_encoded.len()).unwrap();
+                    let value: Option<Vec<u8>> =
+                        interface.storage_get(key, 0, u32::max_value()).await;
 
-                    let dest_ptr = interface.allocate(value_len).await;
-                    interface.write_memory(dest_ptr, value_encoded).await;
+                    // Rather than SCALE-encoding the `Option`, the code below manually writes
+                    // the `1` or `0` prefix of the `Option`.
+                    let (dest_ptr, value_len) = if let Some(value) = value {
+                        let value_len_enc = parity_scale_codec::Encode::encode(
+                            &parity_scale_codec::Compact(u64::try_from(value.len()).unwrap()),
+                        );
+                        let value_len_enc_len = u32::try_from(value_len_enc.len()).unwrap();
+
+                        let value_len = u32::try_from(value.len())
+                            .unwrap()
+                            .checked_add(value_len_enc_len)
+                            .unwrap()
+                            .checked_add(1)
+                            .unwrap();
+                        let dest_ptr = interface.allocate(value_len).await;
+                        // Writing `Some(value)`.
+                        interface.write_memory(dest_ptr, vec![1]).await;
+                        interface.write_memory(dest_ptr + 1, value_len_enc).await;
+                        interface
+                            .write_memory(dest_ptr + value_len_enc_len + 1, value)
+                            .await;
+                        (dest_ptr, value_len)
+                    } else {
+                        // Writing `None`.
+                        let dest_ptr = interface.allocate(1).await;
+                        interface.write_memory(dest_ptr, vec![0]).await;
+                        (dest_ptr, 1)
+                    };
 
                     let ret = build_pointer_size(dest_ptr, value_len);
                     Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
@@ -554,15 +577,36 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                 Box::pin(async move {
                     expect_num_params(1, &params)?;
                     let key = expect_pointer_size(&params[0], &*interface).await?;
-                    let value = interface.storage_next_key(key).await;
-                    // TODO: we SCALE-encode an option, meaning we just memcpy the value, this is
-                    // extremely stupid
-                    let value_encoded = parity_scale_codec::Encode::encode(&value);
-                    // TODO: don't unwrap?
-                    let value_len = u32::try_from(value_encoded.len()).unwrap();
+                    let value: Option<Vec<u8>> = interface.storage_next_key(key).await;
 
-                    let dest_ptr = interface.allocate(value_len).await;
-                    interface.write_memory(dest_ptr, value_encoded).await;
+                    // Rather than SCALE-encoding the `Option`, the code below manually writes
+                    // the `1` or `0` prefix of the `Option`.
+                    let (dest_ptr, value_len) = if let Some(value) = value {
+                        let value_len_enc = parity_scale_codec::Encode::encode(
+                            &parity_scale_codec::Compact(u64::try_from(value.len()).unwrap()),
+                        );
+                        let value_len_enc_len = u32::try_from(value_len_enc.len()).unwrap();
+
+                        let value_len = u32::try_from(value.len())
+                            .unwrap()
+                            .checked_add(value_len_enc_len)
+                            .unwrap()
+                            .checked_add(1)
+                            .unwrap();
+                        let dest_ptr = interface.allocate(value_len).await;
+                        // Writing `Some(value)`.
+                        interface.write_memory(dest_ptr, vec![1]).await;
+                        interface.write_memory(dest_ptr + 1, value_len_enc).await;
+                        interface
+                            .write_memory(dest_ptr + value_len_enc_len + 1, value)
+                            .await;
+                        (dest_ptr, value_len)
+                    } else {
+                        // Writing `None`.
+                        let dest_ptr = interface.allocate(1).await;
+                        interface.write_memory(dest_ptr, vec![0]).await;
+                        (dest_ptr, 1)
+                    };
 
                     let ret = build_pointer_size(dest_ptr, value_len);
                     Ok(Some(vm::WasmValue::I64(reinterpret_u64_i64(ret))))
