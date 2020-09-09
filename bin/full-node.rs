@@ -462,6 +462,7 @@ async fn start_network(
                     match event {
                         network::Event::BlockAnnounce(header) => {
                         }
+                        network::Event::CallRequestFinished { .. } => unreachable!(),
                         network::Event::BlocksRequestFinished { id, result } => {
                             let send_back = block_requests.remove(&id).unwrap();
                             let _: Result<_, _> = send_back.send(result

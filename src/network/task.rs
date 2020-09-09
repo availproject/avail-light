@@ -92,6 +92,9 @@ async fn run_networking_task(
                         let sender = pending_blocks_requests.remove(&id).unwrap();
                         let _ = sender.send(result);
                     }
+                    network::Event::CallRequestFinished { id, result } => {
+                        todo!()
+                    }
                     network::Event::Connected(peer_id) => {
                         num_connections_store.fetch_add(1, atomic::Ordering::Relaxed);
                     },

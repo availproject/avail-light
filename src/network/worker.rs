@@ -8,6 +8,7 @@ use core::{
     str,
     time::Duration,
 };
+use hashbrown::HashMap;
 use libp2p::{
     swarm::{SwarmBuilder, SwarmEvent},
     wasm_ext, Multiaddr, PeerId, Swarm,
@@ -23,6 +24,13 @@ pub use request_responses::RequestId;
 pub struct Network {
     swarm: Swarm<behaviour::Behaviour>,
     chain_spec_protocol_id: String,
+    // TODO: meh
+    request_types: HashMap<RequestId, RequestTy, fnv::FnvBuildHasher>,
+}
+
+enum RequestTy {
+    Block,
+    Call,
 }
 
 /// Event that can happen on the network.
@@ -35,6 +43,13 @@ pub enum Event {
     BlocksRequestFinished {
         id: RequestId,
         result: Result<Vec<BlockData>, ()>,
+    },
+
+    /// A call request started with [`Network::start_call_request`] has gotten a response.
+    CallRequestFinished {
+        id: RequestId,
+        // TODO: better type
+        result: Result<Vec<u8>, ()>,
     },
 
     /// Established at least one connection with the given peer.
@@ -80,6 +95,19 @@ pub struct BlocksRequestConfig {
     pub direction: BlocksRequestDirection,
     /// Which fields should be present in the response.
     pub fields: BlocksRequestFields,
+}
+
+/// Description of a call request that the network must perform.
+#[derive(Debug, PartialEq, Eq)]
+pub struct CallRequestConfig {
+    /// Peer to ask to perform the call.
+    pub peer_id: PeerId,
+    /// Block to perform the call on.
+    pub block: [u8; 32],
+    /// Name of the Wasm entry point to call.
+    pub method_name: String,
+    /// SCALE-encoded parameter to pass to the Wasm entry point.
+    pub encoded_input_parameter: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -188,6 +216,7 @@ impl Network {
         Network {
             swarm,
             chain_spec_protocol_id,
+            request_types: Default::default(),
         }
     }
 
@@ -252,13 +281,52 @@ impl Network {
             buf
         };
 
-        self.swarm
+        let request_id = self
+            .swarm
             .send_request(
                 &config.peer_id,
                 &format!("/{}/sync/2", self.chain_spec_protocol_id),
                 request_bytes,
             )
-            .map_err(|_| ())
+            .map_err(|_| ())?;
+
+        self.request_types.insert(request_id, RequestTy::Block);
+        Ok(request_id)
+    }
+
+    /// Starts a remote call request on the network.
+    ///
+    /// This requests a remote to perform a runtime call and return a proof of execution.
+    ///
+    /// Despite being asynchronous, this method only *starts* the request and does not wait for a
+    /// response to come back. The method will block only in situations where the CPU is
+    /// overwhelmed.
+    pub async fn start_call_request(&mut self, config: CallRequestConfig) -> Result<RequestId, ()> {
+        let request = schema::v1::light::RemoteCallRequest {
+            block: config.block.to_vec(),
+            method: config.method_name,
+            data: config.encoded_input_parameter,
+        };
+
+        let request_bytes = {
+            let mut buf = Vec::with_capacity(request.encoded_len());
+            if let Err(err) = request.encode(&mut buf) {
+                return Err(());
+            }
+            buf
+        };
+
+        let request_id = self
+            .swarm
+            .send_request(
+                &config.peer_id,
+                &format!("/{}/light/2", self.chain_spec_protocol_id),
+                request_bytes,
+            )
+            .map_err(|_| ())?;
+
+        self.request_types.insert(request_id, RequestTy::Call);
+        Ok(request_id)
     }
 
     /// Returns the next event that happened on the network.
@@ -273,70 +341,76 @@ impl Network {
                     request_id,
                     outcome: Ok(response_bytes),
                 }) => {
-                    // TODO: don't unwrap
-                    let response = match schema::v1::BlockResponse::decode(&response_bytes[..]) {
-                        Ok(r) => r,
-                        Err(_) => {
-                            // TODO: proper error
+                    match self.request_types.remove(&request_id).unwrap() {
+                        RequestTy::Block => {
+                            // TODO: don't unwrap
+                            let response =
+                                match schema::v1::BlockResponse::decode(&response_bytes[..]) {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        // TODO: proper error
+                                        return Event::BlocksRequestFinished {
+                                            id: request_id,
+                                            result: Err(()),
+                                        };
+                                    }
+                                };
+
+                            let mut blocks = Vec::with_capacity(response.blocks.len());
+                            for block in response.blocks {
+                                let mut body = Vec::with_capacity(block.body.len());
+                                for extrinsic in block.body {
+                                    let ext = match Vec::<u8>::decode_all(&mut extrinsic.as_ref()) {
+                                        Ok(e) => e,
+                                        Err(_) => {
+                                            // TODO: proper error
+                                            return Event::BlocksRequestFinished {
+                                                id: request_id,
+                                                result: Err(()),
+                                            };
+                                        }
+                                    };
+
+                                    body.push(Extrinsic(ext));
+                                }
+
+                                let hash = match H256::decode_all(&mut block.hash.as_ref()) {
+                                    Ok(e) => e,
+                                    Err(_) => {
+                                        // TODO: proper error
+                                        return Event::BlocksRequestFinished {
+                                            id: request_id,
+                                            result: Err(()),
+                                        };
+                                    }
+                                };
+
+                                blocks.push(BlockData {
+                                    hash,
+                                    header: if !block.header.is_empty() {
+                                        Some(ScaleBlockHeader(block.header))
+                                    } else {
+                                        None
+                                    },
+                                    // TODO: no; we might not have asked for the body
+                                    body: Some(body),
+                                    justification: if !block.justification.is_empty() {
+                                        Some(block.justification)
+                                    } else if block.is_empty_justification {
+                                        Some(Vec::new())
+                                    } else {
+                                        None
+                                    },
+                                });
+                            }
+
                             return Event::BlocksRequestFinished {
                                 id: request_id,
-                                result: Err(()),
+                                result: Ok(blocks),
                             };
                         }
-                    };
-
-                    let mut blocks = Vec::with_capacity(response.blocks.len());
-                    for block in response.blocks {
-                        let mut body = Vec::with_capacity(block.body.len());
-                        for extrinsic in block.body {
-                            let ext = match Vec::<u8>::decode_all(&mut extrinsic.as_ref()) {
-                                Ok(e) => e,
-                                Err(_) => {
-                                    // TODO: proper error
-                                    return Event::BlocksRequestFinished {
-                                        id: request_id,
-                                        result: Err(()),
-                                    };
-                                }
-                            };
-
-                            body.push(Extrinsic(ext));
-                        }
-
-                        let hash = match H256::decode_all(&mut block.hash.as_ref()) {
-                            Ok(e) => e,
-                            Err(_) => {
-                                // TODO: proper error
-                                return Event::BlocksRequestFinished {
-                                    id: request_id,
-                                    result: Err(()),
-                                };
-                            }
-                        };
-
-                        blocks.push(BlockData {
-                            hash,
-                            header: if !block.header.is_empty() {
-                                Some(ScaleBlockHeader(block.header))
-                            } else {
-                                None
-                            },
-                            // TODO: no; we might not have asked for the body
-                            body: Some(body),
-                            justification: if !block.justification.is_empty() {
-                                Some(block.justification)
-                            } else if block.is_empty_justification {
-                                Some(Vec::new())
-                            } else {
-                                None
-                            },
-                        });
+                        RequestTy::Call => todo!(),
                     }
-
-                    return Event::BlocksRequestFinished {
-                        id: request_id,
-                        result: Ok(blocks),
-                    };
                 }
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::RequestFinished {
                     request_id,
