@@ -52,6 +52,9 @@ pub struct WsServer<T> {
     /// Endpoint for incoming TCP sockets.
     listener: TcpListener,
 
+    /// Pending incoming connection to accept. Accepted by calling [`WsServer::accept`].
+    pending_incoming: Option<TcpStream>,
+
     /// List of TCP connections that are currently negotiating the WebSocket handshake.
     ///
     /// The output can be an error if the handshake fails.
@@ -113,6 +116,7 @@ impl<T> WsServer<T> {
             send_buffer_len: config.send_buffer_len,
             max_clean_rejected_sockets_shutdowns: config.max_clean_rejected_sockets_shutdowns,
             listener,
+            pending_incoming: None,
             negotiating: stream::FuturesUnordered::new(),
             incoming_messages: stream::SelectAll::new(),
             sending_tasks: stream::FuturesUnordered::new(),
@@ -125,6 +129,82 @@ impl<T> WsServer<T> {
     /// Address of the local TCP listening socket, as provided by the operating system.
     pub fn local_addr(&self) -> Result<SocketAddr, io::Error> {
         self.listener.local_addr()
+    }
+
+    /// Accepts the pending connection.
+    ///
+    /// Either [`WsServer::accept`] or [`WsServer::reject`] must be called after a
+    /// [`Event::ConnectionOpen`] event is returned.
+    ///
+    /// # Panic
+    ///
+    /// Panics if no connection is pending.
+    ///
+    pub fn accept(&mut self, user_data: T) -> ConnectionId {
+        let pending_incoming = self.pending_incoming.take().expect("no pending socket");
+
+        let unique_id = {
+            let id = self.next_unique_id;
+            self.next_unique_id += 1;
+            id
+        };
+
+        let connection_id = ConnectionId(self.connections.insert({
+            let (send_tx, send_rx) = mpsc::channel(self.send_buffer_len);
+            Connection {
+                user_data,
+                send_tx: Some(send_tx),
+                send_rx: Some(send_rx),
+                unique_id,
+            }
+        }));
+
+        self.negotiating.push(Box::pin(async move {
+            let mut server = Server::new(pending_incoming);
+
+            let websocket_key = match server.receive_request().await {
+                Ok(req) => req.into_key(),
+                Err(_) => return (connection_id, unique_id, Err(())),
+            };
+
+            match server
+                .send_response(&{
+                    Response::Accept {
+                        key: &websocket_key,
+                        protocol: None,
+                    }
+                })
+                .await
+            {
+                Ok(()) => {}
+                Err(_) => return (connection_id, unique_id, Err(())),
+            };
+
+            (connection_id, unique_id, Ok(server))
+        }));
+
+        connection_id
+    }
+
+    /// Reject the pending connection.
+    ///
+    /// Either [`WsServer::accept`] or [`WsServer::reject`] must be called after a
+    /// [`Event::ConnectionOpen`] event is returned.
+    ///
+    /// # Panic
+    ///
+    /// Panics if no connection is pending.
+    ///
+    pub fn reject(&mut self) {
+        let mut pending_incoming = self.pending_incoming.take().expect("no pending socket");
+
+        if self.rejected_sockets.len() >= self.max_clean_rejected_sockets_shutdowns {
+            return;
+        }
+
+        self.rejected_sockets.push(Box::pin(async move {
+            let _ = pending_incoming.close().await;
+        }));
     }
 
     /// Destroys a connection.
@@ -160,16 +240,25 @@ impl<T> WsServer<T> {
     pub async fn next_event<'a>(&'a mut self) -> Event<'a, T> {
         loop {
             futures::select! {
-                socket = self.listener.accept().fuse() => {
+                // Only try to fetch a new incoming connection if none is pending.
+                socket = {
+                    let listener = &self.listener;
+                    let has_pending = self.pending_incoming.is_some();
+                    async move {
+                        if !has_pending {
+                            listener.accept().await
+                        } else {
+                            loop { futures::pending!() }
+                        }
+                    }
+                }.fuse() => {
                     let (socket, address) = match socket {
                         Ok(s) => s,
                         Err(_) => continue,
                     };
-                    let open = ConnectionOpenEvent {
-                        server: self,
-                        socket: Some(socket),
-                    };
-                    return Event::ConnectionOpen { open, address };
+                    debug_assert!(self.pending_incoming.is_none());
+                    self.pending_incoming = Some(socket);
+                    return Event::ConnectionOpen { address };
                 },
 
                 (connection_id, unique_id, result) = self.negotiating.select_next_some() => {
@@ -294,11 +383,11 @@ impl<T: fmt::Debug> fmt::Debug for WsServer<T> {
 pub enum Event<'a, T> {
     /// A new TCP connection has arrived on the listening socket.
     ///
-    /// The connection *must* be accepted using the provided [`ConnectionOpenEvent`], otherwise
-    /// it will be silently dropped.
+    /// The connection *must* be accepted or rejected using [`WsServer::accept`] or
+    /// [`WsServer::reject`].
+    /// No other [`Event::ConnectionOpen`] event will be generated until the current pending
+    /// connection has been either accepted or rejected.
     ConnectionOpen {
-        /// Object used to accept the incoming connection.
-        open: ConnectionOpenEvent<'a, T>,
         /// Address of the remote, as provided by the operating system.
         address: SocketAddr,
     },
@@ -330,81 +419,3 @@ pub enum Event<'a, T> {
 /// After a connection has closed, its [`ConnectionId`]s might be reused.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct ConnectionId(usize);
-
-/// Object returned when a new connection arrives. The connection must be accepted by calling
-/// [`ConnectionOpenEvent::accept`].
-#[must_use]
-pub struct ConnectionOpenEvent<'a, T> {
-    server: &'a mut WsServer<T>,
-
-    /// Socket to accept. Always `Some`, except after `accept` has been called.
-    socket: Option<TcpStream>,
-}
-
-impl<'a, T> ConnectionOpenEvent<'a, T> {
-    /// Accept the incoming connection. Associates the passed user data with it.
-    pub fn accept(mut self, user_data: T) -> ConnectionId {
-        let unique_id = {
-            let id = self.server.next_unique_id;
-            self.server.next_unique_id += 1;
-            id
-        };
-
-        let connection_id = ConnectionId(self.server.connections.insert({
-            let (send_tx, send_rx) = mpsc::channel(self.server.send_buffer_len);
-            Connection {
-                user_data,
-                send_tx: Some(send_tx),
-                send_rx: Some(send_rx),
-                unique_id,
-            }
-        }));
-
-        let socket = self.socket.take().unwrap();
-        self.server.negotiating.push(Box::pin(async move {
-            let mut server = Server::new(socket);
-
-            let websocket_key = match server.receive_request().await {
-                Ok(req) => req.into_key(),
-                Err(_) => return (connection_id, unique_id, Err(())),
-            };
-
-            match server
-                .send_response(&{
-                    Response::Accept {
-                        key: &websocket_key,
-                        protocol: None,
-                    }
-                })
-                .await
-            {
-                Ok(()) => {}
-                Err(_) => return (connection_id, unique_id, Err(())),
-            };
-
-            (connection_id, unique_id, Ok(server))
-        }));
-
-        connection_id
-    }
-}
-
-impl<'a, T> Drop for ConnectionOpenEvent<'a, T> {
-    fn drop(&mut self) {
-        if self.server.rejected_sockets.len() >= self.server.max_clean_rejected_sockets_shutdowns {
-            return;
-        }
-
-        if let Some(mut socket) = self.socket.take() {
-            self.server.rejected_sockets.push(Box::pin(async move {
-                let _ = socket.close().await;
-            }));
-        }
-    }
-}
-
-impl<'a, T> fmt::Debug for ConnectionOpenEvent<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("ConnectionOpenEvent").finish()
-    }
-}

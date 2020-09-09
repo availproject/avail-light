@@ -46,7 +46,7 @@ fn basic_works() {
         });
 
         let id = match server.next_event().await {
-            Event::ConnectionOpen { open, .. } => open.accept(12),
+            Event::ConnectionOpen { .. } => server.accept(12),
             _ => panic!(),
         };
 

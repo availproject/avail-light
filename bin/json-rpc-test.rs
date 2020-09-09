@@ -25,8 +25,8 @@ async fn async_main() {
 
     loop {
         let (connection_id, response) = match server.next_event().await {
-            websocket_server::Event::ConnectionOpen { open, .. } => {
-                open.accept(());
+            websocket_server::Event::ConnectionOpen { .. } => {
+                server.accept(());
                 continue;
             }
             websocket_server::Event::ConnectionError { .. } => continue,
