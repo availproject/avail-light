@@ -416,11 +416,16 @@ impl Network {
                     request_id,
                     outcome: Err(_err),
                 }) => {
-                    // TODO: proper error
-                    return Event::BlocksRequestFinished {
-                        id: request_id,
-                        result: Err(()),
-                    };
+                    match self.request_types.remove(&request_id).unwrap() {
+                        RequestTy::Block => {
+                            // TODO: proper error
+                            return Event::BlocksRequestFinished {
+                                id: request_id,
+                                result: Err(()),
+                            };
+                        },
+                        RequestTy::Call => todo!(),
+                    }
                 }
                 SwarmEvent::Behaviour(behaviour::BehaviourOut::InboundRequest { .. }) => {}
 
