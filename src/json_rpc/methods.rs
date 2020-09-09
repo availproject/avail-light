@@ -52,6 +52,11 @@ macro_rules! define_methods {
         }
 
         impl MethodCall {
+            /// Returns a list of RPC method names of all the methods in the [`MethodCall`] enum.
+            pub fn method_names() -> impl ExactSizeIterator<Item = &'static str> {
+                [$(stringify!($name)),*].iter().copied()
+            }
+
             fn from_defs(name: &str, params: &defs::SerdeParams) -> Option<Self> {
                 $(
                     if name == stringify!($name) $($(|| name == stringify!($alias))*)* {
@@ -143,10 +148,10 @@ define_methods! {
     state_call() -> () [state_callAt],
     state_getKeys() -> (), // TODO:
     state_getKeysPaged() -> () [state_getKeysPagedAt], // TODO:
-    state_getMetadata() -> (), // TODO:
+    state_getMetadata() -> HexString,
     state_getPairs() -> (), // TODO:
     state_getReadProof() -> (), // TODO:
-    state_getRuntimeVersion() -> () [chain_getRuntimeVersion], // TODO:
+    state_getRuntimeVersion() -> RuntimeVersion [chain_getRuntimeVersion],
     state_getStorage() -> () [state_getStorageAt], // TODO:
     state_getStorageHash() -> () [state_getStorageHashAt], // TODO:
     state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:
@@ -197,12 +202,26 @@ impl From<RequestId> for defs::SerdeId {
 }
 
 #[derive(Debug, Clone)]
+pub struct HexString(pub Vec<u8>);
+
+#[derive(Debug, Clone)]
 pub struct HashHexString(pub [u8; 32]);
 
 #[derive(Debug, Clone)]
 pub struct RpcMethods {
     pub version: u64,
     pub methods: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeVersion {
+    pub spec_name: String,
+    pub impl_name: String,
+    pub authoring_version: u64,
+    pub spec_version: u64,
+    pub impl_version: u64,
+    pub transaction_version: u64,
+    // TODO: apis missing
 }
 
 #[derive(Debug, Clone)]
@@ -264,6 +283,12 @@ impl From<HashHexString> for serde_json::Value {
     }
 }
 
+impl From<HexString> for serde_json::Value {
+    fn from(str: HexString) -> serde_json::Value {
+        serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
+    }
+}
+
 impl From<RpcMethods> for serde_json::Value {
     fn from(methods: RpcMethods) -> serde_json::Value {
         serde_json::Value::Object(
@@ -287,6 +312,31 @@ impl From<RpcMethods> for serde_json::Value {
             .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
             .collect(),
         )
+    }
+}
+
+impl From<RuntimeVersion> for serde_json::Value {
+    fn from(rt: RuntimeVersion) -> serde_json::Value {
+        // TODO: not sure about the camelCasing
+        #[derive(serde::Serialize)]
+        struct SerdeRuntimeVersion {
+            spec_name: String,
+            impl_name: String,
+            authoring_version: u64,
+            spec_version: u64,
+            impl_version: u64,
+            transaction_version: u64,
+        }
+
+        serde_json::to_value(SerdeRuntimeVersion {
+            spec_name: rt.spec_name,
+            impl_name: rt.impl_name,
+            authoring_version: rt.authoring_version,
+            spec_version: rt.spec_version,
+            impl_version: rt.impl_version,
+            transaction_version: rt.transaction_version,
+        })
+        .unwrap()
     }
 }
 
