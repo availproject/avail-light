@@ -232,6 +232,42 @@ async fn start_sync(
                 }
             }
 
+            // Verify blocks that have been fetched from queries.
+            // TODO: it can take a long time to call this in a loop until exhausted; interleave
+            //       the future polling in between two calls
+            loop {
+                match sync.process_one() {
+                    headers_optimistic::ProcessOneOutcome::Idle => break,
+                    headers_optimistic::ProcessOneOutcome::Reset {
+                        reason,
+                        new_best_block_hash,
+                        new_best_block_number,
+                    } => {
+                        web_sys::console::warn_1(&JsValue::from_str(&format!(
+                            "⚠️ Sync error ⚠️ {}",
+                            reason
+                        )));
+                        web_sys::console::log_1(&JsValue::from_str(&format!(
+                            "Chain state update: #{} {:?}",
+                            new_best_block_number, new_best_block_hash
+                        )));
+                    }
+                    headers_optimistic::ProcessOneOutcome::Updated {
+                        best_block_hash,
+                        best_block_number,
+                        ..
+                    } => {
+                        web_sys::console::log_1(&JsValue::from_str(&format!(
+                            "Chain state update: #{} {:?}",
+                            best_block_number, best_block_hash
+                        )));
+                    }
+                }
+            }
+
+            // TODO: save less often
+            let _ = to_db_save_tx.send(sync.as_chain_information().into()).await;
+
             futures::select! {
                 message = to_sync.next() => {
                     let message = match message {
@@ -260,23 +296,6 @@ async fn start_sync(
                     if let Ok(result) = result {
                         let _ = sync.finish_request(request_id, result.unwrap().map(|v| v.into_iter()));
                     }
-                },
-
-                // Dummy future that is constantly pending if and only if the sync'ing has
-                // nothing to process.
-                chain_state_update = async {
-                    if let Some(outcome) = sync.process_one() {
-                        outcome
-                    } else {
-                        loop { futures::pending!() }
-                    }
-                }.fuse() => {
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Chain state update: {:?}", chain_state_update
-                    )));
-
-                    // TODO: save less often
-                    let _ = to_db_save_tx.send(sync.as_chain_information().into()).await;
                 },
             }
         }

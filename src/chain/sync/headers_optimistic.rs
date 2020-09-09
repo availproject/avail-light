@@ -12,7 +12,6 @@
 //! not the non-finalized blocks.
 
 // TODO: document usage
-// TODO: the quality of this module's code is sub-par compared to what we want
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
@@ -156,29 +155,30 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             .finish_request(request_id, outcome)
     }
 
-    /// Process a single block in the queue of verification.
-    // TODO: better return value
-    pub fn process_one(&mut self) -> Option<ChainStateUpdate> {
+    /// Process a batch of blocks in the queue of verification.
+    ///
+    /// This method processes a batch of blocks passed earlier to
+    /// [`OptimisticHeadersSync::finish_request`]. Only one batch is process rather than the
+    /// entire queue, in order to not block the CPU for too long in unpredictable ways.
+    ///
+    /// It is encouraged to call this method multiple times in a row until
+    /// [`ProcessOneOutcome::Idle`] is returned, interleaving any necessary high-priority
+    /// operations (e.g. processing network sockets) in-between two calls.
+    pub fn process_one(&mut self) -> ProcessOneOutcome {
         let mut to_process = match self.sync.take().unwrap().process_one() {
             Ok(tp) => tp,
             Err(sync) => {
                 self.sync = Some(sync);
-                return None;
+                return ProcessOneOutcome::Idle;
             }
         };
 
         self.chain.reserve(to_process.blocks.len());
 
         // Verify each block one by one.
-        //
-        // In case something unexpected happens, such as an invalid block, there is unfortunately
-        // no easy way to know which node is misbehaving. Blocks and justifications are valid
-        // only in the context of a specific chain, and it is possible that the presumably invalid
-        // block is invalid only because of an earlier block.
-        //
-        // Consequently, if something unexpected happens, the strategy employed is to clear any
-        // non-finalized block, cancel all requests in progress, and restart from the finalized
-        // block.
+        // The loop stops whenever something unexpected (such as a verification error) happens.
+        let mut finalized_update = false;
+        let mut has_error = None;
         for block in to_process.blocks {
             match self.chain.verify_header(block.scale_encoded_header.into()) {
                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
@@ -186,44 +186,31 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     is_new_best,
                     insert,
                 }) => {
-                    if !is_new_best || block_height != to_process.expected_block_height {
-                        // Something unexpected happened. See above.
-                        // TODO: report with an event that this has happened
-                        self.chain = blocks_tree::NonFinalizedTree::new(
-                            self.finalized_chain_information.clone(),
-                        );
-                        let sync = to_process
-                            .report
-                            .reset_to_finalized(self.chain.finalized_block_header().number);
-                        self.sync = Some(sync);
-                        panic!() // TODO: report with an event that this has happened
+                    if !is_new_best {
+                        debug_assert!(has_error.is_none());
+                        has_error = Some(ResetCause::NonCanonical);
+                        break;
+                    }
+                    if block_height != to_process.expected_block_height {
+                        debug_assert!(has_error.is_none());
+                        has_error = Some(ResetCause::UnexpectedBlockNumber {
+                            expected: to_process.expected_block_height,
+                            actual: block_height,
+                        });
+                        break;
                     }
 
                     insert.insert(());
                 }
                 Ok(blocks_tree::HeaderVerifySuccess::Duplicate) => {
-                    // Something unexpected happened. See above.
-                    // TODO: report with an event that this has happened
-                    self.chain = blocks_tree::NonFinalizedTree::new(
-                        self.finalized_chain_information.clone(),
-                    );
-                    let sync = to_process
-                        .report
-                        .reset_to_finalized(self.chain.finalized_block_header().number);
-                    self.sync = Some(sync);
-                    panic!() // TODO: report with an event that this has happened
+                    debug_assert!(has_error.is_none());
+                    has_error = Some(ResetCause::NonCanonical);
+                    break;
                 }
                 Err(err) => {
-                    // Something unexpected happened. See above.
-                    // TODO: report with an event that this has happened
-                    self.chain = blocks_tree::NonFinalizedTree::new(
-                        self.finalized_chain_information.clone(),
-                    );
-                    let sync = to_process
-                        .report
-                        .reset_to_finalized(self.chain.finalized_block_header().number);
-                    self.sync = Some(sync);
-                    panic!("{:?}", err) // TODO: report with an event that this has happened
+                    debug_assert!(has_error.is_none());
+                    has_error = Some(ResetCause::HeaderError(err));
+                    break;
                 }
             }
 
@@ -231,26 +218,49 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                 match self.chain.verify_justification(justification.as_ref()) {
                     Ok(apply) => {
                         apply.apply();
+                        finalized_update = true;
                         self.finalized_chain_information
                             .chain_information_config
                             .chain_information = self.chain.as_chain_information().into();
                     }
                     Err(err) => {
-                        // Something unexpected happened. See above.
-                        // TODO: report with an event that this has happened
-                        self.chain = blocks_tree::NonFinalizedTree::new(
-                            self.finalized_chain_information.clone(),
-                        );
-                        let sync = to_process
-                            .report
-                            .reset_to_finalized(self.chain.finalized_block_header().number);
-                        self.sync = Some(sync);
-                        panic!() // TODO: report with an event that this has happened
+                        debug_assert!(has_error.is_none());
+                        has_error = Some(ResetCause::JustificationError(err));
+                        break;
                     }
                 }
             }
 
             to_process.expected_block_height += 1;
+        }
+
+        // In case something unexpected happens, such as an invalid block, there is unfortunately
+        // no easy way to know which node is misbehaving. Blocks and justifications are valid
+        // only in the context of a specific chain, and it is possible that the presumably invalid
+        // block is invalid only because of an earlier block.
+        //
+        // Example. Let's say a source A sends back blocks 1 to 128 and a source B sends back
+        // blocks 129 to 256. If source A sends back a block 128 which happens to be from a
+        // non-canonical fork, then block 129 will fail to import. It is however not B's fault,
+        // but A's fault.
+        //
+        // Consequently, if something unexpected happens, the strategy employed is to clear any
+        // non-finalized block, cancel all requests in progress, and restart from the finalized
+        // block. No attempt is made to punish nodes.
+        if let Some(has_error) = has_error {
+            // As documented, the `chain` field does not contain the *actual* finalized block.
+            // Instead, a new chain is recreated in order to reset to the actual finalized block.
+            self.chain =
+                blocks_tree::NonFinalizedTree::new(self.finalized_chain_information.clone());
+            let sync = to_process
+                .report
+                .reset_to_finalized(self.chain.finalized_block_header().number);
+            self.sync = Some(sync);
+            return ProcessOneOutcome::Reset {
+                reason: has_error,
+                new_best_block_number: self.chain.best_block_header().number,
+                new_best_block_hash: self.chain.best_block_hash(),
+            };
         }
 
         let sync = to_process
@@ -262,38 +272,91 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         // finalized block. The optimistic sync state machine tracks the actual finalized block
         // separately, and the finalized block of `chain` is always set to the best block.
         let best_block_hash = self.chain.best_block_hash();
-        // `set_finalized_block` will error if best block == finalized block.
+        // `set_finalized_block` will error if best block == finalized block, which will
+        // frequently and legitimately happen. As such, we ignore errors.
         let _ = self.chain.set_finalized_block(&best_block_hash);
 
-        // TODO: consider finer granularity in report
-        Some(ChainStateUpdate {
-            finalized_block_hash: self
-                .finalized_chain_information
-                .chain_information_config
-                .chain_information
-                .finalized_block_header
-                .hash(), // TODO: expensive to compute for no reason
-            finalized_block_number: self
-                .finalized_chain_information
-                .chain_information_config
-                .chain_information
-                .finalized_block_header
-                .number,
+        // Success! 🎉
+        ProcessOneOutcome::Updated {
             best_block_hash,
             best_block_number: self.chain.best_block_header().number,
-        })
+            finalized_block: if finalized_update {
+                let number = self
+                    .finalized_chain_information
+                    .chain_information_config
+                    .chain_information
+                    .finalized_block_header
+                    .number;
+                let hash = self
+                    .finalized_chain_information
+                    .chain_information_config
+                    .chain_information
+                    .finalized_block_header
+                    .hash();
+                Some((number, hash))
+            } else {
+                None
+            },
+        }
     }
 }
 
+/// Single block in the outcome of a request. A list of these must be passed to
+/// [`OptimisticHeadersSync::finish_request`].
+#[derive(Debug)]
 pub struct RequestSuccessBlock {
+    /// SCALE-encoded block header.
     pub scale_encoded_header: Vec<u8>,
+    /// SCALE-encoded justification of this block, or `None` if none is available.
     pub scale_encoded_justification: Option<Vec<u8>>,
 }
 
+/// Outcome of calling [`OptimisticHeadersSync::process_one`].
 #[derive(Debug)]
-pub struct ChainStateUpdate {
-    pub best_block_hash: [u8; 32],
-    pub best_block_number: u64,
-    pub finalized_block_hash: [u8; 32],
-    pub finalized_block_number: u64,
+pub enum ProcessOneOutcome {
+    /// There was nothing to do.
+    Idle,
+
+    /// An issue happened when verifying a block or justification, resulting in resetting the
+    /// chain to the latest finalized block.
+    ///
+    /// > **Note**: The latest finalized block might be a block imported during the same
+    /// >           operation.
+    Reset {
+        /// Problem that happened and caused the reset.
+        reason: ResetCause,
+        /// Number of the new best block. Identical to the number of the finalized block.
+        new_best_block_number: u64,
+        /// Hash of the new best block. Identical to the hash of the finalized block.
+        new_best_block_hash: [u8; 32],
+    },
+
+    /// One or more blocks have been successfully imported.
+    Updated {
+        /// Number of the new best block.
+        best_block_number: u64,
+        /// Hash of the new best block.
+        best_block_hash: [u8; 32],
+        /// Number and hash of the finalized block. `None` if the finalized block hasn't changed.
+        finalized_block: Option<(u64, [u8; 32])>,
+    },
+}
+
+/// Problem that happened and caused the reset.
+#[derive(Debug, derive_more::Display)]
+pub enum ResetCause {
+    /// Error while verifying a justification.
+    JustificationError(blocks_tree::JustificationVerifyError),
+    /// Error while verifying a header.
+    HeaderError(blocks_tree::HeaderVerifyError),
+    /// Received block isn't a child of the current best block.
+    NonCanonical,
+    /// Received block number doesn't match expected number.
+    #[display(fmt = "Received block height doesn't match expected number")]
+    UnexpectedBlockNumber {
+        /// Number of the block that was expected to be verified next.
+        expected: u64,
+        /// Number of the block that was verified.
+        actual: u64,
+    },
 }
