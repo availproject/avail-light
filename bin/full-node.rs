@@ -159,43 +159,45 @@ async fn async_main() {
                         n => Some(n)
                     },
                 });
-            }
+            },
+
             telemetry_event = telemetry.next_event().fuse() => {
-                // TODO:
-                /*telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
+                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
                     name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
                     implementation: String::from("Secret projet 🤫").into_boxed_str(),  // TODO:
                     version: String::from("1.0.0").into_boxed_str(),   // TODO: version
                     validator: None,
-                    network_id: Some(service.local_peer_id().to_base58().into_boxed_str()),
-                }));*/
+                    network_id: None, // TODO: Some(service.local_peer_id().to_base58().into_boxed_str()),
+                }));
             },
+
             _ = telemetry_timer.next() => {
-                // TODO:
-                /*// Some of the fields below are set to `None` because there is no plan to
+                let sync_state = sync_state.lock().await.clone();
+
+                // Some of the fields below are set to `None` because there is no plan to
                 // implement reporting accurate metrics about the node.
                 telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemInterval(substrate_lite::telemetry::message::SystemInterval {
                     stats: substrate_lite::telemetry::message::NodeStats {
-                        peers: service.num_network_connections(),
+                        peers: network_state.num_network_connections.load(Ordering::Relaxed),
                         txcount: 0,  // TODO:
                     },
                     memory: None,
                     cpu: None,
                     bandwidth_upload: Some(0.0), // TODO:
                     bandwidth_download: Some(0.0), // TODO:
-                    finalized_height: Some(service.finalized_block_number()),
-                    finalized_hash: Some(service.finalized_block_hash().into()),
+                    finalized_height: Some(sync_state.finalized_block_number),
+                    finalized_hash: Some(sync_state.finalized_block_hash.into()),
                     block: substrate_lite::telemetry::message::Block {
-                        hash: service.best_block_hash().into(),
-                        height: service.best_block_number(),
+                        hash: sync_state.best_block_hash.into(),
+                        height: sync_state.best_block_number,
                     },
                     used_state_cache_size: None,
                     used_db_cache_size: None,
                     disk_read_per_sec: None,
                     disk_write_per_sec: None,
-                }));*/
-            }
+                }));
+            },
         }
     }
 }
