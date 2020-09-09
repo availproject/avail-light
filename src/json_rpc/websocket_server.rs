@@ -201,6 +201,7 @@ impl<T> WsServer<T> {
                     self.incoming_messages.push({
                         // Turn `receiver` into a stream of received packets.
                         let socket_packets = stream::unfold((receiver, Vec::new()), move |(mut receiver, mut buf)| async {
+                            buf.clear();
                             let ret = match receiver.receive_data(&mut buf).await {
                                 Ok(soketto::Data::Text(len)) => Ok(str::from_utf8(&buf[..len]).unwrap().to_owned()),
                                 _ => Err(())

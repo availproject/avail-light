@@ -41,6 +41,11 @@ name = "full-node"
 path = "bin/full-node.rs"
 required-features = ["database-sled", "os-networking"]
 
+[[bin]]
+name = "json-rpc-test"
+path = "bin/json-rpc-test.rs"
+required-features = ["os-networking"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
