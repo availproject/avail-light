@@ -1,5 +1,14 @@
 Prototype for Substrate client refactoring.
 
+Guidelines for writing code:
+
+- No trait definitions, except for private traits used purely as implementation detail.
+- No `Arc`s or `Mutex`es exposed in public APIs.
+- No splitting of the crate into multiple crates without a good reason. "Improving compilation time" is not considered a good reason.
+- Do not perform any memory allocation unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads.
+- Embrace TODO-driven development. Try as much as possible to write code that will never need to change, but if that isn't possible leave a `// TODO` comment in the code explaining which modifications will be needed in the future. Writing code that will never need to change is still the preferred approach, and it's better to take more time before merging something than merging it with active TODOs.
+- Do not apply the DRY principle, in other words don't try to remove duplicated code, without Pierre's approval.
+
 # Objectives compared to Substrate
 
 This code base proposed an opinionated approaches that differ from Substrate.
