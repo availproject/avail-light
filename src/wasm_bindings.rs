@@ -401,6 +401,7 @@ async fn start_network(
                                 .map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable) // TODO:
                             );
                         }
+                        network::Event::CallRequestFinished { .. } => todo!(),
                         network::Event::Connected(peer_id) => {
                             let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
                         }
