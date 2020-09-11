@@ -17,7 +17,6 @@ async fn async_main() {
         bind_address: "0.0.0.0:9944".parse().unwrap(),
         max_frame_size: 1024 * 1024,
         send_buffer_len: 32,
-        max_clean_rejected_sockets_shutdowns: 32,
         capacity: 16,
     })
     .await

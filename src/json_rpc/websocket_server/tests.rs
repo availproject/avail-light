@@ -9,7 +9,6 @@ fn basic_works() {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             max_frame_size: 1024 * 1024,
             send_buffer_len: 32,
-            max_clean_rejected_sockets_shutdowns: 256,
             capacity: 32,
         })
         .await

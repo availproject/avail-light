@@ -30,10 +30,6 @@ pub struct Config {
     /// unresponsive.
     pub send_buffer_len: usize,
 
-    /// When an incoming connection is rejected, it is added to a queue for clean shut down. This
-    /// configures the maximum size of this queue.
-    pub max_clean_rejected_sockets_shutdowns: usize,
-
     /// Pre-allocated capacity for the list of connections.
     pub capacity: usize,
 }
@@ -45,9 +41,6 @@ pub struct WsServer<T> {
 
     /// Value passed through [`Config::send_buffer_len`].
     send_buffer_len: usize,
-
-    /// Value passed through [`Config::max_clean_rejected_sockets_shutdowns`].
-    max_clean_rejected_sockets_shutdowns: usize,
 
     /// Endpoint for incoming TCP sockets.
     listener: TcpListener,
@@ -114,7 +107,6 @@ impl<T> WsServer<T> {
         Ok(WsServer {
             max_frame_size: config.max_frame_size,
             send_buffer_len: config.send_buffer_len,
-            max_clean_rejected_sockets_shutdowns: config.max_clean_rejected_sockets_shutdowns,
             listener,
             pending_incoming: None,
             negotiating: stream::FuturesUnordered::new(),
@@ -196,15 +188,7 @@ impl<T> WsServer<T> {
     /// Panics if no connection is pending.
     ///
     pub fn reject(&mut self) {
-        let mut pending_incoming = self.pending_incoming.take().expect("no pending socket");
-
-        if self.rejected_sockets.len() >= self.max_clean_rejected_sockets_shutdowns {
-            return;
-        }
-
-        self.rejected_sockets.push(Box::pin(async move {
-            let _ = pending_incoming.close().await;
-        }));
+        let _ = self.pending_incoming.take().expect("no pending socket");
     }
 
     /// Destroys a connection.
