@@ -423,7 +423,7 @@ impl Network {
                                 id: request_id,
                                 result: Err(()),
                             };
-                        },
+                        }
                         RequestTy::Call => todo!(),
                     }
                 }

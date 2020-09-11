@@ -1,6 +1,94 @@
 //! WebSocket server.
-
-// TODO: docs
+//!
+//! Only handles text frames from the WebSocket protocol. While adding support for binary frames
+//! isn't difficult, it is out of scope of the use-case of this code.
+//!
+//! # Usage
+//!
+//! Call [`WsServer::new`], passing a [`Config`], in order to create a listening TCP socket
+//! wrapped inside of a [`WsServer`].
+//!
+//! After initialization, call [`WsServer::next_event`] in order to wait for something to happen
+//! on the listening TCP socket or on one of the currently active clients that have connected.
+//!
+//! When [`Event::ConnectionOpen`] is returned, call [`WsServer::accept`] or [`WsServer::reject`]
+//! to either accept or refuse the new incoming connection. The
+//! [`ConnectionOpen`](Event::ConnectionOpen) event holds the [`SocketAddr`] of the client, which
+//! can be used to make a decision. This module doesn't enforce any limit to the number of
+//! simultaneously connected client. In order to enforce one (which is recommended), call
+//! [`WsServer::reject`] if [`WsServer::len`] is superior or equal to a certain value.
+//!
+//! Each active client connection is identified with a [`ConnectionId`], provided when
+//! [`accept`](WsServer::accept) is called. Call [`WsServer::close`] in order to forcefully shut
+//! down a certain connection. An [`Event::ConnectionError`] event is returned by
+//! [`next_event`](WsServer::next_event) if the client shuts down its side of the connection or
+//! if a protocol error is detected. Calling [`close`](WsServer::close) does *not* generate a
+//! [`ConnectionError`](Event::ConnectionError) event, as the closing is assumed to be
+//! instantaneous for API-related purposes.
+//!
+//! After either [`close`](WsServer::close) is called or
+//! [`ConnectionError`](Event::ConnectionError) is returned, the given [`ConnectionId`] is no
+//! longer valid and can later get reused for a different connection.
+//!
+//! When [`accept`](WsServer::accept) is called, a "user data" parameter must be passed. This is
+//! a value opaque to the code in this module that can be used by the API user in order to hold
+//! additional connection-specific state.
+//!
+//! Use [`WsServer::queue_send`] to send a text frame to a client. The message is buffered and
+//! will be progressively delivered when the client is ready to receive it.
+//!
+//! # Example
+//!
+//! ```
+//! # async fn foo() {
+//! use substrate_lite::json_rpc::websocket_server::{Config, Event, WsServer};
+//!
+//! let mut server = WsServer::new(Config {
+//!     bind_address: "127.0.0.1:0".parse().unwrap(),
+//!     max_frame_size: 1024 * 1024,
+//!     send_buffer_len: 32,
+//!     capacity: 32,
+//! })
+//! .await
+//! .unwrap();
+//!
+//! loop {
+//!     match server.next_event().await {
+//!         // New connection on the listener.
+//!         Event::ConnectionOpen { address } => {
+//!             println!("New connection from {:?}", address);
+//!             if server.len() < 512 {
+//!                 server.accept(());
+//!             } else {
+//!                 server.reject();
+//!             }
+//!         }
+//!
+//!         // Received a message from a connection.
+//!         Event::TextFrame { message, connection_id, .. } => {
+//!             server.queue_send(connection_id, "hello back!".to_string());
+//!         },
+//!
+//!         // Connection has been closed.
+//!         Event::ConnectionError { .. } => {},
+//!     }
+//! }
+//! # }
+//! ```
+//!
+//! # About performances
+//!
+//! The [`WsServer`] is entirely single-threaded, as calling [`WsServer::next_event`] is the only
+//! way to process the state of all the sockets and it requires a mutable borrow to the server.
+//!
+//! This restriction to being single-threaded only becomes a problem if a single CPU core isn't
+//! capable of processing the volume of data, which is expected to happen only with a very large
+//! number of clients (the complexity being `O(n)`).
+//!
+//! The single-threadedness can even be beneficial when the WebSocket server isn't the primary
+//! *raison d'être* of a certain program, which is what this module has been designed for. In the
+//! case of a (D)DoS attack on the WebSocket server, only up to one core of CPU processing power
+//! can be occupied by the attacker.
 
 #![cfg(feature = "os-networking")]
 #![cfg_attr(docsrs, doc(cfg(feature = "os-networking")))]
@@ -189,6 +277,29 @@ impl<T> WsServer<T> {
     ///
     pub fn reject(&mut self) {
         let _ = self.pending_incoming.take().expect("no pending socket");
+    }
+
+    /// Returns the number of active healthy connections.
+    pub fn len(&self) -> usize {
+        self.connections.len()
+    }
+
+    /// Returns the user data associated to a connection.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`ConnectionId`] is invalid.
+    pub fn connection_user_data(&self, id: ConnectionId) -> &T {
+        &self.connections.get(id.0).unwrap().user_data
+    }
+
+    /// Returns the user data associated to a connection.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`ConnectionId`] is invalid.
+    pub fn connection_mut_user_data(&mut self, id: ConnectionId) -> &mut T {
+        &mut self.connections.get_mut(id.0).unwrap().user_data
     }
 
     /// Destroys a connection.
@@ -400,6 +511,6 @@ pub enum Event<'a, T> {
 
 /// Identifier for a connection with regard to a [`WsServer`].
 ///
-/// After a connection has closed, its [`ConnectionId`]s might be reused.
+/// After a connection has been closed, its [`ConnectionId`] might be reused.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct ConnectionId(usize);
