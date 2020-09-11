@@ -477,7 +477,7 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                         interface.write_memory(value_out_ptr, value).await;
                         // TODO: while the specs mention that `written` should be returned,
                         // substrate instead returns the total length of the read value;
-                        // needs to be figured out
+                        // see https://github.com/paritytech/substrate/pull/7084
                         Some(written)
                     } else {
                         None
