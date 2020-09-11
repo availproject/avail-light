@@ -284,13 +284,9 @@ async fn start_sync(
                     }
 
                     full_optimistic::ProcessOne::FinalizedStorageGet(mut req) => {
-                        // TODO: we shouldn't have to do this folding
-                        let key = req.key().fold(Vec::new(), |mut a, b| {
-                            a.extend_from_slice(b.as_ref());
-                            a
-                        });
-
-                        let value = finalized_block_storage.get(&key).map(|v| &v[..]);
+                        let value = finalized_block_storage
+                            .get(&req.key_as_vec())
+                            .map(|v| &v[..]);
                         process = req.inject_value(value);
                     }
                     full_optimistic::ProcessOne::FinalizedStorageNextKey(mut req) => {

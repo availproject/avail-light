@@ -182,6 +182,17 @@ impl StorageGet {
         }
     }
 
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    // TODO: shouldn't be mut
+    pub fn key_as_vec(&mut self) -> Vec<u8> {
+        self.key().fold(Vec::new(), |mut a, b| {
+            a.extend_from_slice(b.as_ref());
+            a
+        })
+    }
+
     /// Injects the corresponding storage value.
     // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
     pub fn inject_value(mut self, value: Option<&[u8]>) -> Verify {

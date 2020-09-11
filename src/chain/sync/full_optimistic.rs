@@ -11,7 +11,7 @@
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
-use crate::{executor, header, trie::calculate_root, verify::babe};
+use crate::{executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, vec};
 use core::{iter, num::NonZeroU32};
@@ -509,14 +509,9 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     // As such, the requested value is either found in one of this diff, in which
                     // case it can be returned immediately to continue the verification, or in
                     // the finalized block, in which case the user needs to be queried.
-                    // TODO: a bit stupid to have to allocate for the key
-                    let key = req.key().fold(Vec::new(), |mut a, b| {
-                        a.extend_from_slice(b.as_ref());
-                        a
-                    });
-
-                    if let Some(value) = shared.best_to_finalized_storage_diff.get(&key) {
-                        let value = value.clone(); // TODO: necessary for borrowing issues :(
+                    if let Some(value) =
+                        shared.best_to_finalized_storage_diff.get(&req.key_as_vec())
+                    {
                         inner = Inner::Step2(req.inject_value(value.as_ref().map(|v| &v[..])));
                         continue 'verif_steps;
                     }
@@ -579,6 +574,17 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
             StorageGetTarget::Runtime(_) => {
                 either::Either::Right(iter::once(either::Either::Right(b":code")))
             }
+        }
+    }
+
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    // TODO: shouldn't be mut
+    pub fn key_as_vec(&mut self) -> Vec<u8> {
+        match &mut self.inner {
+            StorageGetTarget::Storage(inner) => inner.key_as_vec(),
+            StorageGetTarget::Runtime(_) => b":code".to_vec(),
         }
     }
 

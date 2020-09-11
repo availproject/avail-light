@@ -1183,6 +1183,14 @@ impl<T> StorageGet<T> {
         self.inner.key()
     }
 
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    // TODO: shouldn't be mut
+    pub fn key_as_vec(&mut self) -> Vec<u8> {
+        self.inner.key_as_vec()
+    }
+
     /// Access to the Nth ancestor's information and hierarchy. Returns `None` if `n` is too
     /// large. A value of `0` for `n` corresponds to the parent block. A value of `1` corresponds
     /// to the parent's parent. And so on.

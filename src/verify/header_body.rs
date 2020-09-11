@@ -264,6 +264,14 @@ impl StorageGet {
         self.inner.key()
     }
 
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    // TODO: shouldn't be mut
+    pub fn key_as_vec(&mut self) -> Vec<u8> {
+        self.inner.key_as_vec()
+    }
+
     /// Injects the corresponding storage value.
     pub fn inject_value(self, value: Option<&[u8]>) -> Verify {
         VerifyInner::Unsealed {
