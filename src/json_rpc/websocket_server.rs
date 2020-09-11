@@ -122,6 +122,12 @@ pub struct Config {
     pub capacity: usize,
 }
 
+/// Identifier for a connection with regard to a [`WsServer`].
+///
+/// After a connection has been closed, its [`ConnectionId`] might be reused.
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct ConnectionId(usize);
+
 /// WebSockets listening socket and list of open connections.
 pub struct WsServer<T> {
     /// Value passed through [`Config::max_frame_size`].
@@ -508,9 +514,3 @@ pub enum Event<'a, T> {
         message: String,
     },
 }
-
-/// Identifier for a connection with regard to a [`WsServer`].
-///
-/// After a connection has been closed, its [`ConnectionId`] might be reused.
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct ConnectionId(usize);

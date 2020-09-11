@@ -5,6 +5,7 @@ Guidelines for writing code:
 - No trait definitions, except for private traits used purely as implementation detail.
 - No `Arc`s or `Mutex`es exposed in public APIs.
 - No splitting of the crate into multiple crates without a good reason. "Improving compilation time" is not considered a good reason.
+- No using the `log`, `tracing`, `slog`, etc. libraries, or any library whose use must be spread through the code base. As an example, `prometheus` is allowed but only in a well-scoped context and by pulling information from the various components, rather than injecting it.
 - Do not perform any memory allocation unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads.
 - Embrace TODO-driven development. Try as much as possible to write code that will never need to change, but if that isn't possible leave a `// TODO` comment in the code explaining which modifications will be needed in the future. Writing code that will never need to change is still the preferred approach, and it's better to take more time before merging something than merging it with active TODOs.
 - Do not apply the DRY principle, in other words don't try to remove duplicated code, without Pierre's approval.
