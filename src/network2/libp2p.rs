@@ -1,3 +1,5 @@
+#![allow(unused)] // TODO: remove once code is used
+
 use core::{fmt, future::Future, pin::Pin};
 use hashbrown::HashMap;
 use rand::{seq::IteratorRandom as _, SeedableRng as _};
@@ -7,10 +9,6 @@ pub use libp2p::{Multiaddr, PeerId};
 
 mod connection;
 mod connections_pool;
-mod multiplexed_connection;
-mod multistream_select;
-mod noise;
-mod yamux;
 
 /// Configuration to provide when building a [`Network`].
 pub struct Config<PIter> {
