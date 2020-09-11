@@ -58,6 +58,8 @@
 //!         Event::ConnectionOpen { address } => {
 //!             println!("New connection from {:?}", address);
 //!             if server.len() < 512 {
+//!                 // Rather than passing `()`, it is possible to pass any value. The value is
+//!                 // provided back on `TextFrame` and `ConnectionError` events.
 //!                 server.accept(());
 //!             } else {
 //!                 server.reject();
@@ -66,6 +68,7 @@
 //!
 //!         // Received a message from a connection.
 //!         Event::TextFrame { message, connection_id, .. } => {
+//!             println!("Received message: {:?}", message);
 //!             server.queue_send(connection_id, "hello back!".to_string());
 //!         },
 //!

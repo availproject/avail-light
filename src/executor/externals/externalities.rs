@@ -475,6 +475,9 @@ pub(super) fn function_by_name(name: &str) -> Option<Externality> {
                         let written = u32::try_from(value.len()).unwrap();
                         assert!(written <= value_out_size);
                         interface.write_memory(value_out_ptr, value).await;
+                        // TODO: while the specs mention that `written` should be returned,
+                        // substrate instead returns the total length of the read value;
+                        // needs to be figured out
                         Some(written)
                     } else {
                         None
