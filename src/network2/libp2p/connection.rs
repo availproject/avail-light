@@ -18,12 +18,12 @@ pub struct Connection {
 
 enum State {
     NegotiatingEncryption {
-        negotiation: multistream_select::Negotiation<iter::Once<&'static str>, &'static str>,
+        negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
     },
     NegotiatingMultiplexing {
         peer_id: PeerId,
         encryption: noise::Noise,
-        negotiation: multistream_select::Negotiation<iter::Once<&'static str>, &'static str>,
+        negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
     },
     Open {
         peer_id: PeerId,
@@ -37,7 +37,7 @@ impl Connection {
     /// Must pass [`Endpoint::Dialer`] if the connection has been opened by the local machine,
     /// and [`Endpoint::Listener`] if it has been opened by the remote.
     pub fn new(endpoint: Endpoint) -> Self {
-        let negotiation = multistream_select::Negotiation::new(match endpoint {
+        let negotiation = multistream_select::InProgress::new(match endpoint {
             Endpoint::Dialer => multistream_select::Config::Dialer {
                 requested_protocol: "/noise",
             },
