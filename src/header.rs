@@ -67,6 +67,9 @@
 //! assert_eq!(reencoded, scale_encoded_header);
 //! ```
 
+// TODO: consider rewriting the encoding/decoding into a more legible style
+// TODO: consider nom for decoding
+
 use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, fmt, iter, slice};
 

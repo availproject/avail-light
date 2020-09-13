@@ -63,6 +63,22 @@ async fn async_main() {
         //}
     ; //};
 
+    // TODO: remove; just for testing
+    let metadata = substrate_lite::metadata::query::from_storage(|key| {
+        chain_spec
+            .genesis_storage()
+            .clone()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.to_owned())
+    })
+    .unwrap();
+
+    println!("opaque metadata: {:?}", metadata);
+    println!(
+        "{:?}",
+        substrate_lite::metadata::decode::MetadataRef::from_slice(&metadata).unwrap()
+    );
+
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_network_tx, to_network_rx) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
