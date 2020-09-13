@@ -84,20 +84,84 @@ impl Noise {
 
     /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
     /// bytes written to `destination`.
-    pub fn write_out(&mut self, destination: &mut [u8]) -> usize {
-        let to_write = self.tx_buffer_encrypted.as_slices().0;
-        let to_write_len = cmp::min(to_write.len(), destination.len());
-        destination.copy_from_slice(&to_write[..to_write_len]);
-        for _ in 0..to_write_len {
-            let _ = self.tx_buffer_encrypted.pop_front();
+    pub fn write_out(&mut self, mut destination: &mut [u8]) -> usize {
+        let mut total_written = 0;
+
+        loop {
+            let to_write = self.tx_buffer_encrypted.as_slices().0;
+            let to_write_len = cmp::min(to_write.len(), destination.len());
+            destination[..to_write_len].copy_from_slice(&to_write[..to_write_len]);
+            for _ in 0..to_write_len {
+                let _ = self.tx_buffer_encrypted.pop_front();
+            }
+            total_written += to_write_len;
+            destination = &mut destination[to_write_len..];
         }
-        to_write_len
+
+        total_written
     }
 }
 
-pub struct NoiseHandshake {}
+pub struct NoiseHandshake {
+    inner: snow::HandshakeState,
+
+    /// Buffer of data containing data received on the wire, before decryption.
+    rx_buffer_encrypted: VecDeque<u8>,
+
+    /// Buffer of data containing data received on the wire, after decryption.
+    rx_buffer_decrypted: Vec<u8>,
+
+    /// Buffer of data containing data received on the wire, after encryption.
+    tx_buffer_encrypted: VecDeque<u8>,
+}
+
+impl NoiseHandshake {
+    pub fn new(endpoint: Endpoint, local_private_key: &[u8; 32]) -> Self {
+        let inner = {
+            let builder = snow::Builder::new(NOISE_PARAMS.clone());
+            // TODO: .local_private_key(self.dh_keys.secret().as_ref());
+            match endpoint {
+                Endpoint::Initiator => builder.build_initiator(),
+                Endpoint::Responder => builder.build_responder(),
+            }
+        };
+
+        let handshake = vec![0u8; 0]; // TODO:
+
+        todo!()
+    }
+
+    /// Feeds data received from the wire.
+    pub fn inject_data(&mut self, payload: &[u8]) -> usize {
+        todo!()
+    }
+
+    /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
+    /// bytes written to `destination`.
+    pub fn write_out(&mut self, mut destination: &mut [u8]) -> usize {
+        let mut total_written = 0;
+
+        loop {
+            let to_write = self.tx_buffer_encrypted.as_slices().0;
+            let to_write_len = cmp::min(to_write.len(), destination.len());
+            destination[..to_write_len].copy_from_slice(&to_write[..to_write_len]);
+            for _ in 0..to_write_len {
+                let _ = self.tx_buffer_encrypted.pop_front();
+            }
+            total_written += to_write_len;
+            destination = &mut destination[to_write_len..];
+        }
+
+        total_written
+    }
+}
 
 lazy_static::lazy_static! {
     static ref NOISE_PARAMS: snow::params::NoiseParams =
         "Noise_XX_25519_ChaChaPoly_SHA256".parse().unwrap();
+}
+
+pub enum Endpoint {
+    Initiator,
+    Responder,
 }

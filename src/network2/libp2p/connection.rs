@@ -17,13 +17,16 @@ pub struct Connection {
 }
 
 enum State {
+    NegotiatingEncryptionProtocol {
+        negotiation: Option<multistream_select::InProgress<iter::Once<&'static str>, &'static str>>,
+    },
     NegotiatingEncryption {
-        negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
+        handshake: noise::NoiseHandshake,
     },
     NegotiatingMultiplexing {
         peer_id: PeerId,
         encryption: noise::Noise,
-        negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
+        negotiation: Option<multistream_select::InProgress<iter::Once<&'static str>, &'static str>>,
     },
     Open {
         peer_id: PeerId,
@@ -48,7 +51,9 @@ impl Connection {
 
         Connection {
             endpoint,
-            state: State::NegotiatingEncryption { negotiation },
+            state: State::NegotiatingEncryptionProtocol {
+                negotiation: Some(negotiation),
+            },
         }
     }
 
@@ -60,7 +65,7 @@ impl Connection {
     ) -> (usize, Option<InjectDataOutcome<'c, 'd>>) {
         // TODO: restore
         /*// Handle the case where the connection is still negotiating the encryption protocol.
-        if let State::NegotiatingEncryption { negotiation } = &mut self.state {
+        if let State::NegotiatingEncryptionProtocol { negotiation } = &mut self.state {
             for buf in data {
                 let mut buf_offset = 0;
                 while buf_offset != buf.len() {
@@ -78,7 +83,8 @@ impl Connection {
 
         // Inject the received data into the cipher for decryption.
         match &mut self.state {
-            State::NegotiatingEncryption { .. } => unreachable!(),
+            State::NegotiatingEncryptionProtocol { .. } => unreachable!(),
+            State::NegotiatingEncryption { .. } => todo!(),
             State::NegotiatingMultiplexing { encryption, .. } | State::Open { encryption, .. } => {
                 for buf in data {
                     encryption.inject_inbound_data(buf);
@@ -91,11 +97,38 @@ impl Connection {
 
     /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
     /// bytes written to `destination`.
-    pub fn write_out(&mut self, destination: &mut [u8]) -> usize {
-        match &mut self.state {
-            //State::NegotiatingEncryption { negotiation } => negotiation.write_out(destination),
-            _ => todo!(),
+    pub fn write_out(&mut self, mut destination: &mut [u8]) -> usize {
+        let mut total_written = 0;
+
+        loop {
+            match &mut self.state {
+                State::NegotiatingEncryptionProtocol { negotiation } => {
+                    let (updated, written) = negotiation.take().unwrap().write_out(destination);
+                    total_written += written;
+                    destination = &mut destination[written..];
+
+                    match updated {
+                        multistream_select::Negotiation::InProgress(continuation) => {
+                            *negotiation = Some(continuation);
+                        }
+                        multistream_select::Negotiation::Success(_) => {
+                            let noise_endpoint = match self.endpoint {
+                                Endpoint::Dialer => noise::Endpoint::Initiator,
+                                Endpoint::Listener => noise::Endpoint::Responder,
+                            };
+
+                            self.state = State::NegotiatingEncryption {
+                                handshake: noise::NoiseHandshake::new(noise_endpoint, &[0; 32]), // TODO: key
+                            };
+                        }
+                        multistream_select::Negotiation::NotAvailable => todo!(), // TODO:
+                    };
+                }
+                _ => todo!(),
+            }
         }
+
+        total_written
     }
 }
 

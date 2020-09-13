@@ -80,6 +80,9 @@ where
     }
 
     /// Feeds more data to the negotiation.
+    ///
+    /// Returns either an error in case of protocol error, or the new state of the negotiation
+    /// and the number of bytes that have been processed in `data`.
     pub fn inject_data(mut self, mut data: &[u8]) -> Result<(Negotiation<I, P>, usize), Error> {
         let mut total_read = 0;
 
@@ -192,8 +195,8 @@ where
         Ok((Negotiation::InProgress(self), total_read))
     }
 
-    /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
-    /// bytes written to `destination`.
+    /// Write to the given buffer the bytes that are ready to be sent out. Returns the new state
+    /// of the negotiation and the number of bytes written to `destination`.
     pub fn write_out(mut self, destination: &mut [u8]) -> (Negotiation<I, P>, usize) {
         let mut total_written = 0;
 
