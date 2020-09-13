@@ -14,7 +14,7 @@ use super::optimistic;
 use crate::{executor, header, trie::calculate_root};
 
 use alloc::{collections::BTreeMap, vec};
-use core::{iter, num::NonZeroU32};
+use core::{convert::TryFrom as _, iter, num::NonZeroU32};
 use hashbrown::{HashMap, HashSet};
 
 pub use optimistic::{
@@ -397,20 +397,51 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     let parent_runtime = match shared.runtime_code_cache.take() {
                         Some(r) => r,
                         None => {
-                            if let Some(code) =
-                                shared.best_to_finalized_storage_diff.get(&b":code"[..])
-                            {
-                                let code = code.as_ref().expect("no runtime code?!?!"); // TODO: what to do?
-                                executor::WasmVmPrototype::new(&code)
-                                    .expect("invalid runtime code?!?!") // TODO: what to do?
-                            } else {
-                                // No cache has been found anywhere in the hierarchy.
-                                // The user needs to be asked for the storage entry containing the
-                                // runtime code.
-                                return ProcessOne::FinalizedStorageGet(StorageGet {
-                                    inner: StorageGetTarget::Runtime(req),
-                                    shared,
-                                });
+                            // TODO: simplify code below
+                            match (
+                                shared.best_to_finalized_storage_diff.get(&b":code"[..]),
+                                shared
+                                    .best_to_finalized_storage_diff
+                                    .get(&b":heappages"[..]),
+                            ) {
+                                (Some(wasm_code), Some(heap_pages)) => {
+                                    let wasm_code =
+                                        wasm_code.as_ref().expect("no runtime code?!?!"); // TODO: what to do?
+                                    let heap_pages = u64::from_le_bytes(
+                                        <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
+                                            .unwrap(), // TODO: don't unwrap
+                                    );
+                                    executor::WasmVmPrototype::new(&wasm_code, heap_pages)
+                                        .expect("invalid runtime code?!?!") // TODO: what to do?
+                                }
+                                (Some(wasm_code), None) => {
+                                    return ProcessOne::FinalizedStorageGet(StorageGet {
+                                        inner: StorageGetTarget::HeapPages(
+                                            req,
+                                            wasm_code.as_ref().unwrap().clone(),
+                                        ), // TODO: don't unwrap
+                                        shared,
+                                    });
+                                }
+                                (None, Some(heap_pages)) => {
+                                    let heap_pages = u64::from_le_bytes(
+                                        <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
+                                            .unwrap(), // TODO: don't unwrap
+                                    );
+                                    return ProcessOne::FinalizedStorageGet(StorageGet {
+                                        inner: StorageGetTarget::Runtime(req, heap_pages), // TODO: don't unwrap
+                                        shared,
+                                    });
+                                }
+                                (None, None) => {
+                                    // No cache has been found anywhere in the hierarchy.
+                                    // The user needs to be asked for the storage entry containing the
+                                    // runtime code.
+                                    return ProcessOne::FinalizedStorageGet(StorageGet {
+                                        inner: StorageGetTarget::HeapPagesAndRuntime(req),
+                                        shared,
+                                    });
+                                }
                             }
                         }
                     };
@@ -430,7 +461,9 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                 }) => {
                     // Successfully verified block!
                     // Inserting it into the chain and updated all the caches.
-                    if !storage_top_trie_changes.contains_key(&b":code"[..]) {
+                    if !storage_top_trie_changes.contains_key(&b":code"[..])
+                        && !storage_top_trie_changes.contains_key(&b":heappages"[..])
+                    {
                         shared.runtime_code_cache = Some(parent_runtime);
                     }
                     shared.top_trie_root_calculation_cache = Some(top_trie_root_calculation_cache);
@@ -560,7 +593,15 @@ pub struct StorageGet<TRq, TBl> {
 
 enum StorageGetTarget {
     Storage(blocks_tree::StorageGet<Block>),
-    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
+    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
+    Runtime(
+        blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>,
+        u64,
+    ),
+    HeapPages(
+        blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>,
+        Vec<u8>,
+    ),
 }
 
 impl<TRq, TBl> StorageGet<TRq, TBl> {
@@ -571,8 +612,11 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
             StorageGetTarget::Storage(inner) => {
                 either::Either::Left(inner.key().map(either::Either::Left))
             }
-            StorageGetTarget::Runtime(_) => {
-                either::Either::Right(iter::once(either::Either::Right(b":code")))
+            StorageGetTarget::HeapPagesAndRuntime(_) | StorageGetTarget::HeapPages(_, _) => {
+                either::Either::Right(iter::once(either::Either::Right(&b":heappages"[..])))
+            }
+            StorageGetTarget::Runtime(_, _) => {
+                either::Either::Right(iter::once(either::Either::Right(&b":code"[..])))
             }
         }
     }
@@ -584,22 +628,53 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
     pub fn key_as_vec(&mut self) -> Vec<u8> {
         match &mut self.inner {
             StorageGetTarget::Storage(inner) => inner.key_as_vec(),
-            StorageGetTarget::Runtime(_) => b":code".to_vec(),
+            StorageGetTarget::HeapPagesAndRuntime(_) | StorageGetTarget::HeapPages(_, _) => {
+                b":heappages".to_vec()
+            }
+            StorageGetTarget::Runtime(_, _) => b":code".to_vec(),
         }
     }
 
     /// Injects the corresponding storage value.
     // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
+        // TODO: simplify code inside here
         match self.inner {
             StorageGetTarget::Storage(inner) => {
                 let inner = inner.inject_value(value);
                 ProcessOne::from(Inner::Step2(inner), self.shared)
             }
-            StorageGetTarget::Runtime(inner) => {
+            StorageGetTarget::HeapPagesAndRuntime(inner) => {
+                let heap_pages = if let Some(value) = value {
+                    u64::from_le_bytes(
+                        <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
+                    )
+                } else {
+                    1024 // TODO: default heap pages
+                };
+                ProcessOne::FinalizedStorageGet(StorageGet {
+                    inner: StorageGetTarget::Runtime(inner, heap_pages),
+                    shared: self.shared,
+                })
+            }
+            StorageGetTarget::Runtime(inner, heap_pages) => {
                 let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
-                let wasm_vm =
-                    executor::WasmVmPrototype::new(wasm_code).expect("invalid runtime code?!?!"); // TODO: ?!?!
+                let wasm_vm = executor::WasmVmPrototype::new(wasm_code, heap_pages)
+                    .expect("invalid runtime code?!?!"); // TODO: ?!?!
+                let inner =
+                    inner.resume(wasm_vm, self.shared.top_trie_root_calculation_cache.take());
+                ProcessOne::from(Inner::Step2(inner), self.shared)
+            }
+            StorageGetTarget::HeapPages(inner, wasm_code) => {
+                let heap_pages = if let Some(value) = value {
+                    u64::from_le_bytes(
+                        <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
+                    )
+                } else {
+                    1024 // TODO: default heap pages
+                };
+                let wasm_vm = executor::WasmVmPrototype::new(&wasm_code, heap_pages)
+                    .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner =
                     inner.resume(wasm_vm, self.shared.top_trie_root_calculation_cache.take());
                 ProcessOne::from(Inner::Step2(inner), self.shared)

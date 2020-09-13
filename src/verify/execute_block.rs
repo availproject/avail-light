@@ -573,7 +573,8 @@ impl VerifyInner {
 
                 executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
                     // TODO: is there maybe a better way to handle that?
-                    let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob) {
+                    // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct
+                    let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob, 1024) {
                         Ok(w) => w,
                         Err(_) => {
                             resolve.finish_call(Err(()));

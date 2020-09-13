@@ -6,8 +6,11 @@ use crate::executor;
 /// >           [`metadata_from_virtual_machine_prototype`]. In performance-critical situations,
 /// >           where the overhead of the Wasm compilation is undesirable, you are encouraged to
 /// >           call [`metadata_from_virtual_machine_prototype`] instead.
-pub fn metadata_from_runtime_code(wasm_code: &[u8]) -> Result<Vec<u8>, FromVmPrototypeError> {
-    let vm = executor::WasmVmPrototype::new(&wasm_code)
+pub fn metadata_from_runtime_code(
+    wasm_code: &[u8],
+    heap_pages: u64,
+) -> Result<Vec<u8>, FromVmPrototypeError> {
+    let vm = executor::WasmVmPrototype::new(&wasm_code, heap_pages)
         .map_err(FromVmPrototypeError::VmInitialization)?;
     let (out, _vm) = metadata_from_virtual_machine_prototype(vm)?;
     Ok(out)

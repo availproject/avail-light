@@ -94,6 +94,7 @@ impl VirtualMachinePrototype {
     /// to handle the call.
     pub fn new(
         module_bytes: impl AsRef<[u8]>,
+        heap_pages: u64,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         let module =
@@ -171,7 +172,7 @@ impl VirtualMachinePrototype {
                                 memory_type
                                     .maximum()
                                     .map(|m| m.saturating_sub(memory_type.initial()))
-                                    .expect("Maximum is set, checked above; qed"),
+                                    .unwrap(),
                             )))
                         } else {
                             let memory = wasmi::MemoryInstance::alloc(
@@ -206,7 +207,7 @@ impl VirtualMachinePrototype {
             let resolver = ImportResolve {
                 functions: RefCell::new(&mut symbols),
                 import_memory: RefCell::new(&mut import_memory),
-                heap_pages: 1024,
+                heap_pages: usize::try_from(heap_pages).unwrap_or(usize::max_value()),
             };
             wasmi::ModuleInstance::new(&module, &resolver).map_err(NewErr::Interpreter)?
         };

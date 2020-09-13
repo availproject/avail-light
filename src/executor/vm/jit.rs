@@ -44,6 +44,7 @@ impl JitPrototype {
     /// the call.
     pub fn new(
         module: impl AsRef<[u8]>,
+        heap_pages: u64,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         // TODO: deny floating points?
@@ -92,10 +93,11 @@ impl JitPrototype {
                     wasmtime::ExternType::Table(_) => unimplemented!(),
                     wasmtime::ExternType::Memory(m) => {
                         let limits = {
-                            // TODO: this 1024 is arbitrary, it's the "heap_pages" value
-                            let min = cmp::max(m.limits().min(), 1024);
-                            let max = m.limits().max(); // TODO: make sure it's > to min
-                            wasmtime::Limits::new(min, max)
+                            let heap_pages =
+                                usize::try_from(heap_pages).unwrap_or(usize::max_value());
+                            let min = cmp::max(m.limits().min(), heap_pages);
+                            let max = m.limits().max(); // TODO: make sure it's > to min, otherwise error
+                            wasmtime::Limits::new(min, min + heap_pages)
                         };
 
                         // TODO: check name and all?

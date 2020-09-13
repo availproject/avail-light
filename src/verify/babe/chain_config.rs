@@ -22,7 +22,15 @@ impl BabeGenesisConfiguration {
     ) -> Result<Self, FromGenesisStorageError> {
         let wasm_code =
             genesis_storage_access(b":code").ok_or(FromGenesisStorageError::RuntimeNotFound)?;
-        let vm = executor::WasmVmPrototype::new(&wasm_code)
+        let heap_pages = if let Some(bytes) = genesis_storage_access(b":heappages") {
+            u64::from_le_bytes(
+                <[u8; 8]>::try_from(&bytes[..])
+                    .map_err(FromGenesisStorageError::HeapPagesDecode)?,
+            )
+        } else {
+            1024 // TODO: default heap pages
+        };
+        let vm = executor::WasmVmPrototype::new(&wasm_code, heap_pages)
             .map_err(FromVmPrototypeError::VmInitialization)
             .map_err(FromGenesisStorageError::VmError)?;
         let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
@@ -135,6 +143,10 @@ impl fmt::Debug for BabeGenesisConfiguration {
 pub enum FromGenesisStorageError {
     /// Runtime couldn't be found in the genesis storage.
     RuntimeNotFound,
+    /// Number of heap pages couldn't be found in the genesis storage.
+    HeapPagesNotFound,
+    /// Failed to decode heap pages from the genesis storage.
+    HeapPagesDecode(core::array::TryFromSliceError),
     /// Error while executing the runtime.
     VmError(FromVmPrototypeError),
 }
