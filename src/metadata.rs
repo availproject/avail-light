@@ -17,7 +17,7 @@
 //! - ...
 //!
 //! In order to obtain the metadata, a call to an entry point of the runtime code is necessary.
-//! Afterwards, the retreived metadata is guaranteed to not change until the runtime code
+//! Afterwards, the retrieved metadata is guaranteed to not change until the runtime code
 //! changes.
 //!
 //! See also:
@@ -33,3 +33,16 @@ pub use query::*;
 pub fn decode(scale_encoded_metadata: &[u8]) -> Result<decode::MetadataRef, decode::DecodeError> {
     decode::decode(scale_encoded_metadata)
 }
+
+// TODO: functions that generate transactions
+// - https://github.com/paritytech/substrate/blob/4cc4b76e361f55de8ae5dd2bae8226cacf4addcb/primitives/runtime/src/generic/unchecked_extrinsic.rs#L38-L48
+// - https://github.com/paritytech/substrate-subxt/blob/e85d01ed08e54374d2383e390cd5c2f09b400063/src/extrinsic/mod.rs#L44-L82
+// - https://github.com/paritytech/substrate-subxt/blob/e85d01ed08e54374d2383e390cd5c2f09b400063/src/metadata.rs#L190-L196
+
+// TODO: functions that decode events?
+// - storage key: https://github.com/paritytech/substrate-subxt/blob/271775bf99092bb890fe8c15eabc87f5b8d3966f/src/rpc.rs#L282-L284
+// - decoding this storage entry: https://github.com/paritytech/substrate-subxt/blob/e85d01ed08e54374d2383e390cd5c2f09b400063/src/events.rs#L195-L243
+// - in order to decode this storage entry, we need to know the sizes:
+//    - https://github.com/paritytech/substrate-subxt/blob/e85d01ed08e54374d2383e390cd5c2f09b400063/src/metadata.rs#L391-L444
+//    - https://github.com/paritytech/substrate-subxt/blob/e85d01ed08e54374d2383e390cd5c2f09b400063/src/events.rs#L82-L100
+// - this seems overly polkadot-specific and we probably need changes in the runtime before implementing this

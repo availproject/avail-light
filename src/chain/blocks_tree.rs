@@ -67,7 +67,7 @@ pub struct NonFinalizedTree<T> {
     // TODO: doesn't have to be a collection; refactor into a single value
     grandpa_finalized_scheduled_changes: VecDeque<chain_information::FinalizedScheduledChange>,
 
-    /// Configuration for BABE, retreived from the genesis block.
+    /// Configuration for BABE, retrieved from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
     /// See [`ChainInformation::babe_finalized_block_epoch_information`].
@@ -524,7 +524,7 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// This method takes ownership of both the block's information and the [`NonFinalizedTree`].
     /// It turns an object that must be driver by the user, until either the verification is
-    /// finished or the process aborted, at which point the [`NonFinalizedTree`] can be retreived
+    /// finished or the process aborted, at which point the [`NonFinalizedTree`] can be retrieved
     /// back. The state of the [`NonFinalizedTree`] isn't modified until [`BodyInsert::insert`] is
     /// called after the end of the verification.
     pub fn verify_body<I, E>(self, scale_encoded_header: Vec<u8>, body: I) -> BodyVerifyStep1<T, I>

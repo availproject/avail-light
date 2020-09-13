@@ -29,6 +29,9 @@ pub fn metadata_from_virtual_machine_prototype(
             executor::State::Finished(data) => break data.to_vec(),
             executor::State::Trapped => return Err(FromVmPrototypeError::Trapped),
             executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
+
+            // Querying the metadata shouldn't require any extrinsic such as accessing the
+            // storage.
             _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
         }
     };

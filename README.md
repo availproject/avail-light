@@ -2,13 +2,17 @@ Prototype for Substrate client refactoring.
 
 Guidelines for writing code:
 
+- The main objective is simplicity. The definition of simplicity is not how easy the code is to read, but how easy it is to understand. Verbose code can be just as simple to understand as concise code, sometimes more simple. As an example, introducing a procedural macro will often make the code nicer to read while greatly hurting understandability.
 - No trait definitions, except for private traits used purely as implementation detail.
 - No `Arc`s or `Mutex`es exposed in public APIs.
 - No splitting of the crate into multiple crates without a good reason. "Improving compilation time" is not considered a good reason.
-- No using the `log`, `tracing`, `slog`, etc. libraries, or any library whose use must be spread through the code base. As an example, `prometheus` is allowed but only in a well-scoped context and by pulling information from the various components, rather than injecting it.
-- Do not perform any memory allocation unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads.
+- No using the `log`, `tracing`, `slog`, etc. libraries, or any library whose use must be spread through the code base. As an example, `prometheus` is allowed but only in a well-scoped context and by pulling information from the various components, rather than injecting itself.
+- Do not expose types of third-party libraries in the public API, unless there is a good reason to.
+- Do not perform memory allocations unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads. Memory allocations aren't a bad thing, but we should try to fight against the lazy habit of adding a `.to_vec()` or `.clone()` here and there to make the code compile and without thinking about it. Adding `to_vec()` or `clone()` is often the wrong solution to the problem.
 - Embrace TODO-driven development. Try as much as possible to write code that will never need to change, but if that isn't possible leave a `// TODO` comment in the code explaining which modifications will be needed in the future. Writing code that will never need to change is still the preferred approach, and it's better to take more time before merging something than merging it with active TODOs.
-- Do not apply the DRY principle, in other words don't try to remove duplicated code, without Pierre's approval.
+  - Don't add TODOs for missing features, though, but only for known issues with the code.
+- Do not try to hard to apply the "Don't Repeat Yourself" principle. Remember that the main objective is simplicity, and having to jump to a different file to understand what is going on is a big hit to this objective. Furthermore, two very similar pieces of code will often differ by their objective, in which case they should be in no way de-duplicated.
+- Structs and functions are often private for a reason. Adding a `pub` where there isn't one is often a violation of encapsulation.
 
 # Objectives compared to Substrate
 

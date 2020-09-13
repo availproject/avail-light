@@ -17,7 +17,7 @@
 //! Calling [`execute_block`] returns a [`Verify`] enum containing the state of the verification.
 //!
 //! If the [`Verify`] is a [`Verify::Finished`], then the verification is over and the result can
-//! be retreived.
+//! be retrieved.
 //! Otherwise, the verification process requires an information from the storage of the parent
 //! block in order to continue.
 //!

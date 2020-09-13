@@ -120,6 +120,7 @@ pub fn core_version(vm_proto: WasmVmPrototype) -> Result<(CoreVersion, WasmVmPro
 }
 
 /// Structure that the `CoreVersion` function returns.
+// TODO: don't expose Encode/Decode trait impls
 #[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 pub struct CoreVersion {
     pub spec_name: String,

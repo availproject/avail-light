@@ -96,7 +96,7 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
 /// Error when building the chain information from the genesis storage.
 #[derive(Debug, derive_more::Display)]
 pub enum FromGenesisStorageError {
-    /// Error when retreiving the GrandPa configuration.
+    /// Error when retrieving the GrandPa configuration.
     GrandpaConfigLoad(grandpa::chain_config::FromGenesisStorageError),
 }
 
@@ -161,7 +161,7 @@ pub struct ChainInformationConfig {
     /// Information about the latest finalized block.
     pub chain_information: ChainInformation,
 
-    /// Configuration for BABE, retreived from the genesis block.
+    /// Configuration for BABE, retrieved from the genesis block.
     pub babe_genesis_config: babe::BabeGenesisConfiguration,
 }
 
