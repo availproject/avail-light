@@ -64,7 +64,7 @@ async fn async_main() {
     ; //};
 
     // TODO: remove; just for testing
-    /*let metadata = substrate_lite::metadata::query::metadata_from_runtime_code(
+    /*let metadata = substrate_lite::metadata::metadata_from_runtime_code(
         chain_spec
             .genesis_storage()
             .clone()
@@ -74,7 +74,7 @@ async fn async_main() {
     .unwrap();
     println!(
         "{:#?}",
-        substrate_lite::metadata::decode::MetadataRef::from_slice(&metadata).unwrap()
+        substrate_lite::metadata::decode(&metadata).unwrap()
     );*/
 
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);

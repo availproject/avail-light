@@ -1,11 +1,15 @@
 use crate::executor;
 
 /// Retrieves the SCALE-encoded metadata from the runtime code of a block.
-pub fn metadata_from_runtime_code(wasm_code: &[u8]) -> Result<Vec<u8>, FromStorageError> {
+///
+/// > **Note**: This function is a convenient shortcut for
+/// >           [`metadata_from_virtual_machine_prototype`]. In performance-critical situations,
+/// >           where the overhead of the Wasm compilation is undesirable, you are encouraged to
+/// >           call [`metadata_from_virtual_machine_prototype`] instead.
+pub fn metadata_from_runtime_code(wasm_code: &[u8]) -> Result<Vec<u8>, FromVmPrototypeError> {
     let vm = executor::WasmVmPrototype::new(&wasm_code)
-        .map_err(FromVmPrototypeError::VmInitialization)
-        .map_err(FromStorageError::VmError)?;
-    let (out, _) = metadata_from_virtual_machine_prototype(vm).map_err(FromStorageError::VmError)?;
+        .map_err(FromVmPrototypeError::VmInitialization)?;
+    let (out, _vm) = metadata_from_virtual_machine_prototype(vm)?;
     Ok(out)
 }
 
@@ -30,13 +34,6 @@ pub fn metadata_from_virtual_machine_prototype(
     };
 
     Ok((outcome, vm.into_prototype()))
-}
-
-/// Error when retrieving the metadata.
-#[derive(Debug, derive_more::Display)]
-pub enum FromStorageError {
-    /// Error while executing the runtime.
-    VmError(FromVmPrototypeError),
 }
 
 /// Error when retrieving the metadata.

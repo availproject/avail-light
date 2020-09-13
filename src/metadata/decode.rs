@@ -2,20 +2,18 @@
 
 use core::{convert::TryFrom as _, fmt, str};
 
+/// Decodes the given SCALE-encoded metadata.
+pub(super) fn decode(scale_encoded_metadata: &[u8]) -> Result<MetadataRef, DecodeError> {
+    let (_remain, out) = nom::combinator::all_consuming(opaque_metadata)(scale_encoded_metadata)
+        .map_err(DecodeError)?;
+    debug_assert!(_remain.is_empty());
+    Ok(out)
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct MetadataRef<'a> {
     pub modules: UndecodedIter<'a, ModuleMetadataRef<'a>>,
     pub extrinsic: ExtrinsicMetadataRef<'a>,
-}
-
-impl<'a> MetadataRef<'a> {
-    // TODO: move this as a freestanding function
-    pub fn from_slice(data: &'a [u8]) -> Result<Self, DecodeError> {
-        let (_remain, out) =
-            nom::combinator::all_consuming(opaque_metadata)(data).map_err(DecodeError)?;
-        debug_assert!(_remain.is_empty());
-        Ok(out)
-    }
 }
 
 /// All metadata about an runtime module.
