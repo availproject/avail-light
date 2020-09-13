@@ -135,8 +135,10 @@ pub struct ExtrinsicMetadataRef<'a> {
 #[derive(Debug, derive_more::Display)]
 pub struct DecodeError<'a>(nom::Err<NomError<'a>>);
 
-/// `nom` error type that we use. Can be changed for a `nom::error::VerboseError<&'a [u8]>` for
-/// more verbose error messages.
+/// `nom` error type that is used. Considering that decoding metadata is expected to never fail,
+/// a lightweight enum is used by default . When debugging decoding problems, replace this type
+/// with `nom::error::VerboseError<&'a [u8]>` and use `nom::error::convert_error` for more
+/// verbose error messages.
 type NomError<'a> = (&'a [u8], nom::error::ErrorKind);
 
 pub struct UndecodedIter<'a, T> {
@@ -489,9 +491,9 @@ fn vec_decode<'a, O>(
     bytes: &'a [u8],
     decoding_fn: fn(&'a [u8]) -> nom::IResult<&'a [u8], O, NomError<'a>>,
 ) -> nom::IResult<&'a [u8], UndecodedIter<'a, O>, NomError<'a>> {
-    let (value_start, num_items) = scale_compact_usize(bytes)?;
+    let (bytes, num_items) = scale_compact_usize(bytes)?;
 
-    let mut verify_iter = value_start;
+    let mut verify_iter = bytes;
     for _ in 0..num_items {
         let (remain, _) = decoding_fn(verify_iter)?;
         verify_iter = remain;
