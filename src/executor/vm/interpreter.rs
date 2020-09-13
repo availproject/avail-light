@@ -92,6 +92,7 @@ impl VirtualMachinePrototype {
     /// to each import, or return an error if the import can't be resolved. When the VM calls one
     /// of these functions, this number will be returned back in order for the user to know how
     /// to handle the call.
+    // TODO: explain heap_pages
     pub fn new(
         module_bytes: impl AsRef<[u8]>,
         heap_pages: u64,
@@ -202,6 +203,8 @@ impl VirtualMachinePrototype {
             }
         }
 
+        let heap_pages = usize::try_from(heap_pages).unwrap_or(usize::max_value());
+
         let mut import_memory = None;
         let not_started = {
             let resolver = ImportResolve {
@@ -218,6 +221,8 @@ impl VirtualMachinePrototype {
             Some(import_memory)
         } else if let Some(mem) = module.export_by_name("memory") {
             if let Some(mem) = mem.as_memory() {
+                // TODO: use Result
+                mem.grow(wasmi::memory_units::Pages(heap_pages));
                 Some(mem.clone())
             } else {
                 return Err(NewErr::MemoryIsntMemory);

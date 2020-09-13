@@ -42,6 +42,7 @@ impl JitPrototype {
     /// import, or return an error if the import can't be resolved. When the VM calls one of these
     /// functions, this number will be returned back in order for the user to know how to handle
     /// the call.
+    // TODO: explain heap_pages
     pub fn new(
         module: impl AsRef<[u8]>,
         heap_pages: u64,
@@ -97,7 +98,8 @@ impl JitPrototype {
                                 usize::try_from(heap_pages).unwrap_or(usize::max_value());
                             let min = cmp::max(m.limits().min(), heap_pages);
                             let max = m.limits().max(); // TODO: make sure it's > to min, otherwise error
-                            wasmtime::Limits::new(min, min + heap_pages)
+                            let num = min + heap_pages;
+                            wasmtime::Limits::new(num, num)
                         };
 
                         // TODO: check name and all?
@@ -127,8 +129,10 @@ impl JitPrototype {
                     // TODO: don't unwrap
                     let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
 
+                    // TODO: review interaction with imported memory
                     let memory = if let Some(mem) = instance.get_export("memory") {
                         if let Some(mem) = mem.into_memory() {
+                            // TODO: has to grow memory by heap_pages
                             Some(mem.clone())
                         } else {
                             let err = NewErr::MemoryIsntMemory;
