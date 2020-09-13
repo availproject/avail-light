@@ -88,6 +88,7 @@ serde_json = { version = "1.0.48", default-features = false, features = ["alloc"
 slab = "0.4.2"
 smallvec = "0.6.10"
 snow = { version = "0.7.1", default-features = false }  # TODO: we have to pick a resolver I think
+structopt = { version = "0.3.17", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.5.0"

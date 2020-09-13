@@ -449,7 +449,7 @@ impl PendingVerify {
                 }
             }
         } else {
-            debug_assert!(self.primary_slot_claim);
+            debug_assert!(!self.primary_slot_claim);
         }
 
         // Each slot can be claimed by one specific authority in what is called a secondary slot

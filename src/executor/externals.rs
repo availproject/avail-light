@@ -232,7 +232,7 @@ impl ExternalsVm {
                             StateInner::Calling(calling)
                         }
                         Err(err) => {
-                            println!("test {:?}", err); // TODO: no
+                            println!("allocation size {} failed: {:?}", size, err); // TODO: no
                             StateInner::Trapped
                         }
                     };

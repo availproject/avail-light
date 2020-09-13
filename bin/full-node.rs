@@ -7,7 +7,9 @@ use futures::{
     prelude::*,
 };
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
+    fs,
     num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
     pin::Pin,
@@ -15,6 +17,7 @@ use std::{
     thread,
     time::Duration,
 };
+use structopt::StructOpt as _;
 use substrate_lite::{
     chain::{self, sync::full_optimistic},
     chain_spec, header, network,
@@ -25,11 +28,51 @@ fn main() {
     futures::executor::block_on(async_main())
 }
 
+#[derive(Debug, structopt::StructOpt)]
+struct CliOptions {
+    /// Chain to connect to ("polkadot", "kusama", "westend", or a file path).
+    #[structopt(long, default_value = "polkadot")]
+    chain: CliChain,
+}
+
+#[derive(Debug)]
+enum CliChain {
+    Polkadot,
+    Kusama,
+    Westend,
+    Custom(PathBuf),
+}
+
+impl core::str::FromStr for CliChain {
+    type Err = core::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "polkadot" {
+            Ok(CliChain::Polkadot)
+        } else if s == "kusama" {
+            Ok(CliChain::Kusama)
+        } else if s == "westend" {
+            Ok(CliChain::Westend)
+        } else {
+            Ok(CliChain::Custom(s.parse()?))
+        }
+    }
+}
+
 async fn async_main() {
-    let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(
-        &include_bytes!("../polkadot.json")[..],
-    )
-    .unwrap();
+    let cli_options = CliOptions::from_args();
+
+    let chain_spec = {
+        let json: Cow<[u8]> = match cli_options.chain {
+            CliChain::Polkadot => (&include_bytes!("../polkadot.json")[..]).into(),
+            CliChain::Kusama => (&include_bytes!("../kusama.json")[..]).into(),
+            CliChain::Westend => (&include_bytes!("../westend.json")[..]).into(),
+            CliChain::Custom(path) => fs::read(&path).expect("Failed to read chain specs").into(),
+        };
+
+        substrate_lite::chain_spec::ChainSpec::from_json_bytes(&json)
+            .expect("Failed to decode chain specs")
+    };
 
     const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
         name: "substrate-lite",
