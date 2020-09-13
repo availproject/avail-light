@@ -309,15 +309,14 @@ impl VirtualMachinePrototype {
 //
 // This importantly means that we should never return a `Rc` (even by reference) across the API
 // boundary.
+//
+// For this reason, it would also be unsafe to implement `Clone` on `VirtualMachinePrototype`. A
+// user could clone the `VirtualMachinePrototype` and send it to another thread, which would be
+// undefined behaviour.
 // TODO: really annoying to have to use unsafe code
 unsafe impl Send for VirtualMachinePrototype {}
 
 impl VirtualMachine {
-    /// Returns true if the state machine is in a poisoned state and cannot run anymore.
-    pub fn is_poisoned(&self) -> bool {
-        self.is_poisoned
-    }
-
     /// Starts or continues execution of the virtual machine.
     ///
     /// If this is the first call you call [`run`](VirtualMachine::run), then you must pass

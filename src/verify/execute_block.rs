@@ -572,8 +572,13 @@ impl VerifyInner {
                 }
 
                 executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
-                    // TODO: is there maybe a better way to handle that?
-                    // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct
+                    // The code below compiles the provided WebAssembly runtime code, which is a
+                    // relatively expensive operation (in the order of milliseconds).
+                    // While it could be tempting to use a system cache, this function is expected
+                    // to be called only right before runtime upgrades. Considering that runtime
+                    // upgrades are quite uncommon and that a caching system is rather non-trivial
+                    // to set up, the approach of recompiling every single time is preferred here.
+                    // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct or if we have to take the current heap pages
                     let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob, 1024) {
                         Ok(w) => w,
                         Err(_) => {
