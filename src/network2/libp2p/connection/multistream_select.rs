@@ -455,6 +455,8 @@ mod tests {
 
     #[test]
     fn negotiation_basic_works() {
+        // TODO: test doesn't work with smaller buffer length
+
         let mut negotiation1 = Negotiation::new(Config::<iter::Once<_>, _>::Dialer {
             requested_protocol: "/foo",
         });
