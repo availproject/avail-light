@@ -503,10 +503,6 @@ impl HandshakeInProgress {
             return NoiseHandshake::InProgress(self);
         }
 
-        // If `rx_buffer_encrypted` wasn't empty, that would mean there would still be a buffer
-        // to decode.
-        debug_assert!(self.rx_buffer_encrypted.is_empty());
-
         // `into_transport_mode()` can only panic if `!is_handshake_finished()`.
         let cipher = self.inner.into_transport_mode().unwrap();
 
@@ -517,6 +513,12 @@ impl HandshakeInProgress {
             // situation other than because of logic error within the code.
             RxPayload::NthMessage(_) => unreachable!(),
         };
+
+        // If `rx_buffer_encrypted` wasn't empty, that would mean there would still be a handshake
+        // message to decode, which shouldn't be possible given that the handshake is finished.
+        debug_assert!(self.rx_buffer_encrypted.is_empty());
+        // Already checked above, but repeat it for explicitness
+        debug_assert!(self.tx_buffer_encrypted.is_empty());
 
         NoiseHandshake::Success {
             cipher: Noise {
@@ -648,6 +650,7 @@ impl HandshakeInProgress {
             // only arrive after `get_remote_static` is `Some`. Since we have already checked that
             // the payload arrives when it is supposed to, this can never panic.
             let remote_noise_static = self.inner.get_remote_static().unwrap();
+            // TODO: don't use concat() in order to not allocate a Vec
             if !remote_public_key.verify(
                 &["noise-libp2p-static-key:".as_bytes(), remote_noise_static].concat(),
                 &handshake_payload.identity_sig,
