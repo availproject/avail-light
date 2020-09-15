@@ -177,10 +177,6 @@ pub struct Noise {
 
     /// Buffer of data containing data received on the wire, after decryption.
     rx_buffer_decrypted: Vec<u8>,
-
-    /// Buffer of data containing data to be sent on the wire, after encryption and with the
-    /// length delimiters.
-    tx_buffer_encrypted: VecDeque<u8>,
 }
 
 impl Noise {
@@ -279,72 +275,113 @@ impl Noise {
         }
     }
 
-    /// Encrypts a packet of data and makes it available later when calling [`Noise::write_out`].
+    /// Reads data from `payload` and writes it to `destination`. Returns, in order, the number
+    /// of bytes read from `payload` and the number of bytes written to `destination`. The data
+    /// written out is always slightly larger than the data read, in order to add the
+    /// [HMAC](https://en.wikipedia.org/wiki/HMAC)s.
     ///
-    /// Since the maximum size of a noise packet is 64kiB, `payload` is automatically split into
-    /// frames of 64kiB. Each frame of `N` bytes (where `N <= 65536`) is encrypted into `N + 18`
-    /// bytes.
+    /// This function returns only after the input bytes are fully consumed or the output buffer
+    /// is full.
     ///
-    /// > **Note**: You are encouraged to not call this method with small payloads, as at least
-    /// >           two bytes of data are added to the stream every time this method is called.
-    pub fn inject_outbound_data(&mut self, payload: &[u8]) {
-        // The maximum size of a noise message is 65535 bytes. As such, we split any payload that
-        // is longer than that.
-        for payload in payload.chunks(65535) {
-            debug_assert!(!payload.is_empty()); // Guaranteed by `chunks()`
-
-            // TODO: At the moment we employ the rather lazy strategy of using an intermediary
-            //       `Vec` rather than writing directly to the `VecDeque`. Writing directly to the
-            //       ring buffer is more difficult than it looks.
-
-            let mut intermediary_buffer = vec![0; payload.len() + 16];
-
-            let _written = self
-                .inner
-                .write_message(&payload, &mut intermediary_buffer)
-                .unwrap();
-            debug_assert_eq!(_written, intermediary_buffer.len());
-
-            let len_bytes = u16::try_from(intermediary_buffer.len())
-                .unwrap()
-                .to_be_bytes();
-
-            self.tx_buffer_encrypted.extend(&len_bytes);
-            self.tx_buffer_encrypted.extend(&intermediary_buffer);
-        }
-    }
-
-    /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
-    /// bytes written to `destination`.
-    pub fn write_out(&mut self, mut destination: &mut [u8]) -> usize {
+    /// > **Note**: Because each message has a prefix and a suffix, you are encouraged to batch
+    /// >           as much data as possible into `payload` before calling this function.
+    pub fn encrypt(&mut self, mut payload: &[u8], mut destination: &mut [u8]) -> (usize, usize) {
+        let mut total_read = 0;
         let mut total_written = 0;
 
-        // This code does nothing more by copy from `tx_buffer_encrypted` to `destination`
-
-        // This loop is necessary because `tx_buffer_encrypted`, being a ring buffer, potentially
-        // wraps around, in which case two copies are necessary.
-        loop {
-            let to_write = self.tx_buffer_encrypted.as_slices().0;
-            let to_write_len = cmp::min(to_write.len(), destination.len());
-            if to_write_len == 0 {
+        // At least 18 bytes must be available in `destination` in order to fit an entire noise
+        // frame. The check is for 19 because it doesn't make sense to send an empty frame.
+        while destination.len() >= 19 {
+            let in_len = cmp::min(payload.len(), cmp::min(65536, destination.len() - 18));
+            if in_len == 0 {
                 break;
             }
 
-            destination[..to_write_len].copy_from_slice(&to_write[..to_write_len]);
-            for _ in 0..to_write_len {
-                let _ = self.tx_buffer_encrypted.pop_front();
-            }
-            total_written += to_write_len;
-            destination = &mut destination[to_write_len..];
+            let written = self
+                .inner
+                .write_message(&payload[..in_len], &mut destination[2..in_len + 2 + 16])
+                .unwrap();
+            debug_assert_eq!(written, in_len + 16);
+
+            let len_bytes = u16::try_from(written).unwrap().to_be_bytes();
+            destination[..2].copy_from_slice(&len_bytes);
+
+            total_read += in_len;
+            payload = &payload[in_len..];
+            total_written += written + 2;
+            destination = &mut destination[written + 2..];
         }
 
-        total_written
+        (total_read, total_written)
+    }
+
+    // TODO: doc
+    pub fn prepare_buffer_encryption<'a>(
+        &'a mut self,
+        destination: &'a mut [u8],
+    ) -> BufferEncryption<'a> {
+        let available_in = {
+            let mut total = 0;
+            let mut dest_len = destination.len();
+            while dest_len >= 19 {
+                let in_len = cmp::min(65536, dest_len - 18);
+                total += in_len;
+                dest_len -= in_len + 18;
+            }
+            total
+        };
+
+        let buffer = vec![0; available_in];
+
+        BufferEncryption {
+            noise: self,
+            destination,
+            buffer,
+        }
     }
 }
 
 impl fmt::Debug for Noise {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Noise").finish()
+    }
+}
+
+// TODO: doc
+// TODO: Debug
+pub struct BufferEncryption<'a> {
+    noise: &'a mut Noise,
+    destination: &'a mut [u8],
+    buffer: Vec<u8>,
+}
+
+impl<'a> BufferEncryption<'a> {
+    /// Send the `len` first bytes to the noise state machine for encryption and puts them in the
+    /// buffer originally passed to [`Noise::prepare_buffer_encryption`]. Returns the number of
+    /// bytes written.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `len` is larger than the slice this derefs to.
+    ///
+    pub fn finish(self, len: usize) -> usize {
+        let (_read, written) = self.noise.encrypt(&self.buffer[..len], self.destination);
+        debug_assert_eq!(_read, len);
+        written
+    }
+}
+
+impl<'a> ops::Deref for BufferEncryption<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.buffer
+    }
+}
+
+impl<'a> ops::DerefMut for BufferEncryption<'a> {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer
     }
 }
 
@@ -517,15 +554,12 @@ impl HandshakeInProgress {
         // If `rx_buffer_encrypted` wasn't empty, that would mean there would still be a handshake
         // message to decode, which shouldn't be possible given that the handshake is finished.
         debug_assert!(self.rx_buffer_encrypted.is_empty());
-        // Already checked above, but repeat it for explicitness
-        debug_assert!(self.tx_buffer_encrypted.is_empty());
 
         NoiseHandshake::Success {
             cipher: Noise {
                 inner: cipher,
                 rx_buffer_encrypted: self.rx_buffer_encrypted,
                 rx_buffer_decrypted: Vec::new(), // TODO: with_capacity
-                tx_buffer_encrypted: self.tx_buffer_encrypted,
             },
             remote_peer_id,
         }

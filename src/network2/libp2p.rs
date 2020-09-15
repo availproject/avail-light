@@ -111,7 +111,7 @@ where
         endpoint: connection::Endpoint,
     ) {
         // Create a state machine handling the traffic from/to that connection.
-        let mut connection = Some(connection::Healthy::new(endpoint));
+        let mut connection = Some(connection::HealthyHandshake::new(endpoint));
 
         // `noise_key` being an `Arc`, this cloning is cheap.
         let noise_key = self.noise_key.clone();
@@ -148,9 +148,12 @@ where
                                 connection.take().unwrap().inject_data(buffer).unwrap(); // TODO: don't unwrap
                             socket.as_mut().consume(read_num);
                             connection = Some(match new_state {
-                                connection::Connection::Healthy(h) => h,
-                                connection::Connection::NoiseKeyRequired(req) => {
+                                connection::Handshake::Healthy(h) => h,
+                                connection::Handshake::NoiseKeyRequired(req) => {
                                     req.resume(&noise_key)
+                                }
+                                connection::Handshake::Success { remote_peer_id, .. } => {
+                                    todo!("{}", remote_peer_id)
                                 }
                             });
                             all_pending = false;
@@ -179,10 +182,13 @@ where
                             write_buffer_filled = num_written;
 
                             connection = Some(match new_state {
-                                connection::Connection::Healthy(h) => h,
-                                connection::Connection::NoiseKeyRequired(req) => {
+                                connection::Handshake::Healthy(h) => h,
+                                connection::Handshake::NoiseKeyRequired(req) => {
                                     all_pending = false;
                                     req.resume(&noise_key)
+                                }
+                                connection::Handshake::Success { remote_peer_id, .. } => {
+                                    todo!("{}", remote_peer_id)
                                 }
                             });
 

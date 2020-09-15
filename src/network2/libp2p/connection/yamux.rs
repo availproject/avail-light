@@ -17,6 +17,9 @@
 
 use core::{convert::TryFrom as _, fmt, iter};
 
+/// Name of the protocol, typically used when negotiated it using *multistream-select*.
+pub const PROTOCOL_NAME: &str = "/yamux/1.0.0";
+
 /// By default, all new substreams have this implicit window size.
 const DEFAULT_FRAME_SIZE: u32 = 256 * 1024;
 
