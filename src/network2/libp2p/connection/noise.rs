@@ -8,16 +8,24 @@ mod payload_proto {
     include!(concat!(env!("OUT_DIR"), "/payload.proto.rs"));
 }
 
-/// The noise key is the key exchanged during the noise handshake. It is *not* the same as the
+/// The noise key is the key exchanged during the noise handshake. It is **not** the same as the
 /// libp2p key. The libp2p key is used only to sign the noise public key, while the ECDH is
 /// performed with the noise key.
 ///
-/// The noise key is typically generated at startup and doesn't have to be persisted.
+/// The noise key is typically generated at startup and doesn't have to be persisted on disk.
 ///
 /// In order to generate a [`NoiseKey`], two things are needed:
 ///
 /// - A public/private key, also represented as [`UnsignedNoiseKey`].
 /// - A signature of this public key made using the libp2p private key.
+///
+/// The signature requires access to the libp2p private key. As such, there are two possible
+/// ways to create a [`NoiseKey`]:
+///
+/// - The easier way, by passing the libp2p private key to [`NoiseKey::new`].
+/// - The slightly more complex way, by first creating an [`UnsignedNoiseKey`] then passing a
+/// a signature. This second method doesn't require direct access to the private key, but only
+/// to a method to sign a message, for example a hardware device.
 ///
 pub struct NoiseKey {
     key: snow::Keypair,
@@ -67,7 +75,7 @@ impl UnsignedNoiseKey {
 
     /// Returns the data that has to be signed.
     pub fn payload_to_sign<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
-        iter::once(&b"noise-libp2p-static-key:"[..]).chain(iter::once(&self.key.public[..]))
+        iter::once("noise-libp2p-static-key:".as_bytes()).chain(iter::once(&self.key.public[..]))
     }
 
     /// Returns the data that has to be signed.
@@ -115,7 +123,8 @@ pub struct Noise {
     /// Buffer of data containing data received on the wire, after decryption.
     rx_buffer_decrypted: Vec<u8>,
 
-    /// Buffer of data containing data received on the wire, after encryption.
+    /// Buffer of data containing data to be sent on the wire, after encryption and with the
+    /// length delimiters.
     tx_buffer_encrypted: VecDeque<u8>,
 }
 
@@ -212,7 +221,7 @@ impl fmt::Debug for Noise {
 #[derive(Debug)]
 pub enum NoiseHandshake {
     /// Handshake still in progress. More data needs to be sent or received.
-    InProgress(InProgress),
+    InProgress(HandshakeInProgress),
     /// Noise handshake has successfully completed.
     Success {
         /// Object to use to encrypt and decrypt all further communications.
@@ -223,62 +232,189 @@ pub enum NoiseHandshake {
 }
 
 /// Handshake still in progress. More data needs to be sent or received.
-pub struct InProgress {
+pub struct HandshakeInProgress {
+    /// Underlying noise state machine.
+    ///
+    /// Libp2p always uses the XX handshake.
+    ///
+    /// While the `snow` library ensures that the emitted and received messages respect the
+    /// handshake according to the noise specifications, libp2p extends these noise specifications
+    /// with a payload that must be transmitted on the second and third messages of the exchange.
+    /// This payload must contain a signature of the noise key made using the libp2p key and can
+    /// be found in the `tx_payload` field.
     inner: snow::HandshakeState,
+
+    /// Unencrypted payload to send as part of the handshake.
+    /// If the payload has already been sent, contains `None`.
+    /// If the payload hasn't been sent yet, contains the index of the call to
+    /// [`snow::HandshakeState::write_message`] that must contain the payload.
+    tx_payload: Option<(usize, Box<[u8]>)>,
+
+    /// State of the remote payload reception.
+    rx_payload: RxPayload,
+
+    /// Number of messages remaining to be received. Used to know whether an incoming packet is
+    /// still part of the handshake or not.
+    rx_messages_remain: usize,
 
     /// Buffer of data containing data received on the wire, before decryption.
     rx_buffer_encrypted: Vec<u8>,
 
-    /// Buffer of data containing data received on the wire, after decryption.
-    rx_buffer_decrypted: Vec<u8>,
-
-    /// Buffer of data containing data received on the wire, after encryption.
+    /// Buffer of data containing data waiting to be sent on the wire, after encryption. Includes
+    /// the length prefixes.
     tx_buffer_encrypted: VecDeque<u8>,
 }
 
+enum RxPayload {
+    /// Remote payload has been received.
+    Received(PeerId),
+    /// Index of the call to [`snow::HandshakeState::read_message`], from now, that is expected
+    /// to contains the payload.
+    NthMessage(usize),
+}
+
 impl NoiseHandshake {
-    pub fn new(key: &NoiseKey, endpoint: Endpoint) -> Self {
-        NoiseHandshake::InProgress(InProgress::new(key, endpoint))
+    /// Shortcut function that calls [`HandshakeInProgress::new`] and wraps it into a
+    /// [`NoiseHandshake`].
+    pub fn new(key: &NoiseKey, is_initiator: bool) -> Self {
+        NoiseHandshake::InProgress(HandshakeInProgress::new(key, is_initiator))
     }
 }
 
-impl InProgress {
-    pub fn new(key: &NoiseKey, endpoint: Endpoint) -> Self {
+impl HandshakeInProgress {
+    /// Initializes a new noise handshake state machine.
+    pub fn new(key: &NoiseKey, is_initiator: bool) -> Self {
         let inner = {
             let builder =
                 snow::Builder::new(NOISE_PARAMS.clone()).local_private_key(&key.key.private);
-            match endpoint {
-                Endpoint::Initiator => builder.build_initiator(),
-                Endpoint::Responder => builder.build_responder(),
+            if is_initiator {
+                builder.build_initiator()
+            } else {
+                builder.build_responder()
             }
             .unwrap()
         };
 
-        let mut tx_buffer_encrypted = VecDeque::new();
-        tx_buffer_encrypted.resize(key.handshake_message.len() + 256, 0);
-        debug_assert!(tx_buffer_encrypted.as_slices().1.is_empty());
-        let written = inner
+        // Configure according to the XX handshake.
+        let (tx_payload, rx_payload, rx_messages_remain) = if is_initiator {
+            let tx = Some((1, key.handshake_message.clone().into_boxed_slice()));
+            let rx = RxPayload::NthMessage(0);
+            (tx, rx, 1)
+        } else {
+            let tx = Some((0, key.handshake_message.clone().into_boxed_slice()));
+            let rx = RxPayload::NthMessage(1);
+            (tx, rx, 2)
+        };
+
+        let mut handshake = HandshakeInProgress {
+            inner,
+            tx_payload,
+            rx_payload,
+            rx_messages_remain,
+            rx_buffer_encrypted: Vec::with_capacity(65536 + 2),
+            tx_buffer_encrypted: VecDeque::new(),
+        };
+
+        handshake.update_message_write();
+        handshake
+    }
+
+    /// Calls [`snow::HandshakeState::write_message`] if necessary, updates all the internal state,
+    /// and puts the message into `tx_buffer_encrypted`.
+    fn update_message_write(&mut self) {
+        if !self.inner.is_my_turn() {
+            return;
+        }
+
+        debug_assert!(self.tx_buffer_encrypted.is_empty());
+
+        let payload = match &mut self.tx_payload {
+            None => None,
+            Some((n, _)) if *n != 0 => {
+                *n -= 1;
+                None
+            }
+            opt @ Some(_) => {
+                let (_n, payload) = opt.take().unwrap();
+                debug_assert_eq!(_n, 0);
+                Some(payload)
+            }
+        };
+
+        self.tx_buffer_encrypted.resize(512, 0);
+        debug_assert!(self.tx_buffer_encrypted.as_slices().1.is_empty());
+        let written = self
+            .inner
             .write_message(
-                &key.handshake_message,
-                tx_buffer_encrypted.as_mut_slices().0,
+                payload.as_ref().map(|p| &p[..]).unwrap_or(&[]),
+                self.tx_buffer_encrypted.as_mut_slices().0,
             )
             .unwrap();
-        assert!(written < tx_buffer_encrypted.len()); // be sure that the message has fit into `out`.
-        tx_buffer_encrypted.truncate(written);
+        assert!(written < self.tx_buffer_encrypted.len()); // be sure that the message has fit into `out`.
+        self.tx_buffer_encrypted.truncate(written);
 
-        InProgress {
-            inner,
-            rx_buffer_encrypted: Vec::new(), // TODO: with_capacity?
-            rx_buffer_decrypted: Vec::new(),
-            tx_buffer_encrypted,
+        // Handshake must also be prefixed with two bytes indicating its length.
+        // The message is guaranteed by the Noise specs to not be more than 64kiB.
+        let length_bytes = u16::try_from(self.tx_buffer_encrypted.len())
+            .unwrap()
+            .to_be_bytes();
+        self.tx_buffer_encrypted.push_front(length_bytes[1]);
+        self.tx_buffer_encrypted.push_front(length_bytes[0]);
+    }
+
+    /// Try to turn this [`InProgress`] into a [`NoiseHandshake::Success`] if possible.
+    fn try_finish(mut self) -> NoiseHandshake {
+        if !self.tx_buffer_encrypted.is_empty() {
+            return NoiseHandshake::InProgress(self);
+        }
+
+        if !self.inner.is_handshake_finished() {
+            return NoiseHandshake::InProgress(self);
+        }
+
+        // If `rx_buffer_encrypted` wasn't empty, that would mean there would still be a buffer
+        // to decode.
+        debug_assert!(self.rx_buffer_encrypted.is_empty());
+
+        // `into_transport_mode()` can only panic if `!is_handshake_finished()`.
+        let cipher = self.inner.into_transport_mode().unwrap();
+
+        let remote_peer_id = match self.rx_payload {
+            RxPayload::Received(peer_id) => peer_id,
+            // Since `is_handshake_finished()` has returned true, all messages have been
+            // exchanged. As such, the remote payload cannot be in a "still waiting to come"
+            // situation other than because of logic error within the code.
+            RxPayload::NthMessage(_) => unreachable!(),
+        };
+
+        NoiseHandshake::Success {
+            cipher: Noise {
+                inner: cipher,
+                rx_buffer_encrypted: self.rx_buffer_encrypted,
+                rx_buffer_decrypted: Vec::new(), // TODO: with_capacity
+                tx_buffer_encrypted: self.tx_buffer_encrypted,
+            },
+            remote_peer_id,
         }
     }
 
     /// Feeds data received from the wire.
+    ///
+    /// Returns an error in case of protocol error. Otherwise, returns the new state of the
+    /// handshake and the number of bytes from `payload` that have been processed.
+    ///
+    /// If the number of bytes read is different from 0, you should immediately call this method
+    /// again with the remaining data.
     pub fn inject_data(
         mut self,
         mut payload: &[u8],
     ) -> Result<(NoiseHandshake, usize), HandshakeError> {
+        // Check if incoming data is still part of the handshake.
+        // If not, return early without reading anything.
+        if self.rx_messages_remain == 0 {
+            return Ok((NoiseHandshake::InProgress(self), 0));
+        }
+
         let mut total_read = 0;
 
         // Handshake message must start with two bytes of length.
@@ -295,7 +431,7 @@ impl InProgress {
 
         // Decoding the first two bytes, which are the length of the handshake message.
         let expected_len =
-            u16::from_le_bytes(<[u8; 2]>::try_from(&self.rx_buffer_encrypted[..2]).unwrap());
+            u16::from_be_bytes(<[u8; 2]>::try_from(&self.rx_buffer_encrypted[..2]).unwrap());
         debug_assert!(self.rx_buffer_encrypted.len() < 2 + usize::from(expected_len));
 
         // Copy as much data as possible from `payload` to `self.rx_buffer_encrypted`, without
@@ -316,9 +452,9 @@ impl InProgress {
         }
 
         // Entire handshake message has been received.
-        // Decoding it into `decoded_handshake`.
-        let decoded_handshake = {
-            // The decrypted message can only ever be smaller than the encrypted message. As such,
+        // Decoding the potential payload into `decoded_payload`.
+        let decoded_payload = {
+            // The decrypted payload can only ever be smaller than the encrypted message. As such,
             // we allocate a buffer of size equal to the encrypted message.
             let mut decoded = vec![0; usize::from(expected_len)];
             match self
@@ -336,44 +472,69 @@ impl InProgress {
             decoded
         };
 
-        // The decoded handshake is a protobuf message.
-        let mut handshake_payload =
-            match payload_proto::NoiseHandshakePayload::decode(&decoded_handshake[..]) {
-                Ok(p) => p,
-                Err(err) => {
-                    return Err(HandshakeError::HandshakeDecode(HandshakeDecodeError(err)));
-                }
-            };
-
-        let remote_public_key =
-            libp2p::identity::PublicKey::from_protobuf_encoding(&handshake_payload.identity_key)
-                .map_err(|_| HandshakeError::InvalidKey)?;
-
-        let cipher = self
-            .inner
-            .into_transport_mode()
-            .map_err(CipherError)
-            .map_err(HandshakeError::Cipher)?;
-
-        // TODO: /!\ must verify the signature /!\
-        // TODO: id_pk.verify(&[b"noise-libp2p-static-key:", dh_pk.as_ref()].concat(), s)
-
+        // Data in `rx_buffer_encrypted` has been fully decoded and can be thrown away.
         self.rx_buffer_encrypted.clear();
-        self.rx_buffer_decrypted.clear();
-        self.tx_buffer_encrypted.clear();
+        self.rx_messages_remain -= 1;
 
-        Ok((
-            NoiseHandshake::Success {
-                cipher: Noise {
-                    inner: cipher,
-                    rx_buffer_encrypted: self.rx_buffer_encrypted,
-                    rx_buffer_decrypted: self.rx_buffer_decrypted,
-                    tx_buffer_encrypted: self.tx_buffer_encrypted,
-                },
-                remote_peer_id: remote_public_key.into_peer_id(),
-            },
-            total_read,
-        ))
+        // Check and update the status of the payload reception.
+        let payload_expected = match &mut self.rx_payload {
+            RxPayload::NthMessage(0) => true,
+            RxPayload::NthMessage(n) => {
+                *n -= 1;
+                false
+            }
+            RxPayload::Received(_) => false,
+        };
+
+        if payload_expected {
+            // The decoded handshake is a protobuf message.
+            // Because rust-libp2p was erroneously putting a length prefix before the payload,
+            // we try, as a fallback, to skip the first two bytes.
+            // See https://github.com/libp2p/rust-libp2p/blob/9178459cc8abb8379c759c02185175af7cfcea78/protocols/noise/src/io/handshake.rs#L368-L384
+            // TODO: remove this hack in the future
+            let mut handshake_payload =
+                match payload_proto::NoiseHandshakePayload::decode(&decoded_payload[..]) {
+                    Ok(p) => p,
+                    Err(err) if decoded_payload.len() >= 2 => {
+                        match payload_proto::NoiseHandshakePayload::decode(&decoded_payload[2..]) {
+                            Ok(p) => p,
+                            Err(err) => {
+                                return Err(HandshakeError::PayloadDecode(PayloadDecodeError(err)));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        return Err(HandshakeError::PayloadDecode(PayloadDecodeError(err)));
+                    }
+                };
+
+            let remote_public_key = libp2p::identity::PublicKey::from_protobuf_encoding(
+                &handshake_payload.identity_key,
+            )
+            .map_err(|_| HandshakeError::InvalidKey)?;
+
+            // Assuming that the libp2p+noise specifications are well-designed, the payload will
+            // only arrive after `get_remote_static` is `Some`. Since we have already checked that
+            // the payload arrives when it is supposed to, this can never panic.
+            let remote_noise_static = self.inner.get_remote_static().unwrap();
+            if !remote_public_key.verify(
+                &["noise-libp2p-static-key:".as_bytes(), remote_noise_static].concat(),
+                &handshake_payload.identity_sig,
+            ) {
+                return Err(HandshakeError::SignatureVerificationFailed);
+            }
+
+            self.rx_payload = RxPayload::Received(remote_public_key.into_peer_id());
+        } else if !decoded_payload.is_empty() {
+            return Err(HandshakeError::UnexpectedPayload);
+        };
+
+        // Now that a message has been received, check if it's the turn of the local node to send
+        // something.
+        self.update_message_write();
+
+        // Call `try_finish` to check whether the handshake has finished.
+        Ok((self.try_finish(), total_read))
     }
 
     /// Write to the given buffer the bytes that are ready to be sent out. Returns the new state
@@ -381,26 +542,35 @@ impl InProgress {
     pub fn write_out(mut self, mut destination: &mut [u8]) -> (NoiseHandshake, usize) {
         let mut total_written = 0;
 
+        // Copy data from `self.tx_buffer_encrypted` to `destination`.
         loop {
+            debug_assert!(
+                !self.tx_buffer_encrypted.as_slices().0.is_empty()
+                    || self.tx_buffer_encrypted.as_slices().1.is_empty()
+            );
+
             let to_write = self.tx_buffer_encrypted.as_slices().0;
             let to_write_len = cmp::min(to_write.len(), destination.len());
             destination[..to_write_len].copy_from_slice(&to_write[..to_write_len]);
             for _ in 0..to_write_len {
-                let _ = self.tx_buffer_encrypted.pop_front();
+                self.tx_buffer_encrypted.pop_front().unwrap();
             }
             total_written += to_write_len;
             destination = &mut destination[to_write_len..];
+
+            if to_write_len == 0 {
+                break;
+            }
         }
 
-        // TODO: call is_handshake_finished()
-
-        (NoiseHandshake::InProgress(self), total_written)
+        // Call `try_finish` to check whether the handshake has finished.
+        (self.try_finish(), total_written)
     }
 }
 
-impl fmt::Debug for InProgress {
+impl fmt::Debug for HandshakeInProgress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("InProgress").finish()
+        f.debug_struct("HandshakeInProgress").finish()
     }
 }
 
@@ -409,17 +579,19 @@ lazy_static::lazy_static! {
         "Noise_XX_25519_ChaChaPoly_SHA256".parse().unwrap();
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum Endpoint {
-    Initiator,
-    Responder,
-}
-
+/// Potential error during the noise handshake.
 #[derive(Debug, derive_more::Display)]
 pub enum HandshakeError {
+    /// Error in the decryption state machine.
     Cipher(CipherError),
-    HandshakeDecode(HandshakeDecodeError),
+    /// Failed to decode the payload as the libp2p-extension-to-noise payload.
+    PayloadDecode(PayloadDecodeError),
+    /// Key passed as part of the payload failed to decode into a libp2p public key.
     InvalidKey,
+    /// Received a payload as part of a handshake message when none was expected.
+    UnexpectedPayload,
+    /// Signature of the noise public key by the libp2p key failed.
+    SignatureVerificationFailed,
 }
 
 /// Error while decoding data.
@@ -428,4 +600,4 @@ pub struct CipherError(snow::Error);
 
 /// Error while decoding the handshake.
 #[derive(Debug, derive_more::Display)]
-pub struct HandshakeDecodeError(prost::DecodeError);
+pub struct PayloadDecodeError(prost::DecodeError);

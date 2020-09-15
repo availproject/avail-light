@@ -83,6 +83,9 @@ where
     ///
     /// Returns either an error in case of protocol error, or the new state of the negotiation
     /// and the number of bytes that have been processed in `data`.
+    ///
+    /// If the number of bytes read is different from 0, you should immediately call this method
+    /// again with the remaining data.
     pub fn inject_data(mut self, mut data: &[u8]) -> Result<(Negotiation<I, P>, usize), Error> {
         let mut total_read = 0;
 

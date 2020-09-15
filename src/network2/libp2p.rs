@@ -2,7 +2,7 @@
 
 // TODO: this module uses the AsyncRead/AsyncWrite traits, which are unfortunately not no_std friendly
 
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, sync::Arc};
 use core::{fmt, future::Future, iter, marker::PhantomData, pin::Pin, task::Poll};
 use futures::{
     channel::{mpsc, oneshot},
@@ -11,12 +11,17 @@ use futures::{
 use hashbrown::HashMap;
 use rand::{seq::IteratorRandom as _, SeedableRng as _};
 
+pub use connection::{NoiseKey, UnsignedNoiseKey};
 pub use libp2p::{multiaddr, Multiaddr, PeerId};
 
 mod connection;
 
 /// Configuration to provide when building a [`Network`].
 pub struct Config<PIter> {
+    /// Key to use during the connection handshakes. Not the same thing as the libp2p key, but
+    /// instead contains a signature made using the libp2p private key.
+    pub noise_key: NoiseKey,
+
     /// List of notification protocols.
     pub notification_protocols: PIter,
 
@@ -30,6 +35,10 @@ pub struct Config<PIter> {
 /// Collection of network connections.
 pub struct Network<TUserData, TDialFut, TSocket, TRq, TProtocol> {
     nodes: HashMap<PeerId, NodeInner<TUserData, TSocket>, fnv::FnvBuildHasher>,
+
+    /// See [`Config::noise_key`]. Wrapped in an `Arc` for sharing between all the background
+    /// tasks.
+    noise_key: Arc<NoiseKey>,
 
     /// Stream of dialing attempts.
     dials: stream::FuturesUnordered<TDialFut>,
@@ -64,6 +73,7 @@ where
 
         Network {
             nodes: HashMap::default(),
+            noise_key: Arc::new(config.noise_key),
             dials: stream::FuturesUnordered::new(),
             tasks_executor: config.tasks_executor,
             test_tx,
@@ -101,7 +111,10 @@ where
         endpoint: connection::Endpoint,
     ) {
         // Create a state machine handling the traffic from/to that connection.
-        let mut connection = connection::Connection::new(endpoint);
+        let mut connection = Some(connection::Healthy::new(endpoint));
+
+        // `noise_key` being an `Arc`, this cloning is cheap.
+        let noise_key = self.noise_key.clone();
 
         // Spawn a background task dedicated to handling this connection.
         (self.tasks_executor)(
@@ -126,10 +139,20 @@ where
 
                         if let Poll::Ready(result) = socket.as_mut().poll_fill_buf(cx) {
                             let buffer = result.unwrap(); // TODO:
+                            if buffer.is_empty() {
+                                panic!(); // TODO: this indicates EOF, I believe
+                            }
+
                             println!("recv buffer: {:?}", buffer); // TODO: remove
-                                                                   // TODO: use _event
-                            let (read_num, _event) = connection.inject_data(iter::once(buffer));
+                            let (new_state, read_num) =
+                                connection.take().unwrap().inject_data(buffer).unwrap(); // TODO: don't unwrap
                             socket.as_mut().consume(read_num);
+                            connection = Some(match new_state {
+                                connection::Connection::Healthy(h) => h,
+                                connection::Connection::NoiseKeyRequired(req) => {
+                                    req.resume(&noise_key)
+                                }
+                            });
                             all_pending = false;
                         }
 
@@ -150,17 +173,25 @@ where
                             }
                         } else {
                             debug_assert!(write_buffer_cursor == write_buffer_filled);
-                            let num_written = connection.write_out(&mut write_buffer);
+                            let (new_state, num_written) =
+                                connection.take().unwrap().write_out(&mut write_buffer);
                             write_buffer_cursor = 0;
                             write_buffer_filled = num_written;
+
+                            connection = Some(match new_state {
+                                connection::Connection::Healthy(h) => h,
+                                connection::Connection::NoiseKeyRequired(req) => {
+                                    all_pending = false;
+                                    req.resume(&noise_key)
+                                }
+                            });
+
                             if num_written != 0 {
                                 println!(
                                     "writing out: {:?}",
                                     &write_buffer[write_buffer_cursor..write_buffer_filled]
                                 ); // TODO: remove
                                 all_pending = false;
-                            } else {
-                                println!("idle writing"); // TODO: remove
                             }
                         }
 

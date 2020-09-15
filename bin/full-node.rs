@@ -613,6 +613,7 @@ async fn start_network2(
 ) -> impl Future<Output = ()> {
     let mut network = substrate_lite::network2::libp2p::Network::<_, _, _, (), _>::new(
         substrate_lite::network2::libp2p::Config {
+            noise_key: substrate_lite::network2::libp2p::NoiseKey::new(&[0; 32]), // TODO:
             notification_protocols: core::iter::empty::<()>(),
             request_protocols: Vec::new(),
             tasks_executor,
@@ -636,7 +637,7 @@ async fn start_network2(
         })
         .collect::<Vec<_>>();
 
-    for (peer_id, target) in bootnodes {
+    /*for (peer_id, target) in bootnodes {
         if let Ok(addr) = multiaddr_to_socketaddr(&target) {
             network.add_dial_future(async move {
                 async_std::net::TcpStream::connect(addr)
@@ -644,7 +645,12 @@ async fn start_network2(
                     .await
             });
         }
-    }
+    }*/
+    network.add_dial_future(async move {
+        async_std::net::TcpStream::connect("127.0.0.1:30333")
+            .map_ok(|s| ((), s))
+            .await
+    });
 
     async move {
         loop {
