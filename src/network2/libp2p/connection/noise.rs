@@ -1,5 +1,51 @@
+//! Noise protocol libp2p layer.
+//!
+//! The [noise protocol](https://noiseprotocol.org/) is a standard framework for building
+//! cryptographic protocols. Libp2p uses the noise protocol to provide an encryption layer on
+//! top of which data is exchanged.
+//!
+//! # Protocol details
+//!
+//! Libp2p uses [the XX pattern](https://noiseexplorer.com/patterns/XX/). The handshake consists
+//! of three packets:
+//!
+//! - The initiator generates an ephemeral keypair and sends the public key to the responder.
+//! - The responder generates its own ephemeral keypair and sends the public key to the
+//! initiator. Afterwards, the responder derives a shared secret and uses it to encrypt all
+//! further communications. Now encrypted, the responder also sends back its static noise public
+//! key (represented with the [`NoiseKey`] type of this module), its libp2p public key, and a
+//! signature of the static noise public key made using its libp2p private key.
+//! - The initiator, after having received the ephemeral key from the remote, derives the same
+//! shared secret. It sends its own static noise public key, libp2p public key, and signature.
+//!
+//! After these three packets, the initiator and responder derive another shared secret using
+//! both the static and ephemeral keys, which is then used to encrypt communications. Note that
+//! the libp2p key isn't used in the key derivation.
+//!
+//! # Usage
+//!
+//! While this is out of scope of this module, the noise protocol must typically first be
+//! negotiated using the *multistream-select* protocol. The name of the protocol is given by
+//! the [`PROTOCOL_NAME`] constant.
+//!
+//! In order to use noise on top of a connection which has agreed to use noise, create a
+//! [`HandshakeInProgress`], passing a [`NoiseKey`]. This [`NoiseKey`] is typically generated at
+//! startup and doesn't need to be persisted after a restart.
+//!
+//! Use [`HandshakeInProgress::write_out`] to send out handshake messages ready to be sent out,
+//! and [`HandshakeInProgress::inject_data`] when data is received from the wire. At every call,
+//! a [`Handshake`] is returned, potentially indicating the end of the handshake.
+//!
+//! If the handshake is finished, a [`Handshake::Success`] is returned, containing the [`PeerId`]
+//! of the remote, which is known to be legitimate, and a [`Noise`] object through which all
+//! further communications should go through.
+//!
+//! Use [`Noise::inject_outbound_data`] and [`Noise::write_out`] in order to send out data to the
+//! remote, and [`Noise::inject_inbound_data`] when data is received.
+// TODO: review this last sentence, as this API might change after some experience with it
+
 use alloc::collections::VecDeque;
-use core::{cmp, convert::TryFrom as _, fmt, iter};
+use core::{cmp, convert::TryFrom as _, fmt, iter, ops};
 use libp2p::PeerId;
 use prost::Message as _;
 
@@ -8,11 +54,16 @@ mod payload_proto {
     include!(concat!(env!("OUT_DIR"), "/payload.proto.rs"));
 }
 
+/// Name of the protocol, typically used when negotiated it using *multistream-select*.
+pub const PROTOCOL_NAME: &str = "/noise";
+
 /// The noise key is the key exchanged during the noise handshake. It is **not** the same as the
 /// libp2p key. The libp2p key is used only to sign the noise public key, while the ECDH is
 /// performed with the noise key.
 ///
-/// The noise key is typically generated at startup and doesn't have to be persisted on disk.
+/// From the point of view of the noise protocol specifications, this [`NoiseKey`] corresponds to
+/// the static key. The noise key is typically generated at startup and doesn't have to be
+/// persisted on disk, contrary to the libp2p key which is typically persisted after a restart.
 ///
 /// In order to generate a [`NoiseKey`], two things are needed:
 ///
@@ -23,9 +74,10 @@ mod payload_proto {
 /// ways to create a [`NoiseKey`]:
 ///
 /// - The easier way, by passing the libp2p private key to [`NoiseKey::new`].
-/// - The slightly more complex way, by first creating an [`UnsignedNoiseKey`] then passing a
-/// a signature. This second method doesn't require direct access to the private key, but only
-/// to a method to sign a message, for example a hardware device.
+/// - The slightly more complex way, by first creating an [`UnsignedNoiseKey`], then passing a
+/// a signature. This second method doesn't require direct access to the private key but only
+/// to a method of signing a message, which makes it for example possible to use a hardware
+/// device.
 ///
 pub struct NoiseKey {
     key: snow::Keypair,
@@ -114,10 +166,13 @@ impl UnsignedNoiseKey {
     }
 }
 
+/// State of the noise encryption/decryption cipher.
 pub struct Noise {
     inner: snow::TransportState,
 
-    /// Buffer of data containing data received on the wire, before decryption.
+    /// Buffer of data containing data received on the wire, before decryption. Always either
+    /// empty or contains a partial frame (including the two bytes of length prefix). Frames,
+    /// once full, are immediately decoded and moved to `rx_buffer_decrypted`.
     rx_buffer_encrypted: Vec<u8>,
 
     /// Buffer of data containing data received on the wire, after decryption.
@@ -130,64 +185,132 @@ pub struct Noise {
 
 impl Noise {
     /// Feeds data received from the wire.
-    pub fn inject_inbound_data(&mut self, payload: &[u8]) {
-        // TODO: possibly optimize by not always copy bytes to `rx_buffer_encrypted`
-        self.rx_buffer_encrypted.extend(payload.iter().cloned());
+    pub fn inject_inbound_data(&mut self, mut payload: &[u8]) -> Result<usize, CipherError> {
+        // As a reminder, noise frames consist of two bytes of length (big endian) followed with
+        // the message of that length destined to the `snow` library.
 
-        self.rx_buffer_decrypted.resize(payload.len(), 0);
-        let _written = self
-            .inner
-            .read_message(payload, &mut self.rx_buffer_decrypted);
-        // TODO: continue
-        // TODO: check _written
+        let mut total_read = 0;
+
+        loop {
+            // Buffering up too much data in the output buffer should be avoided. As such, past
+            // a certain threshold, return early and refuse to read more.
+            if self.rx_buffer_decrypted.len() >= 65536 * 4 {
+                // TODO: should be configurable value ^
+                break;
+            }
+
+            // Try to construct the length prefix in `rx_buffer_encrypted` by moving bytes from
+            // `payload`.
+            while self.rx_buffer_encrypted.len() < 2 {
+                if payload.is_empty() {
+                    return Ok(total_read);
+                }
+
+                self.rx_buffer_encrypted.push(payload[0]);
+                payload = &payload[1..];
+                total_read += 1;
+            }
+
+            // Length of the frame currently being received.
+            let expected_len = usize::from(u16::from_be_bytes(
+                <[u8; 2]>::try_from(&self.rx_buffer_encrypted[..2]).unwrap(),
+            ));
+
+            // If there isn't enough data available for the full frame, copy the partial frame
+            // to `rx_buffer_encrypted` and return early.
+            if self.rx_buffer_encrypted.len() + payload.len() < expected_len + 2 {
+                self.rx_buffer_encrypted.extend_from_slice(payload);
+                total_read += payload.len();
+                payload = &[];
+                break;
+            }
+
+            // Construct the encrypted slice of data to decode.
+            let to_decode_slice = if self.rx_buffer_encrypted.len() == 2 {
+                // If the entirety of the frame is in `payload`, decode it from there without
+                // moving data.
+                debug_assert!(payload.len() >= expected_len);
+                let decode = &payload[..expected_len];
+                payload = &payload[expected_len..];
+                total_read += expected_len;
+                decode
+            } else {
+                // Otherwise, copy the rest of the frame to `rx_buffer_encrypted`.
+                let remains = expected_len - (self.rx_buffer_encrypted.len() - 2);
+                self.rx_buffer_encrypted
+                    .extend_from_slice(&payload[..remains]);
+                payload = &payload[remains..];
+                total_read += remains;
+                &self.rx_buffer_encrypted[2..]
+            };
+
+            // Allocate the space to decode to.
+            // Each frame consists of the payload plus 16 bytes of authentication data, therefore
+            // the payload size is `expected_len - 16`.
+            let len_before = self.rx_buffer_decrypted.len();
+            self.rx_buffer_decrypted
+                .resize(len_before + expected_len - 16, 0);
+
+            // Finally decoding the data.
+            let written = self
+                .inner
+                .read_message(to_decode_slice, &mut self.rx_buffer_decrypted[len_before..])
+                .map_err(CipherError)?;
+            self.rx_buffer_decrypted.truncate(len_before + written);
+
+            // Clear the now-decoded frame.
+            self.rx_buffer_encrypted.clear();
+        }
+
+        Ok(total_read)
     }
 
+    // TODO: if rx_buffer_decrypted becomes a VecDeque, this leads to a potentially weird API
+    //       where calling consume_inbound_data can lead to decoded_inbound_data to provide more
+    //       data
+    pub fn decoded_inbound_data(&self) -> &[u8] {
+        &self.rx_buffer_decrypted
+    }
+
+    pub fn consume_inbound_data(&mut self, n: usize) {
+        // TODO: no, slow
+        for _ in 0..n {
+            self.rx_buffer_decrypted.remove(0);
+        }
+    }
+
+    /// Encrypts a packet of data and makes it available later when calling [`Noise::write_out`].
+    ///
+    /// Since the maximum size of a noise packet is 64kiB, `payload` is automatically split into
+    /// frames of 64kiB. Each frame of `N` bytes (where `N <= 65536`) is encrypted into `N + 18`
+    /// bytes.
     ///
     /// > **Note**: You are encouraged to not call this method with small payloads, as at least
     /// >           two bytes of data are added to the stream every time this method is called.
-    // TODO: docs
     pub fn inject_outbound_data(&mut self, payload: &[u8]) {
         // The maximum size of a noise message is 65535 bytes. As such, we split any payload that
         // is longer than that.
         for payload in payload.chunks(65535) {
-            debug_assert!(payload.is_empty()); // guaranteed by `chunks()`
+            debug_assert!(!payload.is_empty()); // Guaranteed by `chunks()`
 
-            // The complexity below stems from the fact that we write into a `VecDeque`.
+            // TODO: At the moment we employ the rather lazy strategy of using an intermediary
+            //       `Vec` rather than writing directly to the `VecDeque`. Writing directly to the
+            //       ring buffer is more difficult than it looks.
 
-            // TODO: review; might be wrong
-
-            let out_buf_len_before = self.tx_buffer_encrypted.len();
-            self.tx_buffer_encrypted
-                .resize(out_buf_len_before + 2 + payload.len(), 0);
-
-            let payload_len_bytes = u16::try_from(payload.len()).unwrap().to_be_bytes();
-            self.tx_buffer_encrypted[out_buf_len_before] = payload_len_bytes[0];
-            self.tx_buffer_encrypted[out_buf_len_before + 1] = payload_len_bytes[1];
-
-            let mut out_buf_slices = self.tx_buffer_encrypted.as_mut_slices();
-            out_buf_slices.1 =
-                &mut out_buf_slices.1[out_buf_len_before.saturating_sub(out_buf_slices.0.len())..];
-            out_buf_slices.0 = {
-                let off = out_buf_slices.0.len().saturating_sub(out_buf_len_before);
-                &mut out_buf_slices.0[off..]
-            };
-
-            let to_write0 = cmp::min(out_buf_slices.0.len(), payload.len());
-            debug_assert!(payload.len().saturating_sub(to_write0) <= out_buf_slices.1.len());
+            let mut intermediary_buffer = vec![0; payload.len() + 16];
 
             let _written = self
                 .inner
-                .write_message(&payload[..to_write0], out_buf_slices.0)
+                .write_message(&payload, &mut intermediary_buffer)
                 .unwrap();
-            debug_assert_eq!(_written, to_write0);
+            debug_assert_eq!(_written, intermediary_buffer.len());
 
-            if to_write0 != payload.len() {
-                let _written = self
-                    .inner
-                    .write_message(&payload[to_write0..], out_buf_slices.1)
-                    .unwrap();
-                debug_assert_eq!(_written, out_buf_slices.1.len().saturating_sub(to_write0));
-            }
+            let len_bytes = u16::try_from(intermediary_buffer.len())
+                .unwrap()
+                .to_be_bytes();
+
+            self.tx_buffer_encrypted.extend(&len_bytes);
+            self.tx_buffer_encrypted.extend(&intermediary_buffer);
         }
     }
 
@@ -196,9 +319,17 @@ impl Noise {
     pub fn write_out(&mut self, mut destination: &mut [u8]) -> usize {
         let mut total_written = 0;
 
+        // This code does nothing more by copy from `tx_buffer_encrypted` to `destination`
+
+        // This loop is necessary because `tx_buffer_encrypted`, being a ring buffer, potentially
+        // wraps around, in which case two copies are necessary.
         loop {
             let to_write = self.tx_buffer_encrypted.as_slices().0;
             let to_write_len = cmp::min(to_write.len(), destination.len());
+            if to_write_len == 0 {
+                break;
+            }
+
             destination[..to_write_len].copy_from_slice(&to_write[..to_write_len]);
             for _ in 0..to_write_len {
                 let _ = self.tx_buffer_encrypted.pop_front();
@@ -248,14 +379,14 @@ pub struct HandshakeInProgress {
     /// If the payload has already been sent, contains `None`.
     /// If the payload hasn't been sent yet, contains the index of the call to
     /// [`snow::HandshakeState::write_message`] that must contain the payload.
-    tx_payload: Option<(usize, Box<[u8]>)>,
+    tx_payload: Option<(u8, Box<[u8]>)>,
 
     /// State of the remote payload reception.
     rx_payload: RxPayload,
 
     /// Number of messages remaining to be received. Used to know whether an incoming packet is
     /// still part of the handshake or not.
-    rx_messages_remain: usize,
+    rx_messages_remain: u8,
 
     /// Buffer of data containing data received on the wire, before decryption.
     rx_buffer_encrypted: Vec<u8>,
@@ -270,7 +401,7 @@ enum RxPayload {
     Received(PeerId),
     /// Index of the call to [`snow::HandshakeState::read_message`], from now, that is expected
     /// to contains the payload.
-    NthMessage(usize),
+    NthMessage(u8),
 }
 
 impl NoiseHandshake {
