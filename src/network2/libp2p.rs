@@ -1,14 +1,19 @@
 #![allow(unused)] // TODO: remove once code is used
 
-use core::{fmt, future::Future, pin::Pin};
+// TODO: this module uses the AsyncRead/AsyncWrite traits, which are unfortunately not no_std friendly
+
+use alloc::collections::VecDeque;
+use core::{fmt, future::Future, iter, marker::PhantomData, pin::Pin, task::Poll};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+};
 use hashbrown::HashMap;
 use rand::{seq::IteratorRandom as _, SeedableRng as _};
 
-pub use connections_pool::RequestId;
-pub use libp2p::{Multiaddr, PeerId};
+pub use libp2p::{multiaddr, Multiaddr, PeerId};
 
 mod connection;
-mod connections_pool;
 
 /// Configuration to provide when building a [`Network`].
 pub struct Config<PIter> {
@@ -18,61 +23,164 @@ pub struct Config<PIter> {
     /// List of protocol names for request-response protocols.
     pub request_protocols: Vec<String>,
 
-    /// Seed used by the PRNG (Pseudo-Random Number Generator) that selects
-    /// which task to assign to each new connection.
-    ///
-    /// You are encouraged to use something like `rand::random()` to fill this
-    /// field, except in situations where determinism/reproducibility is
-    /// desired.
-    pub pool_selection_randomness_seed: u64,
-
     /// Executor to spawn background tasks.
     pub tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 }
 
 /// Collection of network connections.
-pub struct Network<T, TRq, P> {
-    pools: slab::Slab<connections_pool::ConnectionsPool<T, TRq, P>>,
+pub struct Network<TUserData, TDialFut, TSocket, TRq, TProtocol> {
+    nodes: HashMap<PeerId, NodeInner<TUserData, TSocket>, fnv::FnvBuildHasher>,
 
-    /// For each `PeerId` we're connected to, the pool that handles it.
-    // TODO: we would actually benefit from the SipHasher here, considering that PeerIds are determined by the remote
-    peers_pools: HashMap<PeerId, usize, fnv::FnvBuildHasher>,
+    /// Stream of dialing attempts.
+    dials: stream::FuturesUnordered<TDialFut>,
 
-    /// PRNG used to select the source to start a query with.
-    pool_selection_rng: rand_chacha::ChaCha8Rng,
+    /// How to start a background task.
+    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+
+    test_tx: mpsc::Sender<()>,
+    test_rx: mpsc::Receiver<()>,
+
+    protocols: Vec<TProtocol>,
+    rq: PhantomData<TRq>,
 }
 
-impl<T, TRq, P> Network<T, TRq, P> {
+struct NodeInner<TUserData, TSocket> {
+    dialing: Vec<(Multiaddr, PeerId, oneshot::Receiver<TSocket>)>,
+
+    /// User data stored for this node, or `None` if the node is reported as not-connected on
+    /// the API.
+    user_data: Option<TUserData>,
+}
+
+impl<TUserData, TDialFut, TDialError, TSocket, TRq, TProtocol>
+    Network<TUserData, TDialFut, TSocket, TRq, TProtocol>
+where
+    TDialFut: Future<Output = Result<(TUserData, TSocket), TDialError>>,
+    TSocket: AsyncRead + AsyncWrite + Send + 'static,
+{
     /// Initializes the [`Network`].
-    pub fn new(config: Config<impl Iterator<Item = P>>) -> Self {
+    pub fn new(config: Config<impl Iterator<Item = TProtocol>>) -> Self {
+        let (test_tx, test_rx) = mpsc::channel(512);
+
         Network {
-            pools: slab::Slab::new(),
-            peers_pools: Default::default(),
-            pool_selection_rng: rand_chacha::ChaCha8Rng::seed_from_u64(
-                config.pool_selection_randomness_seed,
-            ),
+            nodes: HashMap::default(),
+            dials: stream::FuturesUnordered::new(),
+            tasks_executor: config.tasks_executor,
+            test_tx,
+            test_rx,
+            protocols: config.notification_protocols.collect(),
+            rq: PhantomData,
         }
     }
 
-    /// Emits a request towards a certain peer.
-    pub async fn start_request(
+    /// Returns the state of a certain node in the libp2p state machine.
+    pub fn node_mut(
         &mut self,
-        target: &PeerId,
-        protocol_name: &str,
-        user_data: TRq,
-        payload: impl Into<Vec<u8>>,
-    ) -> Result<RequestId, StartRequestError> {
-        let pool_id = *self
-            .peers_pools
-            .get(target)
-            .ok_or(StartRequestError::NotConnected)?;
-
+        peer_id: &PeerId,
+    ) -> Node<TUserData, TDialFut, TSocket, TRq, TProtocol> {
         todo!()
     }
 
-    /// Cancels a request. No [`Event::RequestFinished`] will be generated.
-    pub fn cancel_request(&mut self, request_id: RequestId) -> TRq {
-        todo!()
+    pub fn add_dial_future(&mut self, future: TDialFut) {
+        self.dials.push(future);
+    }
+
+    pub fn inject_inbound_connection(
+        &mut self,
+        user_data: TUserData,
+        socket: TSocket,
+        target: Multiaddr,
+    ) {
+        self.inject_connection(user_data, socket, connection::Endpoint::Listener)
+    }
+
+    fn inject_connection(
+        &mut self,
+        user_data: TUserData,
+        mut socket: TSocket,
+        endpoint: connection::Endpoint,
+    ) {
+        // Create a state machine handling the traffic from/to that connection.
+        let mut connection = connection::Connection::new(endpoint);
+
+        // Spawn a background task dedicated to handling this connection.
+        (self.tasks_executor)(
+            async move {
+                println!("connected"); // TODO: remove
+
+                // Wrap the socket in a `BufReader`, mostly to provide a buffer rather than having
+                // to do the buffering manually.
+                let socket = futures::io::BufReader::new(socket); // TODO: buffer size configurable
+                futures::pin_mut!(socket);
+
+                // Buffer containing data to write to the socket.
+                let mut write_buffer = vec![0; 4096].into_boxed_slice(); // TODO: 4096 configurable
+                let mut write_buffer_cursor = 0;
+                let mut write_buffer_filled = 0;
+                let mut flush_needed = false;
+
+                // TODO: remove explicit generic
+                future::poll_fn::<(), _>(move |cx| {
+                    loop {
+                        let mut all_pending = true;
+
+                        if let Poll::Ready(result) = socket.as_mut().poll_fill_buf(cx) {
+                            let buffer = result.unwrap(); // TODO:
+                            println!("recv buffer: {:?}", buffer); // TODO: remove
+                                                                   // TODO: use _event
+                            let (read_num, _event) = connection.inject_data(iter::once(buffer));
+                            socket.as_mut().consume(read_num);
+                            all_pending = false;
+                        }
+
+                        debug_assert!(write_buffer_cursor <= write_buffer_filled);
+                        if write_buffer_cursor < write_buffer_filled {
+                            match socket.as_mut().poll_write(
+                                cx,
+                                &mut write_buffer[write_buffer_cursor..write_buffer_filled],
+                            ) {
+                                Poll::Ready(Ok(n)) => {
+                                    write_buffer_cursor += n;
+                                    debug_assert!(write_buffer_cursor <= write_buffer_filled);
+                                    flush_needed = true;
+                                    all_pending = false;
+                                }
+                                Poll::Ready(Err(_)) => todo!(),
+                                Poll::Pending => {}
+                            }
+                        } else {
+                            debug_assert!(write_buffer_cursor == write_buffer_filled);
+                            let num_written = connection.write_out(&mut write_buffer);
+                            write_buffer_cursor = 0;
+                            write_buffer_filled = num_written;
+                            if num_written != 0 {
+                                println!(
+                                    "writing out: {:?}",
+                                    &write_buffer[write_buffer_cursor..write_buffer_filled]
+                                ); // TODO: remove
+                                all_pending = false;
+                            } else {
+                                println!("idle writing"); // TODO: remove
+                            }
+                        }
+
+                        if write_buffer_cursor < write_buffer_filled && flush_needed {
+                            if let Poll::Ready(result) = socket.as_mut().poll_flush(cx) {
+                                flush_needed = false;
+                                all_pending = false;
+                                let () = result.unwrap(); // TODO:
+                            }
+                        }
+
+                        if all_pending {
+                            return Poll::Pending;
+                        }
+                    }
+                })
+                .await;
+            }
+            .boxed(),
+        );
     }
 
     ///
@@ -80,47 +188,36 @@ impl<T, TRq, P> Network<T, TRq, P> {
         todo!()
     }
 
-    pub async fn next_event<'a>(&'a mut self) -> Event<'a, T, TRq, P> {
-        todo!()
+    pub async fn next_event<'a>(&'a mut self) -> Event<'a, TUserData, TProtocol> {
+        loop {
+            futures::select! {
+                dial_result = self.dials.select_next_some() => {
+                    match dial_result {
+                        Ok((user_data, socket)) => {
+                            self.inject_connection(user_data, socket, connection::Endpoint::Dialer);
+                        },
+                        Err(_) => todo!(),
+                    }
+                },
+                _ = self.test_rx.select_next_some() => {
+                    todo!()
+                },
+            }
+        }
     }
 }
 
 /// Event that happened on the [`Network`].
 #[derive(Debug)]
-pub enum Event<'a, T, TRq, P> {
-    IncomingConnection {
-        /// Address of the local listening endpoint.
-        local_listener: Multiaddr,
-        send_back_address: Multiaddr,
-        accept: Accept<'a, T, TRq, P>,
-    },
+pub enum Event<'a, TUserData, TProtocol> {
     RequestFinished {
-        peer: &'a mut P,
+        peer: &'a mut TProtocol,
     },
     Notification {
-        user_data: &'a mut T,
-        protocol: &'a mut P,
+        user_data: &'a mut TUserData,
+        protocol: &'a mut TProtocol,
         payload: NotificationPayload<'a>,
     },
-}
-
-/// Accepts an incoming connection.
-#[must_use]
-pub struct Accept<'a, T, TRq, P> {
-    network: &'a mut Network<T, TRq, P>,
-}
-
-impl<'a, T, TRq, P> Accept<'a, T, TRq, P> {
-    /// Accepts the incoming connection.
-    pub fn accept(self, user_data: T) {
-        todo!()
-    }
-}
-
-impl<'a, T, TRq, P> fmt::Debug for Accept<'a, T, TRq, P> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Accept").finish()
-    }
 }
 
 /// Notification data.
@@ -143,4 +240,55 @@ impl<'a> fmt::Debug for NotificationPayload<'a> {
 #[derive(Debug, derive_more::Display)]
 pub enum StartRequestError {
     NotConnected,
+}
+
+/// State of a node in the libp2p state machine.
+pub enum Node<'a, TUserData, TDialFut, TSocket, TRq, TProtocol> {
+    /// There isn't any healthy connect to this node.
+    NotConnected(NodeNotConnected<'a, TUserData, TDialFut, TSocket, TRq, TProtocol>),
+    /// There exists at least one healthy connection to this node.
+    Connected(NodeConnected<'a, TUserData, TDialFut, TSocket, TRq, TProtocol>),
+}
+
+/// State of a node in the libp2p state machine.
+pub struct NodeNotConnected<'a, TUserData, TDialFut, TSocket, TRq, TProtocol> {
+    network: &'a mut Network<TUserData, TDialFut, TSocket, TRq, TProtocol>,
+    peer_id: &'a PeerId,
+}
+
+impl<'a, T, TDialFut, TSocket, TRq, TProtocol>
+    NodeNotConnected<'a, T, TDialFut, TSocket, TRq, TProtocol>
+{
+    pub fn is_dialing(&self) -> bool {
+        todo!()
+    }
+}
+
+/// State of a node in the libp2p state machine.
+pub struct NodeConnected<'a, TUserData, TDialFut, TSocket, TRq, TProtocol> {
+    network: &'a mut Network<TUserData, TDialFut, TSocket, TRq, TProtocol>,
+    peer_id: &'a PeerId,
+}
+
+impl<'a, T, TDialFut, TSocket, TRq, TProtocol>
+    NodeConnected<'a, T, TDialFut, TSocket, TRq, TProtocol>
+{
+    pub fn user_data(&mut self) -> &mut T {
+        todo!()
+    }
+
+    pub fn into_user_data(self) -> &'a mut T {
+        todo!()
+    }
+
+    /// Start disconnecting all active connections to this peer. For API-related purposes, the
+    /// node is now considered disconnected.
+    pub fn close(
+        self,
+    ) -> (
+        T,
+        NodeNotConnected<'a, T, TDialFut, TSocket, TRq, TProtocol>,
+    ) {
+        todo!()
+    }
 }

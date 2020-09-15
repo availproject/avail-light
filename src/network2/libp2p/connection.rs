@@ -63,23 +63,46 @@ impl Connection {
         &'c mut self,
         data: impl Iterator<Item = &'d [u8]>,
     ) -> (usize, Option<InjectDataOutcome<'c, 'd>>) {
-        // TODO: restore
-        /*// Handle the case where the connection is still negotiating the encryption protocol.
+        // Handle the case where the connection is still negotiating the encryption protocol.
         if let State::NegotiatingEncryptionProtocol { negotiation } = &mut self.state {
+            let mut total_read = 0;
+
             for buf in data {
                 let mut buf_offset = 0;
                 while buf_offset != buf.len() {
-                    let (new_negotiation, processed, outcome) =
-                        negotiation.inject_data(&buf[buf_offset..]);
-                    *negotiation = new_negotiation;
+                    let (updated, processed) = negotiation
+                        .take()
+                        .unwrap()
+                        .inject_data(&buf[buf_offset..])
+                        .unwrap(); // TODO: don't unwrap
+
                     buf_offset += processed;
+                    total_read += processed;
                     debug_assert!(buf_offset <= buf.len());
+
+                    match updated {
+                        multistream_select::Negotiation::InProgress(updated) => {
+                            *negotiation = Some(updated)
+                        }
+                        multistream_select::Negotiation::Success(_) => {
+                            let noise_endpoint = match self.endpoint {
+                                Endpoint::Dialer => noise::Endpoint::Initiator,
+                                Endpoint::Listener => noise::Endpoint::Responder,
+                            };
+
+                            self.state = State::NegotiatingEncryption {
+                                handshake: noise::NoiseHandshake::new(noise_endpoint), // TODO: key
+                            };
+
+                            return (total_read, None);
+                        }
+                        multistream_select::Negotiation::NotAvailable => todo!(),
+                    }
                 }
             }
 
-            // TODO: return here
-            todo!()
-        }*/
+            return (total_read, None);
+        }
 
         // Inject the received data into the cipher for decryption.
         match &mut self.state {
@@ -110,6 +133,9 @@ impl Connection {
                     match updated {
                         multistream_select::Negotiation::InProgress(continuation) => {
                             *negotiation = Some(continuation);
+                            if written == 0 {
+                                break;
+                            }
                         }
                         multistream_select::Negotiation::Success(_) => {
                             let noise_endpoint = match self.endpoint {
@@ -118,7 +144,7 @@ impl Connection {
                             };
 
                             self.state = State::NegotiatingEncryption {
-                                handshake: noise::NoiseHandshake::new(noise_endpoint, &[0; 32]), // TODO: key
+                                handshake: noise::NoiseHandshake::new(noise_endpoint), // TODO: key
                             };
                         }
                         multistream_select::Negotiation::NotAvailable => todo!(), // TODO:

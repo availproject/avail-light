@@ -10,6 +10,7 @@ use std::{
     borrow::Cow,
     collections::BTreeMap,
     fs,
+    net::{SocketAddr, ToSocketAddrs as _},
     num::{NonZeroU32, NonZeroU64},
     path::PathBuf,
     pin::Pin,
@@ -122,6 +123,7 @@ async fn async_main() {
 
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_network_tx, to_network_rx) = mpsc::channel(64);
+    let (to_network_tx2, to_network_rx2) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
     let network_state = Arc::new(NetworkState {
@@ -140,6 +142,22 @@ async fn async_main() {
             tasks_executor,
             network_state.clone(),
             to_network_rx,
+            to_sync_tx.clone(), // TODO: don't clone
+        )
+        .await
+    });
+
+    threads_pool.spawn_ok({
+        let tasks_executor = Box::new({
+            let threads_pool = threads_pool.clone();
+            move |f| threads_pool.spawn_ok(f)
+        });
+
+        start_network2(
+            &chain_spec,
+            tasks_executor,
+            network_state.clone(),
+            to_network_rx2,
             to_sync_tx,
         )
         .await
@@ -582,6 +600,96 @@ enum ToNetwork {
             Result<Vec<full_optimistic::RequestSuccessBlock>, full_optimistic::RequestFail>,
         >,
     },
+}
+
+/// Testing prototype of the new networking.
+// TODO: remove eventually
+async fn start_network2(
+    chain_spec: &chain_spec::ChainSpec,
+    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    network_state: Arc<NetworkState>,
+    mut to_network: mpsc::Receiver<ToNetwork>,
+    mut to_sync: mpsc::Sender<ToSync>,
+) -> impl Future<Output = ()> {
+    let mut network = substrate_lite::network2::libp2p::Network::<_, _, _, (), _>::new(
+        substrate_lite::network2::libp2p::Config {
+            notification_protocols: core::iter::empty::<()>(),
+            request_protocols: Vec::new(),
+            tasks_executor,
+        },
+    );
+
+    let bootnodes = chain_spec
+        .boot_nodes()
+        .iter()
+        .map(|a| {
+            let mut a = a
+                .parse::<substrate_lite::network2::libp2p::Multiaddr>()
+                .unwrap();
+            let peer_id = match a.pop().unwrap() {
+                substrate_lite::network2::libp2p::multiaddr::Protocol::P2p(h) => {
+                    substrate_lite::network2::libp2p::PeerId::from_multihash(h).unwrap()
+                }
+                _ => panic!(),
+            };
+            (peer_id, a)
+        })
+        .collect::<Vec<_>>();
+
+    for (peer_id, target) in bootnodes {
+        if let Ok(addr) = multiaddr_to_socketaddr(&target) {
+            network.add_dial_future(async move {
+                async_std::net::TcpStream::connect(addr)
+                    .map_ok(|s| ((), s))
+                    .await
+            });
+        }
+    }
+
+    async move {
+        loop {
+            match network.next_event().await {
+                substrate_lite::network2::libp2p::Event::Notification { .. } => todo!(),
+                substrate_lite::network2::libp2p::Event::RequestFinished { .. } => todo!(),
+            }
+        }
+    }
+}
+
+fn multiaddr_to_socketaddr(
+    addr: &substrate_lite::network2::libp2p::Multiaddr,
+) -> Result<SocketAddr, ()> {
+    let mut iter = addr.iter();
+    let proto1 = iter.next().ok_or(())?;
+    let proto2 = iter.next().ok_or(())?;
+
+    if iter.next().is_some() {
+        return Err(());
+    }
+
+    match (proto1, proto2) {
+        (
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Dns(addr),
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Tcp(port),
+        )
+        | (
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Dns4(addr),
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Tcp(port),
+        )
+        | (
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Dns6(addr),
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Tcp(port),
+        ) => Ok((&*addr, port).to_socket_addrs().unwrap().next().unwrap()),
+        (
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Ip4(ip),
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Tcp(port),
+        ) => Ok(SocketAddr::new(ip.into(), port)),
+        (
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Ip6(ip),
+            substrate_lite::network2::libp2p::multiaddr::Protocol::Tcp(port),
+        ) => Ok(SocketAddr::new(ip.into(), port)),
+        _ => Err(()),
+    }
 }
 
 /// Since opening the database can take a long time, this utility function performs this operation
