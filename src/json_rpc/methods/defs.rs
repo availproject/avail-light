@@ -26,7 +26,7 @@ pub(super) struct SerdeMethodCall {
     pub(super) jsonrpc: SerdeVersion,
     pub(super) method: String,
     #[serde(default = "default_params")]
-    pub(super) params: SerdeParams,
+    pub(super) params: serde_json::Value,
     pub(super) id: SerdeId,
 }
 
@@ -36,11 +36,11 @@ pub(super) struct SerdeNotification {
     pub(super) jsonrpc: SerdeVersion,
     pub(super) method: String,
     #[serde(default = "default_params")]
-    pub(super) params: SerdeParams,
+    pub(super) params: serde_json::Value,
 }
 
-fn default_params() -> SerdeParams {
-    SerdeParams::None
+fn default_params() -> serde_json::Value {
+    serde_json::Value::Null
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
@@ -86,15 +86,6 @@ impl<'a> serde::de::Visitor<'a> for SerdeVersionVisitor {
             _ => Err(serde::de::Error::custom("invalid version")),
         }
     }
-}
-
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(untagged)]
-pub(super) enum SerdeParams {
-    None,
-    Array(Vec<serde_json::Value>),
-    Map(serde_json::Map<String, serde_json::Value>),
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]

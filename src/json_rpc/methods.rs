@@ -57,26 +57,25 @@ macro_rules! define_methods {
                 [$(stringify!($name)),*].iter().copied()
             }
 
-            fn from_defs(name: &str, params: &defs::SerdeParams) -> Option<Self> {
+            // TODO: params should be a &str
+            fn from_defs(name: &str, params: &serde_json::Value) -> Option<Self> {
                 $(
                     if name == stringify!($name) $($(|| name == stringify!($alias))*)* {
-                        let mut _param_num = 0;
-                        $(
-                            let $p_name: $p_ty = {
-                                let json_value = match params {
-                                    defs::SerdeParams::None => &serde_json::Value::Null,
-                                    // TODO: don't return an error if param doesn't exist but try decoding Null instead
-                                    defs::SerdeParams::Array(params) => &params.get(_param_num)?,
-                                    defs::SerdeParams::Map(params) => params.get(stringify!($p_name))?,
-                                };
+                        #[derive(serde::Deserialize)]
+                        struct Params {
+                            $(
+                                $p_name: $p_ty,
+                            )*
+                        }
 
-                                <$p_ty as FromSerdeJsonValue>::decode(json_value)?
-                            };
-                            _param_num += 1;
-                        )*
-                        return Some(MethodCall::$name {
-                            $($p_name,)*
-                        })
+                        if let Ok(params) = serde_json::from_value(params.clone()) { // TODO: don't clone
+                            let Params { $($p_name),* } = params;
+                            return Some(MethodCall::$name {
+                                $($p_name,)*
+                            })
+                        } else {
+                            todo!() // TODO: ?
+                        }
                     }
                 )*
 
@@ -207,6 +206,28 @@ pub struct HexString(pub Vec<u8>);
 #[derive(Debug, Clone)]
 pub struct HashHexString(pub [u8; 32]);
 
+impl<'a> serde::Deserialize<'a> for HashHexString {
+    fn deserialize<D>(deserializer: D) -> Result<HashHexString, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        if !string.starts_with("0x") {
+            return Err(serde::de::Error::custom("hash doesn't start with 0x"));
+        }
+
+        let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
+        if bytes.len() != 32 {
+            return Err(serde::de::Error::custom("hash of the wrong length"));
+        }
+
+        let mut out = [0; 32];
+        out.copy_from_slice(&bytes);
+        Ok(HashHexString(out))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RpcMethods {
     pub version: u64,
@@ -231,58 +252,14 @@ pub struct SystemHealth {
     pub should_have_peers: bool,
 }
 
-trait FromSerdeJsonValue {
-    fn decode(value: &serde_json::Value) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-impl FromSerdeJsonValue for String {
-    fn decode(value: &serde_json::Value) -> Option<Self> {
-        Some(value.as_str()?.to_owned())
-    }
-}
-
-impl FromSerdeJsonValue for u64 {
-    fn decode(value: &serde_json::Value) -> Option<Self> {
-        value.as_u64()
-    }
-}
-
-impl<T: FromSerdeJsonValue> FromSerdeJsonValue for Option<T> {
-    fn decode(value: &serde_json::Value) -> Option<Self> {
-        if value.is_null() {
-            Some(None)
-        } else {
-            T::decode(value).map(Some)
-        }
-    }
-}
-
-impl FromSerdeJsonValue for HashHexString {
-    fn decode(value: &serde_json::Value) -> Option<Self> {
-        let value = value.as_str()?;
-        if !value.starts_with("0x") {
-            return None;
-        }
-
-        let bytes = hex::decode(&value[2..]).ok()?;
-        if bytes.len() != 32 {
-            return None;
-        }
-
-        let mut out = [0; 32];
-        out.copy_from_slice(&bytes);
-        Some(HashHexString(out))
-    }
-}
-
+// TODO: implement serde::Serialize instead
 impl From<HashHexString> for serde_json::Value {
     fn from(str: HashHexString) -> serde_json::Value {
         serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
     }
 }
 
+// TODO: implement serde::Serialize instead
 impl From<HexString> for serde_json::Value {
     fn from(str: HexString) -> serde_json::Value {
         serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
