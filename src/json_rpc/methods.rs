@@ -15,7 +15,7 @@ pub fn parse_json_call(message: &str) -> Result<(RequestId, MethodCall), ParseEr
         }
     };
 
-    let call = match MethodCall::from_defs(&method_call_def.method, &method_call_def.params) {
+    let call = match MethodCall::from_defs(&method_call_def.method, method_call_def.params.get()) {
         Some(call) => call,
         None => return Err(ParseError::UnknownMethod(method_call_def.method)),
     };
@@ -57,8 +57,7 @@ macro_rules! define_methods {
                 [$(stringify!($name)),*].iter().copied()
             }
 
-            // TODO: params should be a &str
-            fn from_defs(name: &str, params: &serde_json::Value) -> Option<Self> {
+            fn from_defs(name: &str, params: &str) -> Option<Self> {
                 $(
                     if name == stringify!($name) $($(|| name == stringify!($alias))*)* {
                         #[derive(serde::Deserialize)]
@@ -68,7 +67,7 @@ macro_rules! define_methods {
                             )*
                         }
 
-                        if let Ok(params) = serde_json::from_value(params.clone()) { // TODO: don't clone
+                        if let Ok(params) = serde_json::from_str(params) {
                             let Params { $($p_name),* } = params;
                             return Some(MethodCall::$name {
                                 $($p_name,)*
@@ -206,6 +205,7 @@ pub struct HexString(pub Vec<u8>);
 #[derive(Debug, Clone)]
 pub struct HashHexString(pub [u8; 32]);
 
+// TODO: not great for type in public API
 impl<'a> serde::Deserialize<'a> for HashHexString {
     fn deserialize<D>(deserializer: D) -> Result<HashHexString, D::Error>
     where
@@ -252,20 +252,21 @@ pub struct SystemHealth {
     pub should_have_peers: bool,
 }
 
-// TODO: implement serde::Serialize instead
+// TODO: implement serde::Serialize instead?
 impl From<HashHexString> for serde_json::Value {
     fn from(str: HashHexString) -> serde_json::Value {
         serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
     }
 }
 
-// TODO: implement serde::Serialize instead
+// TODO: implement serde::Serialize instead?
 impl From<HexString> for serde_json::Value {
     fn from(str: HexString) -> serde_json::Value {
         serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
     }
 }
 
+// TODO: implement serde::Serialize instead?
 impl From<RpcMethods> for serde_json::Value {
     fn from(methods: RpcMethods) -> serde_json::Value {
         serde_json::Value::Object(
@@ -292,6 +293,7 @@ impl From<RpcMethods> for serde_json::Value {
     }
 }
 
+// TODO: implement serde::Serialize instead?
 impl From<RuntimeVersion> for serde_json::Value {
     fn from(rt: RuntimeVersion) -> serde_json::Value {
         // TODO: not sure about the camelCasing
@@ -317,6 +319,7 @@ impl From<RuntimeVersion> for serde_json::Value {
     }
 }
 
+// TODO: implement serde::Serialize instead?
 impl From<SystemHealth> for serde_json::Value {
     fn from(health: SystemHealth) -> serde_json::Value {
         serde_json::Value::Object(

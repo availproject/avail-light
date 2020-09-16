@@ -264,9 +264,7 @@ where
         // whether the remote is allowed to send a frame of this length.
         if header[1] == 0 || header[1] == 1 {
             let id = {
-                let raw = u32::from_be_bytes(
-                    <[u8; 4]>::try_from(&header[4..8]).unwrap(),
-                );
+                let raw = u32::from_be_bytes(<[u8; 4]>::try_from(&header[4..8]).unwrap());
                 match NonZeroU32::new(raw) {
                     Some(i) => SubstreamId(i),
                     None => return DecodeStep::Error(Error::ZeroSubstreamId),
@@ -305,20 +303,18 @@ where
         let mut offset = self.current_buffer_offset;
         let mut next_buffers = self.next_buffer.clone();
 
-        iter::from_fn(move || {
-            loop {
-                let current = current_owned.as_ref().map(|b| b.as_ref()).unwrap_or(first);
+        iter::from_fn(move || loop {
+            let current = current_owned.as_ref().map(|b| b.as_ref()).unwrap_or(first);
 
-                if offset >= current.len() {
-                    current_owned = Some(next_buffers.next()?);
-                    offset = 0;
-                    continue;
-                }
-
-                let byte = current[offset];
-                offset += 1;
-                break Some(byte)
+            if offset >= current.len() {
+                current_owned = Some(next_buffers.next()?);
+                offset = 0;
+                continue;
             }
+
+            let byte = current[offset];
+            offset += 1;
+            break Some(byte);
         })
     }
 }

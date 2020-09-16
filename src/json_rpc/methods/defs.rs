@@ -5,11 +5,13 @@
 
 use core::fmt;
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(untagged)]
-pub(super) enum SerdeCall {
-    MethodCall(SerdeMethodCall),
-    Notification(SerdeNotification),
+pub(super) enum SerdeCall<'a> {
+    #[serde(borrow)]
+    MethodCall(SerdeMethodCall<'a>),
+    #[serde(borrow)]
+    Notification(SerdeNotification<'a>),
 }
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq, serde::Deserialize, serde::Serialize)]
@@ -20,27 +22,23 @@ pub(super) enum SerdeId {
     Str(String),
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SerdeMethodCall {
+pub(super) struct SerdeMethodCall<'a> {
     pub(super) jsonrpc: SerdeVersion,
     pub(super) method: String,
-    #[serde(default = "default_params")]
-    pub(super) params: serde_json::Value,
+    #[serde(borrow)]
+    pub(super) params: &'a serde_json::value::RawValue,
     pub(super) id: SerdeId,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SerdeNotification {
+pub(super) struct SerdeNotification<'a> {
     pub(super) jsonrpc: SerdeVersion,
     pub(super) method: String,
-    #[serde(default = "default_params")]
-    pub(super) params: serde_json::Value,
-}
-
-fn default_params() -> serde_json::Value {
-    serde_json::Value::Null
+    #[serde(borrow)]
+    pub(super) params: &'a serde_json::value::RawValue,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
