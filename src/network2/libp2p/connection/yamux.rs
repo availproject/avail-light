@@ -15,7 +15,7 @@
 
 // TODO: finish usage
 
-use core::{convert::TryFrom as _, fmt, iter};
+use core::{cmp, convert::TryFrom as _, fmt, iter};
 
 /// Name of the protocol, typically used when negotiated it using *multistream-select*.
 pub const PROTOCOL_NAME: &str = "/yamux/1.0.0";
@@ -43,6 +43,82 @@ where
         num_read: 0,
     }
     .resume()
+}
+
+/// Writes to `destination` a frame of data containing `payload` and that belongs to the given
+/// substream.
+///
+/// Returns, in order, the number of bytes read from `payload` and the number of bytes written
+/// to `destination`.
+pub fn substream_emit_data(
+    substream: &mut SubstreamState,
+    mut payload: &[u8],
+    destination: &mut [u8],
+) -> (usize, usize) {
+    // A header occupies 12 bytes. If the destination isn't capable of holding at least a header
+    // and one byte of data, return immediately.
+    if destination.len() <= 12 {
+        return (0, 0);
+    }
+
+    // There's no point in writing empty frames.
+    if payload.is_empty() {
+        return (0, 0);
+    }
+
+    // If the local node isn't allowed to write any more data, return immediately as well.
+    if substream.local_write_closed || substream.allowed_window == 0 {
+        // TODO: error if local_write_closed instead?
+        return (0, 0);
+    }
+
+    // Clamp `payload` to the length that is actually going to be emitted.
+    payload = {
+        let len = cmp::min(
+            cmp::min(destination.len() - 12, payload.len()),
+            usize::try_from(substream.allowed_window).unwrap_or(usize::max_value()),
+        );
+        debug_assert_ne!(len, 0);
+        &payload[..len]
+    };
+
+    // Write the header.
+    destination[0] = 0;
+    destination[1] = 0;
+    destination[2..4].copy_from_slice(&0u16.to_be_bytes());
+    // Since the payload is clamped to the allowed window size, which is a u32, it is also
+    // guaranteed that `payload.len()` fits in a u32.
+    destination[4..8].copy_from_slice(&substream.id.0.to_be_bytes());
+    destination[8..12].copy_from_slice(&u32::try_from(payload.len()).unwrap().to_be_bytes());
+
+    // Copy the data.
+    destination[12..][..payload.len()].copy_from_slice(&payload);
+
+    // Success!
+    substream.allowed_window -= u32::try_from(payload.len()).unwrap();
+    debug_assert!(payload.len() + 12 <= destination.len());
+    (payload.len(), payload.len() + 12)
+}
+
+pub struct ConnectionState {
+    /// Nature of the next bytes of data to be received.
+    incoming_data_ty: IncomingDataTy,
+}
+
+enum IncomingDataTy {
+    NewFrame,
+    DataFrameInProgress {
+        substream: SubstreamId,
+        remaining_bytes: usize,
+    },
+}
+
+impl ConnectionState {
+    pub fn new() -> ConnectionState {
+        ConnectionState {
+            incoming_data_ty: IncomingDataTy::NewFrame,
+        }
+    }
 }
 
 pub struct SubstreamState {
@@ -111,13 +187,14 @@ where
         if let Some(state) = &state {
             assert_eq!(
                 state.id.0,
-                u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[4..8]).unwrap(),)
+                u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[4..8]).unwrap())
             );
         }
 
         let header_length_field =
             u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[8..12]).unwrap());
 
+        // Check whether the remote is allowed to send that much data.
         match (self.header[1], state) {
             (0, Some(existing)) => {
                 if header_length_field > existing.remote_allowed_window {
@@ -129,11 +206,12 @@ where
                     return DecodeStep::Error(Error::CreditsExceeded);
                 }
             }
-            (1, Some(existing)) => {}
-            (1, None) => {}
+            (1, _) => {}
             // A `SubstreamStateReq` struct is created only when the frame type is 0 or 1.
             (_, _) => unreachable!(),
         }
+
+        // Check if there is enough buffered data for an entire frame.
 
         self.decoder.resume()
     }
@@ -156,27 +234,10 @@ where
     pub fn resume(self) -> DecodeStep<TIter, TBuf> {
         // Try to collect 12 bytes from the input data, to form a header.
         let header = {
-            // TODO: there might be a more elegant way to write this
             let mut header = arrayvec::ArrayVec::<[u8; 12]>::new();
-            let mut cur_owned = None;
-            let mut cur = &self.current_buffer.as_ref()[self.current_buffer_offset..];
-            let mut next = self.next_buffer.clone();
-            while header.len() != 12 {
-                if cur.is_empty() {
-                    match next.next() {
-                        Some(n) => {
-                            cur_owned = Some(n);
-                            cur = cur_owned.as_ref().unwrap().as_ref();
-                            continue;
-                        }
-                        None => break,
-                    }
-                }
-
-                header.push(cur[0]);
-                cur = &cur[1..];
+            for byte in self.bytes_iter().take(12) {
+                header.push(byte);
             }
-
             match header.into_inner() {
                 Ok(h) => h,
                 Err(_) => {
@@ -225,6 +286,32 @@ where
         }
 
         DecodeStep::Error(Error::BadFrameType(header[1]))
+    }
+
+    /// Builds an iterator over the bytes remaining to decode.
+    ///
+    /// Does not update the state of the decoder.
+    fn bytes_iter<'a>(&'a self) -> impl Iterator<Item = u8> + 'a {
+        let mut first = self.current_buffer.as_ref();
+        let mut current_owned = None::<TBuf>;
+        let mut offset = self.current_buffer_offset;
+        let mut next_buffers = self.next_buffer.clone();
+
+        iter::from_fn(move || {
+            loop {
+                let current = current_owned.as_ref().map(|b| b.as_ref()).unwrap_or(first);
+
+                if offset >= current.len() {
+                    current_owned = Some(next_buffers.next()?);
+                    offset = 0;
+                    continue;
+                }
+
+                let byte = current[offset];
+                offset += 1;
+                break Some(byte)
+            }
+        })
     }
 }
 
