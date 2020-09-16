@@ -15,7 +15,7 @@
 
 // TODO: finish usage
 
-use core::{cmp, convert::TryFrom as _, fmt, iter};
+use core::{cmp, convert::TryFrom as _, fmt, iter, num::NonZeroU32};
 
 /// Name of the protocol, typically used when negotiated it using *multistream-select*.
 pub const PROTOCOL_NAME: &str = "/yamux/1.0.0";
@@ -88,7 +88,7 @@ pub fn substream_emit_data(
     destination[2..4].copy_from_slice(&0u16.to_be_bytes());
     // Since the payload is clamped to the allowed window size, which is a u32, it is also
     // guaranteed that `payload.len()` fits in a u32.
-    destination[4..8].copy_from_slice(&substream.id.0.to_be_bytes());
+    destination[4..8].copy_from_slice(&substream.id.0.get().to_be_bytes());
     destination[8..12].copy_from_slice(&u32::try_from(payload.len()).unwrap().to_be_bytes());
 
     // Copy the data.
@@ -144,7 +144,7 @@ impl fmt::Debug for SubstreamState {
 
 /// Identifier of a substream in the context of a connection.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, derive_more::From)]
-pub struct SubstreamId(pub u32);
+pub struct SubstreamId(pub NonZeroU32);
 
 pub enum DecodeStep<TIter, TBuf> {
     NewSubstream {
@@ -186,7 +186,7 @@ where
     pub fn resume(self, state: Option<&mut SubstreamState>) -> DecodeStep<TIter, TBuf> {
         if let Some(state) = &state {
             assert_eq!(
-                state.id.0,
+                state.id.0.get(),
                 u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[4..8]).unwrap())
             );
         }
@@ -263,11 +263,19 @@ where
         // data is available. In terms of resilience, however, it is a better idea to first check
         // whether the remote is allowed to send a frame of this length.
         if header[1] == 0 || header[1] == 1 {
+            let id = {
+                let raw = u32::from_be_bytes(
+                    <[u8; 4]>::try_from(&header[4..8]).unwrap(),
+                );
+                match NonZeroU32::new(raw) {
+                    Some(i) => SubstreamId(i),
+                    None => return DecodeStep::Error(Error::ZeroSubstreamId),
+                }
+            };
+
             return DecodeStep::SubstreamStateRequest {
                 num_read: self.num_read,
-                id: SubstreamId(u32::from_be_bytes(
-                    <[u8; 4]>::try_from(&header[4..8]).unwrap(),
-                )),
+                id,
                 request: SubstreamStateReq {
                     header,
                     decoder: self,
@@ -322,6 +330,8 @@ pub enum Error {
     UnknownVersion(u8),
     /// Unrecognized value for the type of frame as indicated in the header.
     BadFrameType(u8),
+    /// Substream ID was zero in a data of window update frame.
+    ZeroSubstreamId,
     /// Remote tried to send more data than it was allowed to.
     CreditsExceeded,
 }
