@@ -162,7 +162,7 @@ define_methods! {
     rpc_methods() -> RpcMethods,
     state_call() -> () [state_callAt],
     state_getKeys() -> (), // TODO:
-    state_getKeysPaged() -> () [state_getKeysPagedAt], // TODO:
+    state_getKeysPaged(prefix: Option<HexString>, count: u32, start_key: Option<HexString>, hash: Option<HashHexString>) -> Vec<HexString> [state_getKeysPagedAt],
     state_getMetadata() -> HexString,
     state_getPairs() -> (), // TODO:
     state_getReadProof() -> (), // TODO:
@@ -171,9 +171,9 @@ define_methods! {
     state_getStorageHash() -> () [state_getStorageHashAt], // TODO:
     state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:
     state_queryStorage() -> (), // TODO:
-    state_queryStorageAt() -> (), // TODO:
+    state_queryStorageAt(keys: Vec<HexString>, at: Option<HashHexString>) -> Vec<StorageChangeSet>, // TODO:
     state_subscribeRuntimeVersion() -> String [chain_subscribeRuntimeVersion],
-    state_subscribeStorage(list: Vec<HashHexString>) -> String [state_unsubscribeStorage],
+    state_subscribeStorage(list: Vec<HexString>) -> String [state_unsubscribeStorage],
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
     system_accountNextIndex() -> (), // TODO:
     system_addReservedPeer() -> (), // TODO:
@@ -195,6 +195,25 @@ define_methods! {
 #[derive(Debug, Clone)]
 pub struct HexString(pub Vec<u8>);
 
+// TODO: not great for type in public API
+impl<'a> serde::Deserialize<'a> for HexString {
+    fn deserialize<D>(deserializer: D) -> Result<HexString, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        if !string.starts_with("0x") {
+            return Err(serde::de::Error::custom(
+                "hexadecimal string doesn't start with 0x",
+            ));
+        }
+
+        let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
+        Ok(HexString(bytes))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HashHexString(pub [u8; 32]);
 
@@ -212,7 +231,10 @@ impl<'a> serde::Deserialize<'a> for HashHexString {
 
         let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
         if bytes.len() != 32 {
-            return Err(serde::de::Error::custom("hash of the wrong length"));
+            return Err(serde::de::Error::invalid_length(
+                bytes.len(),
+                &"a 32 bytes hash",
+            ));
         }
 
         let mut out = [0; 32];
@@ -236,6 +258,12 @@ pub struct RuntimeVersion {
     pub impl_version: u64,
     pub transaction_version: u64,
     // TODO: apis missing
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StorageChangeSet {
+    pub block: HashHexString,
+    pub changes: Vec<(HexString, Option<HexString>)>,
 }
 
 #[derive(Debug, Clone)]

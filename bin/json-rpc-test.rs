@@ -1,5 +1,6 @@
 // TODO: temporary binary to try the JSON-RPC server component alone
 
+use core::convert::TryFrom as _;
 use std::collections::HashMap;
 use substrate_lite::json_rpc::{methods, websocket_server};
 
@@ -25,12 +26,16 @@ async fn async_main() {
 
     let mut next_subscription = 0u64;
     let mut runtime_version_subscriptions = HashMap::new();
+    let mut all_heads_subscriptions = HashMap::new();
     let mut new_heads_subscriptions = HashMap::new();
+    let mut finalized_heads_subscriptions = HashMap::new();
     let mut storage_subscriptions = HashMap::new();
 
     struct Subscriptions {
         runtime_version: Vec<String>,
+        all_heads: Vec<String>,
         new_heads: Vec<String>,
+        finalized_heads: Vec<String>,
         storage: Vec<String>,
     }
 
@@ -39,7 +44,9 @@ async fn async_main() {
             websocket_server::Event::ConnectionOpen { .. } => {
                 server.accept(Subscriptions {
                     runtime_version: Vec::new(),
+                    all_heads: Vec::new(),
                     new_heads: Vec::new(),
+                    finalized_heads: Vec::new(),
                     storage: Vec::new(),
                 });
                 continue;
@@ -95,6 +102,17 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         (connection_id, response)
                     }
+                    methods::MethodCall::chain_subscribeAllHeads {} => {
+                        let subscription = next_subscription.to_string();
+                        next_subscription += 1;
+
+                        let response =
+                            methods::Response::chain_subscribeAllHeads(subscription.clone())
+                                .to_json_response(request_id);
+                        user_data.all_heads.push(subscription.clone());
+                        all_heads_subscriptions.insert(subscription, connection_id);
+                        (connection_id, response)
+                    }
                     methods::MethodCall::chain_subscribeNewHeads {} => {
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
@@ -106,6 +124,17 @@ async fn async_main() {
                         new_heads_subscriptions.insert(subscription, connection_id);
                         (connection_id, response)
                     }
+                    methods::MethodCall::chain_subscribeFinalizedHeads {} => {
+                        let subscription = next_subscription.to_string();
+                        next_subscription += 1;
+
+                        let response =
+                            methods::Response::chain_subscribeFinalizedHeads(subscription.clone())
+                                .to_json_response(request_id);
+                        user_data.finalized_heads.push(subscription.clone());
+                        finalized_heads_subscriptions.insert(subscription, connection_id);
+                        (connection_id, response)
+                    }
                     methods::MethodCall::rpc_methods {} => {
                         let response = methods::Response::rpc_methods(methods::RpcMethods {
                             version: 1,
@@ -114,6 +143,66 @@ async fn async_main() {
                                 .collect(),
                         })
                         .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::state_queryStorageAt { keys, at } => {
+                        // TODO: I have no idea what the API of this function is
+                        assert!(at.is_none()); // TODO:
+
+                        let mut out = methods::StorageChangeSet {
+                            block: methods::HashHexString(
+                                substrate_lite::calculate_genesis_block_header(
+                                    chain_spec.genesis_storage(),
+                                )
+                                .hash(),
+                            ),
+                            changes: Vec::new(),
+                        };
+
+                        for key in keys {
+                            let value = chain_spec
+                                .genesis_storage()
+                                .find(|(k, _)| *k == &key.0[..])
+                                .map(|(_, v)| methods::HexString(v.to_owned()));
+                            out.changes.push((key, value));
+                        }
+
+                        let response = methods::Response::state_queryStorageAt(vec![out])
+                            .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::state_getKeysPaged {
+                        prefix,
+                        count,
+                        start_key,
+                        hash,
+                    } => {
+                        assert!(hash.is_none()); // TODO:
+
+                        let mut out = Vec::new();
+                        for (k, _) in chain_spec.genesis_storage() {
+                            if prefix
+                                .as_ref()
+                                .map_or(false, |prefix| !k.starts_with(&prefix.0))
+                            {
+                                continue;
+                            }
+
+                            if start_key
+                                .as_ref()
+                                .map_or(false, |start_key| k < &start_key.0[..])
+                            {
+                                continue;
+                            }
+
+                            out.push(methods::HexString(k.to_owned()));
+                        }
+
+                        out.sort_by(|a, b| a.0.cmp(&b.0));
+                        out.truncate(usize::try_from(count).unwrap_or(usize::max_value()));
+
+                        let response =
+                            methods::Response::state_getKeysPaged(out).to_json_response(request_id);
                         (connection_id, response)
                     }
                     methods::MethodCall::state_getMetadata {} => {
@@ -137,6 +226,7 @@ async fn async_main() {
                         (connection_id, response)
                     }
                     methods::MethodCall::state_subscribeStorage { list } => {
+                        // TODO: must send value immediately
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
 
