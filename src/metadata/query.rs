@@ -52,7 +52,7 @@ pub fn metadata_from_virtual_machine_prototype(
     let outcome = loop {
         match vm.state() {
             executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(data) => break remove_length_prefix(data)?,
+            executor::State::Finished(data) => break remove_length_prefix(data)?.to_owned(),
             executor::State::Trapped => return Err(Error::Trapped),
             executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
 
@@ -80,7 +80,7 @@ pub enum Error {
 
 /// Removes the length prefix at the beginning of `metadata`. Returns an error if there is no
 /// valid length prefix.
-fn remove_length_prefix(metadata: &[u8]) -> Result<Vec<u8>, Error> {
+fn remove_length_prefix(metadata: &[u8]) -> Result<&[u8], Error> {
     // TODO: maybe don't use parity_scale_codec here
     // Decoded length prefix.
     let length = parity_scale_codec::Compact::<u64>::decode(&mut (&metadata[..]))
@@ -102,5 +102,5 @@ fn remove_length_prefix(metadata: &[u8]) -> Result<Vec<u8>, Error> {
         return Err(Error::BadLengthPrefix);
     }
 
-    Ok(metadata[length_length..].to_owned())
+    Ok(&metadata[length_length..])
 }
