@@ -1,5 +1,8 @@
 use crate::executor;
 
+// TODO: these functions should probably strip the length prefix of the metadata, because every
+// single piece of documentation refers to "the metadata" to designate "the metadata without length prefix"
+
 /// Retrieves the SCALE-encoded metadata from the runtime code of a block.
 ///
 /// > **Note**: This function is a convenient shortcut for

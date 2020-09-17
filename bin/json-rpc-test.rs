@@ -24,6 +24,16 @@ async fn async_main() {
     .await
     .unwrap();
 
+    let metadata = {
+        let code = chain_spec
+            .genesis_storage()
+            .find(|(k, _)| k == b":code")
+            .unwrap()
+            .1;
+        let heap_pages = 1024; // TODO: laziness
+        substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
+    };
+
     let mut next_subscription = 0u64;
     let mut runtime_version_subscriptions = HashMap::new();
     let mut all_heads_subscriptions = HashMap::new();
@@ -206,12 +216,14 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::state_getMetadata {} => {
-                        // TODO: complete hack
-                        let metadata =
-                            hex::decode(&include_str!("json-rpc-test-metadata-tmp")[..]).unwrap();
-                        let response =
-                            methods::Response::state_getMetadata(methods::HexString(metadata))
-                                .to_json_response(request_id);
+                        // Because of some weirdness, the metadata provided by the runtime
+                        // contained a length prefix, but the one expected to be sent back in the
+                        // JSON-RPC call doesn't.
+                        // TODO: this 4.. is a hack
+                        let response = methods::Response::state_getMetadata(methods::HexString(
+                            metadata[4..].to_owned(),
+                        ))
+                        .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::state_subscribeRuntimeVersion {} => {
