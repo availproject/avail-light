@@ -40,7 +40,7 @@ async fn async_main() {
     }
 
     loop {
-        let (connection_id, response) = match server.next_event().await {
+        let (connection_id, response1, response2) = match server.next_event().await {
             websocket_server::Event::ConnectionOpen { .. } => {
                 server.accept(Subscriptions {
                     runtime_version: Vec::new(),
@@ -85,7 +85,7 @@ async fn async_main() {
                         let response =
                             methods::Response::chain_getBlockHash(methods::HashHexString(hash))
                                 .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::chain_getHeader { hash } => {
                         // TODO: hash
@@ -100,7 +100,7 @@ async fn async_main() {
                         let response =
                             methods::Response::chain_getHeader(methods::HexString(header))
                                 .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::chain_subscribeAllHeads {} => {
                         let subscription = next_subscription.to_string();
@@ -111,7 +111,7 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         user_data.all_heads.push(subscription.clone());
                         all_heads_subscriptions.insert(subscription, connection_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::chain_subscribeNewHeads {} => {
                         let subscription = next_subscription.to_string();
@@ -122,7 +122,7 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         user_data.new_heads.push(subscription.clone());
                         new_heads_subscriptions.insert(subscription, connection_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::chain_subscribeFinalizedHeads {} => {
                         let subscription = next_subscription.to_string();
@@ -133,7 +133,7 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         user_data.finalized_heads.push(subscription.clone());
                         finalized_heads_subscriptions.insert(subscription, connection_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::rpc_methods {} => {
                         let response = methods::Response::rpc_methods(methods::RpcMethods {
@@ -143,7 +143,7 @@ async fn async_main() {
                                 .collect(),
                         })
                         .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_queryStorageAt { keys, at } => {
                         // TODO: I have no idea what the API of this function is
@@ -169,7 +169,7 @@ async fn async_main() {
 
                         let response = methods::Response::state_queryStorageAt(vec![out])
                             .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_getKeysPaged {
                         prefix,
@@ -203,7 +203,7 @@ async fn async_main() {
 
                         let response =
                             methods::Response::state_getKeysPaged(out).to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_getMetadata {} => {
                         // TODO: complete hack
@@ -212,7 +212,7 @@ async fn async_main() {
                         let response =
                             methods::Response::state_getMetadata(methods::HexString(metadata))
                                 .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_subscribeRuntimeVersion {} => {
                         let subscription = next_subscription.to_string();
@@ -223,19 +223,45 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         user_data.runtime_version.push(subscription.clone());
                         runtime_version_subscriptions.insert(subscription, connection_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_subscribeStorage { list } => {
-                        // TODO: must send value immediately
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
 
-                        let response =
+                        let response1 =
                             methods::Response::state_subscribeStorage(subscription.clone())
                                 .to_json_response(request_id);
                         user_data.storage.push(subscription.clone());
-                        storage_subscriptions.insert(subscription, connection_id);
-                        (connection_id, response)
+                        storage_subscriptions.insert(subscription.clone(), connection_id);
+
+                        // TODO: have no idea what this describes actually
+                        let mut out = methods::StorageChangeSet {
+                            block: methods::HashHexString(
+                                substrate_lite::calculate_genesis_block_header(
+                                    chain_spec.genesis_storage(),
+                                )
+                                .hash(),
+                            ),
+                            changes: Vec::new(),
+                        };
+
+                        for key in list {
+                            let value = chain_spec
+                                .genesis_storage()
+                                .find(|(k, _)| *k == &key.0[..])
+                                .map(|(_, v)| methods::HexString(v.to_owned()));
+                            out.changes.push((key, value));
+                        }
+
+                        // TODO: hack
+                        let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+                            "state_subscribeStorage",
+                            &subscription,
+                            &serde_json::to_string(&out).unwrap(),
+                        );
+
+                        (connection_id, response1, Some(response2))
                     }
                     methods::MethodCall::state_getRuntimeVersion {} => {
                         // FIXME: hack
@@ -249,19 +275,19 @@ async fn async_main() {
                                 transaction_version: 4,
                             })
                             .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_chain {} => {
                         let response =
                             methods::Response::system_chain(chain_spec.name().to_owned())
                                 .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_chainType {} => {
                         let response =
                             methods::Response::system_chainType(chain_spec.chain_type().to_owned())
                                 .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_health {} => {
                         let response = methods::Response::system_health(methods::SystemHealth {
@@ -270,24 +296,24 @@ async fn async_main() {
                             should_have_peers: true, // TODO:
                         })
                         .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_name {} => {
                         let response = methods::Response::system_name("substrate-lite!".to_owned())
                             .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_properties {} => {
                         let response = methods::Response::system_properties(
                             serde_json::from_str(chain_spec.properties()).unwrap(),
                         )
                         .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::system_version {} => {
                         let response = methods::Response::system_version("1.0.0".to_owned())
                             .to_json_response(request_id);
-                        (connection_id, response)
+                        (connection_id, response, None)
                     }
                     _ => {
                         println!("unimplemented: {:?}", call);
@@ -297,6 +323,9 @@ async fn async_main() {
             }
         };
 
-        server.queue_send(connection_id, response);
+        server.queue_send(connection_id, response1);
+        if let Some(response2) = response2 {
+            server.queue_send(connection_id, response2);
+        }
     }
 }
