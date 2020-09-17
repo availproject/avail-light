@@ -86,6 +86,11 @@ async fn async_main() {
             } => {
                 let (request_id, call) = methods::parse_json_call(&message).expect("bad request");
                 match call {
+                    methods::MethodCall::author_pendingExtrinsics {} => {
+                        let response = methods::Response::author_pendingExtrinsics(Vec::new())
+                            .to_json_response(request_id);
+                        (connection_id, response, None)
+                    }
                     methods::MethodCall::chain_getBlockHash { height } => {
                         assert_eq!(height, 0);
                         let hash = substrate_lite::calculate_genesis_block_header(

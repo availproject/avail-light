@@ -134,9 +134,9 @@ define_methods! {
     author_hasKey() -> (), // TODO:
     author_hasSessionKeys() -> (), // TODO:
     author_insertKey() -> (), // TODO:
-    author_pendingExtrinsics() -> (), // TODO:
+    author_pendingExtrinsics() -> Vec<HexString>,
     author_removeExtrinsic() -> (), // TODO:
-    author_rotateKeys() -> (), // TODO:
+    author_rotateKeys() -> HexString,
     author_submitAndWatchExtrinsic() -> (), // TODO:
     author_submitExtrinsic() -> (), // TODO:
     author_unwatchExtrinsic() -> (), // TODO:
@@ -186,7 +186,7 @@ define_methods! {
     system_name() -> String,
     system_networkState() -> (), // TODO:
     system_nodeRoles() -> (), // TODO:
-    system_peers() -> (), // TODO:
+    system_peers() -> Vec<SystemPeer>,
     system_properties() -> Box<serde_json::value::RawValue>,
     system_removeReservedPeer() -> (), // TODO:
     system_version() -> String,
@@ -271,6 +271,17 @@ pub struct SystemHealth {
     pub is_syncing: bool,
     pub peers: u64,
     pub should_have_peers: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SystemPeer {
+    #[serde(rename = "peerId")]
+    pub peer_id: String,
+    pub roles: String,
+    #[serde(rename = "bestHash")]
+    pub best_hash: HashHexString,
+    #[serde(rename = "bestNumber")]
+    pub best_number: u64,
 }
 
 impl serde::Serialize for HashHexString {
