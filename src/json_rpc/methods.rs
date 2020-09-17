@@ -3,24 +3,25 @@
 mod defs;
 
 /// Parses a JSON call (usually received from a JSON-RPC server).
-pub fn parse_json_call(message: &str) -> Result<(RequestId, MethodCall), ParseError> {
+///
+/// On success, returns a JSON-encoded identifier for that request that must be passed back when
+/// emitting the response.
+pub fn parse_json_call(message: &str) -> Result<(&str, MethodCall), ParseError> {
     let call_def: defs::SerdeCall = serde_json::from_str(message)
         .map_err(JsonRpcParseError)
         .map_err(ParseError::JsonRpcParse)?;
 
-    let method_call_def = match call_def {
-        defs::SerdeCall::MethodCall(method_call) => method_call,
-        defs::SerdeCall::Notification(notification) => {
-            return Err(ParseError::UnknownNotification(notification.method))
-        }
+    let id = match call_def.id {
+        Some(id) => id.get(),
+        None => return Err(ParseError::UnknownNotification(call_def.method.to_owned())),
     };
 
-    let call = match MethodCall::from_defs(&method_call_def.method, method_call_def.params.get()) {
+    let call = match MethodCall::from_defs(&call_def.method, call_def.params.get()) {
         Some(call) => call,
-        None => return Err(ParseError::UnknownMethod(method_call_def.method)),
+        None => return Err(ParseError::UnknownMethod(call_def.method.to_owned())),
     };
 
-    Ok((method_call_def.id.into(), call))
+    Ok((id, call))
 }
 
 /// Error produced by [`parse_json_call`].
@@ -92,14 +93,25 @@ macro_rules! define_methods {
 
         impl Response {
             /// Serializes the response into a JSON string.
-            pub fn to_json_response(&self, id: RequestId) -> String {
+            ///
+            /// `id_json` must be a valid JSON-formatted request identifier, the same the user
+            /// passed in the request.
+            ///
+            /// # Panic
+            ///
+            /// Panics if `id_json` isn't valid JSON.
+            ///
+            pub fn to_json_response(&self, id_json: &str) -> String {
+                let id_json: &serde_json::value::RawValue = serde_json::from_str(id_json)
+                    .expect("invalid id_json");
+
                 let def = match self {
                     $(
                         Response::$name(out) => {
                             defs::SerdeOutput::Success(defs::SerdeSuccess {
                                 jsonrpc: defs::SerdeVersion::V2,
                                 result: From::<$ret_ty>::from(out.clone()),
-                                id: id.into(),
+                                id: Some(id_json),
                             })
                         },
                     )*
@@ -173,30 +185,6 @@ define_methods! {
     system_properties() -> serde_json::Map<String, serde_json::Value>,
     system_removeReservedPeer() -> (), // TODO:
     system_version() -> String,
-}
-
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
-pub enum RequestId {
-    Num(u64),
-    Str(String),
-}
-
-impl From<defs::SerdeId> for RequestId {
-    fn from(id: defs::SerdeId) -> RequestId {
-        match id {
-            defs::SerdeId::Num(n) => RequestId::Num(n),
-            defs::SerdeId::Str(s) => RequestId::Str(s),
-        }
-    }
-}
-
-impl From<RequestId> for defs::SerdeId {
-    fn from(id: RequestId) -> defs::SerdeId {
-        match id {
-            RequestId::Num(n) => defs::SerdeId::Num(n),
-            RequestId::Str(s) => defs::SerdeId::Str(s),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

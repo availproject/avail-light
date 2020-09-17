@@ -6,39 +6,14 @@
 use core::fmt;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-#[serde(untagged)]
-pub(super) enum SerdeCall<'a> {
-    #[serde(borrow)]
-    MethodCall(SerdeMethodCall<'a>),
-    #[serde(borrow)]
-    Notification(SerdeNotification<'a>),
-}
-
-#[derive(Debug, PartialEq, Clone, Hash, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-#[serde(untagged)]
-pub(super) enum SerdeId {
-    Num(u64),
-    Str(String),
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SerdeMethodCall<'a> {
+pub(super) struct SerdeCall<'a> {
     pub(super) jsonrpc: SerdeVersion,
-    pub(super) method: String,
+    #[serde(borrow)]
+    pub(super) method: &'a str,
     #[serde(borrow)]
     pub(super) params: &'a serde_json::value::RawValue,
-    pub(super) id: SerdeId,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SerdeNotification<'a> {
-    pub(super) jsonrpc: SerdeVersion,
-    pub(super) method: String,
     #[serde(borrow)]
-    pub(super) params: &'a serde_json::value::RawValue,
+    pub(super) id: Option<&'a serde_json::value::RawValue>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
@@ -86,28 +61,32 @@ impl<'a> serde::de::Visitor<'a> for SerdeVersionVisitor {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SerdeSuccess {
+pub(super) struct SerdeSuccess<'a> {
     pub(super) jsonrpc: SerdeVersion,
     pub(super) result: serde_json::Value,
-    pub(super) id: SerdeId,
+    #[serde(borrow)]
+    pub(super) id: Option<&'a serde_json::value::RawValue>,
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SerdeFailure {
+pub(super) struct SerdeFailure<'a> {
     pub(super) version: SerdeVersion,
     pub(super) error: SerdeError,
-    pub(super) id: SerdeId,
+    #[serde(borrow)]
+    pub(super) id: Option<&'a serde_json::value::RawValue>,
 }
 
-#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
-pub(super) enum SerdeOutput {
-    Success(SerdeSuccess),
-    Failure(SerdeFailure),
+pub(super) enum SerdeOutput<'a> {
+    #[serde(borrow)]
+    Success(SerdeSuccess<'a>),
+    #[serde(borrow)]
+    Failure(SerdeFailure<'a>),
 }
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
