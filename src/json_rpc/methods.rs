@@ -104,7 +104,7 @@ macro_rules! define_methods {
                 match self {
                     $(
                         Response::$name(out) => {
-                            let result_json = serde_json::to_string(&serde_json::Value::from(out.clone())).unwrap();
+                            let result_json = serde_json::to_string(&out).unwrap();
                             parse::build_success_response(id_json, &result_json)
                         },
                     )*
@@ -173,7 +173,7 @@ define_methods! {
     system_networkState() -> (), // TODO:
     system_nodeRoles() -> (), // TODO:
     system_peers() -> (), // TODO:
-    system_properties() -> serde_json::Map<String, serde_json::Value>,
+    system_properties() -> Box<serde_json::value::RawValue>,
     system_removeReservedPeer() -> (), // TODO:
     system_version() -> String,
 }
@@ -231,94 +231,90 @@ pub struct SystemHealth {
     pub should_have_peers: bool,
 }
 
-// TODO: implement serde::Serialize instead?
-impl From<HashHexString> for serde_json::Value {
-    fn from(str: HashHexString) -> serde_json::Value {
-        serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
+impl serde::Serialize for HashHexString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        format!("0x{}", hex::encode(&self.0[..])).serialize(serializer)
     }
 }
 
-// TODO: implement serde::Serialize instead?
-impl From<HexString> for serde_json::Value {
-    fn from(str: HexString) -> serde_json::Value {
-        serde_json::Value::String(format!("0x{}", hex::encode(&str.0[..])))
+impl serde::Serialize for HexString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        format!("0x{}", hex::encode(&self.0[..])).serialize(serializer)
     }
 }
 
-// TODO: implement serde::Serialize instead?
-impl From<RpcMethods> for serde_json::Value {
-    fn from(methods: RpcMethods) -> serde_json::Value {
-        serde_json::Value::Object(
-            [
-                (
-                    "version".to_owned(),
-                    serde_json::Value::Number(methods.version.into()),
-                ),
-                (
-                    "methods".to_owned(),
-                    serde_json::Value::Array(
-                        methods
-                            .methods
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
-                    ),
-                ),
-            ]
-            .iter()
-            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
-            .collect(),
-        )
+impl serde::Serialize for RpcMethods {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct SerdeRpcMethods<'a> {
+            version: u64,
+            methods: &'a [String],
+        }
+
+        SerdeRpcMethods {
+            version: self.version,
+            methods: &self.methods,
+        }
+        .serialize(serializer)
     }
 }
 
-// TODO: implement serde::Serialize instead?
-impl From<RuntimeVersion> for serde_json::Value {
-    fn from(rt: RuntimeVersion) -> serde_json::Value {
+impl serde::Serialize for RuntimeVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
         // TODO: not sure about the camelCasing
         #[derive(serde::Serialize)]
-        struct SerdeRuntimeVersion {
-            spec_name: String,
-            impl_name: String,
+        struct SerdeRuntimeVersion<'a> {
+            spec_name: &'a str,
+            impl_name: &'a str,
             authoring_version: u64,
             spec_version: u64,
             impl_version: u64,
             transaction_version: u64,
         }
 
-        serde_json::to_value(SerdeRuntimeVersion {
-            spec_name: rt.spec_name,
-            impl_name: rt.impl_name,
-            authoring_version: rt.authoring_version,
-            spec_version: rt.spec_version,
-            impl_version: rt.impl_version,
-            transaction_version: rt.transaction_version,
-        })
-        .unwrap()
+        SerdeRuntimeVersion {
+            spec_name: &self.spec_name,
+            impl_name: &self.impl_name,
+            authoring_version: self.authoring_version,
+            spec_version: self.spec_version,
+            impl_version: self.impl_version,
+            transaction_version: self.transaction_version,
+        }
+        .serialize(serializer)
     }
 }
 
-// TODO: implement serde::Serialize instead?
-impl From<SystemHealth> for serde_json::Value {
-    fn from(health: SystemHealth) -> serde_json::Value {
-        serde_json::Value::Object(
-            [
-                (
-                    "isSyncing".to_owned(),
-                    serde_json::Value::Bool(health.is_syncing),
-                ),
-                (
-                    "peers".to_owned(),
-                    serde_json::Value::Number(From::from(health.peers)),
-                ),
-                (
-                    "shouldHavePeers".to_owned(),
-                    serde_json::Value::Bool(health.should_have_peers),
-                ),
-            ]
-            .iter()
-            .cloned() // TODO: that cloned() is crappy; Rust is adding proper support for arrays at some point
-            .collect(),
-        )
+impl serde::Serialize for SystemHealth {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct SerdeSystemHealth {
+            #[serde(rename = "isSyncing")]
+            is_syncing: bool,
+            peers: u64,
+            #[serde(rename = "shouldHavePeers")]
+            should_have_peers: bool,
+        }
+
+        SerdeSystemHealth {
+            is_syncing: self.is_syncing,
+            peers: self.peers,
+            should_have_peers: self.should_have_peers,
+        }
+        .serialize(serializer)
     }
 }

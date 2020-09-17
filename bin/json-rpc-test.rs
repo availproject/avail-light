@@ -94,10 +94,7 @@ async fn async_main() {
                     }
                     methods::MethodCall::system_properties {} => {
                         let response = methods::Response::system_properties(
-                            chain_spec
-                                .properties()
-                                .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                                .collect(),
+                            serde_json::from_str(chain_spec.properties()).unwrap(),
                         )
                         .to_json_response(request_id);
                         (connection_id, response)

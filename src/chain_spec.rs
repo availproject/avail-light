@@ -118,13 +118,14 @@ impl ChainSpec {
     ///
     /// The value of these properties is never interpreted by the local node, but can be served
     /// to a UI.
-    pub fn properties(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+    ///
+    /// The returned value is a JSON-formatted map.
+    pub fn properties(&self) -> &str {
         self.client_spec
             .properties
             .as_ref()
-            .map(|p| p.iter().map(|(k, v)| (k.as_ref(), v)))
-            .into_iter()
-            .flatten()
+            .map(|p| p.get())
+            .unwrap_or("{}")
     }
 }
 
