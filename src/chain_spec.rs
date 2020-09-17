@@ -43,8 +43,9 @@ pub struct ChainSpec {
 
 impl ChainSpec {
     /// Parse JSON content into a [`ChainSpec`].
-    pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, serde_json::Error> {
-        let client_spec: structs::ClientSpec = serde_json::from_slice(json.as_ref())?;
+    pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, ParseError> {
+        let client_spec: structs::ClientSpec =
+            serde_json::from_slice(json.as_ref()).map_err(ParseError)?;
         // TODO: we don't support child tries in the genesis block
         assert!({
             let structs::Genesis::Raw(genesis) = &client_spec.genesis;
@@ -119,7 +120,7 @@ impl ChainSpec {
     /// The value of these properties is never interpreted by the local node, but can be served
     /// to a UI.
     ///
-    /// The returned value is a JSON-formatted map.
+    /// The returned value is a JSON-formatted map, for example `{"foo":"bar"}`.
     pub fn properties(&self) -> &str {
         self.client_spec
             .properties
@@ -128,6 +129,10 @@ impl ChainSpec {
             .unwrap_or("{}")
     }
 }
+
+/// Error that can happen when parsing a chain spec JSON.
+#[derive(Debug, derive_more::Display)]
+pub struct ParseError(serde_json::Error);
 
 #[cfg(test)]
 mod tests {

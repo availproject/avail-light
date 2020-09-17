@@ -62,11 +62,11 @@ pub fn build_success_response(id_json: &str, result_json: &str) -> String {
 struct SerdeCall<'a> {
     jsonrpc: SerdeVersion,
     #[serde(borrow)]
+    id: Option<&'a serde_json::value::RawValue>,
+    #[serde(borrow)]
     method: &'a str,
     #[serde(borrow)]
     params: &'a serde_json::value::RawValue,
-    #[serde(borrow)]
-    id: Option<&'a serde_json::value::RawValue>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
@@ -102,18 +102,18 @@ impl<'a> serde::Deserialize<'a> for SerdeVersion {
 #[serde(deny_unknown_fields)]
 struct SerdeSuccess<'a> {
     jsonrpc: SerdeVersion,
-    result: &'a serde_json::value::RawValue,
     #[serde(borrow)]
     id: &'a serde_json::value::RawValue,
+    result: &'a serde_json::value::RawValue,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SerdeFailure<'a> {
     version: SerdeVersion,
-    error: SerdeError,
     #[serde(borrow)]
     id: &'a serde_json::value::RawValue,
+    error: SerdeError,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

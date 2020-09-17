@@ -59,7 +59,8 @@ async fn async_main() {
                     }
                     methods::MethodCall::state_getMetadata {} => {
                         // TODO: complete hack
-                        let metadata = hex::decode(&include_str!("json-rpc-test-metadata-tmp")[..]).unwrap();
+                        let metadata =
+                            hex::decode(&include_str!("json-rpc-test-metadata-tmp")[..]).unwrap();
                         let response =
                             methods::Response::state_getMetadata(methods::HexString(metadata))
                                 .to_json_response(request_id);
