@@ -4,7 +4,7 @@ use core::{convert::TryFrom as _, fmt, str};
 
 /// Decodes the given SCALE-encoded metadata.
 pub(super) fn decode(scale_encoded_metadata: &[u8]) -> Result<MetadataRef, DecodeError> {
-    let (_remain, out) = nom::combinator::all_consuming(opaque_metadata)(scale_encoded_metadata)
+    let (_remain, out) = nom::combinator::all_consuming(prefixed_metadata)(scale_encoded_metadata)
         .map_err(DecodeError)?;
     debug_assert!(_remain.is_empty());
     Ok(out)
@@ -209,15 +209,6 @@ where
 impl<'a, T> Eq for UndecodedIter<'a, T> where T: Eq {}
 
 // `nom` parser functions can be found below.
-
-fn opaque_metadata(bytes: &[u8]) -> nom::IResult<&[u8], MetadataRef, NomError> {
-    // For some undeterminate reason, the metadata starts with a SCALE-compact length of the rest
-    // of the metadata.
-    nom::multi::length_value(
-        scale_compact_usize,
-        nom::combinator::all_consuming(prefixed_metadata),
-    )(bytes)
-}
 
 fn prefixed_metadata(bytes: &[u8]) -> nom::IResult<&[u8], MetadataRef, NomError> {
     nom::sequence::preceded(

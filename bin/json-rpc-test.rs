@@ -216,12 +216,8 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::state_getMetadata {} => {
-                        // Because of some weirdness, the metadata provided by the runtime
-                        // contained a length prefix, but the one expected to be sent back in the
-                        // JSON-RPC call doesn't.
-                        // TODO: this 4.. is a hack
                         let response = methods::Response::state_getMetadata(methods::HexString(
-                            metadata[4..].to_owned(),
+                            metadata.clone(),
                         ))
                         .to_json_response(request_id);
                         (connection_id, response, None)
