@@ -58,6 +58,8 @@ macro_rules! define_methods {
             }
 
             fn from_defs(name: &str, params: &str) -> Option<Self> {
+                #![allow(unused, unused_mut)]
+
                 $(
                     if name == stringify!($name) $($(|| name == stringify!($alias))*)* {
                         #[derive(serde::Deserialize)]
@@ -72,9 +74,21 @@ macro_rules! define_methods {
                             return Some(MethodCall::$name {
                                 $($p_name,)*
                             })
-                        } else {
-                            todo!() // TODO: ?
                         }
+
+                        // TODO: code below is messy
+                        if let Ok(params) = serde_json::from_str::<Vec<serde_json::Value>>(params) {
+                            let mut n = 0;
+                            $(
+                                let $p_name = serde_json::from_value(params.get(n).cloned().unwrap_or(serde_json::Value::Null)).unwrap(); // TODO: don't panic
+                                n += 1;
+                            )*
+                            return Some(MethodCall::$name {
+                                $($p_name,)*
+                            })
+                        }
+
+                        todo!("bad params for {} => {}", name, params) // TODO: ?
                     }
                 )*
 
@@ -130,7 +144,7 @@ define_methods! {
     chain_getBlock(hash: Option<HashHexString>) -> (), // TODO: bad return type
     chain_getBlockHash(height: u64) -> HashHexString [chain_getHead], // TODO: wrong param
     chain_getFinalizedHead() -> HashHexString [chain_getFinalisedHead],
-    chain_getHeader(hash: Option<HashHexString>) -> (), // TODO: bad return type
+    chain_getHeader(hash: Option<HashHexString>) -> HexString, // TODO: return type is guessed
     chain_subscribeAllHeads() -> String,
     chain_subscribeFinalizedHeads() -> String [chain_subscribeFinalisedHeads],
     chain_subscribeNewHeads() -> String [subscribe_newHead, chain_subscribeNewHead],
@@ -159,7 +173,7 @@ define_methods! {
     state_queryStorage() -> (), // TODO:
     state_queryStorageAt() -> (), // TODO:
     state_subscribeRuntimeVersion() -> String [chain_subscribeRuntimeVersion],
-    state_subscribeStorage() -> String [state_unsubscribeStorage],
+    state_subscribeStorage(list: Vec<HashHexString>) -> String [state_unsubscribeStorage],
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
     system_accountNextIndex() -> (), // TODO:
     system_addReservedPeer() -> (), // TODO:

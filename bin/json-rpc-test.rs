@@ -1,5 +1,6 @@
 // TODO: temporary binary to try the JSON-RPC server component alone
 
+use std::collections::HashMap;
 use substrate_lite::json_rpc::{methods, websocket_server};
 
 fn main() {
@@ -22,17 +23,49 @@ async fn async_main() {
     .await
     .unwrap();
 
+    let mut next_subscription = 0u64;
+    let mut runtime_version_subscriptions = HashMap::new();
+    let mut new_heads_subscriptions = HashMap::new();
+    let mut storage_subscriptions = HashMap::new();
+
+    struct Subscriptions {
+        runtime_version: Vec<String>,
+        new_heads: Vec<String>,
+        storage: Vec<String>,
+    }
+
     loop {
         let (connection_id, response) = match server.next_event().await {
             websocket_server::Event::ConnectionOpen { .. } => {
-                server.accept(());
+                server.accept(Subscriptions {
+                    runtime_version: Vec::new(),
+                    new_heads: Vec::new(),
+                    storage: Vec::new(),
+                });
                 continue;
             }
-            websocket_server::Event::ConnectionError { .. } => continue,
+            websocket_server::Event::ConnectionError {
+                connection_id,
+                user_data,
+            } => {
+                for runtime_version in user_data.runtime_version {
+                    let _user_data = runtime_version_subscriptions.remove(&runtime_version);
+                    debug_assert_eq!(_user_data, Some(connection_id));
+                }
+                for new_heads in user_data.new_heads {
+                    let _user_data = new_heads_subscriptions.remove(&new_heads);
+                    debug_assert_eq!(_user_data, Some(connection_id));
+                }
+                for storage in user_data.storage {
+                    let _user_data = storage_subscriptions.remove(&storage);
+                    debug_assert_eq!(_user_data, Some(connection_id));
+                }
+                continue;
+            }
             websocket_server::Event::TextFrame {
                 connection_id,
                 message,
-                ..
+                user_data,
             } => {
                 let (request_id, call) = methods::parse_json_call(&message).expect("bad request");
                 match call {
@@ -45,6 +78,32 @@ async fn async_main() {
                         let response =
                             methods::Response::chain_getBlockHash(methods::HashHexString(hash))
                                 .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::chain_getHeader { hash } => {
+                        // TODO: hash
+                        let header = substrate_lite::calculate_genesis_block_header(
+                            chain_spec.genesis_storage(),
+                        )
+                        .scale_encoding()
+                        .fold(Vec::new(), |mut a, b| {
+                            a.extend_from_slice(b.as_ref());
+                            a
+                        });
+                        let response =
+                            methods::Response::chain_getHeader(methods::HexString(header))
+                                .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::chain_subscribeNewHeads {} => {
+                        let subscription = next_subscription.to_string();
+                        next_subscription += 1;
+
+                        let response =
+                            methods::Response::chain_subscribeNewHeads(subscription.clone())
+                                .to_json_response(request_id);
+                        user_data.new_heads.push(subscription.clone());
+                        new_heads_subscriptions.insert(subscription, connection_id);
                         (connection_id, response)
                     }
                     methods::MethodCall::rpc_methods {} => {
@@ -67,9 +126,25 @@ async fn async_main() {
                         (connection_id, response)
                     }
                     methods::MethodCall::state_subscribeRuntimeVersion {} => {
+                        let subscription = next_subscription.to_string();
+                        next_subscription += 1;
+
                         let response =
-                            methods::Response::state_subscribeRuntimeVersion("foo".to_owned())
+                            methods::Response::state_subscribeRuntimeVersion(subscription.clone())
                                 .to_json_response(request_id);
+                        user_data.runtime_version.push(subscription.clone());
+                        runtime_version_subscriptions.insert(subscription, connection_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::state_subscribeStorage { list } => {
+                        let subscription = next_subscription.to_string();
+                        next_subscription += 1;
+
+                        let response =
+                            methods::Response::state_subscribeStorage(subscription.clone())
+                                .to_json_response(request_id);
+                        user_data.storage.push(subscription.clone());
+                        storage_subscriptions.insert(subscription, connection_id);
                         (connection_id, response)
                     }
                     methods::MethodCall::state_getRuntimeVersion {} => {
@@ -92,11 +167,36 @@ async fn async_main() {
                                 .to_json_response(request_id);
                         (connection_id, response)
                     }
+                    methods::MethodCall::system_chainType {} => {
+                        let response =
+                            methods::Response::system_chainType(chain_spec.chain_type().to_owned())
+                                .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::system_health {} => {
+                        let response = methods::Response::system_health(methods::SystemHealth {
+                            is_syncing: true,        // TODO:
+                            peers: 1,                // TODO:
+                            should_have_peers: true, // TODO:
+                        })
+                        .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::system_name {} => {
+                        let response = methods::Response::system_name("substrate-lite!".to_owned())
+                            .to_json_response(request_id);
+                        (connection_id, response)
+                    }
                     methods::MethodCall::system_properties {} => {
                         let response = methods::Response::system_properties(
                             serde_json::from_str(chain_spec.properties()).unwrap(),
                         )
                         .to_json_response(request_id);
+                        (connection_id, response)
+                    }
+                    methods::MethodCall::system_version {} => {
+                        let response = methods::Response::system_version("1.0.0".to_owned())
+                            .to_json_response(request_id);
                         (connection_id, response)
                     }
                     _ => {

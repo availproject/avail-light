@@ -58,6 +58,28 @@ pub fn build_success_response(id_json: &str, result_json: &str) -> String {
     .unwrap()
 }
 
+/// Builds a JSON event to a subscription.
+///
+/// `method` must be the name of the method that was used for the subscription. `id` must
+/// be the identifier of the subscription, as previously attributed by the server and returned to
+/// the client. `result_json` must be the JSON-formatted event.
+///
+/// # Panic
+///
+/// Panics if `result_json` isn't valid JSON.
+///
+pub fn build_subscription_event(method: &str, id: &str, result_json: &str) -> String {
+    serde_json::to_string(&SerdeSubscriptionEvent {
+        jsonrpc: SerdeVersion::V2,
+        method,
+        params: SerdeSubscriptionEventParams {
+            subscription: id,
+            result: serde_json::from_str(result_json).expect("invalid result_json"),
+        },
+    })
+    .unwrap()
+}
+
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct SerdeCall<'a> {
     jsonrpc: SerdeVersion,
@@ -182,4 +204,19 @@ impl serde::Serialize for SerdeErrorCode {
 
         serializer.serialize_i64(code)
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SerdeSubscriptionEvent<'a> {
+    jsonrpc: SerdeVersion,
+    method: &'a str,
+    params: SerdeSubscriptionEventParams<'a>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct SerdeSubscriptionEventParams<'a> {
+    subscription: &'a str,
+    result: &'a serde_json::value::RawValue,
 }
