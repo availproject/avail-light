@@ -1,0 +1,185 @@
+//! Parse JSON-RPC method calls and notifications, and build responses messages.
+
+/// Parses a JSON-encoded RPC method call or notification.
+pub fn parse_call(call_json: &str) -> Result<Call, ParseError> {
+    let serde_call: SerdeCall = serde_json::from_str(call_json).map_err(ParseError)?;
+
+    if let Some(id) = &serde_call.id {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        #[serde(untagged)]
+        enum SerdeId {
+            Num(u64),
+            Str(String),
+        }
+
+        if let Err(err) = serde_json::from_str::<SerdeId>(id.get()) {
+            return Err(ParseError(err));
+        }
+    }
+
+    Ok(Call {
+        id_json: serde_call.id.map(|v| v.get()),
+        method: serde_call.method,
+        params_json: serde_call.params.get(),
+    })
+}
+
+/// Parsed JSON-RPC call.
+#[derive(Debug)]
+pub struct Call<'a> {
+    /// JSON-formatted identifier of the request. `None` for notifications.
+    pub id_json: Option<&'a str>,
+    /// Name of the method that is being called.
+    pub method: &'a str,
+    /// JSON-formatted list of parameters.
+    pub params_json: &'a str,
+}
+
+/// Error while parsing a call.
+#[derive(Debug, derive_more::Display)]
+pub struct ParseError(serde_json::Error);
+
+/// Builds a JSON response.
+///
+/// `id_json` must be the JSON-formatted identifier of the request, found in [`Call::id_json`].
+/// `result_json` must be the JSON-formatted result of the request.
+///
+/// # Panic
+///
+/// Panics if `id_json` or `result_json` aren't valid JSON.
+///
+pub fn build_success_response(id_json: &str, result_json: &str) -> String {
+    serde_json::to_string(&SerdeSuccess {
+        jsonrpc: SerdeVersion::V2,
+        result: serde_json::from_str(result_json).expect("invalid result_json"),
+        id: serde_json::from_str(id_json).expect("invalid id_json"),
+    })
+    .unwrap()
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+struct SerdeCall<'a> {
+    jsonrpc: SerdeVersion,
+    #[serde(borrow)]
+    method: &'a str,
+    #[serde(borrow)]
+    params: &'a serde_json::value::RawValue,
+    #[serde(borrow)]
+    id: Option<&'a serde_json::value::RawValue>,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+enum SerdeVersion {
+    V2,
+}
+
+impl serde::Serialize for SerdeVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match *self {
+            SerdeVersion::V2 => "2.0".serialize(serializer),
+        }
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for SerdeVersion {
+    fn deserialize<D>(deserializer: D) -> Result<SerdeVersion, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = <&str>::deserialize(deserializer)?;
+        if string != "2.0" {
+            return Err(serde::de::Error::custom("unknown version"));
+        }
+        Ok(SerdeVersion::V2)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerdeSuccess<'a> {
+    jsonrpc: SerdeVersion,
+    result: &'a serde_json::value::RawValue,
+    #[serde(borrow)]
+    id: &'a serde_json::value::RawValue,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerdeFailure<'a> {
+    version: SerdeVersion,
+    error: SerdeError,
+    #[serde(borrow)]
+    id: &'a serde_json::value::RawValue,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+enum SerdeOutput<'a> {
+    #[serde(borrow)]
+    Success(SerdeSuccess<'a>),
+    #[serde(borrow)]
+    Failure(SerdeFailure<'a>),
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerdeError {
+    code: SerdeErrorCode,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum SerdeErrorCode {
+    ParseError,
+    InvalidRequest,
+    MethodNotFound,
+    InvalidParams,
+    InternalError,
+    ServerError(i64),
+    MethodError(i64),
+}
+
+impl<'a> serde::Deserialize<'a> for SerdeErrorCode {
+    fn deserialize<D>(deserializer: D) -> Result<SerdeErrorCode, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let code: i64 = serde::Deserialize::deserialize(deserializer)?;
+
+        Ok(match code {
+            -32700 => SerdeErrorCode::ParseError,
+            -32600 => SerdeErrorCode::InvalidRequest,
+            -32601 => SerdeErrorCode::MethodNotFound,
+            -32602 => SerdeErrorCode::InvalidParams,
+            -32603 => SerdeErrorCode::InternalError,
+            -32099..=-32000 => SerdeErrorCode::ServerError(code),
+            code => SerdeErrorCode::MethodError(code),
+        })
+    }
+}
+
+impl serde::Serialize for SerdeErrorCode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let code = match *self {
+            SerdeErrorCode::ParseError => -32700,
+            SerdeErrorCode::InvalidRequest => -32600,
+            SerdeErrorCode::MethodNotFound => -32601,
+            SerdeErrorCode::InvalidParams => -32602,
+            SerdeErrorCode::InternalError => -32603,
+            SerdeErrorCode::ServerError(code) => code,
+            SerdeErrorCode::MethodError(code) => code,
+        };
+
+        serializer.serialize_i64(code)
+    }
+}

@@ -1,22 +1,21 @@
 //! List of requests and how to answer them.
 
-mod defs;
+use super::parse;
 
 /// Parses a JSON call (usually received from a JSON-RPC server).
 ///
 /// On success, returns a JSON-encoded identifier for that request that must be passed back when
 /// emitting the response.
 pub fn parse_json_call(message: &str) -> Result<(&str, MethodCall), ParseError> {
-    let call_def: defs::SerdeCall = serde_json::from_str(message)
-        .map_err(JsonRpcParseError)
-        .map_err(ParseError::JsonRpcParse)?;
+    let call_def = parse::parse_call(message).map_err(ParseError::JsonRpcParse)?;
 
-    let id = match call_def.id {
-        Some(id) => id.get(),
+    // No notifications are supported by this server.
+    let id = match call_def.id_json {
+        Some(id) => id,
         None => return Err(ParseError::UnknownNotification(call_def.method.to_owned())),
     };
 
-    let call = match MethodCall::from_defs(&call_def.method, call_def.params.get()) {
+    let call = match MethodCall::from_defs(&call_def.method, call_def.params_json) {
         Some(call) => call,
         None => return Err(ParseError::UnknownMethod(call_def.method.to_owned())),
     };
@@ -28,7 +27,7 @@ pub fn parse_json_call(message: &str) -> Result<(&str, MethodCall), ParseError> 
 #[derive(Debug, derive_more::Display)]
 pub enum ParseError {
     /// Could not parse the body of the message as a valid JSON-RPC message.
-    JsonRpcParse(JsonRpcParseError),
+    JsonRpcParse(parse::ParseError),
     /// Call concerns a method that isn't recognized.
     UnknownMethod(String),
     /// Call concerns a notification that isn't recognized.
@@ -102,22 +101,14 @@ macro_rules! define_methods {
             /// Panics if `id_json` isn't valid JSON.
             ///
             pub fn to_json_response(&self, id_json: &str) -> String {
-                let id_json: &serde_json::value::RawValue = serde_json::from_str(id_json)
-                    .expect("invalid id_json");
-
-                let def = match self {
+                match self {
                     $(
                         Response::$name(out) => {
-                            defs::SerdeOutput::Success(defs::SerdeSuccess {
-                                jsonrpc: defs::SerdeVersion::V2,
-                                result: From::<$ret_ty>::from(out.clone()),
-                                id: Some(id_json),
-                            })
+                            let result_json = serde_json::to_string(&serde_json::Value::from(out.clone())).unwrap();
+                            parse::build_success_response(id_json, &result_json)
                         },
                     )*
-                };
-
-                serde_json::to_string(&def).unwrap()
+                }
             }
         }
     };
