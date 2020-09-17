@@ -6,16 +6,19 @@
 //!
 //! # About the length prefix
 //!
-//! The Wasm runtime returns the metadata prefixed with a SCALE-compact-encoded prefix. The
-//! functions in this module remove this prefix before returning the value.
+//! The Wasm runtime returns the metadata prefixed with a SCALE-compact-encoded length. The
+//! functions in this module remove this length prefix before returning the value.
 //!
-//! While it would be more idiomatic to return the raw result and let the user remove the prefix
+//! While it would be more flexible to return the raw result and let the user remove the prefix
 //! if desired, the presence of this prefix is clearly the result of a mistake during the
-//! development process that has now to be kept in order to preserve backwards compatibility.
+//! development process that now has to be maintained in order to preserve backwards
+//! compatibility.
 //!
-//! What the documentation refers as "the metadata" systematically describes the metadata
-//! *without* a length prefix, and it is therefore less surprising to not include this length
-//! prefix in the return value of this function.
+//! A lot of documentation concerning the metadata is available on the Internet, and several
+//! projects are capable of parsing the metadata, and what is referred to as "the metadata"
+//! in this documentation and projects systematically describes the metadata *without* any length
+//! prefix. It would be confusing and error-prone if the value returned here obeyed a slightly
+//! different definition.
 //!
 
 use crate::executor;
@@ -46,10 +49,10 @@ pub fn metadata_from_virtual_machine_prototype(
         .run_no_param("Metadata_metadata")
         .map_err(Error::VmInitialization)?;
 
-    let mut outcome = loop {
+    let outcome = loop {
         match vm.state() {
             executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(data) => break data.to_vec(),
+            executor::State::Finished(data) => break remove_length_prefix(data)?,
             executor::State::Trapped => return Err(Error::Trapped),
             executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
 
@@ -58,8 +61,6 @@ pub fn metadata_from_virtual_machine_prototype(
             _ => return Err(Error::ExternalityNotAllowed),
         }
     };
-
-    remove_length_prefix(&mut outcome)?;
 
     Ok((outcome, vm.into_prototype()))
 }
@@ -79,23 +80,27 @@ pub enum Error {
 
 /// Removes the length prefix at the beginning of `metadata`. Returns an error if there is no
 /// valid length prefix.
-fn remove_length_prefix(metadata: &mut Vec<u8>) -> Result<(), Error> {
+fn remove_length_prefix(metadata: &[u8]) -> Result<Vec<u8>, Error> {
     // TODO: maybe don't use parity_scale_codec here
+    // Decoded length prefix.
     let length = parity_scale_codec::Compact::<u64>::decode(&mut (&metadata[..]))
         .map_err(|_| Error::BadLengthPrefix)?;
-    // This `CompactLen` API is one of the weird APIs I've ever seen.
-    let len_len =
+
+    // Length of the decoded length prefix.
+    let length_length =
         <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
             &length.0,
         );
+
+    // Verify that the length prefix indeed matches the metadata's length.
     if usize::try_from(length.0)
         .unwrap_or(usize::max_value())
-        .checked_add(len_len)
+        .checked_add(length_length)
         .ok_or(Error::BadLengthPrefix)?
         != metadata.len()
     {
         return Err(Error::BadLengthPrefix);
     }
-    *metadata = metadata[len_len..].to_owned();
-    Ok(())
+
+    Ok(metadata[length_length..].to_owned())
 }
