@@ -1,10 +1,10 @@
 //! Data structure containing trees of nodes.
 //!
-//! This data structure is meant to be used in situations where there exists a finalized block,
-//! plus a tree of non-finalized nodes that all descend from that finalized block.
+//! The [`ForkTree`] data structure can be used in situations where there exists a finalized
+//! block, plus a tree of non-finalized blocks that all descend from that finalized block.
 //!
-//! In this schema, the finalized block is **not** part of the `ForkTree` data structure. Only
-//! its descendants are.
+//! The [`ForkTree`] only contains the non-finalized blocks. The finalized block, virtual root
+//! of the tree, is only implicitly there.
 //!
 //! # Example
 //!
@@ -13,7 +13,8 @@
 //!
 //! let mut tree = ForkTree::new();
 //!
-//! // Add a first node with no root.
+//! // Add a first node with no parent. In other words, its parent is the finalized block that is
+//! // virtually there but not managed by the `ForkTree`.
 //! // Note that the user data (`"foo"` here) can be of any type. It can be used to store
 //! // additional information on each node.
 //! let node0 = tree.insert(None, "foo");
@@ -24,6 +25,7 @@
 //!
 //! // Removes `node1` and all the nodes that aren't its descendants.
 //! // This is typically called when `node1` gets finalized.
+//! // This function returns an iterator containing the blocks that have been removed.
 //! tree.prune_ancestors(node1);
 //!
 //! // Only `node2` remains.
@@ -38,7 +40,7 @@ use core::{fmt, iter};
 pub struct ForkTree<T> {
     /// Container storing the nodes.
     nodes: slab::Slab<Node<T>>,
-    /// Index of the node in the tree without any root.
+    /// Index of the node in the tree without any parent nor previous sibling.
     first_root: Option<usize>,
 }
 

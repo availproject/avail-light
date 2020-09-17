@@ -1,5 +1,5 @@
 //! Syncing, short for synchronizing, consists in synchronizing the state of a local chain with
-//! the state of the chain of other machines, called *remotes* or *sources*.
+//! the state of the chain contained in other machines, called *remotes* or *sources*.
 //!
 //! > **Note**: While the above summary is a bit abstract, in practice it is almost always
 //! >           done by exchanging messages through a peer-to-peer network.
@@ -7,7 +7,7 @@
 //! Multiple strategies exist for syncing, and which one to employ depends on the amount of
 //! information that is desired (e.g. is it required to know the header and/or body of every
 //! single block, or can some blocks be skipped?) and the distance between the highest block of
-//! the local chain and the highest block on the rest of the network.
+//! the local chain and the highest block available on the remotes.
 //!
 //! # About safety
 //!
@@ -18,15 +18,18 @@
 //! It is possible, however, for a malicious remote to omit some information, such as the
 //! existence of a specific block. If all the remotes that are being synchronized from are
 //! malicious and collude to omit the same information, there is no way for the local node to
-//! know about this information or even to be aware that it is missing an information. This is
-//! called an **eclipse attack**.
+//! learn this information or even to be aware that it is missing an information. This is called
+//! an **eclipse attack**.
 //!
 //! For this reason, it is important to ensure a large number and a good distribution of the
-//! sources. In the context of a peer-to-peer network, a minimum threshold of around 7 peers is
-//! generally considered acceptable. Similarly, in the context of a peer-to-peer network, it is
-//! important to establish outgoing connections to other nodes and not only rely on incoming
-//! connections, as there is otherwise the possibility of a single actor controlling all said
-//! incoming connections.
+//! sources. In the context of a peer-to-peer network where machines are picked randomly, a
+//! minimum threshold of around 7 peers is generally considered acceptable. Similarly, in the
+//! context of a peer-to-peer network, it is important to establish outgoing connections to other
+//! nodes and not only rely on incoming connections, as there is otherwise the possibility of a
+//! single actor controlling all said incoming connections.
+
+// TODO: this doc ^ is correct but assumes that there exist multiple syncing strategies, while at
+//       the time of writing only one is implemented
 
 // TODO: pub mod full_all_forks;
 pub mod full_optimistic;

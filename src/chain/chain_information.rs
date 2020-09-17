@@ -1,3 +1,26 @@
+//! Data structures containing the finalized state of the chain, except for its storage.
+//!
+//! The types provided in this module contain the state of the chain, other than its storage, that
+//! has been finalized.
+//!
+//! > **Note**: These data structures only provide a way to communicate that finalized state, but
+//! >           the existence of a [`ChainInformation`] alone does in no way mean that its content
+//! >           is accurate. As an example, one use case of [`ChainInformation`] is to be written
+//! >           to disk then later reloaded. It is possible for the user to modify the data on
+//! >           disk, in which case the loaded [`ChanInformation`] might be erroneous.
+//!
+//! These data structures contain all the information that is necessary to verify the
+//! authenticity (but not the correctness) of blocks that descend from the finalized block
+//! contained in the structure.
+//!
+//! They do not, however, contain the storage of the finalized block, which is necessary to verify
+//! the correctness of new blocks. It possible possible, though, for instance to download the
+//! storage of the finalized block from another node. This downloaded storage can be verified
+//! to make sure that it matches the content of the [`ChainInformation`].
+//!
+//! They also do not contain the past history of the chain. It is, however, similarly possible to
+//! for instance download the history from other nodes.
+
 use crate::{finality::grandpa, header, verify::babe};
 
 use alloc::vec::Vec;
@@ -40,6 +63,7 @@ pub struct ChainInformation {
 
     /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
     /// are already finalized but not triggered yet. These changes will for sure happen.
+    // TODO: I believe this should be an Option
     pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
 }
 

@@ -416,14 +416,6 @@ pub enum RequestFail {
     BlocksUnavailable,
 }
 
-#[derive(Debug)]
-pub struct ChainStateUpdate {
-    pub best_block_hash: [u8; 32],
-    pub best_block_number: u64,
-    pub finalized_block_hash: [u8; 32],
-    pub finalized_block_number: u64,
-}
-
 /// Iterator that drains requests after a source has been removed.
 pub struct RequestsDrain<'a, TRq, TBl> {
     iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq, TBl>>>,

@@ -1,29 +1,47 @@
-//! Tree of block headers.
+//! Finalized block header, plus tree of authenticated non-finalized block headers.
 //!
-//! This module provides the [`NonFinalizedTree`] struct. This struct is a data structure
-//! containing a tree of block headers, plus the state necessary to add new blocks to that tree.
-//! Each block header additionally holds a user-chosen opaque data.
+//! This module provides the [`NonFinalizedTree`] type. This type is a data structure
+//! containing a valid tree of block headers, plus the state necessary to verify new blocks with
+//! the intent to add them to that tree. Each block header additionally holds a user-chosen
+//! opaque data.
 //!
 //! The state in the [`NonFinalizedTree`] consists of:
 //!
-//! - One "latest finalized" block, and various states contained in its ancestors.
-//! - Zero or more blocks that descend from the latest finalized block.
+//! - One "latest finalized" block and various information about its ancestors, akin to a
+//!   [`chain_information::ChainInformation`].
+//! - Zero or more blocks that descend from that latest finalized block.
 //!
 //! The latest finalized block is a block that is guaranted to never be reverted. While it can
 //! always be set to the genesis block of the chain, it is preferable, in order to reduce
 //! memory utilization, to maintain it to a block that is as high as possible in the chain.
 //!
-//! > **Note**: While the GrandPa protocol provides a network-wide way to designate a block as
-//! >           final, the concept of GrandPa-provided finality doesn't have to be the same as
-//! >           the concept of finality in the [`NonFinalizedTree`]. For example, an API user
-//! >           might decide to optimistically assume that the block whose number is
+//! > **Note**: While mechanisms such as GrandPa provide a network-wide way to designate a block
+//! >           as final, the concept of GrandPa-provided finality doesn't necessarily have to
+//! >           match the concept of finality in the [`NonFinalizedTree`]. For example, an API
+//! >           user might decide to optimistically assume that the block whose number is
 //! >           `highest_block - 5` is automatically finalized, and fall back to rebuilding a new
-//! >           [`NonFinalizedTree`] if that assumption turns out to not be true.
+//! >           [`NonFinalizedTree`] if that assumption turns out to not be true. The finalized
+//! >           block in the [`NonFinalizedTree`] only represents a block that the
+//! >           [`NonFinalizedTree`] cannot remove, not a block that cannot be removed in the
+//! >           absolute.
 //!
-//! A block can be added to the chain by calling [`NonFinalizedTree::verify_header`].
+//! A block can be added to the chain by calling [`NonFinalizedTree::verify_header`] or
+//! [`NonFinalizedTree::verify_body`]. As explained in details in
+//! [the `verify` module](crate::verify), verifying the header only verifies the authenticity of
+//! a block and not its correctness. Verifying both the header and body provides the strongest
+//! guarantee, but requires knowledge of the storage of the block that is parent of the block to
+//! verify.
 //!
+//! > **Note**: There typically exists two kinds of clients: full and light. Full clients store
+//! >           the state of the storage, while light clients don't. For this reason, light
+//! >           clients can only verify the header of new blocks. Both full and light clients
+//! >           should wait for a block to be finalized if they want to be certain that it will
+//! >           forever remain part of the chain.
+//!
+//! Additionally, a [`NonFinalizedTree::verify_justification`] method is provided in order to
+//! verify the correctness of a [justification](crate::finality::justification).
 
-// TODO: rethink this doc ^
+// TODO: expand this doc ^
 // TODO: this module is an essential part of the code and needs clean up and testing
 
 use crate::{
@@ -609,6 +627,7 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// If the verification succeeds, a [`JustificationApply`] object will be returned which can
     /// be used to apply the finalization.
+    // TODO: expand the documentation about how blocks with authorities changes have to be finalized before any further block can be finalized
     pub fn verify_justification(
         &mut self,
         scale_encoded_justification: &[u8],
