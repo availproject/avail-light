@@ -285,7 +285,40 @@ impl Noise {
     ///
     /// > **Note**: Because each message has a prefix and a suffix, you are encouraged to batch
     /// >           as much data as possible into `payload` before calling this function.
-    pub fn encrypt(&mut self, mut payload: &[u8], mut destination: &mut [u8]) -> (usize, usize) {
+    pub fn encrypt(
+        &mut self,
+        mut payload: impl Iterator<Item = impl AsRef<[u8]>>,
+        destination: &mut [u8],
+    ) -> (usize, usize) {
+        // TODO: The API exposes `payload` is an iterator of buffers rather than a single
+        //       contiguous buffer. The reason is that, theoretically speaking, the underlying
+        //       implementation should be able to read bytes from an iterator. Rather than
+        //       providing an API whose usage might force an overhead, the overhead is instead
+        //       moved to the implementation while keeping in mind that this overhead can be
+        //       fixed later.
+
+        // The three possible paths below are: the iterator is empty, the iterator contains
+        // exactly one buffer, the iterator contains two or more buffers.
+
+        let first_buf = match payload.next() {
+            Some(b) => b,
+            None => return (0, 0),
+        };
+
+        if let Some(next) = payload.next() {
+            let mut buf = first_buf.as_ref().to_vec();
+            buf.extend_from_slice(next.as_ref());
+            let payload = payload.fold(buf, |mut a, b| {
+                a.extend_from_slice(b.as_ref());
+                a
+            });
+            self.encrypt_inner(&payload, destination)
+        } else {
+            self.encrypt_inner(first_buf.as_ref(), destination)
+        }
+    }
+
+    fn encrypt_inner(&mut self, mut payload: &[u8], mut destination: &mut [u8]) -> (usize, usize) {
         let mut total_read = 0;
         let mut total_written = 0;
 
@@ -294,6 +327,7 @@ impl Noise {
         while destination.len() >= 19 {
             let in_len = cmp::min(payload.len(), cmp::min(65536, destination.len() - 18));
             if in_len == 0 {
+                debug_assert!(payload.is_empty());
                 break;
             }
 
@@ -365,7 +399,9 @@ impl<'a> BufferEncryption<'a> {
     /// Panics if `len` is larger than the slice this derefs to.
     ///
     pub fn finish(self, len: usize) -> usize {
-        let (_read, written) = self.noise.encrypt(&self.buffer[..len], self.destination);
+        let (_read, written) = self
+            .noise
+            .encrypt(iter::once(&self.buffer[..len]), self.destination);
         debug_assert_eq!(_read, len);
         written
     }

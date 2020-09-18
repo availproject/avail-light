@@ -28,7 +28,7 @@
 //! - [Official repository](https://github.com/multiformats/multistream-select)
 //!
 
-// TODO: write usage
+// TODO: write usage once it's fully fledged out
 
 use crate::network2::leb128;
 
