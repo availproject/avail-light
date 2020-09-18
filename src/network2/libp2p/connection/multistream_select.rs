@@ -1,31 +1,90 @@
-//! https://github.com/multiformats/multistream-select
+//! Multistream-select is a protocol whose purpose is to negotiate protocols.
+//!
+//! # Context
+//!
+//! The multistream-select protocol makes it possible for two parties to negotiate a protocol.
+//!
+//! When using TCP connections, it is used immediately after a connection opens in order to
+//! negotiate which encryption protocol to use, then after the encryption protocol handshake to
+//! negotiate which multiplexing protocol to use.
+//!
+//! It is also used every time a substream opens in order to negotiate which protocol to use for
+//! this substream in particular.
+//!
+//! Once a protocol has been negotiated, the connection or substream immediately starts speaking
+//! this protocol.
+//!
+//! The multistream-select protocol is asymmetric: one side needs to be the dialer and the other
+//! side the listener. In the context of a TCP connection, the dialer and listener correspond to
+//! the dialer and listener of the connection. In the context of a substream, the dialer is the
+//! side that initiated the opening of the substream.
+//!
+//! # Usage
+//!
+//! To be written.
+//!
+//! # See also
+//!
+//! - [Official repository](https://github.com/multiformats/multistream-select)
+//!
 
-// TODO: docs
+// TODO: write usage
 
 use crate::network2::leb128;
 
 use alloc::borrow::Cow;
-use core::{cmp, iter, mem, slice, str};
+use core::{cmp, fmt, iter, mem, slice, str};
 
-/// Handshake message sent by both sides at the beginning of each multistream-select negotiation.
+/// Handshake message sent by both parties at the beginning of each multistream-select negotiation.
 const HANDSHAKE: &'static [u8] = b"/multistream/1.0.0\n";
 
+/// Configuration of a multistream-select protocol.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Config<I, P> {
-    Dialer { requested_protocol: P },
-    Listener { supported_protocols: I },
+    /// Local node is the dialing side and requests the specific protocol.
+    Dialer {
+        /// Name of the protocol to try negotiate. The multistream-select negotiation will
+        /// ultimately succeed if and only if the remote supports this protocol.
+        requested_protocol: P,
+    },
+    /// Local node is the listening side.
+    Listener {
+        /// List of protocol names that are supported. In case of success, the-negotiated protocol
+        /// is one of the protocols in this list.
+        supported_protocols: I,
+    },
 }
 
+/// Current state of a multistream-select negotiation.
+#[derive(Debug)]
 pub enum Negotiation<I, P> {
+    /// Negotiation is still in progress. Use the provided [`InProgress`] object to inject and
+    /// extract more data from/to the remote.
     InProgress(InProgress<I, P>),
+    /// Negotiation has ended successfully. A protocol has been negotiated.
     Success(P),
+    /// Negotiation has ended, but there isn't any protocol in common between the two parties.
     NotAvailable,
 }
 
+impl<I, P> Negotiation<I, P>
+where
+    I: Iterator<Item = P> + Clone,
+    P: AsRef<str>,
+{
+    /// Shortcut method for [`InProgress::new`] and wrapping the [`InProgress`] in a
+    /// [`Negotiation`].
+    pub fn new(config: Config<I, P>) -> Self {
+        Negotiation::InProgress(InProgress::new(config))
+    }
+}
+
+/// Negotiation in progress.
 pub struct InProgress<I, P> {
     /// Configuration of the negotiation. Always `Some` except right before destruction.
     config: Option<Config<I, P>>,
     state: InProgressState<P>,
+    /// Incoming data is buffered in this `recv_buffer` before being decoded.
     recv_buffer: leb128::Framed,
 }
 
@@ -48,34 +107,47 @@ enum InProgressState<P> {
     ProtocolRequestAnswerExpected,
 }
 
-impl<I, P> Negotiation<I, P>
-where
-    I: Iterator<Item = P> + Clone,
-    P: AsRef<str>,
-{
-    pub fn new(config: Config<I, P>) -> Self {
-        Negotiation::InProgress(InProgress::new(config))
-    }
-}
-
 impl<I, P> InProgress<I, P>
 where
     I: Iterator<Item = P> + Clone,
     P: AsRef<str>,
 {
+    /// Initializes a new handshake state machine.
     pub fn new(config: Config<I, P>) -> Self {
+        // Length, in bytes, of the longest protocol name.
+        let max_proto_name_len = match &config {
+            Config::Dialer { requested_protocol } => requested_protocol.as_ref().len(),
+            Config::Listener {
+                supported_protocols,
+            } => supported_protocols
+                .clone()
+                .map(|p| p.as_ref().len())
+                .max()
+                .unwrap_or(0),
+        };
+
+        // Any incoming frame larger than `max_frame_len` will trigger a protocol error.
+        // This means that a protocol error might be reported in situations where the dialer
+        // legitimately requests a protocol that the listener doesn't support. In order to prevent
+        // confusion, a minimum length is applied to the protocol name length. Any protocol name
+        // smaller than this will never trigger a protocol error, even if it isn't supported.
+        const MIN_PROTO_LEN_NO_ERR: usize = 32;
+        let max_frame_len = cmp::max(
+            cmp::min(max_proto_name_len, MIN_PROTO_LEN_NO_ERR),
+            HANDSHAKE.len(),
+        ) + 1;
+
         InProgress {
             config: Some(config),
-            // Note that the listener normally doesn't necessarily have to immediately send a
-            // handshake, and could instead wait for a command from the dialer. In practice,
+            // Note that the listener theoretically doesn't necessarily have to immediately send
+            // a handshake, and could instead wait for a command from the dialer. In practice,
             // however, the specifications don't mention anything about this, and some libraries
             // such as js-libp2p wait for the listener to send a handshake before emitting a
             // command.
             state: InProgressState::SendHandshake {
                 num_bytes_written: 0,
             },
-            // We don't expect a protocol that is more than 1024 bytes long.
-            recv_buffer: leb128::Framed::new(1024),
+            recv_buffer: leb128::Framed::new(max_frame_len),
         }
     }
 
@@ -91,7 +163,7 @@ where
 
         loop {
             // If the current state involves sending out data, any additional incoming data is
-            // refused in order to push back the remote.
+            // refused in order to apply back-pressure on the remote.
             match &self.state {
                 InProgressState::SendHandshake { .. }
                 | InProgressState::SendProtocolRequest { .. }
@@ -117,15 +189,13 @@ where
             };
 
             match (&mut self.state, &mut self.config) {
-                (InProgressState::SendHandshake { .. }, _)
-                | (InProgressState::SendProtocolRequest { .. }, _)
-                | (InProgressState::SendProtocolNa { .. }, _)
-                | (InProgressState::SendProtocolOk { .. }, _) => unreachable!(),
-
                 (InProgressState::HandshakeExpected, Some(Config::Dialer { .. })) => {
                     if &*frame != HANDSHAKE {
                         return Err(Error::BadHandshake);
                     }
+                    // The dialer immediately sends the request after its handshake and before
+                    // waiting for the handshake from the listener. As such, after receiving the
+                    // handshake, the next step is to wait for the request answer.
                     self.state = InProgressState::ProtocolRequestAnswerExpected;
                 }
 
@@ -133,10 +203,10 @@ where
                     if &*frame != HANDSHAKE {
                         return Err(Error::BadHandshake);
                     }
+                    // The listener immediately sends the handshake at initialization. When this
+                    // code is reached, it has therefore already been sent.
                     self.state = InProgressState::CommandExpected;
                 }
-
-                (InProgressState::CommandExpected, Some(Config::Dialer { .. })) => unreachable!(),
 
                 (
                     InProgressState::CommandExpected,
@@ -163,16 +233,12 @@ where
                     }
                 }
 
-                (InProgressState::ProtocolRequestAnswerExpected, Some(Config::Listener { .. })) => {
-                    unreachable!()
-                }
-
                 (
                     InProgressState::ProtocolRequestAnswerExpected,
                     mut cfg @ Some(Config::Dialer { .. }),
                 ) => {
-                    // Extract `config` to get the protocol name, as all the paths below
-                    // return.
+                    // Extract `config` to get the protocol name. All the paths below return,
+                    // thereby `config` doesn't need to be put back in `self`.
                     let requested_protocol = match cfg.take() {
                         Some(Config::Dialer { requested_protocol }) => requested_protocol,
                         _ => unreachable!(),
@@ -190,6 +256,17 @@ where
                     return Ok((Negotiation::Success(requested_protocol), total_read));
                 }
 
+                // Handled above.
+                (InProgressState::SendHandshake { .. }, _)
+                | (InProgressState::SendProtocolRequest { .. }, _)
+                | (InProgressState::SendProtocolNa { .. }, _)
+                | (InProgressState::SendProtocolOk { .. }, _) => unreachable!(),
+
+                // Invalid states.
+                (InProgressState::CommandExpected, Some(Config::Dialer { .. })) => unreachable!(),
+                (InProgressState::ProtocolRequestAnswerExpected, Some(Config::Listener { .. })) => {
+                    unreachable!()
+                }
                 (_, None) => unreachable!(),
             };
         }
@@ -199,7 +276,10 @@ where
     }
 
     /// Write to the given buffer the bytes that are ready to be sent out. Returns the new state
-    /// of the negotiation and the number of bytes written to `destination`.
+    /// of the negotiation and the number of bytes that have been written to `destination`.
+    ///
+    /// If `0` is returned and `destination` wasn't empty, no more data can be written out before
+    /// [`InProgress::inject_data`] is called.
     pub fn write_out(mut self, destination: &mut [u8]) -> (Negotiation<I, P>, usize) {
         let mut total_written = 0;
 
@@ -295,11 +375,22 @@ where
     }
 }
 
+impl<I, P> fmt::Debug for InProgress<I, P> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("InProgress").finish()
+    }
+}
+
+/// Error that can happen during the negotiation.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
+    /// Error while decoding a frame length, or frame size limit reached.
     Frame(leb128::FramedError),
+    /// Unknown handshake or unknown multistream-select protocol version.
     BadHandshake,
+    /// Received empty command.
     InvalidCommand,
+    /// Received answer to protocol request that doesn't match the requested protocol.
     UnexpectedProtocolRequestAnswer,
 }
 

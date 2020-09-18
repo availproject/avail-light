@@ -44,7 +44,7 @@
 //! let wasm_binary: &[u8] = unimplemented!();
 //!
 //! // Start executing a function on the runtime.
-//! let vm = substrate_lite::executor::WasmVmPrototype::new(&wasm_binary).unwrap()
+//! let vm = substrate_lite::executor::WasmVmPrototype::new(&wasm_binary, 1024).unwrap()
 //!     .run_no_param("Core_version").unwrap();
 //!
 //! // We need to answer the calls that the runtime might perform.
