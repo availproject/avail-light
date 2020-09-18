@@ -1,7 +1,7 @@
 // TODO: temporary binary to try the JSON-RPC server component alone
 
 use core::convert::TryFrom as _;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use substrate_lite::json_rpc::{methods, websocket_server};
 
 fn main() {
@@ -24,12 +24,14 @@ async fn async_main() {
     .await
     .unwrap();
 
+    let genesis_storage = chain_spec.genesis_storage().collect::<BTreeMap<_, _>>();
+
+    let genesis_block_header =
+        substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage());
+    let genesis_block_hash = genesis_block_header.hash();
+
     let metadata = {
-        let code = chain_spec
-            .genesis_storage()
-            .find(|(k, _)| k == b":code")
-            .unwrap()
-            .1;
+        let code = genesis_storage.get(&b":code"[..]).unwrap();
         let heap_pages = 1024; // TODO: laziness
         substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
     };
@@ -93,28 +95,45 @@ async fn async_main() {
                     }
                     methods::MethodCall::chain_getBlockHash { height } => {
                         assert_eq!(height, 0);
-                        let hash = substrate_lite::calculate_genesis_block_header(
-                            chain_spec.genesis_storage(),
+                        let response = methods::Response::chain_getBlockHash(
+                            methods::HashHexString(genesis_block_hash),
                         )
-                        .hash();
-                        let response =
-                            methods::Response::chain_getBlockHash(methods::HashHexString(hash))
-                                .to_json_response(request_id);
+                        .to_json_response(request_id);
+                        (connection_id, response, None)
+                    }
+                    methods::MethodCall::chain_getFinalizedHead {} => {
+                        let response = methods::Response::chain_getFinalizedHead(
+                            methods::HashHexString(genesis_block_hash),
+                        )
+                        .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::chain_getHeader { hash } => {
-                        // TODO: hash
-                        let header = substrate_lite::calculate_genesis_block_header(
-                            chain_spec.genesis_storage(),
-                        )
-                        .scale_encoding()
-                        .fold(Vec::new(), |mut a, b| {
-                            a.extend_from_slice(b.as_ref());
-                            a
-                        });
-                        let response =
-                            methods::Response::chain_getHeader(methods::HexString(header))
-                                .to_json_response(request_id);
+                        // TODO: use hash parameter
+                        let response = methods::Response::chain_getHeader(methods::Header {
+                            parent_hash: methods::HashHexString(genesis_block_header.parent_hash),
+                            extrinsics_root: methods::HashHexString(
+                                genesis_block_header.extrinsics_root,
+                            ),
+                            state_root: methods::HashHexString(genesis_block_header.state_root),
+                            number: genesis_block_header.number,
+                            digest: methods::HeaderDigest {
+                                logs: genesis_block_header
+                                    .digest
+                                    .logs()
+                                    .map(|log| {
+                                        methods::HexString(log.scale_encoding().fold(
+                                            Vec::new(),
+                                            |mut a, b| {
+                                                a.extend_from_slice(b.as_ref());
+                                                a
+                                            },
+                                        ))
+                                    })
+                                    .collect(),
+                            },
+                        })
+                        .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::chain_subscribeAllHeads {} => {
@@ -165,20 +184,14 @@ async fn async_main() {
                         assert!(at.is_none()); // TODO:
 
                         let mut out = methods::StorageChangeSet {
-                            block: methods::HashHexString(
-                                substrate_lite::calculate_genesis_block_header(
-                                    chain_spec.genesis_storage(),
-                                )
-                                .hash(),
-                            ),
+                            block: methods::HashHexString(genesis_block_hash),
                             changes: Vec::new(),
                         };
 
                         for key in keys {
-                            let value = chain_spec
-                                .genesis_storage()
-                                .find(|(k, _)| *k == &key.0[..])
-                                .map(|(_, v)| methods::HexString(v.to_owned()));
+                            let value = genesis_storage
+                                .get(&key.0[..])
+                                .map(|v| methods::HexString(v.to_vec()));
                             out.changes.push((key, value));
                         }
 
@@ -195,26 +208,23 @@ async fn async_main() {
                         assert!(hash.is_none()); // TODO:
 
                         let mut out = Vec::new();
-                        for (k, _) in chain_spec.genesis_storage() {
+                        // TODO: check whether start_key should be included of the set
+                        for (k, _) in genesis_storage
+                            .range(start_key.as_ref().map(|p| &p.0[..]).unwrap_or(&[])..)
+                        {
+                            if out.len() >= usize::try_from(count).unwrap_or(usize::max_value()) {
+                                break;
+                            }
+
                             if prefix
                                 .as_ref()
                                 .map_or(false, |prefix| !k.starts_with(&prefix.0))
                             {
-                                continue;
+                                break;
                             }
 
-                            if start_key
-                                .as_ref()
-                                .map_or(false, |start_key| k < &start_key.0[..])
-                            {
-                                continue;
-                            }
-
-                            out.push(methods::HexString(k.to_owned()));
+                            out.push(methods::HexString(k.to_vec()));
                         }
-
-                        out.sort_by(|a, b| a.0.cmp(&b.0));
-                        out.truncate(usize::try_from(count).unwrap_or(usize::max_value()));
 
                         let response =
                             methods::Response::state_getKeysPaged(out).to_json_response(request_id);
@@ -225,6 +235,15 @@ async fn async_main() {
                             metadata.clone(),
                         ))
                         .to_json_response(request_id);
+                        (connection_id, response, None)
+                    }
+                    methods::MethodCall::state_getStorage { key, hash } => {
+                        // TODO: use hash
+
+                        let value = genesis_storage.get(&key.0[..]).unwrap().to_vec(); // TODO: don't unwrap
+                        let response =
+                            methods::Response::state_getStorage(methods::HexString(value))
+                                .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::state_subscribeRuntimeVersion {} => {
@@ -250,31 +269,38 @@ async fn async_main() {
 
                         // TODO: have no idea what this describes actually
                         let mut out = methods::StorageChangeSet {
-                            block: methods::HashHexString(
-                                substrate_lite::calculate_genesis_block_header(
-                                    chain_spec.genesis_storage(),
-                                )
-                                .hash(),
-                            ),
+                            block: methods::HashHexString(genesis_block_hash),
                             changes: Vec::new(),
                         };
 
                         for key in list {
-                            let value = chain_spec
-                                .genesis_storage()
-                                .find(|(k, _)| *k == &key.0[..])
-                                .map(|(_, v)| methods::HexString(v.to_owned()));
+                            let value = genesis_storage
+                                .get(&key.0[..])
+                                .map(|v| methods::HexString(v.to_vec()));
                             out.changes.push((key, value));
                         }
 
                         // TODO: hack
                         let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
-                            "state_subscribeStorage",
+                            "state_storage",
                             &subscription,
                             &serde_json::to_string(&out).unwrap(),
                         );
 
                         (connection_id, response1, Some(response2))
+                    }
+                    methods::MethodCall::state_unsubscribeStorage { subscription } => {
+                        let valid = storage_subscriptions
+                            .get(&subscription)
+                            .map_or(false, |id| *id == connection_id);
+                        if valid {
+                            storage_subscriptions.remove(&subscription);
+                            user_data.storage.retain(|s| *s != subscription);
+                        };
+
+                        let response = methods::Response::state_unsubscribeStorage(valid)
+                            .to_json_response(request_id);
+                        (connection_id, response, None)
                     }
                     methods::MethodCall::state_getRuntimeVersion {} => {
                         // FIXME: hack
@@ -283,7 +309,7 @@ async fn async_main() {
                                 spec_name: "polkadot".to_string(),
                                 impl_name: "substrate-lite".to_string(),
                                 authoring_version: 0,
-                                spec_version: 18,
+                                spec_version: 23,
                                 impl_version: 0,
                                 transaction_version: 4,
                             })

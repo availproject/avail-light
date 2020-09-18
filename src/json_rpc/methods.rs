@@ -144,7 +144,7 @@ define_methods! {
     chain_getBlock(hash: Option<HashHexString>) -> (), // TODO: bad return type
     chain_getBlockHash(height: u64) -> HashHexString [chain_getHead], // TODO: wrong param
     chain_getFinalizedHead() -> HashHexString [chain_getFinalisedHead],
-    chain_getHeader(hash: Option<HashHexString>) -> HexString, // TODO: return type is guessed
+    chain_getHeader(hash: Option<HashHexString>) -> Header, // TODO: return type is guessed
     chain_subscribeAllHeads() -> String,
     chain_subscribeFinalizedHeads() -> String [chain_subscribeFinalisedHeads],
     chain_subscribeNewHeads() -> String [subscribe_newHead, chain_subscribeNewHead],
@@ -167,14 +167,15 @@ define_methods! {
     state_getPairs() -> (), // TODO:
     state_getReadProof() -> (), // TODO:
     state_getRuntimeVersion() -> RuntimeVersion [chain_getRuntimeVersion],
-    state_getStorage() -> () [state_getStorageAt], // TODO:
+    state_getStorage(key: HexString, hash: Option<HashHexString>) -> HexString [state_getStorageAt],
     state_getStorageHash() -> () [state_getStorageHashAt], // TODO:
     state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:
     state_queryStorage() -> (), // TODO:
     state_queryStorageAt(keys: Vec<HexString>, at: Option<HashHexString>) -> Vec<StorageChangeSet>, // TODO:
     state_subscribeRuntimeVersion() -> String [chain_subscribeRuntimeVersion],
-    state_subscribeStorage(list: Vec<HexString>) -> String [state_unsubscribeStorage],
+    state_subscribeStorage(list: Vec<HexString>) -> String,
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
+    state_unsubscribeStorage(subscription: String) -> bool,
     system_accountNextIndex() -> (), // TODO:
     system_addReservedPeer() -> (), // TODO:
     system_chain() -> String,
@@ -241,6 +242,23 @@ impl<'a> serde::Deserialize<'a> for HashHexString {
         out.copy_from_slice(&bytes);
         Ok(HashHexString(out))
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Header {
+    #[serde(rename = "parentHash")]
+    pub parent_hash: HashHexString,
+    #[serde(rename = "extrinsicsRoot")]
+    pub extrinsics_root: HashHexString,
+    #[serde(rename = "stateRoot")]
+    pub state_root: HashHexString,
+    pub number: u64,
+    pub digest: HeaderDigest,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HeaderDigest {
+    pub logs: Vec<HexString>,
 }
 
 #[derive(Debug, Clone)]
