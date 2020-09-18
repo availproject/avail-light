@@ -98,13 +98,13 @@ macro_rules! define_methods {
 
         #[allow(non_camel_case_types)]
         #[derive(Debug, Clone)]
-        pub enum Response {
+        pub enum Response<'a> {
             $(
                 $name($ret_ty),
             )*
         }
 
-        impl Response {
+        impl<'a> Response<'a> {
             /// Serializes the response into a JSON string.
             ///
             /// `id_json` must be a valid JSON-formatted request identifier, the same the user
@@ -128,7 +128,8 @@ macro_rules! define_methods {
     };
 }
 
-// TODO: some of these methods have aliases
+// TODO: change everything to take parameters by ref when possible
+// TODO: change everything to return values by ref when possible
 define_methods! {
     account_nextIndex() -> (), // TODO:
     author_hasKey() -> (), // TODO:
@@ -145,9 +146,9 @@ define_methods! {
     chain_getBlockHash(height: u64) -> HashHexString [chain_getHead], // TODO: wrong param
     chain_getFinalizedHead() -> HashHexString [chain_getFinalisedHead],
     chain_getHeader(hash: Option<HashHexString>) -> Header, // TODO: return type is guessed
-    chain_subscribeAllHeads() -> String,
-    chain_subscribeFinalizedHeads() -> String [chain_subscribeFinalisedHeads],
-    chain_subscribeNewHeads() -> String [subscribe_newHead, chain_subscribeNewHead],
+    chain_subscribeAllHeads() -> &'a str,
+    chain_subscribeFinalizedHeads() -> &'a str [chain_subscribeFinalisedHeads],
+    chain_subscribeNewHeads() -> &'a str [subscribe_newHead, chain_subscribeNewHead],
     chain_unsubscribeAllHeads(subscription: String) -> bool,
     chain_unsubscribeFinalizedHeads(subscription: String) -> bool [chain_unsubscribeFinalisedHeads],
     chain_unsubscribeNewHeads(subscription: String) -> bool [unsubscribe_newHead, chain_unsubscribeNewHead],
@@ -160,7 +161,7 @@ define_methods! {
     offchain_localStorageSet() -> (), // TODO:
     payment_queryInfo() -> (), // TODO:
     rpc_methods() -> RpcMethods,
-    state_call() -> () [state_callAt],
+    state_call() -> () [state_callAt], // TODO:
     state_getKeys() -> (), // TODO:
     state_getKeysPaged(prefix: Option<HexString>, count: u32, start_key: Option<HexString>, hash: Option<HashHexString>) -> Vec<HexString> [state_getKeysPagedAt],
     state_getMetadata() -> HexString,
@@ -172,25 +173,25 @@ define_methods! {
     state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:
     state_queryStorage() -> (), // TODO:
     state_queryStorageAt(keys: Vec<HexString>, at: Option<HashHexString>) -> Vec<StorageChangeSet>, // TODO:
-    state_subscribeRuntimeVersion() -> String [chain_subscribeRuntimeVersion],
-    state_subscribeStorage(list: Vec<HexString>) -> String,
+    state_subscribeRuntimeVersion() -> &'a str [chain_subscribeRuntimeVersion],
+    state_subscribeStorage(list: Vec<HexString>) -> &'a str,
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
     state_unsubscribeStorage(subscription: String) -> bool,
     system_accountNextIndex() -> (), // TODO:
     system_addReservedPeer() -> (), // TODO:
-    system_chain() -> String,
-    system_chainType() -> String,
+    system_chain() -> &'a str,
+    system_chainType() -> &'a str,
     system_dryRun() -> () [system_dryRunAt], // TODO:
     system_health() -> SystemHealth,
     system_localListenAddresses() -> Vec<String>,
-    system_localPeerId() -> String,
-    system_name() -> String,
+    system_localPeerId() -> &'a str,
+    system_name() -> &'a str,
     system_networkState() -> (), // TODO:
     system_nodeRoles() -> (), // TODO:
     system_peers() -> Vec<SystemPeer>,
     system_properties() -> Box<serde_json::value::RawValue>,
     system_removeReservedPeer() -> (), // TODO:
-    system_version() -> String,
+    system_version() -> &'a str,
 }
 
 #[derive(Debug, Clone)]

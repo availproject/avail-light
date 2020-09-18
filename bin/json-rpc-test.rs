@@ -140,9 +140,8 @@ async fn async_main() {
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
 
-                        let response =
-                            methods::Response::chain_subscribeAllHeads(subscription.clone())
-                                .to_json_response(request_id);
+                        let response = methods::Response::chain_subscribeAllHeads(&subscription)
+                            .to_json_response(request_id);
                         user_data.all_heads.push(subscription.clone());
                         all_heads_subscriptions.insert(subscription, connection_id);
                         (connection_id, response, None)
@@ -151,9 +150,8 @@ async fn async_main() {
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
 
-                        let response =
-                            methods::Response::chain_subscribeNewHeads(subscription.clone())
-                                .to_json_response(request_id);
+                        let response = methods::Response::chain_subscribeNewHeads(&subscription)
+                            .to_json_response(request_id);
                         user_data.new_heads.push(subscription.clone());
                         new_heads_subscriptions.insert(subscription, connection_id);
                         (connection_id, response, None)
@@ -163,7 +161,7 @@ async fn async_main() {
                         next_subscription += 1;
 
                         let response =
-                            methods::Response::chain_subscribeFinalizedHeads(subscription.clone())
+                            methods::Response::chain_subscribeFinalizedHeads(&subscription)
                                 .to_json_response(request_id);
                         user_data.finalized_heads.push(subscription.clone());
                         finalized_heads_subscriptions.insert(subscription, connection_id);
@@ -251,7 +249,7 @@ async fn async_main() {
                         next_subscription += 1;
 
                         let response =
-                            methods::Response::state_subscribeRuntimeVersion(subscription.clone())
+                            methods::Response::state_subscribeRuntimeVersion(&subscription)
                                 .to_json_response(request_id);
                         user_data.runtime_version.push(subscription.clone());
                         runtime_version_subscriptions.insert(subscription, connection_id);
@@ -261,9 +259,8 @@ async fn async_main() {
                         let subscription = next_subscription.to_string();
                         next_subscription += 1;
 
-                        let response1 =
-                            methods::Response::state_subscribeStorage(subscription.clone())
-                                .to_json_response(request_id);
+                        let response1 = methods::Response::state_subscribeStorage(&subscription)
+                            .to_json_response(request_id);
                         user_data.storage.push(subscription.clone());
                         storage_subscriptions.insert(subscription.clone(), connection_id);
 
@@ -317,15 +314,13 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::system_chain {} => {
-                        let response =
-                            methods::Response::system_chain(chain_spec.name().to_owned())
-                                .to_json_response(request_id);
+                        let response = methods::Response::system_chain(chain_spec.name())
+                            .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::system_chainType {} => {
-                        let response =
-                            methods::Response::system_chainType(chain_spec.chain_type().to_owned())
-                                .to_json_response(request_id);
+                        let response = methods::Response::system_chainType(chain_spec.chain_type())
+                            .to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     methods::MethodCall::system_health {} => {
@@ -338,7 +333,7 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::system_name {} => {
-                        let response = methods::Response::system_name("substrate-lite!".to_owned())
+                        let response = methods::Response::system_name("substrate-lite!")
                             .to_json_response(request_id);
                         (connection_id, response, None)
                     }
@@ -350,8 +345,8 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::system_version {} => {
-                        let response = methods::Response::system_version("1.0.0".to_owned())
-                            .to_json_response(request_id);
+                        let response =
+                            methods::Response::system_version("1.0.0").to_json_response(request_id);
                         (connection_id, response, None)
                     }
                     _ => {
