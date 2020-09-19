@@ -74,6 +74,7 @@ mod nibble;
 
 pub mod calculate_root;
 pub mod node_value;
+pub mod proof_verify;
 pub mod trie_structure;
 
 pub use nibble::{bytes_to_nibbles, BytesToNibbles, Nibble, NibbleFromU8Error};
