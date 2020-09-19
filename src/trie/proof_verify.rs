@@ -13,9 +13,22 @@
 //! node value contains the Merkle values of the children of the node, it is possible to iterate
 //! down the hierarchy of nodes until the one closest to the desired key is found.
 //!
+//! # Multiple proofs merged into one
+//!
+//! Considering that a trie proof consists in a list of node values, it is possible to reduce the
+//! space occupied by multiple trie proofs built from the same trie by merging them into a single
+//! list and removing duplicate elements.
+//!
+//! In order to support this use case, the [`verify_proof`] function intentionally doesn't return
+//! an error if some elements in the proof are unused, as it might be that these elements are part
+//! of a different proof that has been merged with the one that is relevant.
+//!
+//! > **Note**: The main use case for merging multiple proofs into one is when a machine that has
+//! >           access to the storage of a block sends to a machine that doesn't all the proofs
+//! >           corresponding to the storage entries necessary for a certain runtime call.
+//!
 
 use super::nibble;
-use alloc::borrow::Cow;
 use core::{convert::TryFrom as _, iter};
 use parity_scale_codec::Decode as _;
 
@@ -54,16 +67,15 @@ pub fn verify_proof<'a>(
     let merkle_values = config
         .proof
         .clone()
-        .map(|proof_entry| {
+        .map(|proof_entry| -> arrayvec::ArrayVec<[u8; 32]> {
             if proof_entry.len() >= 32 {
-                // TODO: use a [u8; 32] instead of a Vec<u8>?
-                Cow::Owned(
-                    blake2_rfc::blake2b::blake2b(32, &[], proof_entry)
-                        .as_bytes()
-                        .to_vec(),
-                )
+                blake2_rfc::blake2b::blake2b(32, &[], proof_entry)
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .collect()
             } else {
-                Cow::Borrowed(proof_entry)
+                proof_entry.iter().cloned().collect()
             }
         })
         .collect::<Vec<_>>();

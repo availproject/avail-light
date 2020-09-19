@@ -479,7 +479,7 @@ pub enum State<'a> {
         /// Object to use to finish the call
         resolve: Resume<'a, ()>,
     },
-    /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
+    /// Need to call `Core_version` on the given Wasm code and return the raw output (i.e.
     /// still SCALE-encoded), or an error if the call has failed.
     CallRuntimeVersion {
         /// Wasm blob to compile and run.

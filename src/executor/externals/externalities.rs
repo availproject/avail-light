@@ -351,7 +351,7 @@ pub enum State<'a> {
         done: Resume<'a, ()>,
     },
 
-    /// Need to call `Core_runtime_version` on the given Wasm code and return the raw output (i.e.
+    /// Need to call `Core_version` on the given Wasm code and return the raw output (i.e.
     /// still SCALE-encoded) or an error if the call has failed.
     CallRuntimeVersionNeeded {
         wasm_blob: &'a [u8],
