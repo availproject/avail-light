@@ -15,129 +15,276 @@
 
 // TODO: finish usage
 
-use core::{cmp, convert::TryFrom as _, fmt, iter, num::NonZeroU32};
+use core::{
+    cmp,
+    convert::TryFrom as _,
+    fmt, iter,
+    num::{NonZeroU32, NonZeroUsize},
+};
 
 /// Name of the protocol, typically used when negotiated it using *multistream-select*.
 pub const PROTOCOL_NAME: &str = "/yamux/1.0.0";
 
-/// By default, all new substreams have this implicit window size.
-const DEFAULT_FRAME_SIZE: u32 = 256 * 1024;
-
-pub fn decode<TIter, TBuf>(
-    data: impl IntoIterator<Item = TBuf, IntoIter = TIter>,
-) -> DecodeStep<TIter, TBuf>
-where
-    TIter: Iterator<Item = TBuf> + Clone,
-    TBuf: AsRef<[u8]>,
-{
-    let mut data = data.into_iter();
-    let current_buffer = match data.next() {
-        Some(b) => b,
-        None => return DecodeStep::Finished { num_read: 0 },
-    };
-
-    Decoder {
-        current_buffer,
-        current_buffer_offset: 0,
-        next_buffer: data,
-        num_read: 0,
-    }
-    .resume()
+pub struct Connection<T> {
+    // TODO: there's an actual chance of collision attack here if we don't use a siphasher
+    substreams: hashbrown::HashMap<u32, Substream<T>, fnv::FnvBuildHasher>,
+    /// Buffer for a partially read header.
+    incoming_header: arrayvec::ArrayVec<[u8; 12]>,
+    /// Header to be written out in priority.
+    pending_out_header: arrayvec::ArrayVec<[u8; 12]>,
+    pending_incoming_substream: Option<SubstreamId>,
 }
 
-/// Writes to `destination` a frame of data containing `payload` and that belongs to the given
-/// substream.
-///
-/// Returns, in order, the number of bytes read from `payload` and the number of bytes written
-/// to `destination`.
-pub fn substream_emit_data(
-    substream: &mut SubstreamState,
-    mut payload: &[u8],
-    destination: &mut [u8],
-) -> (usize, usize) {
-    // A header occupies 12 bytes. If the destination isn't capable of holding at least a header
-    // and one byte of data, return immediately.
-    if destination.len() <= 12 {
-        return (0, 0);
-    }
-
-    // There's no point in writing empty frames.
-    if payload.is_empty() {
-        return (0, 0);
-    }
-
-    // If the local node isn't allowed to write any more data, return immediately as well.
-    if substream.local_write_closed || substream.allowed_window == 0 {
-        // TODO: error if local_write_closed instead?
-        return (0, 0);
-    }
-
-    // Clamp `payload` to the length that is actually going to be emitted.
-    payload = {
-        let len = cmp::min(
-            cmp::min(destination.len() - 12, payload.len()),
-            usize::try_from(substream.allowed_window).unwrap_or(usize::max_value()),
-        );
-        debug_assert_ne!(len, 0);
-        &payload[..len]
-    };
-
-    // Write the header.
-    destination[0] = 0;
-    destination[1] = 0;
-    destination[2..4].copy_from_slice(&0u16.to_be_bytes());
-    // Since the payload is clamped to the allowed window size, which is a u32, it is also
-    // guaranteed that `payload.len()` fits in a u32.
-    destination[4..8].copy_from_slice(&substream.id.0.get().to_be_bytes());
-    destination[8..12].copy_from_slice(&u32::try_from(payload.len()).unwrap().to_be_bytes());
-
-    // Copy the data.
-    destination[12..][..payload.len()].copy_from_slice(&payload);
-
-    // Success!
-    substream.allowed_window -= u32::try_from(payload.len()).unwrap();
-    debug_assert!(payload.len() + 12 <= destination.len());
-    (payload.len(), payload.len() + 12)
-}
-
-pub struct ConnectionState {
-    /// Nature of the next bytes of data to be received.
-    incoming_data_ty: IncomingDataTy,
-}
-
-enum IncomingDataTy {
-    NewFrame,
-    DataFrameInProgress {
-        substream: SubstreamId,
-        remaining_bytes: usize,
-    },
-}
-
-impl ConnectionState {
-    pub fn new() -> ConnectionState {
-        ConnectionState {
-            incoming_data_ty: IncomingDataTy::NewFrame,
-        }
-    }
-}
-
-pub struct SubstreamState {
+struct Substream<T> {
     /// Identifier of the substream.
     id: SubstreamId,
     /// Amount of data the remote is allowed to transmit to the local node.
-    remote_allowed_window: u32,
+    remote_allowed_window: u64,
     /// Amount of data the local node is allowed to transmit to the remote.
-    allowed_window: u32,
+    allowed_window: u64,
     /// True if the writing side of the local node is closed for this substream.
     local_write_closed: bool,
     /// True if the writing side of the remote node is closed for this substream.
     remote_write_closed: bool,
+    /// Data chosen by the user.
+    user_data: T,
 }
 
-impl fmt::Debug for SubstreamState {
+impl<T> Connection<T> {
+    /// Initializes a new yamux state machine.
+    pub fn new() -> Connection<T> {
+        Self::with_capacity(0)
+    }
+
+    /// Initializes a new yamux state machine with enough capacity for the given number of
+    /// substreams.
+    pub fn with_capacity(capacity: usize) -> Connection<T> {
+        Connection {
+            substreams: hashbrown::HashMap::with_capacity_and_hasher(capacity, Default::default()),
+            incoming_header: arrayvec::ArrayVec::new(),
+            pending_out_header: arrayvec::ArrayVec::new(),
+            pending_incoming_substream: None,
+        }
+    }
+
+    /// Process some incoming data.
+    ///
+    /// The received payload may require some data to be written back on the socket. As such,
+    /// `out` is a buffer destined to hold data to be sent to the remote.
+    ///
+    /// # Panic
+    ///
+    /// Panics if pending incoming substream.
+    ///
+    // TODO: reword panic reason
+    pub fn incoming_data(
+        &mut self,
+        mut data: &[u8],
+        mut out: &mut [u8],
+    ) -> Result<IncomingDataOutcome, Error> {
+        assert!(self.pending_incoming_substream.is_none());
+
+        let mut total_read = 0;
+        let mut total_written = 0;
+
+        loop {
+            // Start by emptying `pending_out_header`. The code below might require writing
+            // to it, and as such we can't proceed with any reading if it isn't empty.
+            if !self.pending_out_header.is_empty() && !out.is_empty() {
+                let to_write = cmp::min(self.pending_out_header.len(), out.len());
+                out[..to_write].copy_from_slice(&self.pending_out_header[..to_write]);
+                for _ in 0..to_write {
+                    self.pending_out_header.remove(0);
+                }
+                out = &mut out[to_write..];
+                total_written += to_write;
+            }
+            if !self.pending_out_header.is_empty() {
+                break;
+            }
+
+            // Try to copy as much as possible from `data` to `header`.
+            while !data.is_empty() && self.incoming_header.len() < 12 {
+                self.incoming_header.push(data[0]);
+                total_read += 1;
+                data = &data[1..];
+            }
+
+            // Not enough data to finish receiving header. Nothing more can be done.
+            if self.incoming_header.len() != 12 {
+                debug_assert!(data.is_empty());
+                break;
+            }
+
+            // Full header to decode available.
+
+            // Byte 0 of the header is the yamux version number. Return an error if it isn't 0.
+            if self.incoming_header[0] != 0 {
+                return Err(Error::UnknownVersion(self.incoming_header[0]));
+            }
+
+            // Decode the three other fields: flags, substream id, and length.
+            let flags_field =
+                u16::from_be_bytes(<[u8; 2]>::try_from(&self.incoming_header[2..4]).unwrap());
+            let substream_id_field =
+                u32::from_be_bytes(<[u8; 4]>::try_from(&self.incoming_header[4..8]).unwrap());
+            let length_field =
+                u32::from_be_bytes(<[u8; 4]>::try_from(&self.incoming_header[8..12]).unwrap());
+
+            // Byte 1 of the header indicates the type of message.
+            match self.incoming_header[1] {
+                2 => {
+                    // A ping or pong has been received.
+                    // TODO: check flags more strongly?
+                    if (flags_field & 0x1) != 0 {
+                        // Ping. Write a pong message in `self.pending_out_header`.
+                        debug_assert!(self.pending_out_header.is_empty());
+                        self.pending_out_header
+                            .try_extend_from_slice(
+                                &[
+                                    0,
+                                    2,
+                                    0x0,
+                                    0x2,
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    self.incoming_header[8],
+                                    self.incoming_header[9],
+                                    self.incoming_header[10],
+                                    self.incoming_header[11],
+                                ][..],
+                            )
+                            .unwrap();
+                        break;
+                    }
+                }
+                3 => {
+                    // TODO: go away
+                    todo!()
+                }
+                // Handled below.
+                0 | 1 => {}
+                _ => return Err(Error::BadFrameType(self.incoming_header[1])),
+            }
+
+            // In case of data (`0`) or window size (`1`) frame, check whether the remote has the
+            // the rights to send this data.
+            let substream_id = match NonZeroU32::new(substream_id_field) {
+                Some(i) => SubstreamId(i),
+                None => return Err(Error::ZeroSubstreamId),
+            };
+
+            todo!()
+        }
+
+        todo!()
+    }
+
+    pub fn accept_pending_substream(&mut self, user_data: T, mut out: &mut [u8]) -> usize {
+        let pending_incoming_substream = self.pending_incoming_substream.take().unwrap();
+        debug_assert!(self.pending_out_header.is_empty());
+
+        // TODO: finish
+
+        todo!()
+    }
+
+    pub fn reject_pending_substream(&mut self, mut out: &mut [u8]) -> usize {
+        let pending_incoming_substream = self.pending_incoming_substream.take().unwrap();
+        debug_assert!(self.pending_out_header.is_empty());
+
+        self.pending_out_header.push(0);
+        self.pending_out_header.push(1);
+        self.pending_out_header
+            .try_extend_from_slice(&0x8u16.to_be_bytes()[..])
+            .unwrap();
+        self.pending_out_header
+            .try_extend_from_slice(&pending_incoming_substream.0.get().to_be_bytes()[..])
+            .unwrap();
+        self.pending_out_header
+            .try_extend_from_slice(&0u32.to_be_bytes()[..])
+            .unwrap();
+
+        let to_write = cmp::min(self.pending_out_header.len(), out.len());
+        out[..to_write].copy_from_slice(&self.pending_out_header[..to_write]);
+        for _ in 0..to_write {
+            self.pending_out_header.remove(0);
+        }
+        to_write
+    }
+
+    /*pub fn emit_data_frame_header(
+        &mut self,
+        mut payload: &[u8],
+        destination: &mut [u8],
+    ) -> (usize, usize) {
+        // A header occupies 12 bytes. If the destination isn't capable of holding at least a header
+        // and one byte of data, return immediately.
+        if destination.len() <= 12 {
+            return (0, 0);
+        }
+
+        // There's no point in writing empty frames.
+        if payload.is_empty() {
+            return (0, 0);
+        }
+
+        // If the local node isn't allowed to write any more data, return immediately as well.
+        if substream.local_write_closed || substream.allowed_window == 0 {
+            // TODO: error if local_write_closed instead?
+            return (0, 0);
+        }
+
+        // Clamp `payload` to the length that is actually going to be emitted.
+        payload = {
+            let len = cmp::min(
+                cmp::min(destination.len() - 12, payload.len()),
+                usize::try_from(substream.allowed_window).unwrap_or(usize::max_value()),
+            );
+            debug_assert_ne!(len, 0);
+            &payload[..len]
+        };
+
+        // Write the header.
+        destination[0] = 0;
+        destination[1] = 0;
+        destination[2..4].copy_from_slice(&0u16.to_be_bytes());
+        // Since the payload is clamped to the allowed window size, which is a u32, it is also
+        // guaranteed that `payload.len()` fits in a u32.
+        destination[4..8].copy_from_slice(&substream.id.0.get().to_be_bytes());
+        destination[8..12].copy_from_slice(&u32::try_from(payload.len()).unwrap().to_be_bytes());
+
+        // Copy the data.
+        destination[12..][..payload.len()].copy_from_slice(&payload);
+
+        // Success!
+        substream.allowed_window -= u64::try_from(payload.len()).unwrap();
+        debug_assert!(payload.len() + 12 <= destination.len());
+        (payload.len(), payload.len() + 12)
+    }*/
+}
+
+impl<T> fmt::Debug for Connection<T>
+where
+    T: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SubstreamState")
-            .field("id", &self.id)
+        struct List<'a, T>(&'a Connection<T>);
+        impl<'a, T> fmt::Debug for List<'a, T>
+        where
+            T: fmt::Debug,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_list()
+                    .entries(self.0.substreams.values().map(|v| &v.user_data))
+                    .finish()
+            }
+        }
+
+        f.debug_struct("Connection")
+            .field("substreams", &List(self))
             .finish()
     }
 }
@@ -146,177 +293,14 @@ impl fmt::Debug for SubstreamState {
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, derive_more::From)]
 pub struct SubstreamId(pub NonZeroU32);
 
-pub enum DecodeStep<TIter, TBuf> {
-    NewSubstream {
-        num_read: usize,
-        id: SubstreamId,
-        state: SubstreamState,
-        resume: Decoder<TIter, TBuf>,
-    },
-    SubstreamStateRequest {
-        num_read: usize,
-        id: SubstreamId,
-        request: SubstreamStateReq<TIter, TBuf>,
-    },
-    /// Decoding is finished, either because all the data has been processed or because more data
-    /// is needed in order to be able to successfully decode something.
-    Finished { num_read: usize },
-    /// Error in the yamux protocol. The connection should be terminated.
-    Error(Error),
+pub struct IncomingDataOutcome {
+    pub bytes_read: usize,
+    pub bytes_written: usize,
+    pub ty: IncomingDataTy,
 }
 
-pub struct SubstreamStateReq<TIter, TBuf> {
-    /// Header of the frame currently being decoded.
-    header: [u8; 12],
-    decoder: Decoder<TIter, TBuf>,
-}
-
-impl<TIter, TBuf> SubstreamStateReq<TIter, TBuf>
-where
-    TIter: Iterator<Item = TBuf> + Clone,
-    TBuf: AsRef<[u8]>,
-{
-    // TODO: docs
-    ///
-    ///
-    /// # Panic
-    ///
-    /// Panics if the id of the provided [`SubstreamState`] doesn't match the requested one.
-    ///
-    pub fn resume(self, state: Option<&mut SubstreamState>) -> DecodeStep<TIter, TBuf> {
-        if let Some(state) = &state {
-            assert_eq!(
-                state.id.0.get(),
-                u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[4..8]).unwrap())
-            );
-        }
-
-        let header_length_field =
-            u32::from_be_bytes(<[u8; 4]>::try_from(&self.header[8..12]).unwrap());
-
-        // Check whether the remote is allowed to send that much data.
-        match (self.header[1], state) {
-            (0, Some(existing)) => {
-                if header_length_field > existing.remote_allowed_window {
-                    return DecodeStep::Error(Error::CreditsExceeded);
-                }
-            }
-            (0, None) => {
-                if header_length_field > DEFAULT_FRAME_SIZE {
-                    return DecodeStep::Error(Error::CreditsExceeded);
-                }
-            }
-            (1, _) => {}
-            // A `SubstreamStateReq` struct is created only when the frame type is 0 or 1.
-            (_, _) => unreachable!(),
-        }
-
-        // Check if there is enough buffered data for an entire frame.
-
-        self.decoder.resume()
-    }
-}
-
-pub struct Decoder<TIter, TBuf> {
-    current_buffer: TBuf,
-    current_buffer_offset: usize,
-    next_buffer: TIter,
-    /// Total number of bytes read so far, to report to the user. Should only be updated after
-    /// frames that have been completed processed.
-    num_read: usize,
-}
-
-impl<TIter, TBuf> Decoder<TIter, TBuf>
-where
-    TIter: Iterator<Item = TBuf> + Clone,
-    TBuf: AsRef<[u8]>,
-{
-    pub fn resume(self) -> DecodeStep<TIter, TBuf> {
-        // Try to collect 12 bytes from the input data, to form a header.
-        let header = {
-            let mut header = arrayvec::ArrayVec::<[u8; 12]>::new();
-            for byte in self.bytes_iter().take(12) {
-                header.push(byte);
-            }
-            match header.into_inner() {
-                Ok(h) => h,
-                Err(_) => {
-                    // Not enough data in `header`.
-                    return DecodeStep::Finished {
-                        num_read: self.num_read,
-                    };
-                }
-            }
-        };
-
-        // Byte 0 of the header is the yamux version number. Return an error if it isn't 0.
-        if header[0] != 0 {
-            return DecodeStep::Error(Error::UnknownVersion(header[0]));
-        }
-
-        // Byte 1 of the header indicates the type of message.
-        //
-        // In case of a frame concerning a substream (data frames `0` or window updates `1`),
-        // immediately ask the `SubstreamState` from the user.
-        //
-        // It might be tempting, for data frames, to return `DecodeStep::Finished` if not enough
-        // data is available. In terms of resilience, however, it is a better idea to first check
-        // whether the remote is allowed to send a frame of this length.
-        if header[1] == 0 || header[1] == 1 {
-            let id = {
-                let raw = u32::from_be_bytes(<[u8; 4]>::try_from(&header[4..8]).unwrap());
-                match NonZeroU32::new(raw) {
-                    Some(i) => SubstreamId(i),
-                    None => return DecodeStep::Error(Error::ZeroSubstreamId),
-                }
-            };
-
-            return DecodeStep::SubstreamStateRequest {
-                num_read: self.num_read,
-                id,
-                request: SubstreamStateReq {
-                    header,
-                    decoder: self,
-                },
-            };
-        }
-
-        // TODO: ping
-        if header[1] == 2 {
-            todo!()
-        }
-
-        // TODO: go away
-        if header[1] == 3 {
-            todo!()
-        }
-
-        DecodeStep::Error(Error::BadFrameType(header[1]))
-    }
-
-    /// Builds an iterator over the bytes remaining to decode.
-    ///
-    /// Does not update the state of the decoder.
-    fn bytes_iter<'a>(&'a self) -> impl Iterator<Item = u8> + 'a {
-        let mut first = self.current_buffer.as_ref();
-        let mut current_owned = None::<TBuf>;
-        let mut offset = self.current_buffer_offset;
-        let mut next_buffers = self.next_buffer.clone();
-
-        iter::from_fn(move || loop {
-            let current = current_owned.as_ref().map(|b| b.as_ref()).unwrap_or(first);
-
-            if offset >= current.len() {
-                current_owned = Some(next_buffers.next()?);
-                offset = 0;
-                continue;
-            }
-
-            let byte = current[offset];
-            offset += 1;
-            break Some(byte);
-        })
-    }
+pub enum IncomingDataTy {
+    IncomingSubstream(SubstreamId),
 }
 
 /// Error while decoding the yamux stream.
@@ -328,6 +312,11 @@ pub enum Error {
     BadFrameType(u8),
     /// Substream ID was zero in a data of window update frame.
     ZeroSubstreamId,
+    /// Received unknown substream ID without a SYN flag.
+    InvalidSubstreamId(u32),
     /// Remote tried to send more data than it was allowed to.
     CreditsExceeded,
 }
+
+/// By default, all new substreams have this implicit window size.
+const DEFAULT_FRAME_SIZE: u32 = 256 * 1024;

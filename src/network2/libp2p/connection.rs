@@ -14,6 +14,88 @@ mod yamux;
 
 // TODO: needs a timeout for the handshake
 
+pub struct Connection {
+    encryption: noise::Noise,
+    yamux: yamux::Connection<Substream>,
+}
+
+struct Substream {
+    /// Specialization for that substream.
+    ty: SubstreamTy,
+}
+
+enum SubstreamTy {
+    /// Protocol negotiation is still in progress on this substream.
+    Negotiating(multistream_select::InProgress<iter::Once<&'static str>, &'static str>),
+    NotificationsOut,
+    NotificationsIn,
+    RequestOut,
+    RequestIn,
+}
+
+impl Connection {
+    /// Parse the content of `data`. Returns the new state of the connection and the number of
+    /// bytes read from `data`.
+    ///
+    /// Returns an error in case of protocol error, in which case the connection should be
+    /// entirely shut down.
+    ///
+    /// If the number of bytes read is different from 0, you should immediately call this method
+    /// again with the remaining data.
+    pub fn inject_data(mut self, mut data: &[u8]) -> Result<usize, HandshakeError> {
+        let mut total_read = 0;
+
+        let num_read = self
+            .encryption
+            .inject_inbound_data(data)
+            .map_err(HandshakeError::Noise)?;
+        total_read += data.len();
+        data = &data[num_read..];
+
+        todo!()
+    }
+
+    /// Write to the given buffer the bytes that are ready to be sent out. Returns the number of
+    /// bytes written to `destination`.
+    pub fn write_out(mut self, mut destination: &mut [u8]) -> usize {
+        let mut total_written = 0;
+
+        /*loop {
+            let mut buffer = encryption.prepare_buffer_encryption(destination);
+            let (updated, written_interm) = negotiation.write_out(&mut *buffer);
+            let written = buffer.finish(written_interm);
+            destination = &mut destination[written..];
+            total_written += written;
+
+            self.state = match updated {
+                multistream_select::Negotiation::InProgress(updated) => {
+                    HandshakeState::NegotiatingMultiplexing {
+                        encryption,
+                        negotiation: updated,
+                        peer_id,
+                    }
+                }
+                multistream_select::Negotiation::Success(_) => {
+                    return (
+                        Handshake::Success {
+                            connection: Connection { encryption },
+                            remote_peer_id: peer_id,
+                        },
+                        total_written,
+                    );
+                }
+                multistream_select::Negotiation::NotAvailable => todo!(), // TODO: ?!
+            };
+
+            if written == 0 {
+                break;
+            }
+        }*/
+
+        total_written
+    }
+}
+
 #[derive(derive_more::From)]
 pub enum Handshake {
     Healthy(HealthyHandshake),
@@ -22,8 +104,7 @@ pub enum Handshake {
     NoiseKeyRequired(NoiseKeyRequired),
     Success {
         remote_peer_id: PeerId,
-        // TODO: some sort of `Connection` object
-        encryption: noise::Noise,
+        connection: Connection,
     },
 }
 
@@ -82,14 +163,17 @@ impl HealthyHandshake {
     ///
     /// If the number of bytes read is different from 0, you should immediately call this method
     /// again with the remaining data.
-    pub fn inject_data<'c, 'd>(mut self, mut data: &[u8]) -> Result<(Handshake, usize), Error> {
+    pub fn inject_data<'c, 'd>(
+        mut self,
+        mut data: &[u8],
+    ) -> Result<(Handshake, usize), HandshakeError> {
         let mut total_read = 0;
 
         match self.state {
             HandshakeState::NegotiatingEncryptionProtocol { negotiation } => {
                 let (updated, num_read) = negotiation
                     .inject_data(data)
-                    .map_err(Error::MultistreamSelect)?;
+                    .map_err(HandshakeError::MultistreamSelect)?;
                 total_read += num_read;
                 data = &data[num_read..];
 
@@ -108,7 +192,7 @@ impl HealthyHandshake {
                         ));
                     }
                     multistream_select::Negotiation::NotAvailable => {
-                        return Err(Error::NoEncryptionProtocol)
+                        return Err(HandshakeError::NoEncryptionProtocol)
                     }
                 }
 
@@ -116,8 +200,9 @@ impl HealthyHandshake {
             }
 
             HandshakeState::NegotiatingEncryption { handshake } => {
-                let (updated, num_read) =
-                    handshake.inject_data(data).map_err(Error::NoiseHandshake)?;
+                let (updated, num_read) = handshake
+                    .inject_data(data)
+                    .map_err(HandshakeError::NoiseHandshake)?;
                 total_read += num_read;
                 data = &data[num_read..];
 
@@ -155,13 +240,15 @@ impl HealthyHandshake {
                 mut encryption,
                 peer_id,
             } => {
-                let num_read = encryption.inject_inbound_data(data).map_err(Error::Noise)?;
+                let num_read = encryption
+                    .inject_inbound_data(data)
+                    .map_err(HandshakeError::Noise)?;
                 total_read += data.len();
                 data = &data[num_read..];
 
                 let (updated, read_num) = negotiation
                     .inject_data(encryption.decoded_inbound_data())
-                    .map_err(Error::MultistreamSelect)?;
+                    .map_err(HandshakeError::MultistreamSelect)?;
                 encryption.consume_inbound_data(read_num);
 
                 match updated {
@@ -175,14 +262,17 @@ impl HealthyHandshake {
                     multistream_select::Negotiation::Success(_) => {
                         return Ok((
                             Handshake::Success {
-                                encryption,
+                                connection: Connection {
+                                    encryption,
+                                    yamux: yamux::Connection::new(),
+                                },
                                 remote_peer_id: peer_id,
                             },
                             total_read,
                         ));
                     }
                     multistream_select::Negotiation::NotAvailable => {
-                        return Err(Error::NoMultiplexingProtocol)
+                        return Err(HandshakeError::NoMultiplexingProtocol)
                     }
                 }
 
@@ -285,7 +375,10 @@ impl HealthyHandshake {
                         multistream_select::Negotiation::Success(_) => {
                             return (
                                 Handshake::Success {
-                                    encryption,
+                                    connection: Connection {
+                                        encryption,
+                                        yamux: yamux::Connection::new(),
+                                    },
                                     remote_peer_id: peer_id,
                                 },
                                 total_written,
@@ -343,14 +436,20 @@ pub enum InjectDataOutcome<'c, 'd> {
     },
 }
 
-/// Protocol error on a connection. The connection should be shut down.
+/// Error during a connection handshake. The connection should be shut down.
 #[derive(Debug, derive_more::Display)]
-pub enum Error {
+pub enum HandshakeError {
+    /// Protocol error during a multistream-select negotiation.
     MultistreamSelect(multistream_select::Error),
+    /// Protocol error during the noise handshake.
     NoiseHandshake(noise::HandshakeError),
     /// No encryption protocol in common with the remote.
+    ///
+    /// The remote is behaving correctly but isn't compatible with the local node.
     NoEncryptionProtocol,
     /// No multiplexing protocol in common with the remote.
+    ///
+    /// The remote is behaving correctly but isn't compatible with the local node.
     NoMultiplexingProtocol,
     /// Error in the noise cipher. Data has most likely been corrupted.
     Noise(noise::CipherError),
