@@ -116,7 +116,7 @@
 
 use crate::header;
 
-use core::{convert::TryFrom as _, time::Duration};
+use core::{convert::TryFrom as _, num::NonZeroU64, time::Duration};
 use num_traits::{cast::ToPrimitive as _, identities::One as _};
 
 pub mod chain_config;
@@ -166,7 +166,7 @@ pub struct VerifySuccess {
     /// when verifying blocks that are part of that epoch.
     ///
     /// > **Note**: If `Some`, the value is always equal to [`VerifySuccess::epoch_number`] + 1.
-    pub epoch_transition_target: Option<u64>,
+    pub epoch_transition_target: Option<NonZeroU64>,
 }
 
 /// Failure to verify a block.
@@ -269,7 +269,7 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
         .header
         .digest
         .babe_epoch_information()
-        .map(|_| epoch_number + 1);
+        .map(|_| NonZeroU64::new(epoch_number + 1).unwrap());
 
     // TODO: in case of epoch change, should also check the randomness value; while the runtime
     //       checks that the randomness value is correct, light clients in particular do not
@@ -346,7 +346,7 @@ pub struct PendingVerify {
     seal_signature: schnorrkel::Signature,
     /// If `Some`, block is at an epoch transition.
     /// This can only happen for blocks that are the first block of an epoch.
-    epoch_transition_target: Option<u64>,
+    epoch_transition_target: Option<NonZeroU64>,
     /// Epoch number the block belongs to.
     epoch_number: u64,
     /// Slot number the block belongs to.

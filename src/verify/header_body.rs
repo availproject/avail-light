@@ -1,7 +1,7 @@
 use super::execute_block;
 use crate::{executor, header, trie::calculate_root, verify::babe};
 
-use core::time::Duration;
+use core::{num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
@@ -52,7 +52,7 @@ pub struct Success {
     /// If `Some`, the verified block contains an epoch transition describing the given epoch.
     /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
     /// blocks that are part of that epoch.
-    pub babe_epoch_transition_target: Option<u64>,
+    pub babe_epoch_transition_target: Option<NonZeroU64>,
 
     /// Slot number the block belongs to.
     pub slot_number: u64,
