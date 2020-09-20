@@ -1,34 +1,52 @@
 //! Methods that verify whether a block is correct.
 //!
-//! # Context
+//! # Description
 //!
-//! When we receive a block from the network whose number is higher than the number of the best
-//! block that we know of, we can potentially add this block to the chain and treat it as the new
-//! best block.
+//! When a block is received from the network (or any other untrusted source), this block should
+//! first be verified.
 //!
-//! But before doing so, we must first verify whether the block is correct. In other words, that
-//! it was legitimately and correctly crafted.
+//! Two possibilities are offered:
 //!
-//! # Header and body, or header only
+//! - Verifying the authenticity of the block, using only its header and the ancestor blocks'
+//! headers.
+//! - Verifying both the validity and authenticity of the block, using.the block's header and
+//! body, the headers of the ancestors, and storage of its parent.
 //!
-//! There are two options when it comes to verifying a block:
+//! > **Note**: The body of a block consistss in the list of its extrinsics. An extrinsic is
+//! >           either an intrinsic (added by the block's author) or a transaction.
 //!
-//! - Verifying only a block header.
-//! - Verifying both a block header and its body.
+//! > **Note**: The option of verifying only the authenticity of a block, and not its validity,
+//! >           is normally for situations where a block's body or the parent block's storage is
+//! >           not known. If the parent storage and the block's body are known, it is encouraged
+//! >           that the block's validity be checked as well.
 //!
-//! > **Note**: The option of verifying only the header of a block, and not its body, is
-//! >           normally provided for situations where a block's body is simple not known. If
-//! >           the block's body is known, it is usually assumed that its validity be checked
-//! >           too.
+//! Verifying the authenticity of a block consists in verifying the consensus digest logs found
+//! in its header in order to make sure that the author of the block was authorized to produce it.
+//! Whether the block has been correctly crafted isn't and cannot be verified with only the
+//! header.
 //!
-//! Verifying the header of a block consists in verifying its signature in order to make sure
-//! that the author of the block was authorized to produce it. Whether the block has been
-//! correctly crafted isn't and cannot be verified with only the header.
-//!
-//! Verifying the body of a block consists, in addition to verifying it header, in *executing*
+//! Verifying the block's validity consists, in addition to verifying its header, in *executing*
 //! the block. This involves calling the `Core_execute_block` runtime function, passing as
-//! parameter the header and body of the block, for the runtime to verify that everything is
-//! correct.
+//! parameter the header and body of the block, and providing access to the storage of the parent
+//! block. The runtime verifies that the header and body are correct.
+//!
+//! # Trust
+//!
+//! Verifying only the authenticity of a block, and not its validity, means that the author of
+//! the block is trusted to have generated a correct block.
+//!
+//! Situations where the block author had the right to generate a block but created an invalid
+//! block would result in a loss of money for this author, and are therefore most likely the
+//! consequence of a bug (either on the side of the block author or on the side of the local
+//! verification code).
+//!
+//! However, if the blocks' validity isn't verified, it is possible for a block author to target
+//! a weak implementation by directly connecting to it and announcing invalid blocks directly
+//! to it. Consequently, if blocks are for example used to verify whether a payment has gone
+//! through, it is preferable to wait for blocks to have been finalized.
+//!
+//! No matter the validity of a block, keep in mind that a reorg (a "reorganization") might
+//! happen, and many valid blocks don't get finalized.
 //!
 
 mod execute_block;
