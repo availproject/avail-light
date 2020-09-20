@@ -129,23 +129,24 @@ impl BrowserLightClient {
 
         let response = match call {
             json_rpc::methods::MethodCall::system_chain {} => {
-                let value =
-                    json_rpc::methods::Response::system_chain(self.chain_spec.name().to_owned());
+                let value = json_rpc::methods::Response::system_chain(self.chain_spec.name())
+                    .to_json_response(request_id);
                 async move { value }.boxed()
             }
             json_rpc::methods::MethodCall::system_chainType {} => {
-                let value = json_rpc::methods::Response::system_chainType(
-                    self.chain_spec.chain_type().to_owned(),
-                );
+                let value =
+                    json_rpc::methods::Response::system_chainType(self.chain_spec.chain_type())
+                        .to_json_response(request_id);
                 async move { value }.boxed()
             }
             json_rpc::methods::MethodCall::system_name {} => {
-                let value =
-                    json_rpc::methods::Response::system_name("Polkadot ✨ lite ✨".to_owned());
+                let value = json_rpc::methods::Response::system_name("Polkadot ✨ lite ✨")
+                    .to_json_response(request_id);
                 async move { value }.boxed()
             }
             json_rpc::methods::MethodCall::system_version {} => {
-                let value = json_rpc::methods::Response::system_version("??".to_owned());
+                let value =
+                    json_rpc::methods::Response::system_version("??").to_json_response(request_id);
                 async move { value }.boxed()
             }
             // TODO: implement the rest
@@ -158,9 +159,7 @@ impl BrowserLightClient {
         };
 
         Ok(wasm_bindgen_futures::future_to_promise(async move {
-            Ok(JsValue::from_str(
-                &response.await.to_json_response(request_id),
-            ))
+            Ok(JsValue::from_str(&response.await))
         }))
     }
 
