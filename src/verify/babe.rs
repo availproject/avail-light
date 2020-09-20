@@ -514,7 +514,7 @@ fn slot_number_to_epoch(
 fn calculate_primary_threshold(
     c: (u64, u64),
     authorities_weights: impl ExactSizeIterator<Item = u64>,
-    authority_weight: u64,
+    authority_weight: u64, // TODO: use a NonZeroU64 once crate::header also has weights that use NonZeroU64
 ) -> u128 {
     assert!(authorities_weights.len() != 0);
 
