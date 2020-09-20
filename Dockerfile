@@ -7,10 +7,8 @@ COPY . /build
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y musl-tools
-# TODO: don't use nightly once possible
-RUN rustup default nightly
 RUN rustup target add x86_64-unknown-linux-musl
-RUN cargo build --target x86_64-unknown-linux-musl --bin full-node --release --verbose --all-features
+RUN cargo build --target x86_64-unknown-linux-musl --bin full-node --release --verbose
 
 
 FROM alpine:latest
