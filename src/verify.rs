@@ -12,7 +12,7 @@
 //! - Verifying both the validity and authenticity of the block, using.the block's header and
 //! body, the headers of the ancestors, and storage of its parent.
 //!
-//! > **Note**: The body of a block consistss in the list of its extrinsics. An extrinsic is
+//! > **Note**: The body of a block consists in the list of its extrinsics. An extrinsic is
 //! >           either an intrinsic (added by the block's author) or a transaction.
 //!
 //! > **Note**: The option of verifying only the authenticity of a block, and not its validity,

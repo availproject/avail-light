@@ -23,15 +23,13 @@
 
 use crate::executor;
 
-use core::convert::TryFrom as _;
-use parity_scale_codec::Decode as _;
-
 /// Retrieves the SCALE-encoded metadata from the runtime code of a block.
 ///
 /// > **Note**: This function is a convenient shortcut for
 /// >           [`metadata_from_virtual_machine_prototype`]. In performance-critical situations,
 /// >           where the overhead of the Wasm compilation is undesirable, you are encouraged to
 /// >           call [`metadata_from_virtual_machine_prototype`] instead.
+// TODO: document heap_pages
 pub fn metadata_from_runtime_code(wasm_code: &[u8], heap_pages: u64) -> Result<Vec<u8>, Error> {
     let vm =
         executor::WasmVmPrototype::new(&wasm_code, heap_pages).map_err(Error::VmInitialization)?;
@@ -81,26 +79,13 @@ pub enum Error {
 /// Removes the length prefix at the beginning of `metadata`. Returns an error if there is no
 /// valid length prefix.
 fn remove_length_prefix(metadata: &[u8]) -> Result<&[u8], Error> {
-    // TODO: maybe don't use parity_scale_codec here
-    // Decoded length prefix.
-    let length = parity_scale_codec::Compact::<u64>::decode(&mut (&metadata[..]))
-        .map_err(|_| Error::BadLengthPrefix)?;
-
-    // Length of the decoded length prefix.
-    let length_length =
-        <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
-            &length.0,
-        );
+    let (after_prefix, length) = crate::util::nom_scale_compact_usize(metadata)
+        .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| Error::BadLengthPrefix)?;
 
     // Verify that the length prefix indeed matches the metadata's length.
-    if usize::try_from(length.0)
-        .unwrap_or(usize::max_value())
-        .checked_add(length_length)
-        .ok_or(Error::BadLengthPrefix)?
-        != metadata.len()
-    {
+    if length != after_prefix.len() {
         return Err(Error::BadLengthPrefix);
     }
 
-    Ok(&metadata[length_length..])
+    Ok(after_prefix)
 }
