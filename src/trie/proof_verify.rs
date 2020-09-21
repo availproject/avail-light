@@ -30,7 +30,6 @@
 
 use super::nibble;
 use core::{convert::TryFrom as _, iter};
-use parity_scale_codec::Decode as _;
 
 /// Configuration to pass to [`verify_proof`].
 pub struct Config<'a, I> {
@@ -173,10 +172,12 @@ pub fn verify_proof<'a>(
                 }
 
                 // Find the Merkle value of that child in `node_value`.
-                let len = parity_scale_codec::Compact::<u64>::decode(&mut node_value)
-                    .map_err(|_| Error::InvalidNodeValue)?;
-                let len_usize = usize::try_from(len.0).map_err(|_| Error::InvalidNodeValue)?;
-                if node_value.len() < len_usize {
+                let (node_value_update, len) = crate::util::nom_scale_compact_usize(node_value)
+                    .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| {
+                        Error::InvalidNodeValue
+                    })?;
+                node_value = node_value_update;
+                if node_value.len() < len {
                     return Err(Error::InvalidNodeValue);
                 }
 
@@ -186,12 +187,12 @@ pub fn verify_proof<'a>(
                     // `proof_iter`.
                     proof_iter = merkle_values
                         .iter()
-                        .position(|v| &v[..] == &node_value[..len_usize])
+                        .position(|v| &v[..] == &node_value[..len])
                         .ok_or(Error::MissingProofEntry)?;
                     break;
                 }
 
-                node_value = &node_value[len_usize..];
+                node_value = &node_value[len..];
             }
         } else if has_storage_value {
             // The current node (as per `proof_iter`) exactly matches the requested key, and
@@ -199,20 +200,22 @@ pub fn verify_proof<'a>(
 
             // Skip over the Merkle values of the children.
             for _ in 0..children_bitmap.count_ones() {
-                let len = parity_scale_codec::Compact::<u64>::decode(&mut node_value)
-                    .map_err(|_| Error::InvalidNodeValue)?;
-                let len_usize = usize::try_from(len.0).map_err(|_| Error::InvalidNodeValue)?;
-                if node_value.len() < len_usize {
+                let (node_value_update, len) = crate::util::nom_scale_compact_usize(node_value)
+                    .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| {
+                        Error::InvalidNodeValue
+                    })?;
+                node_value = node_value_update;
+                if node_value.len() < len {
                     return Err(Error::InvalidNodeValue);
                 }
-                node_value = &node_value[len_usize..];
+                node_value = &node_value[len..];
             }
 
             // Now at the value that interests us.
-            let len = parity_scale_codec::Compact::<u64>::decode(&mut node_value)
-                .map_err(|_| Error::InvalidNodeValue)?;
-            let len_usize = usize::try_from(len.0).map_err(|_| Error::InvalidNodeValue)?;
-            if node_value.len() != len_usize {
+            let (node_value_update, len) = crate::util::nom_scale_compact_usize(node_value)
+                .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| Error::InvalidNodeValue)?;
+            node_value = node_value_update;
+            if node_value.len() != len {
                 return Err(Error::InvalidNodeValue);
             }
             return Ok(Some(node_value));

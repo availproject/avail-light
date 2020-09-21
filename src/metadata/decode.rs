@@ -1,6 +1,6 @@
 // TODO: documentation
 
-use core::{convert::TryFrom as _, fmt, str};
+use core::{fmt, str};
 
 /// Decodes the given SCALE-encoded metadata.
 pub(super) fn decode(scale_encoded_metadata: &[u8]) -> Result<MetadataRef, DecodeError> {
@@ -238,9 +238,9 @@ fn module_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ModuleMetadataRef, NomEr
         nom::combinator::map(
             nom::sequence::tuple((
                 string_decode,
-                |i| option_decode(i, storage_metadata),
-                |i| option_decode(i, |i| vec_decode(i, function_metadata)),
-                |i| option_decode(i, |i| vec_decode(i, event_metadata)),
+                |i| crate::util::nom_option_decode(i, storage_metadata),
+                |i| crate::util::nom_option_decode(i, |i| vec_decode(i, function_metadata)),
+                |i| crate::util::nom_option_decode(i, |i| vec_decode(i, event_metadata)),
                 |i| vec_decode(i, module_constant_metadata),
                 |i| vec_decode(i, error_metadata),
             )),
@@ -467,12 +467,15 @@ fn extrinsic_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ExtrinsicMetadataRef,
 
 /// Decodes a SCALE-encoded vec of bytes.
 fn bytes_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a [u8], NomError<'a>> {
-    nom::multi::length_data(scale_compact_usize)(bytes)
+    nom::multi::length_data(crate::util::nom_scale_compact_usize)(bytes)
 }
 
 /// Decodes a SCALE-encoded string.
 fn string_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a str, NomError<'a>> {
-    nom::combinator::map_res(nom::multi::length_data(scale_compact_usize), str::from_utf8)(bytes)
+    nom::combinator::map_res(
+        nom::multi::length_data(crate::util::nom_scale_compact_usize),
+        str::from_utf8,
+    )(bytes)
 }
 
 /// Decodes a SCALE-encoded `Vec`.
@@ -480,7 +483,7 @@ fn vec_decode<'a, O>(
     bytes: &'a [u8],
     decoding_fn: fn(&'a [u8]) -> nom::IResult<&'a [u8], O, NomError<'a>>,
 ) -> nom::IResult<&'a [u8], UndecodedIter<'a, O>, NomError<'a>> {
-    let (bytes, num_items) = scale_compact_usize(bytes)?;
+    let (bytes, num_items) = crate::util::nom_scale_compact_usize(bytes)?;
 
     let mut verify_iter = bytes;
     for _ in 0..num_items {
@@ -496,71 +499,4 @@ fn vec_decode<'a, O>(
             decoding_fn,
         },
     ))
-}
-
-/// Decodes a SCALE-encoded `Option`.
-fn option_decode<'a, O, E: nom::error::ParseError<&'a [u8]>>(
-    bytes: &'a [u8],
-    inner_decode: impl Fn(&'a [u8]) -> nom::IResult<&'a [u8], O, E>,
-) -> nom::IResult<&'a [u8], Option<O>, E> {
-    nom::branch::alt((
-        nom::combinator::map(nom::bytes::complete::tag(&[0]), |_| None),
-        nom::combinator::map(
-            nom::sequence::preceded(nom::bytes::complete::tag(&[1]), inner_decode),
-            Some,
-        ),
-    ))(bytes)
-}
-
-/// Decodes a SCALE-compact-encoded usize.
-fn scale_compact_usize<'a, E: nom::error::ParseError<&'a [u8]>>(
-    bytes: &'a [u8],
-) -> nom::IResult<&'a [u8], usize, E> {
-    if bytes.is_empty() {
-        return Err(nom::Err::Error(nom::error::make_error(
-            bytes,
-            nom::error::ErrorKind::Eof,
-        )));
-    }
-
-    match bytes[0] & 0b11 {
-        0b00 => {
-            let value = bytes[0] >> 2;
-            Ok((&bytes[1..], usize::from(value)))
-        }
-        0b01 => {
-            if bytes.len() < 2 {
-                return Err(nom::Err::Error(nom::error::make_error(
-                    bytes,
-                    nom::error::ErrorKind::Eof,
-                )));
-            }
-
-            let byte0 = u16::from(bytes[0] >> 2);
-            let byte1 = u16::from(bytes[1]);
-            let value = (byte1 << 6) | byte0;
-            Ok((&bytes[2..], usize::from(value)))
-        }
-        0b10 => {
-            if bytes.len() < 4 {
-                return Err(nom::Err::Error(nom::error::make_error(
-                    bytes,
-                    nom::error::ErrorKind::Eof,
-                )));
-            }
-
-            let byte0 = u32::from(bytes[0] >> 2);
-            let byte1 = u32::from(bytes[1]);
-            let byte2 = u32::from(bytes[2]);
-            let byte3 = u32::from(bytes[3]);
-            let value = (byte3 << 22) | (byte2 << 14) | (byte1 << 6) | byte0;
-            let value = match usize::try_from(value) {
-                Ok(v) => v,
-                Err(_) => todo!(), // TODO:
-            };
-            Ok((&bytes[4..], value))
-        }
-        0b11 => todo!(), // TODO:
-        _ => unreachable!(),
-    }
 }
