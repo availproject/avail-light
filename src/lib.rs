@@ -102,6 +102,8 @@ pub mod trie;
 pub mod verify;
 pub mod wasm_bindings;
 
+mod util;
+
 /// Builds the header of the genesis block, from the values in storage.
 ///
 /// # Example

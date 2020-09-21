@@ -232,11 +232,19 @@ async fn start_sync(
             }
 
             // Verify blocks that have been fetched from queries.
-            // TODO: it can take a long time to call this in a loop until exhausted; interleave
-            //       the future polling in between two calls
             loop {
                 match sync.process_one() {
                     headers_optimistic::ProcessOneOutcome::Idle => break,
+                    headers_optimistic::ProcessOneOutcome::Updated {
+                        best_block_hash,
+                        best_block_number,
+                        ..
+                    } => {
+                        web_sys::console::log_1(&JsValue::from_str(&format!(
+                            "Chain state update: #{} {:?}",
+                            best_block_number, best_block_hash
+                        )));
+                    }
                     headers_optimistic::ProcessOneOutcome::Reset {
                         reason,
                         new_best_block_hash,
@@ -251,17 +259,13 @@ async fn start_sync(
                             new_best_block_number, new_best_block_hash
                         )));
                     }
-                    headers_optimistic::ProcessOneOutcome::Updated {
-                        best_block_hash,
-                        best_block_number,
-                        ..
-                    } => {
-                        web_sys::console::log_1(&JsValue::from_str(&format!(
-                            "Chain state update: #{} {:?}",
-                            best_block_number, best_block_hash
-                        )));
-                    }
                 }
+
+                // Since `process_one` is a CPU-heavy operation, looping until it is done can
+                // take a long time. In order to avoid blocking the rest of the program in the
+                // meanwhile, the `yield_once` function interrupts the current task and gives a
+                // chance for other tasks to progress.
+                crate::util::yield_once().await;
             }
 
             // TODO: save less often
