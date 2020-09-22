@@ -290,7 +290,7 @@ impl Noise {
         mut payload: impl Iterator<Item = impl AsRef<[u8]>>,
         destination: &mut [u8],
     ) -> (usize, usize) {
-        // TODO: The API exposes `payload` is an iterator of buffers rather than a single
+        // TODO: The API exposes `payload` as an iterator of buffers rather than a single
         //       contiguous buffer. The reason is that, theoretically speaking, the underlying
         //       implementation should be able to read bytes from an iterator. Rather than
         //       providing an API whose usage might force an overhead, the overhead is instead

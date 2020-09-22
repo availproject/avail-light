@@ -79,7 +79,9 @@ pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsVa
                 babe_genesis_config,
             }
         }
-        Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
+        Err(database::local_storage_light::AccessError::StorageAccess(err)) => {
+            return Err(err.into())
+        }
         // TODO: log why storage access failed?
         Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {
             chain::chain_information::ChainInformationConfig::from_genesis_storage(

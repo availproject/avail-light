@@ -1,4 +1,28 @@
-//! Persistent storage for light-client data based on the browser's local storage.
+//! Persistent storage for a [`chain_information::ChainInformation`] based on the browser's local
+//! storage.
+//!
+//! The browser's local storage is a storage space in the form string that browser offer to
+//! web pages. While it is very limited in size, this size is more than enough to store a
+//! serialized version of a [`chain_information::ChainInformation`].
+//!
+//! # Usage
+//!
+//! Call [`LocalStorage::open`] to access the local storage provided by the environment. An error
+//! is returned if the environment doesn't provide any local storage.
+//!
+//! Use [`LocalStorage::chain_information`] and [`LocalStorage::set_chain_information`] to
+//! respectively load and store a [`chain_information::ChainInformation`] from/to the local
+//! storage.
+//!
+//! > **Note**: The format of the stored information (in other words, the string actually stored
+//! >           in the local storage) isn't documented here. At the time of the writing of this
+//! >           comment, this format isn't stable and can break without warning. In the future,
+//! >           though, a certain committment to a specific format should be done.
+//!
+//! # See also
+//!
+//! - [MDN documentation](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage).
+//!
 
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
@@ -32,25 +56,32 @@ impl LocalStorage {
     }
 
     /// Stores the given information in the local storage.
+    ///
+    /// Errors are expected to be extremely rare, but might happen for example if the serialized
+    /// data exceeds the browser-specific limit.
     pub fn set_chain_information(
         &self,
         information: chain_information::ChainInformationRef<'_>,
-    ) -> Result<(), AccessError> {
+    ) -> Result<(), StorageAccessError> {
         let decoded = defs::SerializedChainInformation::V1(information.into());
         let encoded = serde_json::to_string(&decoded).unwrap();
         self.inner
             .set_item("chain_information", &encoded)
-            .map_err(AccessError::StorageAccess)?;
+            .map_err(StorageAccessError)?;
         Ok(())
     }
 
     /// Loads information about the chain from the local storage.
+    ///
+    /// This function can reasonably return an [`AccessError::Corrupted`] error if the user
+    /// messed with the stored data.
     pub fn chain_information(
         &self,
     ) -> Result<Option<chain_information::ChainInformation>, AccessError> {
         let encoded = match self
             .inner
             .get_item("chain_information")
+            .map_err(StorageAccessError)
             .map_err(AccessError::StorageAccess)?
         {
             Some(v) => v,
@@ -103,9 +134,20 @@ pub enum OpenError {
 pub enum AccessError {
     /// JavaScript error produced when accessing the storage.
     #[display(fmt = "Error when accessing local storage: {:?}", _0)]
-    StorageAccess(JsValue),
+    StorageAccess(StorageAccessError),
     /// Corruption in the data stored in the local storage.
     Corrupted(CorruptedError),
+}
+
+/// Opaque error indicating a browser-returned error in accessing the storage.
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "{:?}", _0)]
+pub struct StorageAccessError(JsValue);
+
+impl From<StorageAccessError> for JsValue {
+    fn from(err: StorageAccessError) -> JsValue {
+        err.0
+    }
 }
 
 /// Opaque error indicating a corruption in the data stored in the local storage.
