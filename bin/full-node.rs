@@ -242,7 +242,7 @@ async fn async_main() {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
                     name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
                     implementation: String::from("Secret projet 🤫").into_boxed_str(),  // TODO:
-                    version: String::from("1.0.0").into_boxed_str(),   // TODO: version
+                    version: String::from(env!("CARGO_PKG_VERSION")).into_boxed_str(),
                     validator: None,
                     network_id: None, // TODO: Some(service.local_peer_id().to_base58().into_boxed_str()),
                 }));
