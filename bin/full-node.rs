@@ -139,7 +139,7 @@ async fn async_main() {
 
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_network_tx, to_network_rx) = mpsc::channel(64);
-    let (to_network_tx2, to_network_rx2) = mpsc::channel(64);
+    //let (to_network_tx2, to_network_rx2) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
     let network_state = Arc::new(NetworkState {
@@ -163,7 +163,7 @@ async fn async_main() {
         .await
     });
 
-    threads_pool.spawn_ok({
+    /*threads_pool.spawn_ok({
         let tasks_executor = Box::new({
             let threads_pool = threads_pool.clone();
             move |f| threads_pool.spawn_ok(f)
@@ -177,7 +177,7 @@ async fn async_main() {
             to_sync_tx,
         )
         .await
-    });
+    });*/
 
     let sync_state = Arc::new(Mutex::new(SyncState {
         best_block_hash: [0; 32],      // TODO:
