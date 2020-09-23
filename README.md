@@ -13,6 +13,13 @@ In order to achieve simplicity, a few opinionated design choices have been made:
 - No native runtime. The execution time of `wasmtime` is satisfying enough that having a native runtime isn't critical anymore. Relying only on the on-chain Wasm code considerably simplifies the code.
 - No pluggable architecture. At the moment substrate-lite assumes that chains use Babe and GrandPa, which is the case of Westend, Kusama and Polkadot. Implementing other consensus algorithm (notably Aura and Sassafras) is not excluded, but their support would then be directly implemented in the main tree of substrate-lite. Support for plugging in "custom" consensus algorithms requires a considerably more complex code architecture, and is therefore out of scope.
 
+## Why is this repository not public?
+
+Two concerns should be resolved before making this repository public:
+
+- We don't want external people to believe that this is going to replace Substrate or Polkadot.
+- It is unclear whether this repository should be under GPL or Apache license. At the moment, all newly-written code is under Apache, but some code has been copy-pasted from Substrate and is still using the GPL.
+
 # Status
 
 As a quick overview, at the time of writing of this README, the following is supported:
