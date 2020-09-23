@@ -48,12 +48,26 @@ pub struct Success {
 /// Error that can happen during the verification.
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
+    /// Number of the block to verify isn't equal to the parent block's number plus one.
+    BadBlockNumber,
     /// Failed to verify the authenticity of the block with the BABE algorithm.
+    #[display(fmt = "{}", _0)]
     BabeVerification(babe::VerifyError),
 }
 
 /// Verifies whether a block is valid.
 pub fn verify<'a>(config: Config<'a>) -> Verify {
+    // Some basic verification of the block number. This is normally verified by the runtime, but
+    // no runtime call can be performed with only the header.
+    if config
+        .parent_block_header
+        .number
+        .checked_add(1)
+        .map_or(true, |v| v != config.block_header.number)
+    {
+        return Verify::Finished(Err(Error::BadBlockNumber));
+    }
+
     // Start the BABE verification process.
     let babe_verification = {
         let result = babe::start_verify_header(babe::VerifyConfig {
