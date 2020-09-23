@@ -53,7 +53,7 @@ use crate::{
     verify::{self, babe},
 };
 
-use alloc::{collections::VecDeque, sync::Arc};
+use alloc::sync::Arc;
 use core::{cmp, convert::TryFrom as _, fmt, mem};
 use hashbrown::HashMap;
 
@@ -78,12 +78,10 @@ pub struct NonFinalizedTree<T> {
     /// List of GrandPa authorities that need to finalize the block right after the finalized
     /// block.
     grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
-    /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
-    /// are already finalized. These changes will for sure happen.
-    /// Contrary to the equivalent field in [`ChainInformation`], this list is always known to be
-    /// ordered by block height.
-    // TODO: doesn't have to be a collection; refactor into a single value
-    grandpa_finalized_scheduled_changes: VecDeque<chain_information::FinalizedScheduledChange>,
+    /// Change in the GrandPa authorities list that has been scheduled by a block that is already
+    /// finalized but not triggered yet. These changes will for sure happen. Contains the block
+    /// number where the changes are to be triggered.
+    grandpa_finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
 
     /// Configuration for BABE, retrieved from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
@@ -176,23 +174,21 @@ impl<T> NonFinalizedTree<T> {
             .finalized_block_header
             .hash();
 
-        config
+        if let Some(scheduled) = config
             .chain_information_config
             .chain_information
-            .grandpa_finalized_scheduled_changes
-            .retain({
-                let n = config
-                    .chain_information_config
-                    .chain_information
-                    .finalized_block_header
-                    .number;
-                move |sc| sc.trigger_block_height > n
-            });
-        config
-            .chain_information_config
-            .chain_information
-            .grandpa_finalized_scheduled_changes
-            .sort_by_key(|sc| sc.trigger_block_height);
+            .grandpa_finalized_scheduled_change
+            .as_ref()
+        {
+            assert!(
+                scheduled.0
+                    > config
+                        .chain_information_config
+                        .chain_information
+                        .finalized_block_header
+                        .number
+            );
+        }
 
         NonFinalizedTree {
             finalized_block_header: config
@@ -208,12 +204,10 @@ impl<T> NonFinalizedTree<T> {
                 .chain_information_config
                 .chain_information
                 .grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: config
+            grandpa_finalized_scheduled_change: config
                 .chain_information_config
                 .chain_information
-                .grandpa_finalized_scheduled_changes
-                .into_iter()
-                .collect(),
+                .grandpa_finalized_scheduled_change,
             babe_genesis_config: config.chain_information_config.babe_genesis_config,
             babe_finalized_block1_slot_number: config
                 .chain_information_config
@@ -277,11 +271,10 @@ impl<T> NonFinalizedTree<T> {
             grandpa_after_finalized_block_authorities_set_id: self
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &self.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: self
-                .grandpa_finalized_scheduled_changes
-                .iter()
-                .cloned()
-                .collect(),
+            grandpa_finalized_scheduled_change: self
+                .grandpa_finalized_scheduled_change
+                .as_ref()
+                .map(|(n, l)| (*n, &l[..])),
         }
     }
 
@@ -651,14 +644,15 @@ impl<T> NonFinalizedTree<T> {
         // authorities change, then we need to finalize that triggering block (or any block
         // after or including the one that schedules these changes) before finalizing the one
         // targeted by the justification.
+        // TODO: rethink and reexplain this ^
 
         // Find out the next block height where an authority change will be triggered.
         let earliest_trigger = {
             // Scheduled change that is already finalized.
-            let already_finalized = self
-                .grandpa_finalized_scheduled_changes
-                .front()
-                .map(|sc| sc.trigger_block_height);
+            let scheduled = self
+                .grandpa_finalized_scheduled_change
+                .as_ref()
+                .map(|(n, _)| *n);
 
             // First change that would be scheduled if we finalize the target block.
             let would_happen = {
@@ -686,7 +680,7 @@ impl<T> NonFinalizedTree<T> {
                 trigger_height
             };
 
-            match (already_finalized, would_happen) {
+            match (scheduled, would_happen) {
                 (Some(a), Some(b)) => Some(cmp::min(a, b)),
                 (Some(a), None) => Some(a),
                 (None, Some(b)) => Some(b),
@@ -722,11 +716,10 @@ impl<T> NonFinalizedTree<T> {
 
         // Find which authorities are supposed to finalize the target block.
         let authorities_list = self
-            .grandpa_finalized_scheduled_changes
-            .iter()
-            .filter(|sc| sc.trigger_block_height < u64::from(decoded.target_number))
-            .last()
-            .map(|sc| &sc.new_authorities_list)
+            .grandpa_finalized_scheduled_change
+            .as_ref()
+            .filter(|(trigger_height, _)| *trigger_height < u64::from(decoded.target_number))
+            .map(|(_, list)| list)
             .unwrap_or(&self.grandpa_finalized_triggered_authorities);
 
         // As per above check, we know that the authorities of the target block are either the
@@ -778,13 +771,14 @@ impl<T> NonFinalizedTree<T> {
         &mut self,
         block_index: fork_tree::NodeIndex,
     ) -> SetFinalizedBlockIter<T> {
-        // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
-        //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
+        let target_block_height = self.blocks.get_mut(block_index).unwrap().header.number;
 
-        // Update the list of scheduled GrandPa changes and Babe epochs with the ones contained
-        // in the newly-finalized blocks.
+        // Update the scheduled GrandPa change with the latest scheduled-but-non-finalized change
+        // that could be found.
+        self.grandpa_finalized_scheduled_change = None;
         for node in self.blocks.root_to_node_path(block_index) {
             let node = self.blocks.get(node).unwrap();
+            //node.header.number
             for grandpa_digest_item in node.header.digest.logs().filter_map(|d| match d {
                 header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
                 _ => None,
@@ -796,23 +790,17 @@ impl<T> NonFinalizedTree<T> {
                             .number
                             .checked_add(u64::from(change.delay))
                             .unwrap();
-                        self.grandpa_finalized_scheduled_changes.push_back(
-                            chain_information::FinalizedScheduledChange {
+                        if trigger_block_height > target_block_height {
+                            self.grandpa_finalized_scheduled_change = Some((
                                 trigger_block_height,
-                                new_authorities_list: change
-                                    .next_authorities
-                                    .map(Into::into)
-                                    .collect(),
-                            },
-                        );
+                                change.next_authorities.map(Into::into).collect(),
+                            ));
+                        }
                     }
                     _ => {} // TODO: unimplemented
                 }
             }
         }
-
-        // TODO: uncomment after https://github.com/rust-lang/rust/issues/53485
-        //debug_assert!(self.grandpa_finalized_scheduled_changes.iter().is_sorted_by_key(|sc| sc.trigger_block_height));
 
         let new_finalized_block = self.blocks.get_mut(block_index).unwrap();
 
@@ -826,18 +814,6 @@ impl<T> NonFinalizedTree<T> {
             &mut new_finalized_block.header,
         );
         self.finalized_block_hash = self.finalized_block_header.hash();
-
-        // Remove the changes that have been triggered by the newly-finalized blocks.
-        while let Some(next_change) = self.grandpa_finalized_scheduled_changes.front() {
-            if next_change.trigger_block_height <= self.finalized_block_header.number {
-                let next_change = self
-                    .grandpa_finalized_scheduled_changes
-                    .pop_front()
-                    .unwrap();
-                self.grandpa_finalized_triggered_authorities = next_change.new_authorities_list;
-                self.grandpa_after_finalized_block_authorities_set_id += 1;
-            }
-        }
 
         if self.babe_finalized_block1_slot_number.is_none() {
             debug_assert!(self.finalized_block_header.number >= 1);

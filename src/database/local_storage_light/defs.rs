@@ -39,8 +39,8 @@ pub(super) struct SerializedChainInformationV1 {
     grandpa_after_finalized_block_authorities_set_id: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     grandpa_finalized_triggered_authorities: Vec<SerializedGrandpaAuthorityV1>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    grandpa_finalized_scheduled_changes: Vec<SerializedFinalizedScheduledChangeV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    grandpa_finalized_scheduled_change: Option<SerializedFinalizedScheduledChangeV1>,
 }
 
 impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInformationV1 {
@@ -68,11 +68,15 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                 .map(header::GrandpaAuthorityRef::from)
                 .map(Into::into)
                 .collect(),
-            grandpa_finalized_scheduled_changes: from
-                .grandpa_finalized_scheduled_changes
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            grandpa_finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
+                |(n, l)| SerializedFinalizedScheduledChangeV1 {
+                    trigger_block_height: n,
+                    new_authorities_list: l
+                        .iter()
+                        .map(Into::into)
+                        .collect(),
+                },
+            ),
         }
     }
 }
@@ -97,11 +101,18 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
                 .into_iter()
                 .map(Into::into)
                 .collect(),
-            grandpa_finalized_scheduled_changes: from
-                .grandpa_finalized_scheduled_changes
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            grandpa_finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
+                |change| {
+                    (
+                        change.trigger_block_height,
+                        change
+                            .new_authorities_list
+                            .into_iter()
+                            .map(Into::into)
+                            .collect(),
+                    )
+                },
+            ),
         })
     }
 }
@@ -242,32 +253,6 @@ struct SerializedFinalizedScheduledChangeV1 {
     new_authorities_list: Vec<SerializedGrandpaAuthorityV1>,
 }
 
-impl From<chain_information::FinalizedScheduledChange> for SerializedFinalizedScheduledChangeV1 {
-    fn from(from: chain_information::FinalizedScheduledChange) -> Self {
-        SerializedFinalizedScheduledChangeV1 {
-            new_authorities_list: from
-                .new_authorities_list
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            trigger_block_height: from.trigger_block_height,
-        }
-    }
-}
-
-impl From<SerializedFinalizedScheduledChangeV1> for chain_information::FinalizedScheduledChange {
-    fn from(from: SerializedFinalizedScheduledChangeV1) -> Self {
-        chain_information::FinalizedScheduledChange {
-            new_authorities_list: from
-                .new_authorities_list
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            trigger_block_height: from.trigger_block_height,
-        }
-    }
-}
-
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SerializedGrandpaAuthorityV1 {
@@ -283,6 +268,15 @@ impl<'a> From<header::GrandpaAuthorityRef<'a>> for SerializedGrandpaAuthorityV1 
     fn from(from: header::GrandpaAuthorityRef<'a>) -> Self {
         SerializedGrandpaAuthorityV1 {
             public_key: *from.public_key,
+            weight: from.weight,
+        }
+    }
+}
+
+impl<'a> From<&'a header::GrandpaAuthority> for SerializedGrandpaAuthorityV1 {
+    fn from(from: &'a header::GrandpaAuthority) -> Self {
+        SerializedGrandpaAuthorityV1 {
+            public_key: from.public_key,
             weight: from.weight,
         }
     }

@@ -61,10 +61,22 @@ pub struct ChainInformation {
     /// block.
     pub grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
 
-    /// List of changes in the GrandPa authorities list that have been scheduled by blocks that
-    /// are already finalized but not triggered yet. These changes will for sure happen.
-    // TODO: I believe this should be an Option
-    pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
+    /// Change in the GrandPa authorities list that has been scheduled by a block that is already
+    /// finalized, but the change is not triggered yet. These changes will for sure happen.
+    /// Contains the block number where the changes are to be triggered.
+    ///
+    /// The block whose height is contained in this field must still be finalized using the
+    /// authorities found in [`ChainInformation::grandpa_finalized_triggered_authorities`]. Only
+    /// the next block and further use the new list of authorities.
+    ///
+    /// The block height must always be strictly superior to the height found in
+    /// [`ChainInformation::finalized_block_header`].
+    ///
+    /// > **Note**: When a header contains a GrandPa scheduled changes log item with a delay of N,
+    /// >           the block where the changes are triggered is
+    /// >           `height(block_with_log_item) + N`. If `N` is 0, then the block where the
+    /// >           change is triggered is the same as the one where it is scheduled.
+    pub grandpa_finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
 }
 
 impl ChainInformation {
@@ -90,7 +102,7 @@ impl ChainInformation {
             babe_finalized_block_epoch_information: None,
             babe_finalized_next_epoch_transition: None,
             grandpa_after_finalized_block_authorities_set_id: 0,
-            grandpa_finalized_scheduled_changes: Vec::new(),
+            grandpa_finalized_scheduled_change: None,
             grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
         })
     }
@@ -112,7 +124,9 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
             grandpa_finalized_triggered_authorities: info
                 .grandpa_finalized_triggered_authorities
                 .into(),
-            grandpa_finalized_scheduled_changes: info.grandpa_finalized_scheduled_changes.into(),
+            grandpa_finalized_scheduled_change: info
+                .grandpa_finalized_scheduled_change
+                .map(|(n, l)| (n, l.into())),
         }
     }
 }
@@ -154,8 +168,7 @@ pub struct ChainInformationRef<'a> {
     pub grandpa_finalized_triggered_authorities: &'a [header::GrandpaAuthority],
 
     /// See equivalent field in [`ChanInformation`].
-    // TODO: better type, as a Vec is not in the spirit of this struct; however it's likely that this "scheduled changes" field will disappear altogether
-    pub grandpa_finalized_scheduled_changes: Vec<FinalizedScheduledChange>,
+    pub grandpa_finalized_scheduled_change: Option<(u64, &'a [header::GrandpaAuthority])>,
 }
 
 impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
@@ -174,7 +187,10 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
             grandpa_after_finalized_block_authorities_set_id: info
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: &info.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_changes: info.grandpa_finalized_scheduled_changes.clone(),
+            grandpa_finalized_scheduled_change: info
+                .grandpa_finalized_scheduled_change
+                .as_ref()
+                .map(|(n, l)| (*n, &l[..])),
         }
     }
 }
