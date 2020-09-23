@@ -18,7 +18,7 @@ name: continuous-integration
 on:
   pull_request:
   push:
-    branches:    
+    branches:
       - main
 
 jobs:
