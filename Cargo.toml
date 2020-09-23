@@ -2,7 +2,8 @@
 name = "substrate-lite"
 version = "0.1.0"
 authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
-license = "GPL3"    # TODO: we're copy-pasting code from Substrate, so it must be GPL; can probably be removed if we remove all of Substrate's code
+license = "GPL3" # TODO: at the moment some code is still straight-up copy-pasted from Substrate; need to ask on a case-by-case basis whether it's ok to relicense
+# TODO: license = "Apache-2.0"
 edition = "2018"
 keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
