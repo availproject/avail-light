@@ -1,18 +1,49 @@
 Prototype for Substrate client refactoring.
 
-Guidelines for writing code:
+# Context
 
-- The main objective is simplicity. The definition of simplicity is not how easy the code is to read, but how easy it is to understand. Verbose code can be just as simple to understand as concise code, sometimes more simple. As an example, introducing a procedural macro will often make the code nicer to read while greatly hurting understandability.
-- No trait definitions, except for private traits used purely as implementation detail.
-- No `Arc`s or `Mutex`es exposed in public APIs.
-- No splitting of the crate into multiple crates without a good reason. "Improving compilation time" is not considered a good reason.
-- No using the `log`, `tracing`, `slog`, etc. libraries, or any library whose use must be spread through the code base. As an example, `prometheus` is allowed but only in a well-scoped context and by pulling information from the various components, rather than injecting itself.
-- Do not expose types of third-party libraries in the public API, unless there is a good reason to.
-- Do not perform memory allocations unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads. Memory allocations aren't a bad thing, but we should try to fight against the lazy habit of adding a `.to_vec()` or `.clone()` here and there to make the code compile and without thinking about it. Adding `to_vec()` or `clone()` is often the wrong solution to the problem.
-- Embrace TODO-driven development. Try as much as possible to write code that will never need to change, but if that isn't possible leave a `// TODO` comment in the code explaining which modifications will be needed in the future. Writing code that will never need to change is still the preferred approach, and it's better to take more time before merging something than merging it with active TODOs.
-  - Don't add TODOs for missing features, though, but only for known issues with the code.
-- Do not try to hard to apply the "Don't Repeat Yourself" principle. Remember that the main objective is simplicity, and having to jump to a different file to understand what is going on is a big hit to this objective. Furthermore, two very similar pieces of code will often differ by their objective, in which case they should be in no way de-duplicated.
-- Structs and functions are often private for a reason. Adding a `pub` where there isn't one is often a violation of encapsulation.
+Like many big software projects, the Substrate client code has accumulated a lot of technical debt over time, mostly because of the many refactorings that it has gone through. Its overall complexity has been causing a lot of frustration and has slowed down development quite a lot.
+
+In this context, `substrate-lite` has been started at the end of 2019 as a quick proof-of-concept of how to clarify and simplify the overall architecture of the Substrate client. Its scope has expanded over time, and during spring 2020 it became capable of syncing Kusama and Polkadot the same way a full node does.
+
+More recently, mid-2020, the idea has emerged to use `substrate-lite` for the `substrate-connect` project, which consists in embedding a Substrate/Polkadot/Kusama light client inside of a browser. While `substrate-lite` is still far from being a fully-capable full node, it already supports all the features necessary for a light client to function.
+
+In order to achieve simplicity, a few opinionated design choices have been made:
+
+- No native runtime. The execution time of `wasmtime` is satisfying enough that having a native runtime isn't critical anymore. Relying only on the on-chain Wasm code considerably simplifies the code.
+- No pluggable architecture. At the moment substrate-lite assumes that chains use Babe and GrandPa, which is the case of Westend, Kusama and Polkadot. Implementing other consensus algorithm (notably Aura and Sassafras) is not excluded, but their support would then be directly implemented in the main tree of substrate-lite. Support for plugging in "custom" consensus algorithms requires a considerably more complex code architecture, and is therefore out of scope.
+
+# Status
+
+As a quick overview, at the time of writing of this README, the following is supported:
+
+- Verifying Babe blocks.
+- "Executing" blocks, by calling `Core_execute_block`.
+- Verifying GrandPa justifications.
+- "Optimistic syncing", in other words syncing by assuming that there isn't any fork.
+- Verifying storage trie proofs.
+- The WebSocket JSON-RPC server is in progress, but its design is still changing.
+- An informant.
+- A telemetry client (mostly copy-pasted from Substrate and substrate-telemetry).
+
+The networking has been copy-pasted from Substrate.
+
+The following isn't done yet:
+
+- Authoring blocks isn't supported.
+- There is no transaction pool.
+- Anything related to GrandPa networking messages. Finality can only be determined by asking a full node for a justification.
+- No actual database for the full client.
+- The changes trie isn't implemented (it is not enabled on Westend, Kusama and Polkadot at the moment).
+- Prometheus metrics. While not difficult to implement, it seems a bit overkill to have one at the moment.
+
+## How to test
+
+There exists two clients.
+
+The full client can be tested with `cargo run`.
+
+The light client running in a browser can be tested with `cd browser-node` and `./build.sh`.
 
 # Objectives compared to Substrate
 
@@ -84,3 +115,19 @@ However, code **must** panic if its internal consistency is compromised. In othe
 The author of this crate considers that it is dangerous to try to continue running the program if it is known that it does not run according to expectations.
 
 While there is no rule in this source code about `unwrap`, the programmer is expected to think about every single `unwrap()` that they write and is concious that a `None` or an `Err` cannot happen unless a bug is present.
+
+# Guidelines
+
+Guidelines for writing code:
+
+- The main objective is simplicity. The definition of simplicity is not how easy the code is to read, but how easy it is to understand. Verbose code can be just as simple to understand as concise code, sometimes more simple. As an example, introducing a procedural macro will often make the code nicer to read while greatly hurting understandability.
+- No trait definitions, except for private traits used purely as implementation detail.
+- No `Arc`s or `Mutex`es exposed in public APIs.
+- No splitting of the crate into multiple crates without a good reason. "Improving compilation time" is not considered a good reason.
+- No using the `log`, `tracing`, `slog`, etc. libraries, or any library whose use must be spread through the code base. As an example, `prometheus` is allowed but only in a well-scoped context and by pulling information from the various components, rather than injecting itself.
+- Do not expose types of third-party libraries in the public API, unless there is a good reason to.
+- Do not perform memory allocations unless the logic of the code you're writing requires storing data for later or passing data between tasks/threads. Memory allocations aren't a bad thing, but we should try to fight against the lazy habit of adding a `.to_vec()` or `.clone()` here and there to make the code compile and without thinking about it. Adding `to_vec()` or `clone()` is often the wrong solution to the problem.
+- Embrace TODO-driven development. Try as much as possible to write code that will never need to change, but if that isn't possible leave a `// TODO` comment in the code explaining which modifications will be needed in the future. Writing code that will never need to change is still the preferred approach, and it's better to take more time before merging something than merging it with active TODOs.
+  - Don't add TODOs for missing features, though, but only for known issues with the code.
+- Do not try too hard to apply the "Don't Repeat Yourself" principle. Remember that the main objective is simplicity, and having to jump to a different file to understand what is going on is a big hit to this objective. Furthermore, two very similar pieces of code will often differ by their objective, in which case they should be in no way de-duplicated.
+- Structs and functions are often private for a reason. Adding a `pub` where there isn't one is often a violation of encapsulation.
