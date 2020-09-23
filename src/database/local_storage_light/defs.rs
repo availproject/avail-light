@@ -71,10 +71,7 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
             grandpa_finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
                 |(n, l)| SerializedFinalizedScheduledChangeV1 {
                     trigger_block_height: n,
-                    new_authorities_list: l
-                        .iter()
-                        .map(Into::into)
-                        .collect(),
+                    new_authorities_list: l.iter().map(Into::into).collect(),
                 },
             ),
         }

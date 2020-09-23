@@ -795,6 +795,10 @@ impl<T> NonFinalizedTree<T> {
                                 trigger_block_height,
                                 change.next_authorities.map(Into::into).collect(),
                             ));
+                        } else {
+                            self.grandpa_finalized_triggered_authorities =
+                                change.next_authorities.map(Into::into).collect();
+                            self.grandpa_after_finalized_block_authorities_set_id += 1;
                         }
                     }
                     _ => {} // TODO: unimplemented
