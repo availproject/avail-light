@@ -65,6 +65,8 @@ pub struct Success {
 pub enum Error {
     /// Number of the block to verify isn't equal to the parent block's number plus one.
     BadBlockNumber,
+    /// Hash of the parent block doesn't match the hash in the header to verify.
+    BadParentHash,
     /// Failed to verify the authenticity of the block with the BABE algorithm.
     #[display(fmt = "{}", _0)]
     BabeVerification(babe::VerifyError),
@@ -72,6 +74,16 @@ pub enum Error {
 
 /// Verifies whether a block is valid.
 pub fn verify<'a>(config: Config<'a>) -> Verify {
+    // Check that there is no mismatch in the parent header hash.
+    // Note that the user is expected to pass a parent block that matches the parent indicated by
+    // the header to verify, and not blindly pass an "expected parent". As such, this check is
+    // unnecessary and introduces an overhead.
+    // However this check is performed anyway, as the consequences of a failure here could be
+    // potentially quite high.
+    if config.parent_block_header.hash() != *config.block_header.parent_hash {
+        return Verify::Finished(Err(Error::BadParentHash));
+    }
+
     // Some basic verification of the block number. This is normally verified by the runtime, but
     // no runtime call can be performed with only the header.
     if config
