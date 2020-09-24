@@ -9,8 +9,7 @@ keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
 
 [features]
-default = ["database-sled", "os-networking"]
-database-sled = ["sled"]
+default = ["os-networking"]
 os-networking = [
     "async-std",
     "async-tls",
@@ -33,14 +32,9 @@ wasm-bindings = [
 ]
 
 [[bin]]
-name = "database-explorer"
-path = "bin/database-explorer.rs"
-required-features = ["database-sled"]
-
-[[bin]]
 name = "full-node"
 path = "bin/full-node.rs"
-required-features = ["database-sled", "os-networking"]
+required-features = ["os-networking"]
 
 [[bin]]
 name = "json-rpc-test"
@@ -96,9 +90,6 @@ twox-hash = "1.5.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"
 wasm-timer = "0.2.4"
-
-# `database-sled` feature
-sled = { version = "0.31.0", features = ["compression"], optional = true }
 
 # `os-networking` feature
 async-std = { version = "1.6.2", optional = true }

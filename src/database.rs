@@ -20,8 +20,7 @@
 
 pub mod local_storage_light;
 
-// Note for the reader: sled hasn't been chosen by any particular reason other that it is a
-// pure Rust database with an image of being robust. There is no strong committment from
-// substrate-lite towards sled or any database engine at the moment.
-// TODO: remove this node at some point ^
-pub mod sled;
+// TODO: when implementing an actual database for the full node, here is some inspiration:
+// - https://github.com/paritytech/substrate-lite/blob/e53148ca8af7450e9995e960279b6c8925a37663/src/database/sled.rs
+// - https://github.com/paritytech/substrate-lite/blob/e53148ca8af7450e9995e960279b6c8925a37663/bin/full-node.rs#L717-L758
+// - https://github.com/paritytech/substrate-lite/blob/8f41c567d8dc644e2166f06f0bd5e5dfca4fddd3/src/lib.rs#L171-L208
