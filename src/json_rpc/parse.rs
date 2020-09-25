@@ -60,6 +60,16 @@ pub struct ParseError(serde_json::Error);
 /// `id_json` must be the JSON-formatted identifier of the request, found in [`Call::id_json`].
 /// `result_json` must be the JSON-formatted result of the request.
 ///
+/// # Example
+///
+/// ```
+/// # use substrate_lite::json_rpc::parse;
+/// let result_json = parse::build_success_response("27", r#"[1, 2, {"foo":"bar"}]"#);
+///
+/// // Note that the output is guaranteed to be stable.
+/// assert_eq!(result_json, r#"{"jsonrpc":"2.0","id":27,"result":[1, 2, {"foo":"bar"}]}"#);
+/// ```
+///
 /// # Panic
 ///
 /// Panics if `id_json` or `result_json` aren't valid JSON.
@@ -67,8 +77,8 @@ pub struct ParseError(serde_json::Error);
 pub fn build_success_response(id_json: &str, result_json: &str) -> String {
     serde_json::to_string(&SerdeSuccess {
         jsonrpc: SerdeVersion::V2,
-        result: serde_json::from_str(result_json).expect("invalid result_json"),
         id: serde_json::from_str(id_json).expect("invalid id_json"),
+        result: serde_json::from_str(result_json).expect("invalid result_json"),
     })
     .unwrap()
 }
