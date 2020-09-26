@@ -18,19 +18,6 @@
 //! The [`Network`] struct provided by this module allows you to connect to other nodes and
 //! exchange messages with them.
 //!
-//! # Usage
-//!
-//! - Call [`builder::builder`] in order to create a [`builder::NetworkBuilder`].
-//! - Configure it, then call [`builder::NetworkBuilder::build`] to obtain a [`Network`].
-//! - Call methods such as [`Network::start_block_request`] to perform actions on the network.
-//! - Repeatedly call [`Network::next_event`] in order to query for messages or events that happen
-//! on the network.
-//!
-//! > **Note**: It is assumed that [`Network::next_event`] gets called as often as possible. If it
-//! >           is called too infrequently, then back-pressure will be applied on the networking
-//! >           stack, and the networking as a whole will slow down in order to adjust for the
-//! >           processing speed.
-//!
 //! # Concepts
 //!
 //! Here are the major concepts that you should understand in order to use this module:

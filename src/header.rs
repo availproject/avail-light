@@ -320,8 +320,8 @@ enum DigestRefInner<'a> {
     /// Source of data is an undecoded slice of bytes.
     Undecoded {
         /// Number of log items in the header.
-        /// Must always match the actual number of items in [`DigestRef::digest`]. The validity
-        /// must be verified before a [`DigestRef`] object is instantiated.
+        /// Must always match the actual number of items in [`DigestRefInner::digest`]. The
+        /// validity must be verified before a [`DigestRef`] object is instantiated.
         digest_logs_len: usize,
         /// Encoded digest. Its validity must be verified before a [`DigestRef`] object is
         /// instantiated.

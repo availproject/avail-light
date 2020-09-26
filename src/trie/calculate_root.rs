@@ -296,7 +296,7 @@ impl CalcInner {
                     Some(c) => Some(c.node_index()),
                     None => {
                         // Trie is empty.
-                        let merkle_value = node_value::calculate_merke_root(node_value::Config {
+                        let merkle_value = node_value::calculate_merkle_root(node_value::Config {
                             is_root: true,
                             children: (0..16).map(|_| None),
                             partial_key: iter::empty(),
@@ -365,7 +365,7 @@ impl CalcInner {
 
             if !current.has_storage_value() {
                 // Calculate the Merkle value of the node.
-                let merkle_value = node_value::calculate_merke_root(node_value::Config {
+                let merkle_value = node_value::calculate_merkle_root(node_value::Config {
                     is_root: current.is_root_node(),
                     children: (0..16u8).map(|child_idx| {
                         if let Some(child) =
@@ -451,7 +451,7 @@ impl StorageValue {
             .unwrap();
 
         // Calculate the Merkle value of the node.
-        let merkle_value = node_value::calculate_merke_root(node_value::Config {
+        let merkle_value = node_value::calculate_merkle_root(node_value::Config {
             is_root: current.is_root_node(),
             children: (0..16u8).map(|child_idx| {
                 if let Some(child) = current.child_user_data(Nibble::try_from(child_idx).unwrap()) {

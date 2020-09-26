@@ -65,8 +65,8 @@ pub struct Success {
     pub parent_runtime: executor::WasmVmPrototype,
 
     /// If `Some`, the verified block contains an epoch transition describing the given epoch.
-    /// This epoch transition must later be provided back as part of the [`VerifyConfig`] of the
-    /// blocks that are part of that epoch.
+    /// This epoch transition must later be provided back as part of the [`Config`] when verifying
+    /// the blocks that are part of that epoch.
     pub babe_epoch_transition_target: Option<NonZeroU64>,
 
     /// Slot number the block belongs to.
@@ -238,18 +238,18 @@ pub struct BabeEpochInformation {
 
 impl BabeEpochInformation {
     /// Returns the epoch number whose information must be passed to
-    /// [`EpochInformation::inject_epoch`].
+    /// [`BabeEpochInformation::inject_epoch`].
     pub fn epoch_number(&self) -> u64 {
         self.inner.epoch_number()
     }
 
-    /// Returns true if the epoch is the same as the parent's.
+    /// Returns true if the epoch of the verified block is the same as its parent's.
     pub fn same_epoch_as_parent(&self) -> bool {
         self.inner.same_epoch_as_parent()
     }
 
     /// Finishes the verification. Must provide the information about the epoch whose number is
-    /// obtained with [`EpochInformation::epoch_number`].
+    /// obtained with [`BabeEpochInformation::epoch_number`].
     pub fn inject_epoch(
         self,
         epoch_info: (header::BabeNextEpochRef, header::BabeNextConfig),

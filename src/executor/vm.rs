@@ -336,7 +336,7 @@ impl fmt::Display for RunErr {
     }
 }
 
-/// Error that can happen when calling [`VirtualMachine::global_value`].
+/// Error that can happen when calling [`VirtualMachinePrototype::global_value`].
 #[derive(Debug, derive_more::Display)]
 pub enum GlobalValueErr {
     NotFound,

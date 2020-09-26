@@ -26,13 +26,12 @@
 //!
 //! # Usage
 //!
-//! The first step is to create a [`WasmBlob`] object from the WebAssembly code. Creating this
-//! object performs some initial steps, such as parsing the WebAssembly code. You are encouraged
-//! to maintain a cache of [`WasmBlob`] objects (one instance per WebAssembly byte code) in order
-//! to avoid performing these operations too often.
+//! The first step is to create a [`WasmVmPrototype`] object from the WebAssembly code. Creating
+//! this object performs some initial steps, such as parsing and compiling the WebAssembly code.
+//! You are encouraged to maintain a cache of [`WasmVmPrototype`] objects (one instance per
+//! WebAssembly byte code) in order to avoid performing these operations too often.
 //!
-//! To start calling the runtime, create a [`WasmVm`] object, passing the [`WasmBlob`] and a
-//! [`FunctionToCall`].
+//! To start calling the runtime, create a [`WasmVm`] by calling [`WasmVmPrototype::run`].
 //!
 //! While the Wasm runtime code has side-effects (such as storing values in the storage), the
 //! [`WasmVm`] itself is a pure state machine with no side effects.

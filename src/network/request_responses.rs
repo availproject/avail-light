@@ -14,25 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Substrate.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Collection of request-response protocols.
-//!
-//! The [`RequestResponses`] struct defined in this module provides support for zero or more
-//! so-called "request-response" protocols.
-//!
-//! A request-response protocol works in the following way:
-//!
-//! - For every emitted request, a new substream is open and the protocol is negotiated. If the
-//! remote supports the protocol, the size of the request is sent as a LEB128 number, followed
-//! with the request itself. The remote then sends the size of the response as a LEB128 number,
-//! followed with the response.
-//!
-//! - Requests have a certain time limit before they time out. This time includes the time it
-//! takes to send/receive the request and response.
-//!
-//! - If provided, a ["requests processing"](RequestResponseConfig::requests_processing) channel
-//! is used to handle incoming requests.
-//!
-
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
@@ -115,7 +96,7 @@ pub struct IncomingRequest {
     pub origin: PeerId,
 
     /// Request sent by the remote. Will always be smaller than
-    /// [`RequestResponseConfig::max_response_size`].
+    /// [`ProtocolConfig::max_response_size`].
     pub request_bytes: Vec<u8>,
 
     /// Channel to send back the response to.

@@ -35,7 +35,7 @@ mod tests;
 pub struct TrieStructure<TUd> {
     /// List of nodes. Using a [`Slab`] guarantees that the node indices never change.
     nodes: Slab<Node<TUd>>,
-    /// Index of the root node within [`nodes`]. `None` if the trie is empty.
+    /// Index of the root node within [`TrieStructure::nodes`]. `None` if the trie is empty.
     root_index: Option<usize>,
 }
 

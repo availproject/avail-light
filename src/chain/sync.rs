@@ -49,5 +49,5 @@
 // TODO: pub mod full_all_forks;
 pub mod full_optimistic;
 pub mod headers_optimistic;
-
-mod optimistic;
+// TODO: maybe shouldn't be pub, but creates doc-link errors if private
+pub mod optimistic;

@@ -37,7 +37,7 @@ use wasmi::memory_units::ByteSize as _;
 /// parameter, you must pass a list of external functions that are available to the code running
 /// in the virtual machine.
 ///
-/// - Call [`VirtualMachinePrototype::build`] to turn it into a [`VirtualMachine`]. This operation
+/// - Call [`VirtualMachinePrototype::start`] to turn it into a [`VirtualMachine`]. This operation
 /// only initializes the machine but doesn't run it.
 ///
 /// - Call [`VirtualMachine::run`], passing `None` as parameter. This runs the Wasm virtual

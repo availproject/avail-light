@@ -101,11 +101,11 @@ pub struct NonFinalizedTree<T> {
     /// Configuration for BABE, retrieved from the genesis block.
     babe_genesis_config: babe::BabeGenesisConfiguration,
 
-    /// See [`ChainInformation::babe_finalized_block_epoch_information`].
+    /// See [`chain_information::ChainInformation::babe_finalized_block_epoch_information`].
     babe_finalized_block_epoch_information:
         Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
 
-    /// See [`ChainInformation::babe_finalized_next_epoch_transition`].
+    /// See [`chain_information::ChainInformation::babe_finalized_next_epoch_transition`].
     babe_finalized_next_epoch_transition:
         Option<Arc<(header::BabeNextEpoch, header::BabeNextConfig)>>,
 
@@ -938,7 +938,7 @@ where
     /// block.
     ///
     /// The value of `top_trie_root_calculation_cache` can be the one provided by the
-    /// [`BodyVerifyStep2::finished`] variant when the parent block has been verified. `None` can
+    /// [`BodyVerifyStep2::Finished`] variant when the parent block has been verified. `None` can
     /// be passed if this information isn't available.
     ///
     /// While `top_trie_root_calculation_cache` is optional, providing a value will considerably
@@ -1384,7 +1384,7 @@ pub enum HeaderVerifySuccess<'c, T> {
 #[must_use]
 pub struct HeaderInsert<'c, T> {
     chain: &'c mut NonFinalizedTree<T>,
-    /// Copy of the value in [`VerifySuccess::is_new_best`].
+    /// Copy of the value in [`HeaderVerifySuccess::is_new_best`].
     is_new_best: bool,
     /// Index of the parent in [`NonFinalizedTree::blocks`].
     parent_tree_index: Option<fork_tree::NodeIndex>,
@@ -1565,7 +1565,6 @@ pub enum SetFinalizedError {
 #[must_use]
 pub struct BodyInsert<T> {
     chain: NonFinalizedTree<T>,
-    /// Copy of the value in [`VerifySuccess::is_new_best`].
     is_new_best: bool,
     /// Index of the parent in [`NonFinalizedTree::blocks`].
     parent_tree_index: Option<fork_tree::NodeIndex>,

@@ -407,7 +407,7 @@ impl ExternalsVm {
     }
 }
 
-/// State of a [`ExternalVm`]. Mutably borrows the virtual machine, thereby ensuring that the
+/// State of an [`ExternalsVm`]. Mutably borrows the virtual machine, thereby ensuring that the
 /// state can't change.
 #[derive(Debug)]
 pub enum State<'a> {

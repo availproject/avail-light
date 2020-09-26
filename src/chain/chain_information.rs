@@ -22,7 +22,7 @@
 //! >           the existence of a [`ChainInformation`] alone does in no way mean that its content
 //! >           is accurate. As an example, one use case of [`ChainInformation`] is to be written
 //! >           to disk then later reloaded. It is possible for the user to modify the data on
-//! >           disk, in which case the loaded [`ChanInformation`] might be erroneous.
+//! >           disk, in which case the loaded [`ChainInformation`] might be erroneous.
 //!
 //! These data structures contain all the information that is necessary to verify the
 //! authenticity (but not the correctness) of blocks that descend from the finalized block
@@ -43,10 +43,7 @@ use alloc::vec::Vec;
 /// Information about the latest finalized block and state found in its ancestors.
 #[derive(Debug, Clone)]
 pub struct ChainInformation {
-    /// SCALE encoding of the header of the highest known finalized block.
-    ///
-    /// Once the queue is created, it is as if you had called
-    /// [`NonFinalizedTree::set_finalized_block`] with this block.
+    /// Header of the highest known finalized block.
     pub finalized_block_header: header::Header,
 
     /// If the number in [`ChainInformation::finalized_block_header`] is superior or equal to 1,
@@ -162,27 +159,27 @@ pub struct FinalizedScheduledChange {
 /// Equivalent to a [`ChainInformation`] but referencing an existing structure. Cheap to copy.
 #[derive(Debug, Clone)]
 pub struct ChainInformationRef<'a> {
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub finalized_block_header: header::HeaderRef<'a>,
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub babe_finalized_block1_slot_number: Option<u64>,
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub babe_finalized_block_epoch_information:
         Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub babe_finalized_next_epoch_transition:
         Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub grandpa_after_finalized_block_authorities_set_id: u64,
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub grandpa_finalized_triggered_authorities: &'a [header::GrandpaAuthority],
 
-    /// See equivalent field in [`ChanInformation`].
+    /// See equivalent field in [`ChainInformation`].
     pub grandpa_finalized_scheduled_change: Option<(u64, &'a [header::GrandpaAuthority])>,
 }
 

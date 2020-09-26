@@ -42,7 +42,7 @@
 //!         children
 //!     };
 //!
-//!     node_value::calculate_merke_root(node_value::Config {
+//!     node_value::calculate_merkle_root(node_value::Config {
 //!         is_root: false,
 //!         children: children.iter().map(|opt| opt.as_ref()),
 //!         partial_key: [
@@ -104,7 +104,7 @@ pub struct Config<TChIter, TPKey, TVal> {
 ///
 /// Panics if `config.children.len() != 16`.
 ///
-pub fn calculate_merke_root<'a, TChIter, TPKey, TVal>(
+pub fn calculate_merkle_root<'a, TChIter, TPKey, TVal>(
     mut config: Config<TChIter, TPKey, TVal>,
 ) -> Output
 where
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn empty_root() {
-        let obtained = super::calculate_merke_root(super::Config {
+        let obtained = super::calculate_merkle_root(super::Config {
             is_root: true,
             children: (0..16).map(|_| None),
             partial_key: iter::empty(),
@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn empty_node() {
-        let obtained = super::calculate_merke_root(super::Config {
+        let obtained = super::calculate_merkle_root(super::Config {
             is_root: false,
             children: (0..16).map(|_| None),
             partial_key: iter::empty(),
@@ -385,7 +385,7 @@ mod tests {
             children
         };
 
-        let obtained = super::calculate_merke_root(super::Config {
+        let obtained = super::calculate_merkle_root(super::Config {
             is_root: false,
             children: children.iter().map(|opt| opt.as_ref()),
             partial_key: [
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn bad_children_len() {
-        super::calculate_merke_root(super::Config {
+        super::calculate_merkle_root(super::Config {
             is_root: false,
             children: iter::empty(),
             partial_key: iter::empty(),

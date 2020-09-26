@@ -381,7 +381,7 @@ impl PendingVerify {
         self.epoch_number
     }
 
-    /// Returns true if the epoch is the same as the parent's.
+    /// Returns true if the epoch of the verified block is the same as its parent's.
     pub fn same_epoch_as_parent(&self) -> bool {
         self.epoch_transition_target.is_none()
     }
