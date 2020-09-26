@@ -16,7 +16,7 @@
 //! Type definitions to help with serializing/deserializing from/to the local storage.
 
 use crate::{chain::chain_information, header};
-use core::convert::TryFrom;
+use core::{convert::TryFrom, fmt};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version")]
@@ -313,29 +313,36 @@ impl From<SerializedGrandpaAuthorityV1> for header::GrandpaAuthority {
 }
 
 fn serialize_bytes<S: serde::Serializer>(data: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
-    // TODO: there's probably a more optimized way to do it
-    serializer.serialize_str(&hex::encode(data))
+    struct Writer<'a>(&'a [u8]);
+    impl<'a> fmt::Display for Writer<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            for byte in self.0 {
+                write!(f, "{:02x}", byte)?
+            }
+            Ok(())
+        }
+    }
+
+    serializer.collect_str(&Writer(data))
 }
 
 fn deserialize_bytes<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<u8>, D::Error> {
-    // TODO: not sure that's the correct way to do it
-    let string = <String as serde::Deserialize>::deserialize(deserializer)?;
-    Ok(hex::decode(&string).map_err(serde::de::Error::custom)?)
+    let string = <&str as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(hex::decode(string).map_err(serde::de::Error::custom)?)
 }
 
 fn deserialize_hash32<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<[u8; 32], D::Error> {
-    // TODO: not sure that's the correct way to do it
-    let string = <String as serde::Deserialize>::deserialize(deserializer)?;
-    let value = hex::decode(&string).map_err(serde::de::Error::custom)?;
-    if value.len() > 32 {
+    let string = <&str as serde::Deserialize>::deserialize(deserializer)?;
+    if string.len() > 64 {
         return Err(serde::de::Error::custom("invalid hash length"));
     }
 
     let mut out = [0u8; 32];
-    out[(32 - value.len())..].copy_from_slice(&value);
+    hex::decode_to_slice(string, &mut out[(32 - string.len() / 2)..])
+        .map_err(serde::de::Error::custom)?;
     Ok(out)
 }
