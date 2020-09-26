@@ -17,7 +17,7 @@ name: deploy
 
 on:
   push:
-    branches:    
+    branches:
       - main
 
 jobs:
@@ -32,5 +32,5 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         registry: docker.pkg.github.com
-        repository: tomaka/substrate-lite/node
+        repository: paritytech/substrate-lite/node
         tag_with_ref: true

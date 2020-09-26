@@ -72,7 +72,9 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: cargo check --workspace --no-default-features
-    - run: cargo check --workspace --no-default-features --features rpc-server
+    - run: cargo check --workspace --no-default-features --features os-networking
+    - run: cargo check --workspace --no-default-features --features os-networking --features wasm-bindings
+    - run: cargo check --workspace --no-default-features --features wasm-bindings
     # TODO: finish here
 
   check-rustdoc-links:
