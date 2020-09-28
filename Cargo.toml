@@ -54,7 +54,7 @@ blake2-rfc = { version = "0.2.18", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
 ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch"] }
-either = "1.5.3"
+either = "1.6.1"
 env_logger = "0.7.1"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
