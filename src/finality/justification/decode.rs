@@ -17,62 +17,12 @@ use crate::header;
 use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.
-pub fn decode<'a>(mut scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, Error> {
-    if scale_encoded.len() < 8 + 32 + 4 + 1 + 1 {
-        return Err(Error::TooShort);
+pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, Error> {
+    match nom::combinator::all_consuming(justification)(scale_encoded) {
+        Ok((_, justification)) => Ok(justification),
+        Err(nom::Err::Failure((_, kind))) => Err(Error(kind)),
+        Err(_) => unreachable!(),
     }
-
-    let round = u64::from_le_bytes(<[u8; 8]>::try_from(&scale_encoded[..8]).unwrap());
-    scale_encoded = &scale_encoded[8..];
-
-    let target_hash: &[u8; 32] = TryFrom::try_from(&scale_encoded[..32]).unwrap();
-    scale_encoded = &scale_encoded[32..];
-
-    let target_number = u32::from_le_bytes(<[u8; 4]>::try_from(&scale_encoded[..4]).unwrap());
-    scale_encoded = &scale_encoded[4..];
-
-    let num_precommits: parity_scale_codec::Compact<u64> =
-        parity_scale_codec::Decode::decode(&mut scale_encoded)
-            .map_err(Error::NumElementsDecodeError)?;
-
-    let precommits_len =
-        usize::try_from(num_precommits.0).map_err(|_| Error::TooShort)? * PRECOMMIT_ENCODED_LEN;
-    if scale_encoded.len() < precommits_len + 1 {
-        return Err(Error::TooShort);
-    }
-
-    let precommits_data = &scale_encoded[..precommits_len];
-    scale_encoded = &scale_encoded[precommits_len..];
-
-    let num_votes_ancestries: parity_scale_codec::Compact<u64> =
-        parity_scale_codec::Decode::decode(&mut scale_encoded)
-            .map_err(Error::NumElementsDecodeError)?;
-
-    let votes_ancestries = VotesAncestriesIter {
-        slice: scale_encoded,
-        num: usize::try_from(num_votes_ancestries.0).map_err(|_| Error::TooLong)?,
-    };
-
-    // Decoding all the headers to make sure that the justification is well formatted.
-    for _ in 0..num_votes_ancestries.0 {
-        let (_header, remainder) =
-            header::decode_partial(scale_encoded).map_err(Error::VotesAncestriesDecode)?;
-        scale_encoded = remainder;
-    }
-
-    if scale_encoded.len() != 0 {
-        return Err(Error::TooLong);
-    }
-
-    Ok(JustificationRef {
-        round,
-        target_hash,
-        target_number,
-        precommits: PrecommitsRef {
-            inner: precommits_data,
-        },
-        votes_ancestries,
-    })
 }
 
 const PRECOMMIT_ENCODED_LEN: usize = 32 + 4 + 64 + 32;
@@ -120,7 +70,7 @@ impl<'a> PrecommitsRef<'a> {
         debug_assert_eq!(self.inner.len() % PRECOMMIT_ENCODED_LEN, 0);
         self.inner
             .chunks(PRECOMMIT_ENCODED_LEN)
-            .map(|buf| PrecommitRef::from_scale_encoded(buf).unwrap())
+            .map(|buf| precommit(buf).unwrap().1)
     }
 }
 
@@ -148,21 +98,6 @@ pub struct PrecommitRef<'a> {
     /// Authority that signed the precommit. Must be part of the authority set for the
     /// justification to be valid.
     pub authority_public_key: &'a [u8; 32],
-}
-
-impl<'a> PrecommitRef<'a> {
-    pub fn from_scale_encoded(encoded: &'a [u8]) -> Result<PrecommitRef<'a>, Error> {
-        if encoded.len() != PRECOMMIT_ENCODED_LEN {
-            return Err(Error::TooShort);
-        }
-
-        Ok(PrecommitRef {
-            target_hash: TryFrom::try_from(&encoded[0..32]).unwrap(),
-            target_number: u32::from_le_bytes(<[u8; 4]>::try_from(&encoded[32..36]).unwrap()),
-            signature: &encoded[36..100],
-            authority_public_key: TryFrom::try_from(&encoded[100..132]).unwrap(),
-        })
-    }
 }
 
 pub struct Precommit {
@@ -242,14 +177,81 @@ impl<'a> ExactSizeIterator for VotesAncestriesIter<'a> {}
 
 /// Potential error when decoding a justification.
 #[derive(Debug, derive_more::Display)]
-pub enum Error {
-    /// Justification is not long enough.
-    TooShort,
-    /// Justification is too long.
-    TooLong,
-    NumElementsDecodeError(parity_scale_codec::Error),
-    /// Error while decoding one of the headers of the votes ancestries.
-    VotesAncestriesDecode(header::Error),
+#[display(fmt = "Justification parsing error: {:?}", _0)]
+pub struct Error(nom::error::ErrorKind);
+
+/// Nom combinator that parses a justification.
+fn justification(bytes: &[u8]) -> nom::IResult<&[u8], JustificationRef> {
+    nom::error::context(
+        "justification",
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::number::complete::le_u64,
+                nom::bytes::complete::take(32u32),
+                nom::number::complete::le_u32,
+                precommits,
+                votes_ancestries,
+            )),
+            |(round, target_hash, target_number, precommits, votes_ancestries)| JustificationRef {
+                round,
+                target_hash: TryFrom::try_from(target_hash).unwrap(),
+                target_number,
+                precommits,
+                votes_ancestries,
+            },
+        ),
+    )(bytes)
+}
+
+/// Nom combinator that parses a list of precommits.
+fn precommits(bytes: &[u8]) -> nom::IResult<&[u8], PrecommitsRef> {
+    nom::combinator::map(
+        nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
+            nom::combinator::recognize(nom::multi::many_m_n(num_elems, num_elems, precommit))
+        }),
+        |inner| PrecommitsRef { inner },
+    )(bytes)
+}
+
+/// Nom combinator that parses a single precommit.
+fn precommit(bytes: &[u8]) -> nom::IResult<&[u8], PrecommitRef> {
+    nom::error::context(
+        "precommit",
+        nom::combinator::map(
+            nom::sequence::tuple((
+                nom::bytes::complete::take(32u32),
+                nom::number::complete::le_u32,
+                nom::bytes::complete::take(64u32),
+                nom::bytes::complete::take(32u32),
+            )),
+            |(target_hash, target_number, signature, authority_public_key)| PrecommitRef {
+                target_hash: TryFrom::try_from(target_hash).unwrap(),
+                target_number,
+                signature,
+                authority_public_key: TryFrom::try_from(authority_public_key).unwrap(),
+            },
+        ),
+    )(bytes)
+}
+
+/// Nom combinator that parses a list of headers.
+fn votes_ancestries(bytes: &[u8]) -> nom::IResult<&[u8], VotesAncestriesIter> {
+    nom::error::context(
+        "votes ancestries",
+        nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
+            nom::combinator::map(
+                nom::combinator::recognize(nom::multi::many_m_n(num_elems, num_elems, |s| {
+                    header::decode_partial(s).map(|(a, b)| (b, a)).map_err(|_| {
+                        nom::Err::Failure(nom::error::make_error(s, nom::error::ErrorKind::Verify))
+                    })
+                })),
+                move |slice| VotesAncestriesIter {
+                    slice,
+                    num: num_elems,
+                },
+            )
+        }),
+    )(bytes)
 }
 
 #[cfg(test)]
