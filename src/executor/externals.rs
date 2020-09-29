@@ -247,7 +247,11 @@ impl ReadyToRun {
     /// > **Note**: This is when the actual CPU-heavy computation happens.
     pub fn run(mut self) -> ExternalsVm {
         loop {
-            match self.inner.vm.run(self.resume_value) {
+            // `vm::ExecOutcome::Interrupted` is by far the variant that requires the most
+            // handling code. As such, special-case all other variants before.
+            let (id, params) = match self.inner.vm.run(self.resume_value) {
+                Ok(vm::ExecOutcome::Interrupted { id, params }) => (id, params),
+
                 Ok(vm::ExecOutcome::Finished {
                     return_value: Ok(Some(vm::WasmValue::I64(ret))),
                 }) => {
@@ -286,691 +290,6 @@ impl ReadyToRun {
                     }
                 }
 
-                Ok(vm::ExecOutcome::Interrupted { id, params }) => {
-                    // The Wasm code has called an externality. The `id` is a value that we passed
-                    // at initialization, and corresponds to an index in `registered_functions`.
-                    let externality = self.inner.registered_functions.get_mut(id).unwrap();
-
-                    let expected_params = match externality {
-                        Externality::ext_storage_set_version_1 => 2,
-                        Externality::ext_storage_get_version_1 => 1,
-                        Externality::ext_storage_read_version_1 => 3,
-                        Externality::ext_storage_clear_version_1 => 1,
-                        Externality::ext_storage_exists_version_1 => 1,
-                        Externality::ext_storage_clear_prefix_version_1 => 1,
-                        Externality::ext_storage_root_version_1 => 0,
-                        Externality::ext_storage_changes_root_version_1 => 1,
-                        Externality::ext_storage_next_key_version_1 => 1,
-                        Externality::ext_storage_append_version_1 => 2,
-                        Externality::ext_storage_child_set_version_1 => todo!(),
-                        Externality::ext_storage_child_get_version_1 => todo!(),
-                        Externality::ext_storage_child_read_version_1 => todo!(),
-                        Externality::ext_storage_child_clear_version_1 => todo!(),
-                        Externality::ext_storage_child_storage_kill_version_1 => todo!(),
-                        Externality::ext_storage_child_exists_version_1 => todo!(),
-                        Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
-                        Externality::ext_storage_child_root_version_1 => todo!(),
-                        Externality::ext_storage_child_next_key_version_1 => todo!(),
-                        Externality::ext_default_child_storage_get_version_1 => todo!(),
-                        Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
-                        Externality::ext_default_child_storage_set_version_1 => todo!(),
-                        Externality::ext_default_child_storage_clear_version_1 => todo!(),
-                        Externality::ext_default_child_storage_root_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_verify_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_verify_version_1 => 3,
-                        Externality::ext_crypto_sr25519_verify_version_2 => 3,
-                        Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
-                        Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => {
-                            todo!()
-                        }
-                        Externality::ext_crypto_start_batch_verify_version_1 => 0,
-                        Externality::ext_crypto_finish_batch_verify_version_1 => 0,
-                        Externality::ext_hashing_keccak_256_version_1 => 1,
-                        Externality::ext_hashing_sha2_256_version_1 => todo!(),
-                        Externality::ext_hashing_blake2_128_version_1 => 1,
-                        Externality::ext_hashing_blake2_256_version_1 => 1,
-                        Externality::ext_hashing_twox_64_version_1 => 1,
-                        Externality::ext_hashing_twox_128_version_1 => 1,
-                        Externality::ext_hashing_twox_256_version_1 => 1,
-                        Externality::ext_offchain_index_set_version_1 => todo!(),
-                        Externality::ext_offchain_index_clear_version_1 => todo!(),
-                        Externality::ext_offchain_is_validator_version_1 => todo!(),
-                        Externality::ext_offchain_submit_transaction_version_1 => todo!(),
-                        Externality::ext_offchain_network_state_version_1 => todo!(),
-                        Externality::ext_offchain_timestamp_version_1 => todo!(),
-                        Externality::ext_offchain_sleep_until_version_1 => todo!(),
-                        Externality::ext_offchain_random_seed_version_1 => todo!(),
-                        Externality::ext_offchain_local_storage_set_version_1 => todo!(),
-                        Externality::ext_offchain_local_storage_compare_and_set_version_1 => {
-                            todo!()
-                        }
-                        Externality::ext_offchain_local_storage_get_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_start_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_wait_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_headers_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
-                        Externality::ext_trie_blake2_256_root_version_1 => 1,
-                        Externality::ext_trie_blake2_256_ordered_root_version_1 => 1,
-                        Externality::ext_misc_chain_id_version_1 => todo!(),
-                        Externality::ext_misc_print_num_version_1 => todo!(),
-                        Externality::ext_misc_print_utf8_version_1 => todo!(),
-                        Externality::ext_misc_print_hex_version_1 => todo!(),
-                        Externality::ext_misc_runtime_version_version_1 => todo!(),
-                        Externality::ext_allocator_malloc_version_1 => 1,
-                        Externality::ext_allocator_free_version_1 => 1,
-                        Externality::ext_logging_log_version_1 => todo!(),
-                    };
-
-                    if params.len() != expected_params {
-                        return ExternalsVm::NonConforming {
-                            error: NonConformingErr::ParamsCountMismatch,
-                            prototype: self.inner.into_prototype(),
-                        };
-                    }
-
-                    // TODO: link to existing working code: https://github.com/paritytech/substrate-lite/blob/0699a302ef573e451fbb67beb8188c0d1b1d540d/src/executor/externals/externalities.rs
-
-                    match externality {
-                        Externality::ext_storage_set_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let value = match self.inner.expect_pointer_size(&params[1]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
-                                key,
-                                value: Some(value),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_get_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
-                                key,
-                                calling: id,
-                                value_out_ptr: None,
-                                offset: 0,
-                                max_size: u32::max_value(),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_read_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let (value_out_ptr, value_out_size) =
-                                match self.inner.expect_pointer_size_raw(&params[1]) {
-                                    Ok(v) => v,
-                                    Err(error) => {
-                                        return ExternalsVm::NonConforming {
-                                            error,
-                                            prototype: self.inner.into_prototype(),
-                                        }
-                                    }
-                                };
-
-                            let offset = match params[2] {
-                                vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                                _ => {
-                                    return ExternalsVm::NonConforming {
-                                        error: NonConformingErr::WrongParamTy,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
-                                key,
-                                calling: id,
-                                value_out_ptr: Some(value_out_ptr),
-                                offset,
-                                max_size: value_out_size,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_clear_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
-                                key,
-                                value: None,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_exists_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
-                                key,
-                                calling: id,
-                                value_out_ptr: None,
-                                offset: 0,
-                                max_size: 0,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_clear_prefix_version_1 => {
-                            let prefix = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageClearPrefix(
-                                ExternalStorageClearPrefix {
-                                    prefix,
-                                    inner: self.inner,
-                                },
-                            );
-                        }
-                        Externality::ext_storage_root_version_1 => {
-                            return ExternalsVm::ExternalStorageRoot(ExternalStorageRoot {
-                                inner: self.inner,
-                            })
-                        }
-                        Externality::ext_storage_changes_root_version_1 => {
-                            // TODO: there's a parameter
-                            return ExternalsVm::ExternalStorageChangesRoot(
-                                ExternalStorageChangesRoot { inner: self.inner },
-                            );
-                        }
-                        Externality::ext_storage_next_key_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageNextKey(ExternalStorageNextKey {
-                                key,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_append_version_1 => {
-                            let key = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let value = match self.inner.expect_pointer_size(&params[1]) {
-                                Ok(k) => k,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ExternalStorageAppend(ExternalStorageAppend {
-                                key,
-                                value,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_storage_child_set_version_1 => todo!(),
-                        Externality::ext_storage_child_get_version_1 => todo!(),
-                        Externality::ext_storage_child_read_version_1 => todo!(),
-                        Externality::ext_storage_child_clear_version_1 => todo!(),
-                        Externality::ext_storage_child_storage_kill_version_1 => todo!(),
-                        Externality::ext_storage_child_exists_version_1 => todo!(),
-                        Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
-                        Externality::ext_storage_child_root_version_1 => todo!(),
-                        Externality::ext_storage_child_next_key_version_1 => todo!(),
-                        Externality::ext_default_child_storage_get_version_1 => todo!(),
-                        Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
-                        Externality::ext_default_child_storage_set_version_1 => todo!(),
-                        Externality::ext_default_child_storage_clear_version_1 => todo!(),
-                        Externality::ext_default_child_storage_root_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
-                        Externality::ext_crypto_ed25519_verify_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_verify_version_1 => todo!(),
-                        Externality::ext_crypto_sr25519_verify_version_2 => {
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                // TODO: wrong! this is a dummy implementation meaning that all
-                                // signature verifications are always successful
-                                resume_value: Some(vm::WasmValue::I32(1)),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => todo!(),
-                        Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => {
-                            todo!()
-                        }
-                        Externality::ext_crypto_start_batch_verify_version_1 => {
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: None,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_crypto_finish_batch_verify_version_1 => {
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                // TODO: wrong! this is a dummy implementation meaning that all
-                                // signature verifications are always successful
-                                resume_value: Some(vm::WasmValue::I32(1)),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_keccak_256_version_1 => {
-                            let data = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let mut keccak = tiny_keccak::Keccak::v256();
-                            keccak.update(&data);
-                            let mut out = [0u8; 32];
-                            keccak.finalize(&mut out);
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 32)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner.vm.write_memory(dest_ptr, &out).unwrap();
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_sha2_256_version_1 => todo!(),
-                        Externality::ext_hashing_blake2_128_version_1 => {
-                            let data = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 16)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner
-                                .vm
-                                .write_memory(dest_ptr, out.as_bytes())
-                                .unwrap();
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_blake2_256_version_1 => {
-                            let data = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let out = blake2_rfc::blake2b::blake2b(32, &[], &data);
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 32)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner
-                                .vm
-                                .write_memory(dest_ptr, out.as_bytes())
-                                .unwrap();
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_twox_64_version_1 => {
-                            let data = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let mut h0 = twox_hash::XxHash::with_seed(0);
-                            h0.write(&data);
-                            let r0 = h0.finish();
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 8)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner
-                                .vm
-                                .write_memory(dest_ptr, &r0.to_le_bytes())
-                                .unwrap();
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_twox_128_version_1 => {
-                            let data = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let mut h0 = twox_hash::XxHash::with_seed(0);
-                            let mut h1 = twox_hash::XxHash::with_seed(1);
-                            h0.write(&data);
-                            h1.write(&data);
-                            let r0 = h0.finish();
-                            let r1 = h1.finish();
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 16)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner
-                                .vm
-                                .write_memory(dest_ptr, &r0.to_le_bytes())
-                                .unwrap();
-                            self.inner
-                                .vm
-                                .write_memory(dest_ptr + 8, &r1.to_le_bytes())
-                                .unwrap();
-
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_hashing_twox_256_version_1 => todo!(),
-                        Externality::ext_offchain_index_set_version_1 => todo!(),
-                        Externality::ext_offchain_index_clear_version_1 => todo!(),
-                        Externality::ext_offchain_is_validator_version_1 => todo!(),
-                        Externality::ext_offchain_submit_transaction_version_1 => todo!(),
-                        Externality::ext_offchain_network_state_version_1 => todo!(),
-                        Externality::ext_offchain_timestamp_version_1 => todo!(),
-                        Externality::ext_offchain_sleep_until_version_1 => todo!(),
-                        Externality::ext_offchain_random_seed_version_1 => todo!(),
-                        Externality::ext_offchain_local_storage_set_version_1 => todo!(),
-                        Externality::ext_offchain_local_storage_compare_and_set_version_1 => {
-                            todo!()
-                        }
-                        Externality::ext_offchain_local_storage_get_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_start_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
-                        Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_wait_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_headers_version_1 => todo!(),
-                        Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
-                        Externality::ext_trie_blake2_256_root_version_1 => todo!(),
-                        Externality::ext_trie_blake2_256_ordered_root_version_1 => {
-                            let encoded = match self.inner.expect_pointer_size(&params[0]) {
-                                Ok(d) => d,
-                                Err(error) => {
-                                    return ExternalsVm::NonConforming {
-                                        error,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let elements = match Vec::<Vec<u8>>::decode_all(&encoded) {
-                                Ok(e) => e,
-                                Err(err) => {
-                                    return ExternalsVm::NonConforming {
-                                        error: NonConformingErr::ParamDecodeError(err),
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let mut trie = crate::trie::Trie::new();
-                            for (idx, value) in elements.into_iter().enumerate() {
-                                let idx = u32::try_from(idx).unwrap();
-                                let key = parity_scale_codec::Encode::encode(
-                                    &parity_scale_codec::Compact(idx),
-                                );
-                                trie.insert(&key, value);
-                            }
-                            let out = trie.root_merkle_value(None);
-
-                            let dest_ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), 32)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            self.inner.vm.write_memory(dest_ptr, &out).unwrap();
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(
-                                    dest_ptr,
-                                ))),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_misc_chain_id_version_1 => todo!(),
-                        Externality::ext_misc_print_num_version_1 => todo!(),
-                        Externality::ext_misc_print_utf8_version_1 => todo!(),
-                        Externality::ext_misc_print_hex_version_1 => todo!(),
-                        Externality::ext_misc_runtime_version_version_1 => todo!(),
-                        Externality::ext_allocator_malloc_version_1 => {
-                            let size = match params[0] {
-                                vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                                _ => {
-                                    return ExternalsVm::NonConforming {
-                                        error: NonConformingErr::WrongParamTy,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let ptr = match self
-                                .inner
-                                .allocator
-                                .allocate(&mut MemAccess(&mut self.inner.vm), size)
-                            {
-                                Ok(p) => p,
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            let ptr_i32 = i32::from_ne_bytes(ptr.to_ne_bytes());
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: Some(vm::WasmValue::I32(ptr_i32)),
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_allocator_free_version_1 => {
-                            let pointer = match params[0] {
-                                vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                                _ => {
-                                    return ExternalsVm::NonConforming {
-                                        error: NonConformingErr::WrongParamTy,
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            match self
-                                .inner
-                                .allocator
-                                .deallocate(&mut MemAccess(&mut self.inner.vm), pointer)
-                            {
-                                Ok(()) => {}
-                                // TODO: better error reporting
-                                Err(_) => {
-                                    return ExternalsVm::Trapped {
-                                        prototype: self.inner.into_prototype(),
-                                    }
-                                }
-                            };
-
-                            return ExternalsVm::ReadyToRun(ReadyToRun {
-                                resume_value: None,
-                                inner: self.inner,
-                            });
-                        }
-                        Externality::ext_logging_log_version_1 => todo!(),
-                    }
-                }
-
                 Ok(vm::ExecOutcome::Finished {
                     return_value: Ok(_),
                 }) => {
@@ -1004,6 +323,670 @@ impl ReadyToRun {
                     // Can only happen if there's a bug somewhere.
                     unreachable!()
                 }
+            };
+
+            // The Wasm code has called an externality. The `id` is a value that we passed
+            // at initialization, and corresponds to an index in `registered_functions`.
+            let externality = self.inner.registered_functions.get_mut(id).unwrap();
+
+            // Check that the actual number of parameters matches the expected number.
+            // This is done ahead of time in order to not forget.
+            let expected_params_num = match externality {
+                Externality::ext_storage_set_version_1 => 2,
+                Externality::ext_storage_get_version_1 => 1,
+                Externality::ext_storage_read_version_1 => 3,
+                Externality::ext_storage_clear_version_1 => 1,
+                Externality::ext_storage_exists_version_1 => 1,
+                Externality::ext_storage_clear_prefix_version_1 => 1,
+                Externality::ext_storage_root_version_1 => 0,
+                Externality::ext_storage_changes_root_version_1 => 1,
+                Externality::ext_storage_next_key_version_1 => 1,
+                Externality::ext_storage_append_version_1 => 2,
+                Externality::ext_storage_child_set_version_1 => todo!(),
+                Externality::ext_storage_child_get_version_1 => todo!(),
+                Externality::ext_storage_child_read_version_1 => todo!(),
+                Externality::ext_storage_child_clear_version_1 => todo!(),
+                Externality::ext_storage_child_storage_kill_version_1 => todo!(),
+                Externality::ext_storage_child_exists_version_1 => todo!(),
+                Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
+                Externality::ext_storage_child_root_version_1 => todo!(),
+                Externality::ext_storage_child_next_key_version_1 => todo!(),
+                Externality::ext_default_child_storage_get_version_1 => todo!(),
+                Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
+                Externality::ext_default_child_storage_set_version_1 => todo!(),
+                Externality::ext_default_child_storage_clear_version_1 => todo!(),
+                Externality::ext_default_child_storage_root_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_verify_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_verify_version_1 => 3,
+                Externality::ext_crypto_sr25519_verify_version_2 => 3,
+                Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
+                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => todo!(),
+                Externality::ext_crypto_start_batch_verify_version_1 => 0,
+                Externality::ext_crypto_finish_batch_verify_version_1 => 0,
+                Externality::ext_hashing_keccak_256_version_1 => 1,
+                Externality::ext_hashing_sha2_256_version_1 => todo!(),
+                Externality::ext_hashing_blake2_128_version_1 => 1,
+                Externality::ext_hashing_blake2_256_version_1 => 1,
+                Externality::ext_hashing_twox_64_version_1 => 1,
+                Externality::ext_hashing_twox_128_version_1 => 1,
+                Externality::ext_hashing_twox_256_version_1 => 1,
+                Externality::ext_offchain_index_set_version_1 => todo!(),
+                Externality::ext_offchain_index_clear_version_1 => todo!(),
+                Externality::ext_offchain_is_validator_version_1 => todo!(),
+                Externality::ext_offchain_submit_transaction_version_1 => todo!(),
+                Externality::ext_offchain_network_state_version_1 => todo!(),
+                Externality::ext_offchain_timestamp_version_1 => todo!(),
+                Externality::ext_offchain_sleep_until_version_1 => todo!(),
+                Externality::ext_offchain_random_seed_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_set_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_get_version_1 => todo!(),
+                Externality::ext_offchain_http_request_start_version_1 => todo!(),
+                Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
+                Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
+                Externality::ext_offchain_http_response_wait_version_1 => todo!(),
+                Externality::ext_offchain_http_response_headers_version_1 => todo!(),
+                Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
+                Externality::ext_trie_blake2_256_root_version_1 => 1,
+                Externality::ext_trie_blake2_256_ordered_root_version_1 => 1,
+                Externality::ext_misc_chain_id_version_1 => todo!(),
+                Externality::ext_misc_print_num_version_1 => todo!(),
+                Externality::ext_misc_print_utf8_version_1 => todo!(),
+                Externality::ext_misc_print_hex_version_1 => todo!(),
+                Externality::ext_misc_runtime_version_version_1 => todo!(),
+                Externality::ext_allocator_malloc_version_1 => 1,
+                Externality::ext_allocator_free_version_1 => 1,
+                Externality::ext_logging_log_version_1 => todo!(),
+            };
+            if params.len() != expected_params_num {
+                return ExternalsVm::NonConforming {
+                    error: NonConformingErr::ParamsCountMismatch,
+                    prototype: self.inner.into_prototype(),
+                };
+            }
+
+            // TODO: link to existing working code: https://github.com/paritytech/substrate-lite/blob/0699a302ef573e451fbb67beb8188c0d1b1d540d/src/executor/externals/externalities.rs
+
+            // Handle the function calls.
+            // Some of these enum variants simply change the state of `self`, while most of them
+            // instead return an `ExternalVm` to the user.
+            match externality {
+                Externality::ext_storage_set_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let value = match self.inner.expect_pointer_size(&params[1]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
+                        key,
+                        value: Some(value),
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_get_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                        key,
+                        calling: id,
+                        value_out_ptr: None,
+                        offset: 0,
+                        max_size: u32::max_value(),
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_read_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let (value_out_ptr, value_out_size) =
+                        match self.inner.expect_pointer_size_raw(&params[1]) {
+                            Ok(v) => v,
+                            Err(error) => {
+                                return ExternalsVm::NonConforming {
+                                    error,
+                                    prototype: self.inner.into_prototype(),
+                                }
+                            }
+                        };
+
+                    let offset = match params[2] {
+                        vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
+                        _ => {
+                            return ExternalsVm::NonConforming {
+                                error: NonConformingErr::WrongParamTy,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                        key,
+                        calling: id,
+                        value_out_ptr: Some(value_out_ptr),
+                        offset,
+                        max_size: value_out_size,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_clear_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
+                        key,
+                        value: None,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_exists_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                        key,
+                        calling: id,
+                        value_out_ptr: None,
+                        offset: 0,
+                        max_size: 0,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_clear_prefix_version_1 => {
+                    let prefix = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageClearPrefix(ExternalStorageClearPrefix {
+                        prefix,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_root_version_1 => {
+                    return ExternalsVm::ExternalStorageRoot(ExternalStorageRoot {
+                        inner: self.inner,
+                    })
+                }
+                Externality::ext_storage_changes_root_version_1 => {
+                    // TODO: there's a parameter
+                    return ExternalsVm::ExternalStorageChangesRoot(ExternalStorageChangesRoot {
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_next_key_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageNextKey(ExternalStorageNextKey {
+                        key,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_append_version_1 => {
+                    let key = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let value = match self.inner.expect_pointer_size(&params[1]) {
+                        Ok(k) => k,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    return ExternalsVm::ExternalStorageAppend(ExternalStorageAppend {
+                        key,
+                        value,
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_storage_child_set_version_1 => todo!(),
+                Externality::ext_storage_child_get_version_1 => todo!(),
+                Externality::ext_storage_child_read_version_1 => todo!(),
+                Externality::ext_storage_child_clear_version_1 => todo!(),
+                Externality::ext_storage_child_storage_kill_version_1 => todo!(),
+                Externality::ext_storage_child_exists_version_1 => todo!(),
+                Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
+                Externality::ext_storage_child_root_version_1 => todo!(),
+                Externality::ext_storage_child_next_key_version_1 => todo!(),
+                Externality::ext_default_child_storage_get_version_1 => todo!(),
+                Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
+                Externality::ext_default_child_storage_set_version_1 => todo!(),
+                Externality::ext_default_child_storage_clear_version_1 => todo!(),
+                Externality::ext_default_child_storage_root_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
+                Externality::ext_crypto_ed25519_verify_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_verify_version_1 => todo!(),
+                Externality::ext_crypto_sr25519_verify_version_2 => {
+                    self = ReadyToRun {
+                        // TODO: wrong! this is a dummy implementation meaning that all
+                        // signature verifications are always successful
+                        resume_value: Some(vm::WasmValue::I32(1)),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => todo!(),
+                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => todo!(),
+                Externality::ext_crypto_start_batch_verify_version_1 => {
+                    self = ReadyToRun {
+                        resume_value: None,
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_crypto_finish_batch_verify_version_1 => {
+                    self = ReadyToRun {
+                        // TODO: wrong! this is a dummy implementation meaning that all
+                        // signature verifications are always successful
+                        resume_value: Some(vm::WasmValue::I32(1)),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_keccak_256_version_1 => {
+                    let data = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let mut keccak = tiny_keccak::Keccak::v256();
+                    keccak.update(&data);
+                    let mut out = [0u8; 32];
+                    keccak.finalize(&mut out);
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 32)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner.vm.write_memory(dest_ptr, &out).unwrap();
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_sha2_256_version_1 => todo!(),
+                Externality::ext_hashing_blake2_128_version_1 => {
+                    let data = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 16)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner
+                        .vm
+                        .write_memory(dest_ptr, out.as_bytes())
+                        .unwrap();
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_blake2_256_version_1 => {
+                    let data = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let out = blake2_rfc::blake2b::blake2b(32, &[], &data);
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 32)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner
+                        .vm
+                        .write_memory(dest_ptr, out.as_bytes())
+                        .unwrap();
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_twox_64_version_1 => {
+                    let data = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    h0.write(&data);
+                    let r0 = h0.finish();
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 8)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner
+                        .vm
+                        .write_memory(dest_ptr, &r0.to_le_bytes())
+                        .unwrap();
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_twox_128_version_1 => {
+                    let data = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    let mut h1 = twox_hash::XxHash::with_seed(1);
+                    h0.write(&data);
+                    h1.write(&data);
+                    let r0 = h0.finish();
+                    let r1 = h1.finish();
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 16)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner
+                        .vm
+                        .write_memory(dest_ptr, &r0.to_le_bytes())
+                        .unwrap();
+                    self.inner
+                        .vm
+                        .write_memory(dest_ptr + 8, &r1.to_le_bytes())
+                        .unwrap();
+
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_hashing_twox_256_version_1 => todo!(),
+                Externality::ext_offchain_index_set_version_1 => todo!(),
+                Externality::ext_offchain_index_clear_version_1 => todo!(),
+                Externality::ext_offchain_is_validator_version_1 => todo!(),
+                Externality::ext_offchain_submit_transaction_version_1 => todo!(),
+                Externality::ext_offchain_network_state_version_1 => todo!(),
+                Externality::ext_offchain_timestamp_version_1 => todo!(),
+                Externality::ext_offchain_sleep_until_version_1 => todo!(),
+                Externality::ext_offchain_random_seed_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_set_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
+                Externality::ext_offchain_local_storage_get_version_1 => todo!(),
+                Externality::ext_offchain_http_request_start_version_1 => todo!(),
+                Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
+                Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
+                Externality::ext_offchain_http_response_wait_version_1 => todo!(),
+                Externality::ext_offchain_http_response_headers_version_1 => todo!(),
+                Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
+                Externality::ext_trie_blake2_256_root_version_1 => todo!(),
+                Externality::ext_trie_blake2_256_ordered_root_version_1 => {
+                    let encoded = match self.inner.expect_pointer_size(&params[0]) {
+                        Ok(d) => d,
+                        Err(error) => {
+                            return ExternalsVm::NonConforming {
+                                error,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let elements = match Vec::<Vec<u8>>::decode_all(&encoded) {
+                        Ok(e) => e,
+                        Err(err) => {
+                            return ExternalsVm::NonConforming {
+                                error: NonConformingErr::ParamDecodeError(err),
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let mut trie = crate::trie::Trie::new();
+                    for (idx, value) in elements.into_iter().enumerate() {
+                        let idx = u32::try_from(idx).unwrap();
+                        let key =
+                            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(idx));
+                        trie.insert(&key, value);
+                    }
+                    let out = trie.root_merkle_value(None);
+
+                    let dest_ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), 32)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self.inner.vm.write_memory(dest_ptr, &out).unwrap();
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(reinterpret_u32_i32(dest_ptr))),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_misc_chain_id_version_1 => todo!(),
+                Externality::ext_misc_print_num_version_1 => todo!(),
+                Externality::ext_misc_print_utf8_version_1 => todo!(),
+                Externality::ext_misc_print_hex_version_1 => todo!(),
+                Externality::ext_misc_runtime_version_version_1 => todo!(),
+                Externality::ext_allocator_malloc_version_1 => {
+                    let size = match params[0] {
+                        vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
+                        _ => {
+                            return ExternalsVm::NonConforming {
+                                error: NonConformingErr::WrongParamTy,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let ptr = match self
+                        .inner
+                        .allocator
+                        .allocate(&mut MemAccess(&mut self.inner.vm), size)
+                    {
+                        Ok(p) => p,
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let ptr_i32 = i32::from_ne_bytes(ptr.to_ne_bytes());
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(ptr_i32)),
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_allocator_free_version_1 => {
+                    let pointer = match params[0] {
+                        vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
+                        _ => {
+                            return ExternalsVm::NonConforming {
+                                error: NonConformingErr::WrongParamTy,
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    match self
+                        .inner
+                        .allocator
+                        .deallocate(&mut MemAccess(&mut self.inner.vm), pointer)
+                    {
+                        Ok(()) => {}
+                        // TODO: better error reporting
+                        Err(_) => {
+                            return ExternalsVm::Trapped {
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    self = ReadyToRun {
+                        resume_value: None,
+                        inner: self.inner,
+                    };
+                }
+                Externality::ext_logging_log_version_1 => todo!(),
             }
         }
     }
