@@ -621,9 +621,8 @@ enum StorageGetTarget {
 
 impl<TRq, TBl> StorageGet<TRq, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    // TODO: shouldn't be mut
-    pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
-        match &mut self.inner {
+    pub fn key<'b>(&'b self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
+        match &self.inner {
             StorageGetTarget::Storage(inner) => {
                 either::Either::Left(inner.key().map(either::Either::Left))
             }
@@ -639,9 +638,8 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     ///
     /// This method is a shortcut for calling `key` and concatenating the returned slices.
-    // TODO: shouldn't be mut
-    pub fn key_as_vec(&mut self) -> Vec<u8> {
-        match &mut self.inner {
+    pub fn key_as_vec(&self) -> Vec<u8> {
+        match &self.inner {
             StorageGetTarget::Storage(inner) => inner.key_as_vec(),
             StorageGetTarget::HeapPagesAndRuntime(_) | StorageGetTarget::HeapPages(_, _) => {
                 b":heappages".to_vec()
@@ -707,26 +705,22 @@ pub struct StoragePrefixKeys<TRq, TBl> {
 
 impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut self but &self
-    pub fn prefix(&mut self) -> &[u8] {
+    pub fn prefix(&self) -> &[u8] {
         self.inner.prefix()
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(
-        mut self,
-        keys: impl Iterator<Item = impl AsRef<[u8]>>,
-    ) -> ProcessOne<TRq, TBl> {
+    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ProcessOne<TRq, TBl> {
         let mut keys = keys
             .map(|k| k.as_ref().to_owned())
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
 
-        let prefix = self.inner.prefix().to_owned(); // TODO: meh
+        let prefix = self.inner.prefix();
         for (k, v) in self
             .shared
             .best_to_finalized_storage_diff
-            .range(prefix.clone()..)
-            .take_while(|(k, _)| k.starts_with(&prefix))
+            .range(prefix.to_owned()..)
+            .take_while(|(k, _)| k.starts_with(prefix))
         {
             if v.is_some() {
                 keys.insert(k.clone());
@@ -749,8 +743,7 @@ pub struct StorageNextKey<TRq, TBl> {
 
 impl<TRq, TBl> StorageNextKey<TRq, TBl> {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut self but &self
-    pub fn key(&mut self) -> &[u8] {
+    pub fn key(&self) -> &[u8] {
         self.inner.key()
     }
 

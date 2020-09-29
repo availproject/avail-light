@@ -90,42 +90,25 @@ impl GrandpaGenesisConfiguration {
         mut genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,
     ) -> Result<Vec<u8>, FromVmPrototypeError> {
         // TODO: DRY with the babe config; put a helper in the executor module
-        let mut vm = vm
+        let mut vm: executor::WasmVm = vm
             .run_no_param("GrandpaApi_grandpa_authorities")
-            .map_err(FromVmPrototypeError::VmInitialization)?;
+            .map_err(FromVmPrototypeError::VmInitialization)?
+            .into();
 
         Ok(loop {
-            match vm.state() {
-                executor::State::ReadyToRun(r) => r.run(),
-                executor::State::Finished(data) => {
-                    break data.to_owned();
+            match vm {
+                executor::WasmVm::ReadyToRun(r) => vm = r.run(),
+                executor::WasmVm::Finished(data) => {
+                    break data.value().to_owned();
                 }
-                executor::State::Trapped => return Err(FromVmPrototypeError::Trapped),
+                executor::WasmVm::Trapped { .. } => return Err(FromVmPrototypeError::Trapped),
 
-                executor::State::ExternalStorageGet {
-                    storage_key,
-                    offset,
-                    max_size,
-                    resolve,
-                } => {
-                    let mut value = genesis_storage_access(storage_key);
-
-                    // TODO: maybe this could be a utility function in `executor`
-                    if let Some(value) = &mut value {
-                        if usize::try_from(offset).unwrap() < value.len() {
-                            *value = value[usize::try_from(offset).unwrap()..].to_vec();
-                            if usize::try_from(max_size).unwrap() < value.len() {
-                                *value = value[..usize::try_from(max_size).unwrap()].to_vec();
-                            }
-                        } else {
-                            *value = Vec::new();
-                        }
-                    }
-
-                    resolve.finish_call(value);
+                executor::WasmVm::ExternalStorageGet(rq) => {
+                    let value = genesis_storage_access(rq.key());
+                    vm = rq.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 
-                executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
+                executor::WasmVm::LogEmit(rq) => vm = rq.resume(),
 
                 _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
             }

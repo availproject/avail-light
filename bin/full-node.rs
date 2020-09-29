@@ -351,7 +351,7 @@ async fn start_sync(
                             .map(|v| &v[..]);
                         process = req.inject_value(value);
                     }
-                    full_optimistic::ProcessOne::FinalizedStorageNextKey(mut req) => {
+                    full_optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
                         // TODO: to_vec() :-/
                         let next_key = finalized_block_storage
                             .range(req.key().to_vec()..)

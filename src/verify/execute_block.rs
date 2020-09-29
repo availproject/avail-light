@@ -127,7 +127,8 @@ pub fn execute_block<'a>(
                 ))))
                 .chain(body.map(either::Either::Left))
         })
-        .unwrap();
+        .unwrap()
+        .into();
 
     VerifyInner {
         vm,
@@ -163,15 +164,16 @@ pub struct StorageGet {
 
 impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    // TODO: shouldn't be mut
-    pub fn key<'a>(&'a mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageGet { storage_key, .. }
-            | executor::State::ExternalStorageAppend { storage_key, .. } => {
-                either::Either::Left(iter::once(either::Either::Left(storage_key)))
+    pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        match &self.inner.vm {
+            executor::WasmVm::ExternalStorageGet(req) => {
+                either::Either::Left(iter::once(either::Either::Left(req.key())))
+            }
+            executor::WasmVm::ExternalStorageAppend(req) => {
+                either::Either::Left(iter::once(either::Either::Left(req.key())))
             }
 
-            executor::State::ExternalStorageRoot { .. } => {
+            executor::WasmVm::ExternalStorageRoot(_) => {
                 if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
                     self.inner.root_calculation.as_ref().unwrap()
                 {
@@ -188,7 +190,7 @@ impl StorageGet {
                 }
             }
 
-            executor::State::ExternalStorageChangesRoot { .. } => {
+            executor::WasmVm::ExternalStorageChangesRoot(_) => {
                 either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
             }
 
@@ -200,8 +202,7 @@ impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     ///
     /// This method is a shortcut for calling `key` and concatenating the returned slices.
-    // TODO: shouldn't be mut
-    pub fn key_as_vec(&mut self) -> Vec<u8> {
+    pub fn key_as_vec(&self) -> Vec<u8> {
         self.key().fold(Vec::new(), |mut a, b| {
             a.extend_from_slice(b.as_ref());
             a
@@ -211,40 +212,21 @@ impl StorageGet {
     /// Injects the corresponding storage value.
     // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
     pub fn inject_value(mut self, value: Option<&[u8]>) -> Verify {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageGet {
-                offset,
-                max_size,
-                resolve,
-                ..
-            } => {
-                if let Some(mut value) = value {
-                    if usize::try_from(offset).unwrap() < value.len() {
-                        value = &value[usize::try_from(offset).unwrap()..];
-                        if usize::try_from(max_size).unwrap() < value.len() {
-                            value = &value[..usize::try_from(max_size).unwrap()];
-                        }
-                    }
-
-                    resolve.finish_call(Some(value.to_vec())); // TODO: overhead
-                } else {
-                    resolve.finish_call(None);
-                }
+        match self.inner.vm {
+            executor::WasmVm::ExternalStorageGet(req) => {
+                // TODO: should actually report the offset and max_size in the API
+                self.inner.vm = req.resume_full_value(value);
             }
-            executor::State::ExternalStorageAppend {
-                storage_key,
-                value: to_add,
-                resolve,
-            } => {
+            executor::WasmVm::ExternalStorageAppend(req) => {
                 let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
                 // TODO: could be less overhead?
-                append_to_storage_value(&mut value, to_add);
+                append_to_storage_value(&mut value, req.value());
                 self.inner
                     .top_trie_changes
-                    .insert(storage_key.to_vec(), Some(value.clone()));
-                resolve.finish_call(());
+                    .insert(req.key().to_vec(), Some(value.clone()));
+                self.inner.vm = req.resume();
             }
-            executor::State::ExternalStorageRoot { .. } => {
+            executor::WasmVm::ExternalStorageRoot(_) => {
                 if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
                     self.inner.root_calculation.take().unwrap()
                 {
@@ -254,9 +236,9 @@ impl StorageGet {
                     panic!()
                 }
             }
-            executor::State::ExternalStorageChangesRoot { resolve, .. } => {
+            executor::WasmVm::ExternalStorageChangesRoot(req) => {
                 if value.is_none() {
-                    resolve.finish_call(None);
+                    self.inner.vm = req.resume(None);
                 } else {
                     // TODO: this is probably one of the most complicated things to implement
                     todo!()
@@ -279,11 +261,10 @@ pub struct PrefixKeys {
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut mut but &self
-    pub fn prefix(&mut self) -> &[u8] {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageClearPrefix { storage_key, .. } => storage_key,
-            executor::State::ExternalStorageRoot { .. } => &[],
+    pub fn prefix(&self) -> &[u8] {
+        match &self.inner.vm {
+            executor::WasmVm::ExternalStorageClearPrefix(req) => req.prefix(),
+            executor::WasmVm::ExternalStorageRoot { .. } => &[],
 
             // We only create a `PrefixKeys` if the state is one of the above.
             _ => unreachable!(),
@@ -292,11 +273,8 @@ impl PrefixKeys {
 
     /// Injects the list of keys.
     pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> Verify {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageClearPrefix {
-                storage_key,
-                resolve,
-            } => {
+        match self.inner.vm {
+            executor::WasmVm::ExternalStorageClearPrefix(req) => {
                 // TODO: use prefix_remove_update once optimized
                 //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
 
@@ -310,8 +288,9 @@ impl PrefixKeys {
                         .top_trie_changes
                         .insert(key.as_ref().to_vec(), None);
                 }
+                // TODO: O(n) complexity here
                 for (key, value) in self.inner.top_trie_changes.iter_mut() {
-                    if !key.starts_with(&storage_key) {
+                    if !key.starts_with(req.prefix()) {
                         continue;
                     }
                     if value.is_none() {
@@ -324,10 +303,10 @@ impl PrefixKeys {
                         .storage_value_update(key, false);
                     *value = None;
                 }
-                resolve.finish_call(());
+                self.inner.vm = req.resume();
             }
 
-            executor::State::ExternalStorageRoot { .. } => {
+            executor::WasmVm::ExternalStorageRoot { .. } => {
                 if let calculate_root::RootMerkleValueCalculation::AllKeys(all_keys) =
                     self.inner.root_calculation.take().unwrap()
                 {
@@ -372,21 +351,17 @@ pub struct NextKey {
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut mut but &self
-    pub fn key(&mut self) -> &[u8] {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageNextKey { storage_key, .. } => storage_key,
+    pub fn key(&self) -> &[u8] {
+        match &self.inner.vm {
+            executor::WasmVm::ExternalStorageNextKey(req) => req.key(),
             _ => unreachable!(),
         }
     }
 
     /// Injects the key.
     pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> Verify {
-        match self.inner.vm.state() {
-            executor::State::ExternalStorageNextKey {
-                storage_key,
-                resolve,
-            } => {
+        match self.inner.vm {
+            executor::WasmVm::ExternalStorageNextKey(req) => {
                 // The next key can be either the one passed by the user or one key in the current
                 // pending storage changes that has been inserted during the verification.
                 // TODO: /!\ this logic is wrong; it is possible for the user-provided key to have
@@ -397,7 +372,7 @@ impl NextKey {
                     .inner
                     .top_trie_changes
                     .keys()
-                    .filter(|k| &***k > storage_key)
+                    .filter(|k| &***k > req.key())
                     .min();
                 // TODO: `to_vec()` overhead
                 let outcome = match (key, in_overlay) {
@@ -406,7 +381,7 @@ impl NextKey {
                     (None, Some(b)) => Some(b.clone()),
                     (None, None) => None,
                 };
-                resolve.finish_call(outcome);
+                self.inner.vm = req.resume(outcome.as_ref().map(|v| &v[..]));
             }
 
             // We only create a `NextKey` if the state is one of the above.
@@ -444,19 +419,24 @@ impl VerifyInner {
     /// Continues the verification.
     fn run(mut self) -> Verify {
         loop {
-            match self.vm.state() {
-                executor::State::ReadyToRun(r) => r.run(),
+            match self.vm {
+                executor::WasmVm::ReadyToRun(r) => self.vm = r.run(),
 
-                executor::State::Trapped => {
+                executor::WasmVm::Trapped { .. } => {
                     return Verify::Finished(Err(Error::Trapped { logs: self.logs }))
                 }
-                executor::State::Finished(output) => {
-                    if !output.is_empty() {
+                executor::WasmVm::NonConforming { .. } => {
+                    // TODO: not the same as Trapped; report properly
+                    return Verify::Finished(Err(Error::Trapped { logs: self.logs }));
+                }
+
+                executor::WasmVm::Finished(finished) => {
+                    if !finished.value().is_empty() {
                         return Verify::Finished(Err(Error::NonEmptyOutput));
                     }
 
                     return Verify::Finished(Ok(Success {
-                        parent_runtime: self.vm.into_prototype(),
+                        parent_runtime: finished.into_prototype(),
                         storage_top_trie_changes: self.top_trie_changes,
                         offchain_storage_changes: self.offchain_storage_changes,
                         top_trie_root_calculation_cache: self
@@ -466,73 +446,49 @@ impl VerifyInner {
                     }));
                 }
 
-                executor::State::ExternalStorageGet {
-                    storage_key,
-                    offset,
-                    max_size,
-                    resolve,
-                } => {
-                    if let Some(overlay) = self.top_trie_changes.get(storage_key) {
-                        if let Some(overlay) = overlay {
-                            // TODO: this clones the storage value, meh
-                            let mut value = overlay.clone();
-                            if usize::try_from(offset).unwrap() < value.len() {
-                                value = value[usize::try_from(offset).unwrap()..].to_vec();
-                                if usize::try_from(max_size).unwrap() < value.len() {
-                                    value = value[..usize::try_from(max_size).unwrap()].to_vec();
-                                }
-                            } else {
-                                value = Vec::new();
-                            }
-                            resolve.finish_call(Some(value));
-                        } else {
-                            resolve.finish_call(None);
-                        }
+                executor::WasmVm::ExternalStorageGet(req) => {
+                    if let Some(overlay) = self.top_trie_changes.get(req.key()) {
+                        self.vm = req.resume_full_value(overlay.as_ref().map(|v| &v[..]));
                     } else {
+                        self.vm = req.into();
                         return Verify::StorageGet(StorageGet { inner: self });
                     }
                 }
 
-                executor::State::ExternalStorageSet {
-                    storage_key,
-                    new_storage_value,
-                    resolve,
-                } => {
+                executor::WasmVm::ExternalStorageSet(req) => {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
-                        .storage_value_update(storage_key, new_storage_value.is_some());
+                        .storage_value_update(req.key(), req.value().is_some());
                     self.top_trie_changes
-                        .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
-                    resolve.finish_call(());
+                        .insert(req.key().to_vec(), req.value().map(|v| v.to_vec()));
+                    self.vm = req.resume();
                 }
 
-                executor::State::ExternalStorageAppend {
-                    storage_key,
-                    value,
-                    resolve,
-                } => {
+                executor::WasmVm::ExternalStorageAppend(req) => {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
-                        .storage_value_update(storage_key, true);
+                        .storage_value_update(req.key(), true);
 
-                    if let Some(current_value) = self.top_trie_changes.get(storage_key) {
+                    if let Some(current_value) = self.top_trie_changes.get(req.key()) {
                         let mut current_value = current_value.clone().unwrap_or_default();
-                        append_to_storage_value(&mut current_value, value);
+                        append_to_storage_value(&mut current_value, req.value());
                         self.top_trie_changes
-                            .insert(storage_key.to_vec(), Some(current_value));
-                        resolve.finish_call(());
+                            .insert(req.key().to_vec(), Some(current_value));
+                        self.vm = req.resume();
                     } else {
+                        self.vm = req.into();
                         return Verify::StorageGet(StorageGet { inner: self });
                     }
                 }
 
-                executor::State::ExternalStorageClearPrefix { .. } => {
+                executor::WasmVm::ExternalStorageClearPrefix(req) => {
+                    self.vm = req.into();
                     return Verify::PrefixKeys(PrefixKeys { inner: self });
                 }
 
-                executor::State::ExternalStorageRoot { resolve } => {
+                executor::WasmVm::ExternalStorageRoot(req) => {
                     if self.root_calculation.is_none() {
                         self.root_calculation = Some(calculate_root::root_merkle_value(Some(
                             self.top_trie_root_calculation_cache.take().unwrap(),
@@ -542,14 +498,16 @@ impl VerifyInner {
                     match self.root_calculation.take().unwrap() {
                         calculate_root::RootMerkleValueCalculation::Finished { hash, cache } => {
                             self.top_trie_root_calculation_cache = Some(cache);
-                            resolve.finish_call(hash);
+                            self.vm = req.resume(&hash);
                         }
                         calculate_root::RootMerkleValueCalculation::AllKeys(keys) => {
+                            self.vm = req.into();
                             self.root_calculation =
                                 Some(calculate_root::RootMerkleValueCalculation::AllKeys(keys));
                             return Verify::PrefixKeys(PrefixKeys { inner: self });
                         }
                         calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
+                            self.vm = req.into();
                             // TODO: allocating a Vec, meh
                             if let Some(overlay) = self
                                 .top_trie_changes
@@ -568,25 +526,23 @@ impl VerifyInner {
                     }
                 }
 
-                executor::State::ExternalStorageChangesRoot { .. } => {
+                executor::WasmVm::ExternalStorageChangesRoot(req) => {
+                    self.vm = req.into();
                     return Verify::StorageGet(StorageGet { inner: self });
                 }
 
-                executor::State::ExternalStorageNextKey { .. } => {
-                    return Verify::NextKey(NextKey { inner: self })
+                executor::WasmVm::ExternalStorageNextKey(req) => {
+                    self.vm = req.into();
+                    return Verify::NextKey(NextKey { inner: self });
                 }
 
-                executor::State::ExternalOffchainStorageSet {
-                    storage_key,
-                    new_storage_value,
-                    resolve,
-                } => {
+                executor::WasmVm::ExternalOffchainStorageSet(req) => {
                     self.offchain_storage_changes
-                        .insert(storage_key.to_vec(), new_storage_value.map(|v| v.to_vec()));
-                    resolve.finish_call(());
+                        .insert(req.key().to_vec(), req.value().map(|v| v.to_vec()));
+                    self.vm = req.resume();
                 }
 
-                executor::State::CallRuntimeVersion { wasm_blob, resolve } => {
+                executor::WasmVm::CallRuntimeVersion(req) => {
                     // The code below compiles the provided WebAssembly runtime code, which is a
                     // relatively expensive operation (in the order of milliseconds).
                     // While it could be tempting to use a system cache, this function is expected
@@ -594,45 +550,46 @@ impl VerifyInner {
                     // upgrades are quite uncommon and that a caching system is rather non-trivial
                     // to set up, the approach of recompiling every single time is preferred here.
                     // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct or if we have to take the current heap pages
-                    let vm_prototype = match executor::WasmVmPrototype::new(wasm_blob, 1024) {
+                    let vm_prototype = match executor::WasmVmPrototype::new(req.wasm_code(), 1024) {
                         Ok(w) => w,
                         Err(_) => {
-                            resolve.finish_call(Err(()));
+                            self.vm = req.resume(Err(()));
                             continue;
                         }
                     };
 
                     match executor::core_version(vm_prototype) {
                         Ok((version, _)) => {
-                            resolve.finish_call(Ok(parity_scale_codec::Encode::encode(&version)));
+                            // TODO: optimize
+                            self.vm = req.resume(Ok(&parity_scale_codec::Encode::encode(&version)));
                         }
                         Err(_) => {
-                            resolve.finish_call(Err(()));
+                            self.vm = req.resume(Err(()));
                         }
                     }
                 }
 
-                executor::State::LogEmit { message, resolve } => {
+                executor::WasmVm::LogEmit(req) => {
                     // We add a hardcoded limit to the logs generated by the runtime in order to
                     // make sure that there is no memory leak. In practice, the runtime should
                     // rarely log more than a few hundred bytes. This limit is hardcoded rather
                     // than configurable because it is not expected to be reachable unless
                     // something is very wrong.
+                    // TODO: optimize somehow? don't create an intermediary String?
+                    let message = req.to_string();
                     if self.logs.len().saturating_add(message.len()) >= 1024 * 1024 {
                         return Verify::Finished(Err(Error::LogsTooLong));
                     }
 
-                    self.logs.push_str(message);
-                    resolve.finish_call(());
+                    self.logs.push_str(&message);
+                    self.vm = req.resume();
                 }
-
-                s => unimplemented!("unimplemented externality: {:?}", s),
             }
         }
     }
 }
 
-/// Performs the action described by [`executor::State::ExternalStorageAppend`] on an encoded
+/// Performs the action described by [`executor::WasmVm::ExternalStorageAppend`] on an encoded
 /// storage value.
 fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {
     let curr_len = match <parity_scale_codec::Compact<u64> as parity_scale_codec::Decode>::decode(

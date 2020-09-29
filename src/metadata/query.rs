@@ -58,24 +58,26 @@ pub fn metadata_from_runtime_code(wasm_code: &[u8], heap_pages: u64) -> Result<V
 pub fn metadata_from_virtual_machine_prototype(
     vm: executor::WasmVmPrototype,
 ) -> Result<(Vec<u8>, executor::WasmVmPrototype), Error> {
-    let mut vm = vm
+    let mut vm: executor::WasmVm = vm
         .run_no_param("Metadata_metadata")
-        .map_err(Error::VmInitialization)?;
+        .map_err(Error::VmInitialization)?
+        .into();
 
-    let outcome = loop {
-        match vm.state() {
-            executor::State::ReadyToRun(r) => r.run(),
-            executor::State::Finished(data) => break remove_length_prefix(data)?.to_owned(),
-            executor::State::Trapped => return Err(Error::Trapped),
-            executor::State::LogEmit { resolve, .. } => resolve.finish_call(()),
+    loop {
+        match vm {
+            executor::WasmVm::ReadyToRun(r) => vm = r.run(),
+            executor::WasmVm::Finished(finished) => {
+                let value = remove_length_prefix(finished.value())?.to_owned();
+                return Ok((value, finished.into_prototype()));
+            }
+            executor::WasmVm::Trapped { .. } => return Err(Error::Trapped),
+            executor::WasmVm::LogEmit(rq) => vm = rq.resume(),
 
             // Querying the metadata shouldn't require any extrinsic such as accessing the
             // storage.
             _ => return Err(Error::ExternalityNotAllowed),
         }
-    };
-
-    Ok((outcome, vm.into_prototype()))
+    }
 }
 
 /// Error when retrieving the metadata.

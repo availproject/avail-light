@@ -36,18 +36,20 @@
 //! While the Wasm runtime code has side-effects (such as storing values in the storage), the
 //! [`WasmVm`] itself is a pure state machine with no side effects.
 //!
-//! At any given point, you can call [`WasmVm::state`] in order to know in which state the
+//! At any given point, you can examine the [`WasmVm`] in order to know in which state the
 //! execution currently is.
-//! If [`State::ReadyToRun`] is returned (which initially is the case when you create the
-//! [`WasmVm`]), then you can execute the Wasm code by calling [`ReadyToRun::run`].
+//! In case of a [`WasmVm::ReadyToRun`] (which initially is the case when you create the
+//! [`WasmVm`]), you can execute the Wasm code by calling [`ReadyToRun::run`].
 //! No background thread of any kind is used, and calling [`ReadyToRun::run`] directly performs
 //! the execution of the Wasm code. If you need parallelism, you are encouraged to spawn a
 //! background thread yourself and call this function from there.
+//! [`ReadyToRun::run`] tries to make the execution progress as much as possible, and returns
+//! the new state of the virtual machine once that is done.
 //!
 //! If the runtime has finished, or has crashed, or wants to perform an operation with side
-//! effects, then [`ReadyToRun::run`] will return and you must call [`WasmVm::state`] again to
-//! determine what to do next. For example, if [`State::ExternalStorageGet`] is returned, then you
-//! must load a value from the storage and pass it back by calling [`Resume::finish_call`].
+//! effects, then the [`WasmVm`] determines what to do next. For example, for
+//! [`WasmVm::ExternalStorageGet`], you must load a value from the storage and pass it back by
+//! calling [`ExternalStorageGet::resume`].
 //!
 //! The Wasm execution is fully deterministic, and the outcome of the execution only depends on
 //! the inputs. There is, for example, no implicit injection of randomness or of the current time.
@@ -58,35 +60,39 @@
 //! let wasm_binary: &[u8] = unimplemented!();
 //!
 //! // Start executing a function on the runtime.
-//! let vm = substrate_lite::executor::WasmVmPrototype::new(&wasm_binary, 1024).unwrap()
-//!     .run_no_param("Core_version").unwrap();
+//! let mut vm: substrate_lite::executor::WasmVm =
+//!     substrate_lite::executor::WasmVmPrototype::new(&wasm_binary, 1024).unwrap()
+//!         .run_no_param("Core_version").unwrap()
+//!         .into();
 //!
 //! // We need to answer the calls that the runtime might perform.
 //! loop {
-//!     match vm.state() {
+//!     match vm {
 //!         // Calling `runner.run()` is what actually executes WebAssembly code and updates
 //!         // the state.
-//!         substrate_lite::executor::State::ReadyToRun(runner) => runner.run(),
+//!         substrate_lite::executor::WasmVm::ReadyToRun(runner) => vm = runner.run(),
 //!
-//!         substrate_lite::executor::State::Finished(value) => {
-//!             // `value` here is an opaque blob of bytes returned by the runtime.
+//!         substrate_lite::executor::WasmVm::Finished(finished) => {
+//!             // `finished.value()` here is an opaque blob of bytes returned by the runtime.
 //!             // In the case of a call to `"Core_version"`, we know that it must be empty.
-//!             assert!(value.is_empty());
+//!             assert!(finished.value().is_empty());
 //!             println!("Success!");
 //!             break;
 //!         },
 //!
 //!         // Errors can happen if the WebAssembly code panics or does something wrong.
 //!         // In a real-life situation, the host should obviously not panic in these situations.
-//!         substrate_lite::executor::State::NonConforming(_) |
-//!         substrate_lite::executor::State::Trapped => panic!("Error while executing code"),
+//!         substrate_lite::executor::WasmVm::NonConforming { .. } |
+//!         substrate_lite::executor::WasmVm::Trapped { .. } => {
+//!             panic!("Error while executing code")
+//!         },
 //!
 //!         // All the other variants correspond to function calls that the runtime might perform.
 //!         // `ExternalStorageGet` is shown here as an example.
-//!         substrate_lite::executor::State::ExternalStorageGet { storage_key, resolve, .. } => {
-//!             println!("Runtime wants to read the storage at {:?}", storage_key);
+//!         substrate_lite::executor::WasmVm::ExternalStorageGet(req) => {
+//!             println!("Runtime wants to read the storage at {:?}", req.key());
 //!             // Injects the value into the virtual machine and updates the state.
-//!             resolve.finish_call(None); // Just a stub
+//!             vm = req.resume(None); // Just a stub
 //!         }
 //!         _ => unimplemented!()
 //!     }
@@ -101,9 +107,10 @@ mod externals;
 mod vm;
 
 pub use externals::{
-    ExternalsVm as WasmVm, ExternalsVmPrototype as WasmVmPrototype, NewErr, NonConformingErr,
-    ReadyToRun, Resume, State,
+    ExternalStorageAppend, ExternalStorageGet, ExternalsVm as WasmVm,
+    ExternalsVmPrototype as WasmVmPrototype, Finished, NewErr, NonConformingErr, ReadyToRun,
 };
+// TODO: reexports ^ ? shouldn't we just make the module public?
 
 /// Runs the `Core_version` function using the given virtual machine prototype, and returns
 /// the output.
@@ -112,25 +119,26 @@ pub use externals::{
 // TODO: proper error
 pub fn core_version(vm_proto: WasmVmPrototype) -> Result<(CoreVersion, WasmVmPrototype), ()> {
     // TODO: is there maybe a better way to handle that?
-    let mut vm = vm_proto.run_no_param("Core_version").map_err(|_| ())?;
+    let mut vm: WasmVm = vm_proto
+        .run_no_param("Core_version")
+        .map_err(|_| ())?
+        .into();
 
-    let core_version = loop {
-        match vm.state() {
-            State::ReadyToRun(r) => r.run(),
-            State::Finished(data) => {
-                let decoded = CoreVersion::decode_all(&data).map_err(|_| ())?;
-                break decoded;
+    loop {
+        match vm {
+            WasmVm::ReadyToRun(r) => vm = r.run(),
+            WasmVm::Finished(finished) => {
+                let decoded = CoreVersion::decode_all(&finished.value()).map_err(|_| ())?;
+                return Ok((decoded, finished.into_prototype()));
             }
-            State::Trapped => return Err(()),
+            WasmVm::Trapped { .. } => return Err(()),
 
             // Since there are potential ambiguities we don't allow any storage access
             // or anything similar. The last thing we want is to have an infinite
             // recursion of runtime calls.
             _ => return Err(()),
         }
-    };
-
-    Ok((core_version, vm.into_prototype()))
+    }
 }
 
 /// Structure that the `CoreVersion` function returns.

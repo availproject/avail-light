@@ -143,7 +143,7 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// Panics if the chain information is incorrect.
     ///
-    pub fn new(mut config: Config) -> Self {
+    pub fn new(config: Config) -> Self {
         if config
             .chain_information_config
             .chain_information
@@ -1192,16 +1192,14 @@ pub struct StorageGet<T> {
 
 impl<T> StorageGet<T> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    // TODO: shouldn't be mut
-    pub fn key<'b>(&'b mut self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
+    pub fn key<'b>(&'b self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
         self.inner.key()
     }
 
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     ///
     /// This method is a shortcut for calling `key` and concatenating the returned slices.
-    // TODO: shouldn't be mut
-    pub fn key_as_vec(&mut self) -> Vec<u8> {
+    pub fn key_as_vec(&self) -> Vec<u8> {
         self.inner.key_as_vec()
     }
 
@@ -1258,8 +1256,7 @@ pub struct StoragePrefixKeys<T> {
 
 impl<T> StoragePrefixKeys<T> {
     /// Returns the prefix whose keys to load.
-    // TODO: don't take &mut self but &self
-    pub fn prefix(&mut self) -> &[u8] {
+    pub fn prefix(&self) -> &[u8] {
         self.inner.prefix()
     }
 
@@ -1315,8 +1312,7 @@ pub struct StorageNextKey<T> {
 
 impl<T> StorageNextKey<T> {
     /// Returns the key whose next key must be passed back.
-    // TODO: don't take &mut self but &self
-    pub fn key(&mut self) -> &[u8] {
+    pub fn key(&self) -> &[u8] {
         self.inner.key()
     }
 
