@@ -80,6 +80,7 @@ schnorrkel = { version = "0.9.1", default-features = false }
 send_wrapper = "0.4.0"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.57", default-features = false, features = ["alloc", "raw_value"] }
+sha2 = "0.9.1"
 slab = "0.4.2"
 smallvec = "0.6.10"
 snow = { version = "0.7.1", default-features = false }  # TODO: we have to pick a resolver I think

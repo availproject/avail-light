@@ -55,6 +55,7 @@ use super::{allocator, vm};
 
 use core::{convert::TryFrom as _, fmt, hash::Hasher as _, iter};
 use parity_scale_codec::DecodeAll as _;
+use sha2::Digest as _;
 use tiny_keccak::Hasher as _;
 
 /// Prototype for an [`ExternalsVm`].
@@ -376,8 +377,8 @@ impl ReadyToRun {
                 Externality::ext_hashing_twox_64_version_1 => 1,
                 Externality::ext_hashing_twox_128_version_1 => 1,
                 Externality::ext_hashing_twox_256_version_1 => 1,
-                Externality::ext_offchain_index_set_version_1 => todo!(),
-                Externality::ext_offchain_index_clear_version_1 => todo!(),
+                Externality::ext_offchain_index_set_version_1 => 2,
+                Externality::ext_offchain_index_clear_version_1 => 1,
                 Externality::ext_offchain_is_validator_version_1 => todo!(),
                 Externality::ext_offchain_submit_transaction_version_1 => todo!(),
                 Externality::ext_offchain_network_state_version_1 => todo!(),
@@ -493,8 +494,6 @@ impl ReadyToRun {
                     }
                 }};
             }
-
-            // TODO: link to existing working code: https://github.com/paritytech/substrate-lite/blob/0699a302ef573e451fbb67beb8188c0d1b1d540d/src/executor/externals/externalities.rs
 
             // Handle the function calls.
             // Some of these enum variants simply change the state of `self`, while most of them
@@ -699,7 +698,20 @@ impl ReadyToRun {
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_sha2_256_version_1 => todo!(),
+                Externality::ext_hashing_sha2_256_version_1 => {
+                    let data = expect_pointer_size!(0);
+
+                    let mut hasher = sha2::Sha256::new();
+                    hasher.update(data);
+
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(iter::once(hasher.finalize().as_slice()))
+                    {
+                        ExternalsVm::ReadyToRun(r) => self = r,
+                        other => return other,
+                    }
+                }
                 Externality::ext_hashing_blake2_128_version_1 => {
                     let data = expect_pointer_size!(0);
                     let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
@@ -756,9 +768,49 @@ impl ReadyToRun {
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_twox_256_version_1 => todo!(),
-                Externality::ext_offchain_index_set_version_1 => todo!(),
-                Externality::ext_offchain_index_clear_version_1 => todo!(),
+                Externality::ext_hashing_twox_256_version_1 => {
+                    let data = expect_pointer_size!(0);
+
+                    let mut h0 = twox_hash::XxHash::with_seed(0);
+                    let mut h1 = twox_hash::XxHash::with_seed(1);
+                    let mut h2 = twox_hash::XxHash::with_seed(2);
+                    let mut h3 = twox_hash::XxHash::with_seed(3);
+                    h0.write(&data);
+                    h1.write(&data);
+                    h2.write(&data);
+                    h3.write(&data);
+                    let r0 = h0.finish();
+                    let r1 = h1.finish();
+                    let r2 = h2.finish();
+                    let r3 = h3.finish();
+
+                    match self.inner.alloc_write_and_return_pointer(
+                        iter::once(&r0.to_le_bytes())
+                            .chain(iter::once(&r1.to_le_bytes()))
+                            .chain(iter::once(&r2.to_le_bytes()))
+                            .chain(iter::once(&r3.to_le_bytes())),
+                    ) {
+                        ExternalsVm::ReadyToRun(r) => self = r,
+                        other => return other,
+                    }
+                }
+                Externality::ext_offchain_index_set_version_1 => {
+                    let key = expect_pointer_size!(0);
+                    let value = expect_pointer_size!(1);
+                    return ExternalsVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
+                        key,
+                        value: Some(value),
+                        inner: self.inner,
+                    });
+                }
+                Externality::ext_offchain_index_clear_version_1 => {
+                    let key = expect_pointer_size!(0);
+                    return ExternalsVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
+                        key,
+                        value: None,
+                        inner: self.inner,
+                    });
+                }
                 Externality::ext_offchain_is_validator_version_1 => todo!(),
                 Externality::ext_offchain_submit_transaction_version_1 => todo!(),
                 Externality::ext_offchain_network_state_version_1 => todo!(),
@@ -774,7 +826,30 @@ impl ReadyToRun {
                 Externality::ext_offchain_http_response_wait_version_1 => todo!(),
                 Externality::ext_offchain_http_response_headers_version_1 => todo!(),
                 Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
-                Externality::ext_trie_blake2_256_root_version_1 => todo!(),
+                Externality::ext_trie_blake2_256_root_version_1 => {
+                    let encoded = expect_pointer_size!(0);
+
+                    let elements = match Vec::<(Vec<u8>, Vec<u8>)>::decode_all(&encoded) {
+                        Ok(e) => e,
+                        Err(err) => {
+                            return ExternalsVm::NonConforming {
+                                error: NonConformingErr::ParamDecodeError(err),
+                                prototype: self.inner.into_prototype(),
+                            }
+                        }
+                    };
+
+                    let mut trie = crate::trie::Trie::new();
+                    for (key, value) in elements {
+                        trie.insert(&key, value);
+                    }
+                    let out = trie.root_merkle_value(None);
+
+                    match self.inner.alloc_write_and_return_pointer(iter::once(&out)) {
+                        ExternalsVm::ReadyToRun(r) => self = r,
+                        other => return other,
+                    }
+                }
                 Externality::ext_trie_blake2_256_ordered_root_version_1 => {
                     let encoded = expect_pointer_size!(0);
 
@@ -851,7 +926,13 @@ impl ReadyToRun {
                         log_entry,
                     });
                 }
-                Externality::ext_misc_runtime_version_version_1 => todo!(),
+                Externality::ext_misc_runtime_version_version_1 => {
+                    let wasm_blob = expect_pointer_size!(0);
+                    return ExternalsVm::CallRuntimeVersion(CallRuntimeVersion {
+                        inner: self.inner,
+                        wasm_blob,
+                    });
+                }
                 Externality::ext_allocator_malloc_version_1 => {
                     let size = expect_u32!(0);
 
