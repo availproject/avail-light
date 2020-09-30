@@ -41,54 +41,146 @@
 //! A block primarily consists in three properties:
 //!
 //! - A parent block, referred to by its hash.
-//! - An ordered list of **extrinsics**. An extrinsic can be either a **transaction** or an
-//! **intrisic**.
-//! - A list of digest items, which include for example a cryptographic signature of the block
-//! made by its author.
+//! - An ordered list of **extrinsics**, representing a state change about the storage. An
+//! extrinsic can be either a **transaction** or an **intrisic**.
+//! - A list of **digest log items**, which include information necessary to verify the
+//! authenticity of the block, such as a cryptographic signature of the block made by its author.
 //!
-//! In order to make abstractions easier, there alsos exists what is called the genesis block, or
-//! block number 0. It doesn't have any parent, extrinsic, or digest item. The state of the
-//! storage of the genesis block is the initial state.
+//! In order to make abstractions easier, there also exists what is called the **genesis block**,
+//! or block number 0. It doesn't have any parent, extrinsic, or digest item.
 //!
-//! From these three block properties, we can derive:
+//! From these three block properties, the following other properties can be derived:
 //!
-//! - The hash of the block. This is a unique 256 bits identifier obtained by hashing all the
-//! information together in a specific way.
-//! - The block number. It is equal to the parent's block number plus one, or equal to zero for
-//! the genesis block
-//! - The state of the storage at the height of the block.The state at the height of the block
-//! consists in the state of the parent block on top of which we have applied the block's
-//! extrinsics on top of each other.
+//! - The **hash** of the block. This is a unique 32 bytes identifier obtained by hashing all the
+//! block's information together in a specific way.
+//! - The **block number**. It is equal to the parent's block number plus one, or equal to zero
+//! for the genesis block
+//! - The state of the storage. It consists in the state of the storage of the parent block, on
+//! top of which the block's extrinsics have been applied. The state of the storage of the genesis
+//! block is the initial state.
+//!
+//! > **Note**: Not all these properties are held in memory or even on disk. For instance, the
+//! >           state of the storage is quite large and holding a full version of the storage of
+//! >           every single block in the chain would be unrealistic.
 //!
 //! ## Trie
 //!
-//! The **trie** is a data structure that plays an important part in the way a blockchain
-//! functions. It consists in a tree of keys and values whose content can be hashed. This hash is
-//! commonly designated as "the Merkle trie root" or "the trie root".
+//! The **trie** is a data structure that plays an important role in the way a blockchain
+//! functions.
+//!
+//! It consists in a tree of nodes associated with a key, some of these nodes containing a value.
+//! Each node is associated with a hash called the **Merkle value** that encompasses the Merkle
+//! values of the node's children. The Merkle value of the root node of the tree is designated
+//! as "the Merkle trie root" or "the trie root".
+//!
 //! See the [`trie`] module for more details.
 //!
 //! ## Block headers
 //!
-//! A block's header contains the following information:
+//! In practical terms, when a block needs to be stored or transferred between machines, it
+//! is split in two parts: a **header** and a **body**. The body of a block simply consists in its
+//! list of extrinsics.
 //!
-//! - The hash of the parent block.
+//! > **Note**: The body of a block and the list of extrinsics of a block are the exact same
+//! >           thing, and these two designations can be used interchangeably.
+//!
+//! A block's header contains the following:
+//!
+//! - The hash of the parent of the block.
 //! - The block number.
-//! - The state trie root, which consists in the trie root of all the keys and values of the
-//! storage after this block's modifications have been applied.
-//! - The extrinsics trie root, which consists in the Merkle root of a trie containing the
+//! - The **state trie root**, which consists in the trie root of all the keys and values of the
+//! storage of this block.
+//! - The **extrinsics trie root**, which consists in the Merkle root of a trie containing the
 //! extrinsics of the block.
-//! - The list of digest items.
+//! - The list of digest log items.
 //!
-//! ## Finalization
+//! The hash of a block consists in the blake2 hash of its header.
 //!
-//! Each block of a chain can be or not **finalized** in the context of a given chain. Once a
-//! block has been finalized, we consider as invalid any block that is not a descendant of it. In
-//! other words, a finalized block can never be reverted and is forever part of the chain.
+//! See the [`header`] module for more information.
 //!
-//! By extension, the parent of a finalized block must be finalized as well. The genesis block of
-//! a chain is by definition always finalized.
+//! ## Runtime
 //!
-//! # TODO: what's a justification?
+//! The state of the storage of each block is mostly opaque from the client's perspective. There
+//! exists, however, a few hardcoded keys, the most important one being
+//! `[0x3a, 0x63, 0x6f, 0x64, 0x65]` (which is the ASCII encoding of the string `:code`). The
+//! value associated with this key must always be a [WebAssembly](https://webassembly.org/) binary
+//! code called the **runtime**.
+//!
+//! This WebAssembly binary code must obey a certain ABI and is responsible for the following
+//! actions:
+//!
+//! - Verifying whether a block has been correctly created by its author.
+//! - Providing the list of modifications to the storage performed by a block, given its header
+//! and body.
+//! - Generating the header of newly-created blocks.
+//! - Validating transactions received from third-parties, in order to later be potentially
+//! included in a block.
+//! - Providing the tools necessary to create transactions. See the [`metadata`] module.
+//!
+//! In other words, the runtime is responsible for all the actual *logic* behind the chain being
+//! run. For instance, when performing a transfer of tokens between one account and another, it is
+//! the runtime WebAssembly code that verifies that the balances are correct and updates them.
+//!
+//! Since applying an extrinsic modifies the state of the storage, it is possible for an
+//! extrinsic to modify this WebAssembly binary code. This is called a **runtime upgrade**. In
+//! other words, any block can potentially modify the logic of the chain.
+//!
+//! See also the [`executor`] module for more information.
+//!
+//! ## Forks and finalization
+//!
+//! While blocks are built on top of each other, they don't necessarily form one single chain. It
+//! is possible for multiple different blocks to have the same parent, thereby forming multiple
+//! chains. This is called a **fork**.
+//!
+//! When multiple chains fly around in the network, each node select one chain they consider as
+//! the "best". However, because of latency, disconnects, or similar reasons, it is possible for
+//! a node to not be immediately aware of the existence of a chain that it would consider as a
+//! better chain than its current best. Later, when this node learns about this better chain, it
+//! will need to perform a **reorg** (short for *reorganization*), where blocks that were part of
+//! the best chain no longer are.
+//!
+//! In order to avoid troublesome situations arising from reorgs, Substrate/Polkadot provides the
+//! concept of **finality**. Once a block has been finalized, it is guaranteed to always be part
+//! of the best chain. By extension, the parent of a finalized block is always finalized as well.
+//! The genesis block of a chain is by definition is always finalized.
+//!
+//! As such, a chain of blocks is composed of two parts: one **finalized** part (usually the
+//! longest), and one non-finalized part. While the finalized part is a single linear list of
+//! blocks, the non-finalized part consists in a *directed rooted tree*.
+//!
+//! In order to finalize a block, Substrate/Polkadot nodes use the **GrandPa** algorithm. Nodes
+//! that are authorized to do so by the runtime emit votes on the peer-to-peer network. When two
+//! thirds or more of the authorized nodes have voted for a specific block to be finalized, it
+//! effectively becomes finalized.
+//!
+//! After these votes have been collected, they are collected in what is called a
+//! **justification**. This justification can later be requested by nodes who might not have
+//! received all the votes, or for example if they were offline.
+//!
+//! See the [`chain`] and [`finality`] modules for more information.
+//!
+//! # Usage
+//!
+//! This library intentionally doesn't provide any ready-to-use blockchain client. Instead, it
+//! provides tools that can be combined together in order to create a client.
+//!
+//! Components that are most certainly needed are:
+//!
+//! - Connectivity to a peer-to-peer network. See the [`network`] module.
+//! - A persistent storage for the blocks. See the [`database`] module.
+//! - A state machine that holds information about the state of the chain and verifies the
+//! authenticity and/or correctness of blocks received from the network. See the [`chain::sync`]
+//! module.
+//!
+//! Optionally:
+//!
+//! - The capacity to author new blocks. This isn't implemented as of the writing of this
+//! documentation.
+//! - A JSON-RPC client, in order to put a convenient-to-use UI on top of the client. See the
+//! [`json_rpc`] module.
+//! - A telemetry client, in order to report information to a telemetry server. See the
+//! [`telemetry`] module.
 //!
 
 // TODO: for `no_std`, fix all the compilation errors caused by the copy-pasted code

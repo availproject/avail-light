@@ -13,7 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! RPC servers.
+//! JSON-RPC servers.
+
+// TODO: write docs ^
 
 // TODO: remove this:
 // link to old code: https://github.com/tomaka/substrate-lite/blob/fd11a4dbf3bcc39e4c7eaad5b38f0e2a1ff7ed61/src/json_rpc.rs
