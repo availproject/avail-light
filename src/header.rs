@@ -69,7 +69,6 @@
 // TODO: consider rewriting the encoding/decoding into a more legible style
 // TODO: consider nom for decoding
 
-use blake2::digest::{Input as _, VariableOutput as _};
 use core::{convert::TryFrom, fmt, iter, slice};
 
 mod babe;
@@ -93,17 +92,16 @@ pub fn hash_from_scale_encoded_header(header: impl AsRef<[u8]>) -> [u8; 32] {
 pub fn hash_from_scale_encoded_header_vectored(
     header: impl Iterator<Item = impl AsRef<[u8]>>,
 ) -> [u8; 32] {
-    let mut out = [0; 32];
-
-    let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
+    let mut hasher = blake2_rfc::blake2b::Blake2b::with_key(32, &[]);
     for buf in header {
-        hasher.input(buf.as_ref());
+        hasher.update(buf.as_ref());
     }
-    hasher.variable_result(|result| {
-        debug_assert_eq!(result.len(), 32);
-        out.copy_from_slice(result)
-    });
 
+    let result = hasher.finalize();
+    debug_assert_eq!(result.as_bytes().len(), 32);
+
+    let mut out = [0; 32];
+    out.copy_from_slice(result.as_bytes());
     out
 }
 

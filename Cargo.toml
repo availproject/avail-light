@@ -108,7 +108,6 @@ web-sys = { version = "0.3.44", optional = true, features = ["DomException", "St
 # TODO:
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
 bitflags = "1.2.1"  # TODO: I hate bitflags
-blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations

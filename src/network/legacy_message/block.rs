@@ -16,7 +16,6 @@
 
 // TODO: remove this module; we don't want to tie things together too much
 
-use blake2::digest::{Input as _, VariableOutput as _};
 use parity_scale_codec::{
     Decode, Encode, EncodeAsRef, EncodeLike, Error, HasCompact, Input, Output,
 };
@@ -49,15 +48,13 @@ pub struct Header {
 impl Header {
     /// Returns the hash of the header, and thus also of the block.
     pub fn block_hash(&self) -> BlockHash {
+        let mut hasher = blake2_rfc::blake2b::Blake2b::with_key(32, &[]);
+        hasher.update(&self.encode());
+        let result = hasher.finalize();
+        debug_assert_eq!(result.as_bytes().len(), 32);
+
         let mut out = [0; 32];
-
-        let mut hasher = blake2::VarBlake2b::new_keyed(&[], 32);
-        hasher.input(&self.encode());
-        hasher.variable_result(|result| {
-            debug_assert_eq!(result.len(), 32);
-            out.copy_from_slice(result)
-        });
-
+        out.copy_from_slice(result.as_bytes());
         BlockHash(out)
     }
 }

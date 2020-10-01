@@ -23,7 +23,10 @@ use futures::{
     prelude::*,
 };
 use libp2p::wasm_ext::{ffi, ExtTransport};
-use std::{collections::HashMap, num::{NonZeroU32, NonZeroU64}};
+use std::{
+    collections::HashMap,
+    num::{NonZeroU32, NonZeroU64},
+};
 use substrate_lite::{
     chain, chain::sync::headers_optimistic, chain_spec, database, header, json_rpc, network,
     verify::babe,
@@ -345,8 +348,10 @@ async fn start_network(
             known_addresses,
             chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
             tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-            local_genesis_hash: substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage())
-                .hash(),
+            local_genesis_hash: substrate_lite::calculate_genesis_block_header(
+                chain_spec.genesis_storage(),
+            )
+            .hash(),
             wasm_external_transport: Some(ExtTransport::new(ffi::websocket_transport())),
         })
         .await
