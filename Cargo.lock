@@ -3127,7 +3127,6 @@ dependencies = [
  "blake2-rfc",
  "bytes",
  "chrono",
- "console_error_panic_hook",
  "derive_more",
  "ed25519-dalek",
  "either",
@@ -3143,7 +3142,6 @@ dependencies = [
  "js-sys",
  "lazy_static",
  "libp2p",
- "libp2p-wasm-ext",
  "libsecp256k1",
  "lru",
  "merlin",
@@ -3177,12 +3175,27 @@ dependencies = [
  "url",
  "void",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "wasm-timer",
  "wasmi",
  "wasmtime",
  "web-sys",
  "webpki",
+]
+
+[[package]]
+name = "substrate-lite-browser-node"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "futures",
+ "js-sys",
+ "libp2p",
+ "libp2p-wasm-ext",
+ "rand",
+ "substrate-lite",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wee_alloc",
 ]
 

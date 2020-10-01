@@ -8,6 +8,11 @@ edition = "2018"
 keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
 
+[workspace]
+members = [
+    "bin/browser-node",
+]
+
 [features]
 default = ["os-networking"]
 os-networking = [
@@ -26,23 +31,18 @@ wasm-bindings = [
     "js-sys",
     "rand/wasm-bindgen",
     "wasm-bindgen",
-    "wasm-bindgen-futures",
     "web-sys",
-    "wee_alloc",
 ]
 
 [[bin]]
 name = "full-node"
-path = "bin/full-node.rs"
+path = "bin/full-node/main.rs"
 required-features = ["os-networking"]
 
 [[bin]]
 name = "json-rpc-test"
-path = "bin/json-rpc-test.rs"
+path = "bin/json-rpc-test/main.rs"
 required-features = ["os-networking"]
-
-[lib]
-crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ansi_term = "0.12.1"
@@ -74,7 +74,7 @@ num-traits = "0.2.8"
 parking_lot = "0.10.2"
 pin-project = "0.4"
 prost = "0.6.1"
-rand = "0.7"
+rand = "0.7.0"
 rand_chacha = "0.2.2"
 schnorrkel = { version = "0.9.1", default-features = false }
 send_wrapper = "0.4.0"
@@ -100,12 +100,9 @@ url = { version = "2.1.1", optional = true }
 webpki = { version = "0.21.0", optional = true }
 
 # `wasm-bindings` feature
-console_error_panic_hook = "0.1.6"
 js-sys = { version = "0.3.44", optional = true }
 wasm-bindgen = { version = "0.2.67", optional = true }
-wasm-bindgen-futures = { version = "0.4.17", optional = true }
-web-sys = { version = "0.3.44", optional = true, features = ["console", "DomException", "IdbDatabase", "IdbFactory", "IdbObjectStore", "IdbOpenDbRequest", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "Storage", "Window"] }
-wee_alloc = { version = "0.4.5", optional = true }
+web-sys = { version = "0.3.44", optional = true, features = ["DomException", "Storage", "Window"] }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
@@ -114,7 +111,6 @@ bitflags = "1.2.1"  # TODO: I hate bitflags
 blake2 = "0.8.1"  # TODO: should be merged with blake2-rfc
 bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
-libp2p-wasm-ext = { version = "0.20.1", features = ["websocket"] }  # TODO: activating the "websocket" feature because the libp2p front doesn't provide a way; https://github.com/libp2p/rust-libp2p/pull/1718
 parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
 sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "16fdfc4a80a14a26221d17b8a1b9a95421a1576c" }

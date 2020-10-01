@@ -18,24 +18,6 @@
 
 use core::convert::TryFrom as _;
 
-/// Use in an asynchronous context to interrupt the current task execution and schedule it back.
-///
-/// This function is useful in order to guarantee a fine granularity of tasks execution time in
-/// situations where a CPU-heavy task is being performed.
-pub(crate) async fn yield_once() {
-    let mut pending = true;
-    futures::future::poll_fn(move |cx| {
-        if pending {
-            pending = false;
-            cx.waker().wake_by_ref();
-            core::task::Poll::Pending
-        } else {
-            core::task::Poll::Ready(())
-        }
-    })
-    .await
-}
-
 /// Decodes a SCALE-encoded `Option`.
 ///
 /// > **Note**: When using this function outside of a `nom` "context", you might have to explicit

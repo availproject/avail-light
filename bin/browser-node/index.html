@@ -5,7 +5,7 @@
 	<title>Substrate-lite node</title>
 	<link rel="shortcut icon" href="/favicon.png" />
 	<script type="module">
-import { start_client, default as init } from './pkg/substrate_lite.js';
+import { start_client, default as init } from './pkg/substrate_lite_browser_node.js';
 
 function log(msg) {
 	document.getElementsByTagName('body')[0].innerHTML += msg + '\n';
@@ -13,7 +13,7 @@ function log(msg) {
 
 async function start() {
 	log('Loading node script');
-	await init('./pkg/substrate_lite_bg.wasm');
+	await init('./pkg/substrate_lite_browser_node_bg.wasm');
 	log('Fetching chain spec');
 	// TODO: we use kusama.json because polkadot.json doesn't have /ws bootnodes
 	const chain_spec_response = await fetch("https://raw.githubusercontent.com/paritytech/polkadot/ae445efc70ee7f9b27807e763ee0155cec8551e6/service/res/kusama.json");

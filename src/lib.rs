@@ -206,7 +206,6 @@ pub mod network;
 pub mod telemetry;
 pub mod trie;
 pub mod verify;
-pub mod wasm_bindings;
 
 mod util;
 

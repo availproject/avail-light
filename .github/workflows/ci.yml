@@ -54,7 +54,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: rustup target add wasm32-unknown-unknown
-    - run: cargo build --release --target wasm32-unknown-unknown --no-default-features --features wasm-bindings
+    - run: cargo build --package substrate-lite-browser-node --release --target wasm32-unknown-unknown
 
   check-features:
     name: Check that combination of features compiles
@@ -71,10 +71,10 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - run: cargo check --workspace --no-default-features
-    - run: cargo check --workspace --no-default-features --features os-networking
-    - run: cargo check --workspace --no-default-features --features os-networking --features wasm-bindings
-    - run: cargo check --workspace --no-default-features --features wasm-bindings
+    - run: cargo check --package substrate-lite --no-default-features
+    - run: cargo check --package substrate-lite --no-default-features --features os-networking
+    - run: cargo check --package substrate-lite --no-default-features --features os-networking --features wasm-bindings
+    - run: cargo check --package substrate-lite --no-default-features --features wasm-bindings
     # TODO: finish here
 
   check-rustdoc-links:
