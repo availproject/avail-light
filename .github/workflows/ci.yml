@@ -37,7 +37,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run tests, with all features
-      run: cargo test --workspace #--all-features  # TODO: restore --all-features after it works
+      run: cargo test --locked --workspace #--all-features  # TODO: restore --all-features after it works
 
   browser-node-check:
     name: Check browser node compilation
@@ -55,7 +55,7 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: rustup target add wasm32-unknown-unknown
     # TODO: figure why `--no-default-features` is needed
-    - run: cargo build --package substrate-lite-browser-node --release --target wasm32-unknown-unknown --no-default-features
+    - run: cargo build --locked --package substrate-lite-browser-node --release --target wasm32-unknown-unknown --no-default-features
 
   check-features:
     name: Check that combination of features compiles
@@ -72,10 +72,10 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - run: cargo check --package substrate-lite --no-default-features
-    - run: cargo check --package substrate-lite --no-default-features --features os-networking
-    - run: cargo check --package substrate-lite --no-default-features --features os-networking --features wasm-bindings
-    - run: cargo check --package substrate-lite --no-default-features --features wasm-bindings
+    - run: cargo check --package substrate-lite --locked --no-default-features
+    - run: cargo check --package substrate-lite --locked --no-default-features --features os-networking
+    - run: cargo check --package substrate-lite --locked --no-default-features --features os-networking --features wasm-bindings
+    - run: cargo check --package substrate-lite --locked --no-default-features --features wasm-bindings
     # TODO: finish here
 
   check-rustdoc-links:
