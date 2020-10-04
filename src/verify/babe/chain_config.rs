@@ -77,7 +77,7 @@ impl BabeGenesisConfiguration {
                         Err(err) => return Err(FromVmPrototypeError::OutputDecode(err)),
                     };
                 }
-                executor::WasmVm::Trapped { .. } => return Err(FromVmPrototypeError::Trapped),
+                executor::WasmVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 executor::WasmVm::ExternalStorageGet(req) => {
                     let value = genesis_storage_access(req.key());

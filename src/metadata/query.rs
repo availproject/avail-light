@@ -70,7 +70,7 @@ pub fn metadata_from_virtual_machine_prototype(
                 let value = remove_length_prefix(finished.value())?.to_owned();
                 return Ok((value, finished.into_prototype()));
             }
-            executor::WasmVm::Trapped { .. } => return Err(Error::Trapped),
+            executor::WasmVm::Error { .. } => return Err(Error::Trapped),
             executor::WasmVm::LogEmit(rq) => vm = rq.resume(),
 
             // Querying the metadata shouldn't require any extrinsic such as accessing the

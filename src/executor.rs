@@ -82,8 +82,7 @@
 //!
 //!         // Errors can happen if the WebAssembly code panics or does something wrong.
 //!         // In a real-life situation, the host should obviously not panic in these situations.
-//!         substrate_lite::executor::WasmVm::NonConforming { .. } |
-//!         substrate_lite::executor::WasmVm::Trapped { .. } => {
+//!         substrate_lite::executor::WasmVm::Error { .. } => {
 //!             panic!("Error while executing code")
 //!         },
 //!
@@ -107,8 +106,8 @@ mod externals;
 mod vm;
 
 pub use externals::{
-    ExternalStorageAppend, ExternalStorageGet, ExternalsVm as WasmVm,
-    ExternalsVmPrototype as WasmVmPrototype, Finished, NewErr, NonConformingErr, ReadyToRun,
+    Error, ExternalStorageAppend, ExternalStorageGet, ExternalsVm as WasmVm,
+    ExternalsVmPrototype as WasmVmPrototype, Finished, NewErr, ReadyToRun,
 };
 // TODO: reexports ^ ? shouldn't we just make the module public?
 
@@ -131,7 +130,7 @@ pub fn core_version(vm_proto: WasmVmPrototype) -> Result<(CoreVersion, WasmVmPro
                 let decoded = CoreVersion::decode_all(&finished.value()).map_err(|_| ())?;
                 return Ok((decoded, finished.into_prototype()));
             }
-            WasmVm::Trapped { .. } => return Err(()),
+            WasmVm::Error { .. } => return Err(()),
 
             // Since there are potential ambiguities we don't allow any storage access
             // or anything similar. The last thing we want is to have an infinite

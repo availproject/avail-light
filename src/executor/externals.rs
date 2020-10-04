@@ -191,17 +191,11 @@ pub enum ExternalsVm {
     #[from]
     Finished(Finished),
     /// The Wasm blob did something that doesn't conform to the runtime environment.
-    NonConforming {
+    Error {
         /// Virtual machine ready to be used again.
         prototype: ExternalsVmPrototype,
         /// Error that happened.
-        error: NonConformingErr,
-    },
-    /// The Wasm VM has encountered a trap (i.e. it has panicked).
-    // TODO: merge with `NonConforming`?
-    Trapped {
-        /// Virtual machine ready to be used again.
-        prototype: ExternalsVmPrototype,
+        error: Error,
     },
     /// Must load an storage value.
     #[from]
@@ -278,13 +272,13 @@ impl ReadyToRun {
                             value,
                         });
                     } else {
-                        let error = NonConformingErr::ReturnedPtrOutOfRange {
+                        let error = Error::ReturnedPtrOutOfRange {
                             pointer: ret_ptr,
                             size: ret_len,
                             memory_size: self.inner.vm.memory_size(),
                         };
 
-                        return ExternalsVm::NonConforming {
+                        return ExternalsVm::Error {
                             prototype: self.inner.into_prototype(),
                             error,
                         };
@@ -292,20 +286,23 @@ impl ReadyToRun {
                 }
 
                 Ok(vm::ExecOutcome::Finished {
-                    return_value: Ok(_),
+                    return_value: Ok(return_value),
                 }) => {
                     // The Wasm function has successfully returned, but the specs require that it
                     // returns a `i64`.
-                    return ExternalsVm::NonConforming {
+                    return ExternalsVm::Error {
                         prototype: self.inner.into_prototype(),
-                        error: NonConformingErr::BadReturnValue,
+                        error: Error::BadReturnValue {
+                            actual: return_value.map(|v| v.ty()),
+                        },
                     };
                 }
 
                 Ok(vm::ExecOutcome::Finished {
                     return_value: Err(()),
                 }) => {
-                    return ExternalsVm::Trapped {
+                    return ExternalsVm::Error {
+                        error: Error::Trapped,
                         prototype: self.inner.into_prototype(),
                     }
                 }
@@ -314,9 +311,9 @@ impl ReadyToRun {
                     // Tried to inject back the value returned by an externality, but it doesn't
                     // match what the Wasm code expects.
                     // TODO: check signatures at initialization instead?
-                    return ExternalsVm::NonConforming {
+                    return ExternalsVm::Error {
                         prototype: self.inner.into_prototype(),
-                        error: NonConformingErr::ExternalityBadReturnValue,
+                        error: Error::ReturnValueTypeMismatch,
                     };
                 }
 
@@ -328,7 +325,7 @@ impl ReadyToRun {
 
             // The Wasm code has called an externality. The `id` is a value that we passed
             // at initialization, and corresponds to an index in `registered_functions`.
-            let externality = self.inner.registered_functions.get_mut(id).unwrap();
+            let externality = *self.inner.registered_functions.get_mut(id).unwrap();
 
             // Check that the actual number of parameters matches the expected number.
             // This is done ahead of time in order to not forget.
@@ -406,8 +403,12 @@ impl ReadyToRun {
                 Externality::ext_logging_log_version_1 => 3,
             };
             if params.len() != expected_params_num {
-                return ExternalsVm::NonConforming {
-                    error: NonConformingErr::ParamsCountMismatch,
+                return ExternalsVm::Error {
+                    error: Error::ParamsCountMismatch {
+                        function: externality.name(),
+                        expected: expected_params_num,
+                        actual: params.len(),
+                    },
                     prototype: self.inner.into_prototype(),
                 };
             }
@@ -416,9 +417,14 @@ impl ReadyToRun {
                 ($num:expr) => {{
                     let val = match &params[$num] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
-                        _ => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO:
+                        v => {
+                            return ExternalsVm::Error {
+                                error: Error::WrongParamTy {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    expected: vm::ValueType::I64,
+                                    actual: v.ty(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         },
@@ -430,8 +436,13 @@ impl ReadyToRun {
                     match self.inner.vm.read_memory(ptr, len).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
                         Err(()) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO:
+                            return ExternalsVm::Error {
+                                error: Error::ParamOutOfRange {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    pointer: ptr,
+                                    length: len,
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -443,9 +454,14 @@ impl ReadyToRun {
                 ($num:expr) => {{
                     let val = match &params[$num] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
-                        _ => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO:
+                        v => {
+                            return ExternalsVm::Error {
+                                error: Error::WrongParamTy {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    expected: vm::ValueType::I64,
+                                    actual: v.ty(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             };
                         }
@@ -461,9 +477,14 @@ impl ReadyToRun {
                 ($num:expr, $size:expr) => {{
                     let ptr = match params[$num] {
                         vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                        _ => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO:
+                        v => {
+                            return ExternalsVm::Error {
+                                error: Error::WrongParamTy {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    expected: vm::ValueType::I32,
+                                    actual: v.ty(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         },
@@ -472,8 +493,13 @@ impl ReadyToRun {
                     match self.inner.vm.read_memory(ptr, $size).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
                         Err(()) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO:
+                            return ExternalsVm::Error {
+                                error: Error::ParamOutOfRange {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    pointer: ptr,
+                                    length: $size,
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -485,9 +511,14 @@ impl ReadyToRun {
                 ($num:expr) => {{
                     match &params[$num] {
                         vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
-                        _ => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy,
+                        v => {
+                            return ExternalsVm::Error {
+                                error: Error::WrongParamTy {
+                                    function: externality.name(),
+                                    param_num: $num,
+                                    expected: vm::ValueType::I32,
+                                    actual: v.ty(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -662,10 +693,10 @@ impl ReadyToRun {
                     })();
                     let result_encoded = parity_scale_codec::Encode::encode(&result);
 
-                    match self
-                        .inner
-                        .alloc_write_and_return_pointer_size(iter::once(&result_encoded))
-                    {
+                    match self.inner.alloc_write_and_return_pointer_size(
+                        externality.name(),
+                        iter::once(&result_encoded),
+                    ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -693,7 +724,10 @@ impl ReadyToRun {
                     let mut out = [0u8; 32];
                     keccak.finalize(&mut out);
 
-                    match self.inner.alloc_write_and_return_pointer(iter::once(&out)) {
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                    {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -704,10 +738,10 @@ impl ReadyToRun {
                     let mut hasher = sha2::Sha256::new();
                     hasher.update(data);
 
-                    match self
-                        .inner
-                        .alloc_write_and_return_pointer(iter::once(hasher.finalize().as_slice()))
-                    {
+                    match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
+                        iter::once(hasher.finalize().as_slice()),
+                    ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -716,10 +750,10 @@ impl ReadyToRun {
                     let data = expect_pointer_size!(0);
                     let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
 
-                    match self
-                        .inner
-                        .alloc_write_and_return_pointer(iter::once(out.as_bytes()))
-                    {
+                    match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
+                        iter::once(out.as_bytes()),
+                    ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -728,10 +762,10 @@ impl ReadyToRun {
                     let data = expect_pointer_size!(0);
                     let out = blake2_rfc::blake2b::blake2b(32, &[], &data);
 
-                    match self
-                        .inner
-                        .alloc_write_and_return_pointer(iter::once(out.as_bytes()))
-                    {
+                    match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
+                        iter::once(out.as_bytes()),
+                    ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -743,10 +777,10 @@ impl ReadyToRun {
                     h0.write(&data);
                     let r0 = h0.finish();
 
-                    match self
-                        .inner
-                        .alloc_write_and_return_pointer(iter::once(&r0.to_le_bytes()))
-                    {
+                    match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
+                        iter::once(&r0.to_le_bytes()),
+                    ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -762,6 +796,7 @@ impl ReadyToRun {
                     let r1 = h1.finish();
 
                     match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
                         iter::once(&r0.to_le_bytes()).chain(iter::once(&r1.to_le_bytes())),
                     ) {
                         ExternalsVm::ReadyToRun(r) => self = r,
@@ -785,6 +820,7 @@ impl ReadyToRun {
                     let r3 = h3.finish();
 
                     match self.inner.alloc_write_and_return_pointer(
+                        externality.name(),
                         iter::once(&r0.to_le_bytes())
                             .chain(iter::once(&r1.to_le_bytes()))
                             .chain(iter::once(&r2.to_le_bytes()))
@@ -832,8 +868,8 @@ impl ReadyToRun {
                     let elements = match Vec::<(Vec<u8>, Vec<u8>)>::decode_all(&encoded) {
                         Ok(e) => e,
                         Err(err) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::ParamDecodeError(err),
+                            return ExternalsVm::Error {
+                                error: Error::ParamDecodeError(err),
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -845,7 +881,10 @@ impl ReadyToRun {
                     }
                     let out = trie.root_merkle_value(None);
 
-                    match self.inner.alloc_write_and_return_pointer(iter::once(&out)) {
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                    {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -856,8 +895,8 @@ impl ReadyToRun {
                     let elements = match Vec::<Vec<u8>>::decode_all(&encoded) {
                         Ok(e) => e,
                         Err(err) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::ParamDecodeError(err),
+                            return ExternalsVm::Error {
+                                error: Error::ParamDecodeError(err),
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -872,7 +911,10 @@ impl ReadyToRun {
                     }
                     let out = trie.root_merkle_value(None);
 
-                    match self.inner.alloc_write_and_return_pointer(iter::once(&out)) {
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                    {
                         ExternalsVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
@@ -887,9 +929,14 @@ impl ReadyToRun {
                 Externality::ext_misc_print_num_version_1 => {
                     let num = match params[0] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
-                        _ => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy,
+                        v => {
+                            return ExternalsVm::Error {
+                                error: Error::WrongParamTy {
+                                    function: externality.name(),
+                                    param_num: 0,
+                                    expected: vm::ValueType::I64,
+                                    actual: v.ty(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -905,9 +952,13 @@ impl ReadyToRun {
                     let data = expect_pointer_size!(0);
                     let log_entry = match String::from_utf8(data) {
                         Ok(m) => m,
-                        Err(_) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO: better error
+                        Err(error) => {
+                            return ExternalsVm::Error {
+                                error: Error::Utf8Error {
+                                    function: externality.name(),
+                                    param_num: 2,
+                                    error: error.utf8_error(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             };
                         }
@@ -942,9 +993,12 @@ impl ReadyToRun {
                         .allocate(&mut MemAccess(&mut self.inner.vm), size)
                     {
                         Ok(p) => p,
-                        // TODO: better error reporting
                         Err(_) => {
-                            return ExternalsVm::Trapped {
+                            return ExternalsVm::Error {
+                                error: Error::OutOfMemory {
+                                    function: externality.name(),
+                                    requested_size: size,
+                                },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -964,9 +1018,9 @@ impl ReadyToRun {
                         .deallocate(&mut MemAccess(&mut self.inner.vm), pointer)
                     {
                         Ok(()) => {}
-                        // TODO: better error reporting
                         Err(_) => {
-                            return ExternalsVm::Trapped {
+                            return ExternalsVm::Error {
+                                error: Error::FreeError { pointer },
                                 prototype: self.inner.into_prototype(),
                             }
                         }
@@ -983,9 +1037,13 @@ impl ReadyToRun {
                     let message = expect_pointer_size!(2);
                     let log_entry = match String::from_utf8(message) {
                         Ok(m) => m,
-                        Err(_) => {
-                            return ExternalsVm::NonConforming {
-                                error: NonConformingErr::WrongParamTy, // TODO: better error
+                        Err(error) => {
+                            return ExternalsVm::Error {
+                                error: Error::Utf8Error {
+                                    function: externality.name(),
+                                    param_num: 2,
+                                    error: error.utf8_error(),
+                                },
                                 prototype: self.inner.into_prototype(),
                             };
                         }
@@ -1128,7 +1186,8 @@ impl ExternalStorageGet {
         mut self,
         value: Option<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
     ) -> ExternalsVm {
-        match self.inner.registered_functions[self.calling] {
+        let externality = self.inner.registered_functions[self.calling];
+        match externality {
             Externality::ext_storage_get_version_1 => {
                 if let Some(value) = value {
                     // Writing `Some(value)`.
@@ -1137,6 +1196,7 @@ impl ExternalStorageGet {
                         &parity_scale_codec::Compact(u64::try_from(value_len).unwrap()),
                     );
                     self.inner.alloc_write_and_return_pointer_size(
+                        externality.name(),
                         iter::once(&[1][..])
                             .chain(iter::once(&value_len_enc[..]))
                             .map(either::Left)
@@ -1145,7 +1205,7 @@ impl ExternalStorageGet {
                 } else {
                     // Write a SCALE-encoded `None`.
                     self.inner
-                        .alloc_write_and_return_pointer_size(iter::once(&[0]))
+                        .alloc_write_and_return_pointer_size(externality.name(), iter::once(&[0]))
                 }
             }
             Externality::ext_storage_read_version_1 => {
@@ -1169,9 +1229,10 @@ impl ExternalStorageGet {
                 };
 
                 let outcome_encoded = parity_scale_codec::Encode::encode(&outcome);
-                return self
-                    .inner
-                    .alloc_write_and_return_pointer_size(iter::once(&outcome_encoded));
+                return self.inner.alloc_write_and_return_pointer_size(
+                    externality.name(),
+                    iter::once(&outcome_encoded),
+                );
             }
             Externality::ext_storage_exists_version_1 => {
                 return ExternalsVm::ReadyToRun(ReadyToRun {
@@ -1340,8 +1401,10 @@ pub struct ExternalStorageRoot {
 impl ExternalStorageRoot {
     /// Writes the trie root hash to the Wasm VM and prepares it for resume.
     pub fn resume(self, hash: &[u8; 32]) -> ExternalsVm {
-        self.inner
-            .alloc_write_and_return_pointer_size(iter::once(hash))
+        self.inner.alloc_write_and_return_pointer_size(
+            Externality::ext_storage_root_version_1.name(),
+            iter::once(hash),
+        )
     }
 }
 
@@ -1363,12 +1426,15 @@ impl ExternalStorageChangesRoot {
         if let Some(hash) = hash {
             // Writing the `Some` of the SCALE-encoded `Option`.
             self.inner.alloc_write_and_return_pointer_size(
+                Externality::ext_storage_changes_root_version_1.name(),
                 iter::once(&[1][..]).chain(iter::once(&hash[..])),
             )
         } else {
             // Writing a SCALE-encoded `None`.
-            self.inner
-                .alloc_write_and_return_pointer_size(iter::once(&[0][..]))
+            self.inner.alloc_write_and_return_pointer_size(
+                Externality::ext_storage_changes_root_version_1.name(),
+                iter::once(&[0][..]),
+            )
         }
     }
 }
@@ -1406,14 +1472,17 @@ impl ExternalStorageNextKey {
                 u64::try_from(follow_up.len()).unwrap(),
             ));
             self.inner.alloc_write_and_return_pointer_size(
+                Externality::ext_storage_next_key_version_1.name(),
                 iter::once(&[1][..])
                     .chain(iter::once(&value_len_enc[..]))
                     .chain(iter::once(follow_up)),
             )
         } else {
             // Write a SCALE-encoded `None`.
-            self.inner
-                .alloc_write_and_return_pointer_size(iter::once(&[0]))
+            self.inner.alloc_write_and_return_pointer_size(
+                Externality::ext_storage_next_key_version_1.name(),
+                iter::once(&[0]),
+            )
         }
     }
 }
@@ -1450,8 +1519,10 @@ impl CallRuntimeVersion {
         // TODO: don't allocate a Vec here
         let scale_encoded_runtime_version =
             parity_scale_codec::Encode::encode(&scale_encoded_runtime_version.ok());
-        self.inner
-            .alloc_write_and_return_pointer_size(iter::once(scale_encoded_runtime_version))
+        self.inner.alloc_write_and_return_pointer_size(
+            Externality::ext_misc_runtime_version_version_1.name(),
+            iter::once(scale_encoded_runtime_version),
+        )
     }
 }
 
@@ -1561,12 +1632,15 @@ impl Inner {
     ///
     /// The data is passed as a list of chunks. These chunks will be laid out lineraly in memory.
     ///
+    /// The function name passed as parameter is used for error-reporting reasons.
+    ///
     /// # Panic
     ///
     /// Must only be called while the Wasm is handling an externality.
     ///
     fn alloc_write_and_return_pointer_size(
         mut self,
+        function_name: &'static str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
     ) -> ExternalsVm {
         let mut data_len = 0u32;
@@ -1580,9 +1654,12 @@ impl Inner {
             .allocate(&mut MemAccess(&mut self.vm), data_len)
         {
             Ok(p) => p,
-            // TODO: better error reporting
             Err(_) => {
-                return ExternalsVm::Trapped {
+                return ExternalsVm::Error {
+                    error: Error::OutOfMemory {
+                        function: function_name,
+                        requested_size: data_len,
+                    },
                     prototype: self.into_prototype(),
                 }
             }
@@ -1610,12 +1687,15 @@ impl Inner {
     ///
     /// The data is passed as a list of chunks. These chunks will be laid out lineraly in memory.
     ///
+    /// The function name passed as parameter is used for error-reporting reasons.
+    ///
     /// # Panic
     ///
     /// Must only be called while the Wasm is handling an externality.
     ///
     fn alloc_write_and_return_pointer(
         mut self,
+        function_name: &'static str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
     ) -> ExternalsVm {
         let mut data_len = 0u32;
@@ -1629,9 +1709,12 @@ impl Inner {
             .allocate(&mut MemAccess(&mut self.vm), data_len)
         {
             Ok(p) => p,
-            // TODO: better error reporting
             Err(_) => {
-                return ExternalsVm::Trapped {
+                return ExternalsVm::Error {
+                    error: Error::OutOfMemory {
+                        function: function_name,
+                        requested_size: data_len,
+                    },
                     prototype: self.into_prototype(),
                 }
             }
@@ -1676,11 +1759,16 @@ pub enum NewErr {
 
 /// Reason why the Wasm blob isn't conforming to the runtime environment.
 #[derive(Debug, Clone, derive_more::Display)]
-pub enum NonConformingErr {
-    /// A non-`i64` value has been returned.
-    #[display(fmt = "A non-I64 value has been returned")]
-    BadReturnValue, // TODO: indicate what got returned?
-    /// The pointer and size returned by the function are invalid.
+pub enum Error {
+    /// Error in the Wasm code execution.
+    Trapped,
+    /// A non-`i64` value has been returned by the Wasm entry point.
+    #[display(fmt = "A non-I64 value has been returned: {:?}", actual)]
+    BadReturnValue {
+        /// Type that has actually gotten returned. `None` for "void".
+        actual: Option<vm::ValueType>,
+    },
+    /// The pointer and size returned by the Wasm entry point function are invalid.
     #[display(fmt = "The pointer and size returned by the function are invalid")]
     ReturnedPtrOutOfRange {
         /// Pointer that got returned.
@@ -1691,13 +1779,103 @@ pub enum NonConformingErr {
         memory_size: u32,
     },
     /// An externality wants to returns a certain value, but the Wasm code expects a different one.
-    ExternalityBadReturnValue,
+    // TODO: indicate function and actual/expected types
+    ReturnValueTypeMismatch,
     /// Mismatch between the number of parameters expected and the actual number.
-    ParamsCountMismatch,
+    #[display(
+        fmt = "Mismatch in parameters count: {}, expected = {}, actual = {}",
+        function,
+        expected,
+        actual
+    )]
+    ParamsCountMismatch {
+        /// Name of the function being called whose number of parameters mismatches.
+        function: &'static str,
+        /// Expected number of parameters.
+        expected: usize,
+        /// Number of parameters that have been passed.
+        actual: usize,
+    },
     /// Failed to decode a SCALE-encoded parameter.
+    // TODO: refactor and/or remove
     ParamDecodeError(parity_scale_codec::Error),
     /// The type of one of the parameters is wrong.
-    WrongParamTy,
+    #[display(
+        fmt = "Type mismatch in parameter #{}: {}, expected = {:?}, actual = {:?}",
+        param_num,
+        function,
+        expected,
+        actual
+    )]
+    WrongParamTy {
+        /// Name of the function being called where a type mismatch happens.
+        function: &'static str,
+        /// Index of the invalid parameter. The first parameter has index 0.
+        param_num: usize,
+        /// Type of the value that was expected.
+        expected: vm::ValueType,
+        /// Type of the value that got passed.
+        actual: vm::ValueType,
+    },
+    /// One parameter is expected to point to a buffer, but the pointer is out
+    /// of range of the memory of the Wasm VM.
+    #[display(
+        fmt = "Bad pointer for parameter #{} of {}: 0x{:x}, len = 0x{:x}",
+        param_num,
+        function,
+        pointer,
+        length
+    )]
+    ParamOutOfRange {
+        /// Name of the function being called where a type mismatch happens.
+        function: &'static str,
+        /// Index of the invalid parameter. The first parameter has index 0.
+        param_num: usize,
+        /// Pointer passed as parameter.
+        pointer: u32,
+        /// Expected length of the buffer.
+        ///
+        /// Depending on the function, this can either be an implicit length
+        /// or a length passed as parameter.
+        length: u32,
+    },
+    /// One parameter is expected to point to a UTF-8 string, but the buffer
+    /// isn't valid UTF-8.
+    #[display(
+        fmt = "UTF-8 error for parameter #{} of {}: {}",
+        param_num,
+        function,
+        error
+    )]
+    Utf8Error {
+        /// Name of the function being called where a type mismatch happens.
+        function: &'static str,
+        /// Index of the invalid parameter. The first parameter has index 0.
+        param_num: usize,
+        /// Decoding error that happened.
+        error: core::str::Utf8Error,
+    },
+    /// Error when allocating memory for a return type.
+    #[display(
+        fmt = "Out of memory allocating 0x{:x} bytes during {}",
+        requested_size,
+        function
+    )]
+    OutOfMemory {
+        /// Name of the function being called.
+        function: &'static str,
+        /// Size of the requested allocation.
+        requested_size: u32,
+    },
+    /// Called `ext_allocator_free_version_1` with an invalid pointer.
+    #[display(
+        fmt = "Bad pointer passed to ext_allocator_free_version_1: 0x{:x}",
+        pointer
+    )]
+    FreeError {
+        /// Pointer that was expected to be free'd.
+        pointer: u32,
+    },
 }
 
 macro_rules! externalities {
@@ -1719,6 +1897,14 @@ macro_rules! externalities {
                     }
                 )*
                 None
+            }
+
+            fn name(&self) -> &'static str {
+                match self {
+                    $(
+                        Externality::$ext => stringify!($ext),
+                    )*
+                }
             }
         }
     };

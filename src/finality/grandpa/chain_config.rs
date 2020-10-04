@@ -101,7 +101,7 @@ impl GrandpaGenesisConfiguration {
                 executor::WasmVm::Finished(data) => {
                     break data.value().to_owned();
                 }
-                executor::WasmVm::Trapped { .. } => return Err(FromVmPrototypeError::Trapped),
+                executor::WasmVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 executor::WasmVm::ExternalStorageGet(rq) => {
                     let value = genesis_storage_access(rq.key());

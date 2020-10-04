@@ -422,10 +422,7 @@ impl VerifyInner {
             match self.vm {
                 executor::WasmVm::ReadyToRun(r) => self.vm = r.run(),
 
-                executor::WasmVm::Trapped { .. } => {
-                    return Verify::Finished(Err(Error::Trapped { logs: self.logs }))
-                }
-                executor::WasmVm::NonConforming { .. } => {
+                executor::WasmVm::Error { .. } => {
                     // TODO: not the same as Trapped; report properly
                     return Verify::Finished(Err(Error::Trapped { logs: self.logs }));
                 }
