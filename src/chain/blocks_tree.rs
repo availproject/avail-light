@@ -1353,6 +1353,11 @@ impl<T> StorageNextKey<T> {
     }
 
     /// Injects the key.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the key passed as parameter isn't strictly superior to the requested key.
+    ///
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_key(key);
         BodyVerifyStep2::from_inner(inner, self.chain)

@@ -347,11 +347,19 @@ impl PrefixKeys {
 #[must_use]
 pub struct NextKey {
     inner: VerifyInner,
+
+    /// If `Some`, ask for the key inside of this field rather than the one of `inner`. Used in
+    /// corner-case situations where the key provided by the user has been erased from storage.
+    key_overwrite: Option<Vec<u8>>,
 }
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
     pub fn key(&self) -> &[u8] {
+        if let Some(key_overwrite) = &self.key_overwrite {
+            return key_overwrite;
+        }
+
         match &self.inner.vm {
             executor::WasmVm::ExternalStorageNextKey(req) => req.key(),
             _ => unreachable!(),
@@ -359,28 +367,67 @@ impl NextKey {
     }
 
     /// Injects the key.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the key passed as parameter isn't strictly superior to the requested key.
+    ///
     pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> Verify {
+        let key = key.as_ref().map(|k| k.as_ref());
+
         match self.inner.vm {
             executor::WasmVm::ExternalStorageNextKey(req) => {
+                let requested_key = if let Some(key_overwrite) = &self.key_overwrite {
+                    &key_overwrite[..]
+                } else {
+                    req.key()
+                };
+
+                if let Some(key) = key {
+                    assert!(key > requested_key);
+                }
+
                 // The next key can be either the one passed by the user or one key in the current
                 // pending storage changes that has been inserted during the verification.
-                // TODO: /!\ this logic is wrong; it is possible for the user-provided key to have
-                //           been erased by the verification in the meanwhile
-                // TODO: not optimized regarding cloning
-                // TODO: also not optimized in terms of searching time ; should really be a BTreeMap or something
+                // As such, find the "next key" in the list of overlay changes.
+                // TODO: not optimized in terms of searching time ; should really be a BTreeMap or something
                 let in_overlay = self
                     .inner
                     .top_trie_changes
-                    .keys()
-                    .filter(|k| &***k > req.key())
-                    .min();
-                // TODO: `to_vec()` overhead
+                    .iter()
+                    .map(|(k, v)| (k, v.is_some()))
+                    .filter(|(k, _)| &***k > requested_key)
+                    .min_by_key(|(k, _)| *k);
+
                 let outcome = match (key, in_overlay) {
-                    (Some(a), Some(b)) => Some(cmp::min(a.as_ref().to_vec(), b.clone())),
-                    (Some(a), None) => Some(a.as_ref().to_vec()),
-                    (None, Some(b)) => Some(b.clone()),
+                    (Some(a), Some((b, true))) if a <= &b[..] => Some(a),
+                    (Some(a), Some((b, false))) if a < &b[..] => Some(a),
+                    (Some(a), Some((b, false))) => {
+                        debug_assert!(a >= &b[..]);
+                        debug_assert_ne!(&b[..], requested_key);
+
+                        // The next key according to the parent storage has been erased earlier in
+                        // the block execution. It is necessary to ask the user again, this time
+                        // for the key after the one that has been erased.
+                        // This `clone()` is necessary, as `b` borrows from
+                        // `self.inner.top_trie_changes`.
+                        let key_overwrite = Some(b.clone());
+                        self.inner.vm = executor::WasmVm::ExternalStorageNextKey(req);
+                        return Verify::NextKey(NextKey {
+                            inner: self.inner,
+                            key_overwrite,
+                        });
+                    }
+                    (Some(a), Some((b, true))) => {
+                        debug_assert!(a >= &b[..]);
+                        Some(&b[..])
+                    }
+
+                    (Some(a), None) => Some(a),
+                    (None, Some((b, _))) => Some(&b[..]),
                     (None, None) => None,
                 };
+
                 self.inner.vm = req.resume(outcome.as_ref().map(|v| &v[..]));
             }
 
@@ -530,7 +577,10 @@ impl VerifyInner {
 
                 executor::WasmVm::ExternalStorageNextKey(req) => {
                     self.vm = req.into();
-                    return Verify::NextKey(NextKey { inner: self });
+                    return Verify::NextKey(NextKey {
+                        inner: self,
+                        key_overwrite: None,
+                    });
                 }
 
                 executor::WasmVm::ExternalOffchainStorageSet(req) => {

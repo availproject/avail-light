@@ -332,6 +332,11 @@ impl StorageNextKey {
     }
 
     /// Injects the key.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the key passed as parameter isn't strictly superior to the requested key.
+    ///
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> Verify {
         VerifyInner::Unsealed {
             inner: self.inner.inject_key(key),
