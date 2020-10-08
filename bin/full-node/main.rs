@@ -304,10 +304,16 @@ async fn start_sync(
             let mut process = sync.process_one();
             loop {
                 match process {
+                    full_optimistic::ProcessOne::Idle { sync: s } => {
+                        sync = s;
+                        break;
+                    }
                     full_optimistic::ProcessOne::Finished {
                         sync: s,
                         finalized_blocks,
                     } => {
+                        process = s.process_one();
+
                         if let Some(last_finalized) = finalized_blocks.last() {
                             let mut lock = sync_state.lock().await;
                             lock.finalized_block_hash = last_finalized.header.hash();
@@ -320,13 +326,11 @@ async fn start_sync(
                                     finalized_block_storage.insert(key, value);
                                 } else {
                                     let _was_there = finalized_block_storage.remove(&key);
-                                    // TODO: panics?! assert!(_was_there.is_some());
+                                    // TODO: if a block inserts a new value, then removes it in the next block, the key will remain in `finalized_block_storage`; either solve this or document this
+                                    // assert!(_was_there.is_some());
                                 }
                             }
                         }
-
-                        sync = s;
-                        break;
                     }
 
                     full_optimistic::ProcessOne::InProgress {
@@ -345,7 +349,7 @@ async fn start_sync(
                         process = resume.resume();
                     }
 
-                    full_optimistic::ProcessOne::FinalizedStorageGet(mut req) => {
+                    full_optimistic::ProcessOne::FinalizedStorageGet(req) => {
                         let value = finalized_block_storage
                             .get(&req.key_as_vec())
                             .map(|v| &v[..]);
@@ -353,14 +357,16 @@ async fn start_sync(
                     }
                     full_optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
                         // TODO: to_vec() :-/
+                        let req_key = req.key().to_vec();
+                        // TODO: to_vec() :-/
                         let next_key = finalized_block_storage
                             .range(req.key().to_vec()..)
-                            .skip(1)
+                            .skip_while(move |(k, _)| &k[..] <= &req_key[..])
                             .next()
                             .map(|(k, _)| k);
                         process = req.inject_key(next_key);
                     }
-                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(mut req) => {
+                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(req) => {
                         // TODO: to_vec() :-/
                         let prefix = req.prefix().to_vec();
                         // TODO: to_vec() :-/

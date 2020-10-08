@@ -218,7 +218,6 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
     ///
     /// This method takes ownership of the [`OptimisticFullSync`] and starts a verification
     /// process. The [`OptimisticFullSync`] is yielded back at the end of this process.
-    // TODO: rename, since we process more than one
     pub fn process_one(mut self) -> ProcessOne<TRq, TSrc> {
         let sync = self.sync.take().unwrap();
 
@@ -226,10 +225,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
             Ok(tp) => tp,
             Err(sync) => {
                 self.sync = Some(sync);
-                return ProcessOne::Finished {
-                    sync: self,
-                    finalized_blocks: Vec::new(),
-                };
+                return ProcessOne::Idle { sync: self };
             }
         };
 
@@ -257,7 +253,18 @@ pub struct RequestSuccessBlock {
 
 /// State of the processing of blocks.
 pub enum ProcessOne<TRq, TSrc> {
+    /// No processing is necessary.
+    ///
+    /// Calling [`OptimisticFullSync::process_one`] again is unnecessary.
+    Idle {
+        /// The state machine.
+        /// The [`OptimisticFullSync::process_one`] method takes ownership of the
+        /// [`OptimisticFullSync`]. This field yields it back.
+        sync: OptimisticFullSync<TRq, TSrc>,
+    },
     /// Processing is over.
+    ///
+    /// There might be more blocks remaining. Call [`OptimisticFullSync::process_one`] again.
     Finished {
         /// The state machine.
         /// The [`OptimisticFullSync::process_one`] method takes ownership of the
@@ -265,6 +272,7 @@ pub enum ProcessOne<TRq, TSrc> {
         sync: OptimisticFullSync<TRq, TSrc>,
         /// Blocks that have been finalized after the verification.
         /// Ordered by increasing block number.
+        // TODO: consider returning them one at a time?
         finalized_blocks: Vec<Block>,
     },
     /// A step in the processing has been completed.
@@ -529,6 +537,26 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         // diff.
                         debug_assert!(chain.is_empty());
                         shared.best_to_finalized_storage_diff.clear();
+
+                        // Since the verification process requires querying the finalized block
+                        // storage from the user, we need to report changes to the finalized
+                        // blocks to the user before we can continue.
+                        let sync = shared
+                            .to_process
+                            .report
+                            .update_block_height(chain.best_block_header().number);
+                        break ProcessOne::Finished {
+                            sync: OptimisticFullSync {
+                                chain,
+                                best_to_finalized_storage_diff: shared
+                                    .best_to_finalized_storage_diff,
+                                runtime_code_cache: shared.runtime_code_cache,
+                                top_trie_root_calculation_cache: shared
+                                    .top_trie_root_calculation_cache,
+                                sync: Some(sync),
+                            },
+                            finalized_blocks: shared.finalized_blocks,
+                        };
                     }
 
                     // Before looping again, report the progress to the user.
