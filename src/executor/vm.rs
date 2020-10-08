@@ -14,16 +14,16 @@
 // limitations under the License.
 
 mod interpreter;
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 mod jit;
 
 use core::fmt;
 use smallvec::SmallVec;
 
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 pub use jit::{Jit as VirtualMachine, JitPrototype as VirtualMachinePrototype};
 
-#[cfg(not(all(target_arch = "x86_64", feature = "wasmtime")))]
+#[cfg(not(target_arch = "x86_64"))]
 pub use interpreter::*;
 
 // TODO: wrap around the content of the submodules here, and make the submodules private
@@ -86,7 +86,7 @@ impl<'a> From<&'a wasmi::Signature> for Signature {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 impl<'a> From<&'a wasmtime::FuncType> for Signature {
     fn from(sig: &'a wasmtime::FuncType) -> Signature {
         // TODO: we only support one return type at the moment; what even is multiple
@@ -173,7 +173,7 @@ impl From<WasmValue> for wasmi::RuntimeValue {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 impl From<WasmValue> for wasmtime::Val {
     fn from(val: WasmValue) -> Self {
         match val {
@@ -183,7 +183,7 @@ impl From<WasmValue> for wasmtime::Val {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 impl From<wasmtime::Val> for WasmValue {
     fn from(val: wasmtime::Val) -> Self {
         match val {
@@ -213,7 +213,7 @@ impl From<wasmi::ValueType> for ValueType {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "wasmtime"))]
+#[cfg(target_arch = "x86_64")]
 impl From<wasmtime::ValType> for ValueType {
     fn from(val: wasmtime::ValType) -> Self {
         match val {

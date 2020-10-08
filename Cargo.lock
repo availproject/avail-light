@@ -636,6 +636,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
+name = "corooteen"
+version = "0.1.0"
+source = "git+https://github.com/tomaka/corooteen#36eae9d1d3cd2adf5ae9db353c88eb69306b3f3e"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "cpuid-bool"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3114,6 +3122,7 @@ dependencies = [
  "blake2-rfc",
  "bytes",
  "chrono",
+ "corooteen",
  "derive_more",
  "ed25519-dalek",
  "either",

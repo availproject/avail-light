@@ -186,9 +186,6 @@
 // TODO: for `no_std`, fix all the compilation errors caused by the copy-pasted code
 //#![cfg_attr(not(test), no_std)]
 #![recursion_limit = "1024"]
-// TODO: get rid of these nightly-only features and remove the `wasmtime` feature
-#![cfg_attr(feature = "wasmtime", feature(new_uninit))]
-#![cfg_attr(feature = "wasmtime", feature(asm))]
 
 extern crate alloc;
 

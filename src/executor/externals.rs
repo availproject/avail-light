@@ -83,7 +83,7 @@ impl ExternalsVmPrototype {
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
         // array.
-        let (vm_proto, registered_functions) = {
+        let (mut vm_proto, registered_functions) = {
             let mut registered_functions = Vec::new();
             let vm_proto = vm::VirtualMachinePrototype::new(
                 module,

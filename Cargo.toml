@@ -121,9 +121,8 @@ default-features = false
 features = ["identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "wasm-ext", "yamux"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-# `wasmtime` feature
-# TODO: enable by default, but requires some nightly-only features
-wasmtime = { version = "0.18.0", default-features = false, optional = true }
+corooteen = { git = "https://github.com/tomaka/corooteen" } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
+wasmtime = { version = "0.18.0", default-features = false }
 
 [build-dependencies]
 prost-build = "0.6.1"
