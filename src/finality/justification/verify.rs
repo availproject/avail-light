@@ -66,7 +66,7 @@ pub fn verify<'a>(
         });
 
         // Can only panic in case of bad signature length, which we know can't happen.
-        signatures.push(ed25519_dalek::Signature::try_from(precommit.signature).unwrap());
+        signatures.push(ed25519_dalek::Signature::try_from(&precommit.signature[..]).unwrap());
 
         public_keys.push(
             ed25519_dalek::PublicKey::from_bytes(precommit.authority_public_key)

@@ -88,12 +88,8 @@ pub struct PrecommitRef<'a> {
     pub target_number: u32,
 
     /// Ed25519 signature made with [`PrecommitRef::authority_public_key`].
-    ///
-    /// Guaranteed to be 64 bytes. We can't use a `&[u8; 64]` because of limitations in the Rust
-    /// type system.
     // TODO: document what is being signed
-    // TODO: use &[u8; 64] when possible
-    pub signature: &'a [u8],
+    pub signature: &'a [u8; 64],
 
     /// Authority that signed the precommit. Must be part of the authority set for the
     /// justification to be valid.
@@ -108,7 +104,6 @@ pub struct Precommit {
 
     /// Ed25519 signature made with [`PrecommitRef::authority_public_key`].
     // TODO: document what is being signed
-    // TODO: use &[u8; 64] when possible
     pub signature: [u8; 64],
 
     /// Authority that signed the precommit. Must be part of the authority set for the
@@ -227,7 +222,7 @@ fn precommit(bytes: &[u8]) -> nom::IResult<&[u8], PrecommitRef> {
             |(target_hash, target_number, signature, authority_public_key)| PrecommitRef {
                 target_hash: TryFrom::try_from(target_hash).unwrap(),
                 target_number,
-                signature,
+                signature: TryFrom::try_from(signature).unwrap(),
                 authority_public_key: TryFrom::try_from(authority_public_key).unwrap(),
             },
         ),
