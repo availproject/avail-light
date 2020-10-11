@@ -332,7 +332,6 @@ impl<'a> DigestRef<'a> {
     /// Returns a digest with empty logs.
     pub fn empty() -> DigestRef<'a> {
         DigestRef {
-            // TODO: Parsed instead
             inner: DigestRefInner::Parsed(&[]),
             babe_seal_index: None,
             babe_predigest_index: None,
@@ -400,9 +399,8 @@ impl<'a> DigestRef<'a> {
     }
 
     /// If the last element of the list is a Babe seal, removes it from the [`DigestRef`].
-    // TODO: guaranteed 64 bytes
     // TODO: have a `Seal` enum or something, maybe?
-    pub fn pop_babe_seal(&mut self) -> Option<&'a [u8]> {
+    pub fn pop_babe_seal(&mut self) -> Option<&'a [u8; 64]> {
         let seal_pos = self.babe_seal_index?;
 
         match &mut self.inner {
@@ -414,7 +412,7 @@ impl<'a> DigestRef<'a> {
                 *list = &list[..seal_pos];
 
                 match item {
-                    DigestItem::BabeSeal(seal) => Some(&seal[..]),
+                    DigestItem::BabeSeal(seal) => Some(seal),
                     _ => unreachable!(),
                 }
             }

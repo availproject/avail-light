@@ -498,11 +498,9 @@ impl<'a> BabePrimaryPreDigestRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        // TODO: don't allocate
-        let header = iter::once(either::Either::Left(parity_scale_codec::Encode::encode(&(
-            self.authority_index,
-            self.slot_number,
-        ))));
+        let header = iter::once(either::Left(self.authority_index.to_le_bytes()))
+            .chain(iter::once(either::Right(self.slot_number.to_le_bytes())))
+            .map(either::Left);
 
         header
             .chain(iter::once(either::Either::Right(&self.vrf_output[..])))
@@ -585,11 +583,8 @@ impl BabeSecondaryPlainPreDigest {
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of that object.
     pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + Clone> + Clone {
-        // TODO: don't allocate
-        iter::once(parity_scale_codec::Encode::encode(&(
-            self.authority_index,
-            self.slot_number,
-        )))
+        iter::once(either::Left(self.authority_index.to_le_bytes()))
+            .chain(iter::once(either::Right(self.slot_number.to_le_bytes())))
     }
 }
 
@@ -617,10 +612,7 @@ impl<'a> BabeSecondaryVRFPreDigestRef<'a> {
             authority_index: u32::from_le_bytes(<[u8; 4]>::try_from(&slice[0..4]).unwrap()),
             slot_number: u64::from_le_bytes(<[u8; 8]>::try_from(&slice[4..12]).unwrap()),
             vrf_output: TryFrom::try_from(&slice[12..44]).unwrap(),
-            vrf_proof: unsafe {
-                // TODO: ugh, how do you even get a &[u8; 64] from a &[u8]
-                &*(slice[44..108].as_ptr() as *const [u8; 64])
-            },
+            vrf_proof: TryFrom::try_from(&slice[44..108]).unwrap(),
         })
     }
 
@@ -629,11 +621,9 @@ impl<'a> BabeSecondaryVRFPreDigestRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        // TODO: don't allocate
-        let header = iter::once(either::Either::Left(parity_scale_codec::Encode::encode(&(
-            self.authority_index,
-            self.slot_number,
-        ))));
+        let header = iter::once(either::Left(self.authority_index.to_le_bytes()))
+            .chain(iter::once(either::Right(self.slot_number.to_le_bytes())))
+            .map(either::Left);
 
         header
             .chain(iter::once(either::Either::Right(&self.vrf_output[..])))
