@@ -51,7 +51,8 @@ pub struct BrowserLightClient {
 /// >           is thrown.
 #[wasm_bindgen]
 pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsValue> {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    #[cfg(debug_assertions)]
+    console_error_panic_hook::set_once();
 
     let chain_spec = match chain_spec::ChainSpec::from_json_bytes(&chain_spec) {
         Ok(cs) => cs,

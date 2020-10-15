@@ -1,7 +1,7 @@
 [package]
 name = "substrate-lite"
 version = "0.1.0"
-authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>"]
+authors = ["Parity Technologies <admin@parity.io>", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
 license = "GPL3" # TODO: at the moment some code is still straight-up copy-pasted from Substrate; need to ask on a case-by-case basis whether it's ok to relicense
 # TODO: license = "Apache-2.0"
 edition = "2018"

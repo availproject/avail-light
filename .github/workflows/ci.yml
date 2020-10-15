@@ -52,7 +52,7 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: rustup target add wasm32-unknown-unknown
     # TODO: figure why `--no-default-features` is needed
-    - run: cargo build --locked --package substrate-lite-browser-node --release --target wasm32-unknown-unknown --no-default-features
+    - run: cargo build --locked --package substrate-lite-js --release --target wasm32-unknown-unknown --no-default-features
 
   check-features:
     name: Check that combination of features compiles

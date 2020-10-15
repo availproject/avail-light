@@ -3179,8 +3179,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "substrate-lite-browser-node"
-version = "0.1.0"
+name = "substrate-lite-js"
+version = "0.1.3"
 dependencies = [
  "console_error_panic_hook",
  "futures",
