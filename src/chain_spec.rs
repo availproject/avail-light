@@ -32,6 +32,7 @@
 //! - Multiple other miscellaneous information.
 //!
 
+mod light_sync_state;
 mod structs;
 
 /// A configuration of a chain. Can be used to build a genesis block.
@@ -45,6 +46,12 @@ impl ChainSpec {
     pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, ParseError> {
         let client_spec: structs::ClientSpec =
             serde_json::from_slice(json.as_ref()).map_err(ParseError)?;
+
+        if let Some(sync_state) = client_spec.light_sync_state.as_ref() {
+            let decoded = sync_state.decode();
+            println!("{:?}", decoded);
+        }
+
         // TODO: we don't support child tries in the genesis block
         assert!({
             let structs::Genesis::Raw(genesis) = &client_spec.genesis;
