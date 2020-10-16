@@ -39,7 +39,7 @@
 
 use crate::{executor, header, trie::calculate_root};
 
-use core::{cmp, convert::TryFrom as _, iter, slice};
+use core::{convert::TryFrom as _, iter, slice};
 use hashbrown::{HashMap, HashSet};
 
 /// Configuration for an unsealed block verification.

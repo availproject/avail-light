@@ -24,7 +24,7 @@ use core::{cmp, convert::TryFrom, fmt};
 pub struct JitPrototype {
     /// Coroutine that contains the Wasm execution stack.
     coroutine: corooteen::Coroutine<
-        Box<dyn FnOnce() -> ()>, // TODO: `!`
+        Box<dyn FnOnce()>, // TODO: return `!`
         FromCoroutine,
         ToCoroutine,
     >,
@@ -119,7 +119,7 @@ impl JitPrototype {
         // We now build the coroutine of the main thread.
         let mut coroutine = {
             let interrupter = builder.interrupter();
-            builder.build(Box::new(move || -> () {
+            builder.build(Box::new(move || {
                 // TODO: no, don't send this now but below; need to adjust for this elsewhere
                 let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
 
@@ -341,7 +341,7 @@ enum FromCoroutine {
 pub struct Jit {
     /// Coroutine that contains the Wasm execution stack.
     coroutine: corooteen::Coroutine<
-        Box<dyn FnOnce() -> ()>, // TODO: `!`
+        Box<dyn FnOnce()>, // TODO: return `!`
         FromCoroutine,
         ToCoroutine,
     >,

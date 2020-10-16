@@ -223,7 +223,7 @@ struct SerializedBabeNextConfigConstantV1 {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 enum SerializedBabeAllowedSlotsV1 {
     #[serde(rename = "primary")]
-    PrimarySlots,
+    OnlyPrimarySlots,
     #[serde(rename = "primary-and-secondary-plain")]
     PrimaryAndSecondaryPlainSlots,
     #[serde(rename = "primary-and-secondary-vrf")]
@@ -233,7 +233,9 @@ enum SerializedBabeAllowedSlotsV1 {
 impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
     fn from(from: header::BabeAllowedSlots) -> Self {
         match from {
-            header::BabeAllowedSlots::PrimarySlots => SerializedBabeAllowedSlotsV1::PrimarySlots,
+            header::BabeAllowedSlots::PrimarySlots => {
+                SerializedBabeAllowedSlotsV1::OnlyPrimarySlots
+            }
             header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots => {
                 SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlainSlots
             }
@@ -247,7 +249,9 @@ impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
 impl From<SerializedBabeAllowedSlotsV1> for header::BabeAllowedSlots {
     fn from(from: SerializedBabeAllowedSlotsV1) -> Self {
         match from {
-            SerializedBabeAllowedSlotsV1::PrimarySlots => header::BabeAllowedSlots::PrimarySlots,
+            SerializedBabeAllowedSlotsV1::OnlyPrimarySlots => {
+                header::BabeAllowedSlots::PrimarySlots
+            }
             SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlainSlots => {
                 header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots
             }

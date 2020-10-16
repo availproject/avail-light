@@ -429,14 +429,12 @@ impl<T> NonFinalizedTree<T> {
                         } else {
                             &parent.babe_next_epoch
                         }
+                    } else if epoch_info_rq.same_epoch_as_parent() {
+                        self.babe_finalized_block_epoch_information
+                            .as_ref()
+                            .unwrap()
                     } else {
-                        if epoch_info_rq.same_epoch_as_parent() {
-                            self.babe_finalized_block_epoch_information
-                                .as_ref()
-                                .unwrap()
-                        } else {
-                            self.babe_finalized_next_epoch_transition.as_ref().unwrap()
-                        }
+                        self.babe_finalized_next_epoch_transition.as_ref().unwrap()
                     };
 
                     process = epoch_info_rq
@@ -1151,20 +1149,18 @@ impl<T> BodyVerifyStep2<T> {
                         } else {
                             &parent.babe_next_epoch
                         }
+                    } else if epoch_info_rq.same_epoch_as_parent() {
+                        chain
+                            .chain
+                            .babe_finalized_block_epoch_information
+                            .as_ref()
+                            .unwrap()
                     } else {
-                        if epoch_info_rq.same_epoch_as_parent() {
-                            chain
-                                .chain
-                                .babe_finalized_block_epoch_information
-                                .as_ref()
-                                .unwrap()
-                        } else {
-                            chain
-                                .chain
-                                .babe_finalized_next_epoch_transition
-                                .as_ref()
-                                .unwrap()
-                        }
+                        chain
+                            .chain
+                            .babe_finalized_next_epoch_transition
+                            .as_ref()
+                            .unwrap()
                     };
 
                     inner = epoch_info_rq.inject_epoch((From::from(&epoch_info.0), epoch_info.1));

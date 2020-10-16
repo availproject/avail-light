@@ -205,12 +205,11 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
             });
         }
 
-        for missing_pos in self
+        if let Some((missing_pos, _)) = self
             .verification_queue
             .iter()
             .enumerate()
-            .filter(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
-            .map(|(n, _)| n)
+            .find(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
         {
             let source = self
                 .sources

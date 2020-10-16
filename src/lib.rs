@@ -249,7 +249,7 @@ pub fn calculate_genesis_block_header<'a>(
     header::Header {
         parent_hash: [0; 32],
         number: 0,
-        state_root: state_root,
+        state_root,
         extrinsics_root: trie::empty_trie_merkle_value(),
         digest: header::DigestRef::empty().into(),
     }
