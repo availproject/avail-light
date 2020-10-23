@@ -209,6 +209,7 @@ async fn async_main() {
                 // informant will then print itself below, which is a fine behaviour.
                 let sync_state = sync_state.lock().await.clone();
                 eprint!("{}\r", substrate_lite::informant::InformantLine {
+                    enable_colors: true, // TODO: configurable? use is_atty?
                     chain_name: chain_spec.name(),
                     max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                     num_network_connections: network_state.num_network_connections.load(Ordering::Relaxed),

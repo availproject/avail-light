@@ -45,7 +45,6 @@ path = "bin/json-rpc-test/main.rs"
 required-features = ["os-networking"]
 
 [dependencies]
-ansi_term = "0.12.1"
 app_dirs = "1.2.1"
 arrayvec = "0.5.1"
 async-trait = "0.1"

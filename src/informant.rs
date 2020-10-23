@@ -29,6 +29,7 @@
 //! ```
 //! use substrate_lite::informant::InformantLine;
 //! eprint!("{}\r", InformantLine {
+//!     enable_colors: true,
 //!     chain_name: "My chain",
 //!     max_line_width: 80,
 //!     num_network_connections: 12,
@@ -40,14 +41,17 @@
 //! });
 //! ```
 
-use ansi_term::Colour; // TODO: this crate isn't no_std
 use core::{cmp, convert::TryFrom as _, fmt, iter};
 
 /// Values used to build the informant line. Implements the [`core::fmt::Display`] trait.
 // TODO: some fields here aren't printed; remove them once what is printed is final
 #[derive(Debug)]
 pub struct InformantLine<'a> {
-    // TODO: pub enable_colors: bool,
+    /// If true, ANSI escape characters will be written out.
+    ///
+    /// > **Note**: Despite its name, this controls *all* styling escape characters, not just
+    /// >           colors.
+    pub enable_colors: bool,
     /// Name of the chain.
     pub chain_name: &'a str,
     /// Maximum number of characters of the informant line.
@@ -69,33 +73,36 @@ pub struct InformantLine<'a> {
 impl<'a> fmt::Display for InformantLine<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: lots of allocations in here
-        // TODO: this bar is actually harder to implement than expected
+        // TODO: this bar is actually harder to implement than expected; clean up code
 
-        let header_unaligned = format!(
-            "{chain_name}   #{local_best}",
-            chain_name = Colour::Cyan.paint(self.chain_name),
-            local_best = Colour::White
-                .bold()
-                .paint(&format!("{:<7}", self.best_number)),
+        // Define the escape sequences used below for colouring purposes.
+        let cyan = if self.enable_colors { "\x1b[36m" } else { "" };
+        let white_bold = if self.enable_colors { "\x1b[1;37m" } else { "" };
+        let reset = if self.enable_colors { "\x1b[0m" } else { "" };
+
+        let header = format!(
+            "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} [",
+            cyan = cyan,
+            reset = reset,
+            white_bold = white_bold,
+            chain_name = self.chain_name,
+            local_best = self.best_number,
         );
 
-        let header = format!("    {} [", header_unaligned);
         let header_len = self.chain_name.chars().count() + 17; // TODO: ? it's easier to do that than deal with unicode
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(
-            "] #{network_best} (🌐{connec})   ",
-            network_best = Colour::White
-                .bold()
-                .paint(&self.network_known_best.unwrap_or(0).to_string()),
-            connec = Colour::White
-                .bold()
-                .paint(format!("{:>4}", self.num_network_connections)),
+            "] {white_bold}#{network_best}{reset} (🌐{white_bold}{connec:>4}{reset})   ",
+            network_best = self.network_known_best.unwrap_or(0),
+            connec = self.num_network_connections,
+            white_bold = white_bold,
+            reset = reset,
         );
         let trailer_len = format!(
-            "] #{network_best} (  {connec})   ",
+            "] #{network_best} (  {connec:>4})   ",
             network_best = self.network_known_best.unwrap_or(0),
-            connec = format!("{:>4}", self.num_network_connections),
+            connec = self.num_network_connections,
         )
         .len();
 
