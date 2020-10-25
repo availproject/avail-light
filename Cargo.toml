@@ -62,6 +62,7 @@ futures-timer = "3.0"
 hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
+isatty = "0.1.9"
 lazy_static = "1.4.0"
 libsecp256k1 = "0.3.5"
 lru = "0.5.3"   # TODO: audit the unsafe code in that crate

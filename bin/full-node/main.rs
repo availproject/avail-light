@@ -49,6 +49,12 @@ struct CliOptions {
     /// Chain to connect to ("polkadot", "kusama", "westend", or a file path).
     #[structopt(long, default_value = "polkadot")]
     chain: CliChain,
+    /// No output printed to stderr.
+    #[structopt(short, long)]
+    quiet: bool,
+    /// Coloring: auto, always, never
+    #[structopt(long, default_value = "auto")]
+    color: ColorChoice,
 }
 
 #[derive(Debug)]
@@ -74,6 +80,33 @@ impl core::str::FromStr for CliChain {
         }
     }
 }
+
+#[derive(Debug)]
+enum ColorChoice {
+    Always,
+    Auto,
+    Never,
+}
+
+impl core::str::FromStr for ColorChoice {
+    type Err = ColorChoiceParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "always" {
+            Ok(ColorChoice::Always)
+        } else if s == "auto" {
+            Ok(ColorChoice::Auto)
+        } else if s == "never" {
+            Ok(ColorChoice::Never)
+        } else {
+            Err(ColorChoiceParseError)
+        }
+    }
+}
+
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "Color must be one of: always, auto, never")]
+struct ColorChoiceParseError;
 
 async fn async_main() {
     let cli_options = CliOptions::from_args();
@@ -204,24 +237,30 @@ async fn async_main() {
     loop {
         futures::select! {
             _ = informant_timer.next() => {
-                // We end the informant line with a `\r` so that it overwrites itself every time.
-                // If any other line gets printed, it will overwrite the informant, and the
-                // informant will then print itself below, which is a fine behaviour.
-                let sync_state = sync_state.lock().await.clone();
-                eprint!("{}\r", substrate_lite::informant::InformantLine {
-                    enable_colors: true, // TODO: configurable? use is_atty?
-                    chain_name: chain_spec.name(),
-                    max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
-                    num_network_connections: network_state.num_network_connections.load(Ordering::Relaxed),
-                    best_number: sync_state.best_block_number,
-                    finalized_number: sync_state.finalized_block_number,
-                    best_hash: &sync_state.best_block_hash,
-                    finalized_hash: &sync_state.finalized_block_hash,
-                    network_known_best: match network_state.best_network_block_height.load(Ordering::Relaxed) {
-                        0 => None,
-                        n => Some(n)
-                    },
-                });
+                if !cli_options.quiet {
+                    // We end the informant line with a `\r` so that it overwrites itself every time.
+                    // If any other line gets printed, it will overwrite the informant, and the
+                    // informant will then print itself below, which is a fine behaviour.
+                    let sync_state = sync_state.lock().await.clone();
+                    eprint!("{}\r", substrate_lite::informant::InformantLine {
+                        enable_colors: match cli_options.color {
+                            ColorChoice::Always => true,
+                            ColorChoice::Auto => isatty::stderr_isatty(),
+                            ColorChoice::Never => false,
+                        },
+                        chain_name: chain_spec.name(),
+                        max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(100),
+                        num_network_connections: network_state.num_network_connections.load(Ordering::Relaxed),
+                        best_number: sync_state.best_block_number,
+                        finalized_number: sync_state.finalized_block_number,
+                        best_hash: &sync_state.best_block_hash,
+                        finalized_hash: &sync_state.finalized_block_hash,
+                        network_known_best: match network_state.best_network_block_height.load(Ordering::Relaxed) {
+                            0 => None,
+                            n => Some(n)
+                        },
+                    });
+                }
             },
 
             telemetry_event = telemetry.next_event().fuse() => {
