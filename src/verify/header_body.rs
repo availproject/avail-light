@@ -14,7 +14,10 @@
 // limitations under the License.
 
 use super::execute_block;
-use crate::{executor, header, trie::calculate_root, verify::babe};
+use crate::{
+    chain::chain_information::babe::BabeGenesisConfiguration, executor, header,
+    trie::calculate_root, verify::babe,
+};
 
 use core::{num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
@@ -32,8 +35,8 @@ pub struct Config<'a, TBody> {
 
     /// BABE configuration retrieved from the genesis block.
     ///
-    /// See the documentation of [`babe::BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'a babe::BabeGenesisConfiguration,
+    /// See the documentation of [`BabeGenesisConfiguration`] to know how to get this.
+    pub babe_genesis_configuration: &'a BabeGenesisConfiguration,
 
     /// Slot number of block #1. **Must** be provided, unless the block being verified is block
     /// #1 itself.

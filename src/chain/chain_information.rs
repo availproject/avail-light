@@ -36,9 +36,11 @@
 //! They also do not contain the past history of the chain. It is, however, similarly possible to
 //! for instance download the history from other nodes.
 
-use crate::{finality::grandpa, header, verify::babe};
+use crate::{finality::grandpa, header};
 
 use alloc::vec::Vec;
+
+pub mod babe;
 
 /// Information about the latest finalized block and state found in its ancestors.
 #[derive(Debug, Clone)]

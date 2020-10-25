@@ -129,14 +129,10 @@
 //! information contained in an ancestor of the block being verified must be provided.
 //!
 
-use crate::header;
+use crate::{chain::chain_information::babe::BabeGenesisConfiguration, header};
 
 use core::{convert::TryFrom as _, num::NonZeroU64, time::Duration};
 use num_traits::{cast::ToPrimitive as _, identities::One as _};
-
-pub mod chain_config;
-
-pub use chain_config::BabeGenesisConfiguration;
 
 /// Configuration for [`start_verify_header`].
 pub struct VerifyConfig<'a> {

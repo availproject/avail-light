@@ -99,7 +99,7 @@ pub struct NonFinalizedTree<T> {
     grandpa_finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
 
     /// Configuration for BABE, retrieved from the genesis block.
-    babe_genesis_config: babe::BabeGenesisConfiguration,
+    babe_genesis_config: chain_information::babe::BabeGenesisConfiguration,
 
     /// See [`chain_information::ChainInformation::babe_finalized_block_epoch_information`].
     babe_finalized_block_epoch_information:

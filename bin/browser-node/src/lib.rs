@@ -28,8 +28,8 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
 };
 use substrate_lite::{
-    chain, chain::sync::headers_optimistic, chain_spec, database, header, json_rpc, network,
-    verify::babe,
+    chain, chain::chain_information::babe, chain::sync::headers_optimistic, chain_spec, database,
+    header, json_rpc, network,
 };
 use wasm_bindgen::prelude::*;
 
