@@ -53,7 +53,7 @@ chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde featur
 derive_more = "0.99.7"
 ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch"] }
 either = "1.6.1"
-env_logger = "0.7.1"
+env_logger = "0.8.1"
 fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures_codec = "0.3.3"
