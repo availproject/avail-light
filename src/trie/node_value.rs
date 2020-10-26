@@ -45,15 +45,16 @@
 //!     };
 //!
 //!     node_value::calculate_merkle_root(node_value::Config {
-//!         is_root: false,
+//!         ty: node_value::NodeTy::NonRoot {
+//!             partial_key: [
+//!                 Nibble::try_from(8).unwrap(),
+//!                 Nibble::try_from(12).unwrap(),
+//!                 Nibble::try_from(1).unwrap(),
+//!             ]
+//!             .iter()
+//!             .cloned(),
+//!         },
 //!         children: children.iter().map(|opt| opt.as_ref()),
-//!         partial_key: [
-//!             Nibble::try_from(8).unwrap(),
-//!             Nibble::try_from(12).unwrap(),
-//!             Nibble::try_from(1).unwrap(),
-//!         ]
-//!         .iter()
-//!         .cloned(),
 //!         stored_value: Some(b"hello world"),
 //!     })
 //! };
@@ -77,27 +78,39 @@ use parity_scale_codec::Encode as _;
 ///
 /// The documentation here assumes that you already know how the trie works.
 pub struct Config<TChIter, TPKey, TVal> {
-    /// True if this is the root node of the trie.
-    pub is_root: bool,
+    /// Type of node.
+    pub ty: NodeTy<TPKey>,
 
     /// Iterator to the Merkle values of the 16 possible children of the node. `None` if there is
     /// no child at this index.
     pub children: TChIter,
 
-    /// Partial key of the node, as an iterator of nibbles.
-    ///
-    /// If `is_root` is true, this is the entire key of the node.
-    ///
-    /// For reminder, the key of non-root nodes is made of three parts:
-    ///
-    /// - The parent's key.
-    /// - The child index, one single nibble indicating which child we are relative to the parent.
-    /// - The partial key.
-    ///
-    pub partial_key: TPKey,
-
     /// Value of the node in the storage.
     pub stored_value: Option<TVal>,
+}
+
+/// Type of node whose node value is to be calculated.
+#[derive(Debug)]
+pub enum NodeTy<TPKey> {
+    /// Node is the root node of the trie.
+    Root {
+        /// Key of the node, as an iterator of nibbles. This is the longest prefix shared by all
+        /// the keys in the trie.
+        key: TPKey,
+    },
+    /// Node is not the root node of the trie.
+    NonRoot {
+        /// Partial key of the node, as an iterator of nibbles.
+        ///
+        /// For reminder, the key of non-root nodes is made of three parts:
+        ///
+        /// - The parent's key. Irrelevant when calculating the node's value.
+        /// - The child index, one single nibble indicating which child we are relative to the
+        ///   parent. Irrelevant when calculating the node's value.
+        /// - The partial key.
+        ///
+        partial_key: TPKey,
+    },
 }
 
 /// Calculates the Merkle value of a node given the information about this node.
@@ -107,7 +120,7 @@ pub struct Config<TChIter, TPKey, TVal> {
 /// Panics if `config.children.len() != 16`.
 ///
 pub fn calculate_merkle_root<'a, TChIter, TPKey, TVal>(
-    mut config: Config<TChIter, TPKey, TVal>,
+    config: Config<TChIter, TPKey, TVal>,
 ) -> Output
 where
     TChIter: ExactSizeIterator<Item = Option<&'a Output>> + Clone,
@@ -119,10 +132,16 @@ where
     let has_children = config.children.clone().any(|c| c.is_some());
 
     // This value will be used as the sink for all the components of the merkle value.
-    let mut merkle_value_sink = if config.is_root {
+    let mut merkle_value_sink = if matches!(config.ty, NodeTy::Root { .. }) {
         HashOrInline::Hasher(blake2_rfc::blake2b::Blake2b::new(32))
     } else {
         HashOrInline::Inline(ArrayVec::new())
+    };
+
+    // For node value calculation purposes, the root key is treated the same as the partial key.
+    let mut partial_key = match config.ty {
+        NodeTy::Root { key } => key,
+        NodeTy::NonRoot { partial_key } => partial_key,
     };
 
     // Push the header of the node to `merkle_value_sink`.
@@ -143,7 +162,7 @@ where
         };
 
         // Another weird algorithm to encode the partial key length into the header.
-        let mut pk_len = config.partial_key.len();
+        let mut pk_len = partial_key.len();
         if pk_len >= 63 {
             pk_len -= 63;
             merkle_value_sink.update(&[(two_msb << 6) + 63]);
@@ -157,15 +176,14 @@ where
         }
     }
 
-    // Turn the `config.partial_key` into bytes with a weird encoding and push it to
-    // `merkle_value_sink`.
-    if config.partial_key.len() % 2 != 0 {
+    // Turn the partial key into bytes with a weird encoding and push it to `merkle_value_sink`.
+    if partial_key.len() % 2 != 0 {
         // next().unwrap() can't panic, otherwise `len() % 2` would have returned 0.
-        merkle_value_sink.update(&[u8::from(config.partial_key.next().unwrap())]);
+        merkle_value_sink.update(&[u8::from(partial_key.next().unwrap())]);
     }
     {
         let mut previous = None;
-        for nibble in config.partial_key {
+        for nibble in partial_key {
             if let Some(prev) = previous.take() {
                 let val = (u8::from(prev) << 4) | u8::from(nibble);
                 merkle_value_sink.update(&[val]);
@@ -342,9 +360,8 @@ mod tests {
     #[test]
     fn empty_root() {
         let obtained = super::calculate_merkle_root(super::Config {
-            is_root: true,
+            ty: super::NodeTy::Root { key: iter::empty() },
             children: (0..16).map(|_| None),
-            partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });
 
@@ -360,9 +377,10 @@ mod tests {
     #[test]
     fn empty_node() {
         let obtained = super::calculate_merkle_root(super::Config {
-            is_root: false,
+            ty: super::NodeTy::NonRoot {
+                partial_key: iter::empty(),
+            },
             children: (0..16).map(|_| None),
-            partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });
 
@@ -388,15 +406,16 @@ mod tests {
         };
 
         let obtained = super::calculate_merkle_root(super::Config {
-            is_root: false,
+            ty: super::NodeTy::NonRoot {
+                partial_key: [
+                    Nibble::try_from(8).unwrap(),
+                    Nibble::try_from(12).unwrap(),
+                    Nibble::try_from(1).unwrap(),
+                ]
+                .iter()
+                .cloned(),
+            },
             children: children.iter().map(|opt| opt.as_ref()),
-            partial_key: [
-                Nibble::try_from(8).unwrap(),
-                Nibble::try_from(12).unwrap(),
-                Nibble::try_from(1).unwrap(),
-            ]
-            .iter()
-            .cloned(),
             stored_value: Some(b"hello world"),
         });
 
@@ -413,9 +432,10 @@ mod tests {
     #[should_panic]
     fn bad_children_len() {
         super::calculate_merkle_root(super::Config {
-            is_root: false,
+            ty: super::NodeTy::NonRoot {
+                partial_key: iter::empty(),
+            },
             children: iter::empty(),
-            partial_key: iter::empty(),
             stored_value: None::<Vec<u8>>,
         });
     }

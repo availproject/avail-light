@@ -299,9 +299,8 @@ impl CalcInner {
                     None => {
                         // Trie is empty.
                         let merkle_value = node_value::calculate_merkle_root(node_value::Config {
-                            is_root: true,
+                            ty: node_value::NodeTy::Root { key: iter::empty() },
                             children: (0..16).map(|_| None),
-                            partial_key: iter::empty(),
                             stored_value: None::<Vec<u8>>,
                         });
 
@@ -368,7 +367,15 @@ impl CalcInner {
             if !current.has_storage_value() {
                 // Calculate the Merkle value of the node.
                 let merkle_value = node_value::calculate_merkle_root(node_value::Config {
-                    is_root: current.is_root_node(),
+                    ty: if current.is_root_node() {
+                        node_value::NodeTy::Root {
+                            key: current.partial_key(),
+                        }
+                    } else {
+                        node_value::NodeTy::NonRoot {
+                            partial_key: current.partial_key(),
+                        }
+                    },
                     children: (0..16u8).map(|child_idx| {
                         if let Some(child) =
                             current.child_user_data(Nibble::try_from(child_idx).unwrap())
@@ -378,7 +385,6 @@ impl CalcInner {
                             None
                         }
                     }),
-                    partial_key: current.partial_key(),
                     stored_value: None::<Vec<u8>>,
                 });
 
@@ -454,7 +460,15 @@ impl StorageValue {
 
         // Calculate the Merkle value of the node.
         let merkle_value = node_value::calculate_merkle_root(node_value::Config {
-            is_root: current.is_root_node(),
+            ty: if current.is_root_node() {
+                node_value::NodeTy::Root {
+                    key: current.partial_key(),
+                }
+            } else {
+                node_value::NodeTy::NonRoot {
+                    partial_key: current.partial_key(),
+                }
+            },
             children: (0..16u8).map(|child_idx| {
                 if let Some(child) = current.child_user_data(Nibble::try_from(child_idx).unwrap()) {
                     Some(child.merkle_value.as_ref().unwrap())
@@ -462,7 +476,6 @@ impl StorageValue {
                     None
                 }
             }),
-            partial_key: current.partial_key(),
             stored_value,
         });
 
