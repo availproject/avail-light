@@ -10,12 +10,6 @@ In order to simplify the code, two main design decisions have been made compared
 
 - No pluggable architecture. `substrate-lite` supports a certain hardcoded list of consensus algorithms, at the moment Babe and GrandPa. Support for other algorithms can only be added by modifying the code of substrate-lite, and it is not possible to plug a custom algorithm from outside.
 
-## Why is this repository not public?
-
-Two concerns should be resolved before making this repository public:
-
-- It is unclear whether this repository should be under GPL or Apache license. At the moment, all newly-written code is under Apache, but some code has been copy-pasted from Substrate and is still using the GPL.
-
 # Objectives
 
 There exists multiple objectives behind this repository:
