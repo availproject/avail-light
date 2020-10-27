@@ -24,16 +24,21 @@ use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
 };
-use libp2p::wasm_ext::{ffi, ExtTransport};
 use std::{
     collections::HashMap,
     num::{NonZeroU32, NonZeroU64},
+    sync::Arc,
 };
 use substrate_lite::{
-    chain, chain::chain_information::babe, chain::sync::headers_optimistic, chain_spec, database,
-    header, json_rpc, network,
+    chain,
+    chain::chain_information::babe,
+    chain::sync::headers_optimistic,
+    chain_spec, database, header, json_rpc,
+    network::{self, protocol},
 };
 use wasm_bindgen::prelude::*;
+
+mod network_service;
 
 // This custom allocator is used in order to reduce the size of the Wasm binary.
 #[global_allocator]
@@ -107,16 +112,21 @@ pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsVa
     };
 
     let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
-    let (to_network_tx, to_network_rx) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
-    wasm_bindgen_futures::spawn_local(start_network(&chain_spec, to_network_rx, to_sync_tx).await);
+    let network_service = network_service::NetworkService::new(network_service::Config {
+        tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
+        bootstrap_nodes: Vec::new(), // TODO:
+    })
+    .await
+    .unwrap();
+
     wasm_bindgen_futures::spawn_local(
         start_sync(
             &chain_spec,
             chain_information,
+            network_service.clone(),
             to_sync_rx,
-            to_network_tx,
             to_db_save_tx,
         )
         .await,
@@ -196,8 +206,8 @@ impl BrowserLightClient {
 async fn start_sync(
     chain_spec: &chain_spec::ChainSpec,
     chain_information_config: chain::chain_information::ChainInformationConfig,
+    network_service: Arc<network_service::NetworkService>,
     mut to_sync: mpsc::Receiver<ToSync>,
-    mut to_network: mpsc::Sender<ToNetwork>,
     mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
 ) -> impl Future<Output = ()> {
     let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
@@ -228,19 +238,23 @@ async fn start_sync(
                         num_blocks,
                         ..
                     } => {
-                        let (tx, rx) = oneshot::channel();
-                        let _ = to_network
-                            .send(ToNetwork::StartBlockRequest {
-                                peer_id: source.clone(),
-                                block_height,
-                                num_blocks: num_blocks.get(),
-                                send_back: tx,
-                            })
-                            .await;
+                        let block_request = network_service.blocks_request(
+                            source.clone(),
+                            protocol::BlocksRequestConfig {
+                                start: protocol::BlocksRequestConfigStart::Number(block_height),
+                                desired_count: num_blocks,
+                                direction: protocol::BlocksRequestDirection::Ascending,
+                                fields: protocol::BlocksRequestFields {
+                                    header: true,
+                                    body: false,
+                                    justification: true,
+                                },
+                            },
+                        );
 
-                        let (rx, abort) = future::abortable(rx);
+                        let (block_request, abort) = future::abortable(block_request);
                         let request_id = start.start(abort);
-                        block_requests_finished.push(rx.map(move |r| (request_id, r)));
+                        block_requests_finished.push(block_request.map(move |r| (request_id, r)));
                     }
                     headers_optimistic::RequestAction::Cancel { user_data, .. } => {
                         user_data.abort();
@@ -314,7 +328,10 @@ async fn start_sync(
                     // `result` is an error if the block request got cancelled by the sync state
                     // machine.
                     if let Ok(result) = result {
-                        let _ = sync.finish_request(request_id, result.unwrap().map(|v| v.into_iter()));
+                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| headers_optimistic::RequestSuccessBlock {
+                            scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
+                            scale_encoded_justification: block.justification,
+                        })).map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable));
                     }
                 },
             }
@@ -325,127 +342,6 @@ async fn start_sync(
 enum ToSync {
     NewPeer(network::PeerId),
     PeerDisconnected(network::PeerId),
-}
-
-async fn start_network(
-    chain_spec: &chain_spec::ChainSpec,
-    mut to_network: mpsc::Receiver<ToNetwork>,
-    mut to_sync: mpsc::Sender<ToSync>,
-) -> impl Future<Output = ()> {
-    let mut network = {
-        let mut known_addresses = chain_spec
-            .boot_nodes()
-            .iter()
-            .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
-            .collect::<Vec<_>>();
-        // TODO: remove this; temporary because bootnode is apparently full
-        // TODO: to test, run a node with ./target/debug/polkadot --chain kusama --listen-addr /ip4/0.0.0.0/tcp/30333/ws --node-key 0000000000000000000000000000000000000000000000000000000000000000
-        known_addresses.push((
-            "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
-                .parse()
-                .unwrap(),
-            "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap(),
-        ));
-
-        network::Network::start(network::Config {
-            known_addresses,
-            chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
-            tasks_executor: Box::new(|fut| wasm_bindgen_futures::spawn_local(fut)),
-            local_genesis_hash: substrate_lite::calculate_genesis_block_header(
-                chain_spec.genesis_storage(),
-            )
-            .hash(),
-            wasm_external_transport: Some(ExtTransport::new(ffi::websocket_transport())),
-        })
-        .await
-    };
-
-    async move {
-        // TODO: store send back channel in a network user data rather than having this hashmap
-        let mut block_requests = HashMap::new();
-
-        loop {
-            futures::select! {
-                message = to_network.next() => {
-                    let message = match message {
-                        Some(m) => m,
-                        None => return,
-                    };
-
-                    match message {
-                        ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, send_back } => {
-                            let result = network.start_block_request(network::BlocksRequestConfig {
-                                start: network::BlocksRequestConfigStart::Number(block_height),
-                                peer_id,
-                                desired_count: num_blocks,
-                                direction: network::BlocksRequestDirection::Ascending,
-                                fields: network::BlocksRequestFields {
-                                    header: true,
-                                    body: false,
-                                    justification: true,
-                                },
-                            }).await;
-
-                            match result {
-                                Ok(id) => {
-                                    block_requests.insert(id, send_back);
-                                }
-                                Err(()) => {
-                                    // TODO: better error
-                                    let _ = send_back.send(Err(headers_optimistic::RequestFail::BlocksUnavailable));
-                                }
-                            };
-                        },
-                    }
-                },
-
-                event = network.next_event().fuse() => {
-                    match event {
-                        network::Event::BlockAnnounce(header) => {
-                            // TODO:
-                            if let Ok(decoded) = header::decode(&header.0) {
-                                web_sys::console::log_1(&JsValue::from_str(&format!(
-                                    "Received block announce: {}", decoded.number
-                                )));
-                            }
-                        }
-                        network::Event::BlocksRequestFinished { id, result } => {
-                            let send_back = block_requests.remove(&id).unwrap();
-                            let _: Result<_, _> = send_back.send(result
-                                .map(|list| {
-                                    list.into_iter().map(|block| {
-                                        headers_optimistic::RequestSuccessBlock {
-                                            scale_encoded_header: block.header.unwrap().0,
-                                            scale_encoded_justification: block.justification,
-                                        }
-                                    }).collect()
-                                })
-                                .map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable) // TODO:
-                            );
-                        }
-                        network::Event::CallRequestFinished { .. } => todo!(),
-                        network::Event::Connected(peer_id) => {
-                            let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
-                        }
-                        network::Event::Disconnected(peer_id) => {
-                            let _ = to_sync.send(ToSync::PeerDisconnected(peer_id)).await;
-                        }
-                    }
-                },
-            }
-        }
-    }
-}
-
-enum ToNetwork {
-    StartBlockRequest {
-        peer_id: network::PeerId,
-        block_height: NonZeroU64,
-        num_blocks: u32,
-        send_back: oneshot::Sender<
-            Result<Vec<headers_optimistic::RequestSuccessBlock>, headers_optimistic::RequestFail>,
-        >,
-    },
 }
 
 /// Use in an asynchronous context to interrupt the current task execution and schedule it back.

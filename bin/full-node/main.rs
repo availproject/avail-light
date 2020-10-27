@@ -26,6 +26,7 @@ use futures::{
 use std::{
     borrow::Cow,
     collections::BTreeMap,
+    convert::TryFrom as _,
     fs,
     net::{SocketAddr, ToSocketAddrs as _},
     num::{NonZeroU32, NonZeroU64},
@@ -39,7 +40,10 @@ use structopt::StructOpt as _;
 use substrate_lite::{
     chain::{self, sync::full_optimistic},
     chain_spec, header, network,
+    network::{connection, multiaddr, peer_id::PeerId, protocol, with_buffers},
 };
+
+mod network_service;
 
 fn main() {
     env_logger::init();
@@ -160,30 +164,32 @@ async fn async_main() {
         substrate_lite::metadata::decode(&metadata).unwrap()
     );*/
 
-    let (to_sync_tx, to_sync_rx) = mpsc::channel(64);
-    let (to_network_tx, to_network_rx) = mpsc::channel(64);
+    let (mut to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_db_save_tx, mut to_db_save_rx) = mpsc::channel(16);
 
-    let network_state = Arc::new(NetworkState {
-        best_network_block_height: Atomic::new(0),
-        num_network_connections: Atomic::new(0),
-    });
-
-    threads_pool.spawn_ok({
-        let tasks_executor = Box::new({
+    let network_service = network_service::NetworkService::new(network_service::Config {
+        listen_addresses: Vec::new(),
+        bootstrap_nodes: {
+            let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
+            for node in chain_spec.boot_nodes() {
+                let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
+                if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
+                    let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                    list.push((peer_id, address));
+                } else {
+                    panic!() // TODO:
+                }
+            }
+            list
+        },
+        noise_key: connection::NoiseKey::new(&rand::random()), // TODO: not random
+        tasks_executor: {
             let threads_pool = threads_pool.clone();
-            move |f| threads_pool.spawn_ok(f)
-        });
-
-        start_network(
-            &chain_spec,
-            tasks_executor,
-            network_state.clone(),
-            to_network_rx,
-            to_sync_tx.clone(), // TODO: don't clone
-        )
-        .await
-    });
+            Box::new(move |task| threads_pool.spawn_ok(task))
+        },
+    })
+    .await
+    .unwrap();
 
     let sync_state = Arc::new(Mutex::new(SyncState {
         best_block_hash: [0; 32],      // TODO:
@@ -198,7 +204,7 @@ async fn async_main() {
             chain_information,
             sync_state.clone(),
             to_sync_rx,
-            to_network_tx,
+            network_service.clone(),
             to_db_save_tx,
         )
         .await,
@@ -210,7 +216,7 @@ async fn async_main() {
         }
     });
 
-    let mut telemetry = {
+    /*let mut telemetry = {
         let endpoints = chain_spec
             .telemetry_endpoints()
             .map(|addr| (addr.as_ref().to_owned(), 0))
@@ -224,7 +230,7 @@ async fn async_main() {
                 Box::new(move |task| threads_pool.spawn_obj_ok(From::from(task))) as Box<_>
             },
         })
-    };
+    };*/
 
     let mut informant_timer = stream::unfold((), move |_| {
         futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
@@ -251,21 +257,30 @@ async fn async_main() {
                             ColorChoice::Never => false,
                         },
                         chain_name: chain_spec.name(),
-                        max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(100),
-                        num_network_connections: network_state.num_network_connections.load(Ordering::Relaxed),
+                        max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
+                        num_network_connections: u64::try_from(network_service.num_established_connections().await)
+                            .unwrap_or(u64::max_value()),
                         best_number: sync_state.best_block_number,
                         finalized_number: sync_state.finalized_block_number,
                         best_hash: &sync_state.best_block_hash,
                         finalized_hash: &sync_state.finalized_block_hash,
-                        network_known_best: match network_state.best_network_block_height.load(Ordering::Relaxed) {
+                        network_known_best: None, /* TODO: match network_state.best_network_block_height.load(Ordering::Relaxed) {
                             0 => None,
                             n => Some(n)
-                        },
+                        },*/
                     });
                 }
             },
 
-            telemetry_event = telemetry.next_event().fuse() => {
+            network_message = network_service.next_event().fuse() => {
+                match network_message {
+                    network_service::Event::Connected(peer_id) => {
+                        to_sync_tx.send(ToSync::NewPeer(peer_id)).await.unwrap();
+                    }
+                }
+            }
+
+            /*telemetry_event = telemetry.next_event().fuse() => {
                 telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
                     name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
@@ -274,10 +289,10 @@ async fn async_main() {
                     validator: None,
                     network_id: None, // TODO: Some(service.local_peer_id().to_base58().into_boxed_str()),
                 }));
-            },
+            },*/
 
             _ = telemetry_timer.next() => {
-                let sync_state = sync_state.lock().await.clone();
+                /*let sync_state = sync_state.lock().await.clone();
 
                 // Some of the fields below are set to `None` because there is no plan to
                 // implement reporting accurate metrics about the node.
@@ -300,7 +315,7 @@ async fn async_main() {
                     used_db_cache_size: None,
                     disk_read_per_sec: None,
                     disk_write_per_sec: None,
-                }));
+                }));*/
             },
         }
     }
@@ -311,7 +326,7 @@ async fn start_sync(
     chain_information_config: chain::chain_information::ChainInformationConfig,
     sync_state: Arc<Mutex<SyncState>>,
     mut to_sync: mpsc::Receiver<ToSync>,
-    mut to_network: mpsc::Sender<ToNetwork>,
+    network: Arc<network_service::NetworkService>,
     mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
 ) -> impl Future<Output = ()> {
     let mut sync =
@@ -440,19 +455,22 @@ async fn start_sync(
                         num_blocks,
                         ..
                     } => {
-                        let (tx, rx) = oneshot::channel();
-                        let _ = to_network
-                            .send(ToNetwork::StartBlockRequest {
-                                peer_id: source.clone(),
-                                block_height,
-                                num_blocks: num_blocks.get(),
-                                send_back: tx,
-                            })
-                            .await;
-
-                        let (rx, abort) = future::abortable(rx);
+                        let block_request = network.blocks_request(
+                            source.clone(),
+                            protocol::BlocksRequestConfig {
+                                start: protocol::BlocksRequestConfigStart::Number(block_height),
+                                desired_count: num_blocks,
+                                direction: protocol::BlocksRequestDirection::Ascending,
+                                fields: protocol::BlocksRequestFields {
+                                    header: true,
+                                    body: true,
+                                    justification: true,
+                                },
+                            },
+                        );
+                        let (block_request, abort) = future::abortable(block_request);
                         let request_id = start.start(abort);
-                        block_requests_finished.push(rx.map(move |r| (request_id, r)));
+                        block_requests_finished.push(block_request.map(move |r| (request_id, r)));
                     }
                     full_optimistic::RequestAction::Cancel { user_data, .. } => {
                         user_data.abort();
@@ -486,7 +504,11 @@ async fn start_sync(
                     // `result` is an error if the block request got cancelled by the sync state
                     // machine.
                     if let Ok(result) = result {
-                        let _ = sync.finish_request(request_id, result.unwrap().map(|v| v.into_iter()));
+                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| full_optimistic::RequestSuccessBlock {
+                            scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
+                            scale_encoded_extrinsics: block.body.unwrap(), // TODO: don't unwrap
+                            scale_encoded_justification: block.justification,
+                        })).map_err(|()| full_optimistic::RequestFail::BlocksUnavailable));
                     }
                 },
             }
@@ -505,134 +527,4 @@ struct SyncState {
     best_block_hash: [u8; 32],
     finalized_block_number: u64,
     finalized_block_hash: [u8; 32],
-}
-
-async fn start_network(
-    chain_spec: &chain_spec::ChainSpec,
-    tasks_executor: Box<dyn Fn(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
-    network_state: Arc<NetworkState>,
-    mut to_network: mpsc::Receiver<ToNetwork>,
-    mut to_sync: mpsc::Sender<ToSync>,
-) -> impl Future<Output = ()> {
-    let mut network = {
-        let mut known_addresses = chain_spec
-            .boot_nodes()
-            .iter()
-            .map(|bootnode_str| network::parse_str_addr(bootnode_str).unwrap())
-            .collect::<Vec<_>>();
-        // TODO: remove this; temporary because bootnode is apparently full
-        // TODO: to test, run a node with ./target/debug/polkadot --chain kusama --listen-addr /ip4/0.0.0.0/tcp/30333/ws --node-key 0000000000000000000000000000000000000000000000000000000000000000
-        known_addresses.push((
-            "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
-                .parse()
-                .unwrap(),
-            "/ip4/127.0.0.1/tcp/30333/ws".parse().unwrap(),
-        ));
-
-        network::Network::start(network::Config {
-            known_addresses,
-            chain_spec_protocol_id: chain_spec.protocol_id().as_bytes().to_vec(),
-            tasks_executor,
-            local_genesis_hash: substrate_lite::calculate_genesis_block_header(
-                chain_spec.genesis_storage(),
-            )
-            .hash(),
-            wasm_external_transport: None,
-        })
-        .await
-    };
-
-    async move {
-        // TODO: store send back channel in a network user data rather than having this hashmap
-        let mut block_requests = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();
-
-        loop {
-            futures::select! {
-                message = to_network.next() => {
-                    let message = match message {
-                        Some(m) => m,
-                        None => return,
-                    };
-
-                    match message {
-                        ToNetwork::StartBlockRequest { peer_id, block_height, num_blocks, send_back } => {
-                            let result = network.start_block_request(network::BlocksRequestConfig {
-                                start: network::BlocksRequestConfigStart::Number(block_height),
-                                peer_id,
-                                desired_count: num_blocks,
-                                direction: network::BlocksRequestDirection::Ascending,
-                                fields: network::BlocksRequestFields {
-                                    header: true,
-                                    body: true,
-                                    justification: true,
-                                },
-                            }).await;
-
-                            match result {
-                                Ok(id) => {
-                                    block_requests.insert(id, send_back);
-                                }
-                                Err(()) => {
-                                    // TODO: better error
-                                    let _ = send_back.send(Err(full_optimistic::RequestFail::BlocksUnavailable));
-                                }
-                            };
-                        },
-                    }
-                },
-
-                event = network.next_event().fuse() => {
-                    match event {
-                        network::Event::BlockAnnounce(header) => {
-                            if let Ok(header) = header::decode(&header.0) {
-                                network_state.best_network_block_height.store(header.number, Ordering::Relaxed);
-                            }
-                        }
-                        network::Event::CallRequestFinished { .. } => unreachable!(),
-                        network::Event::BlocksRequestFinished { id, result } => {
-                            let send_back = block_requests.remove(&id).unwrap();
-                            let _: Result<_, _> = send_back.send(result
-                                .map(|list| {
-                                    list.into_iter().map(|block| {
-                                        full_optimistic::RequestSuccessBlock {
-                                            scale_encoded_header: block.header.unwrap().0,
-                                            scale_encoded_extrinsics: block.body.unwrap().into_iter().map(|e| e.0).collect(), // TODO: overhead
-                                            scale_encoded_justification: block.justification,
-                                        }
-                                    }).collect()
-                                })
-                                .map_err(|()| full_optimistic::RequestFail::BlocksUnavailable) // TODO:
-                            );
-                        }
-                        network::Event::Connected(peer_id) => {
-                            network_state.num_network_connections.fetch_add(1, Ordering::Relaxed);
-                            let _ = to_sync.send(ToSync::NewPeer(peer_id)).await;
-                        }
-                        network::Event::Disconnected(peer_id) => {
-                            network_state.num_network_connections.fetch_sub(1, Ordering::Relaxed);
-                            let _ = to_sync.send(ToSync::PeerDisconnected(peer_id)).await;
-                        }
-                    }
-                },
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct NetworkState {
-    /// 0 means "unknown".
-    best_network_block_height: Atomic<u64>,
-    num_network_connections: Atomic<u64>,
-}
-
-enum ToNetwork {
-    StartBlockRequest {
-        peer_id: network::PeerId,
-        block_height: NonZeroU64,
-        num_blocks: u32,
-        send_back: oneshot::Sender<
-            Result<Vec<full_optimistic::RequestSuccessBlock>, full_optimistic::RequestFail>,
-        >,
-    },
 }

@@ -15,12 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-const PROTOS: &[&str] = &[
-    "src/network/schema/api.v1.proto",
-    "src/network/schema/finality.v1.proto",
-    "src/network/schema/light.v1.proto",
-];
-
 fn main() {
-    prost_build::compile_protos(PROTOS, &["src/network/schema"]).unwrap();
+    prost_build::compile_protos(
+        &[
+            "src/network/discovery/kademlia/dht.proto",
+            "src/network/connection/noise/payload.proto",
+            "src/network/peer_id/keys.proto",
+            "src/network/protocol/api.v1.proto",
+            "src/network/protocol/finality.v1.proto",
+            "src/network/protocol/light.v1.proto",
+        ],
+        &["src"],
+    )
+    .unwrap();
 }

@@ -30,8 +30,7 @@ As a quick overview, at the time of writing of this README, the following is sup
 - The WebSocket JSON-RPC server is in progress, but its design is still changing.
 - An informant.
 - A telemetry client (mostly copy-pasted from Substrate and substrate-telemetry).
-
-The networking has been copy-pasted from Substrate.
+- An unfinished new networking stack.
 
 The following isn't done yet:
 

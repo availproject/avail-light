@@ -11,17 +11,13 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 console_error_panic_hook = "0.1.6"
+derive_more = "0.99.7"
 futures = "0.3.1"
+futures-timer = { version = "3.0.2", features = ["wasm-bindgen"] }
 js-sys = "0.3.44"
-libp2p-wasm-ext = { version = "0.20.1", features = ["websocket"] }  # TODO: activating the "websocket" feature because the libp2p front doesn't provide a way; https://github.com/libp2p/rust-libp2p/pull/1718
-rand = { version = "0.7.0", features = ["wasm-bindgen"] }
+rand = { version = "0.7.0", features = ["wasm-bindgen"] } # TODO: can we remove this `rand` dependency?
 substrate-lite = { version = "0.1.0", path = "../..", default-features = false, features = ["wasm-bindings"] }
 wasm-bindgen = "0.2.68"
 wasm-bindgen-futures = "0.4.17"
 web-sys = { version = "0.3.44", features = ["console"] }
 wee_alloc = "0.4.5"
-
-[dependencies.libp2p]
-version = "0.22.0"
-default-features = false
-features = ["wasm-ext"]

@@ -440,7 +440,7 @@ impl PendingVerify {
 
             // These `unwrap()`s can only panic if `vrf_output` or `vrf_proof` are of the wrong
             // length, which we know can't happen as they're of types `[u8; 32]` and `[u8; 64]`.
-            let vrf_output = schnorrkel::vrf::VRFOutput::from_bytes(&vrf_output[..]).unwrap();
+            let vrf_output = schnorrkel::vrf::VRFPreOut::from_bytes(&vrf_output[..]).unwrap();
             let vrf_proof = schnorrkel::vrf::VRFProof::from_bytes(&vrf_proof[..]).unwrap();
 
             let (vrf_in_out, _) = signing_public_key

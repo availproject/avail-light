@@ -17,9 +17,6 @@ default = ["os-networking"]
 os-networking = [
     "async-std",
     "async-tls",
-    "libp2p/dns",
-    "libp2p/tcp-async-std",
-    "libp2p/websocket",
     "soketto",
     "url",
     "webpki",
@@ -44,52 +41,51 @@ path = "bin/json-rpc-test/main.rs"
 required-features = ["os-networking"]
 
 [dependencies]
+ahash = { version = "0.4.5", default-features = false }
 app_dirs = "1.2.1"
 arrayvec = "0.5.1"
-async-trait = "0.1"
 atomic = "0.5.0"
 blake2-rfc = { version = "0.2.18", default-features = false }
+bs58 = { version = "0.3.1", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
-ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch"] }
+ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch", "u64_backend"] }
 either = "1.6.1"
 env_logger = "0.8.1"
 fnv = "1.0"
-futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
-futures_codec = "0.3.3"
+futures = { version = "0.3.6", features = ["thread-pool"] }   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures-timer = "3.0"
 hashbrown = { version = "0.8.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
-ip_network = "0.3.4"
 isatty = "0.1.9"
-lazy_static = "1.4.0"
 libsecp256k1 = "0.3.5"
 lru = "0.5.3"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
+multihash = "0.11.4"
 nom = "5.1.2"
 num-bigint = "0.2.3"
 num-rational = "0.2.2"
 num-traits = "0.2.8"
+parity-multiaddr = "0.9.2"
 parking_lot = "0.11.0"
-pin-project = "0.4"
+pin-project = "0.4.26"
 prost = "0.6.1"
 rand = "0.7.0"
 rand_chacha = "0.2.2"
-schnorrkel = { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
+schnorrkel = { git = "https://github.com/w3f/schnorrkel", rev = "cfdbe9ae865a4d3ffa2566d896d4dbedf5107028", features = ["preaudit_deprecated"] } # TODO: waiting for a publication { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
 send_wrapper = "0.5.0"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.59", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = "0.9.1"
 slab = "0.4.2"
 smallvec = "0.6.10"
-snow = { version = "0.7.1", default-features = false }  # TODO: we have to pick a resolver I think
+snow = { version = "0.7.1", default-features = false, features = ["default-resolver"] }
 structopt = { version = "0.3.17", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.5.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"
-wasm-timer = "0.2.4"
 
 # `os-networking` feature
 async-std = { version = "1.6.2", optional = true }
@@ -101,23 +97,14 @@ webpki = { version = "0.21.0", optional = true }
 # `wasm-bindings` feature
 js-sys = { version = "0.3.44", optional = true }
 wasm-bindgen = { version = "0.2.68", optional = true }
-web-sys = { version = "0.3.44", optional = true, features = ["DomException", "Storage", "Window"] }
+web-sys = { version = "0.3.44", optional = true, features = ["BinaryType", "CloseEvent", "DomException", "Event", "Storage", "WebSocket", "Window"] }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
-bitflags = "1.2.1"  # TODO: I hate bitflags
-bytes = "0.5.0"  # TODO: I hate bytes
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
-sc-peerset = { git = "https://github.com/paritytech/substrate", rev = "16fdfc4a80a14a26221d17b8a1b9a95421a1576c" }
-void = "1.0"    # TODO: remove
-
-[dependencies.libp2p]
-version = "0.22.0"
-default-features = false
-features = ["identify", "kad", "mdns", "mplex", "noise", "ping", "request-response", "wasm-ext", "yamux"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 corooteen = { git = "https://github.com/tomaka/corooteen" } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
@@ -128,8 +115,6 @@ prost-build = "0.6.1"
 
 [dev-dependencies]
 async-std = "1.6.2"
-# TODO: remove
-libp2p = { version = "0.22.0", default-features = false, features = ["secio"] }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
