@@ -2869,6 +2869,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f638d531eccd6e23b980caf34876660d38e265409d8e99b397ab71eb3612fad0"
 
 [[package]]
+name = "send_wrapper"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "930c0acf610d3fdb5e2ab6213019aaa04e227ebe9547b0649ba599b16d788bd7"
+
+[[package]]
 name = "serde"
 version = "1.0.114"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3180,7 +3186,7 @@ dependencies = [
  "rand_chacha",
  "sc-peerset",
  "schnorrkel",
- "send_wrapper 0.4.0",
+ "send_wrapper 0.5.0",
  "serde",
  "serde_json",
  "sha2 0.9.1",

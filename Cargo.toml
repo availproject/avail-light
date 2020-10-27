@@ -76,7 +76,7 @@ prost = "0.6.1"
 rand = "0.7.0"
 rand_chacha = "0.2.2"
 schnorrkel = { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
-send_wrapper = "0.4.0"
+send_wrapper = "0.5.0"
 serde = { version = "1.0.101", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.59", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = "0.9.1"
