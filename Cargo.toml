@@ -59,7 +59,7 @@ hashbrown = { version = "0.8.1", default-features = false, features = ["serde"] 
 hex = { version = "0.4.2", default-features = false }
 isatty = "0.1.9"
 libsecp256k1 = "0.3.5"
-lru = "0.5.3"   # TODO: audit the unsafe code in that crate
+lru = "0.6.0"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
 multihash = "0.11.4"
 nom = "5.1.2"
