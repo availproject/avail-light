@@ -1329,21 +1329,12 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96282e96bfcd3da0d3aa9938bedf1e50df3269b6db08b4876d2da0bb1a0841cf"
-dependencies = [
- "autocfg 1.0.0",
- "serde",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34f595585f103464d8d2f6e9864682d74c1601fed5e07d62b1c9058dba8246fb"
 dependencies = [
  "autocfg 1.0.0",
+ "serde",
 ]
 
 [[package]]
@@ -3161,7 +3152,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "futures_codec 0.3.4",
- "hashbrown 0.7.2",
+ "hashbrown 0.8.1",
  "hex",
  "impl-serde 0.2.3",
  "ip_network",

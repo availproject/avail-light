@@ -58,7 +58,7 @@ fnv = "1.0"
 futures = "0.3.1"   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures_codec = "0.3.3"
 futures-timer = "3.0"
-hashbrown = { version = "0.7.0", default-features = false, features = ["serde"] }   # TODO: remove serde feature
+hashbrown = { version = "0.8.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 ip_network = "0.3.4"
 isatty = "0.1.9"
