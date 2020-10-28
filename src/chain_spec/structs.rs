@@ -25,7 +25,6 @@ use super::light_sync_state::LightSyncState;
 use alloc::{boxed::Box, string::String, vec::Vec};
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
-use primitive_types::H256;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -41,9 +40,11 @@ pub(super) struct ClientSpec {
     pub(super) protocol_id: Option<String>,
     pub(super) properties: Option<Box<serde_json::value::RawValue>>,
     // TODO: make use of this
-    pub(super) fork_blocks: Option<Vec<(u64, H256)>>,
+    // TODO: [u8; 32] is probably wrong wrt serialization
+    pub(super) fork_blocks: Option<Vec<(u64, [u8; 32])>>,
     // TODO: make use of this
-    pub(super) bad_blocks: Option<HashSet<H256, FnvBuildHasher>>,
+    // TODO: [u8; 32] is probably wrong wrt serialization
+    pub(super) bad_blocks: Option<HashSet<[u8; 32], FnvBuildHasher>>,
     // Unused but for some reason still part of the chain specs.
     pub(super) consensus_engine: (),
     // TODO: looks deprecated?

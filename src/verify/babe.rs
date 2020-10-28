@@ -479,13 +479,13 @@ impl PendingVerify {
 
             // The expected authority index is `hash % num_authorities`.
             let expected_authority_index = {
-                let hash = primitive_types::U256::from_big_endian(hash.as_bytes());
-                let authorities_len = primitive_types::U256::from(epoch_info.0.authorities.len());
+                let hash = num_bigint::BigUint::from_bytes_be(hash.as_bytes());
+                let authorities_len = num_bigint::BigUint::from(epoch_info.0.authorities.len());
                 debug_assert_ne!(epoch_info.0.authorities.len(), 0);
                 hash % authorities_len
             };
 
-            if expected_authority_index.as_u32() != self.authority_index {
+            if u32::try_from(expected_authority_index).map_or(true, |v| v != self.authority_index) {
                 return Err(VerifyError::BadSecondarySlotAuthor);
             }
         }
