@@ -104,7 +104,7 @@ web-sys = { version = "0.3.44", optional = true, features = ["BinaryType", "Clos
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
 impl-serde = "0.2.3"  # TODO: that looks like a hack
 parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
-primitive-types = { version = "0.6.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
+primitive-types = { version = "0.7.2", default-features = false, features = ["codec", "serde", "std"] } # TODO: nothing wrong with this one, but ideally don't use parity crates
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 corooteen = { git = "https://github.com/tomaka/corooteen" } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
