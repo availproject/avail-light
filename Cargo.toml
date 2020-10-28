@@ -83,7 +83,7 @@ snow = { version = "0.7.2", default-features = false, features = ["default-resol
 structopt = { version = "0.3.17", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
-twox-hash = "1.5.0"
+twox-hash = "1.6.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
 wasmi = "0.6.2"
 
