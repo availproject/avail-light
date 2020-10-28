@@ -17,7 +17,7 @@
 
 use super::{ExecOutcome, GlobalValueErr, NewErr, RunErr, Signature, WasmValue};
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{cmp, convert::TryFrom, fmt};
 
 // TODO: this entire module is unsatisfactory

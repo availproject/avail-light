@@ -43,6 +43,7 @@
 //! });
 //! ```
 
+use alloc::{format, string::String};
 use core::{cmp, convert::TryFrom as _, fmt, iter};
 
 /// Values used to build the informant line. Implements the [`core::fmt::Display`] trait.

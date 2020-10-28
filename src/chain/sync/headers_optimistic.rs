@@ -33,6 +33,7 @@
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
 
+use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU32};
 
 pub use optimistic::{

@@ -18,6 +18,7 @@
 //! List of requests and how to answer them.
 
 use super::parse;
+use alloc::{format, string::String, vec::Vec};
 
 /// Parses a JSON call (usually received from a JSON-RPC server).
 ///

@@ -19,6 +19,7 @@ mod interpreter;
 #[cfg(target_arch = "x86_64")]
 mod jit;
 
+use alloc::vec::Vec;
 use core::fmt;
 use smallvec::SmallVec;
 

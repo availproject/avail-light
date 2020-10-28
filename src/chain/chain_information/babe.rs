@@ -17,6 +17,7 @@
 
 use crate::{executor, header};
 
+use alloc::vec::Vec;
 use core::{convert::TryFrom as _, fmt};
 use parity_scale_codec::DecodeAll as _;
 

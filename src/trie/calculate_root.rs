@@ -69,6 +69,7 @@ use super::{
     node_value, trie_structure,
 };
 
+use alloc::vec::Vec;
 use core::{convert::TryFrom as _, fmt, iter};
 
 /// Cache containing intermediate calculation steps.

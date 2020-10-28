@@ -84,7 +84,7 @@
 //! mostly depends on the number of modifications that are performed on it, and only a bit on the
 //! size of the trie.
 
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, vec::Vec};
 use core::{iter, mem};
 
 mod nibble;

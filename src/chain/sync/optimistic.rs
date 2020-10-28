@@ -20,7 +20,7 @@
 // TODO: document usage
 // TODO: the quality of this module's code is sub-par compared to what we want
 
-use alloc::{collections::VecDeque, vec};
+use alloc::{collections::VecDeque, vec, vec::Vec};
 use core::{
     cmp,
     convert::TryFrom as _,

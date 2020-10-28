@@ -16,6 +16,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::finality::justification::decode;
+
+use alloc::vec::Vec;
 use core::convert::TryFrom as _;
 
 /// Configuration for a justification verification process.

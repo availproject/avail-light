@@ -18,6 +18,8 @@
 //! Type definitions to help with serializing/deserializing from/to the local storage.
 
 use crate::{chain::chain_information, header};
+
+use alloc::vec::Vec;
 use core::{convert::TryFrom, fmt};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

@@ -21,6 +21,7 @@ use crate::{
     trie::calculate_root, verify::babe,
 };
 
+use alloc::{string::String, vec::Vec};
 use core::{num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
 

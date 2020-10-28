@@ -71,6 +71,7 @@
 // TODO: consider rewriting the encoding/decoding into a more legible style
 // TODO: consider nom for decoding
 
+use alloc::{vec, vec::Vec};
 use core::{convert::TryFrom, fmt, iter, slice};
 
 mod babe;

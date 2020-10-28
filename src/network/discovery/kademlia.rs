@@ -17,6 +17,7 @@
 
 // TODO: work in progress
 
+use alloc::vec::Vec;
 use prost::Message as _;
 
 mod dht_proto {

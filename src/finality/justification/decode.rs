@@ -16,6 +16,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::header;
+
+use alloc::vec::Vec;
 use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.

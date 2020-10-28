@@ -63,7 +63,7 @@
 
 use crate::network::peer_id::{PeerId, PublicKey};
 
-use alloc::collections::VecDeque;
+use alloc::{boxed::Box, collections::VecDeque, vec, vec::Vec};
 use core::{cmp, convert::TryFrom as _, fmt, iter};
 use prost::Message as _;
 

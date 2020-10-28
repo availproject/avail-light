@@ -39,6 +39,7 @@ use super::{
     yamux,
 };
 
+use alloc::vec;
 use core::{fmt, iter};
 
 mod tests;

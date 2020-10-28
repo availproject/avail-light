@@ -67,10 +67,10 @@ use crate::{
     finality::justification,
     header,
     trie::calculate_root,
-    verify::{self, babe},
+    verify,
 };
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{cmp, convert::TryFrom as _, fmt, mem};
 use hashbrown::HashMap;
 

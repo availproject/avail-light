@@ -41,6 +41,7 @@
 
 use crate::{executor, header, trie::calculate_root};
 
+use alloc::{string::String, vec::Vec};
 use core::{convert::TryFrom as _, iter, slice};
 use hashbrown::{HashMap, HashSet};
 

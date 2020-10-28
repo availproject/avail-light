@@ -45,7 +45,10 @@
 use crate::network::peer_id::PeerId;
 
 use ahash::RandomState;
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
 use core::mem;
 use hashbrown::HashMap;
 use parity_multiaddr::Multiaddr;

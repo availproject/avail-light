@@ -101,6 +101,7 @@
 //! ```
 // TODO: use an actual Wasm blob extracted from somewhere as an example ^
 
+use alloc::{string::String, vec::Vec};
 use parity_scale_codec::DecodeAll as _;
 
 mod allocator;

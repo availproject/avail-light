@@ -17,6 +17,7 @@
 
 use super::Error;
 
+use alloc::vec::Vec;
 use core::{cmp, convert::TryFrom, fmt, iter, slice};
 use parity_scale_codec::{Decode as _, DecodeAll as _};
 

@@ -21,6 +21,8 @@
 //! The main type is [`ClientSpec`].
 
 use super::light_sync_state::LightSyncState;
+
+use alloc::{boxed::Box, string::String, vec::Vec};
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
 use primitive_types::H256;

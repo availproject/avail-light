@@ -59,6 +59,7 @@
 
 use crate::network::leb128;
 
+use alloc::{vec, vec::Vec};
 use core::{cmp, fmt, iter, mem, slice, str};
 
 /// Configuration of a multistream-select protocol.

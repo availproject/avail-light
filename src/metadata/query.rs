@@ -40,6 +40,8 @@
 
 use crate::executor;
 
+use alloc::vec::Vec;
+
 /// Retrieves the SCALE-encoded metadata from the runtime code of a block.
 ///
 /// > **Note**: This function is a convenient shortcut for

@@ -55,6 +55,7 @@
 
 use super::{allocator, vm};
 
+use alloc::{format, string::String, vec::Vec};
 use core::{convert::TryFrom as _, fmt, hash::Hasher as _, iter};
 use parity_scale_codec::DecodeAll as _;
 use sha2::Digest as _;

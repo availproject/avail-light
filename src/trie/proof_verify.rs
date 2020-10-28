@@ -46,6 +46,8 @@
 //!
 
 use super::nibble;
+
+use alloc::vec::Vec;
 use core::{convert::TryFrom as _, iter};
 
 /// Configuration to pass to [`verify_proof`].

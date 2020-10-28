@@ -52,6 +52,7 @@ use crate::network::leb128;
 
 use super::{multistream_select, noise, yamux};
 
+use alloc::vec::Vec;
 use core::{
     cmp, fmt, iter, mem,
     ops::{Add, Sub},

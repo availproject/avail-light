@@ -34,6 +34,8 @@
 //! - Multiple other miscellaneous information.
 //!
 
+use alloc::string::String;
+
 mod light_sync_state;
 mod structs;
 

@@ -16,7 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::header::BabeNextConfig;
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, vec::Vec};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 

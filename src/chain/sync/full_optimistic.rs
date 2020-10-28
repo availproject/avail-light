@@ -30,7 +30,7 @@ use super::super::{blocks_tree, chain_information};
 use super::optimistic;
 use crate::{executor, header, trie::calculate_root};
 
-use alloc::{collections::BTreeMap, vec};
+use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{convert::TryFrom as _, iter, num::NonZeroU32};
 use hashbrown::{HashMap, HashSet};
 

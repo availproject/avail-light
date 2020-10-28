@@ -18,6 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use alloc::{string::String, vec::Vec};
 use core::{cmp, convert::TryFrom, fmt, hash, str::FromStr};
 use prost::Message as _;
 

@@ -17,6 +17,8 @@
 
 //! Parse JSON-RPC method calls and notifications, and build responses messages.
 
+use alloc::string::String;
+
 /// Parses a JSON-encoded RPC method call or notification.
 pub fn parse_call(call_json: &str) -> Result<Call, ParseError> {
     let serde_call: SerdeCall = serde_json::from_str(call_json).map_err(ParseError)?;
@@ -25,9 +27,9 @@ pub fn parse_call(call_json: &str) -> Result<Call, ParseError> {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         #[serde(untagged)]
-        enum SerdeId {
+        enum SerdeId<'a> {
             Num(u64),
-            Str(String),
+            Str(&'a str),
         }
 
         if let Err(err) = serde_json::from_str::<SerdeId>(id.get()) {
