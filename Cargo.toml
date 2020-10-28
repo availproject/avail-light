@@ -108,7 +108,7 @@ primitive-types = { version = "0.7.2", default-features = false, features = ["co
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 corooteen = { git = "https://github.com/tomaka/corooteen" } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
-wasmtime = { version = "0.18.0", default-features = false }
+wasmtime = { version = "0.20.0", default-features = false }
 
 [build-dependencies]
 prost-build = "0.6.1"
