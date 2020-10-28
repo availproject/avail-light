@@ -1150,12 +1150,20 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f595585f103464d8d2f6e9864682d74c1601fed5e07d62b1c9058dba8246fb"
+checksum = "e91b62f79061a0bc2e046024cb7ba44b08419ed238ecbd9adbd787434b9e8c25"
 dependencies = [
  "ahash 0.3.8",
  "autocfg",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+dependencies = [
  "serde",
 ]
 
@@ -1270,7 +1278,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b88cd59ee5f71fea89a62248fc8f387d44400cefe05ef548466d61ced9029a7"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.8.2",
 ]
 
 [[package]]
@@ -1416,7 +1424,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "111b945ac72ec09eb7bc62a0fbdc3cc6e80555a7245f52a69d3921a75b53b153"
 dependencies = [
- "hashbrown",
+ "hashbrown 0.8.2",
 ]
 
 [[package]]
@@ -2498,7 +2506,7 @@ dependencies = [
  "fnv",
  "futures",
  "futures-timer",
- "hashbrown",
+ "hashbrown 0.9.1",
  "hex",
  "impl-serde 0.2.3",
  "isatty",

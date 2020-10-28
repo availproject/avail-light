@@ -55,7 +55,7 @@ env_logger = "0.8.1"
 fnv = "1.0"
 futures = { version = "0.3.6", features = ["thread-pool"] }   # TODO: should be default-features = false, but we use some std-only types at the moment
 futures-timer = "3.0"
-hashbrown = { version = "0.8.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
+hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 isatty = "0.1.9"
 libsecp256k1 = "0.3.5"
