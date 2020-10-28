@@ -49,7 +49,7 @@ blake2-rfc = { version = "0.2.18", default-features = false }
 bs58 = { version = "0.3.1", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
-ed25519-dalek = { version = "1.0.0", default-features = false, features = ["alloc", "batch", "u64_backend"] }
+ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "batch", "u64_backend"] }
 either = "1.6.1"
 env_logger = "0.8.1"
 fnv = "1.0"
