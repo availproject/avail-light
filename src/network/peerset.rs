@@ -141,9 +141,11 @@ impl<TPeer, TConn, TPending> Peerset<TPeer, TConn, TPending> {
         let peer_ids = {
             let k0 = rng.next_u64();
             let k1 = rng.next_u64();
+            let k2 = rng.next_u64();
+            let k3 = rng.next_u64();
             HashMap::with_capacity_and_hasher(
                 config.peers_capacity,
-                RandomState::with_seeds(k0, k1),
+                RandomState::with_seeds(k0, k1, k2, k3),
             )
         };
 

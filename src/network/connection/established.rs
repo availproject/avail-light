@@ -1240,5 +1240,5 @@ pub struct Config<TProtoList, TProto> {
     /// Name of the ping protocol on the network.
     pub ping_protocol: TProto,
     /// Seed used for the randomness specific to this connection.
-    pub randomness_seed: (u64, u64),
+    pub randomness_seed: (u64, u64, u64, u64),
 }

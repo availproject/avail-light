@@ -41,7 +41,7 @@ path = "bin/json-rpc-test/main.rs"
 required-features = ["os-networking"]
 
 [dependencies]
-ahash = { version = "0.4.5", default-features = false }
+ahash = { version = "0.5.6", default-features = false }
 app_dirs = "1.2.1"
 arrayvec = "0.5.1"
 atomic = "0.5.0"
