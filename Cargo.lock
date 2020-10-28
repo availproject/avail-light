@@ -2324,7 +2324,7 @@ dependencies = [
  "parity-multiaddr",
  "parity-scale-codec",
  "parking_lot",
- "pin-project 0.4.27",
+ "pin-project 1.0.1",
  "primitive-types",
  "prost",
  "prost-build",
