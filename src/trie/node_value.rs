@@ -69,10 +69,10 @@
 //! ```
 
 use super::nibble::Nibble;
+use crate::util;
 
 use arrayvec::ArrayVec;
 use core::{convert::TryFrom as _, fmt};
-use parity_scale_codec::Encode as _;
 
 /// Information about a node whose Merkle value is to be calculated.
 ///
@@ -203,8 +203,8 @@ where
             // Doing something like `merkle_value_sink.update(stored_value.encode());` would be
             // quite expensive because we would duplicate the storage value. Instead, we do the
             // encoding manually by pushing the length then the value.
-            parity_scale_codec::Compact(u64::try_from(stored_value.as_ref().len()).unwrap())
-                .encode_to(&mut merkle_value_sink);
+            merkle_value_sink
+                .update(util::encode_scale_compact_usize(stored_value.as_ref().len()).as_ref());
             merkle_value_sink.update(stored_value.as_ref());
         }
 
@@ -232,8 +232,8 @@ where
         // Doing something like `merkle_value_sink.update(child_merkle_value.encode());` would be
         // expensive because we would duplicate the merkle value. Instead, we do the encoding
         // manually by pushing the length then the value.
-        parity_scale_codec::Compact(u64::try_from(child_merkle_value.as_ref().len()).unwrap())
-            .encode_to(&mut merkle_value_sink);
+        merkle_value_sink
+            .update(util::encode_scale_compact_usize(child_merkle_value.as_ref().len()).as_ref());
         merkle_value_sink.update(child_merkle_value.as_ref());
     }
 
@@ -242,8 +242,8 @@ where
         // Doing something like `merkle_value_sink.update(stored_value.encode());` would be
         // quite expensive because we would duplicate the storage value. Instead, we do the
         // encoding manually by pushing the length then the value.
-        parity_scale_codec::Compact(u64::try_from(stored_value.as_ref().len()).unwrap())
-            .encode_to(&mut merkle_value_sink);
+        merkle_value_sink
+            .update(util::encode_scale_compact_usize(stored_value.as_ref().len()).as_ref());
         merkle_value_sink.update(stored_value.as_ref());
     }
 
@@ -343,12 +343,6 @@ impl HashOrInline {
                 HashOrInline::Hasher(h) => OutputInner::Hasher(h.finalize()),
             },
         }
-    }
-}
-
-impl parity_scale_codec::Output for HashOrInline {
-    fn write(&mut self, bytes: &[u8]) {
-        self.update(bytes);
     }
 }
 

@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::Error;
+use crate::util;
 
 use alloc::vec::Vec;
 use core::{cmp, convert::TryFrom, fmt, iter, slice};
@@ -163,19 +164,15 @@ impl<'a> BabeNextEpochRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        // TODO: don't allocate
-        let header = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-            u64::try_from(self.authorities.len()).unwrap(),
-        ));
-
-        iter::once(either::Either::Left(header))
+        let header = util::encode_scale_compact_usize(self.authorities.len());
+        iter::once(either::Left(header))
             .chain(
                 self.authorities
                     .clone()
                     .flat_map(|a| a.scale_encoding())
-                    .map(|buf| either::Either::Right(either::Either::Left(buf))),
+                    .map(|buf| either::Right(either::Left(buf))),
             )
-            .chain(iter::once(either::Either::Right(either::Either::Right(
+            .chain(iter::once(either::Right(either::Right(
                 &self.randomness[..],
             ))))
     }

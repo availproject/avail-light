@@ -39,10 +39,10 @@
 //! block in order to continue.
 //!
 
-use crate::{executor, header, trie::calculate_root};
+use crate::{executor, header, trie::calculate_root, util};
 
 use alloc::{string::String, vec::Vec};
-use core::{convert::TryFrom as _, iter, slice};
+use core::{iter, slice};
 use hashbrown::{HashMap, HashSet};
 
 /// Configuration for an unsealed block verification.
@@ -105,30 +105,18 @@ pub fn execute_block<'a>(
             // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
             // where `body` is a `Vec<Vec<u8>>`. We perform the encoding manually to avoid
             // performing redundant data copies.
-
-            // TODO: zero-cost
-            let encoded_body_len = parity_scale_codec::Encode::encode(
-                &parity_scale_codec::Compact(u32::try_from(config.block_body.len()).unwrap()),
-            );
-
+            let encoded_body_len = util::encode_scale_compact_usize(config.block_body.len());
             let body = config.block_body.flat_map(|ext| {
-                // TODO: don't allocate
-                let encoded_ext_len = parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(u32::try_from(ext.as_ref().len()).unwrap()),
-                );
-
-                iter::once(either::Either::Left(encoded_ext_len))
-                    .chain(iter::once(either::Either::Right(ext)))
+                let encoded_ext_len = util::encode_scale_compact_usize(ext.as_ref().len());
+                iter::once(either::Left(encoded_ext_len)).chain(iter::once(either::Right(ext)))
             });
 
             config
                 .block_header
                 .scale_encoding()
-                .map(|b| either::Either::Right(either::Either::Left(b)))
-                .chain(iter::once(either::Either::Right(either::Either::Right(
-                    encoded_body_len,
-                ))))
-                .chain(body.map(either::Either::Left))
+                .map(|b| either::Right(either::Left(b)))
+                .chain(iter::once(either::Right(either::Right(encoded_body_len))))
+                .chain(body.map(either::Left))
         })
         .unwrap()
         .into();
@@ -641,6 +629,7 @@ impl VerifyInner {
 
 /// Performs the action described by [`executor::WasmVm::ExternalStorageAppend`] on an encoded
 /// storage value.
+// TODO: remove usage of parity_scale_codec
 fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {
     let curr_len = match <parity_scale_codec::Compact<u64> as parity_scale_codec::Decode>::decode(
         &mut &value[..],

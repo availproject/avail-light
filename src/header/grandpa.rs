@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::Error;
+use crate::util;
 
 use alloc::vec::Vec;
 use core::{cmp, convert::TryFrom, fmt, iter, slice};
@@ -267,21 +268,17 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        // TODO: don't allocate
-        let header = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-            u64::try_from(self.next_authorities.len()).unwrap(),
-        ));
-
-        iter::once(either::Either::Left(header))
+        let header = util::encode_scale_compact_usize(self.next_authorities.len());
+        iter::once(either::Left(either::Left(header)))
             .chain(
                 self.next_authorities
                     .clone()
                     .flat_map(|a| a.scale_encoding())
-                    .map(|buf| either::Either::Right(buf)),
+                    .map(|buf| either::Right(buf)),
             )
-            .chain(iter::once(either::Either::Left(
+            .chain(iter::once(either::Left(either::Right(
                 self.delay.to_le_bytes().to_vec(), // TODO: don't allocate
-            )))
+            ))))
     }
 }
 

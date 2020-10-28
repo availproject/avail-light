@@ -226,19 +226,14 @@ mod tests {
         let mut trie = Trie::new();
         trie.insert(&[0xaa], [0xbb].to_vec());
 
-        fn to_compact(n: u8) -> u8 {
-            use parity_scale_codec::Encode as _;
-            parity_scale_codec::Compact(n).encode()[0]
-        }
-
         let expected = blake2_rfc::blake2b::blake2b(
             32,
             &[],
             &[
-                0x42,          // leaf 0x40 (2^6) with (+) key of 2 nibbles (0x02)
-                0xaa,          // key data
-                to_compact(1), // length of value in bytes as Compact
-                0xbb,          // value data
+                0x42,   // leaf 0x40 (2^6) with (+) key of 2 nibbles (0x02)
+                0xaa,   // key data
+                1 << 2, // length of value in bytes as Compact
+                0xbb,   // value data
             ],
         );
 
@@ -251,26 +246,21 @@ mod tests {
         trie.insert(&[0x48, 0x19], [0xfe].to_vec());
         trie.insert(&[0x13, 0x14], [0xff].to_vec());
 
-        fn to_compact(n: u8) -> u8 {
-            use parity_scale_codec::Encode as _;
-            parity_scale_codec::Compact(n).encode()[0]
-        }
-
         let mut ex = Vec::<u8>::new();
         ex.push(0x80); // branch, no value (0b_10..) no nibble
         ex.push(0x12); // slots 1 & 4 are taken from 0-7
         ex.push(0x00); // no slots from 8-15
-        ex.push(to_compact(0x05)); // first slot: LEAF, 5 bytes long.
+        ex.push(0x05 << 2); // first slot: LEAF, 5 bytes long.
         ex.push(0x43); // leaf 0x40 with 3 nibbles
         ex.push(0x03); // first nibble
         ex.push(0x14); // second & third nibble
-        ex.push(to_compact(0x01)); // 1 byte data
+        ex.push(0x01 << 2); // 1 byte data
         ex.push(0xff); // value data
-        ex.push(to_compact(0x05)); // second slot: LEAF, 5 bytes long.
+        ex.push(0x05 << 2); // second slot: LEAF, 5 bytes long.
         ex.push(0x43); // leaf with 3 nibbles
         ex.push(0x08); // first nibble
         ex.push(0x19); // second & third nibble
-        ex.push(to_compact(0x01)); // 1 byte data
+        ex.push(0x01 << 2); // 1 byte data
         ex.push(0xfe); // value data
 
         let expected = blake2_rfc::blake2b::blake2b(32, &[], &ex);

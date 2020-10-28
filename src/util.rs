@@ -92,3 +92,30 @@ pub(crate) fn nom_scale_compact_usize<'a, E: nom::error::ParseError<&'a [u8]>>(
         _ => unreachable!(),
     }
 }
+
+/// Returns a buffer containing the SCALE-compact encoding of the parameter.
+pub(crate) fn encode_scale_compact_usize(mut value: usize) -> impl AsRef<[u8]> + Clone {
+    // TODO: use usize::BITS after https://github.com/rust-lang/rust/issues/76904 is stable
+    let mut array = arrayvec::ArrayVec::<[u8; 1 + 64 / 8]>::new();
+
+    if value < 64 {
+        array.push(u8::try_from(value).unwrap() << 2);
+    } else if value < (1 << 14) {
+        array.push((u8::try_from(value & 0b111111).unwrap() << 2) | 0b01);
+        array.push(u8::try_from((value >> 6) & 0xff).unwrap());
+    } else if value < (1 << 30) {
+        array.push((u8::try_from(value & 0b111111).unwrap() << 2) | 0b10);
+        array.push(u8::try_from((value >> 6) & 0xff).unwrap());
+        array.push(u8::try_from((value >> 14) & 0xff).unwrap());
+        array.push(u8::try_from((value >> 22) & 0xff).unwrap());
+    } else {
+        array.push(0);
+        while value != 0 {
+            array.push(u8::try_from(value & 0xff).unwrap());
+            value >>= 8;
+        }
+        array[0] = (u8::try_from(array.len() - 1 - 4).unwrap() << 2) | 0b11;
+    }
+
+    array
+}

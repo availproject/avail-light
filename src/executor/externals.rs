@@ -54,6 +54,7 @@
 //! length designate a buffer containing the actual return value.
 
 use super::{allocator, vm};
+use crate::util;
 
 use alloc::{format, string::String, vec::Vec};
 use core::{convert::TryFrom as _, fmt, hash::Hasher as _, iter};
@@ -935,6 +936,7 @@ impl ReadyToRun {
                         }
                     };
 
+                    // TODO: optimize this
                     let mut trie = crate::trie::Trie::new();
                     for (key, value) in elements {
                         trie.insert(&key, value);
@@ -962,12 +964,11 @@ impl ReadyToRun {
                         }
                     };
 
+                    // TODO: optimize this
                     let mut trie = crate::trie::Trie::new();
                     for (idx, value) in elements.into_iter().enumerate() {
-                        let idx = u32::try_from(idx).unwrap();
-                        let key =
-                            parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(idx));
-                        trie.insert(&key, value);
+                        let key = util::encode_scale_compact_usize(idx);
+                        trie.insert(key.as_ref(), value);
                     }
                     let out = trie.root_merkle_value(None);
 
@@ -1252,13 +1253,11 @@ impl ExternalStorageGet {
                 if let Some(value) = value {
                     // Writing `Some(value)`.
                     let value_len = value.clone().fold(0, |a, b| a + b.as_ref().len());
-                    let value_len_enc = parity_scale_codec::Encode::encode(
-                        &parity_scale_codec::Compact(u64::try_from(value_len).unwrap()),
-                    );
+                    let value_len_enc = util::encode_scale_compact_usize(value_len);
                     self.inner.alloc_write_and_return_pointer_size(
                         externality.name(),
                         iter::once(&[1][..])
-                            .chain(iter::once(&value_len_enc[..]))
+                            .chain(iter::once(value_len_enc.as_ref()))
                             .map(either::Left)
                             .chain(value.map(either::Right)),
                     )
@@ -1527,14 +1526,11 @@ impl ExternalStorageNextKey {
     /// Must be passed `None` if the key is the last one in the storage.
     pub fn resume(self, follow_up: Option<&[u8]>) -> ExternalsVm {
         if let Some(follow_up) = follow_up {
-            // TODO: don't allocate a Vec here
-            let value_len_enc = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-                u64::try_from(follow_up.len()).unwrap(),
-            ));
+            let value_len_enc = util::encode_scale_compact_usize(follow_up.len());
             self.inner.alloc_write_and_return_pointer_size(
                 Externality::ext_storage_next_key_version_1.name(),
                 iter::once(&[1][..])
-                    .chain(iter::once(&value_len_enc[..]))
+                    .chain(iter::once(value_len_enc.as_ref()))
                     .chain(iter::once(follow_up)),
             )
         } else {

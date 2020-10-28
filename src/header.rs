@@ -71,6 +71,8 @@
 // TODO: consider rewriting the encoding/decoding into a more legible style
 // TODO: consider nom for decoding
 
+use crate::util;
+
 use alloc::{vec, vec::Vec};
 use core::{convert::TryFrom, fmt, iter, slice};
 
@@ -479,13 +481,10 @@ impl<'a> DigestRef<'a> {
     pub fn scale_encoding(
         &self,
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
-        // TODO: don't allocate?
-        let len = u64::try_from(self.logs().len()).unwrap();
-        let encoded_len = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(len));
-
-        iter::once(either::Either::Left(encoded_len)).chain(
+        let encoded_len = util::encode_scale_compact_usize(self.logs().len());
+        iter::once(either::Left(encoded_len)).chain(
             self.logs()
-                .flat_map(|v| v.scale_encoding().map(either::Either::Right)),
+                .flat_map(|v| v.scale_encoding().map(either::Right)),
         )
     }
 
@@ -746,9 +745,7 @@ impl<'a> DigestItemRef<'a> {
 
                 let mut ret = vec![4];
                 ret.extend_from_slice(b"BABE");
-                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
-                ));
+                ret.extend_from_slice(util::encode_scale_compact_usize(encoded.len()).as_ref());
                 ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
@@ -760,9 +757,7 @@ impl<'a> DigestItemRef<'a> {
 
                 let mut ret = vec![4];
                 ret.extend_from_slice(b"FRNK");
-                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
-                ));
+                ret.extend_from_slice(util::encode_scale_compact_usize(encoded.len()).as_ref());
                 ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
@@ -771,9 +766,7 @@ impl<'a> DigestItemRef<'a> {
 
                 let mut ret = vec![5];
                 ret.extend_from_slice(b"BABE");
-                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(64u32),
-                ));
+                ret.extend_from_slice(util::encode_scale_compact_usize(64).as_ref());
                 ret.extend_from_slice(seal);
                 iter::once(ret)
             }
