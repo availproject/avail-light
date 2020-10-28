@@ -79,7 +79,7 @@ serde_json = { version = "1.0.59", default-features = false, features = ["alloc"
 sha2 = "0.9.1"
 slab = "0.4.2"
 smallvec = "0.6.10"
-snow = { version = "0.7.1", default-features = false, features = ["default-resolver"] }
+snow = { version = "0.7.2", default-features = false, features = ["default-resolver"] }
 structopt = { version = "0.3.17", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
