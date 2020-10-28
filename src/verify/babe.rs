@@ -541,7 +541,7 @@ fn calculate_primary_threshold(
     let p = num_rational::BigRational::from_float(1f64 - (1f64 - c).powf(theta)).unwrap();
     let numer = p.numer().to_biguint().unwrap();
     let denom = p.denom().to_biguint().unwrap();
-    ((num_bigint::BigUint::one() << 128) * numer / denom)
+    ((num_bigint::BigUint::one() << 128u32) * numer / denom)
         .to_u128()
         .unwrap()
 }

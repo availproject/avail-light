@@ -63,9 +63,9 @@ lru = "0.6.0"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
 multihash = "0.11.4"
 nom = "5.1.2"
-num-bigint = "0.2.3"
-num-rational = "0.2.2"
-num-traits = "0.2.8"
+num-bigint = "0.3.0"
+num-rational = "0.3.0"
+num-traits = "0.2.12"
 parity-multiaddr = "0.9.2"
 parking_lot = "0.11.0"
 pin-project = "0.4.26"

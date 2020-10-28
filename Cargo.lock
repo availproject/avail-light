@@ -1552,6 +1552,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-bigint"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7f3fc75e3697059fb1bc465e3d8cca6cf92f56854f201158b3f9c77d5a3cfa0"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1568,7 +1579,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c000134b5dbf44adc5cb772486d335293351644b801551abe8f75c84cfa4aef"
 dependencies = [
  "autocfg",
- "num-bigint",
+ "num-bigint 0.2.6",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5b4d7360f362cfb50dde8143501e6940b22f644be75a4cc90b2d81968908138"
+dependencies = [
+ "autocfg",
+ "num-bigint 0.3.0",
  "num-integer",
  "num-traits",
 ]
@@ -2516,8 +2539,8 @@ dependencies = [
  "merlin",
  "multihash",
  "nom",
- "num-bigint",
- "num-rational",
+ "num-bigint 0.3.0",
+ "num-rational 0.3.0",
  "num-traits",
  "parity-multiaddr",
  "parity-scale-codec",
@@ -2924,7 +2947,7 @@ checksum = "bf617d864d25af3587aa745529f7aaa541066c876d57e050c0d0c85c61c92aff"
 dependencies = [
  "libc",
  "memory_units 0.3.0",
- "num-rational",
+ "num-rational 0.2.4",
  "num-traits",
  "parity-wasm",
  "wasmi-validation",
