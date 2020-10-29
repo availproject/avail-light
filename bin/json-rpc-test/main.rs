@@ -22,7 +22,6 @@ use std::collections::{BTreeMap, HashMap};
 use substrate_lite::json_rpc::{methods, websocket_server};
 
 fn main() {
-    env_logger::init();
     futures::executor::block_on(async_main())
 }
 

@@ -46,7 +46,6 @@ use substrate_lite::{
 mod network_service;
 
 fn main() {
-    env_logger::init();
     futures::executor::block_on(async_main())
 }
 

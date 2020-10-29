@@ -16,19 +16,31 @@ members = [
 ]
 
 [features]
-default = ["os-networking"]
-os-networking = [
+default = ["std"]
+std = [
+    "app_dirs",
     "async-std",
     "async-tls",
+    "corooteen",
+    "futures/std",
+    "futures/thread-pool",
+    "futures-timer",
+    "isatty",
+    "rand/std",
+    "rand_chacha/std",
     "soketto",
+    "structopt",
+    "terminal_size",
     "url",
+    "wasmtime",
     "webpki",
 ]
 wasm-bindings = [
-    "chrono/wasmbind",
     "futures-timer/wasm-bindgen",
     "js-sys",
     "rand/wasm-bindgen",
+    "send_wrapper",
+    "std",
     "wasm-bindgen",
     "web-sys",
 ]
@@ -36,69 +48,71 @@ wasm-bindings = [
 [[bin]]
 name = "full-node"
 path = "bin/full-node/main.rs"
-required-features = ["os-networking"]
+required-features = ["std"]
 
 [[bin]]
 name = "json-rpc-test"
 path = "bin/json-rpc-test/main.rs"
-required-features = ["os-networking"]
+required-features = ["std"]
 
 [dependencies]
+# This section contains only no_std-compatible crates. See below for std-only crates.
+#
+# Before adding a crate here, please make sure that it is `no_std`-compatible. If a crate should
+# theoretically be `no_std`-compatible (i.e. doesn't need the help of the operating system) but is
+# not, or if things are sketchy, please leave a comment next to it.
 ahash = { version = "0.5.6", default-features = false }
-app_dirs = "1.2.1"
-arrayvec = "0.5.1"
+arrayvec = { version = "0.5.1", default-features = false }
 atomic = "0.5.0"
 blake2-rfc = { version = "0.2.18", default-features = false }
 bs58 = { version = "0.3.1", default-features = false, features = ["alloc"] }
-chrono = { version = "0.4", features = ["serde"] }   # TODO: remove serde feature
 derive_more = "0.99.7"
 ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "batch", "u64_backend"] }
-either = "1.6.1"
-env_logger = "0.8.1"
-fnv = "1.0"
-futures = { version = "0.3.6", features = ["thread-pool"] }   # TODO: should be default-features = false, but we use some std-only types at the moment
-futures-timer = "3.0"
+either = { version = "1.6.1", default-features = false }
+fnv = { version = "1.0.7", default-features = false }
 hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
-isatty = "0.1.9"
-libsecp256k1 = "0.3.5"
+libsecp256k1 = { version = "0.3.5", default-features = false }
 lru = "0.6.0"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
-multihash = "0.11.4"
-nom = "5.1.2"
-num-bigint = "0.3.0"
-num-rational = "0.3.0"
-num-traits = "0.2.12"
-parity-multiaddr = "0.9.2"
-parking_lot = "0.11.0"
+multihash = "0.11.4"  # TODO: waiting for a crates.io publication of https://github.com/multiformats/rust-multihash/pull/82 that adds no_std support
+nom = "5.1.2"  # TODO: nom has a disableable `std` feature, but disabling it requires nightly; waiting for version 6.0
+num-bigint = { version = "0.3.0", default-features = false }
+num-rational = "0.3.0"  # TODO: there's a fuck-up in their source code that prevents disabling `std`
+num-traits = { version = "0.2.12", default-features = false }
+parity-multiaddr = "0.9.2" # TODO: doesn't support no_std
 pin-project = "1.0.1"
-prost = "0.6.1"
-rand = "0.7.0"
-rand_chacha = "0.2.2"
+prost = "0.6.1"  # TODO: waiting for a published version that supports no_std
+rand = { version = "0.7.3", default-features = false }
+rand_chacha = { version = "0.2.2", default-features = false }
 schnorrkel = { git = "https://github.com/w3f/schnorrkel", rev = "cfdbe9ae865a4d3ffa2566d896d4dbedf5107028", features = ["preaudit_deprecated"] } # TODO: waiting for a publication { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
-send_wrapper = "0.5.0"
 serde = { version = "1.0.117", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.59", default-features = false, features = ["alloc", "raw_value"] }
-sha2 = "0.9.1"
-slab = "0.4.2"
-smallvec = "0.6.10"
+sha2 = { version = "0.9.1", default-features = false }
+slab = "0.4.2"  # TODO: doesn't support no_std and is unmaintained :-/
+smallvec = "1.4.2"
 snow = { version = "0.7.2", default-features = false, features = ["default-resolver"] }
-structopt = { version = "0.3.17", default-features = false, features = ["color", "suggestions", "wrap_help"] }
-terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.6.0"
-unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
-wasmi = "0.7.0"
+wasmi = { version = "0.7.0", default-features = false, features = ["core"] }  # TODO: having to add `core` is sketchy; maybe report this
 
-# `os-networking` feature
-async-std = { version = "1.6.2", optional = true }
+# `std` feature
+# Add here the crates that cannot function without the help of the operating system or environment.
+app_dirs = { version = "1.2.1", optional = true }
+async-std = { version = "1.6.5", optional = true }
 async-tls = { version = "0.7.0", optional = true }
+futures = { version = "0.3.6", default-features = false, optional = true }
+futures-timer = { version = "3.0", optional = true }
+isatty = { version = "0.1.9", optional = true }
 soketto = { version = "0.4.2", optional = true }
+structopt = { version = "0.3.17", optional = true, default-features = false, features = ["color", "suggestions", "wrap_help"] }
+terminal_size = { version = "0.1.12", optional = true }
 url = { version = "2.1.1", optional = true }
 webpki = { version = "0.21.0", optional = true }
 
 # `wasm-bindings` feature
 js-sys = { version = "0.3.44", optional = true }
+send_wrapper = { version = "0.5.0", optional = true }
 wasm-bindgen = { version = "0.2.68", optional = true }
 web-sys = { version = "0.3.44", optional = true, features = ["BinaryType", "CloseEvent", "DomException", "Event", "Storage", "WebSocket", "Window"] }
 
@@ -109,8 +123,9 @@ impl-serde = "0.2.3"  # TODO: that looks like a hack
 parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-corooteen = { git = "https://github.com/tomaka/corooteen" } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
-wasmtime = { version = "0.20.0", default-features = false }
+# `std` feature
+corooteen = { git = "https://github.com/tomaka/corooteen", optional = true } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
+wasmtime = { version = "0.20.0", default-features = false, optional = true }
 
 [build-dependencies]
 prost-build = "0.6.1"

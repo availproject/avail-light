@@ -25,8 +25,8 @@
 
 // The `AsyncRead` and `AsyncWrite` traits, which are core the API of this module, are only
 // available in a "std environment".
-#![cfg(feature = "os-networking")]
-#![cfg_attr(docsrs, doc(cfg(feature = "os-networking")))]
+#![cfg(feature = "std")]
+#![cfg_attr(docsrs, doc(cfg(feature = "std")))]
 
 use core::{fmt, pin::Pin, task::Poll};
 use futures::{
