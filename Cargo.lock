@@ -532,7 +532,7 @@ checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 [[package]]
 name = "corooteen"
 version = "0.1.0"
-source = "git+https://github.com/tomaka/corooteen#36eae9d1d3cd2adf5ae9db353c88eb69306b3f3e"
+source = "git+https://github.com/tomaka/corooteen#90b5c77784d1c71ff48df5e879e8a42278676ccd"
 dependencies = [
  "cc",
 ]
