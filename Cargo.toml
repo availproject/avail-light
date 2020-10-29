@@ -21,11 +21,11 @@ std = [
     "app_dirs",
     "async-std",
     "async-tls",
+    "atty",
     "corooteen",
     "futures/std",
     "futures/thread-pool",
     "futures-timer",
-    "isatty",
     "rand/std",
     "rand_chacha/std",
     "soketto",
@@ -101,9 +101,9 @@ wasmi = { version = "0.7.0", default-features = false, features = ["core"] }  # 
 app_dirs = { version = "1.2.1", optional = true }
 async-std = { version = "1.6.5", optional = true }
 async-tls = { version = "0.10.0", optional = true }
+atty = { version = "0.2.14", optional = true }
 futures = { version = "0.3.6", default-features = false, optional = true }
 futures-timer = { version = "3.0", optional = true }
-isatty = { version = "0.1.9", optional = true }
 soketto = { version = "0.4.2", optional = true }
 structopt = { version = "0.3.17", optional = true, default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = { version = "0.1.12", optional = true }

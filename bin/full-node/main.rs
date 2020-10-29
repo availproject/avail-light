@@ -252,7 +252,7 @@ async fn async_main() {
                     eprint!("{}\r", substrate_lite::informant::InformantLine {
                         enable_colors: match cli_options.color {
                             ColorChoice::Always => true,
-                            ColorChoice::Auto => isatty::stderr_isatty(),
+                            ColorChoice::Auto => atty::is(atty::Stream::Stderr),
                             ColorChoice::Never => false,
                         },
                         chain_name: chain_spec.name(),
