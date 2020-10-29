@@ -2,8 +2,11 @@
 name = "substrate-lite"
 version = "0.1.0"
 authors = ["Parity Technologies <admin@parity.io>", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
+description = "Primitives to build a client for Substrate-based blockchains"
+repository = "https://github.com/paritytech/substrate-lite"
 license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
 edition = "2018"
+readme = "README.md"
 keywords = ["blockchain", "peer-to-peer"]
 default-run = "full-node"
 
