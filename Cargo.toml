@@ -88,7 +88,7 @@ terminal_size = "0.1.12"
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.6.0"
 unsigned-varint = { version = "0.3.1", features = ["futures", "futures-codec"] }
-wasmi = "0.6.2"
+wasmi = "0.7.0"
 
 # `os-networking` feature
 async-std = { version = "1.6.2", optional = true }
