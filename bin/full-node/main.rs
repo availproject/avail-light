@@ -168,6 +168,7 @@ async fn async_main() {
 
     let network_service = network_service::NetworkService::new(network_service::Config {
         listen_addresses: Vec::new(),
+        protocol_id: chain_spec.protocol_id().to_owned(),
         bootstrap_nodes: {
             let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
             for node in chain_spec.boot_nodes() {
