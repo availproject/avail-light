@@ -222,7 +222,7 @@ impl NetworkService {
     // TODO: more docs
     // TODO: proper error type
     pub async fn blocks_request(
-        self: &Arc<Self>,
+        self: Arc<Self>,
         target: PeerId,
         config: protocol::BlocksRequestConfig,
     ) -> Result<Vec<protocol::BlockData>, ()> {
