@@ -120,7 +120,7 @@ web-sys = { version = "0.3.44", optional = true, features = ["BinaryType", "Clos
 # TODO:
 anyhow = "1.0.31"  # TODO: wasmtime returns these errors for some reason
 impl-serde = "0.2.3"  # TODO: that looks like a hack
-parity-scale-codec = { version = "1.0.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
+parity-scale-codec = { version = "1.3.5", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 # `std` feature
