@@ -1039,15 +1039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "impl-serde"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b47ca4d2b6931707a55fce5cf66aff80e2178c8b63bbb4ecb5695cbc870ddf6f"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "indexmap"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2065,7 +2056,6 @@ dependencies = [
  "futures-timer",
  "hashbrown 0.9.1",
  "hex",
- "impl-serde",
  "js-sys",
  "libsecp256k1",
  "lru",

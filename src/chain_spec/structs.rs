@@ -40,11 +40,9 @@ pub(super) struct ClientSpec {
     pub(super) protocol_id: Option<String>,
     pub(super) properties: Option<Box<serde_json::value::RawValue>>,
     // TODO: make use of this
-    // TODO: [u8; 32] is probably wrong wrt serialization
-    pub(super) fork_blocks: Option<Vec<(u64, [u8; 32])>>,
+    pub(super) fork_blocks: Option<Vec<(u64, HashHexString)>>,
     // TODO: make use of this
-    // TODO: [u8; 32] is probably wrong wrt serialization
-    pub(super) bad_blocks: Option<HashSet<[u8; 32], FnvBuildHasher>>,
+    pub(super) bad_blocks: Option<HashSet<HashHexString, FnvBuildHasher>>,
     // Unused but for some reason still part of the chain specs.
     pub(super) consensus_engine: (),
     // TODO: looks deprecated?
@@ -77,15 +75,39 @@ pub(super) enum Genesis {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawGenesis {
-    pub(super) top: HashMap<StorageKey, StorageData, FnvBuildHasher>,
-    pub(super) children_default: HashMap<StorageKey, ChildRawStorage, FnvBuildHasher>,
+    pub(super) top: HashMap<HexString, HexString, FnvBuildHasher>,
+    pub(super) children_default: HashMap<HexString, ChildRawStorage, FnvBuildHasher>,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct StorageKey(#[serde(with = "impl_serde::serialize")] pub(super) Vec<u8>);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct HexString(pub(super) Vec<u8>);
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(super) Vec<u8>);
+impl serde::Serialize for HexString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        format!("0x{}", hex::encode(&self.0[..])).serialize(serializer)
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for HexString {
+    fn deserialize<D>(deserializer: D) -> Result<HexString, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        if !string.starts_with("0x") {
+            return Err(serde::de::Error::custom(
+                "hexadecimal string doesn't start with 0x",
+            ));
+        }
+
+        let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
+        Ok(HexString(bytes))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,4 +115,41 @@ pub(super) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(super
 pub(super) struct ChildRawStorage {
     pub(super) child_info: Vec<u8>,
     pub(super) child_type: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct HashHexString(pub(super) [u8; 32]);
+
+impl serde::Serialize for HashHexString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        format!("0x{}", hex::encode(&self.0[..])).serialize(serializer)
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for HashHexString {
+    fn deserialize<D>(deserializer: D) -> Result<HashHexString, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        if !string.starts_with("0x") {
+            return Err(serde::de::Error::custom("hash doesn't start with 0x"));
+        }
+
+        let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
+        if bytes.len() != 32 {
+            return Err(serde::de::Error::invalid_length(
+                bytes.len(),
+                &"a 32 bytes hash",
+            ));
+        }
+
+        let mut out = [0; 32];
+        out.copy_from_slice(&bytes);
+        Ok(HashHexString(out))
+    }
 }

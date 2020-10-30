@@ -16,21 +16,19 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::header::BabeNextConfig;
+
 use alloc::{collections::BTreeMap, vec::Vec};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct StorageData(#[serde(with = "impl_serde::serialize")] pub(super) Vec<u8>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(super) struct LightSyncState {
-    babe_epoch_changes: StorageData,
+    babe_epoch_changes: HexString,
     babe_finalized_block_weight: u32,
-    finalized_block_header: StorageData,
-    grandpa_authority_set: StorageData,
+    finalized_block_header: HexString,
+    grandpa_authority_set: HexString,
 }
 
 impl LightSyncState {
@@ -154,4 +152,34 @@ pub(super) struct ForkTreeNode<T> {
     number: u32,
     data: T,
     children: Vec<Self>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct HexString(pub(super) Vec<u8>);
+
+impl serde::Serialize for HexString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        format!("0x{}", hex::encode(&self.0[..])).serialize(serializer)
+    }
+}
+
+impl<'a> serde::Deserialize<'a> for HexString {
+    fn deserialize<D>(deserializer: D) -> Result<HexString, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        if !string.starts_with("0x") {
+            return Err(serde::de::Error::custom(
+                "hexadecimal string doesn't start with 0x",
+            ));
+        }
+
+        let bytes = hex::decode(&string[2..]).map_err(serde::de::Error::custom)?;
+        Ok(HexString(bytes))
+    }
 }
