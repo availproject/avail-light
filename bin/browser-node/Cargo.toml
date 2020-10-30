@@ -20,6 +20,6 @@ js-sys = "0.3.45"
 rand = { version = "0.7.0", features = ["wasm-bindgen"] } # TODO: can we remove this `rand` dependency?
 substrate-lite = { version = "0.1.0", path = "../..", default-features = false, features = ["wasm-bindings"] }
 wasm-bindgen = "0.2.68"
-wasm-bindgen-futures = "0.4.17"
+wasm-bindgen-futures = "0.4.18"
 web-sys = { version = "0.3.45", features = ["console"] }
 wee_alloc = "0.4.5"
