@@ -132,7 +132,8 @@ impl JitPrototype {
                     // TODO: review interaction with imported memory
                     let memory = if let Some(mem) = instance.get_export("memory") {
                         if let Some(mem) = mem.into_memory() {
-                            // TODO: has to grow memory by heap_pages
+                            // TODO: do this properly
+                            mem.grow(u32::try_from(heap_pages).unwrap()).unwrap();
                             Some(mem.clone())
                         } else {
                             let err = NewErr::MemoryIsntMemory;
