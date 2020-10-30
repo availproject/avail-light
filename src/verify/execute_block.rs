@@ -85,7 +85,10 @@ pub struct Success {
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum Error {
     /// Error while executing the Wasm virtual machine.
-    Trapped {
+    #[display(fmt = "Error while executing Wasm VM: {}", error)]
+    WasmVm {
+        /// Error that happened.
+        error: executor::Error,
         /// Concatenation of all the log messages printed by the runtime.
         logs: String,
     },
@@ -460,9 +463,11 @@ impl VerifyInner {
             match self.vm {
                 executor::WasmVm::ReadyToRun(r) => self.vm = r.run(),
 
-                executor::WasmVm::Error { .. } => {
-                    // TODO: not the same as Trapped; report properly
-                    return Verify::Finished(Err(Error::Trapped { logs: self.logs }));
+                executor::WasmVm::Error { error, .. } => {
+                    return Verify::Finished(Err(Error::WasmVm {
+                        error,
+                        logs: self.logs,
+                    }));
                 }
 
                 executor::WasmVm::Finished(finished) => {
