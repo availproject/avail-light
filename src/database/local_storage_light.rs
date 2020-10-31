@@ -44,7 +44,7 @@
 #![cfg(feature = "wasm-bindings")]
 #![cfg_attr(docsrs, doc(cfg(feature = "wasm-bindings")))]
 
-use crate::{chain::chain_information, header};
+use crate::chain::chain_information;
 
 use core::{convert::TryFrom, fmt};
 use wasm_bindgen::prelude::*;
@@ -112,7 +112,7 @@ impl LocalStorage {
         match decoded {
             defs::SerializedChainInformation::V1(decoded) => {
                 Ok(Some(TryFrom::try_from(decoded).map_err(|err| {
-                    AccessError::Corrupted(CorruptedError(CorruptedErrorInner::HeaderDecode(err)))
+                    AccessError::Corrupted(CorruptedError(CorruptedErrorInner::Deserialize(err)))
                 })?))
             }
         }
@@ -177,5 +177,5 @@ enum CorruptedErrorInner {
     #[display(fmt = "{}", _0)]
     Serde(serde_json::Error),
     #[display(fmt = "{}", _0)]
-    HeaderDecode(header::Error),
+    Deserialize(defs::DeserializeError),
 }

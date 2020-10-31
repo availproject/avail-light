@@ -30,7 +30,7 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 use substrate_lite::{
     chain::{self, sync::full_optimistic},
     network,
@@ -242,8 +242,12 @@ async fn start_sync(
         let mut block_requests_finished = stream::FuturesUnordered::new();
 
         loop {
+            let unix_time = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap();
+
             // Verify blocks that have been fetched from queries.
-            let mut process = sync.process_one();
+            let mut process = sync.process_one(unix_time);
             loop {
                 match process {
                     full_optimistic::ProcessOne::Idle { sync: s } => {
@@ -254,7 +258,7 @@ async fn start_sync(
                         sync: s,
                         finalized_blocks,
                     } => {
-                        process = s.process_one();
+                        process = s.process_one(unix_time);
 
                         if let Some(last_finalized) = finalized_blocks.last() {
                             let mut lock = sync_state.lock().await;

@@ -28,6 +28,7 @@ use std::{
     collections::HashMap,
     num::{NonZeroU32, NonZeroU64},
     sync::Arc,
+    time::Duration,
 };
 use substrate_lite::{
     chain,
@@ -92,7 +93,7 @@ pub async fn start_client(chain_spec: String) -> Result<BrowserLightClient, JsVa
                     .find(|(k2, _)| *k2 == k)
                     .map(|(_, v)| v.to_owned())
             })
-            .unwrap();
+            .ok();
 
             chain::chain_information::ChainInformationConfig {
                 chain_information: i,
@@ -264,7 +265,8 @@ async fn start_sync(
 
             // Verify blocks that have been fetched from queries.
             loop {
-                match sync.process_one() {
+                let unix_time = Duration::from_secs_f64(js_sys::Date::now() / 1000.0);
+                match sync.process_one(unix_time) {
                     headers_optimistic::ProcessOneOutcome::Idle => break,
                     headers_optimistic::ProcessOneOutcome::Updated {
                         best_block_hash,

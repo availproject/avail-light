@@ -310,8 +310,8 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     // Build the hash that is expected to be signed.
     let pre_seal_hash = {
         let mut unsealed_header = config.header;
-        let _popped = unsealed_header.digest.pop_babe_seal();
-        debug_assert!(_popped.is_some());
+        let _popped = unsealed_header.digest.pop_seal();
+        debug_assert!(matches!(_popped, Some(header::Seal::Babe(_))));
         unsealed_header.hash()
     };
 

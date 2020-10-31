@@ -8,7 +8,7 @@ In order to simplify the code, two main design decisions have been made compared
 
 - No native runtime. The execution time of the `wasmtime` library is satisfying enough that having a native runtime isn't critical anymore.
 
-- No pluggable architecture. `substrate-lite` supports a certain hardcoded list of consensus algorithms, at the moment Babe and GrandPa. Support for other algorithms can only be added by modifying the code of substrate-lite, and it is not possible to plug a custom algorithm from outside.
+- No pluggable architecture. `substrate-lite` supports a certain hardcoded list of consensus algorithms, at the moment Babe, Aura, and GrandPa. Support for other algorithms can only be added by modifying the code of substrate-lite, and it is not possible to plug a custom algorithm from outside.
 
 # Objectives
 
@@ -22,7 +22,7 @@ There exists multiple objectives behind this repository:
 
 As a quick overview, at the time of writing of this README, the following is supported:
 
-- Verifying Babe blocks.
+- Verifying Babe and Aura blocks.
 - "Executing" blocks, by calling `Core_execute_block`.
 - Verifying GrandPa justifications.
 - "Optimistic syncing", in other words syncing by assuming that there isn't any fork.

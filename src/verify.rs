@@ -68,6 +68,7 @@
 
 mod execute_block;
 
+pub mod aura;
 pub mod babe;
 pub mod header_body;
 pub mod header_only;

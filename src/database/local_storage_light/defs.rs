@@ -20,7 +20,14 @@
 use crate::{chain::chain_information, header};
 
 use alloc::vec::Vec;
-use core::{convert::TryFrom, fmt};
+use core::{convert::TryFrom, fmt, num::NonZeroU64};
+
+/// Error that can happen when deserializing the data.
+#[derive(Debug, derive_more::Display)]
+pub(super) enum DeserializeError {
+    Header(header::Error),
+    ConsensusAlgorithmsMismatch,
+}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "version")]
@@ -30,7 +37,7 @@ pub(super) enum SerializedChainInformation {
 }
 
 impl TryFrom<SerializedChainInformation> for chain_information::ChainInformation {
-    type Error = header::Error;
+    type Error = DeserializeError;
 
     fn try_from(from: SerializedChainInformation) -> Result<Self, Self::Error> {
         Ok(match from {
@@ -47,6 +54,10 @@ pub(super) struct SerializedChainInformationV1 {
         deserialize_with = "deserialize_bytes"
     )]
     finalized_block_header: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aura_slot_duration: Option<NonZeroU64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aura_finalized_authorities: Option<Vec<SerializedAuraAuthorityV1>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     babe_finalized_block1_slot_number: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,13 +83,59 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     a
                 },
             ),
-            babe_finalized_block1_slot_number: from.babe_finalized_block1_slot_number,
-            babe_finalized_block_epoch_information: from
-                .babe_finalized_block_epoch_information
-                .map(|(e, i)| (e.into(), i.into())),
-            babe_finalized_next_epoch_transition: from
-                .babe_finalized_next_epoch_transition
-                .map(|(e, i)| (e.into(), i.into())),
+            aura_slot_duration: if let chain_information::ChainInformationConsensusRef::Aura {
+                slot_duration,
+                ..
+            } = &from.consensus
+            {
+                Some(*slot_duration)
+            } else {
+                None
+            },
+            aura_finalized_authorities:
+                if let chain_information::ChainInformationConsensusRef::Aura {
+                    finalized_authorities_list,
+                    ..
+                } = &from.consensus
+                {
+                    Some(finalized_authorities_list.clone().map(Into::into).collect())
+                } else {
+                    None
+                },
+            babe_finalized_block1_slot_number:
+                if let chain_information::ChainInformationConsensusRef::Babe {
+                    finalized_block1_slot_number,
+                    ..
+                } = &from.consensus
+                {
+                    *finalized_block1_slot_number
+                } else {
+                    None
+                },
+            babe_finalized_block_epoch_information:
+                if let chain_information::ChainInformationConsensusRef::Babe {
+                    finalized_block_epoch_information,
+                    ..
+                } = &from.consensus
+                {
+                    finalized_block_epoch_information
+                        .clone()
+                        .map(|(e, i)| (e.into(), i.into()))
+                } else {
+                    None
+                },
+            babe_finalized_next_epoch_transition:
+                if let chain_information::ChainInformationConsensusRef::Babe {
+                    finalized_next_epoch_transition,
+                    ..
+                } = &from.consensus
+                {
+                    finalized_next_epoch_transition
+                        .clone()
+                        .map(|(e, i)| (e.into(), i.into()))
+                } else {
+                    None
+                },
             grandpa_after_finalized_block_authorities_set_id: from
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: from
@@ -98,18 +155,48 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
 }
 
 impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformation {
-    type Error = header::Error;
+    type Error = DeserializeError;
 
     fn try_from(from: SerializedChainInformationV1) -> Result<Self, Self::Error> {
+        let consensus = match (
+            from.aura_finalized_authorities,
+            from.aura_slot_duration,
+            from.babe_finalized_block1_slot_number,
+            from.babe_finalized_block_epoch_information,
+            from.babe_finalized_next_epoch_transition,
+        ) {
+            (Some(aura_authorities), Some(slot_duration), None, None, None) => {
+                chain_information::ChainInformationConsensus::Aura {
+                    finalized_authorities_list: aura_authorities
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    slot_duration,
+                }
+            }
+
+            (
+                None,
+                None,
+                babe_finalized_block1_slot_number,
+                babe_finalized_block_epoch_information,
+                babe_finalized_next_epoch_transition,
+            ) => chain_information::ChainInformationConsensus::Babe {
+                finalized_block1_slot_number: babe_finalized_block1_slot_number,
+                finalized_block_epoch_information: babe_finalized_block_epoch_information
+                    .map(|(e, i)| (e.into(), i.into())),
+                finalized_next_epoch_transition: babe_finalized_next_epoch_transition
+                    .map(|(e, i)| (e.into(), i.into())),
+            },
+
+            _ => return Err(DeserializeError::ConsensusAlgorithmsMismatch),
+        };
+
         Ok(chain_information::ChainInformation {
-            finalized_block_header: header::decode(&from.finalized_block_header)?.into(),
-            babe_finalized_block1_slot_number: from.babe_finalized_block1_slot_number,
-            babe_finalized_block_epoch_information: from
-                .babe_finalized_block_epoch_information
-                .map(|(e, i)| (e.into(), i.into())),
-            babe_finalized_next_epoch_transition: from
-                .babe_finalized_next_epoch_transition
-                .map(|(e, i)| (e.into(), i.into())),
+            finalized_block_header: header::decode(&from.finalized_block_header)
+                .map_err(DeserializeError::Header)?
+                .into(),
+            consensus,
             grandpa_after_finalized_block_authorities_set_id: from
                 .grandpa_after_finalized_block_authorities_set_id,
             grandpa_finalized_triggered_authorities: from
@@ -130,6 +217,32 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
                 },
             ),
         })
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerializedAuraAuthorityV1 {
+    #[serde(
+        serialize_with = "serialize_bytes",
+        deserialize_with = "deserialize_hash32"
+    )]
+    public_key: [u8; 32],
+}
+
+impl<'a> From<header::AuraAuthorityRef<'a>> for SerializedAuraAuthorityV1 {
+    fn from(from: header::AuraAuthorityRef<'a>) -> Self {
+        SerializedAuraAuthorityV1 {
+            public_key: *from.public_key,
+        }
+    }
+}
+
+impl From<SerializedAuraAuthorityV1> for header::AuraAuthority {
+    fn from(from: SerializedAuraAuthorityV1) -> Self {
+        header::AuraAuthority {
+            public_key: from.public_key,
+        }
     }
 }
 

@@ -15,8 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{chain::chain_information::babe::BabeGenesisConfiguration, header, verify::babe};
+use crate::{
+    chain::chain_information::babe::BabeGenesisConfiguration,
+    header,
+    verify::{aura, babe},
+};
 
+use alloc::vec::Vec;
 use core::{num::NonZeroU64, time::Duration};
 
 /// Configuration for a block verification.
@@ -26,40 +31,73 @@ pub struct Config<'a> {
     /// The hash of this header must be the one referenced in [`Config::block_header`].
     pub parent_block_header: header::HeaderRef<'a>,
 
-    /// BABE configuration retrieved from the genesis block.
-    ///
-    /// See the documentation of [`BabeGenesisConfiguration`] to know how to get this.
-    pub babe_genesis_configuration: &'a BabeGenesisConfiguration,
-
-    /// Slot number of block #1. **Must** be provided, unless the block being verified is block
-    /// #1 itself.
-    ///
-    /// Must be the value of [`Success::slot_number`] for block #1.
-    pub block1_slot_number: Option<u64>,
-
-    /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
-    /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
-    pub now_from_unix_epoch: Duration,
-
     /// Header of the block to verify.
     ///
     /// The `parent_hash` field is the hash of the parent whose storage can be accessed through
     /// the other fields.
     pub block_header: header::HeaderRef<'a>,
+
+    /// Configuration items related to the consensus engine.
+    pub consensus: ConfigConsensus<'a>,
+}
+
+/// Extra items of [`Config`] that are dependant on the consensus engine of the chain.
+pub enum ConfigConsensus<'a> {
+    /// Chain is using the Aura consensus engine.
+    Aura {
+        /// Aura authorities that must validate the block.
+        ///
+        /// This list is either equal to the parent's list, or, if the parent changes the list of
+        /// authorities, equal to that new modified list.
+        // TODO: consider not using a Vec
+        current_authorities: Vec<header::AuraAuthorityRef<'a>>,
+
+        /// Duration of a slot in milliseconds.
+        /// Can be found by calling the `AuraApi_slot_duration` runtime function.
+        slot_duration: NonZeroU64,
+
+        /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
+        /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
+        now_from_unix_epoch: Duration,
+    },
+
+    /// Chain is using the Babe consensus engine.
+    Babe {
+        /// BABE configuration retrieved from the genesis block.
+        ///
+        /// See the documentation of [`BabeGenesisConfiguration`] to know how to get this.
+        genesis_configuration: &'a BabeGenesisConfiguration,
+
+        /// Slot number of block #1. **Must** be provided, unless the block being verified is block
+        /// #1 itself.
+        ///
+        /// Must be the value of [`Success::slot_number`] for block #1.
+        block1_slot_number: Option<u64>,
+
+        /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
+        /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
+        now_from_unix_epoch: Duration,
+    },
 }
 
 /// Block successfully verified.
-pub struct Success {
-    /// If `Some`, the verified block contains an epoch transition describing the given epoch.
-    /// This epoch transition must later be provided back as part of the [`Config`] when verifying
-    /// the blocks that are part of that epoch.
-    pub babe_epoch_transition_target: Option<NonZeroU64>,
+pub enum Success {
+    Aura {
+        /// True if the list of authorities is modified by this block.
+        authorities_change: bool,
+    },
+    Babe {
+        /// If `Some`, the verified block contains an epoch transition describing the given epoch.
+        /// This epoch transition must later be provided back as part of the [`Config`] when
+        /// verifying the blocks that are part of that epoch.
+        epoch_transition_target: Option<NonZeroU64>,
 
-    /// Slot number the block belongs to.
-    pub slot_number: u64,
+        /// Slot number the block belongs to.
+        slot_number: u64,
 
-    /// Epoch number the block belongs to.
-    pub epoch_number: u64,
+        /// Epoch number the block belongs to.
+        epoch_number: u64,
+    },
 }
 
 /// Error that can happen during the verification.
@@ -69,6 +107,11 @@ pub enum Error {
     BadBlockNumber,
     /// Hash of the parent block doesn't match the hash in the header to verify.
     BadParentHash,
+    /// Block header contains items relevant to multiple consensus engines at the same time.
+    MultipleConsensusEngines,
+    /// Failed to verify the authenticity of the block with the AURA algorithm.
+    #[display(fmt = "{}", _0)]
+    AuraVerification(aura::VerifyError),
     /// Failed to verify the authenticity of the block with the BABE algorithm.
     #[display(fmt = "{}", _0)]
     BabeVerification(babe::VerifyError),
@@ -97,28 +140,64 @@ pub fn verify<'a>(config: Config<'a>) -> Verify {
         return Verify::Finished(Err(Error::BadBlockNumber));
     }
 
-    // Start the BABE verification process.
-    let babe_verification = {
-        let result = babe::start_verify_header(babe::VerifyConfig {
-            header: config.block_header.clone(),
-            parent_block_header: config.parent_block_header,
-            genesis_configuration: config.babe_genesis_configuration,
-            now_from_unix_epoch: config.now_from_unix_epoch,
-            block1_slot_number: config.block1_slot_number,
-        });
-
-        match result {
-            Ok(s) => s,
-            Err(err) => return Verify::Finished(Err(Error::BabeVerification(err))),
-        }
-    };
-
     // TODO: need to verify the changes trie stuff maybe?
     // TODO: need to verify that there's no grandpa scheduled change header if there's already an active grandpa scheduled change
 
-    Verify::ReadyToRun(ReadyToRun {
-        inner: ReadyToRunInner::Babe(babe_verification),
-    })
+    match config.consensus {
+        ConfigConsensus::Aura {
+            current_authorities,
+            slot_duration,
+            now_from_unix_epoch,
+        } => {
+            if config.block_header.digest.has_any_babe() {
+                return Verify::Finished(Err(Error::MultipleConsensusEngines));
+            }
+
+            let result = aura::verify_header(aura::VerifyConfig {
+                header: config.block_header.clone(),
+                parent_block_header: config.parent_block_header,
+                now_from_unix_epoch,
+                current_authorities: current_authorities.into_iter(),
+                slot_duration,
+            });
+
+            match result {
+                Ok(s) => Verify::Finished(Ok(Success::Aura {
+                    authorities_change: s.authorities_change,
+                })),
+                Err(err) => Verify::Finished(Err(Error::AuraVerification(err))),
+            }
+        }
+        ConfigConsensus::Babe {
+            genesis_configuration,
+            block1_slot_number,
+            now_from_unix_epoch,
+        } => {
+            if config.block_header.digest.has_any_aura() {
+                return Verify::Finished(Err(Error::MultipleConsensusEngines));
+            }
+
+            // Start the BABE verification process.
+            let babe_verification = {
+                let result = babe::start_verify_header(babe::VerifyConfig {
+                    header: config.block_header.clone(),
+                    parent_block_header: config.parent_block_header,
+                    genesis_configuration,
+                    now_from_unix_epoch,
+                    block1_slot_number,
+                });
+
+                match result {
+                    Ok(s) => s,
+                    Err(err) => return Verify::Finished(Err(Error::BabeVerification(err))),
+                }
+            };
+
+            Verify::ReadyToRun(ReadyToRun {
+                inner: ReadyToRunInner::Babe(babe_verification),
+            })
+        }
+    }
 }
 
 /// Current state of the verification.
@@ -157,8 +236,8 @@ impl ReadyToRun {
                     Verify::BabeEpochInformation(BabeEpochInformation { inner: pending })
                 }
             },
-            ReadyToRunInner::Finished(Ok(s)) => Verify::Finished(Ok(Success {
-                babe_epoch_transition_target: s.epoch_transition_target,
+            ReadyToRunInner::Finished(Ok(s)) => Verify::Finished(Ok(Success::Babe {
+                epoch_transition_target: s.epoch_transition_target,
                 slot_number: s.slot_number,
                 epoch_number: s.epoch_number,
             })),

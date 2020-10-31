@@ -34,7 +34,7 @@ use super::super::{blocks_tree, chain_information};
 use super::optimistic;
 
 use alloc::vec::Vec;
-use core::{convert::TryFrom as _, num::NonZeroU32};
+use core::{convert::TryFrom as _, num::NonZeroU32, time::Duration};
 
 pub use optimistic::{
     FinishRequestOutcome, RequestAction, RequestFail, RequestId, SourceId, Start,
@@ -182,7 +182,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// It is encouraged to call this method multiple times in a row until
     /// [`ProcessOneOutcome::Idle`] is returned, interleaving any necessary high-priority
     /// operations (e.g. processing network sockets) in-between two calls.
-    pub fn process_one(&mut self) -> ProcessOneOutcome {
+    ///
+    /// Must be passed the current UNIX time in order to verify that the blocks don't pretend to
+    /// come from the future.
+    pub fn process_one(&mut self, now_from_unix_epoch: Duration) -> ProcessOneOutcome {
         let mut to_process = match self.sync.take().unwrap().process_one() {
             Ok(tp) => tp,
             Err(sync) => {
@@ -198,7 +201,10 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         let mut finalized_update = false;
         let mut has_error = None;
         for block in to_process.blocks {
-            match self.chain.verify_header(block.scale_encoded_header.into()) {
+            match self
+                .chain
+                .verify_header(block.scale_encoded_header.into(), now_from_unix_epoch)
+            {
                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
                     block_height,
                     is_new_best,

@@ -76,9 +76,11 @@ use crate::util;
 use alloc::{vec, vec::Vec};
 use core::{convert::TryFrom, fmt, iter, slice};
 
+mod aura;
 mod babe;
 mod grandpa;
 
+pub use aura::*;
 pub use babe::*;
 pub use grandpa::*;
 
@@ -177,6 +179,12 @@ pub enum Error {
     UnknownDigestLogType(u8),
     /// Found a seal that isn't the last item in the list.
     SealIsntLastItem,
+    /// Bad length of an AURA seal.
+    BadAuraSealLength,
+    BadAuraConsensusRefType,
+    BadAuraAuthoritiesListLen,
+    /// There are multiple Aura pre-runtime digests in the block header.
+    MultipleAuraPreRuntimeDigests,
     /// Bad length of a BABE seal.
     BadBabeSealLength,
     BadBabePreDigestRefType,
@@ -306,6 +314,10 @@ impl<'a> From<HeaderRef<'a>> for Header {
 pub struct DigestRef<'a> {
     /// Actual source of digest items.
     inner: DigestRefInner<'a>,
+    /// Index of the [`DigestItemRef::AuraSeal`] item, if any.
+    aura_seal_index: Option<usize>,
+    /// Index of the [`DigestItemRef::AuraPreDigest`] item, if any.
+    aura_predigest_index: Option<usize>,
     /// Index of the [`DigestItemRef::BabeSeal`] item, if any.
     babe_seal_index: Option<usize>,
     /// Index of the [`DigestItemRef::BabePreDigest`] item, if any.
@@ -338,10 +350,50 @@ impl<'a> DigestRef<'a> {
     pub fn empty() -> DigestRef<'a> {
         DigestRef {
             inner: DigestRefInner::Parsed(&[]),
+            aura_seal_index: None,
+            aura_predigest_index: None,
             babe_seal_index: None,
             babe_predigest_index: None,
             babe_next_epoch_data_index: None,
             babe_next_config_data_index: None,
+        }
+    }
+
+    /// Returns true if the list has any item that belong to the Aura consensus engine.
+    pub fn has_any_aura(&self) -> bool {
+        self.logs().any(|l| l.is_aura())
+    }
+
+    /// Returns true if the list has any item that belong to the Babe consensus engine.
+    pub fn has_any_babe(&self) -> bool {
+        self.logs().any(|l| l.is_babe())
+    }
+
+    /// Returns the Aura seal digest item, if any.
+    pub fn aura_seal(&self) -> Option<&'a [u8; 64]> {
+        if let Some(aura_seal_index) = self.aura_seal_index {
+            if let DigestItemRef::AuraSeal(seal) = self.logs().nth(aura_seal_index).unwrap() {
+                Some(seal)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Returns the Aura pre-runtime digest item, if any.
+    pub fn aura_pre_runtime(&self) -> Option<AuraPreDigest> {
+        if let Some(aura_predigest_index) = self.aura_predigest_index {
+            if let DigestItemRef::AuraPreDigest(item) =
+                self.logs().nth(aura_predigest_index).unwrap()
+            {
+                Some(item)
+            } else {
+                unreachable!()
+            }
+        } else {
+            None
         }
     }
 
@@ -403,10 +455,9 @@ impl<'a> DigestRef<'a> {
         }
     }
 
-    /// If the last element of the list is a Babe seal, removes it from the [`DigestRef`].
-    // TODO: have a `Seal` enum or something, maybe?
-    pub fn pop_babe_seal(&mut self) -> Option<&'a [u8; 64]> {
-        let seal_pos = self.babe_seal_index?;
+    /// If the last element of the list is a seal, removes it from the [`DigestRef`].
+    pub fn pop_seal(&mut self) -> Option<Seal<'a>> {
+        let seal_pos = self.babe_seal_index.or(self.aura_seal_index)?;
 
         match &mut self.inner {
             DigestRefInner::Parsed(list) => {
@@ -417,7 +468,8 @@ impl<'a> DigestRef<'a> {
                 *list = &list[..seal_pos];
 
                 match item {
-                    DigestItem::BabeSeal(seal) => Some(seal),
+                    DigestItem::AuraSeal(seal) => Some(Seal::Aura(seal)),
+                    DigestItem::BabeSeal(seal) => Some(Seal::Babe(seal)),
                     _ => unreachable!(),
                 }
             }
@@ -453,7 +505,8 @@ impl<'a> DigestRef<'a> {
                 }
 
                 match iter.next() {
-                    Some(DigestItemRef::BabeSeal(seal)) => Some(seal),
+                    Some(DigestItemRef::AuraSeal(seal)) => Some(Seal::Aura(seal)),
+                    Some(DigestItemRef::BabeSeal(seal)) => Some(Seal::Babe(seal)),
                     _ => unreachable!(),
                 }
             }
@@ -499,6 +552,8 @@ impl<'a> DigestRef<'a> {
             usize::try_from(len.0).map_err(|_| Error::TooShort)?
         };
 
+        let mut aura_seal_index = None;
+        let mut aura_predigest_index = None;
         let mut babe_seal_index = None;
         let mut babe_predigest_index = None;
         let mut babe_next_epoch_data_index = None;
@@ -511,7 +566,14 @@ impl<'a> DigestRef<'a> {
             next_digest = next;
 
             match item {
+                DigestItemRef::AuraPreDigest(_) if aura_predigest_index.is_none() => {
+                    aura_predigest_index = Some(item_num);
+                }
+                DigestItemRef::AuraPreDigest(_) => {
+                    return Err(Error::MultipleAuraPreRuntimeDigests)
+                }
                 DigestItemRef::ChangesTrieRoot(_) => {}
+                DigestItemRef::AuraConsensus(_) => {}
                 DigestItemRef::BabePreDigest(_) if babe_predigest_index.is_none() => {
                     babe_predigest_index = Some(item_num);
                 }
@@ -536,7 +598,14 @@ impl<'a> DigestRef<'a> {
                 }
                 DigestItemRef::BabeConsensus(BabeConsensusLogRef::OnDisabled(_)) => {}
                 DigestItemRef::GrandpaConsensus(_) => {}
+                DigestItemRef::AuraSeal(_) if item_num == digest_logs_len - 1 => {
+                    debug_assert!(aura_seal_index.is_none());
+                    debug_assert!(babe_seal_index.is_none());
+                    aura_seal_index = Some(item_num);
+                }
+                DigestItemRef::AuraSeal(_) => return Err(Error::SealIsntLastItem),
                 DigestItemRef::BabeSeal(_) if item_num == digest_logs_len - 1 => {
+                    debug_assert!(aura_seal_index.is_none());
                     debug_assert!(babe_seal_index.is_none());
                     babe_seal_index = Some(item_num);
                 }
@@ -554,6 +623,8 @@ impl<'a> DigestRef<'a> {
                 digest_logs_len,
                 digest: scale_encoded,
             },
+            aura_seal_index,
+            aura_predigest_index,
             babe_seal_index,
             babe_predigest_index,
             babe_next_epoch_data_index,
@@ -574,6 +645,8 @@ impl<'a> From<&'a Digest> for DigestRef<'a> {
     fn from(digest: &'a Digest) -> DigestRef<'a> {
         DigestRef {
             inner: DigestRefInner::Parsed(&digest.list),
+            aura_seal_index: digest.aura_seal_index,
+            aura_predigest_index: digest.aura_predigest_index,
             babe_seal_index: digest.babe_seal_index,
             babe_predigest_index: digest.babe_predigest_index,
             babe_next_epoch_data_index: digest.babe_next_epoch_data_index,
@@ -582,11 +655,21 @@ impl<'a> From<&'a Digest> for DigestRef<'a> {
     }
 }
 
+/// Seal poped using [`DigestRef::pop_seal`].
+pub enum Seal<'a> {
+    Aura(&'a [u8; 64]),
+    Babe(&'a [u8; 64]),
+}
+
 /// Generic header digest.
 #[derive(Clone)]
 pub struct Digest {
     /// Actual list of items.
     list: Vec<DigestItem>,
+    /// Index of the [`DigestItemRef::AuraSeal`] item, if any.
+    aura_seal_index: Option<usize>,
+    /// Index of the [`DigestItemRef::AuraPreDigest`] item, if any.
+    aura_predigest_index: Option<usize>,
     /// Index of the [`DigestItemRef::BabeSeal`] item, if any.
     babe_seal_index: Option<usize>,
     /// Index of the [`DigestItemRef::BabePreDigest`] item, if any.
@@ -603,6 +686,11 @@ impl Digest {
     /// Returns an iterator to the log items in this digest.
     pub fn logs(&self) -> LogsIter {
         DigestRef::from(self).logs()
+    }
+
+    /// Returns the Aura seal digest item, if any.
+    pub fn aura_seal(&self) -> Option<&[u8; 64]> {
+        DigestRef::from(self).aura_seal()
     }
 
     /// Returns the Babe seal digest item, if any.
@@ -636,6 +724,8 @@ impl<'a> From<DigestRef<'a>> for Digest {
     fn from(digest: DigestRef<'a>) -> Digest {
         Digest {
             list: digest.logs().map(Into::into).collect(),
+            aura_seal_index: digest.aura_seal_index,
+            aura_predigest_index: digest.aura_predigest_index,
             babe_seal_index: digest.babe_seal_index,
             babe_predigest_index: digest.babe_predigest_index,
             babe_next_epoch_data_index: digest.babe_next_epoch_data_index,
@@ -700,6 +790,11 @@ impl<'a> ExactSizeIterator for LogsIter<'a> {}
 // TODO: document
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum DigestItemRef<'a> {
+    AuraPreDigest(AuraPreDigest),
+    /// Block signature made using the AURA consensus engine.
+    AuraSeal(&'a [u8; 64]),
+    AuraConsensus(AuraConsensusLogRef<'a>),
+
     BabePreDigest(BabePreDigestRef<'a>),
     BabeConsensus(BabeConsensusLogRef<'a>),
     /// Block signature made using the BABE consensus engine.
@@ -712,6 +807,26 @@ pub enum DigestItemRef<'a> {
 }
 
 impl<'a> DigestItemRef<'a> {
+    /// True if the item is relevant to the Aura consensus engine.
+    pub fn is_aura(&self) -> bool {
+        match self {
+            DigestItemRef::AuraPreDigest(_) => true,
+            DigestItemRef::AuraSeal(_) => true,
+            DigestItemRef::AuraConsensus(_) => true,
+            _ => false,
+        }
+    }
+
+    /// True if the item is relevant to the Babe consensus engine.
+    pub fn is_babe(&self) -> bool {
+        match self {
+            DigestItemRef::BabePreDigest(_) => true,
+            DigestItemRef::BabeConsensus(_) => true,
+            DigestItemRef::BabeSeal(_) => true,
+            _ => false,
+        }
+    }
+
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of that digest item.
     pub fn scale_encoding(
@@ -719,6 +834,43 @@ impl<'a> DigestItemRef<'a> {
     ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         // TODO: don't use Vecs?
         match *self {
+            DigestItemRef::AuraPreDigest(ref aura_pre_digest) => {
+                let encoded = aura_pre_digest
+                    .scale_encoding()
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
+                let mut ret = vec![6];
+                ret.extend_from_slice(b"aura");
+                ret.extend_from_slice(util::encode_scale_compact_usize(encoded.len()).as_ref());
+                ret.extend_from_slice(&encoded);
+                iter::once(ret)
+            }
+            DigestItemRef::AuraSeal(seal) => {
+                assert_eq!(seal.len(), 64);
+
+                let mut ret = vec![5];
+                ret.extend_from_slice(b"aura");
+                ret.extend_from_slice(util::encode_scale_compact_usize(64).as_ref());
+                ret.extend_from_slice(seal);
+                iter::once(ret)
+            }
+            DigestItemRef::AuraConsensus(ref aura_consensus) => {
+                let encoded = aura_consensus
+                    .scale_encoding()
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
+                let mut ret = vec![4];
+                ret.extend_from_slice(b"aura");
+                ret.extend_from_slice(util::encode_scale_compact_usize(encoded.len()).as_ref());
+                ret.extend_from_slice(&encoded);
+                iter::once(ret)
+            }
             DigestItemRef::BabePreDigest(ref babe_pre_digest) => {
                 let encoded = babe_pre_digest
                     .scale_encoding()
@@ -729,9 +881,7 @@ impl<'a> DigestItemRef<'a> {
 
                 let mut ret = vec![6];
                 ret.extend_from_slice(b"BABE");
-                ret.extend_from_slice(&parity_scale_codec::Encode::encode(
-                    &parity_scale_codec::Compact(u64::try_from(encoded.len()).unwrap()),
-                ));
+                ret.extend_from_slice(util::encode_scale_compact_usize(encoded.len()).as_ref());
                 ret.extend_from_slice(&encoded);
                 iter::once(ret)
             }
@@ -787,6 +937,9 @@ impl<'a> DigestItemRef<'a> {
 impl<'a> From<&'a DigestItem> for DigestItemRef<'a> {
     fn from(a: &'a DigestItem) -> DigestItemRef<'a> {
         match a {
+            DigestItem::AuraPreDigest(v) => DigestItemRef::AuraPreDigest(v.clone()),
+            DigestItem::AuraConsensus(v) => DigestItemRef::AuraConsensus(v.into()),
+            DigestItem::AuraSeal(v) => DigestItemRef::AuraSeal(v),
             DigestItem::BabePreDigest(v) => DigestItemRef::BabePreDigest(v.into()),
             DigestItem::BabeConsensus(v) => DigestItemRef::BabeConsensus(v.into()),
             DigestItem::BabeSeal(v) => DigestItemRef::BabeSeal(v),
@@ -800,6 +953,11 @@ impl<'a> From<&'a DigestItem> for DigestItemRef<'a> {
 // TODO: document
 #[derive(Debug, Clone)]
 pub enum DigestItem {
+    AuraPreDigest(AuraPreDigest),
+    AuraConsensus(AuraConsensusLog),
+    /// Block signature made using the AURA consensus engine.
+    AuraSeal([u8; 64]),
+
     BabePreDigest(BabePreDigest),
     BabeConsensus(BabeConsensusLog),
     /// Block signature made using the BABE consensus engine.
@@ -814,6 +972,13 @@ pub enum DigestItem {
 impl<'a> From<DigestItemRef<'a>> for DigestItem {
     fn from(a: DigestItemRef<'a>) -> DigestItem {
         match a {
+            DigestItemRef::AuraPreDigest(v) => DigestItem::AuraPreDigest(v),
+            DigestItemRef::AuraConsensus(v) => DigestItem::AuraConsensus(v.into()),
+            DigestItemRef::AuraSeal(v) => {
+                let mut seal = [0; 64];
+                seal.copy_from_slice(v);
+                DigestItem::AuraSeal(seal)
+            }
             DigestItemRef::BabePreDigest(v) => DigestItem::BabePreDigest(v.into()),
             DigestItemRef::BabeConsensus(v) => DigestItem::BabeConsensus(v.into()),
             DigestItemRef::BabeSeal(v) => {
@@ -922,15 +1087,20 @@ fn decode_item_from_parts<'a>(
     content: &'a [u8],
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
+        (4, b"aura") => DigestItemRef::AuraConsensus(AuraConsensusLogRef::from_slice(content)?),
         (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),
         (4, b"FRNK") => {
             DigestItemRef::GrandpaConsensus(GrandpaConsensusLogRef::from_slice(content)?)
         }
         (4, e) => return Err(Error::UnknownConsensusEngine(*e)),
+        (5, b"aura") => DigestItemRef::AuraSeal({
+            TryFrom::try_from(content).map_err(|_| Error::BadAuraSealLength)?
+        }),
         (5, b"BABE") => DigestItemRef::BabeSeal({
             TryFrom::try_from(content).map_err(|_| Error::BadBabeSealLength)?
         }),
         (5, e) => return Err(Error::UnknownConsensusEngine(*e)),
+        (6, b"aura") => DigestItemRef::AuraPreDigest(AuraPreDigest::from_slice(content)?),
         (6, b"BABE") => DigestItemRef::BabePreDigest(BabePreDigestRef::from_slice(content)?),
         (6, e) => return Err(Error::UnknownConsensusEngine(*e)),
         _ => unreachable!(),
