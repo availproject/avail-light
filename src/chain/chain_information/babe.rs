@@ -18,16 +18,17 @@
 use crate::{executor, header};
 
 use alloc::vec::Vec;
-use core::{convert::TryFrom as _, fmt};
+use core::{convert::TryFrom as _, num::NonZeroU64};
 use parity_scale_codec::DecodeAll as _;
 
 /// BABE configuration of a chain, as extracted from the genesis block.
 ///
 /// The way a chain configures BABE is stored in its runtime.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BabeGenesisConfiguration {
-    inner: OwnedGenesisConfiguration,
-    epoch0_information: header::BabeNextEpoch,
+    pub slots_per_epoch: NonZeroU64,
+    pub epoch0_configuration: header::BabeNextConfig,
+    pub epoch0_information: header::BabeNextEpoch,
 }
 
 impl BabeGenesisConfiguration {
@@ -105,37 +106,18 @@ impl BabeGenesisConfiguration {
                 .collect(),
         };
 
+        let epoch0_configuration = header::BabeNextConfig {
+            c: inner.c,
+            allowed_slots: inner.allowed_slots,
+        };
+
         let outcome = BabeGenesisConfiguration {
-            inner,
+            slots_per_epoch: inner.epoch_length,
+            epoch0_configuration,
             epoch0_information,
         };
 
         Ok((outcome, vm_prototype))
-    }
-
-    /// Returns the number of slots contained in each epoch.
-    pub fn slots_per_epoch(&self) -> u64 {
-        self.inner.epoch_length
-    }
-
-    /// Returns the configuration of epoch number 0.
-    pub fn epoch0_configuration(&self) -> header::BabeNextConfig {
-        header::BabeNextConfig {
-            c: self.inner.c,
-            allowed_slots: self.inner.allowed_slots,
-        }
-    }
-
-    /// Returns the information about epoch number 0.
-    pub fn epoch0_information(&self) -> header::BabeNextEpochRef {
-        From::from(&self.epoch0_information)
-    }
-}
-
-impl fmt::Debug for BabeGenesisConfiguration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO: better
-        f.debug_struct("BabeGenesisConfiguration").finish()
     }
 }
 
@@ -165,10 +147,11 @@ pub enum FromVmPrototypeError {
     OutputDecode(parity_scale_codec::Error),
 }
 
+// TODO: don't use scale_codec?
 #[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
 struct OwnedGenesisConfiguration {
     slot_duration: u64,
-    epoch_length: u64,
+    epoch_length: NonZeroU64,
     c: (u64, u64),
     genesis_authorities: Vec<([u8; 32], u64)>,
     randomness: [u8; 32],

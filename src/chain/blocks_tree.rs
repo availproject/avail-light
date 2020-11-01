@@ -630,7 +630,7 @@ impl<T> NonFinalizedTree<T> {
                     }
                     (Some((ref new_epoch, None)), None, None) => Arc::new((
                         new_epoch.clone().into(),
-                        babe_genesis_config.epoch0_configuration(),
+                        babe_genesis_config.epoch0_configuration,
                     )),
                     (None, Some(BlockConsensus::Babe { next_epoch, .. }), _) => next_epoch.clone(),
                     (None, None, _) => {
@@ -1324,7 +1324,7 @@ impl<T> BodyVerifyStep2<T> {
                                 }
                                 (Some((ref new_epoch, None)), None, None) => Arc::new((
                                     new_epoch.clone().into(),
-                                    babe_genesis_config.epoch0_configuration(),
+                                    babe_genesis_config.epoch0_configuration,
                                 )),
                                 (None, Some(BlockConsensus::Babe { next_epoch, .. }), _) => {
                                     next_epoch.clone()

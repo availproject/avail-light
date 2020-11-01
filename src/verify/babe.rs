@@ -331,8 +331,8 @@ pub fn start_verify_header<'a>(config: VerifyConfig<'a>) -> Result<SuccessOrPend
     // the BABE genesis configuration.
     Ok(if epoch_number == 0 {
         SuccessOrPending::Success(pending.finish((
-            config.genesis_configuration.epoch0_information(),
-            config.genesis_configuration.epoch0_configuration(),
+            From::from(&config.genesis_configuration.epoch0_information),
+            config.genesis_configuration.epoch0_configuration,
         ))?)
     } else {
         SuccessOrPending::Pending(pending)
@@ -508,7 +508,7 @@ fn slot_number_to_epoch(
     block1_slot_number: u64,
 ) -> Result<u64, ()> {
     let slots_diff = slot_number.checked_sub(block1_slot_number).ok_or(())?;
-    Ok(slots_diff / genesis_config.slots_per_epoch())
+    Ok(slots_diff / genesis_config.slots_per_epoch.get())
 }
 
 /// Calculates the primary selection threshold for a given authority, taking
