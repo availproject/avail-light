@@ -76,7 +76,7 @@ libsecp256k1 = { version = "0.3.5", default-features = false }
 lru = "0.6.0"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
 multihash = "0.11.4"  # TODO: waiting for a crates.io publication of https://github.com/multiformats/rust-multihash/pull/82 that adds no_std support
-nom = "5.1.2"  # TODO: nom has a disableable `std` feature, but disabling it requires nightly; waiting for version 6.0
+nom = { version = "6.0.0", default-features = false, features = ["alloc"] }
 num-bigint = { version = "0.3.0", default-features = false }
 num-rational = "0.3.1"  # TODO: there's a fuck-up in their source code that prevents disabling `std`
 num-traits = { version = "0.2.14", default-features = false }

@@ -23,7 +23,7 @@ use core::convert::TryFrom as _;
 /// Decodes a SCALE-encoded `Option`.
 ///
 /// > **Note**: When using this function outside of a `nom` "context", you might have to explicit
-/// >           the type of `E`. Use `nom::Err<(&[u8], nom::error::ErrorKind)>`.
+/// >           the type of `E`. Use `nom::Err<nom::error::Error>`.
 pub(crate) fn nom_option_decode<'a, O, E: nom::error::ParseError<&'a [u8]>>(
     bytes: &'a [u8],
     inner_decode: impl Fn(&'a [u8]) -> nom::IResult<&'a [u8], O, E>,
@@ -40,7 +40,7 @@ pub(crate) fn nom_option_decode<'a, O, E: nom::error::ParseError<&'a [u8]>>(
 /// Decodes a SCALE-compact-encoded usize.
 ///
 /// > **Note**: When using this function outside of a `nom` "context", you might have to explicit
-/// >           the type of `E`. Use `nom::Err<(&[u8], nom::error::ErrorKind)>`.
+/// >           the type of `E`. Use `nom::Err<nom::error::Error>`.
 pub(crate) fn nom_scale_compact_usize<'a, E: nom::error::ParseError<&'a [u8]>>(
     bytes: &'a [u8],
 ) -> nom::IResult<&'a [u8], usize, E> {

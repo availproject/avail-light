@@ -288,4 +288,4 @@ pub fn decode_block_announces_handshake<'a>(
 
 /// Error potentially returned by [`decode_block_announces_handshake`].
 #[derive(Debug, derive_more::Display)]
-pub struct BlockAnnouncesDecodeError<'a>(nom::Err<(&'a [u8], nom::error::ErrorKind)>);
+pub struct BlockAnnouncesDecodeError<'a>(nom::Err<nom::error::Error<&'a [u8]>>);

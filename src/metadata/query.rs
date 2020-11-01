@@ -101,7 +101,7 @@ pub enum Error {
 /// valid length prefix.
 fn remove_length_prefix(metadata: &[u8]) -> Result<&[u8], Error> {
     let (after_prefix, length) = crate::util::nom_scale_compact_usize(metadata)
-        .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| Error::BadLengthPrefix)?;
+        .map_err(|_: nom::Err<nom::error::Error<&[u8]>>| Error::BadLengthPrefix)?;
 
     // Verify that the length prefix indeed matches the metadata's length.
     if length != after_prefix.len() {

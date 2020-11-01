@@ -132,9 +132,8 @@ enum AuraAuthoritiesIterInner<'a> {
 impl<'a> AuraAuthoritiesIter<'a> {
     /// Decodes a list of authorities from a SCALE-encoded blob of data.
     pub fn decode(data: &'a [u8]) -> Result<Self, Error> {
-        let (data, num_items) =
-            util::nom_scale_compact_usize::<(&'a [u8], nom::error::ErrorKind)>(data)
-                .map_err(|_| Error::TooShort)?;
+        let (data, num_items) = util::nom_scale_compact_usize::<nom::error::Error<&[u8]>>(data)
+            .map_err(|_| Error::TooShort)?;
 
         if data.len() != num_items * 32 {
             return Err(Error::BadAuraAuthoritiesListLen);
