@@ -106,6 +106,7 @@ use parity_scale_codec::DecodeAll as _;
 
 mod allocator;
 mod externals;
+pub mod runtime_externals;
 mod vm;
 
 pub use externals::{
