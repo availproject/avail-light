@@ -48,8 +48,11 @@ impl JitPrototype {
         heap_pages: u64,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        // TODO: deny floating points?
-        let engine = wasmtime::Engine::new(&Default::default());
+        let mut config = wasmtime::Config::new();
+        config.cranelift_nan_canonicalization(true);
+        config.cranelift_opt_level(wasmtime::OptLevel::Speed);
+        let engine = wasmtime::Engine::new(&config);
+
         let store = wasmtime::Store::new(&engine);
         let module = wasmtime::Module::from_binary(&engine, module.as_ref()).unwrap();
 
