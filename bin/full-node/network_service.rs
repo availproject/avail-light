@@ -504,10 +504,13 @@ async fn connection_task(
 
     // Configure the `connection_prototype` to turn it into an actual connection.
     // The protocol names are hardcoded here.
-    let mut connection = connection_prototype.into_connection::<_, oneshot::Sender<_>, (), _, _>(
+    let mut connection = connection_prototype.into_connection::<_, oneshot::Sender<_>, ()>(
         connection::established::Config {
-            in_request_protocols: iter::once("/foo".to_string()), // TODO: should be empty; hack because iterator type is identical to notification protocols list
-            in_notifications_protocols: iter::once("/dot/block-announces/1".to_string()), // TODO: correct protocolId
+            in_request_protocols: vec![],
+            in_notifications_protocols: vec![connection::established::ConfigNotifications {
+                name: "/dot/block-announces/1".to_string(), // TODO: correct protocolId
+                max_handshake_size: 1024 * 1024,
+            }],
             ping_protocol: "/ipfs/ping/1.0.0".to_string(),
             randomness_seed: rand::random(),
         },

@@ -52,7 +52,7 @@ use crate::network::leb128;
 
 use super::{multistream_select, noise, yamux};
 
-use alloc::vec::Vec;
+use alloc::vec::{self, Vec};
 use core::{
     cmp, fmt, iter, mem,
     ops::{Add, Sub},
@@ -60,7 +60,7 @@ use core::{
 };
 
 /// State machine of a fully-established connection.
-pub struct Established<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
+pub struct Established<TNow, TRqUd, TNotifUd> {
     /// Encryption layer applied directly on top of the incoming data and outgoing data.
     /// In addition to the cipher state, also contains a buffer of data received from the socket,
     /// decoded but yet to be parsed.
@@ -70,7 +70,7 @@ pub struct Established<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
     /// Consists in a collection of substreams, each of which holding a [`Substream`] object.
     /// Also includes, for each substream, a collection of buffers whose data is to be written
     /// out.
-    yamux: yamux::Yamux<Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto>>,
+    yamux: yamux::Yamux<Substream<TNow, TRqUd, TNotifUd>>,
 
     /// Next substream timeout. When the current time is superior to this value, means that one of
     /// the substreams in `yamux` might have timed out.
@@ -80,24 +80,19 @@ pub struct Established<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
     next_timeout: Option<TNow>,
 
     /// See [`Config::in_request_protocols`].
-    in_request_protocols: TProtoList,
+    in_request_protocols: Vec<ConfigRequestResponse>,
     /// See [`Config::in_notifications_protocols`].
-    in_notifications_protocols: TProtoList,
+    in_notifications_protocols: Vec<ConfigNotifications>,
     /// See [`Config::ping_protocol`].
-    ping_protocol: TProto,
+    ping_protocol: String,
 }
 
-enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
+enum Substream<TNow, TRqUd, TNotifUd> {
     /// Temporary transition state.
     Poisoned,
 
     /// Protocol negotiation in progress in an incoming substream.
-    InboundNegotiating(
-        multistream_select::InProgress<
-            iter::Chain<iter::Chain<TProtoList, TProtoList>, iter::Once<TProto>>,
-            TProto,
-        >,
-    ),
+    InboundNegotiating(multistream_select::InProgress<vec::IntoIter<String>, String>),
     /// Incoming substream has failed to negotiate a protocol. Waiting for a close from the remote.
     /// In order to save a round-trip time, the remote might assume that the protocol negotiation
     /// has succeeded. As such, it might send additional data on this substream that should be
@@ -109,7 +104,7 @@ enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
         /// When the opening will time out in the absence of response.
         timeout: TNow,
         /// State of the protocol negotiation.
-        negotiation: multistream_select::InProgress<TProtoList, TProto>,
+        negotiation: multistream_select::InProgress<vec::IntoIter<String>, String>,
         /// Bytes of the handshake to send after the substream is open.
         handshake: Vec<u8>,
         /// Data passed by the user to [`Established::open_notifications_substream`].
@@ -138,7 +133,7 @@ enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
         /// Buffer for the incoming handshake.
         handshake: leb128::FramedInProgress,
         /// Protocol that was negotiated.
-        protocol: TProto,
+        protocol: String,
     },
     /// A handshake on a notifications protocol has been received. Now waiting for an action from
     /// the API user.
@@ -149,7 +144,7 @@ enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
         /// When the request will time out in the absence of response.
         timeout: TNow,
         /// State of the protocol negotiation.
-        negotiation: multistream_select::InProgress<TProtoList, TProto>,
+        negotiation: multistream_select::InProgress<vec::IntoIter<String>, String>,
         /// Bytes of the request to send after the substream is open.
         request: Vec<u8>,
         /// Data passed by the user to [`Established::add_request`].
@@ -172,7 +167,7 @@ enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
         /// Buffer for the incoming request.
         request: leb128::FramedInProgress,
         /// Protocol that was negotiated.
-        protocol: TProto,
+        protocol: String,
     },
     RequestInSend,
 
@@ -180,12 +175,9 @@ enum Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
     PingIn(arrayvec::ArrayVec<[u8; 32]>),
 }
 
-impl<TNow, TRqUd, TNotifUd, TProtoList, TProto>
-    Established<TNow, TRqUd, TNotifUd, TProtoList, TProto>
+impl<TNow, TRqUd, TNotifUd> Established<TNow, TRqUd, TNotifUd>
 where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
-    TProtoList: Iterator<Item = TProto> + Clone,
-    TProto: AsRef<str> + Clone,
 {
     /// Reads data coming from the socket from `incoming_data`, updates the internal state machine,
     /// and writes data destined to the socket to `outgoing_buffer`.
@@ -212,7 +204,7 @@ where
         now: TNow,
         mut incoming_buffer: Option<&[u8]>,
         mut outgoing_buffer: (&'a mut [u8], &'a mut [u8]),
-    ) -> Result<ReadWrite<TNow, TRqUd, TNotifUd, TProtoList, TProto>, Error> {
+    ) -> Result<ReadWrite<TNow, TRqUd, TNotifUd>, Error> {
         let mut total_read = 0;
         let mut total_written = 0;
 
@@ -278,9 +270,16 @@ where
                         multistream_select::InProgress::new(multistream_select::Config::Listener {
                             supported_protocols: self
                                 .in_request_protocols
-                                .clone()
-                                .chain(self.in_notifications_protocols.clone())
-                                .chain(iter::once(self.ping_protocol.clone())),
+                                .iter()
+                                .map(|p| p.name.clone())
+                                .chain(
+                                    self.in_notifications_protocols
+                                        .iter()
+                                        .map(|p| p.name.clone()),
+                                )
+                                .chain(iter::once(self.ping_protocol.clone()))
+                                .collect::<Vec<_>>()
+                                .into_iter(),
                         });
                     self.yamux
                         .accept_pending_substream(Substream::InboundNegotiating(nego));
@@ -389,67 +388,70 @@ where
                 // proper state.
                 match mem::replace(substream.user_data(), Substream::Poisoned) {
                     Substream::Poisoned => unreachable!(),
-                    Substream::InboundNegotiating(nego) => {
-                        match nego.read_write_vec(data) {
-                            Ok((
-                                multistream_select::Negotiation::InProgress(nego),
-                                _read,
-                                out_buffer,
-                            )) => {
-                                debug_assert_eq!(_read, data.len());
-                                data = &data[_read..];
-                                substream.write(out_buffer);
-                                *substream.user_data() = Substream::InboundNegotiating(nego);
-                            }
-                            Ok((
-                                multistream_select::Negotiation::Success(protocol),
-                                num_read,
-                                out_buffer,
-                            )) => {
-                                substream.write(out_buffer);
-                                data = &data[num_read..];
-                                if protocol.as_ref() == self.ping_protocol.as_ref() {
-                                    *substream.user_data() = Substream::PingIn(Default::default());
+                    Substream::InboundNegotiating(nego) => match nego.read_write_vec(data) {
+                        Ok((
+                            multistream_select::Negotiation::InProgress(nego),
+                            _read,
+                            out_buffer,
+                        )) => {
+                            debug_assert_eq!(_read, data.len());
+                            data = &data[_read..];
+                            substream.write(out_buffer);
+                            *substream.user_data() = Substream::InboundNegotiating(nego);
+                        }
+                        Ok((
+                            multistream_select::Negotiation::Success(protocol),
+                            num_read,
+                            out_buffer,
+                        )) => {
+                            substream.write(out_buffer);
+                            data = &data[num_read..];
+                            if protocol == self.ping_protocol {
+                                *substream.user_data() = Substream::PingIn(Default::default());
+                            } else {
+                                if let Some(request_response) = self
+                                    .in_request_protocols
+                                    .iter()
+                                    .find(|p| p.name == protocol)
+                                {
+                                    *substream.user_data() = Substream::RequestInRecv {
+                                        protocol,
+                                        request: leb128::FramedInProgress::new(
+                                            request_response.max_request_size,
+                                        ),
+                                    };
+                                } else if let Some(notif) = self
+                                    .in_notifications_protocols
+                                    .iter()
+                                    .find(|p| p.name == protocol)
+                                {
+                                    *substream.user_data() = Substream::NotificationsInHandshake {
+                                        protocol,
+                                        handshake: leb128::FramedInProgress::new(
+                                            notif.max_handshake_size,
+                                        ),
+                                    };
                                 } else {
-                                    let is_request_response = self
-                                        .in_request_protocols
-                                        .clone()
-                                        .any(|p| AsRef::as_ref(&p) == AsRef::as_ref(&protocol));
-                                    if is_request_response {
-                                        *substream.user_data() = Substream::RequestInRecv {
-                                            protocol,
-                                            request: leb128::FramedInProgress::new(
-                                                10 * 1024 * 1024,
-                                            ), // TODO: proper size
-                                        };
-                                    } else {
-                                        *substream.user_data() =
-                                            Substream::NotificationsInHandshake {
-                                                protocol,
-                                                handshake: leb128::FramedInProgress::new(
-                                                    10 * 1024 * 1024,
-                                                ), // TODO: proper size
-                                            };
-                                    }
+                                    unreachable!()
                                 }
                             }
-                            Ok((
-                                multistream_select::Negotiation::NotAvailable,
-                                num_read,
-                                out_buffer,
-                            )) => {
-                                data = &data[num_read..];
-                                substream.write(out_buffer);
-                                *substream.user_data() = Substream::NegotiationFailed;
-                                substream.close();
-                                break;
-                            }
-                            Err(_) => {
-                                substream.reset();
-                                break;
-                            }
                         }
-                    }
+                        Ok((
+                            multistream_select::Negotiation::NotAvailable,
+                            num_read,
+                            out_buffer,
+                        )) => {
+                            data = &data[num_read..];
+                            substream.write(out_buffer);
+                            *substream.user_data() = Substream::NegotiationFailed;
+                            substream.close();
+                            break;
+                        }
+                        Err(_) => {
+                            substream.reset();
+                            break;
+                        }
+                    },
                     Substream::NegotiationFailed => {
                         // Substream is an inbound substream that has failed to negotiate a
                         // protocol. The substream is expected to close soon, but the remote might
@@ -794,7 +796,7 @@ where
     /// time.
     ///
     /// Optionally returns an event that happened as a result of the passage of time.
-    fn update_now(&mut self, now: TNow) -> Option<Event<TRqUd, TNotifUd, TProto>> {
+    fn update_now(&mut self, now: TNow) -> Option<Event<TRqUd, TNotifUd>> {
         if self.next_timeout.as_ref().map_or(true, |t| *t > now) {
             return None;
         }
@@ -868,7 +870,7 @@ where
     pub fn add_request(
         &mut self,
         now: TNow,
-        protocol: TProto,
+        protocol: String,
         request: Vec<u8>,
         user_data: TRqUd,
     ) -> SubstreamId {
@@ -916,7 +918,7 @@ where
     pub fn open_notifications_substream(
         &mut self,
         now: TNow,
-        protocol: TProto,
+        protocol: String,
         handshake: Vec<u8>,
         user_data: TNotifUd,
     ) -> SubstreamId {
@@ -1011,22 +1013,18 @@ where
     }
 }
 
-impl<TNow, TRqUd, TNotifUd, TProtoList, TProto> fmt::Debug
-    for Established<TNow, TRqUd, TNotifUd, TProtoList, TProto>
+impl<TNow, TRqUd, TNotifUd> fmt::Debug for Established<TNow, TRqUd, TNotifUd>
 where
     TRqUd: fmt::Debug,
-    TProto: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_map().entries(self.yamux.user_datas()).finish()
     }
 }
 
-impl<TNow, TRqUd, TNotifUd, TProtoList, TProto> fmt::Debug
-    for Substream<TNow, TRqUd, TNotifUd, TProtoList, TProto>
+impl<TNow, TRqUd, TNotifUd> fmt::Debug for Substream<TNow, TRqUd, TNotifUd>
 where
     TRqUd: fmt::Debug,
-    TProto: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -1072,9 +1070,9 @@ pub struct SubstreamId(yamux::SubstreamId);
 
 /// Outcome of [`Established::read_write`].
 #[must_use]
-pub struct ReadWrite<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
+pub struct ReadWrite<TNow, TRqUd, TNotifUd> {
     /// Connection object yielded back.
-    pub connection: Established<TNow, TRqUd, TNotifUd, TProtoList, TProto>,
+    pub connection: Established<TNow, TRqUd, TNotifUd>,
 
     /// Number of bytes at the start of the incoming buffer that have been processed. These bytes
     /// should no longer be present the next time [`Established::read_write`] is called.
@@ -1089,13 +1087,13 @@ pub struct ReadWrite<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
     pub wake_up_after: Option<TNow>,
 
     /// Event that happened on the connection.
-    pub event: Option<Event<TRqUd, TNotifUd, TProto>>,
+    pub event: Option<Event<TRqUd, TNotifUd>>,
 }
 
 /// Event that happened on the connection. See [`ReadWrite::event`].
 #[must_use]
 #[derive(Debug)]
-pub enum Event<TRqUd, TNotifUd, TProto> {
+pub enum Event<TRqUd, TNotifUd> {
     /// No more outgoing data will be emitted. The local writing side of the connection should be
     /// closed.
     // TODO: remove?
@@ -1105,7 +1103,7 @@ pub enum Event<TRqUd, TNotifUd, TProto> {
         /// Identifier of the request. Needs to be provided back when answering the request.
         id: SubstreamId,
         /// Protocol the request was sent on.
-        protocol: TProto,
+        protocol: String,
         /// Bytes of the request. Its interpretation is out of scope of this module.
         request: Vec<u8>,
     },
@@ -1123,7 +1121,7 @@ pub enum Event<TRqUd, TNotifUd, TProto> {
         /// substream.
         id: SubstreamId,
         /// Protocol concerned by the substream.
-        protocol: TProto,
+        protocol: String,
         /// Handshake sent by the remote. Its interpretation is out of scope of this module.
         handshake: Vec<u8>,
     },
@@ -1202,10 +1200,10 @@ impl ConnectionPrototype {
     }
 
     /// Turns this prototype into an actual connection.
-    pub fn into_connection<TNow, TRqUd, TNotifUd, TProtoList, TProto>(
+    pub fn into_connection<TNow, TRqUd, TNotifUd>(
         self,
-        config: Config<TProtoList, TProto>,
-    ) -> Established<TNow, TRqUd, TNotifUd, TProtoList, TProto> {
+        config: Config,
+    ) -> Established<TNow, TRqUd, TNotifUd> {
         // TODO: check conflicts between protocol names?
 
         let yamux = yamux::Yamux::new(yamux::Config {
@@ -1232,14 +1230,32 @@ impl fmt::Debug for ConnectionPrototype {
 }
 
 /// Configuration to turn a [`ConnectionPrototype`] into a [`Established`].
+// TODO: this struct isn't zero-cost, but making it zero-cost is kind of hard and annoying
 #[derive(Debug)]
-pub struct Config<TProtoList, TProto> {
+pub struct Config {
     /// List of request-response protocols supported for incoming substreams.
-    pub in_request_protocols: TProtoList,
+    pub in_request_protocols: Vec<ConfigRequestResponse>,
     /// List of notifications protocols supported for incoming substreams.
-    pub in_notifications_protocols: TProtoList,
+    pub in_notifications_protocols: Vec<ConfigNotifications>,
     /// Name of the ping protocol on the network.
-    pub ping_protocol: TProto,
+    pub ping_protocol: String,
     /// Seed used for the randomness specific to this connection.
     pub randomness_seed: (u64, u64, u64, u64),
+}
+
+/// Configuration for a request-response protocol.
+#[derive(Debug)]
+pub struct ConfigRequestResponse {
+    /// Name of the protocol transferred on the wire.
+    pub name: String,
+    pub max_request_size: usize,
+    pub max_response_size: usize,
+}
+
+/// Configuration for a notifications protocol.
+#[derive(Debug)]
+pub struct ConfigNotifications {
+    /// Name of the protocol transferred on the wire.
+    pub name: String,
+    pub max_handshake_size: usize,
 }
