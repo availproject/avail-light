@@ -118,7 +118,7 @@ web-sys = { version = "0.3.45", optional = true, features = ["BinaryType", "Clos
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
-anyhow = "1.0.33"  # TODO: wasmtime returns these errors for some reason
+anyhow = "1.0.34"  # TODO: wasmtime returns these errors for some reason
 parity-scale-codec = { version = "1.3.5", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
