@@ -278,6 +278,13 @@ impl ReadyToRun {
                 }) => {
                     // Wasm virtual machine has successfully returned.
 
+                    if self.inner.within_storage_transaction {
+                        return ExternalsVm::Error {
+                            prototype: self.inner.into_prototype(),
+                            error: Error::FinishedWithPendingTransaction,
+                        };
+                    }
+
                     // Turn the `i64` into a `u64`, not changing any bit.
                     let ret = u64::from_ne_bytes(ret.to_ne_bytes());
 
@@ -2013,6 +2020,10 @@ pub enum Error {
     /// `ext_storage_commit_transaction_version_1` but no transaction was in progress.
     #[display(fmt = "Attempted to end a transaction while none is in progress")]
     NoActiveTransaction,
+    /// Execution has finished while a transaction started with
+    /// `ext_storage_start_transaction_version_1` was still in progress.
+    #[display(fmt = "Execution returned with a pending storage transaction")]
+    FinishedWithPendingTransaction,
     /// Error when allocating memory for a return type.
     #[display(
         fmt = "Out of memory allocating 0x{:x} bytes during {}",
