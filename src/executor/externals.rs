@@ -82,7 +82,11 @@ pub struct ExternalsVmPrototype {
 impl ExternalsVmPrototype {
     /// Creates a new [`ExternalsVmPrototype`]. Parses and potentially JITs the module.
     // TODO: document `heap_pages`; I know it comes from storage, but it's unclear what it means exactly
-    pub fn new(module: impl AsRef<[u8]>, heap_pages: u64) -> Result<Self, NewErr> {
+    pub fn new(
+        module: impl AsRef<[u8]>,
+        heap_pages: u64,
+        exec_hint: vm::ExecHint,
+    ) -> Result<Self, NewErr> {
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
@@ -92,6 +96,7 @@ impl ExternalsVmPrototype {
             let vm_proto = vm::VirtualMachinePrototype::new(
                 module,
                 heap_pages,
+                exec_hint,
                 // This closure is called back for each function that the runtime imports.
                 |mod_name, f_name, _signature| {
                     if mod_name != "env" {

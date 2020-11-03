@@ -29,7 +29,10 @@
 
 // TODO: more docs
 
-use crate::{executor::externals, trie::calculate_root};
+use crate::{
+    executor::{externals, vm},
+    trie::calculate_root,
+};
 
 use alloc::{string::String, vec::Vec};
 use core::{fmt, iter, slice};
@@ -590,14 +593,17 @@ impl Inner {
                     // upgrades are quite uncommon and that a caching system is rather non-trivial
                     // to set up, the approach of recompiling every single time is preferred here.
                     // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct or if we have to take the current heap pages
-                    let vm_prototype =
-                        match externals::ExternalsVmPrototype::new(req.wasm_code(), 1024) {
-                            Ok(w) => w,
-                            Err(_) => {
-                                self.vm = req.resume(Err(()));
-                                continue;
-                            }
-                        };
+                    let vm_prototype = match externals::ExternalsVmPrototype::new(
+                        req.wasm_code(),
+                        1024,
+                        vm::ExecHint::Oneshot,
+                    ) {
+                        Ok(w) => w,
+                        Err(_) => {
+                            self.vm = req.resume(Err(()));
+                            continue;
+                        }
+                    };
 
                     match super::core_version(vm_prototype) {
                         Ok((version, _)) => {

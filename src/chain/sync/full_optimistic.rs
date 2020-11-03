@@ -443,8 +443,12 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                                         <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
                                             .unwrap(), // TODO: don't unwrap
                                     );
-                                    executor::WasmVmPrototype::new(&wasm_code, heap_pages)
-                                        .expect("invalid runtime code?!?!") // TODO: what to do?
+                                    executor::WasmVmPrototype::new(
+                                        &wasm_code,
+                                        heap_pages,
+                                        executor::vm::ExecHint::CompileAheadOfTime,
+                                    )
+                                    .expect("invalid runtime code?!?!") // TODO: what to do?
                                 }
                                 (Some(wasm_code), None) => {
                                     return ProcessOne::FinalizedStorageGet(StorageGet {
@@ -708,8 +712,12 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
             }
             StorageGetTarget::Runtime(inner, heap_pages) => {
                 let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
-                let wasm_vm = executor::WasmVmPrototype::new(wasm_code, heap_pages)
-                    .expect("invalid runtime code?!?!"); // TODO: ?!?!
+                let wasm_vm = executor::WasmVmPrototype::new(
+                    wasm_code,
+                    heap_pages,
+                    executor::vm::ExecHint::CompileAheadOfTime,
+                )
+                .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner =
                     inner.resume(wasm_vm, self.shared.top_trie_root_calculation_cache.take());
                 ProcessOne::from(Inner::Step2(inner), self.shared)
@@ -722,8 +730,12 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
                 } else {
                     1024 // TODO: default heap pages
                 };
-                let wasm_vm = executor::WasmVmPrototype::new(&wasm_code, heap_pages)
-                    .expect("invalid runtime code?!?!"); // TODO: ?!?!
+                let wasm_vm = executor::WasmVmPrototype::new(
+                    &wasm_code,
+                    heap_pages,
+                    executor::vm::ExecHint::CompileAheadOfTime,
+                )
+                .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner =
                     inner.resume(wasm_vm, self.shared.top_trie_root_calculation_cache.take());
                 ProcessOne::from(Inner::Step2(inner), self.shared)

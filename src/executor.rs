@@ -62,10 +62,14 @@
 //! let wasm_binary: &[u8] = unimplemented!();
 //!
 //! // Start executing a function on the runtime.
-//! let mut vm: substrate_lite::executor::WasmVm =
-//!     substrate_lite::executor::WasmVmPrototype::new(&wasm_binary, 1024).unwrap()
-//!         .run_no_param("Core_version").unwrap()
-//!         .into();
+//! let mut vm: substrate_lite::executor::WasmVm = {
+//!     let prototype = substrate_lite::executor::WasmVmPrototype::new(
+//!         &wasm_binary,
+//!         1024,
+//!         substrate_lite::executor::vm::ExecHint::Oneshot
+//!     ).unwrap();
+//!     prototype.run_no_param("Core_version").unwrap().into()
+//! };
 //!
 //! // We need to answer the calls that the runtime might perform.
 //! loop {
@@ -107,7 +111,7 @@ use parity_scale_codec::DecodeAll as _;
 mod allocator;
 mod externals;
 pub mod runtime_externals;
-mod vm;
+pub mod vm;
 
 pub use externals::{
     Error, ExternalStorageAppend, ExternalStorageGet, ExternalsVm as WasmVm,

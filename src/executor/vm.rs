@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// TODO: documentation
+
 mod interpreter;
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod jit;
@@ -23,13 +25,199 @@ use alloc::vec::Vec;
 use core::fmt;
 use smallvec::SmallVec;
 
-#[cfg(all(target_arch = "x86_64", feature = "std"))]
-pub use jit::{Jit as VirtualMachine, JitPrototype as VirtualMachinePrototype};
+pub struct VirtualMachinePrototype {
+    inner: VirtualMachinePrototypeInner,
+}
 
-#[cfg(not(all(target_arch = "x86_64", feature = "std")))]
-pub use interpreter::*;
+enum VirtualMachinePrototypeInner {
+    #[cfg(all(target_arch = "x86_64", feature = "std"))]
+    Jit(jit::JitPrototype),
+    Interpreter(interpreter::VirtualMachinePrototype),
+}
 
-// TODO: wrap around the content of the submodules here, and make the submodules private
+impl VirtualMachinePrototype {
+    /// Creates a new process state machine from the given module.
+    ///
+    /// The closure is called for each import that the module has. It must assign a number to each
+    /// import, or return an error if the import can't be resolved. When the VM calls one of these
+    /// functions, this number will be returned back in order for the user to know how to handle
+    /// the call.
+    // TODO: explain heap_pages
+    pub fn new(
+        module: impl AsRef<[u8]>,
+        heap_pages: u64,
+        exec_hint: ExecHint,
+        symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
+    ) -> Result<Self, NewErr> {
+        let use_wasmtime = match exec_hint {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            ExecHint::CompileAheadOfTime => true,
+            #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+            ExecHint::CompileAheadOfTime => false,
+            ExecHint::Oneshot | ExecHint::Untrusted => false,
+        };
+
+        Ok(VirtualMachinePrototype {
+            inner: if use_wasmtime {
+                #[cfg(all(target_arch = "x86_64", feature = "std"))]
+                let out = VirtualMachinePrototypeInner::Jit(jit::JitPrototype::new(
+                    module, heap_pages, symbols,
+                )?);
+                #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+                let out = unreachable!();
+                out
+            } else {
+                VirtualMachinePrototypeInner::Interpreter(
+                    interpreter::VirtualMachinePrototype::new(module, heap_pages, symbols)?,
+                )
+            },
+        })
+    }
+
+    /// Returns the value of a global that the module exports.
+    pub fn global_value(&mut self, name: &str) -> Result<u32, GlobalValueErr> {
+        match &mut self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachinePrototypeInner::Jit(inner) => inner.global_value(name),
+            VirtualMachinePrototypeInner::Interpreter(inner) => inner.global_value(name),
+        }
+    }
+
+    /// Turns this prototype into an actual virtual machine. This requires choosing which function
+    /// to execute.
+    pub fn start(
+        self,
+        function_name: &str,
+        params: &[WasmValue],
+    ) -> Result<VirtualMachine, NewErr> {
+        Ok(VirtualMachine {
+            inner: match self.inner {
+                #[cfg(all(target_arch = "x86_64", feature = "std"))]
+                VirtualMachinePrototypeInner::Jit(inner) => {
+                    VirtualMachineInner::Jit(inner.start(function_name, params)?)
+                }
+                VirtualMachinePrototypeInner::Interpreter(inner) => {
+                    VirtualMachineInner::Interpreter(inner.start(function_name, params)?)
+                }
+            },
+        })
+    }
+}
+
+// TODO:
+/*impl fmt::Debug for VirtualMachinePrototype {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachinePrototypeInner::Jit(inner) => fmt::Debug::fmt(inner, f),
+            VirtualMachinePrototypeInner::Interpreter(inner) => fmt::Debug::fmt(inner, f),
+        }
+    }
+}*/
+
+pub struct VirtualMachine {
+    inner: VirtualMachineInner,
+}
+
+enum VirtualMachineInner {
+    #[cfg(all(target_arch = "x86_64", feature = "std"))]
+    Jit(jit::Jit),
+    Interpreter(interpreter::VirtualMachine),
+}
+
+impl VirtualMachine {
+    /// Starts or continues execution of this thread.
+    ///
+    /// If this is the first call you call [`run`](VirtualMachine::run) for this thread, then you
+    /// must pass a value of `None`.
+    /// If, however, you call this function after a previous call to [`run`](VirtualMachine::run)
+    /// that was interrupted by an external function call, then you must pass back the outcome of
+    /// that call.
+    pub fn run(&mut self, value: Option<WasmValue>) -> Result<ExecOutcome, RunErr> {
+        match &mut self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Jit(inner) => inner.run(value),
+            VirtualMachineInner::Interpreter(inner) => inner.run(value),
+        }
+    }
+
+    /// Returns the size of the memory, in bytes.
+    ///
+    /// > **Note**: This can change over time if the Wasm code uses the `grow` opcode.
+    pub fn memory_size(&self) -> u32 {
+        match &self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Jit(inner) => inner.memory_size(),
+            VirtualMachineInner::Interpreter(inner) => inner.memory_size(),
+        }
+    }
+
+    /// Copies the given memory range into a `Vec<u8>`.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
+        Ok(match &self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Jit(inner) => either::Left(inner.read_memory(offset, size)?),
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Interpreter(inner) => {
+                either::Right(inner.read_memory(offset, size)?)
+            }
+            #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+            VirtualMachineInner::Interpreter(inner) => inner.read_memory(offset, size)?,
+        })
+    }
+
+    /// Write the data at the given memory location.
+    ///
+    /// Returns an error if the range is invalid or out of range.
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+        match &mut self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Jit(inner) => inner.write_memory(offset, value),
+            VirtualMachineInner::Interpreter(inner) => inner.write_memory(offset, value),
+        }
+    }
+
+    /// Turns back this virtual machine into a prototype.
+    pub fn into_prototype(self) -> VirtualMachinePrototype {
+        VirtualMachinePrototype {
+            inner: match self.inner {
+                #[cfg(all(target_arch = "x86_64", feature = "std"))]
+                VirtualMachineInner::Jit(inner) => {
+                    VirtualMachinePrototypeInner::Jit(inner.into_prototype())
+                }
+                VirtualMachineInner::Interpreter(inner) => {
+                    VirtualMachinePrototypeInner::Interpreter(inner.into_prototype())
+                }
+            },
+        }
+    }
+}
+
+impl fmt::Debug for VirtualMachine {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.inner {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            VirtualMachineInner::Jit(inner) => fmt::Debug::fmt(inner, f),
+            VirtualMachineInner::Interpreter(inner) => fmt::Debug::fmt(inner, f),
+        }
+    }
+}
+
+/// Hint used by the implementation to decide which kind of virtual machine to use.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ExecHint {
+    /// The WebAssembly code will be instantiated once and run many times.
+    /// If possible, compile this WebAssembly code ahead of time.
+    CompileAheadOfTime,
+    /// The WebAssembly code is expected to be only run once.
+    ///
+    /// > **Note**: This isn't a hard requirement but a hint.
+    Oneshot,
+    /// The WebAssembly code running through this VM is untrusted.
+    Untrusted,
+}
 
 /// Low-level Wasm function signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -232,8 +420,8 @@ impl From<wasmtime::ValType> for ValueType {
 pub enum ExecOutcome {
     /// The execution has finished.
     ///
-    /// The state machine is now in a poisoned state, and calling
-    /// [`is_poisoned`](VirtualMachine::is_poisoned) will return true.
+    /// The state machine is now in a poisoned state, and calling [`run`](VirtualMachine::run)
+    /// will return [`RunErr::Poisoned`].
     Finished {
         /// Return value of the function.
         // TODO: error type should change here
@@ -274,6 +462,7 @@ pub enum NewErr {
     NotAFunction,
 }
 
+// TODO: use derive_more instead
 impl fmt::Display for NewErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -291,52 +480,24 @@ impl fmt::Display for NewErr {
     }
 }
 
-/// Error that can happen when starting a new thread.
-#[derive(Debug)]
-pub enum StartErr {
-    /// The state machine is poisoned and cannot run anymore.
-    Poisoned,
-    /// Couldn't find the requested function.
-    FunctionNotFound,
-    /// The requested function has been found in the list of exports, but it is not a function.
-    NotAFunction,
-}
-
-impl fmt::Display for StartErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            StartErr::Poisoned => write!(f, "State machine is in a poisoned state"),
-            StartErr::FunctionNotFound => write!(f, "Function to start was not found"),
-            StartErr::NotAFunction => write!(f, "Symbol to start is not a function"),
-        }
-    }
-}
-
 /// Error that can happen when resuming the execution of a function.
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub enum RunErr {
     /// The state machine is poisoned.
+    #[display(fmt = "State machine is poisoned")]
     Poisoned,
     /// Passed a wrong value back.
+    #[display(
+        fmt = "Expected value of type {:?} but got {:?} instead",
+        expected,
+        obtained
+    )]
     BadValueTy {
         /// Type of the value that was expected.
         expected: Option<ValueType>,
         /// Type of the value that was actually passed.
         obtained: Option<ValueType>,
     },
-}
-
-impl fmt::Display for RunErr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RunErr::Poisoned => write!(f, "State machine is poisoned"),
-            RunErr::BadValueTy { expected, obtained } => write!(
-                f,
-                "Expected value of type {:?} but got {:?} instead",
-                expected, obtained
-            ),
-        }
-    }
 }
 
 /// Error that can happen when calling [`VirtualMachinePrototype::global_value`].

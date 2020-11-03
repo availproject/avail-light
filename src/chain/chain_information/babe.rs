@@ -49,9 +49,10 @@ impl BabeGenesisConfiguration {
         } else {
             1024 // TODO: default heap pages
         };
-        let vm = executor::WasmVmPrototype::new(&wasm_code, heap_pages)
-            .map_err(FromVmPrototypeError::VmInitialization)
-            .map_err(FromGenesisStorageError::VmError)?;
+        let vm =
+            executor::WasmVmPrototype::new(&wasm_code, heap_pages, executor::vm::ExecHint::Oneshot)
+                .map_err(FromVmPrototypeError::VmInitialization)
+                .map_err(FromGenesisStorageError::VmError)?;
         let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
             .map_err(FromGenesisStorageError::VmError)?;
         Ok(cfg)
