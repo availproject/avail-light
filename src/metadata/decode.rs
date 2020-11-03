@@ -19,6 +19,8 @@
 
 use core::{fmt, str};
 
+mod tests;
+
 /// Decodes the given SCALE-encoded metadata.
 pub(super) fn decode(scale_encoded_metadata: &[u8]) -> Result<MetadataRef, DecodeError> {
     let (_remain, out) = nom::combinator::all_consuming(prefixed_metadata)(scale_encoded_metadata)
