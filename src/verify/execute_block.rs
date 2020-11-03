@@ -100,10 +100,10 @@ pub enum Error {
 pub fn execute_block<'a>(
     config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
-    let vm = runtime_externals::run_vectored(
-        config.parent_runtime,
-        "Core_execute_block",
-        {
+    let vm = runtime_externals::run(runtime_externals::Config {
+        virtual_machine: config.parent_runtime,
+        function_to_call: "Core_execute_block",
+        parameter: {
             // The `Code_execute_block` function expects a SCALE-encoded `(header, body)`
             // where `body` is a `Vec<Vec<u8>>`. We perform the encoding manually to avoid
             // performing redundant data copies.
@@ -120,8 +120,10 @@ pub fn execute_block<'a>(
                 .chain(iter::once(either::Right(either::Right(encoded_body_len))))
                 .chain(body.map(either::Left))
         },
-        config.top_trie_root_calculation_cache,
-    )
+        top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
+        storage_top_trie_changes: Default::default(),
+        offchain_storage_changes: Default::default(),
+    })
     .unwrap();
 
     // TODO: shouldn't unwrap ^

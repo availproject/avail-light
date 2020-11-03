@@ -192,6 +192,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+pub mod author;
 pub mod chain;
 pub mod chain_spec;
 pub mod database;

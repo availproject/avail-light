@@ -38,48 +38,45 @@ use alloc::{string::String, vec::Vec};
 use core::{fmt, iter, slice};
 use hashbrown::{HashMap, HashSet};
 
-/// Starts the VM, calling the function passed as parameter.
+/// Configuration for [`run`].
+pub struct Config<'a, TParams> {
+    /// Virtual machine to be run.
+    pub virtual_machine: externals::ExternalsVmPrototype,
+
+    /// Name of the function to be called.
+    pub function_to_call: &'a str,
+
+    /// Parameter of the call, as an iterator of bytes. The concatenation of bytes forms the
+    /// actual input.
+    pub parameter: TParams,
+
+    /// Optional cache of the trie root calculation to use. Must match the state of the storage at
+    /// the start of the call, including [`Config::storage_top_trie_changes`].
+    pub top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+
+    /// Initial state of [`Success::storage_top_trie_changes`]. The changes made during this
+    /// execution will be pushed over the value in this field.
+    pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+
+    /// Initial state of [`Success::offchain_storage_changes`]. The changes made during this
+    /// execution will be pushed over the value in this field.
+    pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+}
+
+/// Start running the WebAssembly virtual machine.
 pub fn run(
-    vm: externals::ExternalsVmPrototype,
-    function_to_call: &str,
-    data: &[u8],
-    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
-) -> Result<RuntimeExternalsVm, externals::NewErr> {
-    run_vectored(
-        vm,
-        function_to_call,
-        iter::once(data),
-        top_trie_root_calculation_cache,
-    )
-}
-
-/// Same as [`run`], except that the function desn't need any parameter.
-pub fn run_no_param(
-    vm: externals::ExternalsVmPrototype,
-    function_to_call: &str,
-    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
-) -> Result<RuntimeExternalsVm, externals::NewErr> {
-    run_vectored(
-        vm,
-        function_to_call,
-        iter::empty::<Vec<u8>>(),
-        top_trie_root_calculation_cache,
-    )
-}
-
-/// Same as [`run`], except that the function parameter can be passed as a list of buffers. All
-/// the buffers will be concatenated in memory.
-pub fn run_vectored(
-    vm: externals::ExternalsVmPrototype,
-    function_to_call: &str,
-    data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
+    config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
 ) -> Result<RuntimeExternalsVm, externals::NewErr> {
     Ok(Inner {
-        vm: vm.run_vectored(function_to_call, data)?.into(),
-        top_trie_changes: Default::default(),
-        offchain_storage_changes: Default::default(),
-        top_trie_root_calculation_cache: Some(top_trie_root_calculation_cache.unwrap_or_default()),
+        vm: config
+            .virtual_machine
+            .run_vectored(config.function_to_call, config.parameter)?
+            .into(),
+        top_trie_changes: config.storage_top_trie_changes,
+        offchain_storage_changes: config.offchain_storage_changes,
+        top_trie_root_calculation_cache: Some(
+            config.top_trie_root_calculation_cache.unwrap_or_default(),
+        ),
         root_calculation: None,
         logs: String::new(),
     }
@@ -127,7 +124,7 @@ impl fmt::Debug for SuccessVirtualMachine {
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum Error {
     /// Error while executing the Wasm virtual machine.
-    #[display(fmt = "Error while executing Wasm VM: {}", error)]
+    #[display(fmt = "Error while executing Wasm VM: {}\n{:?}", error, logs)]
     WasmVm {
         /// Error that happened.
         error: externals::Error,

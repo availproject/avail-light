@@ -147,7 +147,7 @@ pub fn decode_partial<'a>(mut scale_encoded: &'a [u8]) -> Result<(HeaderRef<'a>,
     let extrinsics_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];
 
-    let (digest, remainder) = DigestRef::from_slice(scale_encoded)?;
+    let (digest, remainder) = DigestRef::from_scale_bytes(scale_encoded)?;
 
     let header = HeaderRef {
         parent_hash,
@@ -541,8 +541,82 @@ impl<'a> DigestRef<'a> {
         )
     }
 
+    /// Turns an already-decoded list of items into a [`DigestRef`].
+    ///
+    /// Error can happen if the list of items is invalid, for example if it contains a seal at the
+    /// non-last position.
+    pub fn from_slice(slice: &'a [DigestItem]) -> Result<Self, Error> {
+        let mut aura_seal_index = None;
+        let mut aura_predigest_index = None;
+        let mut babe_seal_index = None;
+        let mut babe_predigest_index = None;
+        let mut babe_next_epoch_data_index = None;
+        let mut babe_next_config_data_index = None;
+
+        // Iterate through the log items to see if anything is wrong.
+        for (item_num, item) in slice.iter().enumerate() {
+            match item {
+                DigestItem::AuraPreDigest(_) if aura_predigest_index.is_none() => {
+                    aura_predigest_index = Some(item_num);
+                }
+                DigestItem::AuraPreDigest(_) => return Err(Error::MultipleAuraPreRuntimeDigests),
+                DigestItem::ChangesTrieRoot(_) => {}
+                DigestItem::AuraConsensus(_) => {}
+                DigestItem::BabePreDigest(_) if babe_predigest_index.is_none() => {
+                    babe_predigest_index = Some(item_num);
+                }
+                DigestItem::BabePreDigest(_) => return Err(Error::MultipleBabePreRuntimeDigests),
+                DigestItem::BabeConsensus(BabeConsensusLog::NextEpochData(_))
+                    if babe_next_epoch_data_index.is_none() =>
+                {
+                    babe_next_epoch_data_index = Some(item_num);
+                }
+                DigestItem::BabeConsensus(BabeConsensusLog::NextEpochData(_)) => {
+                    return Err(Error::MultipleBabeEpochDescriptors);
+                }
+                DigestItem::BabeConsensus(BabeConsensusLog::NextConfigData(_))
+                    if babe_next_config_data_index.is_none() =>
+                {
+                    babe_next_config_data_index = Some(item_num);
+                }
+                DigestItem::BabeConsensus(BabeConsensusLog::NextConfigData(_)) => {
+                    return Err(Error::MultipleBabeConfigDescriptors);
+                }
+                DigestItem::BabeConsensus(BabeConsensusLog::OnDisabled(_)) => {}
+                DigestItem::GrandpaConsensus(_) => {}
+                DigestItem::AuraSeal(_) if item_num == slice.len() - 1 => {
+                    debug_assert!(aura_seal_index.is_none());
+                    debug_assert!(babe_seal_index.is_none());
+                    aura_seal_index = Some(item_num);
+                }
+                DigestItem::AuraSeal(_) => return Err(Error::SealIsntLastItem),
+                DigestItem::BabeSeal(_) if item_num == slice.len() - 1 => {
+                    debug_assert!(aura_seal_index.is_none());
+                    debug_assert!(babe_seal_index.is_none());
+                    babe_seal_index = Some(item_num);
+                }
+                DigestItem::BabeSeal(_) => return Err(Error::SealIsntLastItem),
+                DigestItem::ChangesTrieSignal(_) => {}
+            }
+        }
+
+        if babe_next_config_data_index.is_some() && babe_next_epoch_data_index.is_none() {
+            return Err(Error::UnexpectedBabeConfigDescriptor);
+        }
+
+        Ok(DigestRef {
+            inner: DigestRefInner::Parsed(slice),
+            aura_seal_index,
+            aura_predigest_index,
+            babe_seal_index,
+            babe_predigest_index,
+            babe_next_epoch_data_index,
+            babe_next_config_data_index,
+        })
+    }
+
     /// Try to decode a list of digest items, from their SCALE encoding.
-    fn from_slice(mut scale_encoded: &'a [u8]) -> Result<(Self, &'a [u8]), Error> {
+    fn from_scale_bytes(mut scale_encoded: &'a [u8]) -> Result<(Self, &'a [u8]), Error> {
         let digest_logs_len = {
             let len: parity_scale_codec::Compact<u64> =
                 parity_scale_codec::Decode::decode(&mut scale_encoded)
