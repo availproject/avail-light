@@ -36,7 +36,7 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Run tests, with all features
-      run: cargo test --locked --workspace #--all-features  # TODO: restore --all-features after it works
+      run: cargo test --locked --workspace --all-features
 
   browser-node-check:
     name: Check browser node compilation
@@ -75,7 +75,6 @@ jobs:
     - run: cargo check --package substrate-lite --locked --no-default-features --features std
     - run: cargo check --package substrate-lite --locked --no-default-features --features std --features wasm-bindings
     - run: cargo check --package substrate-lite --locked --no-default-features --features wasm-bindings
-    # TODO: finish here
 
   check-rustdoc-links:
     name: Check rustdoc intra-doc links
