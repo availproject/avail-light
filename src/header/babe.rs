@@ -217,6 +217,13 @@ enum BabeAuthoritiesIterInner<'a> {
     Raw(slice::Chunks<'a, u8>),
 }
 
+impl<'a> BabeAuthoritiesIter<'a> {
+    /// Builds a new [`BabeAuthoritiesIter`] iterating over the given slice.
+    pub fn from_slice(slice: &'a [BabeAuthority]) -> Self {
+        Self(BabeAuthoritiesIterInner::List(slice.iter()))
+    }
+}
+
 impl<'a> Iterator for BabeAuthoritiesIter<'a> {
     type Item = BabeAuthorityRef<'a>;
 

@@ -58,12 +58,12 @@ async fn async_main() {
     // Load the information about the chain from the database, or build the information of the
     // genesis block.
     // TODO:
-    let chain_information_config = /*match local_storage.chain_information() {
+    let chain_information = /*match local_storage.chain_information() {
         Ok(Some(i)) => i,
         Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
         // TODO: log why storage access failed?
         Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {*/
-            chain::chain_information::ChainInformationConfig::from_genesis_storage(
+            chain::chain_information::ChainInformation::from_genesis_storage(
                 chain_spec.genesis_storage(),
             )
             .unwrap()
@@ -116,7 +116,7 @@ async fn async_main() {
             Box::new(move |task| threads_pool.spawn_ok(task))
         },
         chain_spec: &chain_spec,
-        chain_information_config,
+        chain_information,
     })
     .await;
 

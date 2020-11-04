@@ -46,6 +46,8 @@ use core::num::NonZeroU64;
 pub mod aura;
 pub mod babe;
 
+// TODO: is it possible to build an inconsistent `ChainInformation` ; maybe use strong typing to provide a proof of the consistency ; see checks done at head of `blocks_tree.rs`
+
 /// Information about the latest finalized block and state found in its ancestors.
 #[derive(Debug, Clone)]
 pub struct ChainInformation {
@@ -84,13 +86,21 @@ pub struct ChainInformation {
 }
 
 impl ChainInformation {
-    /// Builds the chain information corresponding to the genesis block.
+    /// Builds the [`ChainInformation`] corresponding to the genesis block.
     ///
     /// Must be passed a closure that returns the storage value corresponding to the given key in
     /// the genesis block storage.
-    fn from_genesis_storage<'a>(
+    pub fn from_genesis_storage<'a>(
         genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
     ) -> Result<Self, FromGenesisStorageError> {
+        let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
+            genesis_storage
+                .clone()
+                .find(|(k2, _)| *k2 == k)
+                .map(|(_, v)| v.to_owned())
+        })
+        .ok(); // TODO: differentiate between errors and lack of Babe
+
         let grandpa_genesis_config =
             grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
                 genesis_storage
@@ -100,14 +110,38 @@ impl ChainInformation {
             })
             .unwrap();
 
+        let consensus = if let Some(babe_genesis_config) = babe_genesis_config {
+            ChainInformationConsensus::Babe {
+                slots_per_epoch: babe_genesis_config.slots_per_epoch,
+                finalized_block_epoch_information: None,
+                finalized_next_epoch_transition: BabeEpochInformation {
+                    epoch_index: 0,
+                    start_slot_number: None,
+                    authorities: babe_genesis_config.epoch0_information.authorities,
+                    randomness: babe_genesis_config.epoch0_information.randomness,
+                    c: babe_genesis_config.epoch0_configuration.c,
+                    allowed_slots: babe_genesis_config.epoch0_configuration.allowed_slots,
+                },
+            }
+        } else {
+            // If not Babe, we assume Aura.
+            let aura_genesis_config = aura::AuraGenesisConfiguration::from_genesis_storage(|k| {
+                genesis_storage
+                    .clone()
+                    .find(|(k2, _)| *k2 == k)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .unwrap(); // TODO: don't unwrap
+
+            ChainInformationConsensus::Aura {
+                finalized_authorities_list: aura_genesis_config.authorities_list,
+                slot_duration: aura_genesis_config.slot_duration,
+            }
+        };
+
         Ok(ChainInformation {
             finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
-            consensus: ChainInformationConsensus::Babe {
-                // TODO: don't assume Babe!
-                finalized_block1_slot_number: None,
-                finalized_block_epoch_information: None,
-                finalized_next_epoch_transition: None,
-            },
+            consensus,
             grandpa_after_finalized_block_authorities_set_id: 0,
             grandpa_finalized_scheduled_change: None,
             grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
@@ -130,15 +164,14 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
                     slot_duration,
                 },
                 ChainInformationConsensusRef::Babe {
+                    slots_per_epoch,
                     finalized_next_epoch_transition,
                     finalized_block_epoch_information,
-                    finalized_block1_slot_number,
                 } => ChainInformationConsensus::Babe {
-                    finalized_block1_slot_number: finalized_block1_slot_number,
+                    slots_per_epoch,
                     finalized_block_epoch_information: finalized_block_epoch_information
-                        .map(|(e, c)| (e.clone().into(), c)),
-                    finalized_next_epoch_transition: finalized_next_epoch_transition
-                        .map(|(e, c)| (e.clone().into(), c)),
+                        .map(Into::into),
+                    finalized_next_epoch_transition: finalized_next_epoch_transition.into(),
                 },
             },
             grandpa_after_finalized_block_authorities_set_id: info
@@ -168,22 +201,78 @@ pub enum ChainInformationConsensus {
 
     /// Chain is using the Babe consensus engine.
     Babe {
-        /// If the number in [`ChainInformation::finalized_block_header`] is superior or equal to
-        /// 1, then this field must contain the slot number of the block whose number is 1 and is
-        /// an ancestor of the finalized block.
-        finalized_block1_slot_number: Option<u64>,
+        /// Number of slots per epoch. Configured at the genesis block and never touched later.
+        slots_per_epoch: NonZeroU64,
 
         /// Babe epoch information about the epoch the finalized block belongs to.
         ///
-        /// Must be `None` if and only if the finalized block is block #0 or belongs to epoch #0.
-        finalized_block_epoch_information: Option<(header::BabeNextEpoch, header::BabeNextConfig)>,
+        /// If the finalized block belongs to epoch #0, which starts at block #1, then this must
+        /// contain the information about the epoch #0, which can be found by calling
+        /// [`babe::BabeGenesisConfiguration::from_genesis_storage`].
+        ///
+        /// Must be `None` if and only if the finalized block is block #0.
+        ///
+        /// > **Note**: The information about the epoch the finalized block belongs to isn't
+        /// >           necessary, but the information about the epoch the children of the
+        /// >           finalized block belongs to *is*. However, due to possibility of missed
+        /// >           slots, it is often not possible to know in advance whether the children
+        /// >           of a block will belong to the same epoch as their parent. This is the
+        /// >           reason why the "parent" (i.e. finalized block)'s information are demanded.
+        finalized_block_epoch_information: Option<BabeEpochInformation>,
 
         /// Babe epoch information about the epoch right after the one the finalized block belongs
         /// to.
         ///
-        /// Must be `None` if and only if the finalized block is block #0.
-        finalized_next_epoch_transition: Option<(header::BabeNextEpoch, header::BabeNextConfig)>,
+        /// If [`ChainInformationConsensus::Babe::finalized_block_epoch_information`] is `Some`,
+        /// this field must contain the epoch that follows.
+        ///
+        /// If the finalized block is block #0, then this must contain the information about the
+        /// epoch #0, which can be found by calling
+        /// [`babe::BabeGenesisConfiguration::from_genesis_storage`].
+        finalized_next_epoch_transition: BabeEpochInformation,
     },
+}
+
+/// Information about a Babe epoch.
+#[derive(Debug, Clone)]
+pub struct BabeEpochInformation {
+    /// Index of the epoch.
+    ///
+    /// Epoch number 0 starts at the slot number of block 1. Epoch indices increase one by one.
+    pub epoch_index: u64,
+
+    /// Slot at which the epoch starts.
+    ///
+    /// Must be `None` if and only if `epoch_index` is 0.
+    pub start_slot_number: Option<u64>,
+
+    /// List of authorities allowed to author blocks during this epoch.
+    pub authorities: Vec<header::BabeAuthority>,
+
+    /// Randomness value for this epoch.
+    ///
+    /// Determined using the VRF output of the validators of the epoch before.
+    pub randomness: [u8; 32],
+
+    /// Value of the constant that allows determining the chances of a VRF being generated by a
+    /// given slot.
+    pub c: (u64, u64),
+
+    /// Types of blocks allowed for this epoch.
+    pub allowed_slots: header::BabeAllowedSlots,
+}
+
+impl<'a> From<BabeEpochInformationRef<'a>> for BabeEpochInformation {
+    fn from(info: BabeEpochInformationRef<'a>) -> BabeEpochInformation {
+        BabeEpochInformation {
+            epoch_index: info.epoch_index,
+            start_slot_number: info.start_slot_number,
+            authorities: info.authorities.map(Into::into).collect(),
+            randomness: *info.randomness,
+            c: info.c,
+            allowed_slots: info.allowed_slots,
+        }
+    }
 }
 
 /// Error when building the chain information from the genesis storage.
@@ -233,17 +322,15 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
                     slot_duration: *slot_duration,
                 },
                 ChainInformationConsensus::Babe {
-                    finalized_block1_slot_number,
+                    slots_per_epoch,
                     finalized_block_epoch_information,
                     finalized_next_epoch_transition,
                 } => ChainInformationConsensusRef::Babe {
-                    finalized_block1_slot_number: *finalized_block1_slot_number,
+                    slots_per_epoch: *slots_per_epoch,
                     finalized_block_epoch_information: finalized_block_epoch_information
                         .as_ref()
-                        .map(|(i, c)| (i.into(), *c)),
-                    finalized_next_epoch_transition: finalized_next_epoch_transition
-                        .as_ref()
-                        .map(|(i, c)| (i.into(), *c)),
+                        .map(Into::into),
+                    finalized_next_epoch_transition: finalized_next_epoch_transition.into(),
                 },
             },
             grandpa_after_finalized_block_authorities_set_id: info
@@ -272,86 +359,47 @@ pub enum ChainInformationConsensusRef<'a> {
     /// Chain is using the Babe consensus engine.
     Babe {
         /// See equivalent field in [`ChainInformationConsensus`].
-        finalized_block1_slot_number: Option<u64>,
+        slots_per_epoch: NonZeroU64,
 
         /// See equivalent field in [`ChainInformationConsensus`].
-        finalized_block_epoch_information:
-            Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
+        finalized_block_epoch_information: Option<BabeEpochInformationRef<'a>>,
 
         /// See equivalent field in [`ChainInformationConsensus`].
-        finalized_next_epoch_transition:
-            Option<(header::BabeNextEpochRef<'a>, header::BabeNextConfig)>,
+        finalized_next_epoch_transition: BabeEpochInformationRef<'a>,
     },
 }
 
-/// Includes a [`ChainInformation`] plus some chain-wide configuration.
+/// Information about a Babe epoch.
 #[derive(Debug, Clone)]
-pub struct ChainInformationConfig {
-    /// Information about the latest finalized block.
-    pub chain_information: ChainInformation,
+pub struct BabeEpochInformationRef<'a> {
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub epoch_index: u64,
 
-    /// Configuration for BABE, retrieved from the genesis block, if any.
-    pub babe_genesis_config: Option<babe::BabeGenesisConfiguration>,
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub start_slot_number: Option<u64>,
+
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub authorities: header::BabeAuthoritiesIter<'a>,
+
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub randomness: &'a [u8; 32],
+
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub c: (u64, u64),
+
+    /// See equivalent field in [`BabeEpochInformation`].
+    pub allowed_slots: header::BabeAllowedSlots,
 }
 
-impl ChainInformationConfig {
-    /// Builds the [`ChainInformationConfig`] corresponding to the genesis block.
-    ///
-    /// Must be passed a closure that returns the storage value corresponding to the given key in
-    /// the genesis block storage.
-    pub fn from_genesis_storage<'a>(
-        genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
-    ) -> Result<Self, FromGenesisStorageError> {
-        let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
-            genesis_storage
-                .clone()
-                .find(|(k2, _)| *k2 == k)
-                .map(|(_, v)| v.to_owned())
-        })
-        .ok(); // TODO: differentiate between errors and lack of Babe
-
-        let grandpa_genesis_config =
-            grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
-                genesis_storage
-                    .clone()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.to_owned())
-            })
-            .unwrap();
-
-        let consensus = if babe_genesis_config.is_some() {
-            ChainInformationConsensus::Babe {
-                finalized_block1_slot_number: None,
-                finalized_block_epoch_information: None,
-                finalized_next_epoch_transition: None,
-            }
-        } else {
-            // If not Babe, we assume Aura.
-            let aura_genesis_config = aura::AuraGenesisConfiguration::from_genesis_storage(|k| {
-                genesis_storage
-                    .clone()
-                    .find(|(k2, _)| *k2 == k)
-                    .map(|(_, v)| v.to_owned())
-            })
-            .unwrap(); // TODO: don't unwrap
-
-            ChainInformationConsensus::Aura {
-                finalized_authorities_list: aura_genesis_config.authorities_list,
-                slot_duration: aura_genesis_config.slot_duration,
-            }
-        };
-
-        let chain_information = ChainInformation {
-            finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
-            consensus,
-            grandpa_after_finalized_block_authorities_set_id: 0,
-            grandpa_finalized_scheduled_change: None,
-            grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-        };
-
-        Ok(ChainInformationConfig {
-            chain_information,
-            babe_genesis_config,
-        })
+impl<'a> From<&'a BabeEpochInformation> for BabeEpochInformationRef<'a> {
+    fn from(info: &'a BabeEpochInformation) -> BabeEpochInformationRef<'a> {
+        BabeEpochInformationRef {
+            epoch_index: info.epoch_index,
+            start_slot_number: info.start_slot_number,
+            authorities: header::BabeAuthoritiesIter::from_slice(&info.authorities),
+            randomness: &info.randomness,
+            c: info.c,
+            allowed_slots: info.allowed_slots,
+        }
     }
 }

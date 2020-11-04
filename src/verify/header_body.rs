@@ -17,7 +17,7 @@
 
 use super::execute_block;
 use crate::{
-    chain::chain_information::babe::BabeGenesisConfiguration,
+    chain::chain_information,
     executor, header,
     trie::calculate_root,
     verify::{aura, babe},
@@ -77,16 +77,15 @@ pub enum ConfigConsensus<'a> {
 
     /// Chain is using the Babe consensus engine.
     Babe {
-        /// BABE configuration retrieved from the genesis block.
-        ///
-        /// See the documentation of [`BabeGenesisConfiguration`] to know how to get this.
-        genesis_configuration: &'a BabeGenesisConfiguration,
+        /// Number of slots per epoch in the Babe configuration.
+        slots_per_epoch: NonZeroU64,
 
-        /// Slot number of block #1. **Must** be provided, unless the block being verified is block
-        /// #1 itself.
-        ///
-        /// Must be the value of [`SuccessConsensus::Babe::slot_number`] for block #1.
-        block1_slot_number: Option<u64>,
+        /// Epoch the parent block belongs to. Must be `None` if and only if the parent block's
+        /// number is 0, as block #0 doesn't belong to any epoch.
+        parent_block_epoch: Option<chain_information::BabeEpochInformationRef<'a>>,
+
+        /// Epoch that follows the epoch the parent block belongs to.
+        parent_block_next_epoch: chain_information::BabeEpochInformationRef<'a>,
 
         /// Time elapsed since [the Unix Epoch](https://en.wikipedia.org/wiki/Unix_time) (i.e.
         /// 00:00:00 UTC on 1 January 1970), ignoring leap seconds.
@@ -125,16 +124,18 @@ pub enum SuccessConsensus {
 
     /// Chain is using the Babe consensus engine.
     Babe {
-        /// If `Some`, the verified block contains an epoch transition describing the given epoch.
-        /// This epoch transition must later be provided back as part of the [`Config`] when
-        /// verifying the blocks that are part of that epoch.
-        babe_epoch_transition_target: Option<NonZeroU64>,
-
         /// Slot number the block belongs to.
+        ///
+        /// > **Note**: This is a simple reminder. The value can also be found in the header of the
+        /// >           block.
         slot_number: u64,
 
-        /// Epoch number the block belongs to.
-        epoch_number: u64,
+        /// If `Some`, the verified block contains an epoch transition describing the new
+        /// "next epoch". When verifying blocks that are children of this one, the value in this
+        /// field must be provided as [`ConfigConsensus::Babe::parent_block_next_epoch`], and the
+        /// value previously in [`ConfigConsensus::Babe::parent_block_next_epoch`] must instead be
+        /// passed as [`ConfigConsensus::Babe::parent_block_epoch`].
+        epoch_transition_target: Option<chain_information::BabeEpochInformation>,
     },
 }
 
@@ -158,7 +159,7 @@ pub fn verify<'a>(
     config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
     // Start the consensus engine verification process.
-    let (consensus_success, babe_verification) = match config.consensus {
+    let consensus_success = match config.consensus {
         ConfigConsensus::Aura {
             current_authorities,
             slot_duration,
@@ -177,34 +178,36 @@ pub fn verify<'a>(
             });
 
             match result {
-                Ok(s) => (
-                    Some(SuccessConsensus::Aura {
-                        authorities_change: s.authorities_change,
-                    }),
-                    None,
-                ),
+                Ok(s) => SuccessConsensus::Aura {
+                    authorities_change: s.authorities_change,
+                },
                 Err(err) => return Verify::Finished(Err(Error::AuraVerification(err))),
             }
         }
         ConfigConsensus::Babe {
-            genesis_configuration,
-            block1_slot_number,
+            parent_block_epoch,
+            parent_block_next_epoch,
+            slots_per_epoch,
             now_from_unix_epoch,
         } => {
             if config.block_header.digest.has_any_aura() {
                 return Verify::Finished(Err(Error::MultipleConsensusEngines));
             }
 
-            let result = babe::start_verify_header(babe::VerifyConfig {
+            let result = babe::verify_header(babe::VerifyConfig {
                 header: config.block_header.clone(),
                 parent_block_header: config.parent_block_header,
-                genesis_configuration,
+                parent_block_next_epoch,
+                parent_block_epoch,
+                slots_per_epoch,
                 now_from_unix_epoch,
-                block1_slot_number,
             });
 
             match result {
-                Ok(s) => (None, Some(s)),
+                Ok(s) => SuccessConsensus::Babe {
+                    epoch_transition_target: s.epoch_transition_target,
+                    slot_number: s.slot_number,
+                },
                 Err(err) => return Verify::Finished(Err(Error::BabeVerification(err))),
             }
         }
@@ -225,18 +228,9 @@ pub fn verify<'a>(
         })
     };
 
-    if let Some(babe_verification) = babe_verification {
-        VerifyInner::Babe {
-            babe_verification,
-            import_process,
-        }
-    } else if let Some(consensus_success) = consensus_success {
-        VerifyInner::Unsealed {
-            inner: import_process,
-            consensus_success,
-        }
-    } else {
-        unreachable!()
+    VerifyInner {
+        inner: import_process,
+        consensus_success,
     }
     .run()
 }
@@ -246,8 +240,6 @@ pub fn verify<'a>(
 pub enum Verify {
     /// Verification is over.
     Finished(Result<Success, Error>),
-    /// Fetching an epoch information is required in order to continue.
-    BabeEpochInformation(BabeEpochInformation),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.
@@ -256,121 +248,39 @@ pub enum Verify {
     StorageNextKey(StorageNextKey),
 }
 
-enum VerifyInner {
-    /// Verifying BABE.
-    Babe {
-        babe_verification: babe::SuccessOrPending,
-        import_process: execute_block::Verify,
-    },
-    /// Error in BABE verification.
-    BabeError(babe::VerifyError),
-    /// Verifying the unsealed block.
-    Unsealed {
-        inner: execute_block::Verify,
-        consensus_success: SuccessConsensus,
-    },
+struct VerifyInner {
+    inner: execute_block::Verify,
+    consensus_success: SuccessConsensus,
 }
 
 impl VerifyInner {
     fn run(mut self) -> Verify {
-        loop {
-            break match self {
-                VerifyInner::Babe {
-                    babe_verification,
-                    import_process,
-                } => match babe_verification {
-                    babe::SuccessOrPending::Success(babe_success) => {
-                        self = VerifyInner::Unsealed {
-                            inner: import_process,
-                            consensus_success: SuccessConsensus::Babe {
-                                babe_epoch_transition_target: babe_success.epoch_transition_target,
-                                slot_number: babe_success.slot_number,
-                                epoch_number: babe_success.epoch_number,
-                            },
-                        };
-                        continue;
-                    }
-                    babe::SuccessOrPending::Pending(pending) => {
-                        Verify::BabeEpochInformation(BabeEpochInformation {
-                            inner: pending,
-                            import_process,
-                        })
-                    }
-                },
-                VerifyInner::BabeError(err) => Verify::Finished(Err(Error::BabeVerification(err))),
-                VerifyInner::Unsealed {
-                    inner,
-                    consensus_success,
-                } => match inner {
-                    execute_block::Verify::Finished(Err(err)) => {
-                        Verify::Finished(Err(Error::Unsealed(err)))
-                    }
-                    execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
-                        parent_runtime: success.parent_runtime,
-                        consensus: consensus_success,
-                        storage_top_trie_changes: success.storage_top_trie_changes,
-                        offchain_storage_changes: success.offchain_storage_changes,
-                        top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
-                        logs: success.logs,
-                    })),
-                    execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
-                        inner,
-                        consensus_success,
-                    }),
-                    execute_block::Verify::PrefixKeys(inner) => {
-                        Verify::StoragePrefixKeys(StoragePrefixKeys {
-                            inner,
-                            consensus_success,
-                        })
-                    }
-                    execute_block::Verify::NextKey(inner) => {
-                        Verify::StorageNextKey(StorageNextKey {
-                            inner,
-                            consensus_success,
-                        })
-                    }
-                },
-            };
-        }
-    }
-}
-
-/// Fetching an epoch information is required in order to continue.
-#[must_use]
-pub struct BabeEpochInformation {
-    inner: babe::PendingVerify,
-    import_process: execute_block::Verify,
-}
-
-impl BabeEpochInformation {
-    /// Returns the epoch number whose information must be passed to
-    /// [`BabeEpochInformation::inject_epoch`].
-    pub fn epoch_number(&self) -> u64 {
-        self.inner.epoch_number()
-    }
-
-    /// Returns true if the epoch of the verified block is the same as its parent's.
-    pub fn same_epoch_as_parent(&self) -> bool {
-        self.inner.same_epoch_as_parent()
-    }
-
-    /// Finishes the verification. Must provide the information about the epoch whose number is
-    /// obtained with [`BabeEpochInformation::epoch_number`].
-    pub fn inject_epoch(
-        self,
-        epoch_info: (header::BabeNextEpochRef, header::BabeNextConfig),
-    ) -> Verify {
-        match self.inner.finish(epoch_info) {
-            Ok(babe_success) => VerifyInner::Unsealed {
-                inner: self.import_process,
-                consensus_success: SuccessConsensus::Babe {
-                    babe_epoch_transition_target: babe_success.epoch_transition_target,
-                    slot_number: babe_success.slot_number,
-                    epoch_number: babe_success.epoch_number,
-                },
+        match self.inner {
+            execute_block::Verify::Finished(Err(err)) => {
+                Verify::Finished(Err(Error::Unsealed(err)))
             }
-            .run(),
-            Err(err) => VerifyInner::BabeError(err).run(),
+            execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
+                parent_runtime: success.parent_runtime,
+                consensus: self.consensus_success,
+                storage_top_trie_changes: success.storage_top_trie_changes,
+                offchain_storage_changes: success.offchain_storage_changes,
+                top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
+                logs: success.logs,
+            })),
+            execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
+                inner,
+                consensus_success: self.consensus_success,
+            }),
+            execute_block::Verify::PrefixKeys(inner) => {
+                Verify::StoragePrefixKeys(StoragePrefixKeys {
+                    inner,
+                    consensus_success: self.consensus_success,
+                })
+            }
+            execute_block::Verify::NextKey(inner) => Verify::StorageNextKey(StorageNextKey {
+                inner,
+                consensus_success: self.consensus_success,
+            }),
         }
     }
 }
@@ -397,7 +307,7 @@ impl StorageGet {
 
     /// Injects the corresponding storage value.
     pub fn inject_value(self, value: Option<&[u8]>) -> Verify {
-        VerifyInner::Unsealed {
+        VerifyInner {
             inner: self.inner.inject_value(value),
             consensus_success: self.consensus_success,
         }
@@ -420,7 +330,7 @@ impl StoragePrefixKeys {
 
     /// Injects the list of keys.
     pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> Verify {
-        VerifyInner::Unsealed {
+        VerifyInner {
             inner: self.inner.inject_keys(keys),
             consensus_success: self.consensus_success,
         }
@@ -448,7 +358,7 @@ impl StorageNextKey {
     /// Panics if the key passed as parameter isn't strictly superior to the requested key.
     ///
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> Verify {
-        VerifyInner::Unsealed {
+        VerifyInner {
             inner: self.inner.inject_key(key),
             consensus_success: self.consensus_success,
         }

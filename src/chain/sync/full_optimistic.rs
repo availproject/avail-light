@@ -42,7 +42,7 @@ pub use optimistic::{
 #[derive(Debug)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information_config: chain_information::ChainInformationConfig,
+    pub chain_information: chain_information::ChainInformation,
 
     /// Pre-allocated capacity for the number of block sources.
     pub sources_capacity: usize,
@@ -127,7 +127,7 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
     /// Builds a new [`OptimisticFullSync`].
     pub fn new(config: Config) -> Self {
         let chain = blocks_tree::NonFinalizedTree::new(blocks_tree::Config {
-            chain_information_config: config.chain_information_config,
+            chain_information: config.chain_information,
             blocks_capacity: config.blocks_capacity,
         });
 

@@ -42,7 +42,7 @@ pub struct Config<'a> {
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     /// Information about the starting point of the chain.
-    pub chain_information_config: chain::chain_information::ChainInformationConfig,
+    pub chain_information: chain::chain_information::ChainInformation,
 
     // TODO: remove
     pub chain_spec: &'a crate::chain_spec::ChainSpec,
@@ -103,7 +103,7 @@ impl SyncService {
         (config.tasks_executor)(Box::pin(
             start_sync(
                 config.chain_spec,
-                config.chain_information_config,
+                config.chain_information,
                 sync_state.clone(),
                 to_foreground,
                 from_foreground,
@@ -209,14 +209,14 @@ enum FromBackground {
 /// Returns the background task of the sync service.
 async fn start_sync(
     chain_spec: &crate::chain_spec::ChainSpec,
-    chain_information_config: chain::chain_information::ChainInformationConfig,
+    chain_information: chain::chain_information::ChainInformation,
     sync_state: Arc<Mutex<SyncState>>,
     mut to_foreground: mpsc::Sender<FromBackground>,
     mut from_foreground: mpsc::Receiver<ToBackground>,
 ) -> impl Future<Output = ()> {
     let mut sync =
         full_optimistic::OptimisticFullSync::<_, network::PeerId>::new(full_optimistic::Config {
-            chain_information_config,
+            chain_information,
             sources_capacity: 32,
             blocks_capacity: {
                 // This is the maximum number of blocks between two consecutive justifications.

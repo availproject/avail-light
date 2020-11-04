@@ -44,7 +44,7 @@ pub use optimistic::{
 #[derive(Debug)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information_config: chain_information::ChainInformationConfig,
+    pub chain_information: chain_information::ChainInformation,
 
     /// Pre-allocated capacity for the number of block sources.
     pub sources_capacity: usize,
@@ -96,7 +96,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// Builds a new [`OptimisticHeadersSync`].
     pub fn new(config: Config) -> Self {
         let blocks_tree_config = blocks_tree::Config {
-            chain_information_config: config.chain_information_config,
+            chain_information: config.chain_information,
             blocks_capacity: usize::try_from(config.blocks_request_granularity.get())
                 .unwrap_or(usize::max_value()),
         };
@@ -120,11 +120,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
     /// latest finalized block. Can later be used to reconstruct a chain.
     pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
-        (&self
-            .finalized_chain_information
-            .chain_information_config
-            .chain_information)
-            .into()
+        (&self.finalized_chain_information.chain_information).into()
     }
 
     /// Inform the [`OptimisticHeadersSync`] of a new potential source of blocks.
@@ -243,9 +239,8 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
                     Ok(apply) => {
                         apply.apply();
                         finalized_update = true;
-                        self.finalized_chain_information
-                            .chain_information_config
-                            .chain_information = self.chain.as_chain_information().into();
+                        self.finalized_chain_information.chain_information =
+                            self.chain.as_chain_information().into();
                     }
                     Err(err) => {
                         debug_assert!(has_error.is_none());
@@ -307,13 +302,11 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             finalized_block: if finalized_update {
                 let number = self
                     .finalized_chain_information
-                    .chain_information_config
                     .chain_information
                     .finalized_block_header
                     .number;
                 let hash = self
                     .finalized_chain_information
-                    .chain_information_config
                     .chain_information
                     .finalized_block_header
                     .hash();

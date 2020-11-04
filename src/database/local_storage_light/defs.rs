@@ -27,6 +27,8 @@ use core::{convert::TryFrom, fmt, num::NonZeroU64};
 pub(super) enum DeserializeError {
     Header(header::Error),
     ConsensusAlgorithmsMismatch,
+    /// Some Babe-related information is missing.
+    MissingBabeInformation,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -59,13 +61,11 @@ pub(super) struct SerializedChainInformationV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     aura_finalized_authorities: Option<Vec<SerializedAuraAuthorityV1>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    babe_finalized_block1_slot_number: Option<u64>,
+    babe_slots_per_epoch: Option<NonZeroU64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    babe_finalized_block_epoch_information:
-        Option<(SerializedBabeNextEpochV1, SerializedBabeNextConfigV1)>,
+    babe_finalized_block_epoch_information: Option<SerializedBabeEpochInformationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    babe_finalized_next_epoch_transition:
-        Option<(SerializedBabeNextEpochV1, SerializedBabeNextConfigV1)>,
+    babe_finalized_next_epoch_transition: Option<SerializedBabeEpochInformationV1>,
     grandpa_after_finalized_block_authorities_set_id: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     grandpa_finalized_triggered_authorities: Vec<SerializedGrandpaAuthorityV1>,
@@ -102,25 +102,22 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                 } else {
                     None
                 },
-            babe_finalized_block1_slot_number:
-                if let chain_information::ChainInformationConsensusRef::Babe {
-                    finalized_block1_slot_number,
-                    ..
-                } = &from.consensus
-                {
-                    *finalized_block1_slot_number
-                } else {
-                    None
-                },
+            babe_slots_per_epoch: if let chain_information::ChainInformationConsensusRef::Babe {
+                slots_per_epoch,
+                ..
+            } = &from.consensus
+            {
+                Some(*slots_per_epoch)
+            } else {
+                None
+            },
             babe_finalized_block_epoch_information:
                 if let chain_information::ChainInformationConsensusRef::Babe {
                     finalized_block_epoch_information,
                     ..
                 } = &from.consensus
                 {
-                    finalized_block_epoch_information
-                        .clone()
-                        .map(|(e, i)| (e.into(), i.into()))
+                    finalized_block_epoch_information.clone().map(Into::into)
                 } else {
                     None
                 },
@@ -130,9 +127,7 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     ..
                 } = &from.consensus
                 {
-                    finalized_next_epoch_transition
-                        .clone()
-                        .map(|(e, i)| (e.into(), i.into()))
+                    Some(finalized_next_epoch_transition.clone().into())
                 } else {
                     None
                 },
@@ -161,7 +156,7 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
         let consensus = match (
             from.aura_finalized_authorities,
             from.aura_slot_duration,
-            from.babe_finalized_block1_slot_number,
+            from.babe_slots_per_epoch,
             from.babe_finalized_block_epoch_information,
             from.babe_finalized_next_epoch_transition,
         ) {
@@ -178,15 +173,17 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
             (
                 None,
                 None,
-                babe_finalized_block1_slot_number,
+                babe_slots_per_epoch,
                 babe_finalized_block_epoch_information,
                 babe_finalized_next_epoch_transition,
             ) => chain_information::ChainInformationConsensus::Babe {
-                finalized_block1_slot_number: babe_finalized_block1_slot_number,
+                slots_per_epoch: babe_slots_per_epoch
+                    .ok_or(DeserializeError::MissingBabeInformation)?,
                 finalized_block_epoch_information: babe_finalized_block_epoch_information
-                    .map(|(e, i)| (e.into(), i.into())),
+                    .map(Into::into),
                 finalized_next_epoch_transition: babe_finalized_next_epoch_transition
-                    .map(|(e, i)| (e.into(), i.into())),
+                    .map(Into::into)
+                    .ok_or(DeserializeError::MissingBabeInformation)?,
             },
 
             _ => return Err(DeserializeError::ConsensusAlgorithmsMismatch),
@@ -248,29 +245,45 @@ impl From<SerializedAuraAuthorityV1> for header::AuraAuthority {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SerializedBabeNextEpochV1 {
+struct SerializedBabeEpochInformationV1 {
+    epoch_index: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start_slot_number: Option<u64>,
     authorities: Vec<SerializedBabeAuthorityV1>,
     #[serde(
         serialize_with = "serialize_bytes",
         deserialize_with = "deserialize_hash32"
     )]
     randomness: [u8; 32],
+    c: SerializedBabeNextConfigConstantV1,
+    allowed_slots: SerializedBabeAllowedSlotsV1,
 }
 
-impl<'a> From<header::BabeNextEpochRef<'a>> for SerializedBabeNextEpochV1 {
-    fn from(from: header::BabeNextEpochRef<'a>) -> Self {
-        SerializedBabeNextEpochV1 {
+impl<'a> From<chain_information::BabeEpochInformationRef<'a>> for SerializedBabeEpochInformationV1 {
+    fn from(from: chain_information::BabeEpochInformationRef<'a>) -> Self {
+        SerializedBabeEpochInformationV1 {
+            epoch_index: from.epoch_index,
+            start_slot_number: from.start_slot_number,
             authorities: from.authorities.map(Into::into).collect(),
             randomness: *from.randomness,
+            c: SerializedBabeNextConfigConstantV1 {
+                num: from.c.0,
+                denom: from.c.1,
+            },
+            allowed_slots: from.allowed_slots.into(),
         }
     }
 }
 
-impl From<SerializedBabeNextEpochV1> for header::BabeNextEpoch {
-    fn from(from: SerializedBabeNextEpochV1) -> Self {
-        header::BabeNextEpoch {
+impl From<SerializedBabeEpochInformationV1> for chain_information::BabeEpochInformation {
+    fn from(from: SerializedBabeEpochInformationV1) -> Self {
+        chain_information::BabeEpochInformation {
+            epoch_index: from.epoch_index,
+            start_slot_number: from.start_slot_number,
             authorities: from.authorities.into_iter().map(Into::into).collect(),
             randomness: from.randomness,
+            c: (from.c.num, from.c.denom),
+            allowed_slots: from.allowed_slots.into(),
         }
     }
 }
@@ -300,33 +313,6 @@ impl From<SerializedBabeAuthorityV1> for header::BabeAuthority {
         header::BabeAuthority {
             public_key: from.public_key,
             weight: from.weight,
-        }
-    }
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct SerializedBabeNextConfigV1 {
-    c: SerializedBabeNextConfigConstantV1,
-    allowed_slots: SerializedBabeAllowedSlotsV1,
-}
-
-impl From<header::BabeNextConfig> for SerializedBabeNextConfigV1 {
-    fn from(from: header::BabeNextConfig) -> Self {
-        SerializedBabeNextConfigV1 {
-            c: SerializedBabeNextConfigConstantV1 {
-                num: from.c.0,
-                denom: from.c.1,
-            },
-            allowed_slots: from.allowed_slots.into(),
-        }
-    }
-}
-
-impl From<SerializedBabeNextConfigV1> for header::BabeNextConfig {
-    fn from(from: SerializedBabeNextConfigV1) -> Self {
-        header::BabeNextConfig {
-            c: (from.c.num, from.c.denom),
-            allowed_slots: from.allowed_slots.into(),
         }
     }
 }
