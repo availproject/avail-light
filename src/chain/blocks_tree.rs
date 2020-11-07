@@ -185,11 +185,10 @@ impl<T> NonFinalizedTree<T> {
                         .is_some(),
                     finalized_block_epoch_information.epoch_index != 0
                 );
-                assert!(finalized_block_epoch_information
-                    .start_slot_number
-                    .map_or(finalized_next_epoch_transition.epoch_index == 1, |n| {
-                        finalized_next_epoch_transition.epoch_index == n + 1
-                    }));
+                assert_eq!(
+                    finalized_block_epoch_information.epoch_index + 1,
+                    finalized_next_epoch_transition.epoch_index
+                );
             } else {
                 assert_eq!(config.chain_information.finalized_block_header.number, 0);
             }

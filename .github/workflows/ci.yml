@@ -72,9 +72,14 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - run: cargo check --package substrate-lite --locked --no-default-features
+    - run: cargo check --package substrate-lite --locked --no-default-features --features database-sled
     - run: cargo check --package substrate-lite --locked --no-default-features --features std
     - run: cargo check --package substrate-lite --locked --no-default-features --features std --features wasm-bindings
     - run: cargo check --package substrate-lite --locked --no-default-features --features wasm-bindings
+    - run: cargo check --package substrate-lite --locked --no-default-features --features database-sled --features std
+    - run: cargo check --package substrate-lite --locked --no-default-features --features std --features wasm-bindings
+    - run: cargo check --package substrate-lite --locked --no-default-features --features database-sled --features wasm-bindings
+    - run: cargo check --package substrate-lite --locked --no-default-features --features database-sled --features std --features wasm-bindings
 
   check-rustdoc-links:
     name: Check rustdoc intra-doc links

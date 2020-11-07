@@ -16,7 +16,10 @@ members = [
 ]
 
 [features]
-default = ["std"]
+default = ["database-sled", "std"]
+database-sled = [
+    "sled",
+]
 std = [
     "app_dirs",
     "async-std",
@@ -46,7 +49,7 @@ wasm-bindings = [
 [[bin]]
 name = "full-node"
 path = "bin/full-node/main.rs"
-required-features = ["std"]
+required-features = ["database-sled", "std"]
 
 [[bin]]
 name = "json-rpc-test"
@@ -93,6 +96,9 @@ snow = { version = "0.7.2", default-features = false, features = ["default-resol
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.6.0"
 wasmi = { version = "0.7.0", default-features = false, features = ["core"] }  # TODO: having to add `core` is sketchy; maybe report this
+
+# `database-sled` feature
+sled = { version = "0.34.4", optional = true, features = ["compression"] }
 
 # `std` feature
 # Add here the crates that cannot function without the help of the operating system or environment.

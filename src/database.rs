@@ -20,9 +20,5 @@
 //! This module contains sub-modules that provide different means of storing data in a
 //! persistent way.
 
+pub mod full_sled;
 pub mod local_storage_light;
-
-// TODO: when implementing an actual database for the full node, here is some inspiration:
-// - https://github.com/paritytech/substrate-lite/blob/e53148ca8af7450e9995e960279b6c8925a37663/src/database/sled.rs
-// - https://github.com/paritytech/substrate-lite/blob/e53148ca8af7450e9995e960279b6c8925a37663/bin/full-node.rs#L717-L758
-// - https://github.com/paritytech/substrate-lite/blob/8f41c567d8dc644e2166f06f0bd5e5dfca4fddd3/src/lib.rs#L171-L208

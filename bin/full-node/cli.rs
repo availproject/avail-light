@@ -32,6 +32,12 @@
 
 use std::path::PathBuf;
 
+/// Information about the binary for the `app_dirs` library.
+pub const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
+    name: "substrate-lite",
+    author: "paritytech",
+};
+
 // Note: the doc-comments applied to this struct and its field are visible when the binary is
 // started with `--help`.
 

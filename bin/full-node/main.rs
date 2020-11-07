@@ -17,11 +17,14 @@
 
 #![recursion_limit = "1024"]
 
-use futures::prelude::*;
-use std::{borrow::Cow, convert::TryFrom as _, fs, time::Duration};
+use futures::{channel::oneshot, prelude::*};
+use std::{
+    borrow::Cow, convert::TryFrom as _, fs, iter, path::PathBuf, sync::Arc, thread, time::Duration,
+};
 use structopt::StructOpt as _;
 use substrate_lite::{
     chain, chain_spec,
+    database::full_sled,
     network::{connection, multiaddr, peer_id::PeerId},
 };
 
@@ -55,20 +58,54 @@ async fn async_main() {
         .create()
         .unwrap();
 
-    // Load the information about the chain from the database, or build the information of the
-    // genesis block.
-    // TODO:
-    let chain_information = /*match local_storage.chain_information() {
-        Ok(Some(i)) => i,
-        Err(database::local_storage_light::AccessError::StorageAccess(err)) => return Err(err),
-        // TODO: log why storage access failed?
-        Err(database::local_storage_light::AccessError::Corrupted(_)) | Ok(None) => {*/
-            chain::chain_information::ChainInformation::from_genesis_storage(
-                chain_spec.genesis_storage(),
-            )
-            .unwrap()
-        //}
-    ; //};
+    // Open the database from the filesystem, or create a new database if none is found.
+    let database = Arc::new({
+        // Directory supposed to contain the database.
+        let db_path = {
+            let base_path =
+                app_dirs::app_dir(app_dirs::AppDataType::UserData, &cli::APP_INFO, "database")
+                    .unwrap();
+            base_path.join(chain_spec.id())
+        };
+
+        // The `unwrap()` here can panic for example in case of access denied.
+        match open_database(db_path.clone()).await.unwrap() {
+            // Database already exists and contains data.
+            full_sled::DatabaseOpen::Open(database) => {
+                // TODO: verify that the database matches the chain spec
+                // TODO: print the hash in a nicer way
+                eprintln!(
+                    "Loading existing database with finalized hash {:?}",
+                    database.finalized_block_hash().unwrap()
+                );
+                database
+            }
+
+            // The database doesn't exist or is empty.
+            full_sled::DatabaseOpen::Empty(empty) => {
+                // Build information about state of the chain at the genesis block, and fill the
+                // database with it.
+                let genesis_chain_information =
+                    chain::chain_information::ChainInformation::from_genesis_storage(
+                        chain_spec.genesis_storage(),
+                    )
+                    .unwrap(); // TODO: don't unwrap?
+
+                eprintln!("Initializing new database at {}", db_path.display());
+
+                // The finalized block is the genesis block. As such, it has an empty body and
+                // no justification.
+                empty
+                    .initialize(
+                        &genesis_chain_information,
+                        iter::empty(),
+                        None,
+                        chain_spec.genesis_storage(),
+                    )
+                    .unwrap()
+            }
+        }
+    });
 
     // TODO: remove; just for testing
     /*let metadata = substrate_lite::metadata::metadata_from_runtime_code(
@@ -115,8 +152,7 @@ async fn async_main() {
             let threads_pool = threads_pool.clone();
             Box::new(move |task| threads_pool.spawn_ok(task))
         },
-        chain_spec: &chain_spec,
-        chain_information,
+        database,
     })
     .await;
 
@@ -240,6 +276,42 @@ async fn async_main() {
                     disk_write_per_sec: None,
                 }));*/
             },
+        }
+    }
+}
+
+/// Since opening the database can take a long time, this utility function performs this operation
+/// in the background while showing a small progress bar to the user.
+async fn open_database(path: PathBuf) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {
+    let (tx, rx) = oneshot::channel();
+    let mut rx = rx.fuse();
+
+    let thread_spawn_result = thread::Builder::new().name("database-open".into()).spawn({
+        let path = path.clone();
+        move || {
+            let result = full_sled::open(full_sled::Config { path: &path });
+            let _ = tx.send(result);
+        }
+    });
+
+    // Fall back to opening the database on the same thread if the thread spawn failed.
+    if thread_spawn_result.is_err() {
+        return full_sled::open(full_sled::Config { path: &path });
+    }
+
+    let mut progress_timer = stream::unfold((), move |_| {
+        futures_timer::Delay::new(Duration::from_millis(200)).map(|_| Some(((), ())))
+    })
+    .map(|_| ());
+
+    let mut next_progress_icon = ['-', '\\', '|', '/'].iter().cloned().cycle();
+
+    loop {
+        futures::select! {
+            res = rx => return res.unwrap(),
+            _ = progress_timer.next() => {
+                eprint!("    Opening database... {}\r", next_progress_icon.next().unwrap());
+            }
         }
     }
 }

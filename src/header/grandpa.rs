@@ -321,6 +321,13 @@ enum GrandpaAuthoritiesIterInner<'a> {
     Decoded(slice::Iter<'a, GrandpaAuthority>),
 }
 
+impl<'a> GrandpaAuthoritiesIter<'a> {
+    /// Returns an iterator corresponding to the given slice.
+    pub fn new(slice: &'a [GrandpaAuthority]) -> Self {
+        GrandpaAuthoritiesIter(GrandpaAuthoritiesIterInner::Decoded(slice.iter()))
+    }
+}
+
 impl<'a> Iterator for GrandpaAuthoritiesIter<'a> {
     type Item = GrandpaAuthorityRef<'a>;
 
