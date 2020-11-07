@@ -217,6 +217,9 @@ async fn async_main() {
                     network_service::Event::Connected(peer_id) => {
                         sync_service.add_source(peer_id).await;
                     }
+                    network_service::Event::Disconnected(peer_id) => {
+                        sync_service.remove_source(peer_id).await;
+                    }
                 }
             }
 
