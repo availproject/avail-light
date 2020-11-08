@@ -31,8 +31,12 @@ pub struct JitPrototype {
         ToCoroutine,
     >,
 
-    /// Reference to the memory imported by the module, if any.
-    imported_memory: Option<wasmtime::Memory>,
+    /// Reference to the memory used by the module, if any.
+    memory: Option<wasmtime::Memory>,
+
+    /// Reference to the table of indirect functions, in case we need to access it.
+    /// `None` if the module doesn't export such table.
+    indirect_table: Option<wasmtime::Table>,
 }
 
 impl JitPrototype {
@@ -121,6 +125,38 @@ impl JitPrototype {
             imports
         };
 
+        // TODO: don't unwrap
+        let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
+
+        let exported_memory = if let Some(mem) = instance.get_export("memory") {
+            if let Some(mem) = mem.into_memory() {
+                // TODO: do this properly
+                mem.grow(u32::try_from(heap_pages).unwrap()).unwrap();
+                Some(mem.clone())
+            } else {
+                return Err(NewErr::MemoryIsntMemory);
+            }
+        } else {
+            None
+        };
+
+        let memory = match (exported_memory, imported_memory) {
+            (Some(_), Some(_)) => todo!(),
+            (Some(m), None) => Some(m),
+            (None, Some(m)) => Some(m),
+            (None, None) => None,
+        };
+
+        let indirect_table = if let Some(tbl) = instance.get_export("__indirect_function_table") {
+            if let Some(tbl) = tbl.into_table() {
+                Some(tbl.clone())
+            } else {
+                return Err(NewErr::IndirectTableIsntTable);
+            }
+        } else {
+            None
+        };
+
         // We now build the coroutine of the main thread.
         let mut coroutine = {
             let interrupter = builder.interrupter();
@@ -129,37 +165,6 @@ impl JitPrototype {
                 let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
 
                 loop {
-                    // TODO: don't unwrap
-                    let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
-
-                    // TODO: review interaction with imported memory
-                    let memory = if let Some(mem) = instance.get_export("memory") {
-                        if let Some(mem) = mem.into_memory() {
-                            // TODO: do this properly
-                            mem.grow(u32::try_from(heap_pages).unwrap()).unwrap();
-                            Some(mem.clone())
-                        } else {
-                            let err = NewErr::MemoryIsntMemory;
-                            interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                            return;
-                        }
-                    } else {
-                        None
-                    };
-
-                    let indirect_table =
-                        if let Some(tbl) = instance.get_export("__indirect_function_table") {
-                            if let Some(tbl) = tbl.into_table() {
-                                Some(tbl.clone())
-                            } else {
-                                let err = NewErr::IndirectTableIsntTable;
-                                interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                                return;
-                            }
-                        } else {
-                            None
-                        };
-
                     let (start_function_name, start_parameters) = loop {
                         match request {
                             ToCoroutine::Start(n, p) => break (n, p),
@@ -176,13 +181,6 @@ impl JitPrototype {
 
                                 request = interrupter
                                     .interrupt(FromCoroutine::GetGlobalResponse(global_val));
-                            }
-                            ToCoroutine::GetMemoryTable => {
-                                request =
-                                    interrupter.interrupt(FromCoroutine::GetMemoryTableResponse {
-                                        memory: memory.clone(),
-                                        indirect_table: indirect_table.clone(),
-                                    });
                             }
                             ToCoroutine::Resume(_) => unreachable!(),
                         }
@@ -244,14 +242,14 @@ impl JitPrototype {
         // Execute the coroutine once, as described above.
         // The first yield must always be an `FromCoroutine::Init`.
         match coroutine.run(None) {
-            corooteen::RunOut::Interrupted(FromCoroutine::Init(Err(err))) => return Err(err),
             corooteen::RunOut::Interrupted(FromCoroutine::Init(Ok(()))) => {}
             _ => unreachable!(),
         }
 
         Ok(JitPrototype {
             coroutine,
-            imported_memory,
+            memory,
+            indirect_table,
         })
     }
 
@@ -269,15 +267,6 @@ impl JitPrototype {
     /// Turns this prototype into an actual virtual machine. This requires choosing which function
     /// to execute.
     pub fn start(mut self, function_name: &str, params: &[WasmValue]) -> Result<Jit, NewErr> {
-        let (exported_memory, indirect_table) =
-            match self.coroutine.run(Some(ToCoroutine::GetMemoryTable)) {
-                corooteen::RunOut::Interrupted(FromCoroutine::GetMemoryTableResponse {
-                    memory,
-                    indirect_table,
-                }) => (memory, indirect_table),
-                _ => unreachable!(),
-            };
-
         match self.coroutine.run(Some(ToCoroutine::Start(
             function_name.to_owned(),
             params.to_owned(),
@@ -287,19 +276,10 @@ impl JitPrototype {
             _ => unreachable!(),
         }
 
-        // TODO: proper error instead of panicking?
-        let memory = match (exported_memory, &self.imported_memory) {
-            (Some(_), Some(_)) => unimplemented!(),
-            (Some(m), None) => Some(m),
-            (None, Some(m)) => Some(m.clone()),
-            (None, None) => None,
-        };
-
         Ok(Jit {
             coroutine: self.coroutine,
-            memory,
-            imported_memory: self.imported_memory,
-            indirect_table,
+            memory: self.memory,
+            indirect_table: self.indirect_table,
         })
     }
 }
@@ -313,8 +293,6 @@ enum ToCoroutine {
     Start(String, Vec<WasmValue>),
     /// Resume execution after [`FromCoroutine::Interrupt`].
     Resume(Option<WasmValue>),
-    /// Return the memory and indirect table globals.
-    GetMemoryTable,
     /// Return the value of the given global with a [`FromCoroutine::GetGlobalResponse`].
     GetGlobal(String),
 }
@@ -330,11 +308,6 @@ enum FromCoroutine {
         function_index: usize,
         /// Parameters of the function.
         parameters: Vec<WasmValue>,
-    },
-    /// Response to a [`ToCoroutine::GetMemoryTable`].
-    GetMemoryTableResponse {
-        memory: Option<wasmtime::Memory>,
-        indirect_table: Option<wasmtime::Table>,
     },
     /// Response to a [`ToCoroutine::GetGlobal`].
     GetGlobalResponse(Result<u32, GlobalValueErr>),
@@ -352,15 +325,10 @@ pub struct Jit {
         ToCoroutine,
     >,
 
-    /// See [`JitPrototype::imported_memory`].
-    imported_memory: Option<wasmtime::Memory>,
-
-    /// Reference to the memory, in case we need to access it.
-    /// `None` if the module doesn't export its memory.
+    /// See [`JitPrototype::memory`].
     memory: Option<wasmtime::Memory>,
 
-    /// Reference to the table of indirect functions, in case we need to access it.
-    /// `None` if the module doesn't export such table.
+    /// See [`JitPrototype::indirect_table`].
     indirect_table: Option<wasmtime::Table>,
 }
 
@@ -413,10 +381,6 @@ impl Jit {
             corooteen::RunOut::Interrupted(FromCoroutine::Init(_)) => unreachable!(),
             // `GetGlobalResponse` only happens in response to a request.
             corooteen::RunOut::Interrupted(FromCoroutine::GetGlobalResponse(_)) => unreachable!(),
-            // `GetMemoryTableResponse` only happens in response to a request.
-            corooteen::RunOut::Interrupted(FromCoroutine::GetMemoryTableResponse { .. }) => {
-                unreachable!()
-            }
         }
     }
 
@@ -489,7 +453,8 @@ impl Jit {
 
         JitPrototype {
             coroutine: self.coroutine,
-            imported_memory: self.imported_memory,
+            memory: self.memory,
+            indirect_table: self.indirect_table,
         }
     }
 }
