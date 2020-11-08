@@ -728,15 +728,17 @@ impl ReadyToRun {
                     let message = expect_pointer_size!(1);
                     let pubkey = expect_pointer_constant_size!(2, 32);
 
-                    // The two `unwrap()`s below can only panic if the input is the wrong length,
-                    // which we know can't happen.
                     // TODO: copy overhead?
-                    let public_key = ed25519_dalek::PublicKey::from_bytes(&pubkey).unwrap();
-                    // TODO: copy overhead?
-                    let signature =
-                        ed25519_dalek::Signature::new(<[u8; 64]>::try_from(&sig[..]).unwrap());
-
-                    let success = public_key.verify_strict(&message, &signature).is_ok();
+                    let success = if let Ok(public_key) =
+                        ed25519_dalek::PublicKey::from_bytes(&pubkey)
+                    {
+                        // TODO: copy overhead?
+                        let signature =
+                            ed25519_dalek::Signature::new(<[u8; 64]>::try_from(&sig[..]).unwrap());
+                        public_key.verify_strict(&message, &signature).is_ok()
+                    } else {
+                        false
+                    };
 
                     self = ReadyToRun {
                         resume_value: Some(vm::WasmValue::I32(if success { 1 } else { 0 })),
