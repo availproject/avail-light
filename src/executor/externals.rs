@@ -405,7 +405,7 @@ impl ReadyToRun {
                 Externality::ext_crypto_sr25519_verify_version_1 => 3,
                 Externality::ext_crypto_sr25519_verify_version_2 => 3,
                 Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
-                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => todo!(),
+                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => 2,
                 Externality::ext_crypto_start_batch_verify_version_1 => 0,
                 Externality::ext_crypto_finish_batch_verify_version_1 => 0,
                 Externality::ext_hashing_keccak_256_version_1 => 1,
@@ -826,7 +826,45 @@ impl ReadyToRun {
                         other => return other,
                     }
                 }
-                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => todo!(),
+                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => {
+                    // TODO: clean up
+                    #[derive(parity_scale_codec::Encode)]
+                    enum EcdsaVerifyError {
+                        RSError,
+                        VError,
+                        BadSignature,
+                    }
+
+                    let sig = expect_pointer_constant_size!(0, 65);
+                    let msg = expect_pointer_constant_size!(1, 32);
+
+                    let result = (|| -> Result<_, EcdsaVerifyError> {
+                        let rs = secp256k1::Signature::parse_slice(&sig[0..64])
+                            .map_err(|_| EcdsaVerifyError::RSError)?;
+                        let v = secp256k1::RecoveryId::parse(if sig[64] > 26 {
+                            sig[64] - 27
+                        } else {
+                            sig[64]
+                        } as u8)
+                        .map_err(|_| EcdsaVerifyError::VError)?;
+                        let pubkey = secp256k1::recover(
+                            &secp256k1::Message::parse_slice(&msg).unwrap(),
+                            &rs,
+                            &v,
+                        )
+                        .map_err(|_| EcdsaVerifyError::BadSignature)?;
+                        Ok(pubkey.serialize_compressed())
+                    })();
+                    let result_encoded = parity_scale_codec::Encode::encode(&result);
+
+                    match self.inner.alloc_write_and_return_pointer_size(
+                        externality.name(),
+                        iter::once(&result_encoded),
+                    ) {
+                        ExternalsVm::ReadyToRun(r) => self = r,
+                        other => return other,
+                    }
+                }
                 Externality::ext_crypto_start_batch_verify_version_1 => {
                     self = ReadyToRun {
                         resume_value: None,
