@@ -66,7 +66,7 @@ ahash = { version = "0.5.6", default-features = false }
 arrayvec = { version = "0.5.2", default-features = false }
 atomic = "0.5.0"
 blake2-rfc = { version = "0.2.18", default-features = false }
-bs58 = { version = "0.3.1", default-features = false, features = ["alloc"] }
+bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
 derive_more = "0.99.11"
 ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "batch", "u64_backend"] }
 either = { version = "1.6.1", default-features = false }
