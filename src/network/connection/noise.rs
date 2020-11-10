@@ -289,10 +289,8 @@ impl Noise {
     }
 
     pub fn consume_inbound_data(&mut self, n: usize) {
-        // TODO: no, slow
-        for _ in 0..n {
-            self.rx_buffer_decrypted.remove(0);
-        }
+        // TODO: be smarter than copying
+        self.rx_buffer_decrypted = self.rx_buffer_decrypted[n..].to_vec();
     }
 
     /// Reads data from `payload` and writes it to `destination`. Returns, in order, the number
