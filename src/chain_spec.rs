@@ -34,10 +34,88 @@
 //! - Multiple other miscellaneous information.
 //!
 
+use crate::chain::chain_information::{
+    BabeEpochInformation, ChainInformation, ChainInformationConsensus,
+};
 use alloc::string::String;
+use core::num::NonZeroU64;
 
 mod light_sync_state;
 mod structs;
+
+pub struct LightSyncState {
+    inner: light_sync_state::DecodedLightSyncState,
+}
+
+fn convert_epoch(epoch: &light_sync_state::BabeEpoch) -> BabeEpochInformation {
+    let epoch_authorities: Vec<_> = epoch
+        .authorities
+        .iter()
+        .map(|authority| crate::header::BabeAuthority {
+            public_key: authority.public_key,
+            weight: authority.weight,
+        })
+        .collect();
+
+    BabeEpochInformation {
+        epoch_index: epoch.epoch_index,
+        start_slot_number: Some(epoch.slot_number),
+        authorities: epoch_authorities,
+        randomness: epoch.randomness,
+        c: epoch.config.c,
+        allowed_slots: epoch.config.allowed_slots,
+    }
+}
+
+impl LightSyncState {
+    pub fn as_chain_information(&self) -> ChainInformation {
+        // Create a sorted list of all regular epochs that haven't been pruned from the sync state.
+        let mut epochs: Vec<_> = self
+            .inner
+            .babe_epoch_changes
+            .epochs
+            .iter()
+            .filter(|((_, block_num), _)| {
+                *block_num as u64 <= self.inner.finalized_block_header.number
+            })
+            .filter_map(|((_, block_num), epoch)| match epoch {
+                light_sync_state::PersistedEpoch::Regular(epoch) => Some((block_num, epoch)),
+                _ => None,
+            })
+            .collect();
+
+        epochs.sort_unstable_by_key(|(&block_num, _)| block_num);
+
+        // Get the latest two epochs.
+        let current_epoch = &epochs[epochs.len() - 2].1;
+        let next_epoch = &epochs[epochs.len() - 1].1;
+
+        ChainInformation {
+            finalized_block_header: self.inner.finalized_block_header.clone(),
+            consensus: ChainInformationConsensus::Babe {
+                slots_per_epoch: NonZeroU64::new(current_epoch.duration).unwrap(),
+                finalized_block_epoch_information: Some(convert_epoch(current_epoch)),
+                finalized_next_epoch_transition: convert_epoch(next_epoch),
+            },
+            grandpa_after_finalized_block_authorities_set_id: self
+                .inner
+                .grandpa_authority_set
+                .set_id,
+            grandpa_finalized_triggered_authorities: {
+                self.inner
+                    .grandpa_authority_set
+                    .current_authorities
+                    .iter()
+                    .map(|authority| crate::header::GrandpaAuthority {
+                        public_key: authority.public_key,
+                        weight: authority.weight,
+                    })
+                    .collect()
+            },
+            grandpa_finalized_scheduled_change: None, // TODO: unimplemented
+        }
+    }
+}
 
 /// A configuration of a chain. Can be used to build a genesis block.
 #[derive(Clone)]
@@ -46,15 +124,19 @@ pub struct ChainSpec {
 }
 
 impl ChainSpec {
+    pub fn light_sync_state(&self) -> Option<LightSyncState> {
+        self.client_spec
+            .light_sync_state
+            .as_ref()
+            .map(|state| LightSyncState {
+                inner: state.decode(),
+            })
+    }
+
     /// Parse JSON content into a [`ChainSpec`].
     pub fn from_json_bytes(json: impl AsRef<[u8]>) -> Result<Self, ParseError> {
         let client_spec: structs::ClientSpec =
             serde_json::from_slice(json.as_ref()).map_err(ParseError)?;
-
-        if let Some(sync_state) = client_spec.light_sync_state.as_ref() {
-            let decoded = sync_state.decode();
-            println!("{:?}", decoded);
-        }
 
         // TODO: we don't support child tries in the genesis block
         assert!({

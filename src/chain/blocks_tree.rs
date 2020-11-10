@@ -416,21 +416,37 @@ impl<T> NonFinalizedTree<T> {
                 },
             }
         } else {
-            // Can only happen if parent is the block #0.
-            assert_eq!(decoded_header.number, 1);
-            match &self.finalized_consensus {
-                FinalizedConsensus::Aura {
-                    authorities_list, ..
-                } => VerifyConsensusSpecific::Aura {
-                    authorities_list: authorities_list.clone(),
-                },
-                FinalizedConsensus::Babe {
-                    next_epoch_transition,
-                    ..
-                } => VerifyConsensusSpecific::Babe {
-                    current_epoch: None,
-                    next_epoch: next_epoch_transition.clone(),
-                },
+            // Some consensus-specific information must be fetched from the tree of ancestry. The
+            // information is found either in the parent block, or in the finalized block.
+            if let Some(parent_tree_index) = parent_tree_index {
+                match &self.blocks.get(parent_tree_index).unwrap().consensus {
+                    BlockConsensus::Aura { authorities_list } => VerifyConsensusSpecific::Aura {
+                        authorities_list: authorities_list.clone(),
+                    },
+                    BlockConsensus::Babe {
+                        current_epoch,
+                        next_epoch,
+                    } => VerifyConsensusSpecific::Babe {
+                        current_epoch: current_epoch.clone(),
+                        next_epoch: next_epoch.clone(),
+                    },
+                }
+            } else {
+                match &self.finalized_consensus {
+                    FinalizedConsensus::Aura {
+                        authorities_list, ..
+                    } => VerifyConsensusSpecific::Aura {
+                        authorities_list: authorities_list.clone(),
+                    },
+                    FinalizedConsensus::Babe {
+                        block_epoch_information,
+                        next_epoch_transition,
+                        ..
+                    } => VerifyConsensusSpecific::Babe {
+                        current_epoch: block_epoch_information.clone(),
+                        next_epoch: next_epoch_transition.clone(),
+                    },
+                }
             }
         };
 

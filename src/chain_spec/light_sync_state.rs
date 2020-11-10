@@ -54,16 +54,16 @@ impl LightSyncState {
 
 #[derive(Debug)]
 pub(super) struct DecodedLightSyncState {
-    babe_epoch_changes: EpochChanges,
+    pub(super) babe_epoch_changes: EpochChanges,
     babe_finalized_block_weight: u32,
-    finalized_block_header: crate::header::Header,
-    grandpa_authority_set: AuthoritySet,
+    pub(super) finalized_block_header: crate::header::Header,
+    pub(super) grandpa_authority_set: AuthoritySet,
 }
 
 #[derive(Debug, Decode, Encode)]
 pub(super) struct EpochChanges {
     inner: ForkTree<PersistedEpochHeader>,
-    epochs: BTreeMap<([u8; 32], u32), PersistedEpoch>,
+    pub(super) epochs: BTreeMap<([u8; 32], u32), PersistedEpoch>,
 }
 
 #[derive(Debug, Decode, Encode)]
@@ -86,12 +86,12 @@ pub(super) enum PersistedEpoch {
 
 #[derive(Debug, Decode, Encode)]
 pub(super) struct BabeEpoch {
-    epoch_index: u64,
-    slot_number: u64,
-    duration: u64,
-    authorities: Vec<BabeAuthority>,
-    randomness: [u8; 32],
-    config: BabeNextConfig,
+    pub(super) epoch_index: u64,
+    pub(super) slot_number: u64,
+    pub(super) duration: u64,
+    pub(super) authorities: Vec<BabeAuthority>,
+    pub(super) randomness: [u8; 32],
+    pub(super) config: BabeNextConfig,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Encode, Decode)]
@@ -107,8 +107,8 @@ pub struct BabeAuthority {
 
 #[derive(Debug, Decode, Encode)]
 pub(super) struct AuthoritySet {
-    current_authorities: Vec<GrandpaAuthority>,
-    set_id: u64,
+    pub(super) current_authorities: Vec<GrandpaAuthority>,
+    pub(super) set_id: u64,
     pending_standard_changes: ForkTree<PendingChange>,
     pending_forced_changes: Vec<PendingChange>,
 }
