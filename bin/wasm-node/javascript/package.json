@@ -12,6 +12,7 @@
   "bugs": {
     "url": "https://github.com/paritytech/substrate-lite/issues"
   },
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "prepublishOnly": "node prepare.js",

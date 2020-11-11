@@ -15,15 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-module.exports = {
-  start: (chain_specs, json_rpc_callback) => initialize(chain_specs, json_rpc_callback),
-};
+import { Buffer } from 'buffer';
+import { default as now } from 'performance-now';
+import { default as randombytes } from 'randombytes';
+import Websocket from 'websocket';
 
-const Buffer = require('buffer/').Buffer;  // Note: the trailing slash is important in order to not use the NodeJS core module named "buffer".
-const randombytes = require('randombytes');
-const W3CWebSocket = require('websocket').w3cwebsocket;
+import { default as wasm_base64 } from './autogen/wasm.js';
 
-async function initialize(chain_specs, json_rpc_callback) {
+export async function start(chain_specs, json_rpc_callback) {
   var module;
 
   // List of environment variables to feed to the Rust program. An array of strings.
@@ -37,7 +36,7 @@ async function initialize(chain_specs, json_rpc_callback) {
   // The actual Wasm bytecode is base64-decoded from a constant found in a different file.
   // This is suboptimal compared to using `instantiateStreaming`, but it is the most
   // cross-platform cross-bundler approach.
-  let wasm_bytecode = new Uint8Array(Buffer.from(require('./autogen/wasm.js'), 'base64'));
+  let wasm_bytecode = new Uint8Array(Buffer.from(wasm_base64, 'base64'));
 
   // Start the Wasm virtual machine.
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
@@ -64,7 +63,7 @@ async function initialize(chain_specs, json_rpc_callback) {
       unix_time_ms: () => Date.now(),
 
       // Must return the value of a monotonic clock in milliseconds.
-      monotonic_clock_ms: () => require('performance-now')(),
+      monotonic_clock_ms: () => now(),
 
       // Must call `timer_finished` after the given number of milliseconds has elapsed.
       start_timer: (id, ms) => {
@@ -84,7 +83,7 @@ async function initialize(chain_specs, json_rpc_callback) {
             throw "internal error: WebSocket already allocated";
           }
 
-          let websocket = new W3CWebSocket(url);
+          let websocket = new Websocket.w3cwebsocket(url);
           websocket.binaryType = 'arraybuffer';
 
           websocket.onopen = () => {

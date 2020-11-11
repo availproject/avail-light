@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-const child_process = require('child_process');
-const fs = require('fs');
+import * as child_process from 'child_process';
+import * as fs from 'fs';
 
 // The important step in this script is running `cargo build --target wasm32-wasi` on the Rust
 // code. This generates a `wasm` file in `target/wasm32-wasi`.
@@ -47,7 +47,7 @@ try {
 // `./autogen/wasm.js`. It will be decoded at runtime.
 let wasm_opt_out = fs.readFileSync('./autogen/tmp.wasm');
 let base64_data = wasm_opt_out.toString('base64');
-fs.writeFileSync('./autogen/wasm.js', 'module.exports = "' + base64_data + '";');
+fs.writeFileSync('./autogen/wasm.js', 'export default "' + base64_data + '";');
 fs.unlinkSync("./autogen/tmp.wasm");
 
 // The reason for this script is that at the time of writing, there isn't any standard
