@@ -52,7 +52,7 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - uses: actions/setup-node@v1
+    - uses: actions/setup-node@v2.1.2
       with:
         node-version: '12'
     - run: apt-get update && apt install -y binaryen # For `wasm-opt`
