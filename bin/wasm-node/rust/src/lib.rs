@@ -58,12 +58,17 @@ pub async fn start_client(chain_spec: String) {
         Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
     };
 
-    // Load the information about the chain from the local storage, or build the information of
-    // the genesis block.
-    let chain_information = chain::chain_information::ChainInformation::from_genesis_storage(
-        chain_spec.genesis_storage(),
-    )
-    .unwrap();
+    // Load the information about the chain from the chain specs. If a light sync state is
+    // present in the chain specs, it is possible to start sync at the finalized block it
+    // describes.
+    let chain_information = if let Some(light_sync_state) = chain_spec.light_sync_state() {
+        light_sync_state.as_chain_information()
+    } else {
+        chain::chain_information::ChainInformation::from_genesis_storage(
+            chain_spec.genesis_storage(),
+        )
+        .unwrap()
+    };
 
     let (mut to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_db_save_tx, _to_db_save_rx) = mpsc::channel(16);
