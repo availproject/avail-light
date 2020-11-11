@@ -49,7 +49,7 @@ The full client can be tested with `cargo run`.
 
 > Note: The `Cargo.toml` contains a section `[profile.dev] opt-level = 2`, and as such `cargo run` alone should give performances close to the ones in release mode.
 
-The light client running in a browser can be tested with `cd browser-node` and `./build.sh`.
+The light client running in a browser can be tested with `cd wasm-node/javascript` and `npm run start`.
 
 # Coding rules
 

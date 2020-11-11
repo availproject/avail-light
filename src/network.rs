@@ -28,7 +28,6 @@ pub use parity_multiaddr as multiaddr;
 pub mod peer_id;
 pub mod peerset;
 pub mod protocol;
-pub mod wasm_websocket;
 pub mod with_buffers;
 
 pub use parity_multiaddr::Multiaddr;
