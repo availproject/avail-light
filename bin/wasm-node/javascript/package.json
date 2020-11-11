@@ -14,8 +14,8 @@
   },
   "main": "index.js",
   "scripts": {
-    "prepublishOnly": "./prepare.sh",
-    "prestart": "./prepare.sh",
+    "prepublishOnly": "node prepare.js",
+    "prestart": "node prepare.js",
     "start": "node test.js"
   },
   "dependencies": {
