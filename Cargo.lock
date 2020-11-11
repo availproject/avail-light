@@ -407,12 +407,6 @@ dependencies = [
 
 [[package]]
 name = "bs58"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "476e9cd489f9e121e02ffa6014a8ef220ecb15c05ed23fc34cca13925dc283fb"
-
-[[package]]
-name = "bs58"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
@@ -1477,12 +1471,12 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "parity-multiaddr"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c7ad66970bbab360c97179b60906e2dc4aef1f7fca8ab4e5c5db8c97b16814a"
+checksum = "22fe99b938abd57507e37f8d4ef30cd74b33c71face2809b37b8beb71bab15ab"
 dependencies = [
  "arrayref",
- "bs58 0.3.1",
+ "bs58",
  "byteorder",
  "data-encoding",
  "multihash",
@@ -2157,7 +2151,7 @@ dependencies = [
  "atomic",
  "atty",
  "blake2-rfc",
- "bs58 0.4.0",
+ "bs58",
  "corooteen",
  "derive_more",
  "ed25519-dalek",
