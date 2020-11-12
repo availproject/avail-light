@@ -2157,6 +2157,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "rand",
+ "serde_json",
  "substrate-lite",
  "wee_alloc",
 ]

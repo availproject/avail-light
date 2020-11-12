@@ -21,11 +21,17 @@
 #![recursion_limit = "512"]
 
 use futures::{channel::mpsc, prelude::*};
-use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    convert::TryFrom as _,
+    num::NonZeroU32,
+    sync::Arc,
+};
 use substrate_lite::{
     chain,
     chain::sync::headers_optimistic,
-    chain_spec, json_rpc,
+    chain_spec,
+    json_rpc::methods,
     network::{self, multiaddr, peer_id::PeerId, protocol},
 };
 
@@ -72,6 +78,7 @@ pub async fn start_client(chain_spec: String) {
 
     let (mut to_sync_tx, to_sync_rx) = mpsc::channel(64);
     let (to_db_save_tx, _to_db_save_rx) = mpsc::channel(16);
+    let (sync_feedback_tx, mut sync_feedback_rx) = mpsc::channel(16);
 
     let network_service = network_service::NetworkService::new(network_service::Config {
         tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
@@ -99,9 +106,39 @@ pub async fn start_client(chain_spec: String) {
             network_service.clone(),
             to_sync_rx,
             to_db_save_tx,
+            sync_feedback_tx,
         )
         .await,
     );
+
+    let genesis_storage = chain_spec
+        .genesis_storage()
+        .map(|(k, v)| (k.to_vec(), v.to_vec()))
+        .collect::<BTreeMap<_, _>>();
+
+    let genesis_block_header =
+        substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage());
+    let genesis_block_hash = genesis_block_header.hash();
+
+    let metadata = {
+        let code = genesis_storage.get(&b":code"[..]).unwrap();
+        let heap_pages = 1024; // TODO: laziness
+        substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
+    };
+
+    let mut client = Client {
+        chain_spec,
+        genesis_storage,
+        genesis_block_hash,
+        genesis_block_header,
+        metadata,
+        next_subscription: 0,
+        runtime_version: HashSet::new(),
+        all_heads: HashSet::new(),
+        new_heads: HashSet::new(),
+        finalized_heads: HashSet::new(),
+        storage: HashSet::new(),
+    };
 
     loop {
         futures::select! {
@@ -118,41 +155,309 @@ pub async fn start_client(chain_spec: String) {
 
             json_rpc_request = ffi::next_json_rpc().fuse() => {
                 // TODO: don't unwrap
-                handle_rpc(&String::from_utf8(Vec::from(json_rpc_request)).unwrap(), &chain_spec).await;
-            }
+                let (response1, response2) = handle_rpc(&String::from_utf8(Vec::from(json_rpc_request)).unwrap(), &mut client).await;
+                ffi::emit_json_rpc_response(&response1);
+                if let Some(response2) = response2 {
+                    ffi::emit_json_rpc_response(&response2);
+                }
+            },
+
+            hash = sync_feedback_rx.next().fuse() => {
+                let hash = hash.unwrap();
+                for subscription_id in &client.new_heads {
+                    let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                        "chain_subscribeNewHeads",
+                        subscription_id,
+                        &serde_json::to_string(&hash).unwrap(),  // TODO: wrong format! just for testing
+                    );
+                    ffi::emit_json_rpc_response(&notification);
+                }
+                for subscription_id in &client.all_heads {
+                    let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                        "chain_subscribeAllHeads",
+                        subscription_id,
+                        &serde_json::to_string(&hash).unwrap(),  // TODO: wrong format! just for testing
+                    );
+                    ffi::emit_json_rpc_response(&notification);
+                }
+            },
         }
     }
 }
 
-async fn handle_rpc(rpc: &str, chain_spec: &chain_spec::ChainSpec) {
-    let (request_id, call) = json_rpc::methods::parse_json_call(rpc).unwrap(); // TODO: don't unwrap
+struct Client {
+    chain_spec: chain_spec::ChainSpec,
 
-    let response = match call {
-        json_rpc::methods::MethodCall::system_chain {} => {
-            let value = json_rpc::methods::Response::system_chain(chain_spec.name())
-                .to_json_response(request_id);
-            async move { value }.boxed()
-        }
-        json_rpc::methods::MethodCall::system_chainType {} => {
-            let value = json_rpc::methods::Response::system_chainType(chain_spec.chain_type())
-                .to_json_response(request_id);
-            async move { value }.boxed()
-        }
-        json_rpc::methods::MethodCall::system_name {} => {
-            let value = json_rpc::methods::Response::system_name("Polkadot ✨ lite ✨")
-                .to_json_response(request_id);
-            async move { value }.boxed()
-        }
-        json_rpc::methods::MethodCall::system_version {} => {
-            let value =
-                json_rpc::methods::Response::system_version("??").to_json_response(request_id);
-            async move { value }.boxed()
-        }
-        // TODO: implement the rest
-        _ => todo!("not implemented: {:?}", call),
-    };
+    genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
+    genesis_block_hash: [u8; 32],
+    genesis_block_header: substrate_lite::header::Header,
 
-    ffi::emit_json_rpc_response(&response.await);
+    metadata: Vec<u8>,
+
+    next_subscription: u64,
+
+    runtime_version: HashSet<String>,
+    all_heads: HashSet<String>,
+    new_heads: HashSet<String>,
+    finalized_heads: HashSet<String>,
+    storage: HashSet<String>,
+}
+
+async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) {
+    let (request_id, call) = methods::parse_json_call(rpc).expect("bad request"); // TODO: don't unwrap
+    match call {
+        methods::MethodCall::author_pendingExtrinsics {} => {
+            let response = methods::Response::author_pendingExtrinsics(Vec::new())
+                .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::chain_getBlockHash { height } => {
+            assert_eq!(height, 0);
+            let response = methods::Response::chain_getBlockHash(methods::HashHexString(
+                client.genesis_block_hash,
+            ))
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::chain_getFinalizedHead {} => {
+            let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
+                client.genesis_block_hash,
+            ))
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::chain_getHeader { hash } => {
+            // TODO: use hash parameter
+            let response = methods::Response::chain_getHeader(methods::Header {
+                parent_hash: methods::HashHexString(client.genesis_block_header.parent_hash),
+                extrinsics_root: methods::HashHexString(
+                    client.genesis_block_header.extrinsics_root,
+                ),
+                state_root: methods::HashHexString(client.genesis_block_header.state_root),
+                number: client.genesis_block_header.number,
+                digest: methods::HeaderDigest {
+                    logs: client
+                        .genesis_block_header
+                        .digest
+                        .logs()
+                        .map(|log| {
+                            methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
+                                a.extend_from_slice(b.as_ref());
+                                a
+                            }))
+                        })
+                        .collect(),
+                },
+            })
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::chain_subscribeAllHeads {} => {
+            let subscription = client.next_subscription.to_string();
+            client.next_subscription += 1;
+
+            let response = methods::Response::chain_subscribeAllHeads(&subscription)
+                .to_json_response(request_id);
+            client.all_heads.insert(subscription.clone());
+            // TODO: should return the current state, I think
+            (response, None)
+        }
+        methods::MethodCall::chain_subscribeNewHeads {} => {
+            let subscription = client.next_subscription.to_string();
+            client.next_subscription += 1;
+
+            let response = methods::Response::chain_subscribeNewHeads(&subscription)
+                .to_json_response(request_id);
+            client.new_heads.insert(subscription.clone());
+            // TODO: should return the current state, I think
+            (response, None)
+        }
+        methods::MethodCall::chain_subscribeFinalizedHeads {} => {
+            let subscription = client.next_subscription.to_string();
+            client.next_subscription += 1;
+
+            let response = methods::Response::chain_subscribeFinalizedHeads(&subscription)
+                .to_json_response(request_id);
+            client.finalized_heads.insert(subscription.clone());
+            // TODO: should return the current state, I think
+            (response, None)
+        }
+        methods::MethodCall::rpc_methods {} => {
+            let response = methods::Response::rpc_methods(methods::RpcMethods {
+                version: 1,
+                methods: methods::MethodCall::method_names()
+                    .map(|n| n.into())
+                    .collect(),
+            })
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_queryStorageAt { keys, at } => {
+            // TODO: I have no idea what the API of this function is
+            assert!(at.is_none()); // TODO:
+
+            let mut out = methods::StorageChangeSet {
+                block: methods::HashHexString(client.genesis_block_hash),
+                changes: Vec::new(),
+            };
+
+            for key in keys {
+                let value = client
+                    .genesis_storage
+                    .get(&key.0[..])
+                    .map(|v| methods::HexString(v.to_vec()));
+                out.changes.push((key, value));
+            }
+
+            let response =
+                methods::Response::state_queryStorageAt(vec![out]).to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_getKeysPaged {
+            prefix,
+            count,
+            start_key,
+            hash,
+        } => {
+            assert!(hash.is_none()); // TODO:
+
+            let mut out = Vec::new();
+            // TODO: check whether start_key should be included of the set
+            for (k, _) in client
+                .genesis_storage
+                .range(start_key.map(|p| p.0).unwrap_or(Vec::new())..)
+            {
+                if out.len() >= usize::try_from(count).unwrap_or(usize::max_value()) {
+                    break;
+                }
+
+                if prefix
+                    .as_ref()
+                    .map_or(false, |prefix| !k.starts_with(&prefix.0))
+                {
+                    break;
+                }
+
+                out.push(methods::HexString(k.to_vec()));
+            }
+
+            let response = methods::Response::state_getKeysPaged(out).to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_getMetadata {} => {
+            let response =
+                methods::Response::state_getMetadata(methods::HexString(client.metadata.clone()))
+                    .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_getStorage { key, hash } => {
+            // TODO: use hash
+
+            let value = client.genesis_storage.get(&key.0[..]).unwrap().to_vec(); // TODO: don't unwrap
+            let response = methods::Response::state_getStorage(methods::HexString(value))
+                .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_subscribeRuntimeVersion {} => {
+            let subscription = client.next_subscription.to_string();
+            client.next_subscription += 1;
+
+            let response = methods::Response::state_subscribeRuntimeVersion(&subscription)
+                .to_json_response(request_id);
+            client.runtime_version.insert(subscription.clone());
+            // TODO: should return the current state, I think
+            (response, None)
+        }
+        methods::MethodCall::state_subscribeStorage { list } => {
+            let subscription = client.next_subscription.to_string();
+            client.next_subscription += 1;
+
+            let response1 = methods::Response::state_subscribeStorage(&subscription)
+                .to_json_response(request_id);
+            client.storage.insert(subscription.clone());
+
+            // TODO: have no idea what this describes actually
+            let mut out = methods::StorageChangeSet {
+                block: methods::HashHexString(client.genesis_block_hash),
+                changes: Vec::new(),
+            };
+
+            for key in list {
+                let value = client
+                    .genesis_storage
+                    .get(&key.0[..])
+                    .map(|v| methods::HexString(v.to_vec()));
+                out.changes.push((key, value));
+            }
+
+            // TODO: hack
+            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+                "state_storage",
+                &subscription,
+                &serde_json::to_string(&out).unwrap(),
+            );
+
+            (response1, Some(response2))
+        }
+        methods::MethodCall::state_unsubscribeStorage { subscription } => {
+            let valid = client.storage.remove(&subscription);
+            let response =
+                methods::Response::state_unsubscribeStorage(valid).to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::state_getRuntimeVersion {} => {
+            // FIXME: hack
+            let response = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
+                spec_name: "polkadot".to_string(),
+                impl_name: "substrate-lite".to_string(),
+                authoring_version: 0,
+                spec_version: 23,
+                impl_version: 0,
+                transaction_version: 4,
+            })
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_chain {} => {
+            let response = methods::Response::system_chain(client.chain_spec.name())
+                .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_chainType {} => {
+            let response = methods::Response::system_chainType(client.chain_spec.chain_type())
+                .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_health {} => {
+            let response = methods::Response::system_health(methods::SystemHealth {
+                is_syncing: true,        // TODO:
+                peers: 1,                // TODO:
+                should_have_peers: true, // TODO:
+            })
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_name {} => {
+            let response =
+                methods::Response::system_name("substrate-lite!").to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_properties {} => {
+            let response = methods::Response::system_properties(
+                serde_json::from_str(client.chain_spec.properties()).unwrap(),
+            )
+            .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::system_version {} => {
+            let response = methods::Response::system_version("1.0.0").to_json_response(request_id);
+            (response, None)
+        }
+        _ => {
+            println!("unimplemented: {:?}", call);
+            panic!(); // TODO:
+        }
+    }
 }
 
 async fn start_sync(
@@ -160,6 +465,7 @@ async fn start_sync(
     network_service: Arc<network_service::NetworkService>,
     mut to_sync: mpsc::Receiver<ToSync>,
     mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
+    mut sync_feedback: mpsc::Sender<[u8; 32]>,
 ) -> impl Future<Output = ()> {
     let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
         headers_optimistic::Config {
@@ -221,7 +527,9 @@ async fn start_sync(
                         best_block_hash,
                         best_block_number,
                         ..
-                    } => {}
+                    } => {
+                        sync_feedback.send(best_block_hash).await.unwrap();
+                    }
                     headers_optimistic::ProcessOneOutcome::Reset {
                         reason,
                         new_best_block_hash,
