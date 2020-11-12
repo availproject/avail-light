@@ -125,6 +125,8 @@ async fn async_main() {
     let network_service = network_service::NetworkService::new(network_service::Config {
         listen_addresses: Vec::new(),
         protocol_id: chain_spec.protocol_id().to_owned(),
+        genesis_block_hash: database.finalized_block_hash().unwrap(),
+        best_block: (0, database.finalized_block_hash().unwrap()),
         bootstrap_nodes: {
             let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
             for node in chain_spec.boot_nodes() {

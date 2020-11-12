@@ -53,6 +53,13 @@ pub struct Config {
     /// network.
     pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 
+    /// Hash of the genesis block of the chain. Sent to other nodes in order to determine whether
+    /// the chains match.
+    pub genesis_block_hash: [u8; 32],
+
+    /// Number and hash of the current best block. Can later be updated with // TODO: which function?
+    pub best_block: (u64, [u8; 32]),
+
     /// Identifier of the chain to connect to.
     ///
     /// Each blockchain has (or should have) a different "protocol id". This value identifies the
@@ -79,6 +86,12 @@ pub struct NetworkService {
     /// See [`Config::protocol_id`].
     protocol_id: String,
 
+    /// See [`Config::genesis_block_hash`].
+    genesis_block_hash: [u8; 32],
+
+    /// See [`Config::best_block`].
+    best_block: (u64, [u8; 32]),
+
     /// See [`Config::noise_key`].
     noise_key: Arc<connection::NoiseKey>,
 
@@ -102,7 +115,7 @@ struct Guarded {
 
     /// Holds the state of all the known nodes of the network, and of all the connections (pending
     /// or not).
-    peerset: peerset::Peerset<(), mpsc::Sender<ToConnection>, mpsc::Sender<ToConnection>>,
+    peerset: peerset::Peerset<(), mpsc::Sender<ToConnection>, mpsc::Sender<ToConnection>, (), ()>,
 }
 
 impl NetworkService {
@@ -203,6 +216,8 @@ impl NetworkService {
                 tasks_executor: config.tasks_executor,
                 peerset,
             }),
+            genesis_block_hash: config.genesis_block_hash,
+            best_block: config.best_block,
             protocol_id: config.protocol_id,
             noise_key: Arc::new(config.noise_key),
             from_background: Mutex::new(from_background),
@@ -295,7 +310,11 @@ impl NetworkService {
                 }
                 FromBackground::HandshakeError { connection_id, .. } => {
                     let mut guarded = self.guarded.lock().await;
-                    guarded.peerset.pending_mut(connection_id).unwrap().remove();
+                    guarded
+                        .peerset
+                        .pending_mut(connection_id)
+                        .unwrap()
+                        .remove_and_purge_address();
                 }
                 FromBackground::HandshakeSuccess {
                     connection_id,
@@ -325,9 +344,9 @@ impl NetworkService {
                 } => todo!(),
                 FromBackground::NotificationsCloseResult { connection_id } => todo!(),
 
-                FromBackground::NotificationsOpenDesired { connection_id } => todo!(),
+                FromBackground::NotificationsInOpen { connection_id } => todo!(),
 
-                FromBackground::NotificationsCloseDesired { connection_id } => todo!(),
+                FromBackground::NotificationsInClose { connection_id } => todo!(),
             }
         }
     }
@@ -339,6 +358,36 @@ impl NetworkService {
         // Solves borrow checking errors regarding the borrow of multiple different fields at the
         // same time.
         let guarded = &mut **guarded;
+
+        // TODO: limit number of slots
+
+        // Grab nodes for which we have an established outgoing connections but haven't opened a
+        // substream to yet.
+        while let Some(node) = guarded.peerset.random_connected_closed_node(0) {
+            let connection_id = node.connections().next().unwrap();
+            let mut connection = guarded.peerset.connection_mut(connection_id).unwrap();
+            // It is possible for the channel to be closed if the task has shut down. This will
+            // be processed by `next_event` when detected.
+            let _ = connection
+                .user_data_mut()
+                .send(ToConnection::OpenOutNotifications {
+                    protocol: format!("/{}/block-announces/1", self.protocol_id),
+                    handshake: protocol::encode_block_announces_handshake(
+                        protocol::BlockAnnouncesHandshakeRef {
+                            best_hash: &self.best_block.1,
+                            best_number: self.best_block.0,
+                            genesis_hash: &self.genesis_block_hash,
+                            role: protocol::Role::Full, // TODO:
+                        },
+                    )
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    }),
+                })
+                .await;
+            connection.add_pending_substream(0, ());
+        }
 
         // TODO: very wip
         while let Some(mut node) = guarded.peerset.random_not_connected(0) {
@@ -362,9 +411,9 @@ impl NetworkService {
                     self.to_foreground.clone(),
                     rx,
                 )));
-            }
 
-            break;
+                break;
+            }
         }
     }
 }
@@ -387,8 +436,24 @@ enum ToConnection {
         protocol: String,
         send_back: oneshot::Sender<Result<Vec<protocol::BlockData>, ()>>,
     },
-    OpenNotifications,
-    CloseNotifications,
+    OpenOutNotifications {
+        // TODO: shouldn't pass protocol by String, ideally
+        protocol: String,
+        /// Handshake to initially send to the remote.
+        handshake: Vec<u8>,
+    },
+    CloseOutNotifications {
+        // TODO: shouldn't pass protocol by String, ideally
+        protocol: String,
+    },
+    NotificationsInAccept {
+        // TODO: shouldn't pass protocol by String, ideally
+        protocol: String,
+    },
+    NotificationsInReject {
+        // TODO: shouldn't pass protocol by String, ideally
+        protocol: String,
+    },
 }
 
 /// Messsage sent from a background task and dedicated to the main [`NetworkService`]. Processed
@@ -419,7 +484,7 @@ enum FromBackground {
         connection_id: peerset::ConnectionId,
     },
 
-    /// Response to a [`ToConnection::OpenNotifications`].
+    /// Response to a [`ToConnection::OpenOutNotifications`].
     NotificationsOpenResult {
         connection_id: peerset::ConnectionId,
         /// Outcome of the opening. If `Ok`, the notifications protocol is now open. If `Err`, it
@@ -427,28 +492,27 @@ enum FromBackground {
         result: Result<(), ()>,
     },
 
-    /// Response to a [`ToConnection::CloseNotifications`].
+    /// Response to a [`ToConnection::CloseOutNotifications`].
     ///
     /// Contrary to [`FromBackground::NotificationsOpenResult`], a closing request never fails.
     NotificationsCloseResult {
         connection_id: peerset::ConnectionId,
     },
 
-    /// The remote requests that a notification substream be opened.
+    /// The remote opened a notifications substream.
     ///
-    /// No action has been taken. Send [`ToConnection::OpenNotifications`] to open the substream,
-    /// or [`ToConnection::CloseNotifications`] to reject the request from the remote.
-    NotificationsOpenDesired {
+    /// A [`ToConnection::NotificationsInAccept`] or [`ToConnection::NotificationsInReject`] must
+    /// be sent back.
+    NotificationsInOpen {
         connection_id: peerset::ConnectionId,
     },
 
-    /// The remote requests that a notification substream be closed.
+    /// The remote closed a notifications substream.
     ///
-    /// No action has been taken. Send [`ToConnection::CloseNotifications`] in order to close the
-    /// substream.
-    ///
-    /// If this follows a [`FromBackground::NotificationsOpenDesired`], it cancels it.
-    NotificationsCloseDesired {
+    /// This does not cancel any previously-sent [`FromBackground::NotificationsInOpen`]. Instead,
+    /// the response sent to a previously-sent [`FromBackground::NotificationsInOpen`] will be
+    /// ignored.
+    NotificationsInClose {
         connection_id: peerset::ConnectionId,
     },
 }
@@ -602,6 +666,13 @@ async fn connection_task(
                 }
                 continue;
             }
+            Some(connection::established::Event::NotificationsOutAccept {
+                id,
+                remote_handshake,
+            }) => {
+                let hs = protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
+            }
+            Some(connection::established::Event::NotificationsOutReject { id, user_data }) => {}
             _ => {}
         }
 
@@ -626,19 +697,20 @@ async fn connection_task(
                             });
                         connection.add_request(Instant::now(), protocol, request, send_back);
                     }
-                    ToConnection::OpenNotifications => {
+                    ToConnection::OpenOutNotifications { protocol, handshake } => {
                         // TODO: finish
                         let id = connection.open_notifications_substream(
                             Instant::now(),
-                            "/dot/block-announces/1".to_string(),  // TODO: should contain correct ProtocolId
-                            Vec::new(), // TODO:
+                            protocol,
+                            handshake,
                             ()
                         );
+                    },
+                    ToConnection::CloseOutNotifications { protocol } => {
                         todo!()
                     },
-                    ToConnection::CloseNotifications => {
-                        todo!()
-                    },
+                    ToConnection::NotificationsInAccept { .. } => todo!(),
+                    ToConnection::NotificationsInReject { .. } => todo!(),
                 }
             }
         }

@@ -91,7 +91,7 @@ struct Guarded {
 
     /// Holds the state of all the known nodes of the network, and of all the connections (pending
     /// or not).
-    peerset: peerset::Peerset<(), mpsc::Sender<ToConnection>, mpsc::Sender<ToConnection>>,
+    peerset: peerset::Peerset<(), mpsc::Sender<ToConnection>, mpsc::Sender<ToConnection>, (), ()>,
 }
 
 impl NetworkService {

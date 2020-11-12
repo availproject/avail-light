@@ -292,35 +292,18 @@ where
                     substream_id,
                     user_data,
                 }) => {
-                    match user_data {
-                        Substream::Poisoned => unreachable!(),
-                        Substream::InboundNegotiating(_) => {}
-                        Substream::NegotiationFailed => {}
-                        Substream::RequestOutNegotiating { user_data, .. }
-                        | Substream::RequestOut { user_data, .. } => {
-                            let wake_up_after = self.next_timeout.clone();
-                            return Ok(ReadWrite {
-                                connection: self,
-                                read_bytes: total_read,
-                                written_bytes: total_written,
-                                wake_up_after,
-                                event: Some(Event::Response {
-                                    id: SubstreamId(substream_id),
-                                    user_data,
-                                    response: Err(RequestError::SubstreamReset),
-                                }),
-                            });
-                        }
-                        Substream::RequestInRecv { .. } => {}
-                        Substream::NotificationsInHandshake { .. } => {}
-                        Substream::NotificationsInWait => {
-                            // TODO: report to user
-                            //todo!()
-                        }
-                        Substream::PingIn(_) => {}
-                        _ => todo!("other substream kind"),
+                    if let Some(event) = self.on_substream_reset(substream_id, user_data) {
+                        let wake_up_after = self.next_timeout.clone();
+                        return Ok(ReadWrite {
+                            connection: self,
+                            read_bytes: total_read,
+                            written_bytes: total_written,
+                            wake_up_after,
+                            event: Some(event),
+                        });
+                    } else {
+                        continue;
                     }
-                    continue;
                 }
 
                 Some(yamux::IncomingDataDetail::StreamClosed {
@@ -505,7 +488,10 @@ where
                     } => {
                         match handshake.update(&data) {
                             Ok((num_read, leb128::Framed::Finished(remote_handshake))) => {
-                                data = &data[num_read..];
+                                if num_read != data.len() {
+                                    // TODO:
+                                }
+
                                 let substream_id = substream.id();
                                 let wake_up_after = self.next_timeout.clone();
                                 *substream.user_data() = Substream::NotificationsOut { user_data };
@@ -531,6 +517,14 @@ where
                                 todo!() // TODO: report to user and all
                             }
                         }
+                    }
+                    Substream::NotificationsOut { user_data } => {
+                        data = &[];
+                        *substream.user_data() = Substream::NotificationsOut { user_data };
+                    }
+                    Substream::NotificationsOutClosed => {
+                        data = &[];
+                        *substream.user_data() = Substream::NotificationsOutClosed;
                     }
                     Substream::RequestOutNegotiating {
                         negotiation,
@@ -790,6 +784,40 @@ where
             wake_up_after,
             event: None,
         })
+    }
+
+    fn on_substream_reset(
+        &mut self,
+        substream_id: yamux::SubstreamId,
+        user_data: Substream<TNow, TRqUd, TNotifUd>,
+    ) -> Option<Event<TRqUd, TNotifUd>> {
+        match user_data {
+            Substream::Poisoned => unreachable!(),
+            Substream::InboundNegotiating(_) => None,
+            Substream::NegotiationFailed => None,
+            Substream::RequestOutNegotiating { user_data, .. }
+            | Substream::RequestOut { user_data, .. } => Some(Event::Response {
+                id: SubstreamId(substream_id),
+                user_data,
+                response: Err(RequestError::SubstreamReset),
+            }),
+            Substream::RequestInRecv { .. } => None,
+            Substream::NotificationsInHandshake { .. } => None,
+            Substream::NotificationsInWait => {
+                // TODO: report to user
+                //todo!()
+                None
+            }
+            Substream::NotificationsOutNegotiating { user_data, .. }
+            | Substream::NotificationsOutHandshakeRecv { user_data, .. } => {
+                Some(Event::NotificationsOutReject {
+                    id: SubstreamId(substream_id),
+                    user_data,
+                })
+            }
+            Substream::PingIn(_) => None,
+            _ => todo!("other substream kind"),
+        }
     }
 
     /// Updates the internal state machine, most notably `self.next_timeout`, with the passage of
