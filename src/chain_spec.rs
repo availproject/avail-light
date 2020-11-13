@@ -108,7 +108,7 @@ impl LightSyncState {
                     .iter()
                     .map(|authority| crate::header::GrandpaAuthority {
                         public_key: authority.public_key,
-                        weight: authority.weight,
+                        weight: NonZeroU64::new(authority.weight).unwrap(),
                     })
                     .collect()
             },

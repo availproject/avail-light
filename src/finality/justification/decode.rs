@@ -206,7 +206,13 @@ fn justification(bytes: &[u8]) -> nom::IResult<&[u8], JustificationRef> {
 fn precommits(bytes: &[u8]) -> nom::IResult<&[u8], PrecommitsRef> {
     nom::combinator::map(
         nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
-            nom::combinator::recognize(nom::multi::many_m_n(num_elems, num_elems, precommit))
+            nom::combinator::recognize(nom::multi::fold_many_m_n(
+                num_elems,
+                num_elems,
+                precommit,
+                (),
+                |(), _| (),
+            ))
         }),
         |inner| PrecommitsRef { inner },
     )(bytes)
@@ -239,11 +245,20 @@ fn votes_ancestries(bytes: &[u8]) -> nom::IResult<&[u8], VotesAncestriesIter> {
         "votes ancestries",
         nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
             nom::combinator::map(
-                nom::combinator::recognize(nom::multi::many_m_n(num_elems, num_elems, |s| {
-                    header::decode_partial(s).map(|(a, b)| (b, a)).map_err(|_| {
-                        nom::Err::Failure(nom::error::make_error(s, nom::error::ErrorKind::Verify))
-                    })
-                })),
+                nom::combinator::recognize(nom::multi::fold_many_m_n(
+                    num_elems,
+                    num_elems,
+                    |s| {
+                        header::decode_partial(s).map(|(a, b)| (b, a)).map_err(|_| {
+                            nom::Err::Failure(nom::error::make_error(
+                                s,
+                                nom::error::ErrorKind::Verify,
+                            ))
+                        })
+                    },
+                    (),
+                    |(), _| (),
+                )),
                 move |slice| VotesAncestriesIter {
                     slice,
                     num: num_elems,

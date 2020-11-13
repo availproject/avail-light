@@ -18,7 +18,7 @@
 use crate::{executor, header};
 
 use alloc::vec::Vec;
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, num::NonZeroU64};
 use parity_scale_codec::DecodeAll as _;
 
 /// Grandpa configuration of a chain, as extracted from the genesis block.
@@ -151,4 +151,4 @@ pub enum FromVmPrototypeError {
     ExternalityNotAllowed,
 }
 
-type ConfigScaleEncoding = Vec<([u8; 32], u64)>;
+type ConfigScaleEncoding = Vec<([u8; 32], NonZeroU64)>;

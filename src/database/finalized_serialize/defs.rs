@@ -380,7 +380,7 @@ struct SerializedGrandpaAuthorityV1 {
         deserialize_with = "deserialize_hash32"
     )]
     public_key: [u8; 32],
-    weight: u64, // TODO: should be NonZeroU64; requires changing crate::header first
+    weight: NonZeroU64,
 }
 
 impl<'a> From<header::GrandpaAuthorityRef<'a>> for SerializedGrandpaAuthorityV1 {

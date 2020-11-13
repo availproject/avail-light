@@ -197,7 +197,7 @@ pub enum Error {
     MultipleBabeConfigDescriptors,
     /// Found a Babe configuration change digest without an epoch change digest.
     UnexpectedBabeConfigDescriptor,
-    BadGrandpaConsensusRefType,
+    GrandpaConsensusLogDecodeError,
     /// Unknown consensus engine specified in a digest log.
     #[display(fmt = "Unknown consensus engine specified in a digest log: {:?}", _0)]
     UnknownConsensusEngine([u8; 4]),

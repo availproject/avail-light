@@ -1284,7 +1284,7 @@ fn encode_grandpa_authorities_list(list: header::GrandpaAuthoritiesIter) -> Vec<
     let mut out = Vec::with_capacity(list.len() * 40);
     for authority in list {
         out.extend_from_slice(authority.public_key);
-        out.extend_from_slice(&authority.weight.to_le_bytes()[..]);
+        out.extend_from_slice(&authority.weight.get().to_le_bytes()[..]);
     }
     debug_assert_eq!(out.len(), out.capacity());
     out
@@ -1299,14 +1299,19 @@ fn decode_grandpa_authorities_list<E: From<AccessError>>(
         ));
     }
 
-    Ok(value
-        .chunks(40)
-        .map(|chunk| {
-            let public_key = <[u8; 32]>::try_from(&chunk[..32]).unwrap();
-            let weight = u64::from_le_bytes(<[u8; 8]>::try_from(&chunk[32..]).unwrap());
-            header::GrandpaAuthority { public_key, weight }
-        })
-        .collect())
+    let mut out = Vec::with_capacity(value.len() / 40);
+    for chunk in value.chunks(40) {
+        let public_key = <[u8; 32]>::try_from(&chunk[..32]).unwrap();
+        let weight = u64::from_le_bytes(<[u8; 8]>::try_from(&chunk[32..]).unwrap());
+        let weight = NonZeroU64::new(weight)
+            .ok_or(CorruptedError::InvalidGrandpaAuthoritiesList)
+            .map_err(AccessError::Corrupted)
+            .map_err(From::from)
+            .map_err(sled::transaction::ConflictableTransactionError::Abort)?;
+        out.push(header::GrandpaAuthority { public_key, weight });
+    }
+
+    Ok(out)
 }
 
 fn encode_babe_epoch_information(info: chain_information::BabeEpochInformationRef) -> Vec<u8> {
