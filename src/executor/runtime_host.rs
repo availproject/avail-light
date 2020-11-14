@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Builds upon the functionnalities of [`externals::ExternalsVm`] module and implements some of
-//! the external calls.
+//! Builds upon the functionnalities of [`host::HostVm`] module and implements some of
+//! the host function calls.
 //!
 //! In details, this module:
 //!
@@ -30,7 +30,7 @@
 // TODO: more docs
 
 use crate::{
-    executor::{externals, vm},
+    executor::{host, vm},
     trie::calculate_root,
 };
 
@@ -41,7 +41,7 @@ use hashbrown::{HashMap, HashSet};
 /// Configuration for [`run`].
 pub struct Config<'a, TParams> {
     /// Virtual machine to be run.
-    pub virtual_machine: externals::ExternalsVmPrototype,
+    pub virtual_machine: host::HostVmPrototype,
 
     /// Name of the function to be called.
     pub function_to_call: &'a str,
@@ -66,7 +66,7 @@ pub struct Config<'a, TParams> {
 /// Start running the WebAssembly virtual machine.
 pub fn run(
     config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
-) -> Result<RuntimeExternalsVm, externals::NewErr> {
+) -> Result<RuntimeHostVm, host::NewErr> {
     Ok(Inner {
         vm: config
             .virtual_machine
@@ -100,7 +100,7 @@ pub struct Success {
 }
 
 /// Function execution has succeeded. Contains the return value of the call.
-pub struct SuccessVirtualMachine(externals::Finished);
+pub struct SuccessVirtualMachine(host::Finished);
 
 impl SuccessVirtualMachine {
     /// Returns the value the called function has returned.
@@ -109,7 +109,7 @@ impl SuccessVirtualMachine {
     }
 
     /// Turns the virtual machine back into a prototype.
-    pub fn into_prototype(self) -> externals::ExternalsVmPrototype {
+    pub fn into_prototype(self) -> host::HostVmPrototype {
         self.0.into_prototype()
     }
 }
@@ -127,7 +127,7 @@ pub enum Error {
     #[display(fmt = "Error while executing Wasm VM: {}\n{:?}", error, logs)]
     WasmVm {
         /// Error that happened.
-        error: externals::Error,
+        error: host::Error,
         /// Concatenation of all the log messages printed by the runtime.
         logs: String,
     },
@@ -137,7 +137,7 @@ pub enum Error {
 
 /// Current state of the execution.
 #[must_use]
-pub enum RuntimeExternalsVm {
+pub enum RuntimeHostVm {
     /// Execution is over.
     Finished(Result<Success, Error>),
     /// Loading a storage value is required in order to continue.
@@ -158,14 +158,14 @@ impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
         match &self.inner.vm {
-            externals::ExternalsVm::ExternalStorageGet(req) => {
+            host::HostVm::ExternalStorageGet(req) => {
                 either::Either::Left(iter::once(either::Either::Left(req.key())))
             }
-            externals::ExternalsVm::ExternalStorageAppend(req) => {
+            host::HostVm::ExternalStorageAppend(req) => {
                 either::Either::Left(iter::once(either::Either::Left(req.key())))
             }
 
-            externals::ExternalsVm::ExternalStorageRoot(_) => {
+            host::HostVm::ExternalStorageRoot(_) => {
                 if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
                     self.inner.root_calculation.as_ref().unwrap()
                 {
@@ -182,7 +182,7 @@ impl StorageGet {
                 }
             }
 
-            externals::ExternalsVm::ExternalStorageChangesRoot(_) => {
+            host::HostVm::ExternalStorageChangesRoot(_) => {
                 either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
             }
 
@@ -203,13 +203,13 @@ impl StorageGet {
 
     /// Injects the corresponding storage value.
     // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> RuntimeExternalsVm {
+    pub fn inject_value(mut self, value: Option<&[u8]>) -> RuntimeHostVm {
         match self.inner.vm {
-            externals::ExternalsVm::ExternalStorageGet(req) => {
+            host::HostVm::ExternalStorageGet(req) => {
                 // TODO: should actually report the offset and max_size in the API
                 self.inner.vm = req.resume_full_value(value);
             }
-            externals::ExternalsVm::ExternalStorageAppend(req) => {
+            host::HostVm::ExternalStorageAppend(req) => {
                 let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
                 // TODO: could be less overhead?
                 append_to_storage_value(&mut value, req.value());
@@ -218,7 +218,7 @@ impl StorageGet {
                     .insert(req.key().to_vec(), Some(value.clone()));
                 self.inner.vm = req.resume();
             }
-            externals::ExternalsVm::ExternalStorageRoot(_) => {
+            host::HostVm::ExternalStorageRoot(_) => {
                 if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
                     self.inner.root_calculation.take().unwrap()
                 {
@@ -228,7 +228,7 @@ impl StorageGet {
                     panic!()
                 }
             }
-            externals::ExternalsVm::ExternalStorageChangesRoot(req) => {
+            host::HostVm::ExternalStorageChangesRoot(req) => {
                 if value.is_none() {
                     self.inner.vm = req.resume(None);
                 } else {
@@ -255,8 +255,8 @@ impl PrefixKeys {
     /// Returns the prefix whose keys to load.
     pub fn prefix(&self) -> &[u8] {
         match &self.inner.vm {
-            externals::ExternalsVm::ExternalStorageClearPrefix(req) => req.prefix(),
-            externals::ExternalsVm::ExternalStorageRoot { .. } => &[],
+            host::HostVm::ExternalStorageClearPrefix(req) => req.prefix(),
+            host::HostVm::ExternalStorageRoot { .. } => &[],
 
             // We only create a `PrefixKeys` if the state is one of the above.
             _ => unreachable!(),
@@ -264,12 +264,9 @@ impl PrefixKeys {
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(
-        mut self,
-        keys: impl Iterator<Item = impl AsRef<[u8]>>,
-    ) -> RuntimeExternalsVm {
+    pub fn inject_keys(mut self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> RuntimeHostVm {
         match self.inner.vm {
-            externals::ExternalsVm::ExternalStorageClearPrefix(req) => {
+            host::HostVm::ExternalStorageClearPrefix(req) => {
                 // TODO: use prefix_remove_update once optimized
                 //top_trie_root_calculation_cache.prefix_remove_update(storage_key);
 
@@ -301,7 +298,7 @@ impl PrefixKeys {
                 self.inner.vm = req.resume();
             }
 
-            externals::ExternalsVm::ExternalStorageRoot { .. } => {
+            host::HostVm::ExternalStorageRoot { .. } => {
                 if let calculate_root::RootMerkleValueCalculation::AllKeys(all_keys) =
                     self.inner.root_calculation.take().unwrap()
                 {
@@ -356,7 +353,7 @@ impl NextKey {
         }
 
         match &self.inner.vm {
-            externals::ExternalsVm::ExternalStorageNextKey(req) => req.key(),
+            host::HostVm::ExternalStorageNextKey(req) => req.key(),
             _ => unreachable!(),
         }
     }
@@ -367,11 +364,11 @@ impl NextKey {
     ///
     /// Panics if the key passed as parameter isn't strictly superior to the requested key.
     ///
-    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> RuntimeExternalsVm {
+    pub fn inject_key(mut self, key: Option<impl AsRef<[u8]>>) -> RuntimeHostVm {
         let key = key.as_ref().map(|k| k.as_ref());
 
         match self.inner.vm {
-            externals::ExternalsVm::ExternalStorageNextKey(req) => {
+            host::HostVm::ExternalStorageNextKey(req) => {
                 let requested_key = if let Some(key_overwrite) = &self.key_overwrite {
                     &key_overwrite[..]
                 } else {
@@ -407,8 +404,8 @@ impl NextKey {
                         // This `clone()` is necessary, as `b` borrows from
                         // `self.inner.top_trie_changes`.
                         let key_overwrite = Some(b.clone());
-                        self.inner.vm = externals::ExternalsVm::ExternalStorageNextKey(req);
-                        return RuntimeExternalsVm::NextKey(NextKey {
+                        self.inner.vm = host::HostVm::ExternalStorageNextKey(req);
+                        return RuntimeHostVm::NextKey(NextKey {
                             inner: self.inner,
                             key_overwrite,
                         });
@@ -434,11 +431,11 @@ impl NextKey {
     }
 }
 
-/// Implementation detail of the execution. Shared by all the variants of [`RuntimeExternalsVm`]
-/// other than [`RuntimeExternalsVm::Finished`].
+/// Implementation detail of the execution. Shared by all the variants of [`RuntimeHostVm`]
+/// other than [`RuntimeHostVm::Finished`].
 struct Inner {
     /// Virtual machine running the call.
-    vm: externals::ExternalsVm,
+    vm: host::HostVm,
 
     /// Pending changes to the top storage trie that this execution performs.
     top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
@@ -459,20 +456,20 @@ struct Inner {
 
 impl Inner {
     /// Continues the execution.
-    fn run(mut self) -> RuntimeExternalsVm {
+    fn run(mut self) -> RuntimeHostVm {
         loop {
             match self.vm {
-                externals::ExternalsVm::ReadyToRun(r) => self.vm = r.run(),
+                host::HostVm::ReadyToRun(r) => self.vm = r.run(),
 
-                externals::ExternalsVm::Error { error, .. } => {
-                    return RuntimeExternalsVm::Finished(Err(Error::WasmVm {
+                host::HostVm::Error { error, .. } => {
+                    return RuntimeHostVm::Finished(Err(Error::WasmVm {
                         error,
                         logs: self.logs,
                     }));
                 }
 
-                externals::ExternalsVm::Finished(finished) => {
-                    return RuntimeExternalsVm::Finished(Ok(Success {
+                host::HostVm::Finished(finished) => {
+                    return RuntimeHostVm::Finished(Ok(Success {
                         virtual_machine: SuccessVirtualMachine(finished),
                         storage_top_trie_changes: self.top_trie_changes,
                         offchain_storage_changes: self.offchain_storage_changes,
@@ -483,16 +480,16 @@ impl Inner {
                     }));
                 }
 
-                externals::ExternalsVm::ExternalStorageGet(req) => {
+                host::HostVm::ExternalStorageGet(req) => {
                     if let Some(overlay) = self.top_trie_changes.get(req.key()) {
                         self.vm = req.resume_full_value(overlay.as_ref().map(|v| &v[..]));
                     } else {
                         self.vm = req.into();
-                        return RuntimeExternalsVm::StorageGet(StorageGet { inner: self });
+                        return RuntimeHostVm::StorageGet(StorageGet { inner: self });
                     }
                 }
 
-                externals::ExternalsVm::ExternalStorageSet(req) => {
+                host::HostVm::ExternalStorageSet(req) => {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
@@ -502,7 +499,7 @@ impl Inner {
                     self.vm = req.resume();
                 }
 
-                externals::ExternalsVm::ExternalStorageAppend(req) => {
+                host::HostVm::ExternalStorageAppend(req) => {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
@@ -516,16 +513,16 @@ impl Inner {
                         self.vm = req.resume();
                     } else {
                         self.vm = req.into();
-                        return RuntimeExternalsVm::StorageGet(StorageGet { inner: self });
+                        return RuntimeHostVm::StorageGet(StorageGet { inner: self });
                     }
                 }
 
-                externals::ExternalsVm::ExternalStorageClearPrefix(req) => {
+                host::HostVm::ExternalStorageClearPrefix(req) => {
                     self.vm = req.into();
-                    return RuntimeExternalsVm::PrefixKeys(PrefixKeys { inner: self });
+                    return RuntimeHostVm::PrefixKeys(PrefixKeys { inner: self });
                 }
 
-                externals::ExternalsVm::ExternalStorageRoot(req) => {
+                host::HostVm::ExternalStorageRoot(req) => {
                     if self.root_calculation.is_none() {
                         self.root_calculation = Some(calculate_root::root_merkle_value(Some(
                             self.top_trie_root_calculation_cache.take().unwrap(),
@@ -541,7 +538,7 @@ impl Inner {
                             self.vm = req.into();
                             self.root_calculation =
                                 Some(calculate_root::RootMerkleValueCalculation::AllKeys(keys));
-                            return RuntimeExternalsVm::PrefixKeys(PrefixKeys { inner: self });
+                            return RuntimeHostVm::PrefixKeys(PrefixKeys { inner: self });
                         }
                         calculate_root::RootMerkleValueCalculation::StorageValue(value_request) => {
                             self.vm = req.into();
@@ -557,32 +554,32 @@ impl Inner {
                                     Some(calculate_root::RootMerkleValueCalculation::StorageValue(
                                         value_request,
                                     ));
-                                return RuntimeExternalsVm::StorageGet(StorageGet { inner: self });
+                                return RuntimeHostVm::StorageGet(StorageGet { inner: self });
                             }
                         }
                     }
                 }
 
-                externals::ExternalsVm::ExternalStorageChangesRoot(req) => {
+                host::HostVm::ExternalStorageChangesRoot(req) => {
                     self.vm = req.into();
-                    return RuntimeExternalsVm::StorageGet(StorageGet { inner: self });
+                    return RuntimeHostVm::StorageGet(StorageGet { inner: self });
                 }
 
-                externals::ExternalsVm::ExternalStorageNextKey(req) => {
+                host::HostVm::ExternalStorageNextKey(req) => {
                     self.vm = req.into();
-                    return RuntimeExternalsVm::NextKey(NextKey {
+                    return RuntimeHostVm::NextKey(NextKey {
                         inner: self,
                         key_overwrite: None,
                     });
                 }
 
-                externals::ExternalsVm::ExternalOffchainStorageSet(req) => {
+                host::HostVm::ExternalOffchainStorageSet(req) => {
                     self.offchain_storage_changes
                         .insert(req.key().to_vec(), req.value().map(|v| v.to_vec()));
                     self.vm = req.resume();
                 }
 
-                externals::ExternalsVm::CallRuntimeVersion(req) => {
+                host::HostVm::CallRuntimeVersion(req) => {
                     // The code below compiles the provided WebAssembly runtime code, which is a
                     // relatively expensive operation (in the order of milliseconds).
                     // While it could be tempting to use a system cache, this function is expected
@@ -590,7 +587,7 @@ impl Inner {
                     // upgrades are quite uncommon and that a caching system is rather non-trivial
                     // to set up, the approach of recompiling every single time is preferred here.
                     // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct or if we have to take the current heap pages
-                    let vm_prototype = match externals::ExternalsVmPrototype::new(
+                    let vm_prototype = match host::HostVmPrototype::new(
                         req.wasm_code(),
                         1024,
                         vm::ExecHint::Oneshot,
@@ -613,11 +610,11 @@ impl Inner {
                     }
                 }
 
-                externals::ExternalsVm::StartStorageTransaction(tx) => {
+                host::HostVm::StartStorageTransaction(tx) => {
                     self.vm = tx.resume();
                 }
 
-                externals::ExternalsVm::EndStorageTransaction { resume, rollback } => {
+                host::HostVm::EndStorageTransaction { resume, rollback } => {
                     if rollback {
                         todo!() // TODO:
                     }
@@ -625,7 +622,7 @@ impl Inner {
                     self.vm = resume.resume();
                 }
 
-                externals::ExternalsVm::LogEmit(req) => {
+                host::HostVm::LogEmit(req) => {
                     // We add a hardcoded limit to the logs generated by the runtime in order to
                     // make sure that there is no memory leak. In practice, the runtime should
                     // rarely log more than a few hundred bytes. This limit is hardcoded rather
@@ -634,7 +631,7 @@ impl Inner {
                     // TODO: optimize somehow? don't create an intermediary String?
                     let message = req.to_string();
                     if self.logs.len().saturating_add(message.len()) >= 1024 * 1024 {
-                        return RuntimeExternalsVm::Finished(Err(Error::LogsTooLong));
+                        return RuntimeHostVm::Finished(Err(Error::LogsTooLong));
                     }
 
                     self.logs.push_str(&message);
@@ -645,7 +642,7 @@ impl Inner {
     }
 }
 
-/// Performs the action described by [`externals::ExternalsVm::ExternalStorageAppend`] on an
+/// Performs the action described by [`host::HostVm::ExternalStorageAppend`] on an
 /// encoded storage value.
 // TODO: remove usage of parity_scale_codec
 fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {

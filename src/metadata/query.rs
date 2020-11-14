@@ -19,7 +19,7 @@
 //!
 //! The metadata can be obtained by calling the `Metadata_metadata` entry point of the runtime.
 //! The runtime normally straight-up outputs some hardcoded structures, and no access to the
-//! storage (or any other external function) is necessary.
+//! storage (or any other host function) is necessary.
 //!
 //! # About the length prefix
 //!
@@ -80,7 +80,7 @@ pub fn metadata_from_virtual_machine_prototype(
 
             // Querying the metadata shouldn't require any extrinsic such as accessing the
             // storage.
-            _ => return Err(Error::ExternalityNotAllowed),
+            _ => return Err(Error::HostFunctionNotAllowed),
         }
     }
 }
@@ -92,8 +92,8 @@ pub enum Error {
     VmInitialization(executor::NewErr),
     /// Crash while running the virtual machine.
     Trapped,
-    /// Virtual machine tried to call an externality that isn't valid in this context.
-    ExternalityNotAllowed,
+    /// Virtual machine tried to call a host function that isn't valid in this context.
+    HostFunctionNotAllowed,
     /// Length prefix doesn't match actual length of the metadata.
     BadLengthPrefix,
 }

@@ -91,7 +91,7 @@ impl BabeGenesisConfiguration {
 
                 executor::WasmVm::LogEmit(req) => vm = req.resume(),
 
-                _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
+                _ => return Err(FromVmPrototypeError::HostFunctionNotAllowed),
             }
         };
 
@@ -142,8 +142,8 @@ pub enum FromVmPrototypeError {
     VmInitialization(executor::NewErr),
     /// Crash while running the virtual machine.
     Trapped,
-    /// Virtual machine tried to call an externality that isn't valid in this context.
-    ExternalityNotAllowed,
+    /// Virtual machine tried to call a host function that isn't valid in this context.
+    HostFunctionNotAllowed,
     /// Error while decoding the output of the virtual machine.
     OutputDecode(parity_scale_codec::Error),
 }

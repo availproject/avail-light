@@ -18,12 +18,12 @@
 //! Wasm virtual machine specific to the Substrate/Polkadot Runtime Environment.
 //!
 //! Contrary to [`VirtualMachine`](super::vm::VirtualMachine), this code is not just a generic
-//! Wasm virtual machine, but is aware of the Substrate/Polkadot runtime environment. The external
+//! Wasm virtual machine, but is aware of the Substrate/Polkadot runtime environment. The host
 //! functions that the Wasm code calls are automatically resolved and either handled or notified
 //! to the user of this module.
 //!
-//! Any external function that requires pure CPU computations (for example building or verifying
-//! a cryptographic signature) is directly handled by the code in this module. Other external
+//! Any host function that requires pure CPU computations (for example building or verifying
+//! a cryptographic signature) is directly handled by the code in this module. Other host
 //! functions (for example accessing the state or printing a message) are instead handled by
 //! interrupting the virtual machine and waiting for the user of this module to handle the call.
 //!
@@ -62,8 +62,8 @@ use parity_scale_codec::DecodeAll as _;
 use sha2::Digest as _;
 use tiny_keccak::Hasher as _;
 
-/// Prototype for an [`ExternalsVm`].
-pub struct ExternalsVmPrototype {
+/// Prototype for an [`HostVm`].
+pub struct HostVmPrototype {
     /// Inner virtual machine prototype.
     vm_proto: vm::VirtualMachinePrototype,
 
@@ -74,13 +74,13 @@ pub struct ExternalsVmPrototype {
     /// List of functions that the Wasm code imports.
     ///
     /// The keys of this `Vec` (i.e. the `usize` indices) have been passed to the virtual machine
-    /// executor. Whenever the Wasm code invokes an external function, we obtain its index, and
-    /// look within this `Vec` to know what to do.
-    registered_functions: Vec<Externality>,
+    /// executor. Whenever the Wasm code invokes a host function, we obtain its index, and look
+    /// within this `Vec` to know what to do.
+    registered_functions: Vec<HostFunction>,
 }
 
-impl ExternalsVmPrototype {
-    /// Creates a new [`ExternalsVmPrototype`]. Parses and potentially JITs the module.
+impl HostVmPrototype {
+    /// Creates a new [`HostVmPrototype`]. Parses and potentially JITs the module.
     // TODO: document `heap_pages`; I know it comes from storage, but it's unclear what it means exactly
     pub fn new(
         module: impl AsRef<[u8]>,
@@ -104,7 +104,7 @@ impl ExternalsVmPrototype {
                     }
 
                     let id = registered_functions.len();
-                    registered_functions.push(match Externality::by_name(f_name) {
+                    registered_functions.push(match HostFunction::by_name(f_name) {
                         Some(f) => f,
                         None => return Err(()),
                     });
@@ -121,7 +121,7 @@ impl ExternalsVmPrototype {
             .global_value("__heap_base")
             .map_err(|_| NewErr::HeapBaseNotFound)?;
 
-        Ok(ExternalsVmPrototype {
+        Ok(HostVmPrototype {
             vm_proto,
             heap_base,
             registered_functions,
@@ -133,12 +133,12 @@ impl ExternalsVmPrototype {
         self.run_vectored(function_to_call, iter::once(data))
     }
 
-    /// Same as [`ExternalsVmPrototype::run`], except that the function desn't need any parameter.
+    /// Same as [`HostVmPrototype::run`], except that the function desn't need any parameter.
     pub fn run_no_param(self, function_to_call: &str) -> Result<ReadyToRun, NewErr> {
         self.run_vectored(function_to_call, iter::empty::<Vec<u8>>())
     }
 
-    /// Same as [`ExternalsVmPrototype::run`], except that the function parameter can be passed as
+    /// Same as [`HostVmPrototype::run`], except that the function parameter can be passed as
     /// a list of buffers. All the buffers will be concatenated in memory.
     pub fn run_vectored(
         self,
@@ -193,7 +193,7 @@ impl ExternalsVmPrototype {
 /// Running virtual machine.
 #[must_use]
 #[derive(derive_more::From)]
-pub enum ExternalsVm {
+pub enum HostVm {
     /// Wasm virtual machine is ready to be run. Call [`ReadyToRun::run`] to make progress.
     #[from]
     ReadyToRun(ReadyToRun),
@@ -203,7 +203,7 @@ pub enum ExternalsVm {
     /// The Wasm blob did something that doesn't conform to the runtime environment.
     Error {
         /// Virtual machine ready to be used again.
-        prototype: ExternalsVmPrototype,
+        prototype: HostVmPrototype,
         /// Error that happened.
         error: Error,
     },
@@ -235,19 +235,19 @@ pub enum ExternalsVm {
     /// still SCALE-encoded), or an error if the call has failed.
     #[from]
     CallRuntimeVersion(CallRuntimeVersion),
-    /// Declares the start of a storage transaction. See [`ExternalsVm::EndStorageTransaction`].
+    /// Declares the start of a storage transaction. See [`HostVm::EndStorageTransaction`].
     ///
     /// Guaranteed by the code in this module to never happen while already within a transaction.
-    /// If the runtime attempts to start a nested transaction, an [`ExternalsVm::Error`] is
+    /// If the runtime attempts to start a nested transaction, an [`HostVm::Error`] is
     /// generated instead.
     #[from]
     StartStorageTransaction(StartStorageTransaction),
     /// Ends a storage transaction. All changes made to the storage (e.g. through a
-    /// [`ExternalsVm::ExternalStorageSet`]) since the previous
-    /// [`ExternalsVm::StartStorageTransaction`] must be rolled back if `rollback` is true.
+    /// [`HostVm::ExternalStorageSet`]) since the previous
+    /// [`HostVm::StartStorageTransaction`] must be rolled back if `rollback` is true.
     ///
     /// Guaranteed by the code in this module to never happen if no transaction is in progress.
-    /// If the runtime attempts to end a non-existing transaction, an [`ExternalsVm::Error`] is
+    /// If the runtime attempts to end a non-existing transaction, an [`HostVm::Error`] is
     /// generated instead.
     EndStorageTransaction {
         /// Object used to resume execution.
@@ -271,7 +271,7 @@ impl ReadyToRun {
     /// Runs the virtual machine until something important happens.
     ///
     /// > **Note**: This is when the actual CPU-heavy computation happens.
-    pub fn run(mut self) -> ExternalsVm {
+    pub fn run(mut self) -> HostVm {
         loop {
             // `vm::ExecOutcome::Interrupted` is by far the variant that requires the most
             // handling code. As such, special-case all other variants before.
@@ -284,7 +284,7 @@ impl ReadyToRun {
                     // Wasm virtual machine has successfully returned.
 
                     if self.inner.within_storage_transaction {
-                        return ExternalsVm::Error {
+                        return HostVm::Error {
                             prototype: self.inner.into_prototype(),
                             error: Error::FinishedWithPendingTransaction,
                         };
@@ -305,7 +305,7 @@ impl ReadyToRun {
                         .read_memory(ret_ptr, ret_len)
                         .map(|d| d.as_ref().to_vec());
                     if let Ok(value) = ret_data {
-                        return ExternalsVm::Finished(Finished {
+                        return HostVm::Finished(Finished {
                             inner: self.inner,
                             value,
                         });
@@ -316,7 +316,7 @@ impl ReadyToRun {
                             memory_size: self.inner.vm.memory_size(),
                         };
 
-                        return ExternalsVm::Error {
+                        return HostVm::Error {
                             prototype: self.inner.into_prototype(),
                             error,
                         };
@@ -328,7 +328,7 @@ impl ReadyToRun {
                 }) => {
                     // The Wasm function has successfully returned, but the specs require that it
                     // returns a `i64`.
-                    return ExternalsVm::Error {
+                    return HostVm::Error {
                         prototype: self.inner.into_prototype(),
                         error: Error::BadReturnValue {
                             actual: return_value.map(|v| v.ty()),
@@ -339,17 +339,17 @@ impl ReadyToRun {
                 Ok(vm::ExecOutcome::Finished {
                     return_value: Err(()),
                 }) => {
-                    return ExternalsVm::Error {
+                    return HostVm::Error {
                         error: Error::Trapped,
                         prototype: self.inner.into_prototype(),
                     }
                 }
 
                 Err(vm::RunErr::BadValueTy { .. }) => {
-                    // Tried to inject back the value returned by an externality, but it doesn't
+                    // Tried to inject back the value returned by a host function, but it doesn't
                     // match what the Wasm code expects.
                     // TODO: check signatures at initialization instead?
-                    return ExternalsVm::Error {
+                    return HostVm::Error {
                         prototype: self.inner.into_prototype(),
                         error: Error::ReturnValueTypeMismatch,
                     };
@@ -361,100 +361,100 @@ impl ReadyToRun {
                 }
             };
 
-            // The Wasm code has called an externality. The `id` is a value that we passed
+            // The Wasm code has called an host_fn. The `id` is a value that we passed
             // at initialization, and corresponds to an index in `registered_functions`.
-            let externality = *self.inner.registered_functions.get_mut(id).unwrap();
+            let host_fn = *self.inner.registered_functions.get_mut(id).unwrap();
 
             // Check that the actual number of parameters matches the expected number.
             // This is done ahead of time in order to not forget.
-            let expected_params_num = match externality {
-                Externality::ext_storage_set_version_1 => 2,
-                Externality::ext_storage_get_version_1 => 1,
-                Externality::ext_storage_read_version_1 => 3,
-                Externality::ext_storage_clear_version_1 => 1,
-                Externality::ext_storage_exists_version_1 => 1,
-                Externality::ext_storage_clear_prefix_version_1 => 1,
-                Externality::ext_storage_root_version_1 => 0,
-                Externality::ext_storage_changes_root_version_1 => 1,
-                Externality::ext_storage_next_key_version_1 => 1,
-                Externality::ext_storage_append_version_1 => 2,
-                Externality::ext_storage_child_set_version_1 => todo!(),
-                Externality::ext_storage_child_get_version_1 => todo!(),
-                Externality::ext_storage_child_read_version_1 => todo!(),
-                Externality::ext_storage_child_clear_version_1 => todo!(),
-                Externality::ext_storage_child_storage_kill_version_1 => todo!(),
-                Externality::ext_storage_child_exists_version_1 => todo!(),
-                Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
-                Externality::ext_storage_child_root_version_1 => todo!(),
-                Externality::ext_storage_child_next_key_version_1 => todo!(),
-                Externality::ext_storage_start_transaction_version_1 => 0,
-                Externality::ext_storage_rollback_transaction_version_1 => 0,
-                Externality::ext_storage_commit_transaction_version_1 => 0,
-                Externality::ext_default_child_storage_get_version_1 => todo!(),
-                Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
-                Externality::ext_default_child_storage_set_version_1 => todo!(),
-                Externality::ext_default_child_storage_clear_version_1 => todo!(),
-                Externality::ext_default_child_storage_root_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_verify_version_1 => 3,
-                Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_verify_version_1 => 3,
-                Externality::ext_crypto_sr25519_verify_version_2 => 3,
-                Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
-                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => 2,
-                Externality::ext_crypto_start_batch_verify_version_1 => 0,
-                Externality::ext_crypto_finish_batch_verify_version_1 => 0,
-                Externality::ext_hashing_keccak_256_version_1 => 1,
-                Externality::ext_hashing_sha2_256_version_1 => todo!(),
-                Externality::ext_hashing_blake2_128_version_1 => 1,
-                Externality::ext_hashing_blake2_256_version_1 => 1,
-                Externality::ext_hashing_twox_64_version_1 => 1,
-                Externality::ext_hashing_twox_128_version_1 => 1,
-                Externality::ext_hashing_twox_256_version_1 => 1,
-                Externality::ext_offchain_index_set_version_1 => 2,
-                Externality::ext_offchain_index_clear_version_1 => 1,
-                Externality::ext_offchain_is_validator_version_1 => todo!(),
-                Externality::ext_offchain_submit_transaction_version_1 => todo!(),
-                Externality::ext_offchain_network_state_version_1 => todo!(),
-                Externality::ext_offchain_timestamp_version_1 => todo!(),
-                Externality::ext_offchain_sleep_until_version_1 => todo!(),
-                Externality::ext_offchain_random_seed_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_set_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_get_version_1 => todo!(),
-                Externality::ext_offchain_http_request_start_version_1 => todo!(),
-                Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
-                Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
-                Externality::ext_offchain_http_response_wait_version_1 => todo!(),
-                Externality::ext_offchain_http_response_headers_version_1 => todo!(),
-                Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
-                Externality::ext_sandbox_instantiate_version_1 => todo!(),
-                Externality::ext_sandbox_invoke_version_1 => todo!(),
-                Externality::ext_sandbox_memory_new_version_1 => todo!(),
-                Externality::ext_sandbox_memory_get_version_1 => todo!(),
-                Externality::ext_sandbox_memory_set_version_1 => todo!(),
-                Externality::ext_sandbox_memory_teardown_version_1 => todo!(),
-                Externality::ext_sandbox_instance_teardown_version_1 => todo!(),
-                Externality::ext_sandbox_get_global_val_version_1 => todo!(),
-                Externality::ext_trie_blake2_256_root_version_1 => 1,
-                Externality::ext_trie_blake2_256_ordered_root_version_1 => 1,
-                Externality::ext_misc_chain_id_version_1 => 0,
-                Externality::ext_misc_print_num_version_1 => 1,
-                Externality::ext_misc_print_utf8_version_1 => 1,
-                Externality::ext_misc_print_hex_version_1 => 1,
-                Externality::ext_misc_runtime_version_version_1 => 1,
-                Externality::ext_allocator_malloc_version_1 => 1,
-                Externality::ext_allocator_free_version_1 => 1,
-                Externality::ext_logging_log_version_1 => 3,
+            let expected_params_num = match host_fn {
+                HostFunction::ext_storage_set_version_1 => 2,
+                HostFunction::ext_storage_get_version_1 => 1,
+                HostFunction::ext_storage_read_version_1 => 3,
+                HostFunction::ext_storage_clear_version_1 => 1,
+                HostFunction::ext_storage_exists_version_1 => 1,
+                HostFunction::ext_storage_clear_prefix_version_1 => 1,
+                HostFunction::ext_storage_root_version_1 => 0,
+                HostFunction::ext_storage_changes_root_version_1 => 1,
+                HostFunction::ext_storage_next_key_version_1 => 1,
+                HostFunction::ext_storage_append_version_1 => 2,
+                HostFunction::ext_storage_child_set_version_1 => todo!(),
+                HostFunction::ext_storage_child_get_version_1 => todo!(),
+                HostFunction::ext_storage_child_read_version_1 => todo!(),
+                HostFunction::ext_storage_child_clear_version_1 => todo!(),
+                HostFunction::ext_storage_child_storage_kill_version_1 => todo!(),
+                HostFunction::ext_storage_child_exists_version_1 => todo!(),
+                HostFunction::ext_storage_child_clear_prefix_version_1 => todo!(),
+                HostFunction::ext_storage_child_root_version_1 => todo!(),
+                HostFunction::ext_storage_child_next_key_version_1 => todo!(),
+                HostFunction::ext_storage_start_transaction_version_1 => 0,
+                HostFunction::ext_storage_rollback_transaction_version_1 => 0,
+                HostFunction::ext_storage_commit_transaction_version_1 => 0,
+                HostFunction::ext_default_child_storage_get_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_storage_kill_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_set_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_clear_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_root_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_public_keys_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_generate_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_sign_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_verify_version_1 => 3,
+                HostFunction::ext_crypto_sr25519_public_keys_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_generate_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_sign_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_verify_version_1 => 3,
+                HostFunction::ext_crypto_sr25519_verify_version_2 => 3,
+                HostFunction::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
+                HostFunction::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => 2,
+                HostFunction::ext_crypto_start_batch_verify_version_1 => 0,
+                HostFunction::ext_crypto_finish_batch_verify_version_1 => 0,
+                HostFunction::ext_hashing_keccak_256_version_1 => 1,
+                HostFunction::ext_hashing_sha2_256_version_1 => todo!(),
+                HostFunction::ext_hashing_blake2_128_version_1 => 1,
+                HostFunction::ext_hashing_blake2_256_version_1 => 1,
+                HostFunction::ext_hashing_twox_64_version_1 => 1,
+                HostFunction::ext_hashing_twox_128_version_1 => 1,
+                HostFunction::ext_hashing_twox_256_version_1 => 1,
+                HostFunction::ext_offchain_index_set_version_1 => 2,
+                HostFunction::ext_offchain_index_clear_version_1 => 1,
+                HostFunction::ext_offchain_is_validator_version_1 => todo!(),
+                HostFunction::ext_offchain_submit_transaction_version_1 => todo!(),
+                HostFunction::ext_offchain_network_state_version_1 => todo!(),
+                HostFunction::ext_offchain_timestamp_version_1 => todo!(),
+                HostFunction::ext_offchain_sleep_until_version_1 => todo!(),
+                HostFunction::ext_offchain_random_seed_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_set_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_get_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_start_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_add_header_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_write_body_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_wait_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_headers_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_read_body_version_1 => todo!(),
+                HostFunction::ext_sandbox_instantiate_version_1 => todo!(),
+                HostFunction::ext_sandbox_invoke_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_new_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_get_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_set_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_teardown_version_1 => todo!(),
+                HostFunction::ext_sandbox_instance_teardown_version_1 => todo!(),
+                HostFunction::ext_sandbox_get_global_val_version_1 => todo!(),
+                HostFunction::ext_trie_blake2_256_root_version_1 => 1,
+                HostFunction::ext_trie_blake2_256_ordered_root_version_1 => 1,
+                HostFunction::ext_misc_chain_id_version_1 => 0,
+                HostFunction::ext_misc_print_num_version_1 => 1,
+                HostFunction::ext_misc_print_utf8_version_1 => 1,
+                HostFunction::ext_misc_print_hex_version_1 => 1,
+                HostFunction::ext_misc_runtime_version_version_1 => 1,
+                HostFunction::ext_allocator_malloc_version_1 => 1,
+                HostFunction::ext_allocator_free_version_1 => 1,
+                HostFunction::ext_logging_log_version_1 => 3,
             };
             if params.len() != expected_params_num {
-                return ExternalsVm::Error {
+                return HostVm::Error {
                     error: Error::ParamsCountMismatch {
-                        function: externality.name(),
+                        function: host_fn.name(),
                         expected: expected_params_num,
                         actual: params.len(),
                     },
@@ -467,9 +467,9 @@ impl ReadyToRun {
                     let val = match &params[$num] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
                         v => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::WrongParamTy {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     expected: vm::ValueType::I64,
                                     actual: v.ty(),
@@ -485,9 +485,9 @@ impl ReadyToRun {
                     match self.inner.vm.read_memory(ptr, len).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
                         Err(()) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::ParamOutOfRange {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     pointer: ptr,
                                     length: len,
@@ -504,9 +504,9 @@ impl ReadyToRun {
                     let val = match &params[$num] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
                         v => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::WrongParamTy {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     expected: vm::ValueType::I64,
                                     actual: v.ty(),
@@ -527,9 +527,9 @@ impl ReadyToRun {
                     let ptr = match params[$num] {
                         vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
                         v => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::WrongParamTy {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     expected: vm::ValueType::I32,
                                     actual: v.ty(),
@@ -542,9 +542,9 @@ impl ReadyToRun {
                     match self.inner.vm.read_memory(ptr, $size).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
                         Err(()) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::ParamOutOfRange {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     pointer: ptr,
                                     length: $size,
@@ -561,9 +561,9 @@ impl ReadyToRun {
                     match &params[$num] {
                         vm::WasmValue::I32(v) => u32::from_ne_bytes(v.to_ne_bytes()),
                         v => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::WrongParamTy {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: $num,
                                     expected: vm::ValueType::I32,
                                     actual: v.ty(),
@@ -578,19 +578,19 @@ impl ReadyToRun {
             // Handle the function calls.
             // Some of these enum variants simply change the state of `self`, while most of them
             // instead return an `ExternalVm` to the user.
-            match externality {
-                Externality::ext_storage_set_version_1 => {
+            match host_fn {
+                HostFunction::ext_storage_set_version_1 => {
                     let key = expect_pointer_size!(0);
                     let value = expect_pointer_size!(1);
-                    return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
+                    return HostVm::ExternalStorageSet(ExternalStorageSet {
                         key,
                         value: Some(value),
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_get_version_1 => {
+                HostFunction::ext_storage_get_version_1 => {
                     let key = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                    return HostVm::ExternalStorageGet(ExternalStorageGet {
                         key,
                         calling: id,
                         value_out_ptr: None,
@@ -599,11 +599,11 @@ impl ReadyToRun {
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_read_version_1 => {
+                HostFunction::ext_storage_read_version_1 => {
                     let key = expect_pointer_size!(0);
                     let (value_out_ptr, value_out_size) = expect_pointer_size_raw!(1);
                     let offset = expect_u32!(2);
-                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                    return HostVm::ExternalStorageGet(ExternalStorageGet {
                         key,
                         calling: id,
                         value_out_ptr: Some(value_out_ptr),
@@ -612,17 +612,17 @@ impl ReadyToRun {
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_clear_version_1 => {
+                HostFunction::ext_storage_clear_version_1 => {
                     let key = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalStorageSet(ExternalStorageSet {
+                    return HostVm::ExternalStorageSet(ExternalStorageSet {
                         key,
                         value: None,
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_exists_version_1 => {
+                HostFunction::ext_storage_exists_version_1 => {
                     let key = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalStorageGet(ExternalStorageGet {
+                    return HostVm::ExternalStorageGet(ExternalStorageGet {
                         key,
                         calling: id,
                         value_out_ptr: None,
@@ -631,99 +631,97 @@ impl ReadyToRun {
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_clear_prefix_version_1 => {
+                HostFunction::ext_storage_clear_prefix_version_1 => {
                     let prefix = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalStorageClearPrefix(ExternalStorageClearPrefix {
+                    return HostVm::ExternalStorageClearPrefix(ExternalStorageClearPrefix {
                         prefix,
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_root_version_1 => {
-                    return ExternalsVm::ExternalStorageRoot(ExternalStorageRoot {
-                        inner: self.inner,
-                    })
+                HostFunction::ext_storage_root_version_1 => {
+                    return HostVm::ExternalStorageRoot(ExternalStorageRoot { inner: self.inner })
                 }
-                Externality::ext_storage_changes_root_version_1 => {
+                HostFunction::ext_storage_changes_root_version_1 => {
                     // TODO: there's a parameter
-                    return ExternalsVm::ExternalStorageChangesRoot(ExternalStorageChangesRoot {
+                    return HostVm::ExternalStorageChangesRoot(ExternalStorageChangesRoot {
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_next_key_version_1 => {
+                HostFunction::ext_storage_next_key_version_1 => {
                     let key = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalStorageNextKey(ExternalStorageNextKey {
+                    return HostVm::ExternalStorageNextKey(ExternalStorageNextKey {
                         key,
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_append_version_1 => {
+                HostFunction::ext_storage_append_version_1 => {
                     let key = expect_pointer_size!(0);
                     let value = expect_pointer_size!(1);
-                    return ExternalsVm::ExternalStorageAppend(ExternalStorageAppend {
+                    return HostVm::ExternalStorageAppend(ExternalStorageAppend {
                         key,
                         value,
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_child_set_version_1 => todo!(),
-                Externality::ext_storage_child_get_version_1 => todo!(),
-                Externality::ext_storage_child_read_version_1 => todo!(),
-                Externality::ext_storage_child_clear_version_1 => todo!(),
-                Externality::ext_storage_child_storage_kill_version_1 => todo!(),
-                Externality::ext_storage_child_exists_version_1 => todo!(),
-                Externality::ext_storage_child_clear_prefix_version_1 => todo!(),
-                Externality::ext_storage_child_root_version_1 => todo!(),
-                Externality::ext_storage_child_next_key_version_1 => todo!(),
-                Externality::ext_storage_start_transaction_version_1 => {
+                HostFunction::ext_storage_child_set_version_1 => todo!(),
+                HostFunction::ext_storage_child_get_version_1 => todo!(),
+                HostFunction::ext_storage_child_read_version_1 => todo!(),
+                HostFunction::ext_storage_child_clear_version_1 => todo!(),
+                HostFunction::ext_storage_child_storage_kill_version_1 => todo!(),
+                HostFunction::ext_storage_child_exists_version_1 => todo!(),
+                HostFunction::ext_storage_child_clear_prefix_version_1 => todo!(),
+                HostFunction::ext_storage_child_root_version_1 => todo!(),
+                HostFunction::ext_storage_child_next_key_version_1 => todo!(),
+                HostFunction::ext_storage_start_transaction_version_1 => {
                     if self.inner.within_storage_transaction {
-                        return ExternalsVm::Error {
+                        return HostVm::Error {
                             error: Error::NestedTransaction,
                             prototype: self.inner.into_prototype(),
                         };
                     }
 
                     self.inner.within_storage_transaction = true;
-                    return ExternalsVm::StartStorageTransaction(StartStorageTransaction {
+                    return HostVm::StartStorageTransaction(StartStorageTransaction {
                         inner: self.inner,
                     });
                 }
-                Externality::ext_storage_rollback_transaction_version_1 => {
+                HostFunction::ext_storage_rollback_transaction_version_1 => {
                     if !self.inner.within_storage_transaction {
-                        return ExternalsVm::Error {
+                        return HostVm::Error {
                             error: Error::NoActiveTransaction,
                             prototype: self.inner.into_prototype(),
                         };
                     }
 
                     self.inner.within_storage_transaction = false;
-                    return ExternalsVm::EndStorageTransaction {
+                    return HostVm::EndStorageTransaction {
                         resume: EndStorageTransaction { inner: self.inner },
                         rollback: true,
                     };
                 }
-                Externality::ext_storage_commit_transaction_version_1 => {
+                HostFunction::ext_storage_commit_transaction_version_1 => {
                     if !self.inner.within_storage_transaction {
-                        return ExternalsVm::Error {
+                        return HostVm::Error {
                             error: Error::NoActiveTransaction,
                             prototype: self.inner.into_prototype(),
                         };
                     }
 
                     self.inner.within_storage_transaction = false;
-                    return ExternalsVm::EndStorageTransaction {
+                    return HostVm::EndStorageTransaction {
                         resume: EndStorageTransaction { inner: self.inner },
                         rollback: false,
                     };
                 }
-                Externality::ext_default_child_storage_get_version_1 => todo!(),
-                Externality::ext_default_child_storage_storage_kill_version_1 => todo!(),
-                Externality::ext_default_child_storage_set_version_1 => todo!(),
-                Externality::ext_default_child_storage_clear_version_1 => todo!(),
-                Externality::ext_default_child_storage_root_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_public_keys_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_generate_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_sign_version_1 => todo!(),
-                Externality::ext_crypto_ed25519_verify_version_1 => {
+                HostFunction::ext_default_child_storage_get_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_storage_kill_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_set_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_clear_version_1 => todo!(),
+                HostFunction::ext_default_child_storage_root_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_public_keys_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_generate_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_sign_version_1 => todo!(),
+                HostFunction::ext_crypto_ed25519_verify_version_1 => {
                     let sig = expect_pointer_constant_size!(0, 64);
                     let message = expect_pointer_size!(1);
                     let pubkey = expect_pointer_constant_size!(2, 32);
@@ -745,10 +743,10 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_crypto_sr25519_public_keys_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_generate_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_sign_version_1 => todo!(),
-                Externality::ext_crypto_sr25519_verify_version_1 => {
+                HostFunction::ext_crypto_sr25519_public_keys_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_generate_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_sign_version_1 => todo!(),
+                HostFunction::ext_crypto_sr25519_verify_version_1 => {
                     let sig = expect_pointer_constant_size!(0, 64);
                     let message = expect_pointer_size!(1);
                     let pubkey = expect_pointer_constant_size!(2, 32);
@@ -766,7 +764,7 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_crypto_sr25519_verify_version_2 => {
+                HostFunction::ext_crypto_sr25519_verify_version_2 => {
                     let sig = expect_pointer_constant_size!(0, 64);
                     let message = expect_pointer_size!(1);
                     let pubkey = expect_pointer_constant_size!(2, 32);
@@ -787,7 +785,7 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_crypto_secp256k1_ecdsa_recover_version_1 => {
+                HostFunction::ext_crypto_secp256k1_ecdsa_recover_version_1 => {
                     // TODO: clean up
                     #[derive(parity_scale_codec::Encode)]
                     enum EcdsaVerifyError {
@@ -821,14 +819,14 @@ impl ReadyToRun {
                     let result_encoded = parity_scale_codec::Encode::encode(&result);
 
                     match self.inner.alloc_write_and_return_pointer_size(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&result_encoded),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => {
+                HostFunction::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => {
                     // TODO: clean up
                     #[derive(parity_scale_codec::Encode)]
                     enum EcdsaVerifyError {
@@ -860,20 +858,20 @@ impl ReadyToRun {
                     let result_encoded = parity_scale_codec::Encode::encode(&result);
 
                     match self.inner.alloc_write_and_return_pointer_size(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&result_encoded),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_crypto_start_batch_verify_version_1 => {
+                HostFunction::ext_crypto_start_batch_verify_version_1 => {
                     self = ReadyToRun {
                         resume_value: None,
                         inner: self.inner,
                     };
                 }
-                Externality::ext_crypto_finish_batch_verify_version_1 => {
+                HostFunction::ext_crypto_finish_batch_verify_version_1 => {
                     self = ReadyToRun {
                         // TODO: wrong! this is a dummy implementation meaning that all
                         // signature verifications are always successful
@@ -881,7 +879,7 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_hashing_keccak_256_version_1 => {
+                HostFunction::ext_hashing_keccak_256_version_1 => {
                     let data = expect_pointer_size!(0);
 
                     let mut keccak = tiny_keccak::Keccak::v256();
@@ -891,51 +889,51 @@ impl ReadyToRun {
 
                     match self
                         .inner
-                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                        .alloc_write_and_return_pointer(host_fn.name(), iter::once(&out))
                     {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_sha2_256_version_1 => {
+                HostFunction::ext_hashing_sha2_256_version_1 => {
                     let data = expect_pointer_size!(0);
 
                     let mut hasher = sha2::Sha256::new();
                     hasher.update(data);
 
                     match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(hasher.finalize().as_slice()),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_blake2_128_version_1 => {
+                HostFunction::ext_hashing_blake2_128_version_1 => {
                     let data = expect_pointer_size!(0);
                     let out = blake2_rfc::blake2b::blake2b(16, &[], &data);
 
-                    match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
-                        iter::once(out.as_bytes()),
-                    ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(host_fn.name(), iter::once(out.as_bytes()))
+                    {
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_blake2_256_version_1 => {
+                HostFunction::ext_hashing_blake2_256_version_1 => {
                     let data = expect_pointer_size!(0);
                     let out = blake2_rfc::blake2b::blake2b(32, &[], &data);
 
-                    match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
-                        iter::once(out.as_bytes()),
-                    ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                    match self
+                        .inner
+                        .alloc_write_and_return_pointer(host_fn.name(), iter::once(out.as_bytes()))
+                    {
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_twox_64_version_1 => {
+                HostFunction::ext_hashing_twox_64_version_1 => {
                     let data = expect_pointer_size!(0);
 
                     let mut h0 = twox_hash::XxHash::with_seed(0);
@@ -943,14 +941,14 @@ impl ReadyToRun {
                     let r0 = h0.finish();
 
                     match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&r0.to_le_bytes()),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_twox_128_version_1 => {
+                HostFunction::ext_hashing_twox_128_version_1 => {
                     let data = expect_pointer_size!(0);
 
                     let mut h0 = twox_hash::XxHash::with_seed(0);
@@ -961,14 +959,14 @@ impl ReadyToRun {
                     let r1 = h1.finish();
 
                     match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&r0.to_le_bytes()).chain(iter::once(&r1.to_le_bytes())),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_hashing_twox_256_version_1 => {
+                HostFunction::ext_hashing_twox_256_version_1 => {
                     let data = expect_pointer_size!(0);
 
                     let mut h0 = twox_hash::XxHash::with_seed(0);
@@ -985,63 +983,63 @@ impl ReadyToRun {
                     let r3 = h3.finish();
 
                     match self.inner.alloc_write_and_return_pointer(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&r0.to_le_bytes())
                             .chain(iter::once(&r1.to_le_bytes()))
                             .chain(iter::once(&r2.to_le_bytes()))
                             .chain(iter::once(&r3.to_le_bytes())),
                     ) {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_offchain_index_set_version_1 => {
+                HostFunction::ext_offchain_index_set_version_1 => {
                     let key = expect_pointer_size!(0);
                     let value = expect_pointer_size!(1);
-                    return ExternalsVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
+                    return HostVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
                         key,
                         value: Some(value),
                         inner: self.inner,
                     });
                 }
-                Externality::ext_offchain_index_clear_version_1 => {
+                HostFunction::ext_offchain_index_clear_version_1 => {
                     let key = expect_pointer_size!(0);
-                    return ExternalsVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
+                    return HostVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
                         key,
                         value: None,
                         inner: self.inner,
                     });
                 }
-                Externality::ext_offchain_is_validator_version_1 => todo!(),
-                Externality::ext_offchain_submit_transaction_version_1 => todo!(),
-                Externality::ext_offchain_network_state_version_1 => todo!(),
-                Externality::ext_offchain_timestamp_version_1 => todo!(),
-                Externality::ext_offchain_sleep_until_version_1 => todo!(),
-                Externality::ext_offchain_random_seed_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_set_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
-                Externality::ext_offchain_local_storage_get_version_1 => todo!(),
-                Externality::ext_offchain_http_request_start_version_1 => todo!(),
-                Externality::ext_offchain_http_request_add_header_version_1 => todo!(),
-                Externality::ext_offchain_http_request_write_body_version_1 => todo!(),
-                Externality::ext_offchain_http_response_wait_version_1 => todo!(),
-                Externality::ext_offchain_http_response_headers_version_1 => todo!(),
-                Externality::ext_offchain_http_response_read_body_version_1 => todo!(),
-                Externality::ext_sandbox_instantiate_version_1 => todo!(),
-                Externality::ext_sandbox_invoke_version_1 => todo!(),
-                Externality::ext_sandbox_memory_new_version_1 => todo!(),
-                Externality::ext_sandbox_memory_get_version_1 => todo!(),
-                Externality::ext_sandbox_memory_set_version_1 => todo!(),
-                Externality::ext_sandbox_memory_teardown_version_1 => todo!(),
-                Externality::ext_sandbox_instance_teardown_version_1 => todo!(),
-                Externality::ext_sandbox_get_global_val_version_1 => todo!(),
-                Externality::ext_trie_blake2_256_root_version_1 => {
+                HostFunction::ext_offchain_is_validator_version_1 => todo!(),
+                HostFunction::ext_offchain_submit_transaction_version_1 => todo!(),
+                HostFunction::ext_offchain_network_state_version_1 => todo!(),
+                HostFunction::ext_offchain_timestamp_version_1 => todo!(),
+                HostFunction::ext_offchain_sleep_until_version_1 => todo!(),
+                HostFunction::ext_offchain_random_seed_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_set_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_compare_and_set_version_1 => todo!(),
+                HostFunction::ext_offchain_local_storage_get_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_start_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_add_header_version_1 => todo!(),
+                HostFunction::ext_offchain_http_request_write_body_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_wait_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_headers_version_1 => todo!(),
+                HostFunction::ext_offchain_http_response_read_body_version_1 => todo!(),
+                HostFunction::ext_sandbox_instantiate_version_1 => todo!(),
+                HostFunction::ext_sandbox_invoke_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_new_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_get_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_set_version_1 => todo!(),
+                HostFunction::ext_sandbox_memory_teardown_version_1 => todo!(),
+                HostFunction::ext_sandbox_instance_teardown_version_1 => todo!(),
+                HostFunction::ext_sandbox_get_global_val_version_1 => todo!(),
+                HostFunction::ext_trie_blake2_256_root_version_1 => {
                     let encoded = expect_pointer_size!(0);
 
                     let elements = match Vec::<(Vec<u8>, Vec<u8>)>::decode_all(&encoded) {
                         Ok(e) => e,
                         Err(err) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::ParamDecodeError(err),
                                 prototype: self.inner.into_prototype(),
                             }
@@ -1057,19 +1055,19 @@ impl ReadyToRun {
 
                     match self
                         .inner
-                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                        .alloc_write_and_return_pointer(host_fn.name(), iter::once(&out))
                     {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_trie_blake2_256_ordered_root_version_1 => {
+                HostFunction::ext_trie_blake2_256_ordered_root_version_1 => {
                     let encoded = expect_pointer_size!(0);
 
                     let elements = match Vec::<Vec<u8>>::decode_all(&encoded) {
                         Ok(e) => e,
                         Err(err) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::ParamDecodeError(err),
                                 prototype: self.inner.into_prototype(),
                             }
@@ -1086,26 +1084,26 @@ impl ReadyToRun {
 
                     match self
                         .inner
-                        .alloc_write_and_return_pointer(externality.name(), iter::once(&out))
+                        .alloc_write_and_return_pointer(host_fn.name(), iter::once(&out))
                     {
-                        ExternalsVm::ReadyToRun(r) => self = r,
+                        HostVm::ReadyToRun(r) => self = r,
                         other => return other,
                     }
                 }
-                Externality::ext_misc_chain_id_version_1 => {
+                HostFunction::ext_misc_chain_id_version_1 => {
                     // TODO: this parachain-related function always returns 42 at the moment
                     self = ReadyToRun {
                         resume_value: Some(vm::WasmValue::I32(42)),
                         inner: self.inner,
                     };
                 }
-                Externality::ext_misc_print_num_version_1 => {
+                HostFunction::ext_misc_print_num_version_1 => {
                     let num = match params[0] {
                         vm::WasmValue::I64(v) => u64::from_ne_bytes(v.to_ne_bytes()),
                         v => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::WrongParamTy {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: 0,
                                     expected: vm::ValueType::I64,
                                     actual: v.ty(),
@@ -1116,19 +1114,19 @@ impl ReadyToRun {
                     };
 
                     let log_entry = format!("{}", num);
-                    return ExternalsVm::LogEmit(LogEmit {
+                    return HostVm::LogEmit(LogEmit {
                         inner: self.inner,
                         log_entry,
                     });
                 }
-                Externality::ext_misc_print_utf8_version_1 => {
+                HostFunction::ext_misc_print_utf8_version_1 => {
                     let data = expect_pointer_size!(0);
                     let log_entry = match String::from_utf8(data) {
                         Ok(m) => m,
                         Err(error) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::Utf8Error {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: 2,
                                     error: error.utf8_error(),
                                 },
@@ -1137,27 +1135,27 @@ impl ReadyToRun {
                         }
                     };
 
-                    return ExternalsVm::LogEmit(LogEmit {
+                    return HostVm::LogEmit(LogEmit {
                         inner: self.inner,
                         log_entry,
                     });
                 }
-                Externality::ext_misc_print_hex_version_1 => {
+                HostFunction::ext_misc_print_hex_version_1 => {
                     let data = expect_pointer_size!(0);
                     let log_entry = hex::encode(&data);
-                    return ExternalsVm::LogEmit(LogEmit {
+                    return HostVm::LogEmit(LogEmit {
                         inner: self.inner,
                         log_entry,
                     });
                 }
-                Externality::ext_misc_runtime_version_version_1 => {
+                HostFunction::ext_misc_runtime_version_version_1 => {
                     let wasm_blob = expect_pointer_size!(0);
-                    return ExternalsVm::CallRuntimeVersion(CallRuntimeVersion {
+                    return HostVm::CallRuntimeVersion(CallRuntimeVersion {
                         inner: self.inner,
                         wasm_blob,
                     });
                 }
-                Externality::ext_allocator_malloc_version_1 => {
+                HostFunction::ext_allocator_malloc_version_1 => {
                     let size = expect_u32!(0);
 
                     let ptr = match self
@@ -1167,9 +1165,9 @@ impl ReadyToRun {
                     {
                         Ok(p) => p,
                         Err(_) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::OutOfMemory {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     requested_size: size,
                                 },
                                 prototype: self.inner.into_prototype(),
@@ -1183,7 +1181,7 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_allocator_free_version_1 => {
+                HostFunction::ext_allocator_free_version_1 => {
                     let pointer = expect_u32!(0);
                     match self
                         .inner
@@ -1192,7 +1190,7 @@ impl ReadyToRun {
                     {
                         Ok(()) => {}
                         Err(_) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::FreeError { pointer },
                                 prototype: self.inner.into_prototype(),
                             }
@@ -1204,16 +1202,16 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
-                Externality::ext_logging_log_version_1 => {
+                HostFunction::ext_logging_log_version_1 => {
                     let _log_level = expect_u32!(0);
                     let _target = expect_pointer_size!(1);
                     let message = expect_pointer_size!(2);
                     let log_entry = match String::from_utf8(message) {
                         Ok(m) => m,
                         Err(error) => {
-                            return ExternalsVm::Error {
+                            return HostVm::Error {
                                 error: Error::Utf8Error {
-                                    function: externality.name(),
+                                    function: host_fn.name(),
                                     param_num: 2,
                                     error: error.utf8_error(),
                                 },
@@ -1222,7 +1220,7 @@ impl ReadyToRun {
                         }
                     };
 
-                    return ExternalsVm::LogEmit(LogEmit {
+                    return HostVm::LogEmit(LogEmit {
                         inner: self.inner,
                         log_entry,
                     });
@@ -1256,7 +1254,7 @@ impl Finished {
     }
 
     /// Turns the virtual machine back into a prototype.
-    pub fn into_prototype(self) -> ExternalsVmPrototype {
+    pub fn into_prototype(self) -> HostVmPrototype {
         self.inner.into_prototype()
     }
 }
@@ -1313,7 +1311,7 @@ impl ExternalStorageGet {
     ///
     /// This is a convenient function that automatically applies the offset and maximum size, to
     /// use when the full storage value is already present in memory.
-    pub fn resume_full_value(self, value: Option<&[u8]>) -> ExternalsVm {
+    pub fn resume_full_value(self, value: Option<&[u8]>) -> HostVm {
         if let Some(value) = value {
             if usize::try_from(self.offset).unwrap() < value.len() {
                 let value = &value[usize::try_from(self.offset).unwrap()..];
@@ -1344,7 +1342,7 @@ impl ExternalStorageGet {
     ///
     /// Panics if the value is longer than what [`ExternalStorageGet::max_size`] returns.
     ///
-    pub fn resume(self, value: Option<&[u8]>) -> ExternalsVm {
+    pub fn resume(self, value: Option<&[u8]>) -> HostVm {
         self.resume_vectored(value.as_ref().map(iter::once))
     }
 
@@ -1358,16 +1356,16 @@ impl ExternalStorageGet {
     pub fn resume_vectored(
         mut self,
         value: Option<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
-    ) -> ExternalsVm {
-        let externality = self.inner.registered_functions[self.calling];
-        match externality {
-            Externality::ext_storage_get_version_1 => {
+    ) -> HostVm {
+        let host_fn = self.inner.registered_functions[self.calling];
+        match host_fn {
+            HostFunction::ext_storage_get_version_1 => {
                 if let Some(value) = value {
                     // Writing `Some(value)`.
                     let value_len = value.clone().fold(0, |a, b| a + b.as_ref().len());
                     let value_len_enc = util::encode_scale_compact_usize(value_len);
                     self.inner.alloc_write_and_return_pointer_size(
-                        externality.name(),
+                        host_fn.name(),
                         iter::once(&[1][..])
                             .chain(iter::once(value_len_enc.as_ref()))
                             .map(either::Left)
@@ -1376,10 +1374,10 @@ impl ExternalStorageGet {
                 } else {
                     // Write a SCALE-encoded `None`.
                     self.inner
-                        .alloc_write_and_return_pointer_size(externality.name(), iter::once(&[0]))
+                        .alloc_write_and_return_pointer_size(host_fn.name(), iter::once(&[0]))
                 }
             }
-            Externality::ext_storage_read_version_1 => {
+            HostFunction::ext_storage_read_version_1 => {
                 let outcome = if let Some(value) = value {
                     let written =
                         u32::try_from(value.clone().fold(0, |a, b| a + b.as_ref().len())).unwrap();
@@ -1401,12 +1399,12 @@ impl ExternalStorageGet {
 
                 let outcome_encoded = parity_scale_codec::Encode::encode(&outcome);
                 return self.inner.alloc_write_and_return_pointer_size(
-                    externality.name(),
+                    host_fn.name(),
                     iter::once(&outcome_encoded),
                 );
             }
-            Externality::ext_storage_exists_version_1 => {
-                return ExternalsVm::ReadyToRun(ReadyToRun {
+            HostFunction::ext_storage_exists_version_1 => {
+                return HostVm::ReadyToRun(ReadyToRun {
                     inner: self.inner,
                     resume_value: Some(if value.is_some() {
                         vm::WasmValue::I32(1)
@@ -1457,8 +1455,8 @@ impl ExternalStorageSet {
     }
 
     /// Resumes execution after having set the value.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1518,8 +1516,8 @@ impl ExternalStorageAppend {
     }
 
     /// Resumes execution after having set the value.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1550,8 +1548,8 @@ impl ExternalStorageClearPrefix {
     }
 
     /// Resumes execution after having set the value.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1571,9 +1569,9 @@ pub struct ExternalStorageRoot {
 
 impl ExternalStorageRoot {
     /// Writes the trie root hash to the Wasm VM and prepares it for resume.
-    pub fn resume(self, hash: &[u8; 32]) -> ExternalsVm {
+    pub fn resume(self, hash: &[u8; 32]) -> HostVm {
         self.inner.alloc_write_and_return_pointer_size(
-            Externality::ext_storage_root_version_1.name(),
+            HostFunction::ext_storage_root_version_1.name(),
             iter::once(hash),
         )
     }
@@ -1593,17 +1591,17 @@ pub struct ExternalStorageChangesRoot {
 impl ExternalStorageChangesRoot {
     /// Writes the trie root hash to the Wasm VM and prepares it for resume.
     // TODO: document why it can be `None`
-    pub fn resume(self, hash: Option<&[u8; 32]>) -> ExternalsVm {
+    pub fn resume(self, hash: Option<&[u8; 32]>) -> HostVm {
         if let Some(hash) = hash {
             // Writing the `Some` of the SCALE-encoded `Option`.
             self.inner.alloc_write_and_return_pointer_size(
-                Externality::ext_storage_changes_root_version_1.name(),
+                HostFunction::ext_storage_changes_root_version_1.name(),
                 iter::once(&[1][..]).chain(iter::once(&hash[..])),
             )
         } else {
             // Writing a SCALE-encoded `None`.
             self.inner.alloc_write_and_return_pointer_size(
-                Externality::ext_storage_changes_root_version_1.name(),
+                HostFunction::ext_storage_changes_root_version_1.name(),
                 iter::once(&[0][..]),
             )
         }
@@ -1636,11 +1634,11 @@ impl ExternalStorageNextKey {
     /// Writes the follow-up key in the Wasm VM memory and prepares it for execution.
     ///
     /// Must be passed `None` if the key is the last one in the storage.
-    pub fn resume(self, follow_up: Option<&[u8]>) -> ExternalsVm {
+    pub fn resume(self, follow_up: Option<&[u8]>) -> HostVm {
         if let Some(follow_up) = follow_up {
             let value_len_enc = util::encode_scale_compact_usize(follow_up.len());
             self.inner.alloc_write_and_return_pointer_size(
-                Externality::ext_storage_next_key_version_1.name(),
+                HostFunction::ext_storage_next_key_version_1.name(),
                 iter::once(&[1][..])
                     .chain(iter::once(value_len_enc.as_ref()))
                     .chain(iter::once(follow_up)),
@@ -1648,7 +1646,7 @@ impl ExternalStorageNextKey {
         } else {
             // Write a SCALE-encoded `None`.
             self.inner.alloc_write_and_return_pointer_size(
-                Externality::ext_storage_next_key_version_1.name(),
+                HostFunction::ext_storage_next_key_version_1.name(),
                 iter::once(&[0]),
             )
         }
@@ -1683,12 +1681,12 @@ impl CallRuntimeVersion {
     ///
     /// If an error happened during the execution (such as an invalid Wasm binary code), pass
     /// an `Err`.
-    pub fn resume(self, scale_encoded_runtime_version: Result<&[u8], ()>) -> ExternalsVm {
+    pub fn resume(self, scale_encoded_runtime_version: Result<&[u8], ()>) -> HostVm {
         // TODO: don't allocate a Vec here
         let scale_encoded_runtime_version =
             parity_scale_codec::Encode::encode(&scale_encoded_runtime_version.ok());
         self.inner.alloc_write_and_return_pointer_size(
-            Externality::ext_misc_runtime_version_version_1.name(),
+            HostFunction::ext_misc_runtime_version_version_1.name(),
             iter::once(scale_encoded_runtime_version),
         )
     }
@@ -1731,8 +1729,8 @@ impl ExternalOffchainStorageSet {
     }
 
     /// Resumes execution after having set the value.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1756,8 +1754,8 @@ pub struct LogEmit {
 
 impl LogEmit {
     /// Resumes execution after having set the value.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1785,8 +1783,8 @@ pub struct StartStorageTransaction {
 
 impl StartStorageTransaction {
     /// Resumes execution after having acknowledged the event.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
@@ -1800,15 +1798,15 @@ pub struct EndStorageTransaction {
 
 impl EndStorageTransaction {
     /// Resumes execution after having acknowledged the event.
-    pub fn resume(self) -> ExternalsVm {
-        ExternalsVm::ReadyToRun(ReadyToRun {
+    pub fn resume(self) -> HostVm {
+        HostVm::ReadyToRun(ReadyToRun {
             inner: self.inner,
             resume_value: None,
         })
     }
 }
 
-/// Running virtual machine. Shared between all the variants in [`ExternalsVm`].
+/// Running virtual machine. Shared between all the variants in [`HostVm`].
 struct Inner {
     /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
@@ -1821,8 +1819,8 @@ struct Inner {
     /// No further transaction start is allowed before the current one ends.
     within_storage_transaction: bool,
 
-    /// See [`ExternalsVmPrototype::registered_functions`].
-    registered_functions: Vec<Externality>,
+    /// See [`HostVmPrototype::registered_functions`].
+    registered_functions: Vec<HostFunction>,
 
     /// Memory allocator in order to answer the calls to `malloc` and `free`.
     allocator: allocator::FreeingBumpHeapAllocator,
@@ -1830,7 +1828,7 @@ struct Inner {
 
 impl Inner {
     /// Uses the memory allocator to allocate some memory for the given data, writes the data in
-    /// memory, and returns an [`ExternalsVm`] ready for the Wasm externality return.
+    /// memory, and returns an [`HostVm`] ready for the Wasm host_fn return.
     ///
     /// The data is passed as a list of chunks. These chunks will be laid out lineraly in memory.
     ///
@@ -1838,13 +1836,13 @@ impl Inner {
     ///
     /// # Panic
     ///
-    /// Must only be called while the Wasm is handling an externality.
+    /// Must only be called while the Wasm is handling an host_fn.
     ///
     fn alloc_write_and_return_pointer_size(
         mut self,
         function_name: &'static str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    ) -> ExternalsVm {
+    ) -> HostVm {
         let mut data_len = 0u32;
         for chunk in data.clone() {
             data_len = data_len
@@ -1857,7 +1855,7 @@ impl Inner {
         {
             Ok(p) => p,
             Err(_) => {
-                return ExternalsVm::Error {
+                return HostVm::Error {
                     error: Error::OutOfMemory {
                         function: function_name,
                         requested_size: data_len,
@@ -1885,7 +1883,7 @@ impl Inner {
     }
 
     /// Uses the memory allocator to allocate some memory for the given data, writes the data in
-    /// memory, and returns an [`ExternalsVm`] ready for the Wasm externality return.
+    /// memory, and returns an [`HostVm`] ready for the Wasm host_fn return.
     ///
     /// The data is passed as a list of chunks. These chunks will be laid out lineraly in memory.
     ///
@@ -1893,13 +1891,13 @@ impl Inner {
     ///
     /// # Panic
     ///
-    /// Must only be called while the Wasm is handling an externality.
+    /// Must only be called while the Wasm is handling an host_fn.
     ///
     fn alloc_write_and_return_pointer(
         mut self,
         function_name: &'static str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    ) -> ExternalsVm {
+    ) -> HostVm {
         let mut data_len = 0u32;
         for chunk in data.clone() {
             data_len = data_len
@@ -1912,7 +1910,7 @@ impl Inner {
         {
             Ok(p) => p,
             Err(_) => {
-                return ExternalsVm::Error {
+                return HostVm::Error {
                     error: Error::OutOfMemory {
                         function: function_name,
                         requested_size: data_len,
@@ -1938,8 +1936,8 @@ impl Inner {
     }
 
     /// Turns the virtual machine back into a prototype.
-    fn into_prototype(self) -> ExternalsVmPrototype {
-        ExternalsVmPrototype {
+    fn into_prototype(self) -> HostVmPrototype {
+        HostVmPrototype {
             vm_proto: self.vm.into_prototype(),
             heap_base: self.heap_base,
             registered_functions: self.registered_functions,
@@ -1980,7 +1978,7 @@ pub enum Error {
         /// Size of the virtual memory.
         memory_size: u32,
     },
-    /// An externality wants to returns a certain value, but the Wasm code expects a different one.
+    /// An host_fn wants to returns a certain value, but the Wasm code expects a different one.
     // TODO: indicate function and actual/expected types
     ReturnValueTypeMismatch,
     /// Mismatch between the number of parameters expected and the actual number.
@@ -2097,17 +2095,17 @@ macro_rules! externalities {
         /// List of possible externalities.
         #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         #[allow(non_camel_case_types)]
-        enum Externality {
+        enum HostFunction {
             $(
                 $ext,
             )*
         }
 
-        impl Externality {
+        impl HostFunction {
             fn by_name(name: &str) -> Option<Self> {
                 $(
                     if name == stringify!($ext) {
-                        return Some(Externality::$ext);
+                        return Some(HostFunction::$ext);
                     }
                 )*
                 None
@@ -2116,7 +2114,7 @@ macro_rules! externalities {
             fn name(&self) -> &'static str {
                 match self {
                     $(
-                        Externality::$ext => stringify!($ext),
+                        HostFunction::$ext => stringify!($ext),
                     )*
                 }
             }
@@ -2232,11 +2230,11 @@ impl<'a> allocator::Memory for MemAccess<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::ExternalsVm;
+    use super::HostVm;
 
     #[test]
     fn is_send() {
         fn req<T: Send>() {}
-        req::<ExternalsVm>();
+        req::<HostVm>();
     }
 }

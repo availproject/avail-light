@@ -48,7 +48,7 @@
 mod tests;
 
 use crate::{
-    executor::{self, runtime_externals},
+    executor::{self, runtime_host},
     header,
     trie::calculate_root,
     util,
@@ -116,7 +116,7 @@ pub struct Success {
 pub enum Error {
     /// Error while executing the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    WasmVm(runtime_externals::Error),
+    WasmVm(runtime_host::Error),
     /// Error while initializing the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
     VmInit(executor::NewErr),
@@ -156,7 +156,7 @@ pub enum Error {
 
 /// Start a block building process.
 pub fn build_block<'a>(config: Config<'a>) -> BlockBuild {
-    let init_result = runtime_externals::run(runtime_externals::Config {
+    let init_result = runtime_host::run(runtime_host::Config {
         virtual_machine: config.parent_runtime,
         function_to_call: "Core_initialize_block",
         parameter: {
@@ -244,31 +244,31 @@ pub enum BlockBuild {
 }
 
 impl BlockBuild {
-    fn from_inner(inner: runtime_externals::RuntimeExternalsVm, mut shared: Shared) -> Self {
+    fn from_inner(inner: runtime_host::RuntimeHostVm, mut shared: Shared) -> Self {
         enum Inner {
-            Runtime(runtime_externals::RuntimeExternalsVm),
-            Transition(runtime_externals::Success),
+            Runtime(runtime_host::RuntimeHostVm),
+            Transition(runtime_host::Success),
         }
 
         let mut inner = Inner::Runtime(inner);
 
         loop {
             match (inner, &mut shared.stage) {
-                (Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Err(err))), _) => {
+                (Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Err(err))), _) => {
                     return BlockBuild::Finished(Err(Error::WasmVm(err)))
                 }
-                (Inner::Runtime(runtime_externals::RuntimeExternalsVm::StorageGet(inner)), _) => {
+                (Inner::Runtime(runtime_host::RuntimeHostVm::StorageGet(inner)), _) => {
                     return BlockBuild::StorageGet(StorageGet(inner, shared))
                 }
-                (Inner::Runtime(runtime_externals::RuntimeExternalsVm::PrefixKeys(inner)), _) => {
+                (Inner::Runtime(runtime_host::RuntimeHostVm::PrefixKeys(inner)), _) => {
                     return BlockBuild::PrefixKeys(PrefixKeys(inner, shared))
                 }
-                (Inner::Runtime(runtime_externals::RuntimeExternalsVm::NextKey(inner)), _) => {
+                (Inner::Runtime(runtime_host::RuntimeHostVm::NextKey(inner)), _) => {
                     return BlockBuild::NextKey(NextKey(inner, shared))
                 }
 
                 (
-                    Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Ok(success))),
+                    Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Ok(success))),
                     Stage::InitializeBlock,
                 ) => {
                     if !success.virtual_machine.value().is_empty() {
@@ -288,7 +288,7 @@ impl BlockBuild {
                 }
 
                 (
-                    Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Ok(success))),
+                    Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Ok(success))),
                     Stage::InherentExtrinsics,
                 ) => {
                     let extrinsics =
@@ -308,7 +308,7 @@ impl BlockBuild {
                 {
                     let extrinsic = &extrinsics[0];
 
-                    let init_result = runtime_externals::run(runtime_externals::Config {
+                    let init_result = runtime_host::run(runtime_host::Config {
                         virtual_machine: success.virtual_machine.into_prototype(),
                         function_to_call: "BlockBuilder_apply_extrinsic",
                         parameter: {
@@ -343,7 +343,7 @@ impl BlockBuild {
                 }
 
                 (
-                    Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Ok(success))),
+                    Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Ok(success))),
                     Stage::ApplyInherentExtrinsic { .. },
                 ) => {
                     let (extrinsic, new_stage) = match shared.stage {
@@ -380,7 +380,7 @@ impl BlockBuild {
                 }
 
                 (
-                    Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Ok(success))),
+                    Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Ok(success))),
                     Stage::ApplyExtrinsic(_),
                 ) => {
                     let result =
@@ -414,7 +414,7 @@ impl BlockBuild {
                 }
 
                 (
-                    Inner::Runtime(runtime_externals::RuntimeExternalsVm::Finished(Ok(success))),
+                    Inner::Runtime(runtime_host::RuntimeHostVm::Finished(Ok(success))),
                     Stage::FinalizeBlock,
                 ) => {
                     shared.logs.push_str(&success.logs);
@@ -436,7 +436,7 @@ impl BlockBuild {
     }
 }
 
-/// Extra information maintained in parallel of the [`runtime_externals::RuntimeExternalsVm`].
+/// Extra information maintained in parallel of the [`runtime_host::RuntimeHostVm`].
 #[derive(Debug)]
 struct Shared {
     /// The block building process is separated into multiple stages.
@@ -503,7 +503,7 @@ impl InherentExtrinsics {
     ) -> BlockBuild {
         debug_assert!(matches!(self.shared.stage, Stage::InherentExtrinsics));
 
-        let init_result = runtime_externals::run(runtime_externals::Config {
+        let init_result = runtime_host::run(runtime_host::Config {
             virtual_machine: self.parent_runtime,
             function_to_call: "BlockBuilder_inherent_extrinsics",
             parameter: {
@@ -602,7 +602,7 @@ impl ApplyExtrinsic {
     ///
     /// See the module-level documentation for more information.
     pub fn add_extrinsic(mut self, extrinsic: Vec<u8>) -> BlockBuild {
-        let init_result = runtime_externals::run(runtime_externals::Config {
+        let init_result = runtime_host::run(runtime_host::Config {
             virtual_machine: self.parent_runtime,
             function_to_call: "BlockBuilder_apply_extrinsic",
             parameter: {
@@ -631,7 +631,7 @@ impl ApplyExtrinsic {
     pub fn finish(mut self) -> BlockBuild {
         self.shared.stage = Stage::FinalizeBlock;
 
-        let init_result = runtime_externals::run(runtime_externals::Config {
+        let init_result = runtime_host::run(runtime_host::Config {
             virtual_machine: self.parent_runtime,
             function_to_call: "BlockBuilder_finalize_block",
             parameter: iter::empty::<&[u8]>(),
@@ -651,7 +651,7 @@ impl ApplyExtrinsic {
 
 /// Loading a storage value from the parent storage is required in order to continue.
 #[must_use]
-pub struct StorageGet(runtime_externals::StorageGet, Shared);
+pub struct StorageGet(runtime_host::StorageGet, Shared);
 
 impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
@@ -676,7 +676,7 @@ impl StorageGet {
 /// Fetching the list of keys with a given prefix from the parent storage is required in order to
 /// continue.
 #[must_use]
-pub struct PrefixKeys(runtime_externals::PrefixKeys, Shared);
+pub struct PrefixKeys(runtime_host::PrefixKeys, Shared);
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
@@ -693,7 +693,7 @@ impl PrefixKeys {
 /// Fetching the key that follows a given one in the parent storage is required in order to
 /// continue.
 #[must_use]
-pub struct NextKey(runtime_externals::NextKey, Shared);
+pub struct NextKey(runtime_host::NextKey, Shared);
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.

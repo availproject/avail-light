@@ -94,7 +94,7 @@ impl AuraGenesisConfiguration {
 
                 executor::WasmVm::LogEmit(req) => vm = req.resume(),
 
-                _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
+                _ => return Err(FromVmPrototypeError::HostFunctionNotAllowed),
             }
         };
 
@@ -122,7 +122,7 @@ impl AuraGenesisConfiguration {
 
                 executor::WasmVm::LogEmit(req) => vm = req.resume(),
 
-                _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
+                _ => return Err(FromVmPrototypeError::HostFunctionNotAllowed),
             }
         };
 
@@ -155,8 +155,8 @@ pub enum FromVmPrototypeError {
     VmInitialization(executor::NewErr),
     /// Crash while running the virtual machine.
     Trapped,
-    /// Virtual machine tried to call an externality that isn't valid in this context.
-    ExternalityNotAllowed,
+    /// Virtual machine tried to call a host function that isn't valid in this context.
+    HostFunctionNotAllowed,
     /// Error while decoding the output of the virtual machine for `AuraApi_slot_duration`.
     BadSlotDuration,
     /// Failed to decode the list of authorities returned by `AuraApi_authorities`.

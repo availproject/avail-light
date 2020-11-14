@@ -108,14 +108,14 @@
 use alloc::{string::String, vec::Vec};
 use parity_scale_codec::DecodeAll as _;
 
-mod allocator;
-mod externals;
-pub mod runtime_externals;
+mod allocator; // TODO: make public after refactoring
+pub mod host;
+pub mod runtime_host;
 pub mod vm;
 
-pub use externals::{
-    Error, ExternalStorageAppend, ExternalStorageGet, ExternalsVm as WasmVm,
-    ExternalsVmPrototype as WasmVmPrototype, Finished, NewErr, ReadyToRun,
+pub use host::{
+    Error, ExternalStorageAppend, ExternalStorageGet, Finished, HostVm as WasmVm,
+    HostVmPrototype as WasmVmPrototype, NewErr, ReadyToRun,
 };
 // TODO: reexports ^ ? shouldn't we just make the module public?
 

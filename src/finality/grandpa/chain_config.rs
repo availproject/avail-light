@@ -117,7 +117,7 @@ impl GrandpaGenesisConfiguration {
 
                 executor::WasmVm::LogEmit(rq) => vm = rq.resume(),
 
-                _ => return Err(FromVmPrototypeError::ExternalityNotAllowed),
+                _ => return Err(FromVmPrototypeError::HostFunctionNotAllowed),
             }
         })
     }
@@ -147,8 +147,8 @@ pub enum FromVmPrototypeError {
     VmInitialization(executor::NewErr),
     /// Crash while running the virtual machine.
     Trapped,
-    /// Virtual machine tried to call an externality that isn't valid in this context.
-    ExternalityNotAllowed,
+    /// Virtual machine tried to call a host function that isn't valid in this context.
+    HostFunctionNotAllowed,
 }
 
 type ConfigScaleEncoding = Vec<([u8; 32], NonZeroU64)>;
