@@ -15,14 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Wasm virtual machine that executes a specific function.
-//!
-//! This module handles everything related to executing Wasm code in general. Features specific to
-//! Substrate/Polkadot (such as the host functions available to the Wasm code) are not handled
-//! by this module and must instead be built on top.
+//! Implements the API documented [in the parent module](..).
 
 use super::{
-    ExecOutcome, GlobalValueErr, ModuleError, NewErr, RunErr, Signature, ValueType, WasmValue,
+    ExecOutcome, GlobalValueErr, ModuleError, NewErr, OutOfBoundsError, RunErr, Signature,
+    StartErr, Trap, ValueType, WasmValue,
 };
 
 use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
@@ -33,60 +30,8 @@ use core::{
 };
 use wasmi::memory_units::ByteSize as _;
 
-/// Wasm virtual machine that executes a specific function.
-///
-/// # Usage
-///
-/// - Create an instance of [`VirtualMachinePrototype`] with [`VirtualMachinePrototype::new`]. As
-/// parameter, you must pass a list of host functions that are available to the code running
-/// in the virtual machine.
-///
-/// - Call [`VirtualMachinePrototype::start`] to turn it into a [`VirtualMachine`]. This operation
-/// only initializes the machine but doesn't run it.
-///
-/// - Call [`VirtualMachine::run`], passing `None` as parameter. This runs the Wasm virtual
-/// machine until either function finishes or calls a host function.
-///
-/// - If [`VirtualMachine::run`] returns [`ExecOutcome::Finished`], then it is forbidden to call
-/// [`VirtualMachine::run`].
-///
-/// - If [`VirtualMachine::run`] returns [`ExecOutcome::Interrupted`], then you must later call
-/// [`VirtualMachine::run`] again, passing the return value of the host function.
-///
-pub struct VirtualMachine {
-    /// Original module, with resolved imports.
-    _module: wasmi::ModuleRef,
-
-    /// Memory of the module instantiation.
-    ///
-    /// Right now we only support one unique `Memory` object per process. This is it.
-    /// Contains `None` if the process doesn't export any memory object, which means it doesn't
-    /// use any memory.
-    memory: Option<wasmi::MemoryRef>,
-
-    /// Table of the indirect function calls.
-    ///
-    /// In Wasm, function pointers are in reality indices in a table called
-    /// `__indirect_function_table`. This is this table, if it exists.
-    indirect_table: Option<wasmi::TableRef>,
-
-    /// Execution context of this virtual machine. This notably holds the program counter, state
-    /// of the stack, and so on.
-    ///
-    /// This field is an `Option` because we need to be able to temporarily extract it. It must
-    /// always be `Some`.
-    execution: Option<wasmi::FuncInvocation<'static>>,
-
-    /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
-    /// This is a particularity of the Wasm interpreter that we don't want to expose in our API.
-    interrupted: bool,
-
-    /// If true, the state machine is in a poisoned state and cannot run any code anymore.
-    is_poisoned: bool,
-}
-
-/// Prototype for a [`VirtualMachine`].
-pub struct VirtualMachinePrototype {
+/// See [`super::VirtualMachinePrototype`].
+pub struct InterpreterPrototype {
     /// Original module, with resolved imports.
     module: wasmi::ModuleRef,
 
@@ -104,14 +49,8 @@ pub struct VirtualMachinePrototype {
     indirect_table: Option<wasmi::TableRef>,
 }
 
-impl VirtualMachinePrototype {
-    /// Creates a new state machine from the given module that executes the given function.
-    ///
-    /// The closure is called for each function that the module imports. It must assign a number
-    /// to each import, or return an error if the import can't be resolved. When the VM calls one
-    /// of these functions, this number will be returned back in order for the user to know how
-    /// to handle the call.
-    // TODO: explain heap_pages
+impl InterpreterPrototype {
+    /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
         module_bytes: impl AsRef<[u8]>,
         heap_pages: u64,
@@ -120,10 +59,6 @@ impl VirtualMachinePrototype {
         let module = wasmi::Module::from_buffer(module_bytes.as_ref())
             .map_err(|err| ModuleError(err.to_string()))
             .map_err(NewErr::ModuleError)?;
-        // TODO: for parity with wasmtime we unwrap() at the moment rather than committing to the
-        // idea that floating points are checked at initialization; but ideally wasmtime should
-        // check floating points as well
-        module.deny_floating_point().unwrap();
 
         struct ImportResolve<'a> {
             functions: RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
@@ -139,7 +74,16 @@ impl VirtualMachinePrototype {
                 signature: &wasmi::Signature,
             ) -> Result<wasmi::FuncRef, wasmi::Error> {
                 let closure = &mut **self.functions.borrow_mut();
-                let index = match closure(module_name, field_name, &From::from(signature)) {
+                let conv_signature = match TryFrom::try_from(signature) {
+                    Ok(i) => i,
+                    Err(_) => {
+                        return Err(wasmi::Error::Instantiation(format!(
+                            "Function with unsupported signature `{}`:`{}`",
+                            module_name, field_name
+                        )))
+                    }
+                };
+                let index = match closure(module_name, field_name, &conv_signature) {
                     Ok(i) => i,
                     Err(_) => {
                         return Err(wasmi::Error::Instantiation(format!(
@@ -263,14 +207,14 @@ impl VirtualMachinePrototype {
             None
         };
 
-        Ok(VirtualMachinePrototype {
+        Ok(InterpreterPrototype {
             module,
             memory,
             indirect_table,
         })
     }
 
-    /// Returns the value of a global that the module exports.
+    /// See [`super::VirtualMachinePrototype::global_value`].
     pub fn global_value(&self, name: &str) -> Result<u32, GlobalValueErr> {
         let heap_base_val = self
             .module
@@ -289,15 +233,16 @@ impl VirtualMachinePrototype {
         }
     }
 
-    /// Turns this prototype into an actual virtual machine. This requires choosing which function
-    /// to execute.
-    pub fn start(
-        self,
-        function_name: &str,
-        params: &[WasmValue],
-    ) -> Result<VirtualMachine, NewErr> {
+    /// See [`super::VirtualMachinePrototype::start`].
+    pub fn start(self, function_name: &str, params: &[WasmValue]) -> Result<Interpreter, StartErr> {
         let execution = match self.module.export_by_name(function_name) {
             Some(wasmi::ExternVal::Func(f)) => {
+                // Try to convert the signature of the function to call, in order to make sure
+                // that the type of parameters and return value are supported.
+                if Signature::try_from(f.signature()).is_err() {
+                    return Err(StartErr::SignatureNotSupported);
+                }
+
                 match wasmi::FuncInstance::invoke_resumable(
                     &f,
                     params
@@ -309,11 +254,11 @@ impl VirtualMachinePrototype {
                     Err(err) => unreachable!("{:?}", err), // TODO:
                 }
             }
-            None => return Err(NewErr::FunctionNotFound),
-            _ => return Err(NewErr::NotAFunction),
+            None => return Err(StartErr::FunctionNotFound),
+            _ => return Err(StartErr::NotAFunction),
         };
 
-        Ok(VirtualMachine {
+        Ok(Interpreter {
             _module: self.module,
             memory: self.memory,
             execution: Some(execution),
@@ -332,20 +277,53 @@ impl VirtualMachinePrototype {
 // This importantly means that we should never return a `Rc` (even by reference) across the API
 // boundary.
 //
-// For this reason, it would also be unsafe to implement `Clone` on `VirtualMachinePrototype`. A
-// user could clone the `VirtualMachinePrototype` and send it to another thread, which would be
+// For this reason, it would also be unsafe to implement `Clone` on `InterpreterPrototype`. A
+// user could clone the `InterpreterPrototype` and send it to another thread, which would be
 // undefined behaviour.
 // TODO: really annoying to have to use unsafe code
-unsafe impl Send for VirtualMachinePrototype {}
+unsafe impl Send for InterpreterPrototype {}
 
-impl VirtualMachine {
-    /// Starts or continues execution of the virtual machine.
+impl fmt::Debug for InterpreterPrototype {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("InterpreterPrototype").finish()
+    }
+}
+
+/// See [`super::VirtualMachine`].
+pub struct Interpreter {
+    /// Original module, with resolved imports.
+    _module: wasmi::ModuleRef,
+
+    /// Memory of the module instantiation.
     ///
-    /// If this is the first call you call [`run`](VirtualMachine::run), then you must pass
-    /// a value of `None`.
-    /// If, however, you call this function after a previous call to [`run`](VirtualMachine::run)
-    /// that was interrupted by a host function call, then you must pass back the outcome of
-    /// that call.
+    /// Right now we only support one unique `Memory` object per process. This is it.
+    /// Contains `None` if the process doesn't export any memory object, which means it doesn't
+    /// use any memory.
+    memory: Option<wasmi::MemoryRef>,
+
+    /// Table of the indirect function calls.
+    ///
+    /// In Wasm, function pointers are in reality indices in a table called
+    /// `__indirect_function_table`. This is this table, if it exists.
+    indirect_table: Option<wasmi::TableRef>,
+
+    /// Execution context of this virtual machine. This notably holds the program counter, state
+    /// of the stack, and so on.
+    ///
+    /// This field is an `Option` because we need to be able to temporarily extract it. It must
+    /// always be `Some`.
+    execution: Option<wasmi::FuncInvocation<'static>>,
+
+    /// If false, then one must call `execution.start_execution()` instead of `resume_execution()`.
+    /// This is a particularity of the Wasm interpreter that we don't want to expose in our API.
+    interrupted: bool,
+
+    /// If true, the state machine is in a poisoned state and cannot run any code anymore.
+    is_poisoned: bool,
+}
+
+impl Interpreter {
+    /// See [`super::VirtualMachine::run`].
     pub fn run(&mut self, value: Option<WasmValue>) -> Result<ExecOutcome, RunErr> {
         let value = value.map(wasmi::RuntimeValue::from);
 
@@ -385,9 +363,16 @@ impl VirtualMachine {
             None => unreachable!(),
         };
 
+        // Since the signature of the function is checked at initialization to be supported, it is
+        // guaranteed that the conversions below won't panic.
+
         let result = if self.interrupted {
-            let expected_ty = execution.resumable_value_type().map(ValueType::from);
-            let obtained_ty = value.as_ref().map(|v| ValueType::from(v.value_type()));
+            let expected_ty = execution
+                .resumable_value_type()
+                .map(|v| ValueType::try_from(v).unwrap());
+            let obtained_ty = value
+                .as_ref()
+                .map(|v| ValueType::try_from(v.value_type()).unwrap());
             if expected_ty != obtained_ty {
                 return Err(RunErr::BadValueTy {
                     expected: expected_ty,
@@ -399,7 +384,9 @@ impl VirtualMachine {
             if value.is_some() {
                 return Err(RunErr::BadValueTy {
                     expected: None,
-                    obtained: value.as_ref().map(|v| ValueType::from(v.value_type())),
+                    obtained: value
+                        .as_ref()
+                        .map(|v| ValueType::try_from(v.value_type()).unwrap()),
                 });
             }
             self.interrupted = true;
@@ -410,7 +397,7 @@ impl VirtualMachine {
             Ok(return_value) => {
                 self.is_poisoned = true;
                 Ok(ExecOutcome::Finished {
-                    return_value: Ok(return_value.map(WasmValue::from)),
+                    return_value: Ok(return_value.map(|r| WasmValue::try_from(r).unwrap())),
                 })
             }
             Err(wasmi::ResumableError::AlreadyStarted) => unreachable!(),
@@ -426,60 +413,76 @@ impl VirtualMachine {
                 self.execution = Some(execution);
                 Ok(ExecOutcome::Interrupted {
                     id: interrupt.index,
-                    params: interrupt.args.iter().cloned().map(From::from).collect(),
+                    params: interrupt
+                        .args
+                        .iter()
+                        .cloned()
+                        .map(TryFrom::try_from)
+                        .collect::<Result<_, _>>()
+                        .unwrap(),
                 })
             }
-            Err(wasmi::ResumableError::Trap(_)) => {
+            Err(wasmi::ResumableError::Trap(err)) => {
                 self.is_poisoned = true;
                 Ok(ExecOutcome::Finished {
-                    return_value: Err(()),
+                    return_value: Err(Trap(err.to_string())),
                 })
             }
         }
     }
 
-    /// Returns the size of the memory, in bytes.
-    ///
-    /// > **Note**: This can change over time if the Wasm code uses the `grow` opcode.
+    /// See [`super::VirtualMachine::memory_size`].
     pub fn memory_size(&self) -> u32 {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => return 0,
         };
 
         u32::try_from(mem.current_size().0 * wasmi::memory_units::Pages::byte_size().0).unwrap()
     }
 
-    /// Copies the given memory range into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
+    /// See [`super::VirtualMachine::read_memory`].
+    pub fn read_memory<'a>(
+        &'a self,
+        offset: u32,
+        size: u32,
+    ) -> Result<impl AsRef<[u8]> + 'a, OutOfBoundsError> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => {
+                return if offset == 0 && size == 0 {
+                    Ok(Vec::new())
+                } else {
+                    Err(OutOfBoundsError)
+                }
+            }
         };
 
-        mem.get(offset, size.try_into().map_err(|_| ())?)
-            .map_err(|_| ())
+        mem.get(offset, size.try_into().map_err(|_| OutOfBoundsError)?)
+            .map_err(|_| OutOfBoundsError)
     }
 
-    /// Write the data at the given memory location.
-    ///
-    /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+    /// See [`super::VirtualMachine::write_memory`].
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), OutOfBoundsError> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
-            None => unreachable!(),
+            None => {
+                return if offset == 0 && value.is_empty() {
+                    Ok(())
+                } else {
+                    Err(OutOfBoundsError)
+                }
+            }
         };
 
-        mem.set(offset, value).map_err(|_| ())
+        mem.set(offset, value).map_err(|_| OutOfBoundsError)
     }
 
-    /// Turns back this virtual machine into a prototype.
-    pub fn into_prototype(self) -> VirtualMachinePrototype {
+    /// See [`super::VirtualMachine::into_prototype`].
+    pub fn into_prototype(self) -> InterpreterPrototype {
         // TODO: zero the memory
 
-        VirtualMachinePrototype {
+        InterpreterPrototype {
             module: self._module,
             memory: self.memory,
             indirect_table: self.indirect_table,
@@ -495,10 +498,10 @@ impl VirtualMachine {
 // This importantly means that we should never return a `Rc` (even by reference) across the API
 // boundary.
 // TODO: really annoying to have to use unsafe code
-unsafe impl Send for VirtualMachine {}
+unsafe impl Send for Interpreter {}
 
-impl fmt::Debug for VirtualMachine {
+impl fmt::Debug for Interpreter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("VirtualMachine").finish()
+        f.debug_tuple("Interpreter").finish()
     }
 }

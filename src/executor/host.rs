@@ -129,12 +129,12 @@ impl HostVmPrototype {
     }
 
     /// Starts the VM, calling the function passed as parameter.
-    pub fn run(self, function_to_call: &str, data: &[u8]) -> Result<ReadyToRun, NewErr> {
+    pub fn run(self, function_to_call: &str, data: &[u8]) -> Result<ReadyToRun, StartErr> {
         self.run_vectored(function_to_call, iter::once(data))
     }
 
     /// Same as [`HostVmPrototype::run`], except that the function desn't need any parameter.
-    pub fn run_no_param(self, function_to_call: &str) -> Result<ReadyToRun, NewErr> {
+    pub fn run_no_param(self, function_to_call: &str) -> Result<ReadyToRun, StartErr> {
         self.run_vectored(function_to_call, iter::empty::<Vec<u8>>())
     }
 
@@ -144,13 +144,13 @@ impl HostVmPrototype {
         self,
         function_to_call: &str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    ) -> Result<ReadyToRun, NewErr> {
+    ) -> Result<ReadyToRun, StartErr> {
         let mut data_len_u32: u32 = 0;
         for data in data.clone() {
-            let len = u32::try_from(data.as_ref().len()).map_err(|_| NewErr::DataSizeOverflow)?;
+            let len = u32::try_from(data.as_ref().len()).map_err(|_| StartErr::DataSizeOverflow)?;
             data_len_u32 = data_len_u32
                 .checked_add(len)
-                .ok_or(NewErr::DataSizeOverflow)?;
+                .ok_or(StartErr::DataSizeOverflow)?;
         }
 
         // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
@@ -337,10 +337,10 @@ impl ReadyToRun {
                 }
 
                 Ok(vm::ExecOutcome::Finished {
-                    return_value: Err(()),
+                    return_value: Err(err),
                 }) => {
                     return HostVm::Error {
-                        error: Error::Trapped,
+                        error: Error::Trap(err),
                         prototype: self.inner.into_prototype(),
                     }
                 }
@@ -484,7 +484,7 @@ impl ReadyToRun {
 
                     match self.inner.vm.read_memory(ptr, len).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
-                        Err(()) => {
+                        Err(vm::OutOfBoundsError) => {
                             return HostVm::Error {
                                 error: Error::ParamOutOfRange {
                                     function: host_fn.name(),
@@ -541,7 +541,7 @@ impl ReadyToRun {
 
                     match self.inner.vm.read_memory(ptr, $size).map(|v| v.as_ref().to_vec()) { // TODO: no; keep the impl AsRef<[u8]>; however Rust doesn't like the way we borrow things
                         Ok(v) => v,
-                        Err(()) => {
+                        Err(vm::OutOfBoundsError) => {
                             return HostVm::Error {
                                 error: Error::ParamOutOfRange {
                                     function: host_fn.name(),
@@ -1951,17 +1951,26 @@ pub enum NewErr {
     /// Error while initializing the virtual machine.
     #[display(fmt = "Error while initializing the virtual machine: {}", _0)]
     VirtualMachine(vm::NewErr),
-    /// The size of the input data is too large.
-    DataSizeOverflow,
     /// Couldn't find the `__heap_base` symbol in the Wasm code.
     HeapBaseNotFound,
+}
+
+/// Error that can happen when starting a VM.
+#[derive(Debug, derive_more::From, derive_more::Display)]
+pub enum StartErr {
+    /// Error while starting the virtual machine.
+    #[display(fmt = "Error while starting the virtual machine: {}", _0)]
+    VirtualMachine(vm::StartErr),
+    /// The size of the input data is too large.
+    DataSizeOverflow,
 }
 
 /// Reason why the Wasm blob isn't conforming to the runtime environment.
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum Error {
     /// Error in the Wasm code execution.
-    Trapped,
+    #[display(fmt = "{}", _0)]
+    Trap(vm::Trap),
     /// A non-`i64` value has been returned by the Wasm entry point.
     #[display(fmt = "A non-I64 value has been returned: {:?}", actual)]
     BadReturnValue {

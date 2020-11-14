@@ -71,8 +71,7 @@ impl GrandpaGenesisConfiguration {
                 heap_pages,
                 executor::vm::ExecHint::Oneshot,
             )
-            .map_err(FromVmPrototypeError::VmInitialization)
-            .map_err(FromGenesisStorageError::VmError)?;
+            .map_err(FromGenesisStorageError::VmInitialization)?;
             Self::from_virtual_machine_prototype(vm, genesis_storage_access)
                 .map_err(FromGenesisStorageError::VmError)?
         };
@@ -99,7 +98,7 @@ impl GrandpaGenesisConfiguration {
         // TODO: DRY with the babe config; put a helper in the executor module
         let mut vm: executor::WasmVm = vm
             .run_no_param("GrandpaApi_grandpa_authorities")
-            .map_err(FromVmPrototypeError::VmInitialization)?
+            .map_err(FromVmPrototypeError::VmStart)?
             .into();
 
         Ok(loop {
@@ -136,6 +135,8 @@ pub enum FromGenesisStorageError {
     UnknownEncodingVersionNumber,
     /// Error while decoding the SCALE-encoded list.
     OutputDecode(parity_scale_codec::Error),
+    /// Error when initializing the virtual machine.
+    VmInitialization(executor::NewErr),
     /// Error while executing the runtime.
     VmError(FromVmPrototypeError),
 }
@@ -144,7 +145,7 @@ pub enum FromGenesisStorageError {
 #[derive(Debug, derive_more::Display)]
 pub enum FromVmPrototypeError {
     /// Error when initializing the virtual machine.
-    VmInitialization(executor::NewErr),
+    VmStart(executor::StartErr),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.

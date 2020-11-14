@@ -51,8 +51,7 @@ impl BabeGenesisConfiguration {
         };
         let vm =
             executor::WasmVmPrototype::new(&wasm_code, heap_pages, executor::vm::ExecHint::Oneshot)
-                .map_err(FromVmPrototypeError::VmInitialization)
-                .map_err(FromGenesisStorageError::VmError)?;
+                .map_err(FromGenesisStorageError::VmInitialization)?;
         let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
             .map_err(FromGenesisStorageError::VmError)?;
         Ok(cfg)
@@ -70,7 +69,7 @@ impl BabeGenesisConfiguration {
     ) -> Result<(Self, executor::WasmVmPrototype), FromVmPrototypeError> {
         let mut vm: executor::WasmVm = vm
             .run_no_param("BabeApi_configuration")
-            .map_err(FromVmPrototypeError::VmInitialization)?
+            .map_err(FromVmPrototypeError::VmStart)?
             .into();
 
         let (inner, vm_prototype) = loop {
@@ -131,6 +130,8 @@ pub enum FromGenesisStorageError {
     HeapPagesNotFound,
     /// Failed to decode heap pages from the genesis storage.
     HeapPagesDecode(core::array::TryFromSliceError),
+    /// Error when initializing the virtual machine.
+    VmInitialization(executor::NewErr),
     /// Error while executing the runtime.
     VmError(FromVmPrototypeError),
 }
@@ -138,8 +139,8 @@ pub enum FromGenesisStorageError {
 /// Error when retrieving the BABE configuration.
 #[derive(Debug, derive_more::Display)]
 pub enum FromVmPrototypeError {
-    /// Error when initializing the virtual machine.
-    VmInitialization(executor::NewErr),
+    /// Error when starting the virtual machine.
+    VmStart(executor::StartErr),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.

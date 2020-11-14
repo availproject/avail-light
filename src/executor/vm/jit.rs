@@ -15,21 +15,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::{ExecOutcome, GlobalValueErr, ModuleError, NewErr, RunErr, Signature, WasmValue};
+//! Implements the API documented [in the parent module](..).
+
+use super::{
+    ExecOutcome, GlobalValueErr, ModuleError, NewErr, OutOfBoundsError, RunErr, Signature,
+    StartErr, Trap, WasmValue,
+};
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{cmp, convert::TryFrom, fmt};
+use core::{
+    cmp,
+    convert::{Infallible, TryFrom},
+    fmt,
+};
 
-// TODO: this entire module is unsatisfactory
-
-/// Prototype for a [`Jit`].
+/// See [`super::VirtualMachinePrototype`].
 pub struct JitPrototype {
     /// Coroutine that contains the Wasm execution stack.
-    coroutine: corooteen::Coroutine<
-        Box<dyn FnOnce()>, // TODO: return `!`
-        FromCoroutine,
-        ToCoroutine,
-    >,
+    coroutine: corooteen::Coroutine<Box<dyn FnOnce() -> Infallible>, FromCoroutine, ToCoroutine>,
 
     /// Reference to the memory used by the module, if any.
     memory: Option<wasmtime::Memory>,
@@ -40,13 +43,7 @@ pub struct JitPrototype {
 }
 
 impl JitPrototype {
-    /// Creates a new process state machine from the given module.
-    ///
-    /// The closure is called for each import that the module has. It must assign a number to each
-    /// import, or return an error if the import can't be resolved. When the VM calls one of these
-    /// functions, this number will be returned back in order for the user to know how to handle
-    /// the call.
-    // TODO: explain heap_pages
+    /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
         module: impl AsRef<[u8]>,
         heap_pages: u64,
@@ -71,9 +68,13 @@ impl JitPrototype {
             for import in module.imports() {
                 match import.ty() {
                     wasmtime::ExternType::Func(f) => {
-                        // TODO: don't panic if not found
-                        let function_index =
-                            symbols(import.module(), import.name(), &From::from(&f)).unwrap();
+                        // TODO: don't panic below
+                        let function_index = symbols(
+                            import.module(),
+                            import.name(),
+                            &TryFrom::try_from(&f).unwrap(),
+                        )
+                        .unwrap();
                         let interrupter = builder.interrupter();
                         imports.push(wasmtime::Extern::Func(wasmtime::Func::new(
                             &store,
@@ -82,7 +83,14 @@ impl JitPrototype {
                                 // This closure is executed whenever the Wasm VM calls a host function.
                                 let returned = interrupter.interrupt(FromCoroutine::Interrupt {
                                     function_index,
-                                    parameters: params.iter().cloned().map(From::from).collect(),
+                                    // Since function signatures are checked at initialization,
+                                    // it is guaranteed that the parameter types are also
+                                    // supported.
+                                    parameters: params
+                                        .iter()
+                                        .map(TryFrom::try_from)
+                                        .collect::<Result<_, _>>()
+                                        .unwrap(),
                                 });
                                 let returned = match returned {
                                     ToCoroutine::Resume(returned) => returned,
@@ -161,9 +169,8 @@ impl JitPrototype {
         // We now build the coroutine of the main thread.
         let mut coroutine = {
             let interrupter = builder.interrupter();
-            builder.build(Box::new(move || {
-                // TODO: no, don't send this now but below; need to adjust for this elsewhere
-                let mut request = interrupter.interrupt(FromCoroutine::Init(Ok(())));
+            builder.build(Box::new(move || -> Infallible {
+                let mut request = interrupter.interrupt(FromCoroutine::Init);
 
                 loop {
                     let (start_function_name, start_parameters) = loop {
@@ -193,23 +200,32 @@ impl JitPrototype {
                         if let Some(f) = f.into_func() {
                             f.clone()
                         } else {
-                            let err = NewErr::NotAFunction;
-                            interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                            return;
+                            let err = StartErr::NotAFunction;
+                            request = interrupter.interrupt(FromCoroutine::StartResult(Err(err)));
+                            continue;
                         }
                     } else {
-                        let err = NewErr::FunctionNotFound;
-                        interrupter.interrupt(FromCoroutine::Init(Err(err)));
-                        return;
+                        let err = StartErr::FunctionNotFound;
+                        request = interrupter.interrupt(FromCoroutine::StartResult(Err(err)));
+                        continue;
                     };
+
+                    // Try to convert the signature of the function to call, in order to make sure
+                    // that the type of parameters and return value are supported.
+                    if Signature::try_from(&start_function.ty()).is_err() {
+                        request = interrupter.interrupt(FromCoroutine::StartResult(Err(
+                            StartErr::SignatureNotSupported,
+                        )));
+                        continue;
+                    }
 
                     // Report back that everything went ok.
                     let reinjected: ToCoroutine =
-                        interrupter.interrupt(FromCoroutine::Init(Ok(())));
+                        interrupter.interrupt(FromCoroutine::StartResult(Ok(())));
                     assert!(matches!(reinjected, ToCoroutine::Resume(None)));
 
                     // Now running the `start` function of the Wasm code.
-                    // This will interrupt the coroutine every time we reach a host function.
+                    // This will interrupt the coroutine every time a host function is reached.
                     let result = start_function.call(
                         &start_parameters
                             .into_iter()
@@ -220,21 +236,17 @@ impl JitPrototype {
                     let result = match result {
                         Ok(r) => r,
                         Err(err) => {
-                            // TODO: remove
-                            println!("trapped in vm: {:?}", err);
-                            request = interrupter.interrupt(FromCoroutine::Done(Err(err)));
+                            request =
+                                interrupter.interrupt(FromCoroutine::Done(Err(err.to_string())));
                             continue;
                         }
                     };
 
                     // Execution resumes here when the Wasm code has gracefully finished.
-                    assert!(result.len() == 0 || result.len() == 1); // TODO: I don't know what multiple results means
-                    let result = if result.is_empty() {
-                        Ok(None)
-                    } else {
-                        Ok(Some(result[0].clone())) // TODO: don't clone?
-                    };
-
+                    // The signature of the function has been chedk earlier, and as such it is
+                    // guaranteed that it has only one return value.
+                    assert!(result.len() == 0 || result.len() == 1);
+                    let result = Ok(result.get(0).map(|v| TryFrom::try_from(v).unwrap()));
                     request = interrupter.interrupt(FromCoroutine::Done(result));
                 }
             }) as Box<_>)
@@ -243,7 +255,7 @@ impl JitPrototype {
         // Execute the coroutine once, as described above.
         // The first yield must always be an `FromCoroutine::Init`.
         match coroutine.run(None) {
-            corooteen::RunOut::Interrupted(FromCoroutine::Init(Ok(()))) => {}
+            corooteen::RunOut::Interrupted(FromCoroutine::Init) => {}
             _ => unreachable!(),
         }
 
@@ -254,7 +266,7 @@ impl JitPrototype {
         })
     }
 
-    /// Returns the value of a global that the module exports.
+    /// See [`super::VirtualMachinePrototype::global_value`].
     pub fn global_value(&mut self, name: &str) -> Result<u32, GlobalValueErr> {
         match self
             .coroutine
@@ -265,15 +277,16 @@ impl JitPrototype {
         }
     }
 
-    /// Turns this prototype into an actual virtual machine. This requires choosing which function
-    /// to execute.
-    pub fn start(mut self, function_name: &str, params: &[WasmValue]) -> Result<Jit, NewErr> {
+    /// See [`super::VirtualMachinePrototype::start`].
+    pub fn start(mut self, function_name: &str, params: &[WasmValue]) -> Result<Jit, StartErr> {
         match self.coroutine.run(Some(ToCoroutine::Start(
             function_name.to_owned(),
             params.to_owned(),
         ))) {
-            corooteen::RunOut::Interrupted(FromCoroutine::Init(Err(err))) => return Err(err),
-            corooteen::RunOut::Interrupted(FromCoroutine::Init(Ok(()))) => {}
+            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Err(err))) => {
+                return Err(err)
+            }
+            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Ok(()))) => {}
             _ => unreachable!(),
         }
 
@@ -285,46 +298,26 @@ impl JitPrototype {
     }
 }
 
-// TODO: explain how this is sound
+// The fields related to `wasmtime` do not implement `Send` because they use `std::rc::Rc`. `Rc`
+// does not implement `Send` because incrementing/decrementing the reference counter from
+// multiple threads simultaneously would be racy. It is however perfectly sound to move all the
+// instances of `Rc`s at once between threads, which is what we're doing here.
+//
+// This importantly means that we should never return a `Rc` (even by reference) across the API
+// boundary.
+// TODO: really annoying to have to use unsafe code
 unsafe impl Send for JitPrototype {}
 
-/// Type that can be given to the coroutine.
-enum ToCoroutine {
-    /// Start execution of the given function. Answered with [`FromCoroutine::Init`].
-    Start(String, Vec<WasmValue>),
-    /// Resume execution after [`FromCoroutine::Interrupt`].
-    Resume(Option<WasmValue>),
-    /// Return the value of the given global with a [`FromCoroutine::GetGlobalResponse`].
-    GetGlobal(String),
+impl fmt::Debug for JitPrototype {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("JitPrototype").finish()
+    }
 }
 
-/// Type yielded by the coroutine.
-enum FromCoroutine {
-    /// Reports how well the initialization went. Sent as part of the first interrupt, then again
-    /// as a reponse to [`ToCoroutine::Start`].
-    Init(Result<(), NewErr>),
-    /// Execution of the Wasm code has been interrupted by a call.
-    Interrupt {
-        /// Index of the function, to put in [`ExecOutcome::Interrupted::id`].
-        function_index: usize,
-        /// Parameters of the function.
-        parameters: Vec<WasmValue>,
-    },
-    /// Response to a [`ToCoroutine::GetGlobal`].
-    GetGlobalResponse(Result<u32, GlobalValueErr>),
-    /// Executing the function is finished.
-    // TODO: report to wasmtime that it's stupid to use anyhow
-    Done(Result<Option<wasmtime::Val>, anyhow::Error>),
-}
-
-/// Wasm VM that uses JITted compilation.
+/// See [`super::VirtualMachine`].
 pub struct Jit {
     /// Coroutine that contains the Wasm execution stack.
-    coroutine: corooteen::Coroutine<
-        Box<dyn FnOnce()>, // TODO: return `!`
-        FromCoroutine,
-        ToCoroutine,
-    >,
+    coroutine: corooteen::Coroutine<Box<dyn FnOnce() -> Infallible>, FromCoroutine, ToCoroutine>,
 
     /// See [`JitPrototype::memory`].
     memory: Option<wasmtime::Memory>,
@@ -334,17 +327,7 @@ pub struct Jit {
 }
 
 impl Jit {
-    /// Returns true if the state machine is in a poisoned state and cannot run anymore.
-    pub fn is_poisoned(&self) -> bool {
-        self.coroutine.is_finished()
-    }
-
-    /// Starts or continues execution of this thread.
-    ///
-    /// If this is the first call you call [`run`](Jit::run) for this thread, then you must pass
-    /// a value of `None`.
-    /// If, however, you call this function after a previous call to [`run`](Jit::run) that was
-    /// interrupted by a host function call, then you must pass back the outcome of that call.
+    /// See [`super::VirtualMachine::run`].
     pub fn run(&mut self, value: Option<WasmValue>) -> Result<ExecOutcome, RunErr> {
         if self.coroutine.is_finished() {
             return Err(RunErr::Poisoned);
@@ -357,17 +340,19 @@ impl Jit {
             .coroutine
             .run(Some(ToCoroutine::Resume(value.map(From::from))))
         {
-            // TODO: use `!`
-            corooteen::RunOut::Finished(_) => unreachable!(),
+            corooteen::RunOut::Finished(_void) => match _void {},
 
             corooteen::RunOut::Interrupted(FromCoroutine::Done(Err(err))) => {
                 Ok(ExecOutcome::Finished {
-                    return_value: Err(()),
+                    return_value: Err(Trap(err)),
                 })
             }
             corooteen::RunOut::Interrupted(FromCoroutine::Done(Ok(val))) => {
                 Ok(ExecOutcome::Finished {
-                    return_value: Ok(val.map(From::from)),
+                    // Since we verify at initialization that the signature of the function to
+                    // call is supported, it is guaranteed that the type of this return value is
+                    // supported too.
+                    return_value: Ok(val),
                 })
             }
             corooteen::RunOut::Interrupted(FromCoroutine::Interrupt {
@@ -379,15 +364,15 @@ impl Jit {
             }),
 
             // `Init` must only be produced at initialization.
-            corooteen::RunOut::Interrupted(FromCoroutine::Init(_)) => unreachable!(),
+            corooteen::RunOut::Interrupted(FromCoroutine::Init) => unreachable!(),
+            // `StartResult` only happens in response to a request.
+            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(_)) => unreachable!(),
             // `GetGlobalResponse` only happens in response to a request.
             corooteen::RunOut::Interrupted(FromCoroutine::GetGlobalResponse(_)) => unreachable!(),
         }
     }
 
-    /// Returns the size of the memory, in bytes.
-    ///
-    /// > **Note**: This can change over time if the Wasm code uses the `grow` opcode.
+    /// See [`super::VirtualMachine::memory_size`].
     pub fn memory_size(&self) -> u32 {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
@@ -397,47 +382,75 @@ impl Jit {
         u32::try_from(mem.data_size()).unwrap()
     }
 
-    /// Copies the given memory range into a `Vec<u8>`.
-    ///
-    /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
-        let mem = self.memory.as_ref().ok_or(())?;
-        let start = usize::try_from(offset).map_err(|_| ())?;
+    /// See [`super::VirtualMachine::read_memory`].
+    pub fn read_memory<'a>(
+        &'a self,
+        offset: u32,
+        size: u32,
+    ) -> Result<impl AsRef<[u8]> + 'a, OutOfBoundsError> {
+        let mem = match self.memory.as_ref() {
+            Some(m) => m,
+            None => {
+                return if offset == 0 && size == 0 {
+                    Ok(&[][..])
+                } else {
+                    Err(OutOfBoundsError)
+                }
+            }
+        };
+
+        let start = usize::try_from(offset).map_err(|_| OutOfBoundsError)?;
         let end = start
-            .checked_add(usize::try_from(size).map_err(|_| ())?)
-            .ok_or(())?;
-
-        // TODO: we don't check bounds before slicing, meaning that an out of range will panic
-
-        // Soundness: the documentation of wasmtime precisely explains what is safe or not.
-        // Basically, we are safe as long as we are sure that we don't potentially grow the
-        // buffer (which would invalidate the buffer pointer).
-        unsafe { Ok(&mem.data_unchecked()[start..end]) }
-    }
-
-    /// Write the data at the given memory location.
-    ///
-    /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
-        let mem = self.memory.as_ref().ok_or(())?;
-        let start = usize::try_from(offset).map_err(|_| ())?;
-        let end = start.checked_add(value.len()).ok_or(())?;
-
-        // TODO: we don't check bounds
+            .checked_add(usize::try_from(size).map_err(|_| OutOfBoundsError)?)
+            .ok_or(OutOfBoundsError)?;
 
         // Soundness: the documentation of wasmtime precisely explains what is safe or not.
         // Basically, we are safe as long as we are sure that we don't potentially grow the
         // buffer (which would invalidate the buffer pointer).
         unsafe {
-            mem.data_unchecked_mut()[start..end].copy_from_slice(value);
+            if end > mem.data_unchecked().len() {
+                return Err(OutOfBoundsError);
+            }
+
+            Ok(&mem.data_unchecked()[start..end])
+        }
+    }
+
+    /// See [`super::VirtualMachine::write_memory`].
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), OutOfBoundsError> {
+        let mem = match self.memory.as_ref() {
+            Some(m) => m,
+            None => {
+                return if offset == 0 && value.is_empty() {
+                    Ok(())
+                } else {
+                    Err(OutOfBoundsError)
+                }
+            }
+        };
+
+        let start = usize::try_from(offset).map_err(|_| OutOfBoundsError)?;
+        let end = start.checked_add(value.len()).ok_or(OutOfBoundsError)?;
+
+        // Soundness: the documentation of wasmtime precisely explains what is safe or not.
+        // Basically, we are safe as long as we are sure that we don't potentially grow the
+        // buffer (which would invalidate the buffer pointer).
+        unsafe {
+            if end > mem.data_unchecked().len() {
+                return Err(OutOfBoundsError);
+            }
+
+            if !value.is_empty() {
+                mem.data_unchecked_mut()[start..end].copy_from_slice(value);
+            }
         }
 
         Ok(())
     }
 
-    /// Turns back this virtual machine into a prototype.
+    /// See [`super::VirtualMachine::into_prototype`].
     pub fn into_prototype(self) -> JitPrototype {
-        // TODO: how do we handle if the coroutine was in a host function?
+        // TODO: how do we handle if the coroutine was within a host function?
 
         // TODO: necessary?
         /*// Zero-ing the memory.
@@ -460,11 +473,47 @@ impl Jit {
     }
 }
 
-// TODO: explain how this is sound
+// The fields related to `wasmtime` do not implement `Send` because they use `std::rc::Rc`. `Rc`
+// does not implement `Send` because incrementing/decrementing the reference counter from
+// multiple threads simultaneously would be racy. It is however perfectly sound to move all the
+// instances of `Rc`s at once between threads, which is what we're doing here.
+//
+// This importantly means that we should never return a `Rc` (even by reference) across the API
+// boundary.
+// TODO: really annoying to have to use unsafe code
 unsafe impl Send for Jit {}
 
 impl fmt::Debug for Jit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Jit").finish()
     }
+}
+
+/// Type that can be given to the coroutine.
+enum ToCoroutine {
+    /// Start execution of the given function. Answered with [`FromCoroutine::Init`].
+    Start(String, Vec<WasmValue>),
+    /// Resume execution after [`FromCoroutine::Interrupt`].
+    Resume(Option<WasmValue>),
+    /// Return the value of the given global with a [`FromCoroutine::GetGlobalResponse`].
+    GetGlobal(String),
+}
+
+/// Type yielded by the coroutine.
+enum FromCoroutine {
+    /// Reports how well the initialization went. Sent as part of the first interrupt.
+    Init,
+    /// Reponse to [`ToCoroutine::Start`].
+    StartResult(Result<(), StartErr>),
+    /// Execution of the Wasm code has been interrupted by a call.
+    Interrupt {
+        /// Index of the function, to put in [`ExecOutcome::Interrupted::id`].
+        function_index: usize,
+        /// Parameters of the function.
+        parameters: Vec<WasmValue>,
+    },
+    /// Response to a [`ToCoroutine::GetGlobal`].
+    GetGlobalResponse(Result<u32, GlobalValueErr>),
+    /// Executing the function is finished.
+    Done(Result<Option<WasmValue>, String>),
 }

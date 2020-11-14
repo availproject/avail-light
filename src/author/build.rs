@@ -119,7 +119,7 @@ pub enum Error {
     WasmVm(runtime_host::Error),
     /// Error while initializing the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    VmInit(executor::NewErr),
+    VmInit(executor::StartErr),
     /// Overflow when incrementing block height.
     BlockHeightOverflow,
     /// `Core_initialize_block` has returned a non-empty output.

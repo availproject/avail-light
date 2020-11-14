@@ -65,7 +65,7 @@ pub fn metadata_from_virtual_machine_prototype(
 ) -> Result<(Vec<u8>, executor::WasmVmPrototype), Error> {
     let mut vm: executor::WasmVm = vm
         .run_no_param("Metadata_metadata")
-        .map_err(Error::VmInitialization)?
+        .map_err(Error::VmStart)?
         .into();
 
     loop {
@@ -90,6 +90,8 @@ pub fn metadata_from_virtual_machine_prototype(
 pub enum Error {
     /// Error when initializing the virtual machine.
     VmInitialization(executor::NewErr),
+    /// Error when starting the virtual machine.
+    VmStart(executor::StartErr),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.

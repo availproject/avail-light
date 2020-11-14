@@ -66,7 +66,7 @@ pub struct Config<'a, TParams> {
 /// Start running the WebAssembly virtual machine.
 pub fn run(
     config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
-) -> Result<RuntimeHostVm, host::NewErr> {
+) -> Result<RuntimeHostVm, host::StartErr> {
     Ok(Inner {
         vm: config
             .virtual_machine

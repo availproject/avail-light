@@ -94,7 +94,7 @@ mod interpreter;
 mod jit;
 
 use alloc::vec::Vec;
-use core::fmt;
+use core::{convert::TryFrom, fmt};
 use smallvec::SmallVec;
 
 pub struct VirtualMachinePrototype {
@@ -104,7 +104,7 @@ pub struct VirtualMachinePrototype {
 enum VirtualMachinePrototypeInner {
     #[cfg(all(target_arch = "x86_64", feature = "std"))]
     Jit(jit::JitPrototype),
-    Interpreter(interpreter::VirtualMachinePrototype),
+    Interpreter(interpreter::InterpreterPrototype),
 }
 
 impl VirtualMachinePrototype {
@@ -140,14 +140,16 @@ impl VirtualMachinePrototype {
                 let out = unreachable!();
                 out
             } else {
-                VirtualMachinePrototypeInner::Interpreter(
-                    interpreter::VirtualMachinePrototype::new(module, heap_pages, symbols)?,
-                )
+                VirtualMachinePrototypeInner::Interpreter(interpreter::InterpreterPrototype::new(
+                    module, heap_pages, symbols,
+                )?)
             },
         })
     }
 
     /// Returns the value of a global that the module exports.
+    ///
+    /// The global variable must be a `u32`, otherwise an error is returned.
     pub fn global_value(&mut self, name: &str) -> Result<u32, GlobalValueErr> {
         match &mut self.inner {
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -162,7 +164,7 @@ impl VirtualMachinePrototype {
         self,
         function_name: &str,
         params: &[WasmValue],
-    ) -> Result<VirtualMachine, NewErr> {
+    ) -> Result<VirtualMachine, StartErr> {
         Ok(VirtualMachine {
             inner: match self.inner {
                 #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -177,8 +179,7 @@ impl VirtualMachinePrototype {
     }
 }
 
-// TODO:
-/*impl fmt::Debug for VirtualMachinePrototype {
+impl fmt::Debug for VirtualMachinePrototype {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.inner {
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
@@ -186,7 +187,7 @@ impl VirtualMachinePrototype {
             VirtualMachinePrototypeInner::Interpreter(inner) => fmt::Debug::fmt(inner, f),
         }
     }
-}*/
+}
 
 pub struct VirtualMachine {
     inner: VirtualMachineInner,
@@ -195,7 +196,7 @@ pub struct VirtualMachine {
 enum VirtualMachineInner {
     #[cfg(all(target_arch = "x86_64", feature = "std"))]
     Jit(jit::Jit),
-    Interpreter(interpreter::VirtualMachine),
+    Interpreter(interpreter::Interpreter),
 }
 
 impl VirtualMachine {
@@ -228,7 +229,11 @@ impl VirtualMachine {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory<'a>(&'a self, offset: u32, size: u32) -> Result<impl AsRef<[u8]> + 'a, ()> {
+    pub fn read_memory<'a>(
+        &'a self,
+        offset: u32,
+        size: u32,
+    ) -> Result<impl AsRef<[u8]> + 'a, OutOfBoundsError> {
         Ok(match &self.inner {
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
             VirtualMachineInner::Jit(inner) => either::Left(inner.read_memory(offset, size)?),
@@ -244,7 +249,7 @@ impl VirtualMachine {
     /// Write the data at the given memory location.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), ()> {
+    pub fn write_memory(&mut self, offset: u32, value: &[u8]) -> Result<(), OutOfBoundsError> {
         match &mut self.inner {
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
             VirtualMachineInner::Jit(inner) => inner.write_memory(offset, value),
@@ -295,7 +300,7 @@ pub enum ExecHint {
 /// Low-level Wasm function signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Signature {
-    params: SmallVec<[ValueType; 2]>,
+    params: SmallVec<[ValueType; 8]>,
     ret_ty: Option<ValueType>,
 }
 
@@ -323,7 +328,7 @@ impl Signature {
 }
 
 impl<'a> From<&'a Signature> for wasmi::Signature {
-    fn from(sig: &'a Signature) -> wasmi::Signature {
+    fn from(sig: &'a Signature) -> Self {
         wasmi::Signature::new(
             sig.params
                 .iter()
@@ -341,32 +346,53 @@ impl From<Signature> for wasmi::Signature {
     }
 }
 
-impl<'a> From<&'a wasmi::Signature> for Signature {
-    fn from(sig: &'a wasmi::Signature) -> Signature {
-        Signature::new(
-            sig.params().iter().cloned().map(ValueType::from),
-            sig.return_type().map(ValueType::from),
-        )
+impl<'a> TryFrom<&'a wasmi::Signature> for Signature {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(sig: &'a wasmi::Signature) -> Result<Self, Self::Error> {
+        Ok(Signature {
+            params: sig
+                .params()
+                .iter()
+                .cloned()
+                .map(ValueType::try_from)
+                .collect::<Result<_, _>>()?,
+            ret_ty: sig.return_type().map(ValueType::try_from).transpose()?,
+        })
     }
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
-impl<'a> From<&'a wasmtime::FuncType> for Signature {
-    fn from(sig: &'a wasmtime::FuncType) -> Signature {
-        // TODO: we only support one return type at the moment; what even is multiple
-        // return types?
-        assert!(sig.results().len() <= 1);
+impl<'a> TryFrom<&'a wasmtime::FuncType> for Signature {
+    type Error = UnsupportedTypeError;
 
-        Signature::new(
-            sig.params().iter().cloned().map(ValueType::from),
-            sig.results().get(0).cloned().map(ValueType::from),
-        )
+    fn try_from(sig: &'a wasmtime::FuncType) -> Result<Self, Self::Error> {
+        if sig.results().len() > 1 {
+            return Err(UnsupportedTypeError);
+        }
+
+        Ok(Signature {
+            params: sig
+                .params()
+                .iter()
+                .cloned()
+                .map(ValueType::try_from)
+                .collect::<Result<_, _>>()?,
+            ret_ty: sig
+                .results()
+                .get(0)
+                .cloned()
+                .map(ValueType::try_from)
+                .transpose()?,
+        })
     }
 }
 
-impl From<wasmi::Signature> for Signature {
-    fn from(sig: wasmi::Signature) -> Signature {
-        Signature::from(&sig)
+impl TryFrom<wasmi::Signature> for Signature {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(sig: wasmi::Signature) -> Result<Self, Self::Error> {
+        Signature::try_from(&sig)
     }
 }
 
@@ -418,12 +444,14 @@ impl WasmValue {
     }
 }
 
-impl From<wasmi::RuntimeValue> for WasmValue {
-    fn from(val: wasmi::RuntimeValue) -> Self {
+impl TryFrom<wasmi::RuntimeValue> for WasmValue {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(val: wasmi::RuntimeValue) -> Result<Self, Self::Error> {
         match val {
-            wasmi::RuntimeValue::I32(v) => WasmValue::I32(v),
-            wasmi::RuntimeValue::I64(v) => WasmValue::I64(v),
-            _ => panic!(), // TODO: do something other than panicking here
+            wasmi::RuntimeValue::I32(v) => Ok(WasmValue::I32(v)),
+            wasmi::RuntimeValue::I64(v) => Ok(WasmValue::I64(v)),
+            _ => Err(UnsupportedTypeError),
         }
     }
 }
@@ -448,12 +476,14 @@ impl From<WasmValue> for wasmtime::Val {
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
-impl From<wasmtime::Val> for WasmValue {
-    fn from(val: wasmtime::Val) -> Self {
+impl<'a> TryFrom<&'a wasmtime::Val> for WasmValue {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(val: &'a wasmtime::Val) -> Result<Self, Self::Error> {
         match val {
-            wasmtime::Val::I32(v) => WasmValue::I32(v),
-            wasmtime::Val::I64(v) => WasmValue::I64(v),
-            _ => unimplemented!(),
+            wasmtime::Val::I32(v) => Ok(WasmValue::I32(*v)),
+            wasmtime::Val::I64(v) => Ok(WasmValue::I64(*v)),
+            _ => Err(UnsupportedTypeError),
         }
     }
 }
@@ -467,26 +497,34 @@ impl From<ValueType> for wasmi::ValueType {
     }
 }
 
-impl From<wasmi::ValueType> for ValueType {
-    fn from(val: wasmi::ValueType) -> Self {
+impl TryFrom<wasmi::ValueType> for ValueType {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(val: wasmi::ValueType) -> Result<Self, Self::Error> {
         match val {
-            wasmi::ValueType::I32 => ValueType::I32,
-            wasmi::ValueType::I64 => ValueType::I64,
-            _ => panic!(), // TODO: do something other than panicking here
+            wasmi::ValueType::I32 => Ok(ValueType::I32),
+            wasmi::ValueType::I64 => Ok(ValueType::I64),
+            _ => Err(UnsupportedTypeError),
         }
     }
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
-impl From<wasmtime::ValType> for ValueType {
-    fn from(val: wasmtime::ValType) -> Self {
+impl TryFrom<wasmtime::ValType> for ValueType {
+    type Error = UnsupportedTypeError;
+
+    fn try_from(val: wasmtime::ValType) -> Result<Self, Self::Error> {
         match val {
-            wasmtime::ValType::I32 => ValueType::I32,
-            wasmtime::ValType::I64 => ValueType::I64,
-            _ => unimplemented!(), // TODO:
+            wasmtime::ValType::I32 => Ok(ValueType::I32),
+            wasmtime::ValType::I64 => Ok(ValueType::I64),
+            _ => Err(UnsupportedTypeError),
         }
     }
 }
+
+/// Error used in the conversions between VM implementation and the public API.
+#[derive(Debug, derive_more::Display)]
+pub struct UnsupportedTypeError;
 
 /// Outcome of the [`run`](VirtualMachine::run) function.
 #[derive(Debug)]
@@ -497,8 +535,7 @@ pub enum ExecOutcome {
     /// will return [`RunErr::Poisoned`].
     Finished {
         /// Return value of the function.
-        // TODO: error type should change here
-        return_value: Result<Option<WasmValue>, ()>,
+        return_value: Result<Option<WasmValue>, Trap>,
     },
 
     /// The virtual machine has been paused due to a call to a host function.
@@ -519,7 +556,13 @@ pub enum ExecOutcome {
         params: Vec<WasmValue>,
     },
 }
-/// Error that can happen when initializing a VM.
+
+/// Opaque error that happened during execution, such as an `unreachable` instruction.
+#[derive(Debug, derive_more::Display, Clone)]
+#[display(fmt = "{}", _0)]
+pub struct Trap(String);
+
+/// Error that can happen when initializing a [`VirtualMachinePrototype`].
 #[derive(Debug, derive_more::Display)]
 pub enum NewErr {
     /// Error while parsing or compiling the WebAssembly code.
@@ -531,18 +574,31 @@ pub enum NewErr {
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
     #[display(fmt = "If a \"__indirect_function_table\" symbol is provided, it must be a table.")]
     IndirectTableIsntTable,
+}
+
+/// Error that can happen when calling [`VirtualMachinePrototype::start`].
+#[derive(Debug, derive_more::Display)]
+pub enum StartErr {
     /// Couldn't find the requested function.
     #[display(fmt = "Function to start was not found.")]
     FunctionNotFound,
     /// The requested function has been found in the list of exports, but it is not a function.
     #[display(fmt = "Symbol to start is not a function.")]
     NotAFunction,
+    /// The requested function has a signature that isn't supported.
+    #[display(fmt = "Function to start uses unsupported signature.")]
+    SignatureNotSupported,
 }
 
 /// Opaque error indicating an error while parsing or compiling the WebAssembly code.
 #[derive(Debug, derive_more::Display)]
 #[display(fmt = "{}", _0)]
 pub struct ModuleError(String);
+
+/// Error while reading memory.
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "Out of bounds when accessing virtual machine memory")]
+pub struct OutOfBoundsError;
 
 /// Error that can happen when resuming the execution of a function.
 #[derive(Debug, derive_more::Display)]
@@ -567,11 +623,21 @@ pub enum RunErr {
 /// Error that can happen when calling [`VirtualMachinePrototype::global_value`].
 #[derive(Debug, derive_more::Display)]
 pub enum GlobalValueErr {
+    /// Couldn't find requested symbol.
     NotFound,
+    /// Requested symbol isn't a `u32`.
     Invalid,
 }
 
 #[cfg(test)]
 mod tests {
     // TODO:
+
+    #[test]
+    fn is_send() {
+        // Makes sure that the virtual machine types implement `Send`.
+        fn test<T: Send>() {}
+        test::<super::VirtualMachine>();
+        test::<super::VirtualMachinePrototype>();
+    }
 }

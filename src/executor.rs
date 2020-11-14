@@ -115,7 +115,7 @@ pub mod vm;
 
 pub use host::{
     Error, ExternalStorageAppend, ExternalStorageGet, Finished, HostVm as WasmVm,
-    HostVmPrototype as WasmVmPrototype, NewErr, ReadyToRun,
+    HostVmPrototype as WasmVmPrototype, NewErr, ReadyToRun, StartErr,
 };
 // TODO: reexports ^ ? shouldn't we just make the module public?
 

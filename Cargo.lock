@@ -2099,7 +2099,6 @@ name = "substrate-lite"
 version = "0.1.0"
 dependencies = [
  "ahash 0.5.8",
- "anyhow",
  "app_dirs",
  "arrayvec 0.5.2",
  "async-std",
