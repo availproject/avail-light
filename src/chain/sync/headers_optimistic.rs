@@ -32,6 +32,7 @@
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
+use crate::header;
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU32, time::Duration};
@@ -277,8 +278,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
             self.sync = Some(sync);
             return ProcessOneOutcome::Reset {
                 reason: has_error,
-                new_best_block_number: self.chain.best_block_header().number,
-                new_best_block_hash: self.chain.best_block_hash(),
+                new_best_block: self.chain.best_block_header(),
             };
         }
 
@@ -297,20 +297,14 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
 
         // Success! 🎉
         ProcessOneOutcome::Updated {
-            best_block_hash,
-            best_block_number: self.chain.best_block_header().number,
+            new_best_block: self.chain.best_block_header(),
             finalized_block: if finalized_update {
-                let number = self
-                    .finalized_chain_information
-                    .chain_information
-                    .finalized_block_header
-                    .number;
-                let hash = self
-                    .finalized_chain_information
-                    .chain_information
-                    .finalized_block_header
-                    .hash();
-                Some((number, hash))
+                Some(From::from(
+                    &self
+                        .finalized_chain_information
+                        .chain_information
+                        .finalized_block_header,
+                ))
             } else {
                 None
             },
@@ -330,7 +324,7 @@ pub struct RequestSuccessBlock {
 
 /// Outcome of calling [`OptimisticHeadersSync::process_one`].
 #[derive(Debug)]
-pub enum ProcessOneOutcome {
+pub enum ProcessOneOutcome<'a> {
     /// There was nothing to do.
     Idle,
 
@@ -342,20 +336,16 @@ pub enum ProcessOneOutcome {
     Reset {
         /// Problem that happened and caused the reset.
         reason: ResetCause,
-        /// Number of the new best block. Identical to the number of the finalized block.
-        new_best_block_number: u64,
-        /// Hash of the new best block. Identical to the hash of the finalized block.
-        new_best_block_hash: [u8; 32],
+        /// New best block. Identical to the latest finalized block.
+        new_best_block: header::HeaderRef<'a>,
     },
 
     /// One or more blocks have been successfully imported.
     Updated {
-        /// Number of the new best block.
-        best_block_number: u64,
-        /// Hash of the new best block.
-        best_block_hash: [u8; 32],
-        /// Number and hash of the finalized block. `None` if the finalized block hasn't changed.
-        finalized_block: Option<(u64, [u8; 32])>,
+        /// New best block.
+        new_best_block: header::HeaderRef<'a>,
+        /// New finalized block. `None` if the finalized block hasn't changed.
+        finalized_block: Option<header::HeaderRef<'a>>,
     },
 }
 

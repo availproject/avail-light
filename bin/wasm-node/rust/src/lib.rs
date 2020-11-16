@@ -22,22 +22,20 @@
 
 use futures::{channel::mpsc, prelude::*};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
-    num::NonZeroU32,
     sync::Arc,
 };
 use substrate_lite::{
-    chain,
-    chain::sync::headers_optimistic,
-    chain_spec,
+    chain, chain_spec,
     json_rpc::methods,
-    network::{self, multiaddr, peer_id::PeerId, protocol},
+    network::{multiaddr, peer_id::PeerId},
 };
 
 pub mod ffi;
 
 mod network_service;
+mod sync_service;
 
 // This custom allocator is used in order to reduce the size of the Wasm binary.
 #[global_allocator]
@@ -76,10 +74,7 @@ pub async fn start_client(chain_spec: String) {
         .unwrap()
     };
 
-    let (mut to_sync_tx, to_sync_rx) = mpsc::channel(64);
-    let (to_db_save_tx, _to_db_save_rx) = mpsc::channel(16);
-    let (sync_feedback_tx, mut sync_feedback_rx) = mpsc::channel(16);
-
+    // TODO: un-Arc-ify
     let network_service = network_service::NetworkService::new(network_service::Config {
         tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
         bootstrap_nodes: {
@@ -100,14 +95,11 @@ pub async fn start_client(chain_spec: String) {
     .await
     .unwrap();
 
-    ffi::spawn_task(
-        start_sync(
+    let sync_service = Arc::new(
+        sync_service::SyncService::new(sync_service::Config {
             chain_information,
-            network_service.clone(),
-            to_sync_rx,
-            to_db_save_tx,
-            sync_feedback_tx,
-        )
+            tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
+        })
         .await,
     );
 
@@ -145,11 +137,73 @@ pub async fn start_client(chain_spec: String) {
             network_message = network_service.next_event().fuse() => {
                 match network_message {
                     network_service::Event::Connected(peer_id) => {
-                        to_sync_tx.send(ToSync::NewPeer(peer_id)).await.unwrap();
+                        sync_service.add_source(peer_id).await;
                     }
                     network_service::Event::Disconnected(peer_id) => {
-                        to_sync_tx.send(ToSync::PeerDisconnected(peer_id)).await.unwrap();
+                        sync_service.remove_source(peer_id).await;
                     }
+                }
+            },
+
+            sync_message = sync_service.next_event().fuse() => {
+                match sync_message {
+                    sync_service::Event::BlocksRequest { id, target, request } => {
+                        let block_request = network_service.clone().blocks_request(
+                            target,
+                            request
+                        );
+
+                        ffi::spawn_task({
+                            let sync_service = sync_service.clone();
+                            async move {
+                                let result = block_request.await;
+                                sync_service.answer_blocks_request(id, result).await;
+                            }
+                        });
+                    },
+                    sync_service::Event::NewBest { scale_encoded_header } => {
+                        // TODO: this is also triggered if we reset the sync to a previous point, which isn't correct
+
+                        let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+
+                        let header = methods::Header {
+                            parent_hash: methods::HashHexString(*decoded.parent_hash),
+                            extrinsics_root: methods::HashHexString(
+                                *decoded.extrinsics_root,
+                            ),
+                            state_root: methods::HashHexString(*decoded.state_root),
+                            number: decoded.number,
+                            digest: methods::HeaderDigest {
+                                logs: decoded
+                                    .digest
+                                    .logs()
+                                    .map(|log| {
+                                        methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
+                                            a.extend_from_slice(b.as_ref());
+                                            a
+                                        }))
+                                    })
+                                    .collect(),
+                            },
+                        };
+
+                        for subscription_id in &client.new_heads {
+                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                                "chain_subscribeNewHeads",
+                                subscription_id,
+                                &serde_json::to_string(&header).unwrap(),
+                            );
+                            ffi::emit_json_rpc_response(&notification);
+                        }
+                        for subscription_id in &client.all_heads {
+                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                                "chain_subscribeAllHeads",
+                                subscription_id,
+                                &serde_json::to_string(&header).unwrap(),
+                            );
+                            ffi::emit_json_rpc_response(&notification);
+                        }
+                    },
                 }
             },
 
@@ -159,26 +213,6 @@ pub async fn start_client(chain_spec: String) {
                 ffi::emit_json_rpc_response(&response1);
                 if let Some(response2) = response2 {
                     ffi::emit_json_rpc_response(&response2);
-                }
-            },
-
-            hash = sync_feedback_rx.next().fuse() => {
-                let hash = hash.unwrap();
-                for subscription_id in &client.new_heads {
-                    let notification = substrate_lite::json_rpc::parse::build_subscription_event(
-                        "chain_subscribeNewHeads",
-                        subscription_id,
-                        &serde_json::to_string(&hash).unwrap(),  // TODO: wrong format! just for testing
-                    );
-                    ffi::emit_json_rpc_response(&notification);
-                }
-                for subscription_id in &client.all_heads {
-                    let notification = substrate_lite::json_rpc::parse::build_subscription_event(
-                        "chain_subscribeAllHeads",
-                        subscription_id,
-                        &serde_json::to_string(&hash).unwrap(),  // TODO: wrong format! just for testing
-                    );
-                    ffi::emit_json_rpc_response(&notification);
                 }
             },
         }
@@ -458,137 +492,6 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             panic!(); // TODO:
         }
     }
-}
-
-async fn start_sync(
-    chain_information: chain::chain_information::ChainInformation,
-    network_service: Arc<network_service::NetworkService>,
-    mut to_sync: mpsc::Receiver<ToSync>,
-    mut to_db_save_tx: mpsc::Sender<chain::chain_information::ChainInformation>,
-    mut sync_feedback: mpsc::Sender<[u8; 32]>,
-) -> impl Future<Output = ()> {
-    let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
-        headers_optimistic::Config {
-            chain_information,
-            sources_capacity: 32,
-            source_selection_randomness_seed: rand::random(),
-            blocks_request_granularity: NonZeroU32::new(128).unwrap(),
-            download_ahead_blocks: {
-                // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
-                // the number of blocks to download ahead of time in order to not block is 1000.
-                1024
-            },
-        },
-    );
-
-    async move {
-        let mut peers_source_id_map = HashMap::new();
-        let mut block_requests_finished = stream::FuturesUnordered::new();
-
-        loop {
-            while let Some(action) = sync.next_request_action() {
-                match action {
-                    headers_optimistic::RequestAction::Start {
-                        start,
-                        block_height,
-                        source,
-                        num_blocks,
-                        ..
-                    } => {
-                        let block_request = network_service.clone().blocks_request(
-                            source.clone(),
-                            protocol::BlocksRequestConfig {
-                                start: protocol::BlocksRequestConfigStart::Number(block_height),
-                                desired_count: num_blocks,
-                                direction: protocol::BlocksRequestDirection::Ascending,
-                                fields: protocol::BlocksRequestFields {
-                                    header: true,
-                                    body: false,
-                                    justification: true,
-                                },
-                            },
-                        );
-
-                        let (block_request, abort) = future::abortable(block_request);
-                        let request_id = start.start(abort);
-                        block_requests_finished.push(block_request.map(move |r| (request_id, r)));
-                    }
-                    headers_optimistic::RequestAction::Cancel { user_data, .. } => {
-                        user_data.abort();
-                    }
-                }
-            }
-
-            // Verify blocks that have been fetched from queries.
-            loop {
-                match sync.process_one(ffi::unix_time()) {
-                    headers_optimistic::ProcessOneOutcome::Idle => break,
-                    headers_optimistic::ProcessOneOutcome::Updated {
-                        best_block_hash,
-                        best_block_number,
-                        ..
-                    } => {
-                        sync_feedback.send(best_block_hash).await.unwrap();
-                    }
-                    headers_optimistic::ProcessOneOutcome::Reset {
-                        reason,
-                        new_best_block_hash,
-                        new_best_block_number,
-                    } => {}
-                }
-
-                // Since `process_one` is a CPU-heavy operation, looping until it is done can
-                // take a long time. In order to avoid blocking the rest of the program in the
-                // meanwhile, the `yield_once` function interrupts the current task and gives a
-                // chance for other tasks to progress.
-                yield_once().await;
-            }
-
-            // TODO: save less often
-            let _ = to_db_save_tx.send(sync.as_chain_information().into()).await;
-
-            futures::select! {
-                message = to_sync.next() => {
-                    let message = match message {
-                        Some(m) => m,
-                        None => {
-                            return
-                        },
-                    };
-
-                    match message {
-                        ToSync::NewPeer(peer_id) => {
-                            let id = sync.add_source(peer_id.clone());
-                            peers_source_id_map.insert(peer_id.clone(), id);
-                        },
-                        ToSync::PeerDisconnected(peer_id) => {
-                            let id = peers_source_id_map.remove(&peer_id).unwrap();
-                            let (_, rq_list) = sync.remove_source(id);
-                            for (_, rq) in rq_list {
-                                rq.abort();
-                            }
-                        },
-                    }
-                },
-
-                (request_id, result) = block_requests_finished.select_next_some() => {
-                    // `result` is an error if the block request got cancelled by the sync state
-                    // machine.
-                    if let Ok(result) = result {
-                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| headers_optimistic::RequestSuccessBlock {
-                            scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
-                            scale_encoded_justification: block.justification,
-                        })).map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable));
-                    }
-                },
-            }
-        }
-    }
-}
-
-enum ToSync {
-    NewPeer(network::PeerId),
-    PeerDisconnected(network::PeerId),
 }
 
 /// Use in an asynchronous context to interrupt the current task execution and schedule it back.
