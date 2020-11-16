@@ -89,7 +89,7 @@ twox-hash = "1.6.0"
 wasmi = { version = "0.7.0", default-features = false, features = ["core"] }  # TODO: having to add `core` is sketchy; maybe report this
 
 # `database-sled` feature
-sled = { version = "0.34.5", optional = true, features = ["compression"] }
+sled = { version = "0.34.6", optional = true, features = ["compression"] }
 
 # `std` feature
 # Add here the crates that cannot function without the help of the operating system or environment.
