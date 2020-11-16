@@ -120,12 +120,7 @@ impl<'a> From<PrecommitRef<'a>> for Precommit {
         Precommit {
             target_hash: *pc.target_hash,
             target_number: pc.target_number,
-            signature: {
-                // TODO: ugh
-                let mut v = [0; 64];
-                v.copy_from_slice(pc.signature);
-                v
-            },
+            signature: *pc.signature,
             authority_public_key: *pc.authority_public_key,
         }
     }
