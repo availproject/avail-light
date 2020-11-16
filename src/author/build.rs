@@ -48,7 +48,7 @@
 mod tests;
 
 use crate::{
-    executor::{self, runtime_host},
+    executor::{host, runtime_host},
     header,
     trie::calculate_root,
     util,
@@ -72,7 +72,7 @@ pub struct Config<'a> {
 
     /// Runtime used to check the new block. Must be built using the Wasm code found at the
     /// `:code` key of the parent block storage.
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
 
     /// Consensus-specific item to put in the digest of the header prototype.
     ///
@@ -100,7 +100,7 @@ pub struct Success {
     /// Body of the produced block.
     pub body: Vec<Vec<u8>>,
     /// Runtime that was passed by [`Config`].
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     /// List of changes to the offchain storage that this block performs.
@@ -119,7 +119,7 @@ pub enum Error {
     WasmVm(runtime_host::Error),
     /// Error while initializing the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    VmInit(executor::StartErr),
+    VmInit(host::StartErr),
     /// Overflow when incrementing block height.
     BlockHeightOverflow,
     /// `Core_initialize_block` has returned a non-empty output.
@@ -465,7 +465,7 @@ enum Stage {
 #[must_use]
 pub struct InherentExtrinsics {
     shared: Shared,
-    parent_runtime: executor::WasmVmPrototype,
+    parent_runtime: host::HostVmPrototype,
     storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     top_trie_root_calculation_cache: calculate_root::CalculationCache,
@@ -591,7 +591,7 @@ pub enum InherentDataConsensus {
 #[must_use]
 pub struct ApplyExtrinsic {
     shared: Shared,
-    parent_runtime: executor::WasmVmPrototype,
+    parent_runtime: host::HostVmPrototype,
     storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     top_trie_root_calculation_cache: calculate_root::CalculationCache,

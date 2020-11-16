@@ -28,7 +28,11 @@
 
 use super::super::{blocks_tree, chain_information};
 use super::optimistic;
-use crate::{executor, header, trie::calculate_root};
+use crate::{
+    executor::{host, vm},
+    header,
+    trie::calculate_root,
+};
 
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{convert::TryFrom as _, iter, num::NonZeroU32, time::Duration};
@@ -94,7 +98,7 @@ pub struct OptimisticFullSync<TRq, TSrc> {
     /// Compiled runtime code of the best block block.
     /// This field is a cache. As such, it will stay at `None` until this value has been needed
     /// for the first time.
-    runtime_code_cache: Option<executor::WasmVmPrototype>,
+    runtime_code_cache: Option<host::HostVmPrototype>,
 
     /// Cache of calculation for the storage trie of the best block.
     /// Providing this value when verifying a block considerably speeds up the verification.
@@ -311,7 +315,7 @@ struct ProcessOneShared<TRq, TSrc> {
     pending_encoded_justification: Option<Vec<u8>>,
     to_process: optimistic::ProcessOne<TRq, TSrc, RequestSuccessBlock>,
     best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
-    runtime_code_cache: Option<executor::WasmVmPrototype>,
+    runtime_code_cache: Option<host::HostVmPrototype>,
     top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
     // TODO: make sure we're not throwing this away in case of error
     finalized_blocks: Vec<Block>,
@@ -443,10 +447,10 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                                         <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
                                             .unwrap(), // TODO: don't unwrap
                                     );
-                                    executor::WasmVmPrototype::new(
+                                    host::HostVmPrototype::new(
                                         &wasm_code,
                                         heap_pages,
-                                        executor::vm::ExecHint::CompileAheadOfTime,
+                                        vm::ExecHint::CompileAheadOfTime,
                                     )
                                     .expect("invalid runtime code?!?!") // TODO: what to do?
                                 }
@@ -712,10 +716,10 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
             }
             StorageGetTarget::Runtime(inner, heap_pages) => {
                 let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
-                let wasm_vm = executor::WasmVmPrototype::new(
+                let wasm_vm = host::HostVmPrototype::new(
                     wasm_code,
                     heap_pages,
-                    executor::vm::ExecHint::CompileAheadOfTime,
+                    vm::ExecHint::CompileAheadOfTime,
                 )
                 .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner =
@@ -730,10 +734,10 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
                 } else {
                     1024 // TODO: default heap pages
                 };
-                let wasm_vm = executor::WasmVmPrototype::new(
+                let wasm_vm = host::HostVmPrototype::new(
                     &wasm_code,
                     heap_pages,
-                    executor::vm::ExecHint::CompileAheadOfTime,
+                    vm::ExecHint::CompileAheadOfTime,
                 )
                 .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner =

@@ -33,13 +33,46 @@
 //! >           could theoretically be handled directly by this module, it might be useful for
 //! >           testing purposes to have the possibility to return a deterministic value.
 //!
-//! Contrary to most programs, Wasm runtime code doesn't have a singe `main` function. Instead, it
-//! exposes several entry points. Which one to call indicates which action it has to perform. Not
-//! all entry points are necessarily available on all runtimes.
+//! Contrary to most programs, runtime code doesn't have a singe `main` or `start` function.
+//! Instead, it exposes several entry points. Which one to call indicates which action it has to
+//! perform. Not all entry points are necessarily available on all runtimes.
 //!
-//! # ABI
+//! # Runtime requirements
 //!
-//! All entry points have the same signature:
+//! See the [documentation of the `vm` module](super::vm) for details about the requirements a
+//! runtime must adhere to.
+//!
+//! In addition to the requirements described there, WebAssembly runtime codes must also export
+//! a global symbol named `__heap_base`. More details in the next section.
+//!
+//! ## Memory allocations
+//!
+//! One of the instructions available in WebAssembly code is
+//! [the `memory.grow` instruction](https://webassembly.github.io/spec/core/bikeshed/#-hrefsyntax-instr-memorymathsfmemorygrow),
+//! which allows increasing the size of the memory.
+//!
+//! WebAssembly code is normally intended to perform its own heap-management logic internally, and
+//! use the `memory.grow` instruction if more memory is needed.
+//!
+//! In order to minimize the size of the runtime binary, and in order to accomodate for the API of
+//! the host functions that return a buffer of variable length, the Substrate/Polkadot runtimes,
+//! however, do not perform their heap management internally. Instead, they use the
+//! `ext_allocator_malloc_version_1` and `ext_allocator_free_version_1` host functions for this
+//! purpose. Calling `memory.grow` is forbidden.
+//!
+//! Consequently, the size of the memory available to the WebAssembly virtual machine is always
+//! fixed, and is equal to the initial size of the memory plus the value of `heap_pages` that is
+//! passed as parameter to [`HostVmPrototype::new`].
+//!
+//! Additionally, the runtime code must export a global symbol named `__heap_base` of type `i32`.
+//! Any memory whose offset is below the value of `__heap_base` can be used at will by the
+//! program, while any memory above this value is available for use by the implementation of
+//! `ext_allocator_malloc_version_1`.
+//!
+//! ## Entry points
+//!
+//! All entry points that can be called from the host (using, for example,
+//! [`HostVmPrototype::run`]) have the same signature:
 //!
 //! ```ignore
 //! (func $runtime_entry(param $data i32) (param $len i32) (result i64))
@@ -52,6 +85,91 @@
 //! The function returns a 64bits number. The 32 less significant bits represent a pointer to the
 //! Wasm virtual machine's memory, and the 32 most significant bits a length. This pointer and
 //! length designate a buffer containing the actual return value.
+//!
+//! ## Host functions
+//!
+//! The list of host functions available to the runtime is long and isn't documented here. See
+//! the official specifications for details.
+//!
+//! # Usage
+//!
+//! The first step is to create a [`HostVmPrototype`] object from the WebAssembly code. Creating
+//! this object performs some initial steps, such as parsing and compiling the WebAssembly code.
+//! You are encouraged to maintain a cache of [`HostVmPrototype`] objects (one instance per
+//! WebAssembly byte code) in order to avoid performing these operations too often.
+//!
+//! To start calling the runtime, create a [`HostVm`] by calling [`HostVmPrototype::run`].
+//!
+//! While the Wasm runtime code has side-effects (such as storing values in the storage), the
+//! [`HostVm`] itself is a pure state machine with no side effects.
+//!
+//! At any given point, you can examine the [`HostVm`] in order to know in which state the
+//! execution currently is.
+//! In case of a [`HostVm::ReadyToRun`] (which initially is the case when you create the
+//! [`HostVm`]), you can execute the Wasm code by calling [`ReadyToRun::run`].
+//! No background thread of any kind is used, and calling [`ReadyToRun::run`] directly performs
+//! the execution of the Wasm code. If you need parallelism, you are encouraged to spawn a
+//! background thread yourself and call this function from there.
+//! [`ReadyToRun::run`] tries to make the execution progress as much as possible, and returns
+//! the new state of the virtual machine once that is done.
+//!
+//! If the runtime has finished, or has crashed, or wants to perform an operation with side
+//! effects, then the [`HostVm`] determines what to do next. For example, for
+//! [`HostVm::ExternalStorageGet`], you must load a value from the storage and pass it back by
+//! calling [`ExternalStorageGet::resume`].
+//!
+//! The Wasm execution is fully deterministic, and the outcome of the execution only depends on
+//! the inputs. There is, for example, no implicit injection of randomness or of the current time.
+//!
+//! ## Example
+//!
+//! ```
+//! use substrate_lite::executor::host::{HostVm, HostVmPrototype};
+//!
+//! # let wasm_binary_code: &[u8] = return;
+//!
+//! // Start executing a function on the runtime.
+//! let mut vm: HostVm = {
+//!     let prototype = HostVmPrototype::new(
+//!         &wasm_binary_code,
+//!         1024,
+//!         substrate_lite::executor::vm::ExecHint::Oneshot
+//!     ).unwrap();
+//!     prototype.run_no_param("Core_version").unwrap().into()
+//! };
+//!
+//! // We need to answer the calls that the runtime might perform.
+//! loop {
+//!     match vm {
+//!         // Calling `runner.run()` is what actually executes WebAssembly code and updates
+//!         // the state.
+//!         HostVm::ReadyToRun(runner) => vm = runner.run(),
+//!
+//!         HostVm::Finished(finished) => {
+//!             // `finished.value()` here is an opaque blob of bytes returned by the runtime.
+//!             // In the case of a call to `"Core_version"`, we know that it must be empty.
+//!             assert!(finished.value().is_empty());
+//!             println!("Success!");
+//!             break;
+//!         },
+//!
+//!         // Errors can happen if the WebAssembly code panics or does something wrong.
+//!         // In a real-life situation, the host should obviously not panic in these situations.
+//!         HostVm::Error { .. } => {
+//!             panic!("Error while executing code")
+//!         },
+//!
+//!         // All the other variants correspond to function calls that the runtime might perform.
+//!         // `ExternalStorageGet` is shown here as an example.
+//!         HostVm::ExternalStorageGet(req) => {
+//!             println!("Runtime requires the storage value at {:?}", req.key());
+//!             // Injects the value into the virtual machine and updates the state.
+//!             vm = req.resume(None); // Just a stub
+//!         }
+//!         _ => unimplemented!()
+//!     }
+//! }
+//! ```
 
 use super::{allocator, vm};
 use crate::util;

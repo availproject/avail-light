@@ -38,7 +38,7 @@
 //! different definition.
 //!
 
-use crate::executor;
+use crate::executor::{host, vm};
 
 use alloc::vec::Vec;
 
@@ -50,9 +50,8 @@ use alloc::vec::Vec;
 /// >           call [`metadata_from_virtual_machine_prototype`] instead.
 // TODO: document heap_pages
 pub fn metadata_from_runtime_code(wasm_code: &[u8], heap_pages: u64) -> Result<Vec<u8>, Error> {
-    let vm =
-        executor::WasmVmPrototype::new(&wasm_code, heap_pages, executor::vm::ExecHint::Oneshot)
-            .map_err(Error::VmInitialization)?;
+    let vm = host::HostVmPrototype::new(&wasm_code, heap_pages, vm::ExecHint::Oneshot)
+        .map_err(Error::VmInitialization)?;
     let (out, _vm) = metadata_from_virtual_machine_prototype(vm)?;
     Ok(out)
 }
@@ -61,22 +60,22 @@ pub fn metadata_from_runtime_code(wasm_code: &[u8], heap_pages: u64) -> Result<V
 ///
 /// Returns back the same virtual machine prototype as was passed as parameter.
 pub fn metadata_from_virtual_machine_prototype(
-    vm: executor::WasmVmPrototype,
-) -> Result<(Vec<u8>, executor::WasmVmPrototype), Error> {
-    let mut vm: executor::WasmVm = vm
+    vm: host::HostVmPrototype,
+) -> Result<(Vec<u8>, host::HostVmPrototype), Error> {
+    let mut vm: host::HostVm = vm
         .run_no_param("Metadata_metadata")
         .map_err(Error::VmStart)?
         .into();
 
     loop {
         match vm {
-            executor::WasmVm::ReadyToRun(r) => vm = r.run(),
-            executor::WasmVm::Finished(finished) => {
+            host::HostVm::ReadyToRun(r) => vm = r.run(),
+            host::HostVm::Finished(finished) => {
                 let value = remove_length_prefix(finished.value())?.to_owned();
                 return Ok((value, finished.into_prototype()));
             }
-            executor::WasmVm::Error { .. } => return Err(Error::Trapped),
-            executor::WasmVm::LogEmit(rq) => vm = rq.resume(),
+            host::HostVm::Error { .. } => return Err(Error::Trapped),
+            host::HostVm::LogEmit(rq) => vm = rq.resume(),
 
             // Querying the metadata shouldn't require any extrinsic such as accessing the
             // storage.
@@ -89,9 +88,9 @@ pub fn metadata_from_virtual_machine_prototype(
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Error when initializing the virtual machine.
-    VmInitialization(executor::NewErr),
+    VmInitialization(host::NewErr),
     /// Error when starting the virtual machine.
-    VmStart(executor::StartErr),
+    VmStart(host::StartErr),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.

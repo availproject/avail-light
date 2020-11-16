@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{executor, header};
+use crate::{
+    executor::{host, vm},
+    header,
+};
 
 use alloc::vec::Vec;
 use core::{convert::TryFrom as _, num::NonZeroU64};
@@ -49,9 +52,8 @@ impl BabeGenesisConfiguration {
         } else {
             1024 // TODO: default heap pages
         };
-        let vm =
-            executor::WasmVmPrototype::new(&wasm_code, heap_pages, executor::vm::ExecHint::Oneshot)
-                .map_err(FromGenesisStorageError::VmInitialization)?;
+        let vm = host::HostVmPrototype::new(&wasm_code, heap_pages, vm::ExecHint::Oneshot)
+            .map_err(FromGenesisStorageError::VmInitialization)?;
         let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
             .map_err(FromGenesisStorageError::VmError)?;
         Ok(cfg)
@@ -64,31 +66,31 @@ impl BabeGenesisConfiguration {
     ///
     /// Returns back the same virtual machine prototype as was passed as parameter.
     pub fn from_virtual_machine_prototype(
-        vm: executor::WasmVmPrototype,
+        vm: host::HostVmPrototype,
         mut genesis_storage_access: impl FnMut(&[u8]) -> Option<Vec<u8>>,
-    ) -> Result<(Self, executor::WasmVmPrototype), FromVmPrototypeError> {
-        let mut vm: executor::WasmVm = vm
+    ) -> Result<(Self, host::HostVmPrototype), FromVmPrototypeError> {
+        let mut vm: host::HostVm = vm
             .run_no_param("BabeApi_configuration")
             .map_err(FromVmPrototypeError::VmStart)?
             .into();
 
         let (inner, vm_prototype) = loop {
             match vm {
-                executor::WasmVm::ReadyToRun(r) => vm = r.run(),
-                executor::WasmVm::Finished(finished) => {
+                host::HostVm::ReadyToRun(r) => vm = r.run(),
+                host::HostVm::Finished(finished) => {
                     break match OwnedGenesisConfiguration::decode_all(finished.value()) {
                         Ok(cfg) => (cfg, finished.into_prototype()),
                         Err(err) => return Err(FromVmPrototypeError::OutputDecode(err)),
                     };
                 }
-                executor::WasmVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
+                host::HostVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
-                executor::WasmVm::ExternalStorageGet(req) => {
+                host::HostVm::ExternalStorageGet(req) => {
                     let value = genesis_storage_access(req.key());
                     vm = req.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 
-                executor::WasmVm::LogEmit(req) => vm = req.resume(),
+                host::HostVm::LogEmit(req) => vm = req.resume(),
 
                 _ => return Err(FromVmPrototypeError::HostFunctionNotAllowed),
             }
@@ -131,7 +133,7 @@ pub enum FromGenesisStorageError {
     /// Failed to decode heap pages from the genesis storage.
     HeapPagesDecode(core::array::TryFromSliceError),
     /// Error when initializing the virtual machine.
-    VmInitialization(executor::NewErr),
+    VmInitialization(host::NewErr),
     /// Error while executing the runtime.
     VmError(FromVmPrototypeError),
 }
@@ -140,7 +142,7 @@ pub enum FromGenesisStorageError {
 #[derive(Debug, derive_more::Display)]
 pub enum FromVmPrototypeError {
     /// Error when starting the virtual machine.
-    VmStart(executor::StartErr),
+    VmStart(host::StartErr),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.

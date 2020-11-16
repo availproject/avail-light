@@ -18,7 +18,8 @@
 use super::execute_block;
 use crate::{
     chain::chain_information,
-    executor, header,
+    executor::host,
+    header,
     trie::calculate_root,
     verify::{aura, babe},
 };
@@ -31,7 +32,7 @@ use hashbrown::HashMap;
 pub struct Config<'a, TBody> {
     /// Runtime used to check the new block. Must be built using the `:code` of the parent
     /// block.
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
 
     /// Header of the parent of the block to verify.
     ///
@@ -96,7 +97,7 @@ pub enum ConfigConsensus<'a> {
 /// Block successfully verified.
 pub struct Success {
     /// Runtime that was passed by [`Config`].
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
 
     /// Extra items in [`Success`] relevant to the consensus engine.
     pub consensus: SuccessConsensus,

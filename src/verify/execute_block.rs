@@ -40,7 +40,7 @@
 //!
 
 use crate::{
-    executor::{self, runtime_host},
+    executor::{host, runtime_host},
     header,
     trie::calculate_root,
     util,
@@ -54,7 +54,7 @@ use hashbrown::HashMap;
 pub struct Config<'a, TBody> {
     /// Runtime used to check the new block. Must be built using the Wasm code found at the
     /// `:code` key of the parent block storage.
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
 
     /// Header of the block to verify, in SCALE encoding.
     ///
@@ -75,7 +75,7 @@ pub struct Config<'a, TBody> {
 /// Block successfully verified.
 pub struct Success {
     /// Runtime that was passed by [`Config`].
-    pub parent_runtime: executor::WasmVmPrototype,
+    pub parent_runtime: host::HostVmPrototype,
     /// List of changes to the storage top trie that the block performs.
     pub storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
     /// List of changes to the offchain storage that this block performs.

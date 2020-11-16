@@ -63,7 +63,7 @@
 
 use crate::{
     chain::{chain_information, fork_tree},
-    executor,
+    executor::host,
     finality::justification,
     header,
     trie::calculate_root,
@@ -975,7 +975,7 @@ pub enum BodyVerifyStep1<T, I> {
         parent_hash: [u8; 32],
     },
 
-    /// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the
+    /// Verification is pending. In order to continue, a [`host::HostVmPrototype`] of the
     /// runtime of the parent block must be provided.
     ParentRuntimeRequired(BodyVerifyRuntimeRequired<T, I>),
 }
@@ -991,7 +991,7 @@ enum VerifyConsensusSpecific {
     },
 }
 
-/// Verification is pending. In order to continue, a [`executor::WasmVmPrototype`] of the runtime
+/// Verification is pending. In order to continue, a [`host::HostVmPrototype`] of the runtime
 /// of the parent block must be provided.
 #[must_use]
 #[derive(Debug)]
@@ -1055,7 +1055,7 @@ where
     /// speed up the calculation.
     pub fn resume(
         self,
-        parent_runtime: executor::WasmVmPrototype,
+        parent_runtime: host::HostVmPrototype,
         top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
     ) -> BodyVerifyStep2<T> {
         let parent_block_header = if let Some(parent_tree_index) = self.parent_tree_index {
@@ -1128,7 +1128,7 @@ pub enum BodyVerifyStep2<T> {
     /// Use the provided [`BodyInsert`] to insert the block in the chain if desired.
     Finished {
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
-        parent_runtime: executor::WasmVmPrototype,
+        parent_runtime: host::HostVmPrototype,
         /// List of changes to the storage top trie that the block performs.
         storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
         /// List of changes to the offchain storage that this block performs.
