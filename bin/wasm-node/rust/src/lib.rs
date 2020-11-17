@@ -37,9 +37,14 @@ pub mod ffi;
 mod network_service;
 mod sync_service;
 
-// This custom allocator is used in order to reduce the size of the Wasm binary.
+// Use the default "system" allocator. In the context of Wasm, this uses the `dlmalloc` library.
+// See <https://github.com/rust-lang/rust/tree/1.47.0/library/std/src/sys/wasm>.
+//
+// While the `wee_alloc` crate is usually the recommended choice in WebAssembly, testing has shown
+// that using it makes memory usage explode from ~100MiB to ~2GiB and more (the environment then
+// refuses to allocate 4GiB).
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+static ALLOC: std::alloc::System = std::alloc::System;
 
 // TODO: several places in this module where we unwrap when we shouldn't
 
