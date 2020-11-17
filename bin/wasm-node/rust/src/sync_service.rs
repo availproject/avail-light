@@ -163,9 +163,20 @@ async fn start_sync(
             source_selection_randomness_seed: rand::random(),
             blocks_request_granularity: NonZeroU32::new(128).unwrap(),
             download_ahead_blocks: {
-                // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
-                // the number of blocks to download ahead of time in order to not block is 1000.
-                1024
+                // Verifying a block mostly consists in:
+                //
+                // - Verifying a sr25519 signature for each block, plus a VRF output when the
+                // block is claiming a primary BABE slot.
+                // - Verifying one ed25519 signature per authority for every justification.
+                //
+                // At the time of writing, the speed of these operations hasn't been benchmarked.
+                // It is likely that it varies quite a bit between the various environments (the
+                // different browser engines, and NodeJS).
+                //
+                // Assuming a maximum verification speed of 5k blocks/sec and a 95% latency of one
+                // second, the number of blocks to download ahead of time in order to not block
+                // is 5k.
+                5000
             },
         },
     );
