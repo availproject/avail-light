@@ -19,6 +19,7 @@
 //! `wasm-bindgen` library.
 
 #![recursion_limit = "512"]
+#![deny(unused_crate_dependencies)]
 
 use futures::{channel::mpsc, prelude::*};
 use std::{
