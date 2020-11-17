@@ -45,6 +45,11 @@ pub enum Event {
         /// Header of the new best block, in SCALE encoding.
         scale_encoded_header: Vec<u8>,
     },
+    /// Current finalized block has been updated.
+    NewFinalized {
+        /// Header of the new finalized block, in SCALE encoding.
+        scale_encoded_header: Vec<u8>,
+    },
 }
 
 /// Identifier for a blocks request to be performed.
@@ -146,6 +151,13 @@ impl SyncService {
                         scale_encoded_header,
                     };
                 }
+                FromBackground::NewFinalized {
+                    scale_encoded_header,
+                } => {
+                    return Event::NewFinalized {
+                        scale_encoded_header,
+                    };
+                }
             }
         }
     }
@@ -233,25 +245,51 @@ async fn start_sync(
 
             // Verify blocks that have been fetched from queries.
             loop {
-                match sync.process_one(crate::ffi::unix_time()) {
-                    headers_optimistic::ProcessOneOutcome::Idle => break,
-                    headers_optimistic::ProcessOneOutcome::Updated { new_best_block, .. }
-                    | headers_optimistic::ProcessOneOutcome::Reset { new_best_block, .. } => {
-                        if to_foreground
-                            .send(FromBackground::NewBest {
-                                scale_encoded_header: new_best_block.scale_encoding().fold(
-                                    Vec::new(),
-                                    |mut a, b| {
-                                        a.extend_from_slice(b.as_ref());
-                                        a
-                                    },
-                                ),
-                            })
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
+                let process_result = sync.process_one(crate::ffi::unix_time());
+                if let headers_optimistic::ProcessOneOutcome::Idle = process_result {
+                    break;
+                }
+
+                if let headers_optimistic::ProcessOneOutcome::Updated { new_best_block, .. }
+                | headers_optimistic::ProcessOneOutcome::Reset { new_best_block, .. } =
+                    &process_result
+                {
+                    if to_foreground
+                        .send(FromBackground::NewBest {
+                            scale_encoded_header: new_best_block.scale_encoding().fold(
+                                Vec::new(),
+                                |mut a, b| {
+                                    a.extend_from_slice(b.as_ref());
+                                    a
+                                },
+                            ),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+
+                if let headers_optimistic::ProcessOneOutcome::Updated {
+                    finalized_block: Some(finalized_block),
+                    ..
+                } = &process_result
+                {
+                    if to_foreground
+                        .send(FromBackground::NewFinalized {
+                            scale_encoded_header: finalized_block.scale_encoding().fold(
+                                Vec::new(),
+                                |mut a, b| {
+                                    a.extend_from_slice(b.as_ref());
+                                    a
+                                },
+                            ),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return;
                     }
                 }
 
@@ -319,6 +357,11 @@ enum FromBackground {
     /// Current best block has been updated.
     NewBest {
         /// Header of the new best block, in SCALE encoding.
+        scale_encoded_header: Vec<u8>,
+    },
+    /// Current finalized block has been updated.
+    NewFinalized {
+        /// Header of the new finalized block, in SCALE encoding.
         scale_encoded_header: Vec<u8>,
     },
 }

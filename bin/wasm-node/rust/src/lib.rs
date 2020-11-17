@@ -209,6 +209,39 @@ pub async fn start_client(chain_spec: String) {
                             ffi::emit_json_rpc_response(&notification);
                         }
                     },
+                    sync_service::Event::NewFinalized { scale_encoded_header } => {
+                        let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+
+                        let header = methods::Header {
+                            parent_hash: methods::HashHexString(*decoded.parent_hash),
+                            extrinsics_root: methods::HashHexString(
+                                *decoded.extrinsics_root,
+                            ),
+                            state_root: methods::HashHexString(*decoded.state_root),
+                            number: decoded.number,
+                            digest: methods::HeaderDigest {
+                                logs: decoded
+                                    .digest
+                                    .logs()
+                                    .map(|log| {
+                                        methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
+                                            a.extend_from_slice(b.as_ref());
+                                            a
+                                        }))
+                                    })
+                                    .collect(),
+                            },
+                        };
+
+                        for subscription_id in &client.finalized_heads {
+                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                                "chain_subscribeFinalizedHeads",
+                                subscription_id,
+                                &serde_json::to_string(&header).unwrap(),
+                            );
+                            ffi::emit_json_rpc_response(&notification);
+                        }
+                    },
                 }
             },
 
