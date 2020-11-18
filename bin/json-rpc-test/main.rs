@@ -110,7 +110,7 @@ async fn async_main() {
                         (connection_id, response, None)
                     }
                     methods::MethodCall::chain_getBlockHash { height } => {
-                        assert_eq!(height, 0);
+                        assert_eq!(height, Some(0));
                         let response = methods::Response::chain_getBlockHash(
                             methods::HashHexString(genesis_block_hash),
                         )

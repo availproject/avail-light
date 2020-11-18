@@ -21,7 +21,7 @@
 #![recursion_limit = "512"]
 #![deny(unused_crate_dependencies)]
 
-use futures::{channel::mpsc, prelude::*};
+use futures::prelude::*;
 use std::{
     collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
@@ -29,7 +29,7 @@ use std::{
 };
 use substrate_lite::{
     chain, chain_spec,
-    json_rpc::methods,
+    json_rpc::{self, methods},
     network::{multiaddr, peer_id::PeerId},
 };
 
@@ -103,7 +103,7 @@ pub async fn start_client(chain_spec: String) {
 
     let sync_service = Arc::new(
         sync_service::SyncService::new(sync_service::Config {
-            chain_information,
+            chain_information: chain_information.clone(),
             tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
         })
         .await,
@@ -114,11 +114,7 @@ pub async fn start_client(chain_spec: String) {
         .map(|(k, v)| (k.to_vec(), v.to_vec()))
         .collect::<BTreeMap<_, _>>();
 
-    let genesis_block_header =
-        substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage());
-    let genesis_block_hash = genesis_block_header.hash();
-
-    let metadata = {
+    let best_block_metadata = {
         let code = genesis_storage.get(&b":code"[..]).unwrap();
         let heap_pages = 1024; // TODO: laziness
         substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
@@ -126,10 +122,10 @@ pub async fn start_client(chain_spec: String) {
 
     let mut client = Client {
         chain_spec,
+        best_block: chain_information.finalized_block_header.clone(),
+        finalized_block: chain_information.finalized_block_header,
         genesis_storage,
-        genesis_block_hash,
-        genesis_block_header,
-        metadata,
+        best_block_metadata,
         next_subscription: 0,
         runtime_version: HashSet::new(),
         all_heads: HashSet::new(),
@@ -171,27 +167,7 @@ pub async fn start_client(chain_spec: String) {
                         // TODO: this is also triggered if we reset the sync to a previous point, which isn't correct
 
                         let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
-
-                        let header = methods::Header {
-                            parent_hash: methods::HashHexString(*decoded.parent_hash),
-                            extrinsics_root: methods::HashHexString(
-                                *decoded.extrinsics_root,
-                            ),
-                            state_root: methods::HashHexString(*decoded.state_root),
-                            number: decoded.number,
-                            digest: methods::HeaderDigest {
-                                logs: decoded
-                                    .digest
-                                    .logs()
-                                    .map(|log| {
-                                        methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
-                                            a.extend_from_slice(b.as_ref());
-                                            a
-                                        }))
-                                    })
-                                    .collect(),
-                            },
-                        };
+                        let header = header_conv(decoded.clone());
 
                         for subscription_id in &client.new_heads {
                             let notification = substrate_lite::json_rpc::parse::build_subscription_event(
@@ -209,30 +185,13 @@ pub async fn start_client(chain_spec: String) {
                             );
                             ffi::emit_json_rpc_response(&notification);
                         }
+
+                        client.best_block = decoded.into();
+                        // TODO: need to update `best_block_metadata` if necessary, and notify the runtime version subscriptions
                     },
                     sync_service::Event::NewFinalized { scale_encoded_header } => {
                         let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
-
-                        let header = methods::Header {
-                            parent_hash: methods::HashHexString(*decoded.parent_hash),
-                            extrinsics_root: methods::HashHexString(
-                                *decoded.extrinsics_root,
-                            ),
-                            state_root: methods::HashHexString(*decoded.state_root),
-                            number: decoded.number,
-                            digest: methods::HeaderDigest {
-                                logs: decoded
-                                    .digest
-                                    .logs()
-                                    .map(|log| {
-                                        methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
-                                            a.extend_from_slice(b.as_ref());
-                                            a
-                                        }))
-                                    })
-                                    .collect(),
-                            },
-                        };
+                        let header = header_conv(decoded.clone());
 
                         for subscription_id in &client.finalized_heads {
                             let notification = substrate_lite::json_rpc::parse::build_subscription_event(
@@ -242,6 +201,8 @@ pub async fn start_client(chain_spec: String) {
                             );
                             ffi::emit_json_rpc_response(&notification);
                         }
+
+                        client.finalized_block = decoded.into();
                     },
                 }
             },
@@ -261,11 +222,14 @@ pub async fn start_client(chain_spec: String) {
 struct Client {
     chain_spec: chain_spec::ChainSpec,
 
-    genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
-    genesis_block_hash: [u8; 32],
-    genesis_block_header: substrate_lite::header::Header,
+    /// Current best block.
+    best_block: substrate_lite::header::Header,
+    /// Latest finalized block.
+    finalized_block: substrate_lite::header::Header,
 
-    metadata: Vec<u8>,
+    genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
+
+    best_block_metadata: Vec<u8>,
 
     next_subscription: u64,
 
@@ -285,44 +249,39 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::chain_getBlockHash { height } => {
-            assert_eq!(height, 0);
-            let response = methods::Response::chain_getBlockHash(methods::HashHexString(
-                client.genesis_block_hash,
-            ))
-            .to_json_response(request_id);
+            // TODO: implement correctly
+            let response = if height.is_some() {
+                methods::Response::chain_getBlockHash(methods::HashHexString(
+                    client.best_block.hash(),
+                ))
+                .to_json_response(request_id)
+            } else {
+                json_rpc::parse::build_success_response(request_id, "null")
+            };
             (response, None)
         }
         methods::MethodCall::chain_getFinalizedHead {} => {
             let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
-                client.genesis_block_hash,
+                client.finalized_block.hash(),
             ))
             .to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::chain_getHeader { hash } => {
-            // TODO: use hash parameter
-            let response = methods::Response::chain_getHeader(methods::Header {
-                parent_hash: methods::HashHexString(client.genesis_block_header.parent_hash),
-                extrinsics_root: methods::HashHexString(
-                    client.genesis_block_header.extrinsics_root,
-                ),
-                state_root: methods::HashHexString(client.genesis_block_header.state_root),
-                number: client.genesis_block_header.number,
-                digest: methods::HeaderDigest {
-                    logs: client
-                        .genesis_block_header
-                        .digest
-                        .logs()
-                        .map(|log| {
-                            methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
-                                a.extend_from_slice(b.as_ref());
-                                a
-                            }))
-                        })
-                        .collect(),
-                },
-            })
-            .to_json_response(request_id);
+            let response = if let Some(hash) = hash {
+                if hash.0 == client.best_block.hash() {
+                    methods::Response::chain_getHeader(header_conv(&client.best_block))
+                        .to_json_response(request_id)
+                } else if hash.0 == client.finalized_block.hash() {
+                    methods::Response::chain_getHeader(header_conv(&client.finalized_block))
+                        .to_json_response(request_id)
+                } else {
+                    json_rpc::parse::build_success_response(request_id, "null")
+                }
+            } else {
+                methods::Response::chain_getHeader(header_conv(&client.best_block))
+                    .to_json_response(request_id)
+            };
             (response, None)
         }
         methods::MethodCall::chain_subscribeAllHeads {} => {
@@ -331,9 +290,16 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             let response = methods::Response::chain_subscribeAllHeads(&subscription)
                 .to_json_response(request_id);
+
+            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+                "chain_allHeads", // TODO: is this string correct?
+                &subscription,
+                &serde_json::to_string(&header_conv(&client.best_block)).unwrap(),
+            );
+
             client.all_heads.insert(subscription.clone());
-            // TODO: should return the current state, I think
-            (response, None)
+
+            (response, Some(response2))
         }
         methods::MethodCall::chain_subscribeNewHeads {} => {
             let subscription = client.next_subscription.to_string();
@@ -341,9 +307,16 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             let response = methods::Response::chain_subscribeNewHeads(&subscription)
                 .to_json_response(request_id);
+
+            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+                "chain_newHead",
+                &subscription,
+                &serde_json::to_string(&header_conv(&client.best_block)).unwrap(),
+            );
+
             client.new_heads.insert(subscription.clone());
-            // TODO: should return the current state, I think
-            (response, None)
+
+            (response, Some(response2))
         }
         methods::MethodCall::chain_subscribeFinalizedHeads {} => {
             let subscription = client.next_subscription.to_string();
@@ -351,8 +324,21 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             let response = methods::Response::chain_subscribeFinalizedHeads(&subscription)
                 .to_json_response(request_id);
+
+            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+                "chain_finalizedHead",
+                &subscription,
+                &serde_json::to_string(&header_conv(&client.finalized_block)).unwrap(),
+            );
+
             client.finalized_heads.insert(subscription.clone());
-            // TODO: should return the current state, I think
+
+            (response, Some(response2))
+        }
+        methods::MethodCall::chain_unsubscribeFinalizedHeads { subscription } => {
+            let valid = client.finalized_heads.remove(&subscription);
+            let response = methods::Response::chain_unsubscribeFinalizedHeads(valid)
+                .to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::rpc_methods {} => {
@@ -370,7 +356,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             assert!(at.is_none()); // TODO:
 
             let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.genesis_block_hash),
+                block: methods::HashHexString(client.best_block.hash()),
                 changes: Vec::new(),
             };
 
@@ -418,17 +404,22 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::state_getMetadata {} => {
-            let response =
-                methods::Response::state_getMetadata(methods::HexString(client.metadata.clone()))
-                    .to_json_response(request_id);
+            let response = methods::Response::state_getMetadata(methods::HexString(
+                client.best_block_metadata.clone(),
+            ))
+            .to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::state_getStorage { key, hash } => {
             // TODO: use hash
 
-            let value = client.genesis_storage.get(&key.0[..]).unwrap().to_vec(); // TODO: don't unwrap
-            let response = methods::Response::state_getStorage(methods::HexString(value))
-                .to_json_response(request_id);
+            let response = if let Some(value) = client.genesis_storage.get(&key.0[..]) {
+                methods::Response::state_getStorage(methods::HexString(value.clone()))
+                    .to_json_response(request_id)
+            } else {
+                json_rpc::parse::build_success_response(request_id, "null")
+            };
+
             (response, None)
         }
         methods::MethodCall::state_subscribeRuntimeVersion {} => {
@@ -438,8 +429,19 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response = methods::Response::state_subscribeRuntimeVersion(&subscription)
                 .to_json_response(request_id);
             client.runtime_version.insert(subscription.clone());
-            // TODO: should return the current state, I think
-            (response, None)
+
+            // FIXME: hack
+            let response2 = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
+                spec_name: "polkadot".to_string(),
+                impl_name: "substrate-lite".to_string(),
+                authoring_version: 0,
+                spec_version: 23,
+                impl_version: 0,
+                transaction_version: 4,
+            })
+            .to_json_response(request_id);
+
+            (response, Some(response2))
         }
         methods::MethodCall::state_subscribeStorage { list } => {
             let subscription = client.next_subscription.to_string();
@@ -451,7 +453,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             // TODO: have no idea what this describes actually
             let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.genesis_block_hash),
+                block: methods::HashHexString(client.best_block.hash()),
                 changes: Vec::new(),
             };
 
@@ -515,6 +517,11 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
                 methods::Response::system_name("substrate-lite!").to_json_response(request_id);
             (response, None)
         }
+        methods::MethodCall::system_peers {} => {
+            // TODO: return proper response
+            let response = methods::Response::system_peers(vec![]).to_json_response(request_id);
+            (response, None)
+        }
         methods::MethodCall::system_properties {} => {
             let response = methods::Response::system_properties(
                 serde_json::from_str(client.chain_spec.properties()).unwrap(),
@@ -530,6 +537,29 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             println!("unimplemented: {:?}", call);
             panic!(); // TODO:
         }
+    }
+}
+
+fn header_conv<'a>(header: impl Into<substrate_lite::header::HeaderRef<'a>>) -> methods::Header {
+    let header = header.into();
+
+    methods::Header {
+        parent_hash: methods::HashHexString(*header.parent_hash),
+        extrinsics_root: methods::HashHexString(*header.extrinsics_root),
+        state_root: methods::HashHexString(*header.state_root),
+        number: header.number,
+        digest: methods::HeaderDigest {
+            logs: header
+                .digest
+                .logs()
+                .map(|log| {
+                    methods::HexString(log.scale_encoding().fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    }))
+                })
+                .collect(),
+        },
     }
 }
 

@@ -359,6 +359,11 @@ impl WebSocket {
         unsafe {
             let this = Pin::get_unchecked_mut(self.as_mut());
 
+            // WebSocket might have been closed, but API user hasn't detected it yet.
+            if this.closed {
+                return;
+            }
+
             bindings::websocket_send(
                 this.id.unwrap(),
                 u32::try_from(data.as_ptr() as usize).unwrap(),
