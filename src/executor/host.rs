@@ -2074,7 +2074,7 @@ pub enum NewErr {
 }
 
 /// Error that can happen when starting a VM.
-#[derive(Debug, derive_more::From, derive_more::Display)]
+#[derive(Debug, Clone, derive_more::From, derive_more::Display)]
 pub enum StartErr {
     /// Error while starting the virtual machine.
     #[display(fmt = "Error while starting the virtual machine: {}", _0)]

@@ -89,7 +89,10 @@ pub struct Success {
 /// Error that can happen during the verification.
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum Error {
-    /// Error while executing the Wasm virtual machine.
+    /// Error while starting the Wasm virtual machine.
+    #[display(fmt = "{}", _0)]
+    WasmStart(host::StartErr),
+    /// Error while running the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
     WasmVm(runtime_host::Error),
     /// Output of `Core_execute_block` wasn't empty.
@@ -123,12 +126,12 @@ pub fn execute_block<'a>(
         top_trie_root_calculation_cache: config.top_trie_root_calculation_cache,
         storage_top_trie_changes: Default::default(),
         offchain_storage_changes: Default::default(),
-    })
-    .unwrap();
+    });
 
-    // TODO: shouldn't unwrap ^
-
-    Verify::from_inner(vm)
+    match vm {
+        Ok(vm) => Verify::from_inner(vm),
+        Err(err) => Verify::Finished(Err(Error::WasmStart(err))),
+    }
 }
 
 /// Current state of the verification.

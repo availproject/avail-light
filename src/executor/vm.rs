@@ -577,7 +577,7 @@ pub enum NewErr {
 }
 
 /// Error that can happen when calling [`VirtualMachinePrototype::start`].
-#[derive(Debug, derive_more::Display)]
+#[derive(Debug, Clone, derive_more::Display)]
 pub enum StartErr {
     /// Couldn't find the requested function.
     #[display(fmt = "Function to start was not found.")]
