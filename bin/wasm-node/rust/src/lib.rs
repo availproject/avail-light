@@ -195,7 +195,7 @@ pub async fn start_client(chain_spec: String) {
 
                         for subscription_id in &client.new_heads {
                             let notification = substrate_lite::json_rpc::parse::build_subscription_event(
-                                "chain_subscribeNewHeads",
+                                "chain_newHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
                             );
@@ -203,7 +203,7 @@ pub async fn start_client(chain_spec: String) {
                         }
                         for subscription_id in &client.all_heads {
                             let notification = substrate_lite::json_rpc::parse::build_subscription_event(
-                                "chain_subscribeAllHeads",
+                                "chain_newHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
                             );
@@ -236,7 +236,7 @@ pub async fn start_client(chain_spec: String) {
 
                         for subscription_id in &client.finalized_heads {
                             let notification = substrate_lite::json_rpc::parse::build_subscription_event(
-                                "chain_subscribeFinalizedHeads",
+                                "chain_finalizedHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
                             );
