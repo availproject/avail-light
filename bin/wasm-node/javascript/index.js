@@ -22,7 +22,13 @@ import Websocket from 'websocket';
 
 import { default as wasm_base64 } from './autogen/wasm.js';
 
-export async function start(chain_specs, json_rpc_callback) {
+export async function start(config) {
+  const chain_spec = config.chain_spec;
+  const json_rpc_callback = config.json_rpc_callback;
+
+  if (Object.prototype.toString.call(chain_spec) !== '[object String]')
+    throw 'config must include a string chain_spec';
+
   var module;
 
   // List of environment variables to feed to the Rust program. An array of strings.
@@ -222,12 +228,12 @@ export async function start(chain_specs, json_rpc_callback) {
 
   module = result.instance;
 
-  let chain_specs_len = Buffer.byteLength(chain_specs, 'utf8');
-  let chain_specs_ptr = module.exports.alloc(chain_specs_len);
+  let chain_spec_len = Buffer.byteLength(chain_spec, 'utf8');
+  let chain_spec_ptr = module.exports.alloc(chain_spec_len);
   Buffer.from(module.exports.memory.buffer)
-    .write(chain_specs, chain_specs_ptr);
+    .write(chain_spec, chain_spec_ptr);
 
-  module.exports.init(chain_specs_ptr, chain_specs_len, 0, 0);
+  module.exports.init(chain_spec_ptr, chain_spec_len, 0, 0);
 
   return {
     send_json_rpc: (request) => {
