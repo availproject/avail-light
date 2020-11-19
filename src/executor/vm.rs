@@ -374,16 +374,9 @@ impl<'a> TryFrom<&'a wasmtime::FuncType> for Signature {
         Ok(Signature {
             params: sig
                 .params()
-                .iter()
-                .cloned()
                 .map(ValueType::try_from)
                 .collect::<Result<_, _>>()?,
-            ret_ty: sig
-                .results()
-                .get(0)
-                .cloned()
-                .map(ValueType::try_from)
-                .transpose()?,
+            ret_ty: sig.results().next().map(ValueType::try_from).transpose()?,
         })
     }
 }
