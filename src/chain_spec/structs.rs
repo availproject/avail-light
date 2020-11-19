@@ -48,6 +48,15 @@ pub(super) struct ClientSpec {
     // TODO: looks deprecated?
     pub(super) genesis: Genesis,
     pub(super) light_sync_state: Option<LightSyncState>,
+    #[serde(flatten)]
+    pub(super) parachain: Option<ChainSpecParachain>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ChainSpecParachain {
+    pub(super) relay_chain: String,
+    pub(super) para_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
