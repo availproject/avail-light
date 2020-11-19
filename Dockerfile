@@ -1,8 +1,6 @@
 FROM rust:1 AS builder
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 
-# TODO: add a CI check that tries build this image on pull requests
-
 COPY . /build
 WORKDIR /build
 

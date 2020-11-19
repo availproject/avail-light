@@ -18,6 +18,7 @@
 name: deploy
 
 on:
+  pull_request:  # All deployment steps are tested on PRs, but the actual deployment doesn't happen.
   push:
     branches:
       - main
@@ -32,6 +33,8 @@ jobs:
     - uses: actions/checkout@v2
     - name: Login to DockerHub
       uses: docker/login-action@v1 
+      # This `if` adds an additional satefy against accidental pushes.
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       with:
         registry: docker.pkg.github.com
         username: ${{ github.actor }}
@@ -39,5 +42,5 @@ jobs:
     - name: Push to GitHub Packages
       uses: docker/build-push-action@v2.1.0
       with:
-        push: true
+        push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         tags: docker.pkg.github.com/paritytech/substrate-lite/node:main
