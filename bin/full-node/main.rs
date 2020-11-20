@@ -16,6 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #![recursion_limit = "1024"]
+#![deny(broken_intra_doc_links)]
 // TODO: add #![deny(unused_crate_dependencies)]
 
 use futures::{channel::oneshot, prelude::*};

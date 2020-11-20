@@ -88,12 +88,8 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v2
-    - name: Install nightly Rust
-      # TODO: intra-doc links are available on nightly only
-      # see https://doc.rust-lang.org/nightly/rustdoc/lints.html#broken_intra_doc_links
-      run: rustup default nightly
     - name: Check rustdoc links
-      run: RUSTDOCFLAGS="--deny broken_intra_doc_links" cargo +nightly doc --verbose --workspace --no-deps --document-private-items
+      run: cargo doc --verbose --workspace --all-features --no-deps --document-private-items
 
   fmt:
     name: Rustfmt

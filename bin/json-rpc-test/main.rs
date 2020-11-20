@@ -17,6 +17,8 @@
 
 // TODO: temporary binary to try the JSON-RPC server component alone
 
+#![deny(broken_intra_doc_links)]
+
 use core::convert::TryFrom as _;
 use std::collections::{BTreeMap, HashMap};
 use substrate_lite::json_rpc::{methods, websocket_server};
