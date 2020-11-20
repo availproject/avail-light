@@ -69,60 +69,67 @@ impl ChainInformation {
     pub fn from_genesis_storage<'a>(
         genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
     ) -> Result<Self, FromGenesisStorageError> {
-        let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
-            genesis_storage
-                .clone()
-                .find(|(k2, _)| *k2 == k)
-                .map(|(_, v)| v.to_owned())
-        })
-        .ok(); // TODO: differentiate between errors and lack of Babe
-
-        let grandpa_genesis_config =
-            grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
-                genesis_storage
-                    .clone()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.to_owned())
-            })
-            .unwrap();
-
-        let consensus = if let Some(babe_genesis_config) = babe_genesis_config {
-            ChainInformationConsensus::Babe {
-                slots_per_epoch: babe_genesis_config.slots_per_epoch,
-                finalized_block_epoch_information: None,
-                finalized_next_epoch_transition: BabeEpochInformation {
-                    epoch_index: 0,
-                    start_slot_number: None,
-                    authorities: babe_genesis_config.epoch0_information.authorities,
-                    randomness: babe_genesis_config.epoch0_information.randomness,
-                    c: babe_genesis_config.epoch0_configuration.c,
-                    allowed_slots: babe_genesis_config.epoch0_configuration.allowed_slots,
-                },
-            }
-        } else {
-            // If not Babe, we assume Aura.
+        let consensus = {
             let aura_genesis_config = aura::AuraGenesisConfiguration::from_genesis_storage(|k| {
                 genesis_storage
                     .clone()
                     .find(|(k2, _)| *k2 == k)
                     .map(|(_, v)| v.to_owned())
             })
-            .unwrap(); // TODO: don't unwrap
+            .ok(); // TODO: differentiate between errors and lack of Aura
 
-            ChainInformationConsensus::Aura {
-                finalized_authorities_list: aura_genesis_config.authorities_list,
-                slot_duration: aura_genesis_config.slot_duration,
+            let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
+                genesis_storage
+                    .clone()
+                    .find(|(k2, _)| *k2 == k)
+                    .map(|(_, v)| v.to_owned())
+            })
+            .ok(); // TODO: differentiate between errors and lack of Babe
+
+            match (aura_genesis_config, babe_genesis_config) {
+                (Some(aura_genesis_config), None) => ChainInformationConsensus::Aura {
+                    finalized_authorities_list: aura_genesis_config.authorities_list,
+                    slot_duration: aura_genesis_config.slot_duration,
+                },
+                (None, Some(babe_genesis_config)) => ChainInformationConsensus::Babe {
+                    slots_per_epoch: babe_genesis_config.slots_per_epoch,
+                    finalized_block_epoch_information: None,
+                    finalized_next_epoch_transition: BabeEpochInformation {
+                        epoch_index: 0,
+                        start_slot_number: None,
+                        authorities: babe_genesis_config.epoch0_information.authorities,
+                        randomness: babe_genesis_config.epoch0_information.randomness,
+                        c: babe_genesis_config.epoch0_configuration.c,
+                        allowed_slots: babe_genesis_config.epoch0_configuration.allowed_slots,
+                    },
+                },
+                (None, None) => ChainInformationConsensus::AllAuthorized, // TODO: seems a bit risky to automatically fall back to this?
+                (Some(_), Some(_)) => {
+                    return Err(FromGenesisStorageError::MultipleConsensusAlgorithms);
+                }
+            }
+        };
+
+        let finality = {
+            let grandpa_genesis_config =
+                grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
+                    genesis_storage
+                        .clone()
+                        .find(|(k, _)| *k == key)
+                        .map(|(_, v)| v.to_owned())
+                })
+                .unwrap();
+            ChainInformationFinality::Grandpa {
+                after_finalized_block_authorities_set_id: 0,
+                finalized_scheduled_change: None,
+                finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
             }
         };
 
         Ok(ChainInformation {
             finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
             consensus,
-            finality: ChainInformationFinality::Grandpa {
-                after_finalized_block_authorities_set_id: 0,
-                finalized_scheduled_change: None,
-                finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-            },
+            finality,
         })
     }
 }
@@ -132,6 +139,9 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
         ChainInformation {
             finalized_block_header: info.finalized_block_header.into(),
             consensus: match info.consensus {
+                ChainInformationConsensusRef::AllAuthorized => {
+                    ChainInformationConsensus::AllAuthorized
+                }
                 ChainInformationConsensusRef::Aura {
                     finalized_authorities_list,
                     slot_duration,
@@ -171,6 +181,13 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
 /// Extra items that depend on the consensus engine.
 #[derive(Debug, Clone)]
 pub enum ChainInformationConsensus {
+    /// Any node on the chain is allowed to produce blocks.
+    ///
+    /// > **Note**: Be warned that this variant makes it possible for a huge number of blocks to
+    /// >           be produced. If this variant is used, the user is encouraged to limit, through
+    /// >           other means, the number of blocks being accepted.
+    AllAuthorized,
+
     /// Chain is using the Aura consensus engine.
     Aura {
         /// List of authorities that must validate children of the block referred to by
@@ -295,6 +312,8 @@ pub enum ChainInformationFinality {
 pub enum FromGenesisStorageError {
     /// Error when retrieving the GrandPa configuration.
     GrandpaConfigLoad(grandpa::chain_config::FromGenesisStorageError),
+    /// Multiple consensus algorithms have been detected.
+    MultipleConsensusAlgorithms,
 }
 
 #[derive(Debug, Clone)]
@@ -321,6 +340,9 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
         ChainInformationRef {
             finalized_block_header: (&info.finalized_block_header).into(),
             consensus: match &info.consensus {
+                ChainInformationConsensus::AllAuthorized => {
+                    ChainInformationConsensusRef::AllAuthorized
+                }
                 ChainInformationConsensus::Aura {
                     finalized_authorities_list,
                     slot_duration,
@@ -363,6 +385,9 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
 /// Extra items that depend on the consensus engine.
 #[derive(Debug, Clone)]
 pub enum ChainInformationConsensusRef<'a> {
+    /// See [`ChainInformationConsensus::AllAuthorized`].
+    AllAuthorized,
+
     /// Chain is using the Aura consensus engine.
     Aura {
         /// See equivalent field in [`ChainInformationConsensus`].

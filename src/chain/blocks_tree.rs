@@ -106,6 +106,7 @@ pub struct NonFinalizedTree<T> {
 /// State of the consensus of the finalized block.
 #[derive(Clone)]
 enum FinalizedConsensus {
+    AllAuthorized,
     Aura {
         /// List of authorities that must sign the child of the finalized block.
         authorities_list: Arc<Vec<header::AuraAuthority>>,
@@ -156,6 +157,7 @@ struct Block<T> {
 /// Changes to the consensus made by a block.
 #[derive(Clone)]
 enum BlockConsensus {
+    AllAuthorized,
     Aura {
         /// If `Some`, list of authorities that must verify the child of this block.
         /// This can be a clone of the value of the parent, a clone of
@@ -236,6 +238,9 @@ impl<T> NonFinalizedTree<T> {
                 },
             },
             finalized_consensus: match config.chain_information.consensus {
+                chain_information::ChainInformationConsensus::AllAuthorized => {
+                    FinalizedConsensus::AllAuthorized
+                }
                 chain_information::ChainInformationConsensus::Aura {
                     finalized_authorities_list,
                     slot_duration,
@@ -290,6 +295,9 @@ impl<T> NonFinalizedTree<T> {
         chain_information::ChainInformationRef {
             finalized_block_header: (&self.finalized_block_header).into(),
             consensus: match &self.finalized_consensus {
+                FinalizedConsensus::AllAuthorized => {
+                    chain_information::ChainInformationConsensusRef::AllAuthorized
+                }
                 FinalizedConsensus::Aura {
                     authorities_list,
                     slot_duration,
@@ -419,6 +427,7 @@ impl<T> NonFinalizedTree<T> {
         // information is found either in the parent block, or in the finalized block.
         let consensus_specific = if let Some(parent_tree_index) = parent_tree_index {
             match &self.blocks.get(parent_tree_index).unwrap().consensus {
+                BlockConsensus::AllAuthorized => VerifyConsensusSpecific::AllAuthorized,
                 BlockConsensus::Aura { authorities_list } => VerifyConsensusSpecific::Aura {
                     authorities_list: authorities_list.clone(),
                 },
@@ -435,6 +444,7 @@ impl<T> NonFinalizedTree<T> {
             // information is found either in the parent block, or in the finalized block.
             if let Some(parent_tree_index) = parent_tree_index {
                 match &self.blocks.get(parent_tree_index).unwrap().consensus {
+                    BlockConsensus::AllAuthorized => VerifyConsensusSpecific::AllAuthorized,
                     BlockConsensus::Aura { authorities_list } => VerifyConsensusSpecific::Aura {
                         authorities_list: authorities_list.clone(),
                     },
@@ -448,6 +458,7 @@ impl<T> NonFinalizedTree<T> {
                 }
             } else {
                 match &self.finalized_consensus {
+                    FinalizedConsensus::AllAuthorized => VerifyConsensusSpecific::AllAuthorized,
                     FinalizedConsensus::Aura {
                         authorities_list, ..
                     } => VerifyConsensusSpecific::Aura {
@@ -517,6 +528,12 @@ impl<T> NonFinalizedTree<T> {
             self.finalized_consensus.clone(),
             parent_tree_index.map(|idx| self.blocks.get(idx).unwrap().consensus.clone()),
         ) {
+            (
+                verify::header_only::Success::AllAuthorized,
+                VerifyConsensusSpecific::AllAuthorized,
+                FinalizedConsensus::AllAuthorized,
+                _,
+            ) => BlockConsensus::AllAuthorized,
             (
                 verify::header_only::Success::Aura { authorities_change },
                 VerifyConsensusSpecific::Aura {
@@ -680,6 +697,7 @@ impl<T> NonFinalizedTree<T> {
         // information is found either in the parent block, or in the finalized block.
         let consensus = if let Some(parent_tree_index) = parent_tree_index {
             match &self.blocks.get(parent_tree_index).unwrap().consensus {
+                BlockConsensus::AllAuthorized => VerifyConsensusSpecific::AllAuthorized,
                 BlockConsensus::Aura { authorities_list } => VerifyConsensusSpecific::Aura {
                     authorities_list: authorities_list.clone(),
                 },
@@ -693,6 +711,7 @@ impl<T> NonFinalizedTree<T> {
             }
         } else {
             match &self.finalized_consensus {
+                FinalizedConsensus::AllAuthorized => VerifyConsensusSpecific::AllAuthorized,
                 FinalizedConsensus::Aura {
                     authorities_list, ..
                 } => VerifyConsensusSpecific::Aura {
@@ -1015,6 +1034,7 @@ pub enum BodyVerifyStep1<T, I> {
 
 #[derive(Debug)]
 enum VerifyConsensusSpecific {
+    AllAuthorized,
     Aura {
         authorities_list: Arc<Vec<header::AuraAuthority>>,
     },
@@ -1100,6 +1120,9 @@ where
         let process = verify::header_body::verify(verify::header_body::Config {
             parent_runtime,
             consensus: match (&self.chain.finalized_consensus, &self.consensus) {
+                (FinalizedConsensus::AllAuthorized, VerifyConsensusSpecific::AllAuthorized) => {
+                    verify::header_body::ConfigConsensus::AllAuthorized
+                }
                 (
                     FinalizedConsensus::Aura { slot_duration, .. },
                     VerifyConsensusSpecific::Aura { authorities_list },
@@ -1215,6 +1238,12 @@ impl<T> BodyVerifyStep2<T> {
                             .parent_tree_index
                             .map(|idx| chain.chain.blocks.get(idx).unwrap().consensus.clone()),
                     ) {
+                        (
+                            verify::header_body::SuccessConsensus::AllAuthorized,
+                            VerifyConsensusSpecific::AllAuthorized,
+                            FinalizedConsensus::AllAuthorized,
+                            _,
+                        ) => BlockConsensus::AllAuthorized,
                         (
                             verify::header_body::SuccessConsensus::Aura { authorities_change },
                             VerifyConsensusSpecific::Aura {

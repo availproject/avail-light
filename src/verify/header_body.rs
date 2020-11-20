@@ -58,6 +58,15 @@ pub struct Config<'a, TBody> {
 
 /// Extra items of [`Config`] that are dependant on the consensus engine of the chain.
 pub enum ConfigConsensus<'a> {
+    /// Any node on the chain is allowed to produce blocks.
+    ///
+    /// No seal must be present in the header.  // TODO: is this true?
+    ///
+    /// > **Note**: Be warned that this variant makes it possible for a huge number of blocks to
+    /// >           be produced. If this variant is used, the user is encouraged to limit, through
+    /// >           other means, the number of blocks being accepted.
+    AllAuthorized,
+
     /// Chain is using the Aura consensus engine.
     Aura {
         /// Aura authorities that must validate the block.
@@ -117,6 +126,9 @@ pub struct Success {
 
 /// Extra items in [`Success`] relevant to the consensus engine.
 pub enum SuccessConsensus {
+    /// [`ConfigConsensus::AllAuthorized`] was passed to [`Config`].
+    AllAuthorized,
+
     /// Chain is using the Aura consensus engine.
     Aura {
         /// True if the list of authorities is modified by this block.
@@ -161,6 +173,7 @@ pub fn verify<'a>(
 ) -> Verify {
     // Start the consensus engine verification process.
     let consensus_success = match config.consensus {
+        ConfigConsensus::AllAuthorized => SuccessConsensus::AllAuthorized,
         ConfigConsensus::Aura {
             current_authorities,
             slot_duration,
@@ -255,7 +268,7 @@ struct VerifyInner {
 }
 
 impl VerifyInner {
-    fn run(mut self) -> Verify {
+    fn run(self) -> Verify {
         match self.inner {
             execute_block::Verify::Finished(Err(err)) => {
                 Verify::Finished(Err(Error::Unsealed(err)))
