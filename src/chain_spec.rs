@@ -35,7 +35,7 @@
 //!
 
 use crate::chain::chain_information::{
-    BabeEpochInformation, ChainInformation, ChainInformationConsensus,
+    BabeEpochInformation, ChainInformation, ChainInformationConsensus, ChainInformationFinality,
 };
 use alloc::string::String;
 use core::num::NonZeroU64;
@@ -97,22 +97,21 @@ impl LightSyncState {
                 finalized_block_epoch_information: Some(convert_epoch(current_epoch)),
                 finalized_next_epoch_transition: convert_epoch(next_epoch),
             },
-            grandpa_after_finalized_block_authorities_set_id: self
-                .inner
-                .grandpa_authority_set
-                .set_id,
-            grandpa_finalized_triggered_authorities: {
-                self.inner
-                    .grandpa_authority_set
-                    .current_authorities
-                    .iter()
-                    .map(|authority| crate::header::GrandpaAuthority {
-                        public_key: authority.public_key,
-                        weight: NonZeroU64::new(authority.weight).unwrap(),
-                    })
-                    .collect()
+            finality: ChainInformationFinality::Grandpa {
+                after_finalized_block_authorities_set_id: self.inner.grandpa_authority_set.set_id,
+                finalized_triggered_authorities: {
+                    self.inner
+                        .grandpa_authority_set
+                        .current_authorities
+                        .iter()
+                        .map(|authority| crate::header::GrandpaAuthority {
+                            public_key: authority.public_key,
+                            weight: NonZeroU64::new(authority.weight).unwrap(),
+                        })
+                        .collect()
+                },
+                finalized_scheduled_change: None, // TODO: unimplemented
             },
-            grandpa_finalized_scheduled_change: None, // TODO: unimplemented
         }
     }
 }

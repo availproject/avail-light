@@ -131,20 +131,33 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                 } else {
                     None
                 },
-            grandpa_after_finalized_block_authorities_set_id: from
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: from
-                .grandpa_finalized_triggered_authorities
-                .into_iter()
-                .map(header::GrandpaAuthorityRef::from)
-                .map(Into::into)
-                .collect(),
-            grandpa_finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
-                |(n, l)| SerializedFinalizedScheduledChangeV1 {
-                    trigger_block_height: n,
-                    new_authorities_list: l.iter().map(Into::into).collect(),
-                },
-            ),
+            grandpa_after_finalized_block_authorities_set_id: match from.finality {
+                chain_information::ChainInformationFinalityRef::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    ..
+                } => after_finalized_block_authorities_set_id,
+            },
+            grandpa_finalized_triggered_authorities: match from.finality {
+                chain_information::ChainInformationFinalityRef::Grandpa {
+                    finalized_triggered_authorities,
+                    ..
+                } => finalized_triggered_authorities
+                    .into_iter()
+                    .map(header::GrandpaAuthorityRef::from)
+                    .map(Into::into)
+                    .collect(),
+            },
+            grandpa_finalized_scheduled_change: match from.finality {
+                chain_information::ChainInformationFinalityRef::Grandpa {
+                    finalized_scheduled_change,
+                    ..
+                } => {
+                    finalized_scheduled_change.map(|(n, l)| SerializedFinalizedScheduledChangeV1 {
+                        trigger_block_height: n,
+                        new_authorities_list: l.iter().map(Into::into).collect(),
+                    })
+                }
+            },
         }
     }
 }
@@ -194,15 +207,15 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
                 .map_err(DeserializeError::Header)?
                 .into(),
             consensus,
-            grandpa_after_finalized_block_authorities_set_id: from
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: from
-                .grandpa_finalized_triggered_authorities
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            grandpa_finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
-                |change| {
+            finality: chain_information::ChainInformationFinality::Grandpa {
+                after_finalized_block_authorities_set_id: from
+                    .grandpa_after_finalized_block_authorities_set_id,
+                finalized_triggered_authorities: from
+                    .grandpa_finalized_triggered_authorities
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+                finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(|change| {
                     (
                         change.trigger_block_height,
                         change
@@ -211,8 +224,8 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
                             .map(Into::into)
                             .collect(),
                     )
-                },
-            ),
+                }),
+            },
         })
     }
 }

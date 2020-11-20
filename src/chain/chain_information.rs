@@ -57,32 +57,8 @@ pub struct ChainInformation {
     /// Extra items that depend on the consensus engine.
     pub consensus: ChainInformationConsensus,
 
-    /// Grandpa authorities set ID of the block right after finalized block.
-    ///
-    /// If the finalized block is the genesis, should be 0. Otherwise,
-    // TODO: document how to know this
-    pub grandpa_after_finalized_block_authorities_set_id: u64,
-
-    /// List of GrandPa authorities that need to finalize the block right after the finalized
-    /// block.
-    pub grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
-
-    /// Change in the GrandPa authorities list that has been scheduled by a block that is already
-    /// finalized, but the change is not triggered yet. These changes will for sure happen.
-    /// Contains the block number where the changes are to be triggered.
-    ///
-    /// The block whose height is contained in this field must still be finalized using the
-    /// authorities found in [`ChainInformation::grandpa_finalized_triggered_authorities`]. Only
-    /// the next block and further use the new list of authorities.
-    ///
-    /// The block height must always be strictly superior to the height found in
-    /// [`ChainInformation::finalized_block_header`].
-    ///
-    /// > **Note**: When a header contains a GrandPa scheduled changes log item with a delay of N,
-    /// >           the block where the changes are triggered is
-    /// >           `height(block_with_log_item) + N`. If `N` is 0, then the block where the
-    /// >           change is triggered is the same as the one where it is scheduled.
-    pub grandpa_finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
+    /// Extra items that depend on the finality engine.
+    pub finality: ChainInformationFinality,
 }
 
 impl ChainInformation {
@@ -142,9 +118,11 @@ impl ChainInformation {
         Ok(ChainInformation {
             finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
             consensus,
-            grandpa_after_finalized_block_authorities_set_id: 0,
-            grandpa_finalized_scheduled_change: None,
-            grandpa_finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+            finality: ChainInformationFinality::Grandpa {
+                after_finalized_block_authorities_set_id: 0,
+                finalized_scheduled_change: None,
+                finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+            },
         })
     }
 }
@@ -174,14 +152,18 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
                     finalized_next_epoch_transition: finalized_next_epoch_transition.into(),
                 },
             },
-            grandpa_after_finalized_block_authorities_set_id: info
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: info
-                .grandpa_finalized_triggered_authorities
-                .into(),
-            grandpa_finalized_scheduled_change: info
-                .grandpa_finalized_scheduled_change
-                .map(|(n, l)| (n, l.into())),
+            finality: match info.finality {
+                ChainInformationFinalityRef::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    finalized_triggered_authorities,
+                    finalized_scheduled_change,
+                } => ChainInformationFinality::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    finalized_scheduled_change: finalized_scheduled_change
+                        .map(|(n, l)| (n, l.into())),
+                    finalized_triggered_authorities: finalized_triggered_authorities.into(),
+                },
+            },
         }
     }
 }
@@ -275,6 +257,39 @@ impl<'a> From<BabeEpochInformationRef<'a>> for BabeEpochInformation {
     }
 }
 
+/// Extra items that depend on the finality engine.
+#[derive(Debug, Clone)]
+pub enum ChainInformationFinality {
+    Grandpa {
+        /// Grandpa authorities set ID of the block right after finalized block.
+        ///
+        /// If the finalized block is the genesis, should be 0. Otherwise,
+        // TODO: document how to know this
+        after_finalized_block_authorities_set_id: u64,
+
+        /// List of GrandPa authorities that need to finalize the block right after the finalized
+        /// block.
+        finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
+
+        /// Change in the GrandPa authorities list that has been scheduled by a block that is already
+        /// finalized, but the change is not triggered yet. These changes will for sure happen.
+        /// Contains the block number where the changes are to be triggered.
+        ///
+        /// The block whose height is contained in this field must still be finalized using the
+        /// authorities found in [`ChainInformationFinality::Grandpa::finalized_triggered_authorities`].
+        /// Only the next block and further use the new list of authorities.
+        ///
+        /// The block height must always be strictly superior to the height found in
+        /// [`ChainInformation::finalized_block_header`].
+        ///
+        /// > **Note**: When a header contains a GrandPa scheduled changes log item with a delay of N,
+        /// >           the block where the changes are triggered is
+        /// >           `height(block_with_log_item) + N`. If `N` is 0, then the block where the
+        /// >           change is triggered is the same as the one where it is scheduled.
+        finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
+    },
+}
+
 /// Error when building the chain information from the genesis storage.
 #[derive(Debug, derive_more::Display)]
 pub enum FromGenesisStorageError {
@@ -297,14 +312,8 @@ pub struct ChainInformationRef<'a> {
     /// Extra items that depend on the consensus engine.
     pub consensus: ChainInformationConsensusRef<'a>,
 
-    /// See equivalent field in [`ChainInformation`].
-    pub grandpa_after_finalized_block_authorities_set_id: u64,
-
-    /// See equivalent field in [`ChainInformation`].
-    pub grandpa_finalized_triggered_authorities: &'a [header::GrandpaAuthority],
-
-    /// See equivalent field in [`ChainInformation`].
-    pub grandpa_finalized_scheduled_change: Option<(u64, &'a [header::GrandpaAuthority])>,
+    /// Extra items that depend on the finality engine.
+    pub finality: ChainInformationFinalityRef<'a>,
 }
 
 impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
@@ -333,13 +342,20 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
                     finalized_next_epoch_transition: finalized_next_epoch_transition.into(),
                 },
             },
-            grandpa_after_finalized_block_authorities_set_id: info
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: &info.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_change: info
-                .grandpa_finalized_scheduled_change
-                .as_ref()
-                .map(|(n, l)| (*n, &l[..])),
+            finality: match &info.finality {
+                ChainInformationFinality::Grandpa {
+                    finalized_triggered_authorities,
+                    after_finalized_block_authorities_set_id,
+                    finalized_scheduled_change,
+                } => ChainInformationFinalityRef::Grandpa {
+                    after_finalized_block_authorities_set_id:
+                        *after_finalized_block_authorities_set_id,
+                    finalized_triggered_authorities,
+                    finalized_scheduled_change: finalized_scheduled_change
+                        .as_ref()
+                        .map(|(n, l)| (*n, &l[..])),
+                },
+            },
         }
     }
 }
@@ -402,4 +418,19 @@ impl<'a> From<&'a BabeEpochInformation> for BabeEpochInformationRef<'a> {
             allowed_slots: info.allowed_slots,
         }
     }
+}
+
+/// Extra items that depend on the finality engine.
+#[derive(Debug, Clone)]
+pub enum ChainInformationFinalityRef<'a> {
+    Grandpa {
+        /// See equivalent field in [`ChainInformationFinality`].
+        after_finalized_block_authorities_set_id: u64,
+
+        /// See equivalent field in [`ChainInformationFinality`].
+        finalized_triggered_authorities: &'a [header::GrandpaAuthority],
+
+        /// See equivalent field in [`ChainInformationFinality`].
+        finalized_scheduled_change: Option<(u64, &'a [header::GrandpaAuthority])>,
+    },
 }

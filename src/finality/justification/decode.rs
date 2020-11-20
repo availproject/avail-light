@@ -21,6 +21,7 @@ use alloc::vec::Vec;
 use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.
+// TODO: shouldn't this method be specific to Grandpa?
 pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, Error> {
     match nom::combinator::all_consuming(justification)(scale_encoded) {
         Ok((_, justification)) => Ok(justification),

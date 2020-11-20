@@ -66,23 +66,25 @@
 //!
 //! - `grandpa_authorities_set_id`: A 64bits big endian number representing the id of the
 //! authorities set that must finalize the block right after the finalized block. The value is
-//! 0 at the genesis block, and increased by 1 at every authorities change.
+//! 0 at the genesis block, and increased by 1 at every authorities change. Missing if and only
+//! if the chain doesn't use Grandpa.
 //!
 //! - `grandpa_triggered_authorities`: List of public keys and weights of the GrandPa
 //! authorities that must finalize the children of the finalized block. Consists in 40bytes
 //! values concatenated together, each value being a 32bytes ed25519 public key and a 8bytes
-//! little endian weight.
+//! little endian weight. Missing if and only if the chain doesn't use Grandpa.
 //!
 //! - `grandpa_scheduled_target`: A 64bits big endian number representing the block where the
 //! authorities found in `grandpa_scheduled_authorities` will be triggered. Blocks whose height
 //! is strictly higher than this value must be finalized using the new set of authorities. This
 //! authority change must have been scheduled in or before the finalized block. Missing if no
-//! change is scheduled.
+//! change is scheduled or if the chain doesn't use Grandpa.
 //!
 //! - `grandpa_scheduled_authorities`: List of public keys and weights of the GrandPa
 //! authorities that will be triggered at the block found in `grandpa_scheduled_target`.
 //! Consists in 40bytes values concatenated together, each value being a 32bytes ed25519
-//! public key and a 8bytes little endian weight. Missing if no change is scheduled.
+//! public key and a 8bytes little endian weight. Missing if no change is scheduled or if the
+//! chain doesn't use Grandpa.
 //!
 //! - `aura_slot_duration`: A 64bits big endian number indicating the duration of an Aura
 //! slot. Missing if and only if the chain doesn't use Aura.
@@ -363,6 +365,7 @@ impl SledFullDatabase {
                     ));
                 }
 
+                // TODO: make optional
                 let grandpa_after_finalized_block_authorities_set_id =
                     grandpa_authorities_set_id(&meta)?;
                 let grandpa_finalized_triggered_authorities =
@@ -410,9 +413,12 @@ impl SledFullDatabase {
                 Ok(chain_information::ChainInformation {
                     finalized_block_header,
                     consensus,
-                    grandpa_after_finalized_block_authorities_set_id,
-                    grandpa_finalized_triggered_authorities,
-                    grandpa_finalized_scheduled_change,
+                    finality: chain_information::ChainInformationFinality::Grandpa {
+                        after_finalized_block_authorities_set_id:
+                            grandpa_after_finalized_block_authorities_set_id,
+                        finalized_triggered_authorities: grandpa_finalized_triggered_authorities,
+                        finalized_scheduled_change: grandpa_finalized_scheduled_change,
+                    },
                 })
             });
 

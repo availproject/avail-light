@@ -220,29 +220,39 @@ impl DatabaseEmpty {
                             .number
                             .to_be_bytes()[..],
                     )?;
-                    meta.insert(
-                        b"grandpa_authorities_set_id",
-                        &chain_information
-                            .grandpa_after_finalized_block_authorities_set_id
-                            .to_be_bytes()[..],
-                    )?;
-                    meta.insert(
-                        b"grandpa_triggered_authorities",
-                        encode_grandpa_authorities_list(header::GrandpaAuthoritiesIter::new(
-                            &chain_information.grandpa_finalized_triggered_authorities,
-                        )),
-                    )?;
 
-                    if let Some((height, list)) =
-                        &chain_information.grandpa_finalized_scheduled_change
-                    {
-                        meta.insert(b"grandpa_scheduled_target", &height.to_be_bytes()[..])?;
-                        meta.insert(
-                            b"grandpa_scheduled_authorities",
-                            encode_grandpa_authorities_list(header::GrandpaAuthoritiesIter::new(
-                                list,
-                            )),
-                        )?;
+                    match &chain_information.finality {
+                        chain_information::ChainInformationFinalityRef::Grandpa {
+                            finalized_triggered_authorities,
+                            after_finalized_block_authorities_set_id,
+                            finalized_scheduled_change,
+                        } => {
+                            meta.insert(
+                                b"grandpa_authorities_set_id",
+                                &after_finalized_block_authorities_set_id.to_be_bytes()[..],
+                            )?;
+                            meta.insert(
+                                b"grandpa_triggered_authorities",
+                                encode_grandpa_authorities_list(
+                                    header::GrandpaAuthoritiesIter::new(
+                                        finalized_triggered_authorities,
+                                    ),
+                                ),
+                            )?;
+
+                            if let Some((height, list)) = finalized_scheduled_change {
+                                meta.insert(
+                                    b"grandpa_scheduled_target",
+                                    &height.to_be_bytes()[..],
+                                )?;
+                                meta.insert(
+                                    b"grandpa_scheduled_authorities",
+                                    encode_grandpa_authorities_list(
+                                        header::GrandpaAuthoritiesIter::new(list),
+                                    ),
+                                )?;
+                            }
+                        }
                     }
 
                     match &chain_information.consensus {

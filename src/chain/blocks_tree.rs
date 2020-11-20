@@ -90,15 +90,8 @@ pub struct NonFinalizedTree<T> {
     finalized_block_header: header::Header,
     /// Hash of [`NonFinalizedTree::finalized_block_header`].
     finalized_block_hash: [u8; 32],
-    /// Grandpa authorities set ID of the block right after the finalized block.
-    grandpa_after_finalized_block_authorities_set_id: u64,
-    /// List of GrandPa authorities that need to finalize the block right after the finalized
-    /// block.
-    grandpa_finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
-    /// Change in the GrandPa authorities list that has been scheduled by a block that is already
-    /// finalized but not triggered yet. These changes will for sure happen. Contains the block
-    /// number where the changes are to be triggered.
-    grandpa_finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
+    /// State of the chain finality engine.
+    finality: Finality,
 
     /// State of the consensus of the finalized block.
     finalized_consensus: FinalizedConsensus,
@@ -129,6 +122,22 @@ enum FinalizedConsensus {
 
         /// See [`chain_information::ChainInformationConsensus::Babe::slots_per_epoch`].
         slots_per_epoch: NonZeroU64,
+    },
+}
+
+/// State of the chain finality engine.
+#[derive(Clone)]
+enum Finality {
+    Grandpa {
+        /// Grandpa authorities set ID of the block right after the finalized block.
+        after_finalized_block_authorities_set_id: u64,
+        /// List of GrandPa authorities that need to finalize the block right after the finalized
+        /// block.
+        finalized_triggered_authorities: Vec<header::GrandpaAuthority>,
+        /// Change in the GrandPa authorities list that has been scheduled by a block that is already
+        /// finalized but not triggered yet. These changes will for sure happen. Contains the block
+        /// number where the changes are to be triggered.
+        finalized_scheduled_change: Option<(u64, Vec<header::GrandpaAuthority>)>,
     },
 }
 
@@ -194,39 +203,38 @@ impl<T> NonFinalizedTree<T> {
             }
         }
 
-        if config.chain_information.finalized_block_header.number == 0 {
-            assert_eq!(
-                config
-                    .chain_information
-                    .grandpa_after_finalized_block_authorities_set_id,
-                0
-            );
+        if let chain_information::ChainInformationFinality::Grandpa {
+            after_finalized_block_authorities_set_id,
+            finalized_scheduled_change,
+            ..
+        } = &config.chain_information.finality
+        {
+            if let Some(change) = finalized_scheduled_change.as_ref() {
+                assert!(change.0 > config.chain_information.finalized_block_header.number);
+            }
+            if config.chain_information.finalized_block_header.number == 0 {
+                assert_eq!(*after_finalized_block_authorities_set_id, 0);
+            }
         }
 
         // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
 
         let finalized_block_hash = config.chain_information.finalized_block_header.hash();
 
-        if let Some(scheduled) = config
-            .chain_information
-            .grandpa_finalized_scheduled_change
-            .as_ref()
-        {
-            assert!(scheduled.0 > config.chain_information.finalized_block_header.number);
-        }
-
         NonFinalizedTree {
             finalized_block_header: config.chain_information.finalized_block_header,
             finalized_block_hash,
-            grandpa_after_finalized_block_authorities_set_id: config
-                .chain_information
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: config
-                .chain_information
-                .grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_change: config
-                .chain_information
-                .grandpa_finalized_scheduled_change,
+            finality: match config.chain_information.finality {
+                chain_information::ChainInformationFinality::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    finalized_scheduled_change,
+                    finalized_triggered_authorities,
+                } => Finality::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    finalized_scheduled_change,
+                    finalized_triggered_authorities,
+                },
+            },
             finalized_consensus: match config.chain_information.consensus {
                 chain_information::ChainInformationConsensus::Aura {
                     finalized_authorities_list,
@@ -303,13 +311,20 @@ impl<T> NonFinalizedTree<T> {
                     finalized_next_epoch_transition: next_epoch_transition.as_ref().into(),
                 },
             },
-            grandpa_after_finalized_block_authorities_set_id: self
-                .grandpa_after_finalized_block_authorities_set_id,
-            grandpa_finalized_triggered_authorities: &self.grandpa_finalized_triggered_authorities,
-            grandpa_finalized_scheduled_change: self
-                .grandpa_finalized_scheduled_change
-                .as_ref()
-                .map(|(n, l)| (*n, &l[..])),
+            finality: match &self.finality {
+                Finality::Grandpa {
+                    after_finalized_block_authorities_set_id,
+                    finalized_triggered_authorities,
+                    finalized_scheduled_change,
+                } => chain_information::ChainInformationFinalityRef::Grandpa {
+                    after_finalized_block_authorities_set_id:
+                        *after_finalized_block_authorities_set_id,
+                    finalized_scheduled_change: finalized_scheduled_change
+                        .as_ref()
+                        .map(|(n, l)| (*n, &l[..])),
+                    finalized_triggered_authorities,
+                },
+            },
         }
     }
 
@@ -716,118 +731,128 @@ impl<T> NonFinalizedTree<T> {
         &mut self,
         scale_encoded_justification: &[u8],
     ) -> Result<JustificationApply<T>, JustificationVerifyError> {
-        // Turn justification into a strongly-typed struct.
-        let decoded = justification::decode::decode(&scale_encoded_justification)
-            .map_err(JustificationVerifyError::InvalidJustification)?;
+        match &self.finality {
+            Finality::Grandpa {
+                after_finalized_block_authorities_set_id,
+                finalized_scheduled_change,
+                finalized_triggered_authorities,
+            } => {
+                // Turn justification into a strongly-typed struct.
+                let decoded = justification::decode::decode(&scale_encoded_justification)
+                    .map_err(JustificationVerifyError::InvalidJustification)?;
 
-        // Find in the list of non-finalized blocks the one targeted by the justification.
-        let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
-            Some(idx) => idx,
-            None => {
-                return Err(JustificationVerifyError::UnknownTargetBlock {
-                    block_number: From::from(decoded.target_number),
-                    block_hash: *decoded.target_hash,
-                });
-            }
-        };
+                // Find in the list of non-finalized blocks the one targeted by the justification.
+                let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
+                    Some(idx) => idx,
+                    None => {
+                        return Err(JustificationVerifyError::UnknownTargetBlock {
+                            block_number: From::from(decoded.target_number),
+                            block_hash: *decoded.target_hash,
+                        });
+                    }
+                };
 
-        // If any block between the latest finalized one and the target block trigger any GrandPa
-        // authorities change, then we need to finalize that triggering block (or any block
-        // after or including the one that schedules these changes) before finalizing the one
-        // targeted by the justification.
-        // TODO: rethink and reexplain this ^
+                // If any block between the latest finalized one and the target block trigger any GrandPa
+                // authorities change, then we need to finalize that triggering block (or any block
+                // after or including the one that schedules these changes) before finalizing the one
+                // targeted by the justification.
+                // TODO: rethink and reexplain this ^
 
-        // Find out the next block height where an authority change will be triggered.
-        let earliest_trigger = {
-            // Scheduled change that is already finalized.
-            let scheduled = self
-                .grandpa_finalized_scheduled_change
-                .as_ref()
-                .map(|(n, _)| *n);
+                // Find out the next block height where an authority change will be triggered.
+                let earliest_trigger = {
+                    // Scheduled change that is already finalized.
+                    let scheduled = finalized_scheduled_change.as_ref().map(|(n, _)| *n);
 
-            // First change that would be scheduled if we finalize the target block.
-            let would_happen = {
-                let mut trigger_height = None;
-                // TODO: lot of boilerplate code here
-                for node in self.blocks.root_to_node_path(block_index) {
-                    let header = &self.blocks.get(node).unwrap().header;
-                    for grandpa_digest_item in header.digest.logs().filter_map(|d| match d {
-                        header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
-                        _ => None,
-                    }) {
-                        match grandpa_digest_item {
-                            header::GrandpaConsensusLogRef::ScheduledChange(change) => {
-                                let trigger_block_height =
-                                    header.number.checked_add(u64::from(change.delay)).unwrap();
-                                match trigger_height {
-                                    Some(_) => panic!("invalid block!"), // TODO: this problem is not checked during block verification
-                                    None => trigger_height = Some(trigger_block_height),
+                    // First change that would be scheduled if we finalize the target block.
+                    let would_happen = {
+                        let mut trigger_height = None;
+                        // TODO: lot of boilerplate code here
+                        for node in self.blocks.root_to_node_path(block_index) {
+                            let header = &self.blocks.get(node).unwrap().header;
+                            for grandpa_digest_item in
+                                header.digest.logs().filter_map(|d| match d {
+                                    header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                                    _ => None,
+                                })
+                            {
+                                match grandpa_digest_item {
+                                    header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                                        let trigger_block_height = header
+                                            .number
+                                            .checked_add(u64::from(change.delay))
+                                            .unwrap();
+                                        match trigger_height {
+                                            Some(_) => panic!("invalid block!"), // TODO: this problem is not checked during block verification
+                                            None => trigger_height = Some(trigger_block_height),
+                                        }
+                                    }
+                                    _ => {} // TODO: unimplemented
                                 }
                             }
-                            _ => {} // TODO: unimplemented
                         }
+                        trigger_height
+                    };
+
+                    match (scheduled, would_happen) {
+                        (Some(a), Some(b)) => Some(cmp::min(a, b)),
+                        (Some(a), None) => Some(a),
+                        (None, Some(b)) => Some(b),
+                        (None, None) => None,
+                    }
+                };
+
+                // As explained above, `target_number` must be <= `earliest_trigger`, otherwise the
+                // finalization is unsecure.
+                if let Some(earliest_trigger) = earliest_trigger {
+                    if u64::from(decoded.target_number) > earliest_trigger {
+                        let block_to_finalize_hash = self
+                            .blocks
+                            .node_to_root_path(block_index)
+                            .filter_map(|b| {
+                                let b = self.blocks.get(b).unwrap();
+                                if b.header.number == earliest_trigger {
+                                    Some(b.hash)
+                                } else {
+                                    None
+                                }
+                            })
+                            .next()
+                            .unwrap();
+                        return Err(JustificationVerifyError::TooFarAhead {
+                            justification_block_number: u64::from(decoded.target_number),
+                            justification_block_hash: *decoded.target_hash,
+                            block_to_finalize_number: earliest_trigger,
+                            block_to_finalize_hash,
+                        });
                     }
                 }
-                trigger_height
-            };
 
-            match (scheduled, would_happen) {
-                (Some(a), Some(b)) => Some(cmp::min(a, b)),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
-            }
-        };
-
-        // As explained above, `target_number` must be <= `earliest_trigger`, otherwise the
-        // finalization is unsecure.
-        if let Some(earliest_trigger) = earliest_trigger {
-            if u64::from(decoded.target_number) > earliest_trigger {
-                let block_to_finalize_hash = self
-                    .blocks
-                    .node_to_root_path(block_index)
-                    .filter_map(|b| {
-                        let b = self.blocks.get(b).unwrap();
-                        if b.header.number == earliest_trigger {
-                            Some(b.hash)
-                        } else {
-                            None
-                        }
+                // Find which authorities are supposed to finalize the target block.
+                let authorities_list = finalized_scheduled_change
+                    .as_ref()
+                    .filter(|(trigger_height, _)| {
+                        *trigger_height < u64::from(decoded.target_number)
                     })
-                    .next()
-                    .unwrap();
-                return Err(JustificationVerifyError::TooFarAhead {
-                    justification_block_number: u64::from(decoded.target_number),
-                    justification_block_hash: *decoded.target_hash,
-                    block_to_finalize_number: earliest_trigger,
-                    block_to_finalize_hash,
-                });
+                    .map(|(_, list)| list)
+                    .unwrap_or(finalized_triggered_authorities);
+
+                // As per above check, we know that the authorities of the target block are either the
+                // same as the ones of the latest finalized block, or the ones contained in the header of
+                // the latest finalized block.
+                justification::verify::verify(justification::verify::Config {
+                    justification: decoded,
+                    authorities_set_id: *after_finalized_block_authorities_set_id,
+                    authorities_list: authorities_list.iter().map(|a| a.public_key),
+                })
+                .map_err(JustificationVerifyError::VerificationFailed)?;
+
+                // Justification has been successfully verified!
+                Ok(JustificationApply {
+                    chain: self,
+                    to_finalize: block_index,
+                })
             }
         }
-
-        // Find which authorities are supposed to finalize the target block.
-        let authorities_list = self
-            .grandpa_finalized_scheduled_change
-            .as_ref()
-            .filter(|(trigger_height, _)| *trigger_height < u64::from(decoded.target_number))
-            .map(|(_, list)| list)
-            .unwrap_or(&self.grandpa_finalized_triggered_authorities);
-
-        // As per above check, we know that the authorities of the target block are either the
-        // same as the ones of the latest finalized block, or the ones contained in the header of
-        // the latest finalized block.
-        justification::verify::verify(justification::verify::Config {
-            justification: decoded,
-            authorities_set_id: self.grandpa_after_finalized_block_authorities_set_id,
-            authorities_list: authorities_list.iter().map(|a| a.public_key),
-        })
-        .map_err(JustificationVerifyError::VerificationFailed)?;
-
-        // Justification has been successfully verified!
-        Ok(JustificationApply {
-            chain: self,
-            to_finalize: block_index,
-        })
     }
 
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
@@ -864,35 +889,43 @@ impl<T> NonFinalizedTree<T> {
     ) -> SetFinalizedBlockIter<T> {
         let target_block_height = self.blocks.get_mut(block_index).unwrap().header.number;
 
-        // Update the scheduled GrandPa change with the latest scheduled-but-non-finalized change
-        // that could be found.
-        self.grandpa_finalized_scheduled_change = None;
-        for node in self.blocks.root_to_node_path(block_index) {
-            let node = self.blocks.get(node).unwrap();
-            //node.header.number
-            for grandpa_digest_item in node.header.digest.logs().filter_map(|d| match d {
-                header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
-                _ => None,
-            }) {
-                match grandpa_digest_item {
-                    header::GrandpaConsensusLogRef::ScheduledChange(change) => {
-                        let trigger_block_height = node
-                            .header
-                            .number
-                            .checked_add(u64::from(change.delay))
-                            .unwrap();
-                        if trigger_block_height > target_block_height {
-                            self.grandpa_finalized_scheduled_change = Some((
-                                trigger_block_height,
-                                change.next_authorities.map(Into::into).collect(),
-                            ));
-                        } else {
-                            self.grandpa_finalized_triggered_authorities =
-                                change.next_authorities.map(Into::into).collect();
-                            self.grandpa_after_finalized_block_authorities_set_id += 1;
+        match &mut self.finality {
+            Finality::Grandpa {
+                after_finalized_block_authorities_set_id,
+                finalized_scheduled_change,
+                finalized_triggered_authorities,
+            } => {
+                // Update the scheduled GrandPa change with the latest scheduled-but-non-finalized change
+                // that could be found.
+                *finalized_scheduled_change = None;
+                for node in self.blocks.root_to_node_path(block_index) {
+                    let node = self.blocks.get(node).unwrap();
+                    //node.header.number
+                    for grandpa_digest_item in node.header.digest.logs().filter_map(|d| match d {
+                        header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                        _ => None,
+                    }) {
+                        match grandpa_digest_item {
+                            header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                                let trigger_block_height = node
+                                    .header
+                                    .number
+                                    .checked_add(u64::from(change.delay))
+                                    .unwrap();
+                                if trigger_block_height > target_block_height {
+                                    *finalized_scheduled_change = Some((
+                                        trigger_block_height,
+                                        change.next_authorities.map(Into::into).collect(),
+                                    ));
+                                } else {
+                                    *finalized_triggered_authorities =
+                                        change.next_authorities.map(Into::into).collect();
+                                    *after_finalized_block_authorities_set_id += 1;
+                                }
+                            }
+                            _ => {} // TODO: unimplemented
                         }
                     }
-                    _ => {} // TODO: unimplemented
                 }
             }
         }
