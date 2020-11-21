@@ -45,6 +45,40 @@ jobs:
         push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         tags: docker.pkg.github.com/paritytech/substrate-lite/node:main
 
+  npm-publish:
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 12
+      - run: apt-get update && apt install -y binaryen # For `wasm-opt`
+      - uses: actions-rs/toolchain@v1
+        with:
+          # The Rust version used for compiling the Wasm node is pinned.
+          toolchain: 1.47.0
+          target: wasm32-wasi
+          profile: minimal
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-node-${{ hashFiles('**/Cargo.lock') }}
+      - run: npm install
+        working-directory: ./bin/wasm-node/javascript
+      - run: npm publish --unsafe-perm --dry-run
+        working-directory: ./bin/wasm-node/javascript
+        if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      - run: npm publish --unsafe-perm
+        working-directory: ./bin/wasm-node/javascript
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   # TODO: this stage is planned to be removed once substrate-lite is published on crates.io and its doc available on docs.rs
   deploy-gh-pages:
     runs-on: ubuntu-latest
