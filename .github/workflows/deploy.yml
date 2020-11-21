@@ -44,3 +44,26 @@ jobs:
       with:
         push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         tags: docker.pkg.github.com/paritytech/substrate-lite/node:main
+
+  # TODO: this stage is planned to be removed once substrate-lite is published on crates.io and its doc available on docs.rs
+  deploy-gh-pages:
+    runs-on: ubuntu-latest
+    container:
+      image: rust
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/doc
+        key: ${{ runner.os }}-cargo-doc-${{ hashFiles('**/Cargo.lock') }}
+    - run: cargo doc --verbose --workspace --all-features --no-deps
+    - uses: crazy-max/ghaction-github-pages@v2
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      with:
+        target_branch: gh-pages
+        build_dir: target/doc
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
