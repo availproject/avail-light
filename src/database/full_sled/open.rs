@@ -222,6 +222,7 @@ impl DatabaseEmpty {
                     )?;
 
                     match &chain_information.finality {
+                        chain_information::ChainInformationFinalityRef::Outsourced => {}
                         chain_information::ChainInformationFinalityRef::Grandpa {
                             finalized_triggered_authorities,
                             after_finalized_block_authorities_set_id,

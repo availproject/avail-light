@@ -66,7 +66,8 @@ pub(super) struct SerializedChainInformationV1 {
     babe_finalized_block_epoch_information: Option<SerializedBabeEpochInformationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     babe_finalized_next_epoch_transition: Option<SerializedBabeEpochInformationV1>,
-    grandpa_after_finalized_block_authorities_set_id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    grandpa_after_finalized_block_authorities_set_id: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     grandpa_finalized_triggered_authorities: Vec<SerializedGrandpaAuthorityV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,12 +133,14 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     None
                 },
             grandpa_after_finalized_block_authorities_set_id: match from.finality {
+                chain_information::ChainInformationFinalityRef::Outsourced => None,
                 chain_information::ChainInformationFinalityRef::Grandpa {
                     after_finalized_block_authorities_set_id,
                     ..
-                } => after_finalized_block_authorities_set_id,
+                } => Some(after_finalized_block_authorities_set_id),
             },
             grandpa_finalized_triggered_authorities: match from.finality {
+                chain_information::ChainInformationFinalityRef::Outsourced => Vec::new(),
                 chain_information::ChainInformationFinalityRef::Grandpa {
                     finalized_triggered_authorities,
                     ..
@@ -148,6 +151,7 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     .collect(),
             },
             grandpa_finalized_scheduled_change: match from.finality {
+                chain_information::ChainInformationFinalityRef::Outsourced => None,
                 chain_information::ChainInformationFinalityRef::Grandpa {
                     finalized_scheduled_change,
                     ..
@@ -207,24 +211,29 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
                 .map_err(DeserializeError::Header)?
                 .into(),
             consensus,
-            finality: chain_information::ChainInformationFinality::Grandpa {
-                after_finalized_block_authorities_set_id: from
-                    .grandpa_after_finalized_block_authorities_set_id,
-                finalized_triggered_authorities: from
-                    .grandpa_finalized_triggered_authorities
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
-                finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(|change| {
-                    (
-                        change.trigger_block_height,
-                        change
-                            .new_authorities_list
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                    )
-                }),
+            finality: if let Some(set_id) = from.grandpa_after_finalized_block_authorities_set_id {
+                chain_information::ChainInformationFinality::Grandpa {
+                    after_finalized_block_authorities_set_id: set_id,
+                    finalized_triggered_authorities: from
+                        .grandpa_finalized_triggered_authorities
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
+                        |change| {
+                            (
+                                change.trigger_block_height,
+                                change
+                                    .new_authorities_list
+                                    .into_iter()
+                                    .map(Into::into)
+                                    .collect(),
+                            )
+                        },
+                    ),
+                }
+            } else {
+                chain_information::ChainInformationFinality::Outsourced
             },
         })
     }

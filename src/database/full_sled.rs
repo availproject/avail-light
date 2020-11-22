@@ -365,12 +365,29 @@ impl SledFullDatabase {
                     ));
                 }
 
-                // TODO: make optional
-                let grandpa_after_finalized_block_authorities_set_id =
-                    grandpa_authorities_set_id(&meta)?;
-                let grandpa_finalized_triggered_authorities =
-                    grandpa_finalized_triggered_authorities(&meta)?;
-                let grandpa_finalized_scheduled_change = grandpa_finalized_scheduled_change(&meta)?;
+                let finality = match (
+                    grandpa_authorities_set_id(&meta)?,
+                    grandpa_finalized_triggered_authorities(&meta)?,
+                    grandpa_finalized_scheduled_change(&meta)?,
+                ) {
+                    (
+                        Some(after_finalized_block_authorities_set_id),
+                        Some(finalized_triggered_authorities),
+                        finalized_scheduled_change,
+                    ) => chain_information::ChainInformationFinality::Grandpa {
+                        after_finalized_block_authorities_set_id,
+                        finalized_triggered_authorities,
+                        finalized_scheduled_change,
+                    },
+                    (None, None, None) => chain_information::ChainInformationFinality::Outsourced,
+                    _ => {
+                        return Err(sled::transaction::ConflictableTransactionError::Abort(
+                            FinalizedAccessError::Access(AccessError::Corrupted(
+                                CorruptedError::ConsensusAlgorithm,
+                            )),
+                        ))
+                    }
+                };
 
                 let consensus = match (
                     meta.get(b"aura_finalized_authorities")?,
@@ -416,12 +433,7 @@ impl SledFullDatabase {
                 Ok(chain_information::ChainInformation {
                     finalized_block_header,
                     consensus,
-                    finality: chain_information::ChainInformationFinality::Grandpa {
-                        after_finalized_block_authorities_set_id:
-                            grandpa_after_finalized_block_authorities_set_id,
-                        finalized_triggered_authorities: grandpa_finalized_triggered_authorities,
-                        finalized_scheduled_change: grandpa_finalized_scheduled_change,
-                    },
+                    finality,
                 })
             });
 
@@ -836,26 +848,29 @@ impl SledFullDatabase {
 
                 // TODO: implement Aura
 
-                for grandpa_digest_item in block_header.digest.logs().filter_map(|d| match d {
-                    header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
-                    _ => None,
-                }) {
-                    match grandpa_digest_item {
-                        header::GrandpaConsensusLogRef::ScheduledChange(change) => {
-                            assert_eq!(change.delay, 0); // TODO: not implemented if != 0
-                            meta.insert(
-                                b"grandpa_triggered_authorities",
-                                encode_grandpa_authorities_list(change.next_authorities),
-                            )?;
+                if grandpa_authorities_set_id(&meta)?.is_some() {
+                    for grandpa_digest_item in block_header.digest.logs().filter_map(|d| match d {
+                        header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                        _ => None,
+                    }) {
+                        match grandpa_digest_item {
+                            header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                                assert_eq!(change.delay, 0); // TODO: not implemented if != 0
+                                meta.insert(
+                                    b"grandpa_triggered_authorities",
+                                    encode_grandpa_authorities_list(change.next_authorities),
+                                )?;
 
-                            let curr_set_id =
-                                expect_be_u64(&meta.get(b"grandpa_authorities_set_id")?.unwrap())?; // TODO: don't unwrap
-                            meta.insert(
-                                b"grandpa_authorities_set_id",
-                                &(curr_set_id + 1).to_be_bytes()[..],
-                            )?;
+                                let curr_set_id = expect_be_u64(
+                                    &meta.get(b"grandpa_authorities_set_id")?.unwrap(),
+                                )?; // TODO: don't unwrap
+                                meta.insert(
+                                    b"grandpa_authorities_set_id",
+                                    &(curr_set_id + 1).to_be_bytes()[..],
+                                )?;
+                            }
+                            _ => {} // TODO: unimplemented
                         }
-                        _ => {} // TODO: unimplemented
                     }
                 }
             }
@@ -1064,9 +1079,7 @@ pub enum CorruptedError {
     BlockBodyCorrupted(parity_scale_codec::Error),
     NonFinalizedChangesMissing,
     InvalidBabeEpochInformation,
-    MissingGrandpaAuthoritiesSetId,
     InvalidGrandpaAuthoritiesSetId,
-    MissingGrandpaTriggeredAuthoritiesScheduledHeight,
     InvalidGrandpaTriggeredAuthoritiesScheduledHeight,
     InvalidGrandpaAuthoritiesList,
     InvalidNumber,
@@ -1135,28 +1148,25 @@ fn finalized_block_header<E: From<AccessError>>(
 
 fn grandpa_authorities_set_id<E: From<AccessError>>(
     meta: &sled::transaction::TransactionalTree,
-) -> Result<u64, sled::transaction::ConflictableTransactionError<E>> {
-    let value = meta
-        .get(b"grandpa_authorities_set_id")?
-        .ok_or(AccessError::Corrupted(
-            CorruptedError::MissingGrandpaAuthoritiesSetId,
-        ))
-        .map_err(From::from)
-        .map_err(sled::transaction::ConflictableTransactionError::Abort)?;
-    expect_be_u64(&value)
+) -> Result<Option<u64>, sled::transaction::ConflictableTransactionError<E>> {
+    let value = match meta.get(b"grandpa_authorities_set_id")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    Ok(Some(expect_be_u64(&value)?))
 }
 
 fn grandpa_finalized_triggered_authorities<E: From<AccessError>>(
     meta: &sled::transaction::TransactionalTree,
-) -> Result<Vec<header::GrandpaAuthority>, sled::transaction::ConflictableTransactionError<E>> {
-    let value = meta
-        .get(b"grandpa_triggered_authorities")?
-        .ok_or(AccessError::Corrupted(
-            CorruptedError::MissingGrandpaAuthoritiesSetId,
-        ))
-        .map_err(From::from)
-        .map_err(sled::transaction::ConflictableTransactionError::Abort)?;
-    decode_grandpa_authorities_list(&value)
+) -> Result<Option<Vec<header::GrandpaAuthority>>, sled::transaction::ConflictableTransactionError<E>>
+{
+    let value = match meta.get(b"grandpa_triggered_authorities")? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    Ok(Some(decode_grandpa_authorities_list(&value)?))
 }
 
 fn grandpa_finalized_scheduled_change<E: From<AccessError>>(

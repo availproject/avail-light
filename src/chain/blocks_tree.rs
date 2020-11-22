@@ -149,6 +149,7 @@ impl<T> NonFinalizedTree<T> {
                 finalized_block_header: config.chain_information.finalized_block_header,
                 finalized_block_hash,
                 finality: match config.chain_information.finality {
+                    chain_information::ChainInformationFinality::Outsourced => Finality::Outsourced,
                     chain_information::ChainInformationFinality::Grandpa {
                         after_finalized_block_authorities_set_id,
                         finalized_scheduled_change,
@@ -245,6 +246,7 @@ impl<T> NonFinalizedTree<T> {
                 },
             },
             finality: match &inner.finality {
+                Finality::Outsourced => chain_information::ChainInformationFinalityRef::Outsourced,
                 Finality::Grandpa {
                     after_finalized_block_authorities_set_id,
                     finalized_triggered_authorities,
@@ -349,6 +351,7 @@ enum FinalizedConsensus {
 /// State of the chain finality engine.
 #[derive(Clone)]
 enum Finality {
+    Outsourced,
     Grandpa {
         /// Grandpa authorities set ID of the block right after the finalized block.
         after_finalized_block_authorities_set_id: u64,

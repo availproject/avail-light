@@ -158,6 +158,7 @@ pub fn verify<'a>(config: Config<'a>) -> Result<Success, Error> {
 
     // TODO: need to verify the changes trie stuff maybe?
     // TODO: need to verify that there's no grandpa scheduled change header if there's already an active grandpa scheduled change
+    // TODO: verify that there's no grandpa header items if the chain doesn't use grandpa
 
     match config.consensus {
         ConfigConsensus::AllAuthorized => {

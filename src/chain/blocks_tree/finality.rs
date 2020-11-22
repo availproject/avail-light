@@ -75,6 +75,9 @@ impl<T> NonFinalizedTreeInner<T> {
         scale_encoded_justification: &[u8],
     ) -> Result<JustificationApply<T>, JustificationVerifyError> {
         match &self.finality {
+            Finality::Outsourced => {
+                return Err(JustificationVerifyError::AlgorithmHasNoJustification);
+            }
             Finality::Grandpa {
                 after_finalized_block_authorities_set_id,
                 finalized_scheduled_change,
@@ -206,6 +209,7 @@ impl<T> NonFinalizedTreeInner<T> {
         let target_block_height = self.blocks.get_mut(block_index).unwrap().header.number;
 
         match &mut self.finality {
+            Finality::Outsourced => {}
             Finality::Grandpa {
                 after_finalized_block_authorities_set_id,
                 finalized_scheduled_change,
@@ -338,6 +342,8 @@ impl<'c, T> fmt::Debug for JustificationApply<'c, T> {
 /// Error that can happen when verifying a justification.
 #[derive(Debug, derive_more::Display)]
 pub enum JustificationVerifyError {
+    /// Finality mechanism used by the chain doesn't use justifications.
+    AlgorithmHasNoJustification,
     /// Error while decoding the justification.
     InvalidJustification(justification::decode::Error),
     /// Justification targets a block that isn't in the chain.

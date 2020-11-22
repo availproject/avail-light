@@ -118,11 +118,16 @@ impl ChainInformation {
                         .find(|(k, _)| *k == key)
                         .map(|(_, v)| v.to_owned())
                 })
-                .unwrap();
-            ChainInformationFinality::Grandpa {
-                after_finalized_block_authorities_set_id: 0,
-                finalized_scheduled_change: None,
-                finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+                .ok(); // TODO: differentiate between errors and lack of Grandpa
+
+            if let Some(grandpa_genesis_config) = grandpa_genesis_config {
+                ChainInformationFinality::Grandpa {
+                    after_finalized_block_authorities_set_id: 0,
+                    finalized_scheduled_change: None,
+                    finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
+                }
+            } else {
+                ChainInformationFinality::Outsourced
             }
         };
 
@@ -163,6 +168,7 @@ impl<'a> From<ChainInformationRef<'a>> for ChainInformation {
                 },
             },
             finality: match info.finality {
+                ChainInformationFinalityRef::Outsourced => ChainInformationFinality::Outsourced,
                 ChainInformationFinalityRef::Grandpa {
                     after_finalized_block_authorities_set_id,
                     finalized_triggered_authorities,
@@ -277,6 +283,13 @@ impl<'a> From<BabeEpochInformationRef<'a>> for BabeEpochInformation {
 /// Extra items that depend on the finality engine.
 #[derive(Debug, Clone)]
 pub enum ChainInformationFinality {
+    /// Blocks themselves don't contain any information concerning finality. Finality is provided
+    /// by a mechanism that is entirely external to the chain.
+    ///
+    /// > **Note**: This is the mechanism used for parachains. Finality is provided entirely by
+    /// >           the relay chain.
+    Outsourced,
+
     Grandpa {
         /// Grandpa authorities set ID of the block right after finalized block.
         ///
@@ -365,6 +378,7 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
                 },
             },
             finality: match &info.finality {
+                ChainInformationFinality::Outsourced => ChainInformationFinalityRef::Outsourced,
                 ChainInformationFinality::Grandpa {
                     finalized_triggered_authorities,
                     after_finalized_block_authorities_set_id,
@@ -448,6 +462,10 @@ impl<'a> From<&'a BabeEpochInformation> for BabeEpochInformationRef<'a> {
 /// Extra items that depend on the finality engine.
 #[derive(Debug, Clone)]
 pub enum ChainInformationFinalityRef<'a> {
+    /// See equivalent variant in [`ChainInformationFinality`].
+    Outsourced,
+
+    /// See equivalent variant in [`ChainInformationFinality`].
     Grandpa {
         /// See equivalent field in [`ChainInformationFinality`].
         after_finalized_block_authorities_set_id: u64,
