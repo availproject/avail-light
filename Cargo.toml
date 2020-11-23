@@ -10,7 +10,9 @@ readme = "README.md"
 keywords = ["blockchain", "peer-to-peer"]
 
 [workspace]
+default-members = [".", "bin/full-node"]
 members = [
+    ".",
     "bin/full-node",
     "bin/wasm-node/rust",
 ]
