@@ -42,12 +42,12 @@ async fn async_main() {
     let cli_options = cli::CliOptions::from_args();
 
     let chain_spec = {
-        let json: Cow<[u8]> = match cli_options.chain {
+        let json: Cow<[u8]> = match &cli_options.chain {
             cli::CliChain::Polkadot => (&include_bytes!("../polkadot.json")[..]).into(),
             cli::CliChain::Kusama => (&include_bytes!("../kusama.json")[..]).into(),
             cli::CliChain::Westend => (&include_bytes!("../westend.json")[..]).into(),
             cli::CliChain::Custom(path) => {
-                fs::read(&path).expect("Failed to read chain specs").into()
+                fs::read(path).expect("Failed to read chain specs").into()
             }
         };
 
@@ -55,59 +55,46 @@ async fn async_main() {
             .expect("Failed to decode chain specs")
     };
 
+    // If `chain_spec` define a parachain, also load the specs of the relay chain.
+    let (relay_chain_spec, parachain_id) =
+        if let Some((relay_chain_name, parachain_id)) = chain_spec.relay_chain() {
+            let json: Cow<[u8]> = match &cli_options.chain {
+                cli::CliChain::Custom(parachain_path) => {
+                    // TODO: this is a bit of a hack
+                    let relay_chain_path = parachain_path
+                        .parent()
+                        .unwrap()
+                        .join(format!("{}.json", relay_chain_name));
+                    fs::read(&relay_chain_path)
+                        .expect("Failed to read relay chain specs")
+                        .into()
+                }
+                _ => panic!("Unexpected relay chain specified in hard-coded specs"),
+            };
+
+            let spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(&json)
+                .expect("Failed to decode relay chain chain specs");
+
+            // Make sure we're not accidentally opening the same chain twice, otherwise weird
+            // interactions will happen.
+            assert_ne!(spec.id(), chain_spec.id());
+
+            (Some(spec), Some(parachain_id))
+        } else {
+            (None, None)
+        };
+
     let threads_pool = futures::executor::ThreadPool::builder()
         .name_prefix("tasks-pool-")
         .create()
         .unwrap();
 
-    // Open the database from the filesystem, or create a new database if none is found.
-    let database = Arc::new({
-        // Directory supposed to contain the database.
-        let db_path = {
-            let base_path =
-                app_dirs::app_dir(app_dirs::AppDataType::UserData, &cli::APP_INFO, "database")
-                    .unwrap();
-            base_path.join(chain_spec.id())
-        };
-
-        // The `unwrap()` here can panic for example in case of access denied.
-        match open_database(db_path.clone()).await.unwrap() {
-            // Database already exists and contains data.
-            full_sled::DatabaseOpen::Open(database) => {
-                // TODO: verify that the database matches the chain spec
-                // TODO: print the hash in a nicer way
-                eprintln!(
-                    "Loading existing database with finalized hash {:?}",
-                    database.finalized_block_hash().unwrap()
-                );
-                database
-            }
-
-            // The database doesn't exist or is empty.
-            full_sled::DatabaseOpen::Empty(empty) => {
-                // Build information about state of the chain at the genesis block, and fill the
-                // database with it.
-                let genesis_chain_information =
-                    chain::chain_information::ChainInformation::from_genesis_storage(
-                        chain_spec.genesis_storage(),
-                    )
-                    .unwrap(); // TODO: don't unwrap?
-
-                eprintln!("Initializing new database at {}", db_path.display());
-
-                // The finalized block is the genesis block. As such, it has an empty body and
-                // no justification.
-                empty
-                    .initialize(
-                        &genesis_chain_information,
-                        iter::empty(),
-                        None,
-                        chain_spec.genesis_storage(),
-                    )
-                    .unwrap()
-            }
-        }
-    });
+    let database = open_database(&chain_spec).await;
+    let relay_chain_database = if let Some(relay_chain_spec) = &relay_chain_spec {
+        Some(open_database(&relay_chain_spec).await)
+    } else {
+        None
+    };
 
     // TODO: remove; just for testing
     /*let metadata = substrate_lite::metadata::metadata_from_runtime_code(
@@ -129,6 +116,7 @@ async fn async_main() {
         protocol_id: chain_spec.protocol_id().to_owned(),
         genesis_block_hash: database.finalized_block_hash().unwrap(),
         best_block: (0, database.finalized_block_hash().unwrap()),
+        // TODO: add relay chain bootstrap nodes
         bootstrap_nodes: {
             let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
             for node in chain_spec.boot_nodes() {
@@ -159,6 +147,21 @@ async fn async_main() {
         database,
     })
     .await;
+
+    let relay_chain_sync_service = if let Some(relay_chain_database) = relay_chain_database {
+        Some(
+            sync_service::SyncService::new(sync_service::Config {
+                tasks_executor: {
+                    let threads_pool = threads_pool.clone();
+                    Box::new(move |task| threads_pool.spawn_ok(task))
+                },
+                database: relay_chain_database,
+            })
+            .await,
+        )
+    } else {
+        None
+    };
 
     /*let mut telemetry = {
         let endpoints = chain_spec
@@ -201,6 +204,15 @@ async fn async_main() {
                             cli::ColorChoice::Never => false,
                         },
                         chain_name: chain_spec.name(),
+                        relay_chain: if let Some(relay_chain_spec) = &relay_chain_spec {
+                            let relay_sync_state = relay_chain_sync_service.as_ref().unwrap().sync_state().await;
+                            Some(substrate_lite::informant::RelayChain {
+                                chain_name: relay_chain_spec.name(),
+                                best_number: relay_sync_state.best_block_number,
+                            })
+                        } else {
+                            None
+                        },
                         max_line_width: terminal_size::terminal_size().map(|(w, _)| w.0.into()).unwrap_or(80),
                         num_network_connections: u64::try_from(network_service.num_established_connections().await)
                             .unwrap_or(u64::max_value()),
@@ -229,6 +241,31 @@ async fn async_main() {
 
             sync_message = sync_service.next_event().fuse() => {
                 match sync_message {
+                    sync_service::Event::BlocksRequest { id, target, request } => {
+                        let block_request = network_service.clone().blocks_request(
+                            target,
+                            request
+                        );
+
+                        threads_pool.spawn_ok({
+                            let sync_service = sync_service.clone();
+                            async move {
+                                let result = block_request.await;
+                                sync_service.answer_blocks_request(id, result).await;
+                            }
+                        });
+                    }
+                }
+            }
+
+            relay_chain_sync_message = async {
+                if let Some(relay_chain_sync_service) = &relay_chain_sync_service {
+                    relay_chain_sync_service.next_event().await
+                } else {
+                    future::pending().await
+                }
+            }.fuse() => {
+                match relay_chain_sync_message {
                     sync_service::Event::BlocksRequest { id, target, request } => {
                         let block_request = network_service.clone().blocks_request(
                             target,
@@ -287,9 +324,68 @@ async fn async_main() {
     }
 }
 
+/// Opens the database from the filesystem, or create a new database if none is found.
+///
+/// # Panic
+///
+/// Panics if the database can't be open. This function is expected to be called from the `main`
+/// function.
+///
+async fn open_database(chain_spec: &chain_spec::ChainSpec) -> Arc<full_sled::SledFullDatabase> {
+    Arc::new({
+        // Directory supposed to contain the database.
+        let db_path = {
+            let base_path =
+                app_dirs::app_dir(app_dirs::AppDataType::UserData, &cli::APP_INFO, "database")
+                    .unwrap();
+            base_path.join(chain_spec.id())
+        };
+
+        // The `unwrap()` here can panic for example in case of access denied.
+        match background_open_database(db_path.clone()).await.unwrap() {
+            // Database already exists and contains data.
+            full_sled::DatabaseOpen::Open(database) => {
+                // TODO: verify that the database matches the chain spec
+                // TODO: print the hash in a nicer way
+                eprintln!(
+                    "Loading existing database with finalized hash {:?}",
+                    database.finalized_block_hash().unwrap()
+                );
+                database
+            }
+
+            // The database doesn't exist or is empty.
+            full_sled::DatabaseOpen::Empty(empty) => {
+                // Build information about state of the chain at the genesis block, and fill the
+                // database with it.
+                let genesis_chain_information =
+                    chain::chain_information::ChainInformation::from_genesis_storage(
+                        chain_spec.genesis_storage(),
+                    )
+                    .unwrap(); // TODO: don't unwrap?
+
+                eprintln!("Initializing new database at {}", db_path.display());
+
+                // The finalized block is the genesis block. As such, it has an empty body and
+                // no justification.
+                empty
+                    .initialize(
+                        &genesis_chain_information,
+                        iter::empty(),
+                        None,
+                        chain_spec.genesis_storage(),
+                    )
+                    .unwrap()
+            }
+        }
+    })
+}
+
 /// Since opening the database can take a long time, this utility function performs this operation
 /// in the background while showing a small progress bar to the user.
-async fn open_database(path: PathBuf) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {
+async fn background_open_database(
+    path: PathBuf,
+) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {
     let (tx, rx) = oneshot::channel();
     let mut rx = rx.fuse();
 

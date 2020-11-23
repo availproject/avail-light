@@ -33,6 +33,7 @@
 //! eprint!("{}\r", InformantLine {
 //!     enable_colors: true,
 //!     chain_name: "My chain",
+//!     relay_chain: None,
 //!     max_line_width: 80,
 //!     num_network_connections: 12,
 //!     best_number: 220,
@@ -57,6 +58,8 @@ pub struct InformantLine<'a> {
     pub enable_colors: bool,
     /// Name of the chain.
     pub chain_name: &'a str,
+    /// Extra fields related to the relay chain.
+    pub relay_chain: Option<RelayChain<'a>>,
     /// Maximum number of characters of the informant line.
     pub max_line_width: u32,
     /// Number of network connections we are having with the rest of the peer-to-peer network.
@@ -73,6 +76,15 @@ pub struct InformantLine<'a> {
     pub finalized_hash: &'a [u8],
 }
 
+/// Extra fields if a relay chain exists.
+#[derive(Debug)]
+pub struct RelayChain<'a> {
+    /// Name of the chain.
+    pub chain_name: &'a str,
+    /// Number of the best block that we have locally.
+    pub best_number: u64,
+}
+
 impl<'a> fmt::Display for InformantLine<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: lots of allocations in here
@@ -81,18 +93,37 @@ impl<'a> fmt::Display for InformantLine<'a> {
         // Define the escape sequences used below for colouring purposes.
         let cyan = if self.enable_colors { "\x1b[36m" } else { "" };
         let white_bold = if self.enable_colors { "\x1b[1;37m" } else { "" };
+        let light_gray = if self.enable_colors { "\x1b[90m" } else { "" };
         let reset = if self.enable_colors { "\x1b[0m" } else { "" };
 
-        let header = format!(
-            "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} [",
-            cyan = cyan,
-            reset = reset,
-            white_bold = white_bold,
-            chain_name = self.chain_name,
-            local_best = self.best_number,
-        );
+        let (header, header_len) = if let Some(relay_chain) = &self.relay_chain {
+            let header = format!(
+                "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} {light_gray}({relay_chain_name} #{relay_best}){reset} [",
+                cyan = cyan,
+                reset = reset,
+                white_bold = white_bold,
+                light_gray = light_gray,
+                chain_name = self.chain_name,
+                relay_chain_name = relay_chain.chain_name,
+                local_best = self.best_number,
+                relay_best = relay_chain.best_number,
+            );
 
-        let header_len = self.chain_name.chars().count() + 17; // TODO: ? it's easier to do that than deal with unicode
+            let header_len = self.chain_name.chars().count() + relay_chain.chain_name.len() + 27; // TODO: ? it's easier to do that than deal with unicode
+            (header, header_len)
+        } else {
+            let header = format!(
+                "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} [",
+                cyan = cyan,
+                reset = reset,
+                white_bold = white_bold,
+                chain_name = self.chain_name,
+                local_best = self.best_number,
+            );
+
+            let header_len = self.chain_name.chars().count() + 17; // TODO: ? it's easier to do that than deal with unicode
+            (header, header_len)
+        };
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(

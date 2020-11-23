@@ -199,6 +199,14 @@ impl ChainSpec {
             .unwrap_or("sup")
     }
 
+    // TODO: this API is probably unstable, as the meaning of the string is unclear
+    pub fn relay_chain(&self) -> Option<(&str, u32)> {
+        self.client_spec
+            .parachain
+            .as_ref()
+            .map(|p| (p.relay_chain.as_str(), p.para_id))
+    }
+
     /// Returns the list of storage keys and values of the genesis block.
     pub fn genesis_storage(&self) -> impl ExactSizeIterator<Item = (&[u8], &[u8])> + Clone {
         let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
