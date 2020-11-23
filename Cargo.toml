@@ -8,10 +8,10 @@ license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
 edition = "2018"
 readme = "README.md"
 keywords = ["blockchain", "peer-to-peer"]
-default-run = "full-node"
 
 [workspace]
 members = [
+    "bin/full-node",
     "bin/wasm-node/rust",
 ]
 
@@ -21,31 +21,14 @@ database-sled = [
     "sled",
 ]
 std = [
-    "app_dirs",
     "async-std",
-    "atty",
     "corooteen",
     "futures/std",
     "futures/thread-pool",
-    "futures-timer",
-    "rand/std",
-    "rand_chacha/std",
+    "pin-project",
     "soketto",
-    "structopt",
-    "terminal_size",
-    "url",
     "wasmtime",
 ]
-
-[[bin]]
-name = "full-node"
-path = "bin/full-node/main.rs"
-required-features = ["database-sled", "std"]
-
-[[bin]]
-name = "json-rpc-test"
-path = "bin/json-rpc-test/main.rs"
-required-features = ["std"]
 
 [dependencies]
 # This section contains only no_std-compatible crates. See below for std-only crates.
@@ -55,7 +38,6 @@ required-features = ["std"]
 # not, or if things are sketchy, please leave a comment next to it.
 ahash = { version = "0.5.8", default-features = false }
 arrayvec = { version = "0.5.2", default-features = false }
-atomic = "0.5.0"
 blake2-rfc = { version = "0.2.18", default-features = false }
 bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
 derive_more = "0.99.11"
@@ -65,7 +47,6 @@ fnv = { version = "1.0.7", default-features = false }
 hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 libsecp256k1 = { version = "0.3.5", default-features = false }
-lru = "0.6.1"   # TODO: audit the unsafe code in that crate
 merlin = { version = "2.0", default-features = false }
 multihash = "0.11.4"  # TODO: waiting for a crates.io publication of https://github.com/multiformats/rust-multihash/pull/82 that adds no_std support
 nom = { version = "6.0.0", default-features = false, features = ["alloc"] }
@@ -73,7 +54,6 @@ num-bigint = { version = "0.3.1", default-features = false }
 num-rational = { version = "0.3.2", default-features = false, features = ["num-bigint"] }
 num-traits = { version = "0.2.14", default-features = false }
 parity-multiaddr = "0.9.4" # TODO: doesn't support no_std
-pin-project = "1.0.2"
 prost = "0.6.1"  # TODO: waiting for a published version that supports no_std
 rand = { version = "0.7.3", default-features = false }
 rand_chacha = { version = "0.2.2", default-features = false }
@@ -93,15 +73,10 @@ sled = { version = "0.34.6", optional = true, features = ["compression"] }
 
 # `std` feature
 # Add here the crates that cannot function without the help of the operating system or environment.
-app_dirs = { version = "1.2.1", optional = true }
 async-std = { version = "1.7.0", optional = true }
-atty = { version = "0.2.14", optional = true }
 futures = { version = "0.3.8", default-features = false, optional = true }
-futures-timer = { version = "3.0", optional = true }
+pin-project = { version = "1.0.2", optional = true }
 soketto = { version = "0.4.2", optional = true }
-structopt = { version = "0.3.20", optional = true, default-features = false, features = ["color", "suggestions", "wrap_help"] }
-terminal_size = { version = "0.1.12", optional = true }
-url = { version = "2.2.0", optional = true }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:

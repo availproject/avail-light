@@ -1,0 +1,29 @@
+[package]
+name = "substrate-lite-full-node"
+version = "0.1.0"
+authors = ["Parity Technologies <admin@parity.io>", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
+description = "Substrate/Polkadot full node using substrate-lite"
+repository = "https://github.com/paritytech/substrate-lite"
+license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
+edition = "2018"
+publish = false
+default-run = "full-node"
+
+[[bin]]
+name = "full-node"
+path = "src/main.rs"
+
+[dependencies]
+app_dirs = "1.2.1"
+async-std = "1.7.0"
+atty = "0.2.14"
+derive_more = "0.99.11"
+fnv = { version = "1.0.7", default-features = false }
+futures = { version = "0.3.8", default-features = false, features = ["std", "thread-pool"] }
+futures-timer = "3.0"
+hashbrown = { version = "0.9.1", default-features = false }
+rand = "0.7.3"
+slab = "0.4.2"
+substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }
+structopt = { version = "0.3.20", default-features = false, features = ["color", "suggestions", "wrap_help"] }
+terminal_size = "0.1.12"

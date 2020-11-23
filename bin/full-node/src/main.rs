@@ -17,7 +17,7 @@
 
 #![recursion_limit = "1024"]
 #![deny(broken_intra_doc_links)]
-// TODO: add #![deny(unused_crate_dependencies)]
+#![deny(unused_crate_dependencies)]
 
 use futures::{channel::oneshot, prelude::*};
 use std::{
@@ -43,9 +43,9 @@ async fn async_main() {
 
     let chain_spec = {
         let json: Cow<[u8]> = match &cli_options.chain {
-            cli::CliChain::Polkadot => (&include_bytes!("../polkadot.json")[..]).into(),
-            cli::CliChain::Kusama => (&include_bytes!("../kusama.json")[..]).into(),
-            cli::CliChain::Westend => (&include_bytes!("../westend.json")[..]).into(),
+            cli::CliChain::Polkadot => (&include_bytes!("../../polkadot.json")[..]).into(),
+            cli::CliChain::Kusama => (&include_bytes!("../../kusama.json")[..]).into(),
+            cli::CliChain::Westend => (&include_bytes!("../../westend.json")[..]).into(),
             cli::CliChain::Custom(path) => {
                 fs::read(path).expect("Failed to read chain specs").into()
             }

@@ -71,12 +71,6 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6789e291be47ace86a60303502173d84af8327e3627ecf334356ee0f87a164c"
-
-[[package]]
-name = "ahash"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4eb6ec8807cd25b59e6b8100815afc73f54e294f1a425a2e555971969889a8f8"
@@ -230,15 +224,6 @@ name = "async-task"
 version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91831deabf0d6d7ec49552e489aed63b7456a7a3c46cff62adad428110b0af0"
-
-[[package]]
-name = "atomic"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3410529e8288c463bedb5930f82833bc0c90e5d2fe639a56582a4d09220b281"
-dependencies = [
- "autocfg",
-]
 
 [[package]]
 name = "atomic-waker"
@@ -1047,7 +1032,6 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
 dependencies = [
- "ahash 0.4.6",
  "serde",
 ]
 
@@ -1216,15 +1200,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
 dependencies = [
  "cfg-if 0.1.10",
-]
-
-[[package]]
-name = "lru"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be716eb6878ca2263eb5d00a781aa13264a794f519fe6af4fbb2668b2d5441c0"
-dependencies = [
- "hashbrown 0.9.1",
 ]
 
 [[package]]
@@ -2107,12 +2082,9 @@ dependencies = [
 name = "substrate-lite"
 version = "0.1.0"
 dependencies = [
- "ahash 0.5.8",
- "app_dirs",
+ "ahash",
  "arrayvec 0.5.2",
  "async-std",
- "atomic",
- "atty",
  "blake2-rfc",
  "bs58",
  "corooteen",
@@ -2121,11 +2093,9 @@ dependencies = [
  "either",
  "fnv",
  "futures",
- "futures-timer",
  "hashbrown 0.9.1",
  "hex",
  "libsecp256k1",
- "lru",
  "merlin",
  "multihash",
  "nom",
@@ -2148,13 +2118,29 @@ dependencies = [
  "smallvec",
  "snow",
  "soketto",
- "structopt",
- "terminal_size",
  "tiny-keccak",
  "twox-hash",
- "url",
  "wasmi",
  "wasmtime",
+]
+
+[[package]]
+name = "substrate-lite-full-node"
+version = "0.1.0"
+dependencies = [
+ "app_dirs",
+ "async-std",
+ "atty",
+ "derive_more",
+ "fnv",
+ "futures",
+ "futures-timer",
+ "hashbrown 0.9.1",
+ "rand",
+ "slab",
+ "structopt",
+ "substrate-lite",
+ "terminal_size",
 ]
 
 [[package]]
