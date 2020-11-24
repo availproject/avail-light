@@ -55,7 +55,7 @@ nom = { version = "6.0.0", default-features = false, features = ["alloc"] }
 num-bigint = { version = "0.3.1", default-features = false }
 num-rational = { version = "0.3.2", default-features = false, features = ["num-bigint"] }
 num-traits = { version = "0.2.14", default-features = false }
-parity-multiaddr = "0.9.4" # TODO: doesn't support no_std
+parity-multiaddr = "0.9.6" # TODO: doesn't support no_std
 prost = "0.6.1"  # TODO: waiting for a published version that supports no_std
 rand = { version = "0.7.3", default-features = false }
 rand_chacha = { version = "0.2.2", default-features = false }
