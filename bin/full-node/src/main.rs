@@ -130,7 +130,12 @@ async fn async_main() {
             }
             list
         },
-        noise_key: connection::NoiseKey::new(&rand::random()), // TODO: not random
+        noise_key: if let Some(node_key) = cli_options.node_key {
+            connection::NoiseKey::new(node_key.as_ref())
+        } else {
+            // TODO: load from disk or something instead
+            connection::NoiseKey::new(&rand::random())
+        },
         tasks_executor: {
             let threads_pool = threads_pool.clone();
             Box::new(move |task| threads_pool.spawn_ok(task))

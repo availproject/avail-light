@@ -18,10 +18,12 @@ app_dirs = "1.2.1"
 async-std = "1.7.0"
 atty = "0.2.14"
 derive_more = "0.99.11"
+ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "u64_backend"] }
 fnv = { version = "1.0.7", default-features = false }
 futures = { version = "0.3.8", default-features = false, features = ["std", "thread-pool"] }
 futures-timer = "3.0"
 hashbrown = { version = "0.9.1", default-features = false }
+hex = { version = "0.4.2", default-features = false }
 rand = "0.7.3"
 slab = "0.4.2"
 substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }

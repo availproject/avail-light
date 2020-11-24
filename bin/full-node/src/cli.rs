@@ -52,6 +52,9 @@ pub struct CliOptions {
     /// Coloring: auto, always, never
     #[structopt(long, default_value = "auto")]
     pub color: ColorChoice,
+    /// Ed25519 private key of network identity (32 bytes hexadecimal).
+    #[structopt(long)]
+    pub node_key: Option<NodeKey>,
 }
 
 #[derive(Debug)]
@@ -104,3 +107,48 @@ impl core::str::FromStr for ColorChoice {
 #[derive(Debug, derive_more::Display)]
 #[display(fmt = "Color must be one of: always, auto, never")]
 pub struct ColorChoiceParseError;
+
+// Note: while it is tempting to zero-ize the content of `NodeKey` on Drop, since the node key is
+// passed through the CLI, it is going to be present at several other locations in memory, plus on
+// the system. Any zero-ing here would be completely superfluous.
+#[derive(Debug)]
+pub struct NodeKey([u8; 32]);
+
+impl core::str::FromStr for NodeKey {
+    type Err = NodeKeyParseError;
+
+    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with("0x") {
+            s = &s[2..];
+        }
+
+        if s.len() != 64 {
+            return Err(NodeKeyParseError::BadLength);
+        }
+
+        let bytes = hex::decode(s).map_err(NodeKeyParseError::FromHex)?;
+
+        let mut out = [0; 32];
+        out.copy_from_slice(&bytes);
+
+        ed25519_dalek::SecretKey::from_bytes(&out).map_err(|_| NodeKeyParseError::BadKey)?;
+
+        Ok(NodeKey(out))
+    }
+}
+
+impl AsRef<[u8; 32]> for NodeKey {
+    fn as_ref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Debug, derive_more::Display)]
+pub enum NodeKeyParseError {
+    #[display(fmt = "Expected 64 hexadecimal digits")]
+    BadLength,
+    #[display(fmt = "{}", _0)]
+    FromHex(hex::FromHexError),
+    #[display(fmt = "Invalid ed25519 private key")]
+    BadKey,
+}
