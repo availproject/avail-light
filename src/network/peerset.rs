@@ -175,6 +175,11 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
             .count()
     }
 
+    /// Returns the number of overlay networks registered towards the peerset.
+    pub fn num_overlay_networks(&self) -> usize {
+        self.num_overlay_networks
+    }
+
     /// Returns the list of nodes that belong to the given overlay network.
     ///
     /// # Panic
@@ -287,7 +292,7 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
     /// Gives access to a pending connection within the [`Peerset`].
     pub fn pending_mut(
         &mut self,
-        id: PendingId,
+        id: ConnectionId,
     ) -> Option<PendingMut<TPeer, TConn, TPending, TSub, TPendingSub>> {
         if self
             .connections
@@ -316,6 +321,30 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
         }
     }
 
+    /// Gives access to a connection within the [`Peerset`].
+    pub fn pending_or_connection_mut(
+        &mut self,
+        id: ConnectionId,
+    ) -> Option<PendingOrConnectionMut<TPeer, TConn, TPending, TSub, TPendingSub>> {
+        if let Some(c) = self.connections.get(id.0) {
+            match c.ty {
+                ConnectionTy::Connected { .. } => {
+                    Some(PendingOrConnectionMut::Connection(ConnectionMut {
+                        peerset: self,
+                        id,
+                    }))
+                }
+                ConnectionTy::Pending { .. } => Some(PendingOrConnectionMut::Pending(PendingMut {
+                    peerset: self,
+                    id,
+                })),
+                ConnectionTy::Poisoned => unreachable!(),
+            }
+        } else {
+            None
+        }
+    }
+
     /// Gives access to the state of the node with the given identity.
     pub fn node_mut(
         &mut self,
@@ -335,8 +364,14 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
     }
 }
 
+/// Access to a connection in the [`Peerset`].
+pub enum PendingOrConnectionMut<'a, TPeer, TConn, TPending, TSub, TPendingSub> {
+    Pending(PendingMut<'a, TPeer, TConn, TPending, TSub, TPendingSub>),
+    Connection(ConnectionMut<'a, TPeer, TConn, TPending, TSub, TPendingSub>),
+}
+
 /// Identifier for a connection in a [`Peerset`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectionId(usize);
 
 /// Access to a connection in the [`Peerset`].
@@ -408,14 +443,10 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     }
 }
 
-/// Identifier for a pending connection in a [`Peerset`].
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct PendingId(usize);
-
 /// Access to a connection in the [`Peerset`].
 pub struct PendingMut<'a, TPeer, TConn, TPending, TSub, TPendingSub> {
     peerset: &'a mut Peerset<TPeer, TConn, TPending, TSub, TPendingSub>,
-    id: PendingId,
+    id: ConnectionId,
 }
 
 impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
@@ -542,6 +573,14 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     {
         self.or_insert_with(Default::default)
     }
+
+    /// Shortcut method. If [`NodeMut::Known`], returns a `Some` containing it.
+    pub fn into_known(self) -> Option<NodeMutKnown<'a, TPeer, TConn, TPending, TSub, TPendingSub>> {
+        match self {
+            NodeMut::Known(k) => Some(k),
+            NodeMut::Unknown(k) => None,
+        }
+    }
 }
 
 /// Access to a node is already known to the data structure.
@@ -578,7 +617,11 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     }
 
     // TODO: what if Multiaddr isn't in known addresses? do we add it?
-    pub fn add_outbound_attempt(&mut self, target: Multiaddr, connection: TPending) -> PendingId {
+    pub fn add_outbound_attempt(
+        &mut self,
+        target: Multiaddr,
+        connection: TPending,
+    ) -> ConnectionId {
         let index = self.peerset.connections.insert(Connection {
             peer_index: self.peer_index,
             ty: ConnectionTy::Pending {
@@ -593,7 +636,7 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             .insert((self.peer_index, index));
         debug_assert!(_newly_inserted);
 
-        PendingId(index)
+        ConnectionId(index)
     }
 
     /// Returns an iterator to the list of current connections to that node.
@@ -608,14 +651,14 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     }
 
     /// Returns an iterator to the list of current pending connections to that node.
-    pub fn pending_connections<'b>(&'b self) -> impl Iterator<Item = PendingId> + 'b {
+    pub fn pending_connections<'b>(&'b self) -> impl Iterator<Item = ConnectionId> + 'b {
         self.peerset.peer_connections
             .range((self.peer_index, 0)..=(self.peer_index, usize::max_value()))
             .map(|(_, i)| *i)
             .filter(move |idx| {
                 matches!(self.peerset.connections[*idx].ty, ConnectionTy::Pending { .. })
             })
-            .map(PendingId)
+            .map(ConnectionId)
     }
 
     /// Adds an address to the list of addresses the node is reachable through.

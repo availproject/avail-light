@@ -25,7 +25,6 @@ database-sled = [
 std = [
     "async-std",
     "corooteen",
-    "futures/std",
     "futures/thread-pool",
     "pin-project",
     "soketto",
@@ -46,6 +45,7 @@ derive_more = "0.99.11"
 ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "batch", "u64_backend"] }
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
+futures = "0.3.8"   # TODO: no-std-ize
 hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 libsecp256k1 = { version = "0.3.5", default-features = false }
@@ -76,7 +76,6 @@ sled = { version = "0.34.6", optional = true, features = ["compression"] }
 # `std` feature
 # Add here the crates that cannot function without the help of the operating system or environment.
 async-std = { version = "1.7.0", optional = true }
-futures = { version = "0.3.8", default-features = false, optional = true }
 pin-project = { version = "1.0.2", optional = true }
 soketto = { version = "0.4.2", optional = true }
 

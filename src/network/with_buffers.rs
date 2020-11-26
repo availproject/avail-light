@@ -221,6 +221,53 @@ impl<T> WithBuffers<T> {
             self.close_pending = true;
         }
     }
+
+    /// True if [`WithBuffers::close`] has been called earlier.
+    pub fn is_closed(&self) -> bool {
+        self.write_closed
+    }
+}
+
+impl<T> WithBuffers<T>
+where
+    T: AsyncWrite,
+{
+    /// Wait until the socket has been properly closed.
+    ///
+    /// Implicitly calls [`WithBuffers::close`] if it hasn't been done.
+    ///
+    /// Has no effect if an error has happened in the past on the socket.
+    ///
+    /// This is similar to [`WithBuffers::process`], except that no reading or writing is ever
+    /// performed.
+    pub async fn flush_close(self: Pin<&mut Self>) {
+        let mut this = self.project();
+
+        if !*this.write_closed {
+            *this.write_closed = true;
+            debug_assert!(!*this.close_pending);
+            *this.close_pending = true;
+        }
+
+        future::poll_fn(move |cx| {
+            if !*this.close_pending || this.error.is_some() {
+                return Poll::Ready(());
+            }
+
+            match AsyncWrite::poll_close(this.socket.as_mut(), cx) {
+                Poll::Ready(Ok(())) => {
+                    *this.close_pending = false;
+                    return Poll::Ready(());
+                }
+                Poll::Ready(Err(err)) => {
+                    *this.error = Some(err);
+                    return Poll::Ready(());
+                }
+                Poll::Pending => Poll::Pending,
+            }
+        })
+        .await
+    }
 }
 
 impl<T> WithBuffers<T>
