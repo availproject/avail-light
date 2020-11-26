@@ -28,4 +28,4 @@ rand = "0.7.3"
 slab = "0.4.2"
 substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }
 structopt = { version = "0.3.20", default-features = false, features = ["color", "suggestions", "wrap_help"] }
-terminal_size = "0.1.12"
+terminal_size = "0.1.15"
