@@ -55,6 +55,9 @@ pub struct CliOptions {
     /// Ed25519 private key of network identity (32 bytes hexadecimal).
     #[structopt(long)]
     pub node_key: Option<NodeKey>,
+    /// Do not load or store anything on disk.
+    #[structopt(long)]
+    pub tmp: bool,
 }
 
 #[derive(Debug)]

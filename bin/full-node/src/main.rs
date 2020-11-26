@@ -89,9 +89,9 @@ async fn async_main() {
         .create()
         .unwrap();
 
-    let database = open_database(&chain_spec).await;
+    let database = open_database(&chain_spec, cli_options.tmp).await;
     let relay_chain_database = if let Some(relay_chain_spec) = &relay_chain_spec {
-        Some(open_database(&relay_chain_spec).await)
+        Some(open_database(&relay_chain_spec, cli_options.tmp).await)
     } else {
         None
     };
@@ -331,19 +331,26 @@ async fn async_main() {
 
 /// Opens the database from the filesystem, or create a new database if none is found.
 ///
+/// If `tmp` is `true`, open the database in memory instead.
+///
 /// # Panic
 ///
 /// Panics if the database can't be open. This function is expected to be called from the `main`
 /// function.
 ///
-async fn open_database(chain_spec: &chain_spec::ChainSpec) -> Arc<full_sled::SledFullDatabase> {
+async fn open_database(
+    chain_spec: &chain_spec::ChainSpec,
+    tmp: bool,
+) -> Arc<full_sled::SledFullDatabase> {
     Arc::new({
         // Directory supposed to contain the database.
-        let db_path = {
+        let db_path = if !tmp {
             let base_path =
                 app_dirs::app_dir(app_dirs::AppDataType::UserData, &cli::APP_INFO, "database")
                     .unwrap();
-            base_path.join(chain_spec.id())
+            Some(base_path.join(chain_spec.id()))
+        } else {
+            None
         };
 
         // The `unwrap()` here can panic for example in case of access denied.
@@ -369,8 +376,6 @@ async fn open_database(chain_spec: &chain_spec::ChainSpec) -> Arc<full_sled::Sle
                     )
                     .unwrap(); // TODO: don't unwrap?
 
-                eprintln!("Initializing new database at {}", db_path.display());
-
                 // The finalized block is the genesis block. As such, it has an empty body and
                 // no justification.
                 empty
@@ -388,8 +393,10 @@ async fn open_database(chain_spec: &chain_spec::ChainSpec) -> Arc<full_sled::Sle
 
 /// Since opening the database can take a long time, this utility function performs this operation
 /// in the background while showing a small progress bar to the user.
+///
+/// If `path` is `None`, the database is opened in memory.
 async fn background_open_database(
-    path: PathBuf,
+    path: Option<PathBuf>,
 ) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {
     let (tx, rx) = oneshot::channel();
     let mut rx = rx.fuse();
@@ -397,14 +404,26 @@ async fn background_open_database(
     let thread_spawn_result = thread::Builder::new().name("database-open".into()).spawn({
         let path = path.clone();
         move || {
-            let result = full_sled::open(full_sled::Config { path: &path });
+            let result = full_sled::open(full_sled::Config {
+                ty: if let Some(path) = &path {
+                    full_sled::ConfigTy::Disk(path)
+                } else {
+                    full_sled::ConfigTy::Memory
+                },
+            });
             let _ = tx.send(result);
         }
     });
 
     // Fall back to opening the database on the same thread if the thread spawn failed.
     if thread_spawn_result.is_err() {
-        return full_sled::open(full_sled::Config { path: &path });
+        return full_sled::open(full_sled::Config {
+            ty: if let Some(path) = &path {
+                full_sled::ConfigTy::Disk(path)
+            } else {
+                full_sled::ConfigTy::Memory
+            },
+        });
     }
 
     let mut progress_timer = stream::unfold((), move |_| {

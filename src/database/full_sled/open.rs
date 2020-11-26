@@ -32,12 +32,17 @@ use std::path::Path;
 ///
 /// Note that this doesn't return a [`SledFullDatabase`], but rather a [`DatabaseOpen`].
 pub fn open(config: Config) -> Result<DatabaseOpen, SledError> {
-    let database = sled::Config::default()
-        // We put a `/v1/` behind the path in case we change the schema.
-        .path(config.path.join("v1"))
-        .use_compression(true)
-        .open()
-        .map_err(SledError)?;
+    let database = {
+        let mut cfg = sled::Config::default();
+        match config.ty {
+            ConfigTy::Disk(path) => {
+                // We put a `/v1/` behind the path in case we change the schema.
+                cfg = cfg.path(path.join("v1"));
+            }
+            ConfigTy::Memory => cfg = cfg.temporary(true),
+        };
+        cfg.use_compression(true).open().map_err(SledError)?
+    };
 
     let meta_tree = database.open_tree(b"meta").map_err(SledError)?;
     let block_hashes_by_number_tree = database
@@ -86,8 +91,17 @@ pub fn open(config: Config) -> Result<DatabaseOpen, SledError> {
 /// Configuration for the database.
 #[derive(Debug)]
 pub struct Config<'a> {
-    /// Path to the directory containing the database.
-    pub path: &'a Path,
+    /// Type of database.
+    pub ty: ConfigTy<'a>,
+}
+
+/// Type of database.
+#[derive(Debug)]
+pub enum ConfigTy<'a> {
+    /// Store the database on disk. Path to the directory containing the database.
+    Disk(&'a Path),
+    /// Store the database in memory. The database is discarded on destruction.
+    Memory,
 }
 
 /// Either existing database or database prototype.

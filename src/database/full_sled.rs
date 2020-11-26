@@ -175,7 +175,7 @@ use crate::{chain::chain_information, header, util};
 use core::{convert::TryFrom, fmt, iter, num::NonZeroU64, ops};
 use sled::Transactional as _;
 
-pub use open::{open, Config, DatabaseEmpty, DatabaseOpen};
+pub use open::{open, Config, ConfigTy, DatabaseEmpty, DatabaseOpen};
 
 mod open;
 
