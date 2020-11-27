@@ -220,12 +220,11 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
                     .map(|(_, connec_id)| *connec_id);
                 if iter
                     .clone()
-                    .filter(|connec_id| match connections[*connec_id].ty {
+                    .find(|connec_id| match connections[*connec_id].ty {
                         ConnectionTy::Connected { inbound, .. } => !inbound,
                         ConnectionTy::Pending { .. } => false,
                         ConnectionTy::Poisoned => unreachable!(),
                     })
-                    .next()
                     .is_none()
                 {
                     return false;

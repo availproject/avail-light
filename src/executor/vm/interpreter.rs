@@ -174,7 +174,7 @@ impl InterpreterPrototype {
             let resolver = ImportResolve {
                 functions: RefCell::new(&mut symbols),
                 import_memory: RefCell::new(&mut import_memory),
-                heap_pages: usize::try_from(heap_pages).unwrap_or(usize::max_value()),
+                heap_pages,
             };
             wasmi::ModuleInstance::new(&module, &resolver)
                 .map_err(|err| ModuleError(err.to_string()))
@@ -219,9 +219,9 @@ impl InterpreterPrototype {
         let heap_base_val = self
             .module
             .export_by_name(name)
-            .ok_or_else(|| GlobalValueErr::NotFound)?
+            .ok_or(GlobalValueErr::NotFound)?
             .as_global()
-            .ok_or_else(|| GlobalValueErr::Invalid)?
+            .ok_or(GlobalValueErr::Invalid)?
             .get();
 
         match heap_base_val {

@@ -245,7 +245,7 @@ where
             let yamux_decode = self
                 .yamux
                 .incoming_data(self.encryption.decoded_inbound_data())
-                .map_err(|err| Error::Yamux(err))?;
+                .map_err(Error::Yamux)?;
             self.yamux = yamux_decode.yamux;
 
             // TODO: it is possible that the yamux reading is blocked on writing
@@ -502,7 +502,7 @@ where
                                     wake_up_after,
                                     event: Some(Event::NotificationsOutAccept {
                                         id: SubstreamId(substream_id),
-                                        remote_handshake: remote_handshake.into(),
+                                        remote_handshake,
                                     }),
                                 });
                             }
@@ -621,7 +621,7 @@ where
                                     event: Some(Event::Response {
                                         id: SubstreamId(substream_id),
                                         user_data,
-                                        response: Ok(response.into()),
+                                        response: Ok(response),
                                     }),
                                 });
                             }
@@ -691,7 +691,7 @@ where
                                 event: Some(Event::NotificationsInOpen {
                                     id: SubstreamId(substream_id),
                                     protocol,
-                                    handshake: handshake.into(),
+                                    handshake,
                                 }),
                             });
                         }

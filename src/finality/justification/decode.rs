@@ -22,7 +22,7 @@ use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.
 // TODO: shouldn't this method be specific to Grandpa?
-pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<JustificationRef<'a>, Error> {
+pub fn decode(scale_encoded: &[u8]) -> Result<JustificationRef, Error> {
     match nom::combinator::all_consuming(justification)(scale_encoded) {
         Ok((_, justification)) => Ok(justification),
         Err(nom::Err::Failure(err)) => Err(Error(err.code)),

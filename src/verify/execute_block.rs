@@ -100,8 +100,8 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn execute_block<'a>(
-    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+pub fn execute_block(
+    config: Config<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
     let vm = runtime_host::run(runtime_host::Config {
         virtual_machine: config.parent_runtime,
@@ -155,13 +155,13 @@ impl Verify {
                     return Verify::Finished(Err(Error::NonEmptyOutput));
                 }
 
-                return Verify::Finished(Ok(Success {
+                Verify::Finished(Ok(Success {
                     parent_runtime: success.virtual_machine.into_prototype(),
                     storage_top_trie_changes: success.storage_top_trie_changes,
                     offchain_storage_changes: success.offchain_storage_changes,
                     top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
                     logs: success.logs,
-                }));
+                }))
             }
             runtime_host::RuntimeHostVm::Finished(Err(err)) => {
                 Verify::Finished(Err(Error::WasmVm(err)))

@@ -75,9 +75,7 @@ impl<T> NonFinalizedTreeInner<T> {
         scale_encoded_justification: &[u8],
     ) -> Result<JustificationApply<T>, JustificationVerifyError> {
         match &self.finality {
-            Finality::Outsourced => {
-                return Err(JustificationVerifyError::AlgorithmHasNoJustification);
-            }
+            Finality::Outsourced => Err(JustificationVerifyError::AlgorithmHasNoJustification),
             Finality::Grandpa {
                 after_finalized_block_authorities_set_id,
                 finalized_scheduled_change,
@@ -406,7 +404,7 @@ impl<'a, T> Iterator for SetFinalizedBlockIter<'a, T> {
 impl<'a, T> Drop for SetFinalizedBlockIter<'a, T> {
     fn drop(&mut self) {
         // Make sure the iteration goes to the end.
-        while let Some(_) = self.next() {}
+        for _ in self {}
 
         // TODO: update current_best with the new best block
     }

@@ -216,7 +216,7 @@ pub enum VerifyError {
 /// Panics if `config.parent_block_epoch` is `None` and `config.parent_header.number` is not 0.
 /// Panics if `config.header.number` is not `config.parent_block_header.number + 1`.
 ///
-pub fn verify_header<'a>(config: VerifyConfig<'a>) -> Result<VerifySuccess, VerifyError> {
+pub fn verify_header(config: VerifyConfig) -> Result<VerifySuccess, VerifyError> {
     // TODO: handle OnDisabled
 
     // Gather the BABE-related information from the header.

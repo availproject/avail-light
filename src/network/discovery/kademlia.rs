@@ -35,6 +35,12 @@ impl Kademlia {
     }
 }
 
+impl Default for Kademlia {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Builds a wire message to send on the Kademlia request-response protocol to ask the target to
 /// return the nodes closest to the parameter.
 // TODO: parameter type?

@@ -113,7 +113,7 @@ pub fn hash_from_scale_encoded_header_vectored(
 }
 
 /// Attempt to decode the given SCALE-encoded header.
-pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
+pub fn decode(scale_encoded: &[u8]) -> Result<HeaderRef, Error> {
     let (header, remainder) = decode_partial(scale_encoded)?;
     if !remainder.is_empty() {
         return Err(Error::TooLong);
@@ -126,7 +126,7 @@ pub fn decode<'a>(scale_encoded: &'a [u8]) -> Result<HeaderRef<'a>, Error> {
 ///
 /// Contrary to [`decode`], doesn't return an error if the slice is too long but returns the
 /// remainer.
-pub fn decode_partial<'a>(mut scale_encoded: &'a [u8]) -> Result<(HeaderRef<'a>, &'a [u8]), Error> {
+pub fn decode_partial(mut scale_encoded: &[u8]) -> Result<(HeaderRef, &[u8]), Error> {
     if scale_encoded.len() < 32 + 1 {
         return Err(Error::TooShort);
     }
@@ -1107,7 +1107,7 @@ pub struct ChangesTrieConfiguration {
 
 /// Decodes a single digest log item. On success, returns the item and the data that remains
 /// after the item.
-fn decode_item<'a>(mut slice: &'a [u8]) -> Result<(DigestItemRef<'a>, &'a [u8]), Error> {
+fn decode_item(mut slice: &[u8]) -> Result<(DigestItemRef, &[u8]), Error> {
     let index = *slice.get(0).ok_or(Error::TooShort)?;
     slice = &slice[1..];
 

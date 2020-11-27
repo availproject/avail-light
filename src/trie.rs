@@ -180,6 +180,12 @@ impl Trie {
     }
 }
 
+impl Default for Trie {
+    fn default() -> Self {
+        Trie::new()
+    }
+}
+
 /// Returns the Merkle value of the root of an empty trie.
 pub fn empty_trie_merkle_value() -> [u8; 32] {
     let mut calculation = calculate_root::root_merkle_value(None);

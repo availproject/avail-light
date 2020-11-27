@@ -213,8 +213,8 @@ where
     T: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
-        let mut iter1 = self.clone();
-        let mut iter2 = other.clone();
+        let mut iter1 = *self;
+        let mut iter2 = *other;
         loop {
             match (iter1.next(), iter2.next()) {
                 (None, None) => return true,

@@ -79,7 +79,7 @@ enum HandshakeState {
         is_initiator: bool,
     },
     NegotiatingEncryption {
-        handshake: noise::HandshakeInProgress,
+        handshake: Box<noise::HandshakeInProgress>,
     },
     NegotiatingMultiplexing {
         peer_id: PeerId,
@@ -229,7 +229,7 @@ impl HealthyHandshake {
                             return Ok((
                                 Handshake::Healthy(HealthyHandshake {
                                     state: HandshakeState::NegotiatingEncryption {
-                                        handshake: updated,
+                                        handshake: Box::new(updated),
                                     },
                                 }),
                                 total_read,
@@ -330,7 +330,10 @@ impl NoiseKeyRequired {
     pub fn resume(self, noise_key: &NoiseKey) -> HealthyHandshake {
         HealthyHandshake {
             state: HandshakeState::NegotiatingEncryption {
-                handshake: noise::HandshakeInProgress::new(noise_key, self.is_initiator),
+                handshake: Box::new(noise::HandshakeInProgress::new(
+                    noise_key,
+                    self.is_initiator,
+                )),
             },
         }
     }

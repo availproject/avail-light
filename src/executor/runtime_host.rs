@@ -223,7 +223,7 @@ impl StorageGet {
                 append_to_storage_value(&mut value, req.value());
                 self.inner
                     .top_trie_changes
-                    .insert(req.key().to_vec(), Some(value.clone()));
+                    .insert(req.key().to_vec(), Some(value));
                 self.inner.vm = req.resume();
             }
             host::HostVm::ExternalStorageRoot(_) => {

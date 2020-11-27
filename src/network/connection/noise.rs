@@ -145,7 +145,7 @@ impl UnsignedNoiseKey {
 
     /// Returns the data that has to be signed.
     pub fn payload_to_sign<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
-        iter::once("noise-libp2p-static-key:".as_bytes()).chain(iter::once(&self.key.public[..]))
+        iter::once(&b"noise-libp2p-static-key:"[..]).chain(iter::once(&self.key.public[..]))
     }
 
     /// Returns the data that has to be signed.
@@ -761,7 +761,7 @@ impl HandshakeInProgress {
                 // TODO: don't use concat() in order to not allocate a Vec
                 if remote_public_key
                     .verify(
-                        &["noise-libp2p-static-key:".as_bytes(), remote_noise_static].concat(),
+                        &[b"noise-libp2p-static-key:", remote_noise_static].concat(),
                         &handshake_payload.identity_sig,
                     )
                     .is_err()

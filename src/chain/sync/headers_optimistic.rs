@@ -159,11 +159,11 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
     ///
     /// Panics if the [`RequestId`] is invalid.
     ///
-    pub fn finish_request<'a>(
-        &'a mut self,
+    pub fn finish_request(
+        &mut self,
         request_id: RequestId,
         outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
-    ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
+    ) -> (TRq, FinishRequestOutcome<TSrc>) {
         self.sync
             .as_mut()
             .unwrap()
@@ -200,7 +200,7 @@ impl<TRq, TSrc> OptimisticHeadersSync<TRq, TSrc> {
         for block in to_process.blocks {
             match self
                 .chain
-                .verify_header(block.scale_encoded_header.into(), now_from_unix_epoch)
+                .verify_header(block.scale_encoded_header, now_from_unix_epoch)
             {
                 Ok(blocks_tree::HeaderVerifySuccess::Insert {
                     block_height,

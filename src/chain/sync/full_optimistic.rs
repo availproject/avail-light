@@ -209,11 +209,11 @@ impl<TRq, TSrc> OptimisticFullSync<TRq, TSrc> {
     ///
     /// Panics if the [`RequestId`] is invalid.
     ///
-    pub fn finish_request<'a>(
-        &'a mut self,
+    pub fn finish_request(
+        &mut self,
         request_id: RequestId,
         outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
-    ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
+    ) -> (TRq, FinishRequestOutcome<TSrc>) {
         self.sync
             .as_mut()
             .unwrap()
@@ -836,8 +836,7 @@ impl<TRq, TBl> StorageNextKey<TRq, TBl> {
             .best_to_finalized_storage_diff
             .range(requested_key.to_vec()..) // TODO: don't use to_vec()
             .map(|(k, v)| (k, v.is_some()))
-            .filter(|(k, _)| &***k > requested_key)
-            .next();
+            .find(|(k, _)| &***k > requested_key);
 
         let outcome = match (key, in_diff) {
             (Some(a), Some((b, true))) if a <= &b[..] => Some(a),

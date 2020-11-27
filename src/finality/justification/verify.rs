@@ -38,9 +38,7 @@ pub struct Config<'a, I> {
 // TODO: rewrite as a generator-style process?
 
 /// Verifies that a justification is valid.
-pub fn verify<'a>(
-    config: Config<'a, impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
-) -> Result<(), Error> {
+pub fn verify(config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>) -> Result<(), Error> {
     // Verifying all the signatures together brings better performances than verifying them one
     // by one.
     let mut messages = Vec::with_capacity(config.justification.precommits.iter().len());

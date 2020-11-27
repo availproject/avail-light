@@ -101,7 +101,7 @@ pub fn verify_proof<'a>(
     // Find the expected trie root in the proof. This is the start point of the verification.
     let mut proof_iter = merkle_values
         .iter()
-        .position(|v| &v[..] == &config.trie_root_hash[..])
+        .position(|v| v[..] == config.trie_root_hash[..])
         .ok_or(Error::TrieRootNotFound)?;
 
     // The verification consists in iterating using `expected_nibbles_iter` and `proof_iter`.
@@ -204,7 +204,7 @@ pub fn verify_proof<'a>(
                     // `proof_iter`.
                     proof_iter = merkle_values
                         .iter()
-                        .position(|v| &v[..] == &node_value[..len])
+                        .position(|v| v[..] == node_value[..len])
                         .ok_or(Error::MissingProofEntry)?;
                     break;
                 }

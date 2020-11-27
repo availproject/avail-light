@@ -233,7 +233,7 @@ impl<'a> GrandpaScheduledChangeRef<'a> {
                 self.next_authorities
                     .clone()
                     .flat_map(|a| a.scale_encoding())
-                    .map(|buf| either::Right(buf)),
+                    .map(either::Right),
             )
             .chain(iter::once(either::Left(either::Right(
                 self.delay.to_le_bytes().to_vec(), // TODO: don't allocate

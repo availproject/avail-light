@@ -407,12 +407,7 @@ impl<'a, T> BlockAccess<'a, T> {
     /// Access to the parent block's information and hierarchy. Returns an `Err` containing `self`
     /// if the parent is the finalized block.
     pub fn parent_block(self) -> Result<BlockAccess<'a, T>, BlockAccess<'a, T>> {
-        let parent = self
-            .tree
-            .blocks
-            .node_to_root_path(self.node_index)
-            .skip(1)
-            .next();
+        let parent = self.tree.blocks.node_to_root_path(self.node_index).nth(1);
 
         let parent = match parent {
             Some(p) => p,

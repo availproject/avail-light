@@ -169,20 +169,18 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc, TBl>> {
         if self.cancelling_requests {
             while let Some(queue_elem) = self.verification_queue.pop_back() {
-                match queue_elem.ty {
-                    VerificationQueueEntryTy::Requested {
-                        id,
-                        source,
+                if let VerificationQueueEntryTy::Requested {
+                    id,
+                    source,
+                    user_data,
+                } = queue_elem.ty
+                {
+                    return Some(RequestAction::Cancel {
+                        request_id: id,
                         user_data,
-                    } => {
-                        return Some(RequestAction::Cancel {
-                            request_id: id,
-                            user_data,
-                            source_id: SourceId(source),
-                            source: &mut self.sources[source].user_data,
-                        });
-                    }
-                    _ => {}
+                        source_id: SourceId(source),
+                        source: &mut self.sources[source].user_data,
+                    });
                 }
             }
 
@@ -264,11 +262,11 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     ///
     /// Panics if the [`RequestId`] is invalid.
     ///
-    pub fn finish_request<'a>(
-        &'a mut self,
+    pub fn finish_request(
+        &mut self,
         request_id: RequestId,
         outcome: Result<impl Iterator<Item = TBl>, RequestFail>,
-    ) -> (TRq, FinishRequestOutcome<'a, TSrc>) {
+    ) -> (TRq, FinishRequestOutcome<TSrc>) {
         let (verification_queue_entry, source_id) = self
             .verification_queue
             .iter()
@@ -323,9 +321,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
         // Extract the chunk of blocks to process next.
         let blocks = match &mut self.verification_queue.get_mut(0).map(|b| &mut b.ty) {
-            Some(VerificationQueueEntryTy::Queued(blocks)) => {
-                mem::replace(blocks, Default::default())
-            }
+            Some(VerificationQueueEntryTy::Queued(blocks)) => mem::take(blocks),
             _ => return Err(self),
         };
 

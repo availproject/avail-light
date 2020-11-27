@@ -41,7 +41,6 @@ impl<T> NonFinalizedTree<T> {
     ///
     /// Must be passed the current UNIX time in order to verify that the block doesn't pretend to
     /// come from the future.
-    #[must_use]
     pub fn verify_header(
         &mut self,
         scale_encoded_header: Vec<u8>,
@@ -53,7 +52,7 @@ impl<T> NonFinalizedTree<T> {
             now_from_unix_epoch,
             None::<iter::Empty<Vec<u8>>>,
         ) {
-            VerifyOut::Header(Err(err)) => return Err(err),
+            VerifyOut::Header(Err(err)) => Err(err),
             VerifyOut::Header(Ok((context, is_new_best, consensus))) => {
                 let hash = context.header.hash();
                 Ok(HeaderVerifySuccess::Insert {
@@ -419,8 +418,8 @@ impl<T> VerifyContext<T> {
                 },
                 None,
             ) => BlockConsensus::Babe {
-                current_epoch: block_epoch_information.clone(),
-                next_epoch: next_epoch_transition.clone(),
+                current_epoch: block_epoch_information,
+                next_epoch: next_epoch_transition,
             },
 
             // Any mismatch between consensus algorithms should have been detected by the

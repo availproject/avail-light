@@ -1521,16 +1521,14 @@ impl ExternalStorageGet {
                     iter::once(&outcome_encoded),
                 );
             }
-            HostFunction::ext_storage_exists_version_1 => {
-                return HostVm::ReadyToRun(ReadyToRun {
-                    inner: self.inner,
-                    resume_value: Some(if value.is_some() {
-                        vm::WasmValue::I32(1)
-                    } else {
-                        vm::WasmValue::I32(0)
-                    }),
-                })
-            }
+            HostFunction::ext_storage_exists_version_1 => HostVm::ReadyToRun(ReadyToRun {
+                inner: self.inner,
+                resume_value: Some(if value.is_some() {
+                    vm::WasmValue::I32(1)
+                } else {
+                    vm::WasmValue::I32(0)
+                }),
+            }),
             _ => unreachable!(),
         }
     }

@@ -80,6 +80,10 @@ impl<TUd> TrieStructure<TUd> {
         self.nodes.capacity()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -95,7 +99,7 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Returns a [`Entry`] with the given node.
-    pub fn node<'a, TKIter>(&'a mut self, key: TKIter) -> Entry<'a, TUd, TKIter>
+    pub fn node<TKIter>(&mut self, key: TKIter) -> Entry<TUd, TKIter>
     where
         TKIter: Iterator<Item = Nibble> + Clone,
     {
@@ -412,6 +416,12 @@ impl<TUd> TrieStructure<TUd> {
         }
 
         None
+    }
+}
+
+impl<TUd> Default for TrieStructure<TUd> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1265,7 +1275,7 @@ where
                 } else {
                     None
                 },
-                partial_key: new_node_partial_key.to_owned(),
+                partial_key: new_node_partial_key,
                 children: new_node_children,
             });
         }
@@ -1408,7 +1418,7 @@ impl<'a, TUd> PrepareInsertOne<'a, TUd> {
         let new_node_index = self.trie.nodes.insert(Node {
             parent: self.parent,
             partial_key: self.partial_key,
-            children: self.children.clone(),
+            children: self.children,
             has_storage_value: true,
             user_data,
         });
@@ -1490,7 +1500,7 @@ impl<'a, TUd> PrepareInsertTwo<'a, TUd> {
         let new_branch_node_index = self.trie.nodes.insert(Node {
             parent: self.branch_parent,
             partial_key: self.branch_partial_key,
-            children: self.branch_children.clone(),
+            children: self.branch_children,
             has_storage_value: false,
             user_data: branch_node_user_data,
         });

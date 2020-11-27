@@ -96,7 +96,7 @@ impl<'a> From<&'a BabeConsensusLog> for BabeConsensusLogRef<'a> {
         match a {
             BabeConsensusLog::NextEpochData(v) => BabeConsensusLogRef::NextEpochData(v.into()),
             BabeConsensusLog::OnDisabled(v) => BabeConsensusLogRef::OnDisabled(*v),
-            BabeConsensusLog::NextConfigData(v) => BabeConsensusLogRef::NextConfigData(v.clone()),
+            BabeConsensusLog::NextConfigData(v) => BabeConsensusLogRef::NextConfigData(*v),
         }
     }
 }
@@ -120,7 +120,7 @@ impl<'a> From<BabeConsensusLogRef<'a>> for BabeConsensusLog {
         match a {
             BabeConsensusLogRef::NextEpochData(v) => BabeConsensusLog::NextEpochData(v.into()),
             BabeConsensusLogRef::OnDisabled(v) => BabeConsensusLog::OnDisabled(v),
-            BabeConsensusLogRef::NextConfigData(v) => BabeConsensusLog::NextConfigData(v.clone()),
+            BabeConsensusLogRef::NextConfigData(v) => BabeConsensusLog::NextConfigData(v),
         }
     }
 }
@@ -381,10 +381,7 @@ impl<'a> BabePreDigestRef<'a> {
 
     /// Returns `true` for [`BabePreDigestRef::Primary`].
     pub fn is_primary(&self) -> bool {
-        match self {
-            BabePreDigestRef::Primary(_) => true,
-            _ => false,
-        }
+        matches!(self, BabePreDigestRef::Primary(_))
     }
 
     /// Returns the slot number stored in the header.
@@ -519,8 +516,8 @@ impl<'a> cmp::PartialEq<BabePrimaryPreDigestRef<'a>> for BabePrimaryPreDigestRef
     fn eq(&self, other: &BabePrimaryPreDigestRef<'a>) -> bool {
         self.authority_index == other.authority_index
             && self.slot_number == other.slot_number
-            && &self.vrf_output[..] == &other.vrf_output[..]
-            && &self.vrf_proof[..] == &other.vrf_proof[..]
+            && self.vrf_output[..] == other.vrf_output[..]
+            && self.vrf_proof[..] == other.vrf_proof[..]
     }
 }
 
@@ -580,7 +577,7 @@ impl BabeSecondaryPlainPreDigest {
     /// Decodes a [`BabeSecondaryPlainPreDigest`] from a slice of bytes.
     pub fn from_slice(slice: &[u8]) -> Result<Self, Error> {
         let (authority_index, slot_number) =
-            <(u32, u64)>::decode_all(slice).map_err(|e| Error::DigestItemDecodeError(e))?;
+            <(u32, u64)>::decode_all(slice).map_err(Error::DigestItemDecodeError)?;
         Ok(BabeSecondaryPlainPreDigest {
             authority_index,
             slot_number,
@@ -642,8 +639,8 @@ impl<'a> cmp::PartialEq<BabeSecondaryVRFPreDigestRef<'a>> for BabeSecondaryVRFPr
     fn eq(&self, other: &BabeSecondaryVRFPreDigestRef<'a>) -> bool {
         self.authority_index == other.authority_index
             && self.slot_number == other.slot_number
-            && &self.vrf_output[..] == &other.vrf_output[..]
-            && &self.vrf_proof[..] == &other.vrf_proof[..]
+            && self.vrf_output[..] == other.vrf_output[..]
+            && self.vrf_proof[..] == other.vrf_proof[..]
     }
 }
 

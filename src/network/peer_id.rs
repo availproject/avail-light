@@ -61,7 +61,7 @@ impl PublicKey {
             .map_err(|_| FromProtobufEncodingError::ProtobufDecodeError)?;
 
         let key_type = keys_proto::KeyType::from_i32(pubkey.r#type)
-            .ok_or_else(|| FromProtobufEncodingError::UnknownAlgorithm)?;
+            .ok_or(FromProtobufEncodingError::UnknownAlgorithm)?;
 
         match key_type {
             keys_proto::KeyType::Ed25519 => {

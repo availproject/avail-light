@@ -168,8 +168,8 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a>(
-    config: Config<'a, impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
+pub fn verify(
+    config: Config<impl ExactSizeIterator<Item = impl AsRef<[u8]> + Clone> + Clone>,
 ) -> Verify {
     // Start the consensus engine verification process.
     let consensus_success = match config.consensus {

@@ -533,7 +533,7 @@ where
         }
 
         out_buffer.truncate(total_written);
-        return Ok((Negotiation::InProgress(self), total_read, out_buffer));
+        Ok((Negotiation::InProgress(self), total_read, out_buffer))
     }
 }
 
@@ -577,7 +577,7 @@ where
 {
     /// Returns the bytes representation of this message, as a list of buffers. The message
     /// consists in the concatenation of all buffers.
-    pub fn to_bytes(mut self) -> impl Iterator<Item = impl AsRef<[u8]>> {
+    pub fn into_bytes(mut self) -> impl Iterator<Item = impl AsRef<[u8]>> {
         let len = match &self {
             MessageOut::Handshake => HANDSHAKE.len(),
             MessageOut::Ls => 3,
@@ -655,7 +655,7 @@ where
     pub fn write_out(self, mut message_offset: usize, mut destination: &mut [u8]) -> (usize, bool) {
         let mut total_written = 0;
 
-        for buf in self.to_bytes() {
+        for buf in self.into_bytes() {
             let buf = buf.as_ref();
             if message_offset >= buf.len() {
                 message_offset -= buf.len();
@@ -688,7 +688,7 @@ mod tests {
     fn encode() {
         assert_eq!(
             MessageOut::<iter::Empty<_>, &'static [u8]>::Handshake
-                .to_bytes()
+                .into_bytes()
                 .fold(Vec::new(), move |mut a, b| {
                     a.extend_from_slice(b.as_ref());
                     a
@@ -698,7 +698,7 @@ mod tests {
 
         assert_eq!(
             MessageOut::<iter::Empty<_>, &'static [u8]>::Ls
-                .to_bytes()
+                .into_bytes()
                 .fold(Vec::new(), move |mut a, b| {
                     a.extend_from_slice(b.as_ref());
                     a
@@ -708,7 +708,7 @@ mod tests {
 
         assert_eq!(
             MessageOut::ProtocolRequest::<iter::Empty<_>, _>("/hello")
-                .to_bytes()
+                .into_bytes()
                 .fold(Vec::new(), move |mut a, b| {
                     a.extend_from_slice(b.as_ref());
                     a
@@ -718,7 +718,7 @@ mod tests {
 
         assert_eq!(
             MessageOut::<iter::Empty<_>, &'static [u8]>::ProtocolNa
-                .to_bytes()
+                .into_bytes()
                 .fold(Vec::new(), move |mut a, b| {
                     a.extend_from_slice(b.as_ref());
                     a

@@ -138,14 +138,13 @@ pub fn decode_block_response(
         let mut body = Vec::with_capacity(block.body.len());
         for extrinsic in block.body {
             // TODO: this encoding really is a bit stupid
-            let ext = match <Vec<u8> as parity_scale_codec::DecodeAll>::decode_all(
-                &mut extrinsic.as_ref(),
-            ) {
-                Ok(e) => e,
-                Err(_) => {
-                    return Err(DecodeBlockResponseError::BodyDecodeError);
-                }
-            };
+            let ext =
+                match <Vec<u8> as parity_scale_codec::DecodeAll>::decode_all(extrinsic.as_ref()) {
+                    Ok(e) => e,
+                    Err(_) => {
+                        return Err(DecodeBlockResponseError::BodyDecodeError);
+                    }
+                };
 
             body.push(ext);
         }
@@ -261,9 +260,9 @@ pub fn encode_block_announces_handshake<'a>(
 }
 
 /// Decodes a SCALE-encoded block announces handshake.
-pub fn decode_block_announces_handshake<'a>(
-    handshake: &'a [u8],
-) -> Result<BlockAnnouncesHandshakeRef<'a>, BlockAnnouncesDecodeError<'a>> {
+pub fn decode_block_announces_handshake(
+    handshake: &[u8],
+) -> Result<BlockAnnouncesHandshakeRef, BlockAnnouncesDecodeError> {
     nom::combinator::all_consuming(nom::combinator::map(
         nom::sequence::tuple((
             nom::branch::alt((

@@ -597,10 +597,7 @@ impl<T> Yamux<T> {
             if !self.pending_out_header.is_empty() {
                 if size_bytes_iter >= self.pending_out_header.len() {
                     size_bytes_iter -= self.pending_out_header.len();
-                    buffers.push(either::Left(mem::replace(
-                        &mut self.pending_out_header,
-                        Default::default(),
-                    )));
+                    buffers.push(either::Left(mem::take(&mut self.pending_out_header)));
                 } else {
                     let to_add = self.pending_out_header[..size_bytes_iter].to_vec();
                     for _ in 0..size_bytes_iter {

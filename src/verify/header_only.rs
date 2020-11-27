@@ -134,7 +134,7 @@ pub enum Error {
 }
 
 /// Verifies whether a block is valid.
-pub fn verify<'a>(config: Config<'a>) -> Result<Success, Error> {
+pub fn verify(config: Config) -> Result<Success, Error> {
     // Check that there is no mismatch in the parent header hash.
     // Note that the user is expected to pass a parent block that matches the parent indicated by
     // the header to verify, and not blindly pass an "expected parent". As such, this check is
