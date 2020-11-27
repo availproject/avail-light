@@ -109,6 +109,19 @@ impl NetworkService {
             .await // TODO: chain_index
     }
 
+    /// Sends a storage proof request to the given peer.
+    // TODO: more docs
+    // TODO: proper error type
+    pub async fn storage_proof_request(
+        self: Arc<Self>,
+        target: PeerId,
+        config: protocol::StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
+    ) -> Result<Vec<Vec<u8>>, ()> {
+        self.network
+            .storage_proof_request(ffi::Instant::now(), target, 0, config)
+            .await // TODO: chain_index
+    }
+
     /// Returns the next event that happens in the network service.
     ///
     /// If this method is called multiple times simultaneously, the events will be distributed

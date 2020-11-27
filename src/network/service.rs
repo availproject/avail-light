@@ -186,6 +186,29 @@ where
         protocol::decode_block_response(&response).map_err(|_| ())
     }
 
+    /// Sends a storage request to the given peer.
+    // TODO: more docs
+    // TODO: proper error type
+    pub async fn storage_proof_request(
+        &self,
+        now: TNow,
+        target: PeerId,
+        chain_index: usize,
+        config: protocol::StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
+    ) -> Result<Vec<Vec<u8>>, ()> {
+        let request_data =
+            protocol::build_storage_proof_request(config).fold(Vec::new(), |mut a, b| {
+                a.extend_from_slice(b.as_ref());
+                a
+            });
+        let protocol = format!("/{}/light/2", &self.protocol_ids[chain_index]);
+        let response = self
+            .libp2p
+            .request(now, target, protocol, request_data)
+            .await?;
+        protocol::decode_storage_proof_response(&response).map_err(|_| ())
+    }
+
     pub async fn announce_transaction(&self, transaction: Vec<u8>) {}
 
     /// After a [`Event::StartConnect`], notifies the [`ChainNetwork`] of the success of the
