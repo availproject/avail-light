@@ -34,8 +34,10 @@ use substrate_lite::network::{
     connection,
     multiaddr::{Multiaddr, Protocol},
     peer_id::PeerId,
-    protocol, service, with_buffers,
+    protocol, service,
 };
+
+mod with_buffers;
 
 /// Configuration for a [`NetworkService`].
 pub struct Config {

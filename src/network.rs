@@ -30,7 +30,6 @@ pub mod peer_id;
 pub mod peerset;
 pub mod protocol;
 pub mod service;
-pub mod with_buffers;
 
 pub use parity_multiaddr::Multiaddr;
 pub use peer_id::PeerId;
