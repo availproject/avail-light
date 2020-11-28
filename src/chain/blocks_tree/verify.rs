@@ -151,26 +151,26 @@ impl<T> NonFinalizedTreeInner<T> {
         //
         // The parent hash is first checked against `self.current_best`, as it is most likely
         // that new blocks are built on top of the current best.
-        let parent_tree_index = if self.current_best.map_or(false, |best| {
-            *decoded_header.parent_hash == self.blocks.get(best).unwrap().hash
-        }) {
-            Some(self.current_best.unwrap())
-        } else if *decoded_header.parent_hash == self.finalized_block_hash {
-            None
-        } else {
+        let parent_tree_index = {
             let parent_hash = *decoded_header.parent_hash;
-            match self.blocks.find(|b| b.hash == parent_hash) {
-                Some(parent) => Some(parent),
-                None => {
-                    return if body.is_some() {
-                        VerifyOut::Body(BodyVerifyStep1::BadParent {
-                            chain: NonFinalizedTree { inner: Some(self) },
-                            parent_hash,
-                        })
-                    } else {
-                        VerifyOut::Header(Err(HeaderVerifyError::BadParent { parent_hash }))
-                    }
+            match self.current_best {
+                Some(best) if parent_hash == self.blocks.get(best).unwrap().hash => {
+                    Some(self.current_best.unwrap())
                 }
+                _ if parent_hash == self.finalized_block_hash => None,
+                _ => match self.blocks.find(|b| b.hash == parent_hash) {
+                    Some(parent) => Some(parent),
+                    None => {
+                        return if body.is_some() {
+                            VerifyOut::Body(BodyVerifyStep1::BadParent {
+                                chain: NonFinalizedTree { inner: Some(self) },
+                                parent_hash,
+                            })
+                        } else {
+                            VerifyOut::Header(Err(HeaderVerifyError::BadParent { parent_hash }))
+                        }
+                    }
+                },
             }
         };
 

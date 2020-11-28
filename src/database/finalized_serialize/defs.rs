@@ -145,7 +145,7 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     finalized_triggered_authorities,
                     ..
                 } => finalized_triggered_authorities
-                    .into_iter()
+                    .iter()
                     .map(header::GrandpaAuthorityRef::from)
                     .map(Into::into)
                     .collect(),
@@ -348,24 +348,22 @@ struct SerializedBabeNextConfigConstantV1 {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 enum SerializedBabeAllowedSlotsV1 {
     #[serde(rename = "primary")]
-    OnlyPrimarySlots,
+    OnlyPrimary,
     #[serde(rename = "primary-and-secondary-plain")]
-    PrimaryAndSecondaryPlainSlots,
+    PrimaryAndSecondaryPlain,
     #[serde(rename = "primary-and-secondary-vrf")]
-    PrimaryAndSecondaryVRFSlots,
+    PrimaryAndSecondaryVRF,
 }
 
 impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
     fn from(from: header::BabeAllowedSlots) -> Self {
         match from {
-            header::BabeAllowedSlots::PrimarySlots => {
-                SerializedBabeAllowedSlotsV1::OnlyPrimarySlots
-            }
+            header::BabeAllowedSlots::PrimarySlots => SerializedBabeAllowedSlotsV1::OnlyPrimary,
             header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots => {
-                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlainSlots
+                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlain
             }
             header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots => {
-                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRFSlots
+                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRF
             }
         }
     }
@@ -374,13 +372,11 @@ impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
 impl From<SerializedBabeAllowedSlotsV1> for header::BabeAllowedSlots {
     fn from(from: SerializedBabeAllowedSlotsV1) -> Self {
         match from {
-            SerializedBabeAllowedSlotsV1::OnlyPrimarySlots => {
-                header::BabeAllowedSlots::PrimarySlots
-            }
-            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlainSlots => {
+            SerializedBabeAllowedSlotsV1::OnlyPrimary => header::BabeAllowedSlots::PrimarySlots,
+            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlain => {
                 header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots
             }
-            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRFSlots => {
+            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRF => {
                 header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots
             }
         }

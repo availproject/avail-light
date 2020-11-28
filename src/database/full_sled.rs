@@ -1185,11 +1185,9 @@ fn grandpa_finalized_scheduled_change<E: From<AccessError>>(
             Ok(Some((height, authorities)))
         }
         (None, None) => Ok(None),
-        _ => {
-            return Err(sled::transaction::ConflictableTransactionError::Abort(
-                AccessError::Corrupted(CorruptedError::InvalidGrandpaAuthoritiesList).into(),
-            ))
-        }
+        _ => Err(sled::transaction::ConflictableTransactionError::Abort(
+            AccessError::Corrupted(CorruptedError::InvalidGrandpaAuthoritiesList).into(),
+        )),
     }
 }
 

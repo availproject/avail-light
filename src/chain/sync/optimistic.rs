@@ -471,7 +471,7 @@ impl<'a, TRq, TBl> Drop for RequestsDrain<'a, TRq, TBl> {
     fn drop(&mut self) {
         // Drain all remaining elements even if the iterator is dropped eagerly.
         // This is the reason why a custom iterator type is needed, rather than using combinators.
-        while let Some(_) = self.next() {}
+        for _ in self {}
     }
 }
 

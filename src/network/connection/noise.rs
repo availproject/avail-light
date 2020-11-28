@@ -106,7 +106,7 @@ pub struct NoiseKey {
 impl NoiseKey {
     /// Generates a new private and public key pair signed with the given libp2p ed25519 key.
     pub fn new(libp2p_ed25519_private_key: &[u8; 32]) -> Self {
-        let unsigned = UnsignedNoiseKey::new();
+        let unsigned = UnsignedNoiseKey::random();
 
         let (libp2p_public_key, signature) = {
             // Creating a `SecretKey` can fail only if the length isn't 32 bytes.
@@ -134,7 +134,7 @@ pub struct UnsignedNoiseKey {
 
 impl UnsignedNoiseKey {
     /// Generates a new private and public key pair.
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         UnsignedNoiseKey {
             // TODO: can panic if there's no RNG
             key: snow::Builder::new(noise_params())

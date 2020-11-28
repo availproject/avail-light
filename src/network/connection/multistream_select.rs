@@ -557,7 +557,7 @@ pub enum Error {
 }
 
 /// Handshake message sent by both parties at the beginning of each multistream-select negotiation.
-const HANDSHAKE: &'static [u8] = b"/multistream/1.0.0\n";
+const HANDSHAKE: &[u8] = b"/multistream/1.0.0\n";
 
 /// Message on the multistream-select protocol.
 #[derive(Debug, Copy, Clone)]
