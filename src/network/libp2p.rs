@@ -209,6 +209,36 @@ where
             .num_established_connections()
     }
 
+    /// Returns an iterator to the list of [`PeerId`]s that we have an established connection
+    /// with.
+    pub async fn peers_list_lock(&self) -> impl Iterator<Item = PeerId> {
+        // TODO: actually hold the lock so that we don't allocate a Vec
+        let lock = self.guarded.lock().await;
+        // TODO: what about duplicate PeerIds? should they be automatically deduplicated like here? decide and document
+        // TODO: wrong hashing algorithm
+        lock.peerset
+            .connections_peer_ids()
+            .map(|(_, peer_id)| peer_id.clone())
+            .collect::<hashbrown::HashSet<_, fnv::FnvBuildHasher>>()
+            .into_iter()
+    }
+
+    // TODO: document and improve API
+    pub async fn add_addresses(
+        &self,
+        or_insert: impl FnOnce() -> TPeer,
+        overlay_network_index: usize,
+        peer_id: PeerId,
+        addrs: impl IntoIterator<Item = Multiaddr>,
+    ) {
+        let mut lock = self.guarded.lock().await;
+        let mut node = lock.peerset.node_mut(peer_id).or_insert_with(or_insert);
+        for addr in addrs {
+            node.add_known_address(addr);
+        }
+        node.add_to_overlay(overlay_network_index);
+    }
+
     pub fn add_incoming_connection(
         &self,
         local_listen_address: &Multiaddr,
@@ -250,7 +280,7 @@ where
         connection_lock
             .0
             .as_mut()
-            .unwrap()
+            .ok_or(())?
             .add_request(now, protocol, request_data, send_back);
         if let Some(waker) = connection_lock.2.take() {
             waker.wake();

@@ -27,7 +27,7 @@
 // TODO: doc
 // TODO: re-review this once finished
 
-use core::{pin::Pin, time::Duration};
+use core::{cmp, pin::Pin, time::Duration};
 use futures::{lock::Mutex, prelude::*};
 use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Instant};
 use substrate_lite::network::{
@@ -155,7 +155,8 @@ impl NetworkService {
             ))
         }
 
-        Ok(Arc::new(NetworkService {
+        // Initialize the network service.
+        let network_service = Arc::new(NetworkService {
             guarded: Mutex::new(Guarded {
                 tasks_executor: config.tasks_executor,
             }),
@@ -176,7 +177,39 @@ impl NetworkService {
                 pending_api_events_buffer_size: NonZeroUsize::new(64).unwrap(),
                 randomness_seed: rand::random(),
             }),
-        }))
+        });
+
+        // Spawn tasks dedicated to the Kademlia discovery.
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            let network_service = network_service.clone();
+            async move {
+                let mut next_discovery = Duration::from_secs(5);
+
+                loop {
+                    futures_timer::Delay::new(next_discovery).await;
+                    next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
+
+                    match network_service
+                        .network
+                        .kademlia_discovery_round(Instant::now(), 0)
+                        .await
+                    {
+                        Ok(insert) => {
+                            insert
+                                .insert(|_| ())
+                                .instrument(tracing::debug_span!("insert"))
+                                .await
+                        }
+                        Err(error) => {
+                            tracing::debug!(%error, "discovery-error")
+                        }
+                    }
+                }
+            }
+            .instrument(tracing::debug_span!(parent: None, "kademlia-discovery"))
+        }));
+
+        Ok(network_service)
     }
 
     /// Returns the number of established TCP connections, both incoming and outgoing.

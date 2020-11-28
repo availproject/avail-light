@@ -175,6 +175,17 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
             .count()
     }
 
+    /// Returns the [`PeerId`]s of all active connections.
+    ///
+    /// Since multiple connections to the same [`PeerId`] can exist, the same [`PeerId`] can be
+    /// yielded multiple times.
+    pub fn connections_peer_ids(&self) -> impl Iterator<Item = (ConnectionId, &PeerId)> {
+        self.connections
+            .iter()
+            .filter(|(_, c)| matches!(c.ty, ConnectionTy::Connected { .. }))
+            .map(move |(id, c)| (ConnectionId(id), &self.peers[c.peer_index].peer_id))
+    }
+
     /// Returns the number of overlay networks registered towards the peerset.
     pub fn num_overlay_networks(&self) -> usize {
         self.num_overlay_networks

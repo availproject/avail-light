@@ -17,7 +17,10 @@
 
 // TODO: work in progress
 
+use crate::network::{multiaddr, peer_id};
+
 use alloc::vec::Vec;
+use core::convert::TryFrom as _;
 use prost::Message as _;
 
 mod dht_proto {
@@ -26,6 +29,7 @@ mod dht_proto {
 }
 
 /// Data structure containing the k-buckets and the state of the current Kademlia queries.
+// TODO: unused
 pub struct Kademlia {}
 
 impl Kademlia {
@@ -55,3 +59,52 @@ pub fn build_find_node_request(peer_id: &[u8]) -> Vec<u8> {
     protobuf.encode(&mut buf).unwrap();
     buf
 }
+
+/// Decodes a response to a request built using [`build_find_node_request`].
+// TODO: return a borrow of the response bytes ; we're limited by protobuf library
+pub fn decode_find_node_response(
+    response_bytes: &[u8],
+) -> Result<Vec<(peer_id::PeerId, Vec<multiaddr::Multiaddr>)>, DecodeFindNodeResponseError> {
+    let response = dht_proto::Message::decode(response_bytes)
+        .map_err(ProtobufDecodeError)
+        .map_err(DecodeFindNodeResponseError::ProtobufDecode)?;
+
+    if response.r#type != dht_proto::message::MessageType::FindNode as i32 {
+        return Err(DecodeFindNodeResponseError::BadResponseTy);
+    }
+
+    let mut result = Vec::with_capacity(response.closer_peers.len());
+    for peer in response.closer_peers {
+        let peer_id = peer_id::PeerId::from_bytes(peer.id)
+            .map_err(|(err, _)| DecodeFindNodeResponseError::BadPeerId(err))?;
+
+        let mut multiaddrs = Vec::with_capacity(peer.addrs.len());
+        for addr in peer.addrs {
+            let addr = multiaddr::Multiaddr::try_from(addr)
+                .map_err(DecodeFindNodeResponseError::BadMultiaddr)?;
+            multiaddrs.push(addr);
+        }
+
+        result.push((peer_id, multiaddrs));
+    }
+
+    Ok(result)
+}
+
+/// Error potentially returned by [`decode_find_node_response`].
+#[derive(Debug, derive_more::Display)]
+pub enum DecodeFindNodeResponseError {
+    /// Error while decoding the protobuf encoding.
+    ProtobufDecode(ProtobufDecodeError),
+    /// Response isn't a response to a find node request.
+    BadResponseTy,
+    /// Error while parsing a [`peer_id::PeerId`] in the response.
+    BadPeerId(peer_id::FromBytesError),
+    /// Error while parsing a [`multiaddr::Multiaddr`] in the response.
+    BadMultiaddr(multiaddr::Error),
+}
+
+/// Error while decoding the protobuf encoding.
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "{}", _0)]
+pub struct ProtobufDecodeError(prost::DecodeError);
