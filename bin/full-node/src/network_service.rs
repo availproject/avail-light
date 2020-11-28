@@ -36,6 +36,7 @@ use substrate_lite::network::{
     peer_id::PeerId,
     protocol, service,
 };
+use tracing::Instrument as _;
 
 mod with_buffers;
 
@@ -128,25 +129,30 @@ impl NetworkService {
             };
 
             // Spawn a background task dedicated to this listener.
-            (config.tasks_executor)(Box::pin(async move {
-                loop {
-                    // TODO: add a way to immediately interrupt the listener if the network service is destroyed (or fails to create altogether), in order to immediately liberate the port
+            (config.tasks_executor)(Box::pin(
+                async move {
+                    loop {
+                        // TODO: add a way to immediately interrupt the listener if the network service is destroyed (or fails to create altogether), in order to immediately liberate the port
 
-                    let (socket, _addr) = match tcp_listener.accept().await {
-                        Ok(v) => v,
-                        Err(_) => {
-                            // Errors here can happen if the accept failed, for example if no file
-                            // descriptor is available.
-                            // A wait is added in order to avoid having a busy-loop failing to
-                            // accept connections.
-                            futures_timer::Delay::new(Duration::from_secs(2)).await;
-                            continue;
-                        }
-                    };
+                        let (socket, _addr) = match tcp_listener.accept().await {
+                            Ok(v) => v,
+                            Err(_) => {
+                                // Errors here can happen if the accept failed, for example if no file
+                                // descriptor is available.
+                                // A wait is added in order to avoid having a busy-loop failing to
+                                // accept connections.
+                                futures_timer::Delay::new(Duration::from_secs(2)).await;
+                                continue;
+                            }
+                        };
 
-                    todo!() // TODO: report new connection
+                        todo!() // TODO: report new connection
+                    }
                 }
-            }))
+                .instrument(
+                    tracing::debug_span!(parent: None, "listener", address = %listen_address),
+                ),
+            ))
         }
 
         Ok(Arc::new(NetworkService {
@@ -181,6 +187,7 @@ impl NetworkService {
     /// Sends a blocks request to the given peer.
     // TODO: more docs
     // TODO: proper error type
+    #[tracing::instrument(skip(self))]
     pub async fn blocks_request(
         self: Arc<Self>,
         target: PeerId,
@@ -195,24 +202,39 @@ impl NetworkService {
     ///
     /// If this method is called multiple times simultaneously, the events will be distributed
     /// amongst the different calls in an unpredictable way.
+    #[tracing::instrument(skip(self))]
     pub async fn next_event(self: &Arc<Self>) -> Event {
         loop {
             match self.network.next_event().await {
-                service::Event::Connected(peer_id) => return Event::Connected(peer_id),
-                service::Event::Disconnected(peer_id) => return Event::Disconnected(peer_id),
+                service::Event::Connected(peer_id) => {
+                    tracing::debug!(%peer_id, "connected");
+                    return Event::Connected(peer_id);
+                }
+                service::Event::Disconnected(peer_id) => {
+                    tracing::debug!(%peer_id, "disconnected");
+                    return Event::Disconnected(peer_id);
+                }
                 service::Event::StartConnect { id, multiaddr } => {
+                    let span = tracing::debug_span!("start-connect", ?id, %multiaddr);
+                    let _enter = span.enter();
+
                     // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d`) into
                     // a `Future<dyn Output = Result<TcpStream, ...>>`.
                     let socket = match multiaddr_to_socket(&multiaddr) {
                         Ok(socket) => socket,
                         Err(_) => {
+                            tracing::debug!(%multiaddr, "not-tcp");
                             self.network.pending_outcome_err(id).await;
                             continue;
                         }
                     };
 
                     let mut guarded = self.guarded.lock().await;
-                    (guarded.tasks_executor)(Box::pin(connection_task(socket, self.clone(), id)));
+                    (guarded.tasks_executor)(Box::pin(
+                        connection_task(socket, self.clone(), id).instrument(
+                            tracing::trace_span!(parent: None, "connection", address = %multiaddr),
+                        ),
+                    ));
                 }
             }
         }
@@ -230,6 +252,7 @@ pub enum InitError {
 }
 
 /// Asynchronous task managing a specific TCP connection.
+#[tracing::instrument(skip(tcp_socket, network_service))]
 async fn connection_task(
     tcp_socket: impl Future<Output = Result<async_std::net::TcpStream, io::Error>>,
     network_service: Arc<NetworkService>,
@@ -303,6 +326,14 @@ async fn connection_task(
             Err(_) => return,
         };
 
+        if read_write.read_bytes != 0 || read_write.written_bytes != 0 {
+            tracing::event!(
+                tracing::Level::TRACE,
+                read = read_write.read_bytes,
+                written = read_write.written_bytes
+            );
+        }
+
         // TODO:
         /*if read_write.write_close && !tcp_socket.is_closed() {
             tcp_socket.close();
@@ -334,7 +365,12 @@ async fn connection_task(
         // TODO: maybe optimize the code below so that multiple messages are pulled from `to_connection` at once
 
         futures::select! {
-            _ = tcp_socket.as_mut().process().fuse() => {},
+            _ = tcp_socket.as_mut().process().fuse() => {
+                tracing::event!(
+                    tracing::Level::TRACE,
+                    "socket-ready"
+                );
+            },
             _ = future::poll_fn(move |cx| {
                 let mut lock = waker.0.lock().unwrap();
                 if lock.0 {
@@ -348,6 +384,10 @@ async fn connection_task(
             }).fuse() => {}
             _ = (&mut poll_after).fuse() => { // TODO: no, ref mut + fuse() = probably panic
                 // Nothing to do, but guarantees that we loop again.
+                tracing::event!(
+                    tracing::Level::TRACE,
+                    "timer-ready"
+                );
             }
         }
     }

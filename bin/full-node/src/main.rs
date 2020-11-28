@@ -21,7 +21,8 @@
 
 use futures::{channel::oneshot, prelude::*};
 use std::{
-    borrow::Cow, convert::TryFrom as _, fs, iter, path::PathBuf, sync::Arc, thread, time::Duration,
+    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::Arc, thread,
+    time::Duration,
 };
 use structopt::StructOpt as _;
 use substrate_lite::{
@@ -29,6 +30,7 @@ use substrate_lite::{
     database::full_sled,
     network::{connection, multiaddr, peer_id::PeerId},
 };
+use tracing::Instrument as _;
 
 mod cli;
 mod network_service;
@@ -40,6 +42,36 @@ fn main() {
 
 async fn async_main() {
     let cli_options = cli::CliOptions::from_args();
+
+    // Setup the logging system of the binary.
+    if matches!(
+        cli_options.output,
+        cli::Output::Logs | cli::Output::LogsJson
+    ) {
+        let builder = tracing_subscriber::fmt()
+            .with_timer(tracing_subscriber::fmt::time::ChronoUtc::rfc3339())
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::ACTIVE)
+            .with_max_level(tracing::Level::TRACE) // TODO: configurable?
+            .with_writer(io::stdout);
+
+        // Because calling `builder.json()` changes the type of `builder`, we do it at the end
+        // and call `init()` at the same time.
+        //
+        // This registers a global process-wide subscriber.
+        // While this is poor programming practices and we would prefer using a crate that doesn't
+        // rely on global variables, the `tracing` crate is currently one of the best logging
+        // crates in the Rust ecosystem at the time of writing of this comment.
+        if matches!(cli_options.output, cli::Output::LogsJson) {
+            builder.json().init();
+        } else {
+            builder
+                .with_ansi(match cli_options.color {
+                    cli::ColorChoice::Always => true,
+                    cli::ColorChoice::Never => false,
+                })
+                .init();
+        }
+    }
 
     let chain_spec = {
         let json: Cow<[u8]> = match &cli_options.chain {
@@ -141,6 +173,7 @@ async fn async_main() {
             Box::new(move |task| threads_pool.spawn_ok(task))
         },
     })
+    .instrument(tracing::debug_span!("network-service-init"))
     .await
     .unwrap();
 
@@ -151,6 +184,7 @@ async fn async_main() {
         },
         database,
     })
+    .instrument(tracing::debug_span!("sync-service-init"))
     .await;
 
     let relay_chain_sync_service = if let Some(relay_chain_database) = relay_chain_database {
@@ -162,6 +196,7 @@ async fn async_main() {
                 },
                 database: relay_chain_database,
             })
+            .instrument(tracing::debug_span!("relay-chain-sync-service-init"))
             .await,
         )
     } else {
@@ -197,7 +232,7 @@ async fn async_main() {
     loop {
         futures::select! {
             _ = informant_timer.next() => {
-                if !cli_options.quiet {
+                if matches!(cli_options.output, cli::Output::Informant) {
                     // We end the informant line with a `\r` so that it overwrites itself every time.
                     // If any other line gets printed, it will overwrite the informant, and the
                     // informant will then print itself below, which is a fine behaviour.
@@ -205,7 +240,6 @@ async fn async_main() {
                     eprint!("{}\r", substrate_lite::informant::InformantLine {
                         enable_colors: match cli_options.color {
                             cli::ColorChoice::Always => true,
-                            cli::ColorChoice::Auto => atty::is(atty::Stream::Stderr),
                             cli::ColorChoice::Never => false,
                         },
                         chain_name: chain_spec.name(),
@@ -249,7 +283,7 @@ async fn async_main() {
                     sync_service::Event::BlocksRequest { id, target, request } => {
                         let block_request = network_service.clone().blocks_request(
                             target,
-                            request
+                            request,
                         );
 
                         threads_pool.spawn_ok({
@@ -338,6 +372,7 @@ async fn async_main() {
 /// Panics if the database can't be open. This function is expected to be called from the `main`
 /// function.
 ///
+#[tracing::instrument(skip(chain_spec))]
 async fn open_database(
     chain_spec: &chain_spec::ChainSpec,
     tmp: bool,
@@ -395,6 +430,7 @@ async fn open_database(
 /// in the background while showing a small progress bar to the user.
 ///
 /// If `path` is `None`, the database is opened in memory.
+#[tracing::instrument]
 async fn background_open_database(
     path: Option<PathBuf>,
 ) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {

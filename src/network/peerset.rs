@@ -766,6 +766,11 @@ pub struct NodeMutUnknown<'a, TPeer, TConn, TPending, TSub, TPendingSub> {
 impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     NodeMutUnknown<'a, TPeer, TConn, TPending, TSub, TPendingSub>
 {
+    /// Returns the [`PeerId`] of that node.
+    pub fn peer_id(&self) -> &PeerId {
+        &self.peer_id
+    }
+
     /// Inserts the node into the data structure. Returns a [`NodeMutKnown`] for that node.
     pub fn insert(
         self,
