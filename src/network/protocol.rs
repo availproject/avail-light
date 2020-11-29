@@ -32,7 +32,6 @@ use prost::Message as _;
 
 mod schema {
     include!(concat!(env!("OUT_DIR"), "/api.v1.rs"));
-    include!(concat!(env!("OUT_DIR"), "/api.v1.finality.rs"));
     include!(concat!(env!("OUT_DIR"), "/api.v1.light.rs"));
 }
 

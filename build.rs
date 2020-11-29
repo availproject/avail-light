@@ -22,7 +22,6 @@ fn main() {
             "src/network/connection/noise/payload.proto",
             "src/network/peer_id/keys.proto",
             "src/network/protocol/api.v1.proto",
-            "src/network/protocol/finality.v1.proto",
             "src/network/protocol/light.v1.proto",
         ],
         &["src"],
