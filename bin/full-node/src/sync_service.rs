@@ -31,7 +31,7 @@ use futures::{
     prelude::*,
 };
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
-use substrate_lite::{chain::sync::full_optimistic, database::full_sled, network};
+use substrate_lite::{chain::sync::optimistic, database::full_sled, network};
 use tracing::Instrument as _;
 
 /// Configuration for a [`SyncService`].
@@ -223,7 +223,7 @@ enum FromBackground {
 }
 
 enum ToDatabase {
-    FinalizedBlocks(Vec<full_optimistic::Block>),
+    FinalizedBlocks(Vec<optimistic::Block>),
 }
 
 /// Returns the background task of the sync service.
@@ -235,24 +235,24 @@ async fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_database: mpsc::Sender<ToDatabase>,
 ) -> impl Future<Output = ()> {
-    let mut sync =
-        full_optimistic::OptimisticFullSync::<_, network::PeerId>::new(full_optimistic::Config {
-            chain_information: database
-                .to_chain_information(&database.finalized_block_hash().unwrap())
-                .unwrap(),
-            sources_capacity: 32,
-            blocks_capacity: {
-                // This is the maximum number of blocks between two consecutive justifications.
-                1024
-            },
-            source_selection_randomness_seed: rand::random(),
-            blocks_request_granularity: NonZeroU32::new(128).unwrap(),
-            download_ahead_blocks: {
-                // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
-                // the number of blocks to download ahead of time in order to not block is 1000.
-                1024
-            },
-        });
+    let mut sync = optimistic::OptimisticSync::<_, network::PeerId>::new(optimistic::Config {
+        chain_information: database
+            .to_chain_information(&database.finalized_block_hash().unwrap())
+            .unwrap(),
+        sources_capacity: 32,
+        blocks_capacity: {
+            // This is the maximum number of blocks between two consecutive justifications.
+            1024
+        },
+        source_selection_randomness_seed: rand::random(),
+        blocks_request_granularity: NonZeroU32::new(128).unwrap(),
+        download_ahead_blocks: {
+            // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
+            // the number of blocks to download ahead of time in order to not block is 1000.
+            1024
+        },
+        full: true,
+    });
 
     // Holds, in parallel of the database, the storage of the latest finalized block.
     // At the time of writing, this state is stable around ~3MiB for Polkadot, meaning that it is
@@ -286,11 +286,15 @@ async fn start_sync(
             let mut process = sync.process_one(unix_time);
             loop {
                 match process {
-                    full_optimistic::ProcessOne::Idle { sync: s } => {
+                    optimistic::ProcessOne::Idle { sync: s } => {
                         sync = s;
                         break;
                     }
-                    full_optimistic::ProcessOne::Finished {
+                    optimistic::ProcessOne::Reset { sync: s, reason } => {
+                        tracing::warn!(%reason, "failed-block-verification");
+                        process = s.process_one(unix_time);
+                    }
+                    optimistic::ProcessOne::Finalized {
                         sync: s,
                         finalized_blocks,
                     } => {
@@ -321,29 +325,29 @@ async fn start_sync(
                             .unwrap();
                     }
 
-                    full_optimistic::ProcessOne::InProgress {
-                        current_best_hash,
-                        current_best_number,
-                        resume,
+                    optimistic::ProcessOne::NewBest {
+                        sync: s,
+                        new_best_hash,
+                        new_best_number,
                     } => {
                         // Processing has made a step forward.
                         // There is nothing to do, but this is used to update to best block
                         // shown on the informant.
                         let mut lock = sync_state.lock().await;
-                        lock.best_block_hash = current_best_hash;
-                        lock.best_block_number = current_best_number;
+                        lock.best_block_hash = new_best_hash;
+                        lock.best_block_number = new_best_number;
                         drop(lock);
 
-                        process = resume.resume();
+                        process = s.process_one(unix_time);
                     }
 
-                    full_optimistic::ProcessOne::FinalizedStorageGet(req) => {
+                    optimistic::ProcessOne::FinalizedStorageGet(req) => {
                         let value = finalized_block_storage
                             .get(&req.key_as_vec())
                             .map(|v| &v[..]);
                         process = req.inject_value(value);
                     }
-                    full_optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
+                    optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
                         // TODO: to_vec() :-/
                         let req_key = req.key().to_vec();
                         // TODO: to_vec() :-/
@@ -354,7 +358,7 @@ async fn start_sync(
                             .map(|(k, _)| k);
                         process = req.inject_key(next_key);
                     }
-                    full_optimistic::ProcessOne::FinalizedStoragePrefixKeys(req) => {
+                    optimistic::ProcessOne::FinalizedStoragePrefixKeys(req) => {
                         // TODO: to_vec() :-/
                         let prefix = req.prefix().to_vec();
                         // TODO: to_vec() :-/
@@ -379,7 +383,7 @@ async fn start_sync(
             // blocks can result in new requests but not the contrary.
             while let Some(action) = sync.next_request_action() {
                 match action {
-                    full_optimistic::RequestAction::Start {
+                    optimistic::RequestAction::Start {
                         start,
                         block_height,
                         source,
@@ -416,7 +420,7 @@ async fn start_sync(
                         let request_id = start.start(abort);
                         block_requests_finished.push(rx.map(move |r| (request_id, r)));
                     }
-                    full_optimistic::RequestAction::Cancel { user_data, .. } => {
+                    optimistic::RequestAction::Cancel { user_data, .. } => {
                         user_data.abort();
                     }
                 }
@@ -450,11 +454,11 @@ async fn start_sync(
                     // TODO: clarify this piece of code
                     if let Ok(result) = result {
                         let result = result.map_err(|_| ()).and_then(|v| v);
-                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| full_optimistic::RequestSuccessBlock {
+                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| optimistic::RequestSuccessBlock {
                             scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
                             scale_encoded_extrinsics: block.body.unwrap(), // TODO: don't unwrap
                             scale_encoded_justification: block.justification,
-                        })).map_err(|()| full_optimistic::RequestFail::BlocksUnavailable));
+                        })).map_err(|()| optimistic::RequestFail::BlocksUnavailable));
                     }
                 },
             }

@@ -21,7 +21,7 @@ use futures::{
     prelude::*,
 };
 use std::{collections::HashMap, num::NonZeroU32, pin::Pin};
-use substrate_lite::{chain, chain::sync::headers_optimistic, network};
+use substrate_lite::{chain, chain::sync::optimistic, network};
 
 /// Configuration for a [`SyncService`].
 pub struct Config {
@@ -168,30 +168,33 @@ async fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_foreground: mpsc::Sender<FromBackground>,
 ) -> impl Future<Output = ()> {
-    let mut sync = headers_optimistic::OptimisticHeadersSync::<_, network::PeerId>::new(
-        headers_optimistic::Config {
-            chain_information,
-            sources_capacity: 32,
-            source_selection_randomness_seed: rand::random(),
-            blocks_request_granularity: NonZeroU32::new(128).unwrap(),
-            download_ahead_blocks: {
-                // Verifying a block mostly consists in:
-                //
-                // - Verifying a sr25519 signature for each block, plus a VRF output when the
-                // block is claiming a primary BABE slot.
-                // - Verifying one ed25519 signature per authority for every justification.
-                //
-                // At the time of writing, the speed of these operations hasn't been benchmarked.
-                // It is likely that it varies quite a bit between the various environments (the
-                // different browser engines, and NodeJS).
-                //
-                // Assuming a maximum verification speed of 5k blocks/sec and a 95% latency of one
-                // second, the number of blocks to download ahead of time in order to not block
-                // is 5k.
-                5000
-            },
+    let mut sync = optimistic::OptimisticSync::<_, network::PeerId>::new(optimistic::Config {
+        chain_information,
+        sources_capacity: 32,
+        source_selection_randomness_seed: rand::random(),
+        blocks_request_granularity: NonZeroU32::new(128).unwrap(),
+        blocks_capacity: {
+            // This is the maximum number of blocks between two consecutive justifications.
+            1024
         },
-    );
+        download_ahead_blocks: {
+            // Verifying a block mostly consists in:
+            //
+            // - Verifying a sr25519 signature for each block, plus a VRF output when the
+            // block is claiming a primary BABE slot.
+            // - Verifying one ed25519 signature per authority for every justification.
+            //
+            // At the time of writing, the speed of these operations hasn't been benchmarked.
+            // It is likely that it varies quite a bit between the various environments (the
+            // different browser engines, and NodeJS).
+            //
+            // Assuming a maximum verification speed of 5k blocks/sec and a 95% latency of one
+            // second, the number of blocks to download ahead of time in order to not block
+            // is 5k.
+            5000
+        },
+        full: false,
+    });
 
     async move {
         let mut peers_source_id_map = HashMap::new();
@@ -200,7 +203,7 @@ async fn start_sync(
         loop {
             while let Some(action) = sync.next_request_action() {
                 match action {
-                    headers_optimistic::RequestAction::Start {
+                    optimistic::RequestAction::Start {
                         start,
                         block_height,
                         source,
@@ -237,67 +240,92 @@ async fn start_sync(
                         let request_id = start.start(abort);
                         block_requests_finished.push(rx.map(move |r| (request_id, r)));
                     }
-                    headers_optimistic::RequestAction::Cancel { user_data, .. } => {
+                    optimistic::RequestAction::Cancel { user_data, .. } => {
                         user_data.abort();
                     }
                 }
             }
 
+            let mut verified_blocks = 0u64;
+            let mut new_finalized = None;
+
             // Verify blocks that have been fetched from queries.
-            loop {
-                let process_result = sync.process_one(crate::ffi::unix_time());
-                if let headers_optimistic::ProcessOneOutcome::Idle = process_result {
-                    break;
-                }
-
-                if let headers_optimistic::ProcessOneOutcome::Updated { new_best_block, .. }
-                | headers_optimistic::ProcessOneOutcome::Reset { new_best_block, .. } =
-                    &process_result
-                {
-                    if to_foreground
-                        .send(FromBackground::NewBest {
-                            scale_encoded_header: new_best_block.scale_encoding().fold(
-                                Vec::new(),
-                                |mut a, b| {
-                                    a.extend_from_slice(b.as_ref());
-                                    a
-                                },
-                            ),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        return;
+            // TODO: tweak this mechanism of stopping sync from time to time
+            while verified_blocks < 4096 {
+                match sync.process_one(crate::ffi::unix_time()) {
+                    optimistic::ProcessOne::Idle { sync: s } => {
+                        sync = s;
+                        break;
                     }
-                }
-
-                if let headers_optimistic::ProcessOneOutcome::Updated {
-                    finalized_block: Some(finalized_block),
-                    ..
-                } = &process_result
-                {
-                    if to_foreground
-                        .send(FromBackground::NewFinalized {
-                            scale_encoded_header: finalized_block.scale_encoding().fold(
-                                Vec::new(),
-                                |mut a, b| {
-                                    a.extend_from_slice(b.as_ref());
-                                    a
-                                },
-                            ),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        return;
+                    optimistic::ProcessOne::NewBest { sync: s, .. }
+                    | optimistic::ProcessOne::Reset { sync: s, .. } => {
+                        sync = s;
+                        verified_blocks += 1;
                     }
-                }
 
-                // Since `process_one` is a CPU-heavy operation, looping until it is done can
-                // take a long time. In order to avoid blocking the rest of the program in the
-                // meanwhile, the `yield_once` function interrupts the current task and gives a
-                // chance for other tasks to progress.
-                crate::yield_once().await;
+                    optimistic::ProcessOne::Finalized {
+                        sync: s,
+                        finalized_blocks,
+                        ..
+                    } => {
+                        sync = s;
+                        verified_blocks += 1;
+
+                        let scale_encoded_header = finalized_blocks
+                            .last()
+                            .unwrap()
+                            .header
+                            .scale_encoding()
+                            .fold(Vec::new(), |mut a, b| {
+                                a.extend_from_slice(b.as_ref());
+                                a
+                            });
+
+                        new_finalized = Some(scale_encoded_header);
+                    }
+
+                    // Other variants can be produced if the sync state machine is configured for
+                    // syncing the storage, which is not the case here.
+                    _ => unreachable!(),
+                }
+            }
+
+            // Since `process_one` is a CPU-heavy operation, looping until it is done can
+            // take a long time. In order to avoid blocking the rest of the program in the
+            // meanwhile, the `yield_once` function interrupts the current task and gives a
+            // chance for other tasks to progress.
+            crate::yield_once().await;
+
+            if verified_blocks != 0 {
+                let scale_encoded_header =
+                    sync.best_block_header()
+                        .scale_encoding()
+                        .fold(Vec::new(), |mut a, b| {
+                            a.extend_from_slice(b.as_ref());
+                            a
+                        });
+                if to_foreground
+                    .send(FromBackground::NewBest {
+                        scale_encoded_header,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+
+            if let Some(scale_encoded_header) = new_finalized {
+                debug_assert_ne!(verified_blocks, 0);
+                if to_foreground
+                    .send(FromBackground::NewFinalized {
+                        scale_encoded_header,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
             }
 
             futures::select! {
@@ -329,12 +357,21 @@ async fn start_sync(
                     // machine.
                     if let Ok(result) = result {
                         let result = result.map_err(|_| ()).and_then(|v| v);
-                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| headers_optimistic::RequestSuccessBlock {
+                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| optimistic::RequestSuccessBlock {
                             scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
                             scale_encoded_justification: block.justification,
-                        })).map_err(|()| headers_optimistic::RequestFail::BlocksUnavailable));
+                            scale_encoded_extrinsics: Vec::new(),
+                        })).map_err(|()| optimistic::RequestFail::BlocksUnavailable));
                     }
                 },
+
+                _ = async move {
+                    if verified_blocks == 0 {
+                        loop {
+                            futures::pending!()
+                        }
+                    }
+                }.fuse() => {}
             }
         }
     }

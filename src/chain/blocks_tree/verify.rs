@@ -918,6 +918,11 @@ impl<'c, T> HeaderInsert<'c, T> {
         self.chain.inner = Some(self.context.chain);
     }
 
+    /// Returns the block header about to be inserted.
+    pub fn header(&self) -> header::HeaderRef {
+        From::from(&self.context.header)
+    }
+
     /// Destroys the object without inserting the block in the chain. Returns the block header.
     pub fn into_header(self) -> header::Header {
         self.chain.inner = Some(self.context.chain);

@@ -49,7 +49,4 @@
 //       the time of writing only one is implemented
 
 // TODO: pub mod full_all_forks;
-pub mod full_optimistic;
-pub mod headers_optimistic;
-// TODO: maybe shouldn't be pub, but creates doc-link errors if private
 pub mod optimistic;
