@@ -46,12 +46,16 @@ async fn async_main() {
     // Setup the logging system of the binary.
     if matches!(
         cli_options.output,
-        cli::Output::Logs | cli::Output::LogsJson
+        cli::Output::Informant | cli::Output::Logs | cli::Output::LogsJson
     ) {
         let builder = tracing_subscriber::fmt()
             .with_timer(tracing_subscriber::fmt::time::ChronoUtc::rfc3339())
             .with_span_events(tracing_subscriber::fmt::format::FmtSpan::ACTIVE)
-            .with_max_level(tracing::Level::TRACE) // TODO: configurable?
+            .with_max_level(if matches!(cli_options.output, cli::Output::Informant) {
+                tracing::Level::WARN // TODO: display warnings in a nicer way ; in particular, immediately put the informant on top of warnings
+            } else {
+                tracing::Level::TRACE // TODO: configurable?
+            })
             .with_writer(io::stdout);
 
         // Because calling `builder.json()` changes the type of `builder`, we do it at the end

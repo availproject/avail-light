@@ -50,6 +50,7 @@ use crate::{
     executor::{host, vm},
     header,
     trie::calculate_root,
+    verify,
 };
 
 use alloc::{
@@ -525,7 +526,6 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
                     pending_encoded_justification: block.scale_encoded_justification,
                     expected_block_height,
                     inner: self.inner,
-                    now_from_unix_epoch,
                 },
             )
         } else {
@@ -553,14 +553,18 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
                             pending_encoded_justification: block.scale_encoded_justification,
                             expected_block_height,
                             inner: self.inner,
-                            now_from_unix_epoch,
                         },
                     )
                 }
                 Err(err) => {
                     self.inner.cancelling_requests = true;
+                    self.inner.best_to_finalized_storage_diff = Default::default();
+                    self.inner.runtime_code_cache = None;
+                    self.inner.top_trie_root_calculation_cache = None;
+                    let previous_best_height = self.chain.best_block_header().number;
                     ProcessOne::Reset {
                         sync: self,
+                        previous_best_height,
                         reason: ResetCause::HeaderError(err),
                     }
                 }
@@ -597,6 +601,9 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.
         sync: OptimisticSync<TRq, TSrc>,
+
+        /// Height of the best block before the reset.
+        previous_best_height: u64,
 
         /// Problem that happened and caused the reset.
         reason: ResetCause,
@@ -651,7 +658,6 @@ struct ProcessOneShared<TRq, TSrc> {
     expected_block_height: u64,
     /// See [`OptimisticSync::inner`].
     inner: OptimisticSyncInner<TRq, TSrc>,
-    now_from_unix_epoch: Duration,
 }
 
 impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
@@ -661,45 +667,6 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
         // is found.
         'verif_steps: loop {
             match inner {
-                Inner::Step1(blocks_tree::BodyVerifyStep1::InvalidHeader(chain, error)) => {
-                    // TODO: DRY
-                    println!("invalid header: {:?}", error); // TODO: remove
-
-                    break ProcessOne::Reset {
-                        sync: OptimisticSync {
-                            inner: OptimisticSyncInner {
-                                best_to_finalized_storage_diff: Default::default(),
-                                runtime_code_cache: None,
-                                top_trie_root_calculation_cache: None,
-                                cancelling_requests: true,
-                                ..shared.inner
-                            },
-                            chain,
-                        },
-                        reason: ResetCause::HeaderError(
-                            blocks_tree::HeaderVerifyError::InvalidHeader(error),
-                        ),
-                    };
-                }
-
-                Inner::Step1(blocks_tree::BodyVerifyStep1::Duplicate(chain))
-                | Inner::Step1(blocks_tree::BodyVerifyStep1::BadParent { chain, .. }) => {
-                    // TODO: DRY
-                    break ProcessOne::Reset {
-                        sync: OptimisticSync {
-                            inner: OptimisticSyncInner {
-                                best_to_finalized_storage_diff: Default::default(),
-                                runtime_code_cache: None,
-                                top_trie_root_calculation_cache: None,
-                                cancelling_requests: true,
-                                ..shared.inner
-                            },
-                            chain,
-                        },
-                        reason: ResetCause::NonCanonical,
-                    };
-                }
-
                 Inner::Step1(blocks_tree::BodyVerifyStep1::ParentRuntimeRequired(req)) => {
                     // The verification process is asking for a Wasm virtual machine containing
                     // the parent block's runtime.
@@ -780,7 +747,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     offchain_storage_changes,
                     top_trie_root_calculation_cache,
                     parent_runtime,
-                    result: Ok(success),
+                    insert,
                 }) => {
                     // Successfully verified block!
                     // Inserting it into the chain and updated all the caches.
@@ -799,8 +766,8 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     }
 
                     let chain = {
-                        let header = success.header().into();
-                        success.insert(Block {
+                        let header = insert.header().into();
+                        insert.insert(Block {
                             header,
                             body: Vec::new(), // TODO: // FIXME: wrong! dummy!
                             // Set to `Some` below if the justification check success.
@@ -868,10 +835,6 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                     }
                 }
 
-                Inner::Step2(blocks_tree::BodyVerifyStep2::Finished {
-                    result: Err(err), ..
-                }) => todo!("verif failure"),
-
                 Inner::Step2(blocks_tree::BodyVerifyStep2::StorageGet(req)) => {
                     // The underlying verification process is asking for a storage entry in the
                     // parent block.
@@ -918,6 +881,75 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                         inner: req,
                         shared,
                     });
+                }
+
+                // The three variants below correspond to problems during the verification.
+                //
+                // When that happens:
+                //
+                // - A `ProcessOne::Reset` event is emitted.
+                // - `cancelling_requests` is set to true in order to cancel all ongoing requests.
+                // - `chain` is recreated using `finalized_chain_information`.
+                //
+                Inner::Step1(blocks_tree::BodyVerifyStep1::InvalidHeader(old_chain, error)) => {
+                    break ProcessOne::Reset {
+                        previous_best_height: old_chain.best_block_header().number,
+                        sync: OptimisticSync {
+                            chain: blocks_tree::NonFinalizedTree::new(
+                                shared.inner.finalized_chain_information.clone(),
+                            ),
+                            inner: OptimisticSyncInner {
+                                best_to_finalized_storage_diff: Default::default(),
+                                runtime_code_cache: None,
+                                top_trie_root_calculation_cache: None,
+                                cancelling_requests: true,
+                                ..shared.inner
+                            },
+                        },
+                        reason: ResetCause::InvalidHeader(error),
+                    };
+                }
+                Inner::Step1(blocks_tree::BodyVerifyStep1::Duplicate(old_chain))
+                | Inner::Step1(blocks_tree::BodyVerifyStep1::BadParent {
+                    chain: old_chain, ..
+                }) => {
+                    break ProcessOne::Reset {
+                        previous_best_height: old_chain.best_block_header().number,
+                        sync: OptimisticSync {
+                            chain: blocks_tree::NonFinalizedTree::new(
+                                shared.inner.finalized_chain_information.clone(),
+                            ),
+                            inner: OptimisticSyncInner {
+                                best_to_finalized_storage_diff: Default::default(),
+                                runtime_code_cache: None,
+                                top_trie_root_calculation_cache: None,
+                                cancelling_requests: true,
+                                ..shared.inner
+                            },
+                        },
+                        reason: ResetCause::NonCanonical,
+                    };
+                }
+                Inner::Step2(blocks_tree::BodyVerifyStep2::Error {
+                    chain: old_chain,
+                    error,
+                }) => {
+                    break ProcessOne::Reset {
+                        previous_best_height: old_chain.best_block_header().number,
+                        sync: OptimisticSync {
+                            chain: blocks_tree::NonFinalizedTree::new(
+                                shared.inner.finalized_chain_information.clone(),
+                            ),
+                            inner: OptimisticSyncInner {
+                                best_to_finalized_storage_diff: Default::default(),
+                                runtime_code_cache: None,
+                                top_trie_root_calculation_cache: None,
+                                cancelling_requests: true,
+                                ..shared.inner
+                            },
+                        },
+                        reason: ResetCause::HeaderBodyError(error),
+                    };
                 }
             }
         }
@@ -1294,8 +1326,12 @@ impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
 pub enum ResetCause {
     /// Error while verifying a justification.
     JustificationError(blocks_tree::JustificationVerifyError),
+    /// Error while decoding a header.
+    InvalidHeader(header::Error),
     /// Error while verifying a header.
     HeaderError(blocks_tree::HeaderVerifyError),
+    /// Error while verifying a header and body.
+    HeaderBodyError(verify::header_body::Error), // TODO: change error type?
     /// Received block isn't a child of the current best block.
     NonCanonical,
     /// Received block number doesn't match expected number.

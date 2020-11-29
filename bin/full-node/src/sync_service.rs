@@ -290,8 +290,12 @@ async fn start_sync(
                         sync = s;
                         break;
                     }
-                    optimistic::ProcessOne::Reset { sync: s, reason } => {
-                        tracing::warn!(%reason, "failed-block-verification");
+                    optimistic::ProcessOne::Reset {
+                        sync: s,
+                        previous_best_height,
+                        reason,
+                    } => {
+                        tracing::warn!(%reason, %previous_best_height, "failed-block-verification");
                         process = s.process_one(unix_time);
                     }
                     optimistic::ProcessOne::Finalized {

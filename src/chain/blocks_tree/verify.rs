@@ -445,15 +445,22 @@ impl<T> VerifyContext<T> {
                         storage_top_trie_changes: success.storage_top_trie_changes,
                         offchain_storage_changes: success.offchain_storage_changes,
                         top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
-                        result: Ok(BodyInsert {
+                        insert: BodyInsert {
                             context: self,
                             is_new_best,
                             hash,
                             consensus,
-                        }),
+                        },
                     };
                 }
-                verify::header_body::Verify::Finished(Err(err)) => todo!("verify err: {:?}", err),
+                verify::header_body::Verify::Finished(Err(error)) => {
+                    return BodyVerifyStep2::Error {
+                        chain: NonFinalizedTree {
+                            inner: Some(self.chain),
+                        },
+                        error,
+                    }
+                }
                 verify::header_body::Verify::StorageGet(inner) => {
                     return BodyVerifyStep2::StorageGet(StorageGet {
                         context: self,
@@ -679,8 +686,15 @@ pub enum BodyVerifyStep2<T> {
         /// Pass this value to [`BodyVerifyRuntimeRequired::resume`] when verifying a children of
         /// this block in order to considerably speed up the verification.
         top_trie_root_calculation_cache: calculate_root::CalculationCache,
-        /// Outcome of the verification.
-        result: Result<BodyInsert<T>, HeaderVerifyError>, // TODO: BodyVerifyError, or rename the error to be common
+        /// Use to insert the block in the chain.
+        insert: BodyInsert<T>,
+    },
+    /// Verification has failed. The block is invalid.
+    Error {
+        /// Chain yielded back.
+        chain: NonFinalizedTree<T>,
+        /// Error that happened during the verification.
+        error: verify::header_body::Error, // TODO: BodyVerifyError, or rename the error to be common
     },
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet<T>),
