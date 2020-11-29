@@ -26,12 +26,14 @@ use futures::prelude::*;
 use std::{
     collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
+    iter,
     sync::Arc,
 };
 use substrate_lite::{
     chain, chain_spec,
     json_rpc::{self, methods},
-    network::{multiaddr, peer_id::PeerId},
+    network::{multiaddr, peer_id::PeerId, protocol},
+    trie::proof_verify,
 };
 
 pub mod ffi;
@@ -121,18 +123,31 @@ pub async fn start_client(chain_spec: String) {
         substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
     };
 
-    let mut client = Client {
-        chain_spec,
-        best_block: chain_information.finalized_block_header.clone(),
-        finalized_block: chain_information.finalized_block_header,
-        genesis_storage,
-        best_block_metadata,
-        next_subscription: 0,
-        runtime_version: HashSet::new(),
-        all_heads: HashSet::new(),
-        new_heads: HashSet::new(),
-        finalized_heads: HashSet::new(),
-        storage: HashSet::new(),
+    let mut client = {
+        let finalized_block_hash = chain_information.finalized_block_header.hash();
+
+        let mut known_blocks = lru::LruCache::new(256);
+        known_blocks.put(
+            finalized_block_hash,
+            chain_information.finalized_block_header.clone(),
+        );
+
+        Client {
+            chain_spec,
+            network_service: network_service.clone(),
+            peers: Vec::new(),
+            known_blocks,
+            best_block: finalized_block_hash,
+            finalized_block: finalized_block_hash,
+            genesis_storage,
+            best_block_metadata,
+            next_subscription: 0,
+            runtime_version: HashSet::new(),
+            all_heads: HashSet::new(),
+            new_heads: HashSet::new(),
+            finalized_heads: HashSet::new(),
+            storage: HashSet::new(),
+        }
     };
 
     loop {
@@ -140,9 +155,11 @@ pub async fn start_client(chain_spec: String) {
             network_message = network_service.next_event().fuse() => {
                 match network_message {
                     network_service::Event::Connected(peer_id) => {
+                        client.peers.push(peer_id.clone());
                         sync_service.add_source(peer_id).await;
                     }
                     network_service::Event::Disconnected(peer_id) => {
+                        client.peers.retain(|p| *p != peer_id);
                         sync_service.remove_source(peer_id).await;
                     }
                 }
@@ -187,7 +204,13 @@ pub async fn start_client(chain_spec: String) {
                             ffi::emit_json_rpc_response(&notification);
                         }
 
-                        client.best_block = decoded.into();
+                        client.best_block = decoded.hash();
+                        client.known_blocks.put(client.best_block, decoded.into());
+
+                        // Load the entry of the finalized block in order to guarantee that it
+                        // remains in the LRU cache.
+                        let _ = client.known_blocks.get(&client.finalized_block).unwrap();
+
                         // TODO: need to update `best_block_metadata` if necessary, and notify the runtime version subscriptions
                     },
                     sync_service::Event::NewFinalized { scale_encoded_header } => {
@@ -203,13 +226,15 @@ pub async fn start_client(chain_spec: String) {
                             ffi::emit_json_rpc_response(&notification);
                         }
 
-                        client.finalized_block = decoded.into();
+                        client.finalized_block = decoded.hash();
+                        client.known_blocks.put(client.finalized_block, decoded.into());
                     },
                 }
             },
 
             json_rpc_request = ffi::next_json_rpc().fuse() => {
                 // TODO: don't unwrap
+                // TODO: don't await here; use a queue
                 let (response1, response2) = handle_rpc(&String::from_utf8(Vec::from(json_rpc_request)).unwrap(), &mut client).await;
                 ffi::emit_json_rpc_response(&response1);
                 if let Some(response2) = response2 {
@@ -223,11 +248,22 @@ pub async fn start_client(chain_spec: String) {
 struct Client {
     chain_spec: chain_spec::ChainSpec,
 
-    /// Current best block.
-    best_block: substrate_lite::header::Header,
-    /// Latest finalized block.
-    finalized_block: substrate_lite::header::Header,
+    network_service: Arc<network_service::NetworkService>,
 
+    /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
+    ///
+    /// Always contains `best_block` and `finalized_block`.
+    known_blocks: lru::LruCache<[u8; 32], substrate_lite::header::Header>,
+
+    /// Hash of the current best block.
+    best_block: [u8; 32],
+    /// Hash of the latest finalized block.
+    finalized_block: [u8; 32],
+
+    // TODO: this is a hack before an actual requests distribution system is implemented
+    peers: Vec<PeerId>,
+
+    // TODO: remove; unnecessary
     genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
 
     best_block_metadata: Vec<u8>,
@@ -252,10 +288,8 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
         methods::MethodCall::chain_getBlockHash { height } => {
             // TODO: implement correctly
             let response = if height.is_some() {
-                methods::Response::chain_getBlockHash(methods::HashHexString(
-                    client.best_block.hash(),
-                ))
-                .to_json_response(request_id)
+                methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+                    .to_json_response(request_id)
             } else {
                 json_rpc::parse::build_success_response(request_id, "null")
             };
@@ -263,26 +297,19 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
         }
         methods::MethodCall::chain_getFinalizedHead {} => {
             let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
-                client.finalized_block.hash(),
+                client.finalized_block,
             ))
             .to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::chain_getHeader { hash } => {
-            let response = if let Some(hash) = hash {
-                if hash.0 == client.best_block.hash() {
-                    methods::Response::chain_getHeader(header_conv(&client.best_block))
-                        .to_json_response(request_id)
-                } else if hash.0 == client.finalized_block.hash() {
-                    methods::Response::chain_getHeader(header_conv(&client.finalized_block))
-                        .to_json_response(request_id)
-                } else {
-                    json_rpc::parse::build_success_response(request_id, "null")
-                }
+            let hash = hash.as_ref().map(|h| &h.0).unwrap_or(&client.best_block);
+            let response = if let Some(header) = client.known_blocks.get(hash) {
+                methods::Response::chain_getHeader(header_conv(header)).to_json_response(request_id)
             } else {
-                methods::Response::chain_getHeader(header_conv(&client.best_block))
-                    .to_json_response(request_id)
+                json_rpc::parse::build_success_response(request_id, "null")
             };
+
             (response, None)
         }
         methods::MethodCall::chain_subscribeAllHeads {} => {
@@ -295,7 +322,10 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
                 "chain_allHeads", // TODO: is this string correct?
                 &subscription,
-                &serde_json::to_string(&header_conv(&client.best_block)).unwrap(),
+                &serde_json::to_string(&header_conv(
+                    client.known_blocks.get(&client.best_block).unwrap(),
+                ))
+                .unwrap(),
             );
 
             client.all_heads.insert(subscription.clone());
@@ -312,7 +342,10 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
                 "chain_newHead",
                 &subscription,
-                &serde_json::to_string(&header_conv(&client.best_block)).unwrap(),
+                &serde_json::to_string(&header_conv(
+                    client.known_blocks.get(&client.best_block).unwrap(),
+                ))
+                .unwrap(),
             );
 
             client.new_heads.insert(subscription.clone());
@@ -329,7 +362,10 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
                 "chain_finalizedHead",
                 &subscription,
-                &serde_json::to_string(&header_conv(&client.finalized_block)).unwrap(),
+                &serde_json::to_string(&header_conv(
+                    client.known_blocks.get(&client.finalized_block).unwrap(),
+                ))
+                .unwrap(),
             );
 
             client.finalized_heads.insert(subscription.clone());
@@ -353,20 +389,19 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::state_queryStorageAt { keys, at } => {
-            // TODO: I have no idea what the API of this function is
-            assert!(at.is_none()); // TODO:
+            let at = at.as_ref().map(|h| h.0).unwrap_or(client.best_block);
 
+            // TODO: have no idea what this describes actually
             let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.best_block.hash()),
+                block: methods::HashHexString(client.best_block),
                 changes: Vec::new(),
             };
 
             for key in keys {
-                let value = client
-                    .genesis_storage
-                    .get(&key.0[..])
-                    .map(|v| methods::HexString(v.to_vec()));
-                out.changes.push((key, value));
+                // TODO: parallelism?
+                if let Ok(value) = storage_query(client, &key.0, &at).await {
+                    out.changes.push((key, value.map(methods::HexString)));
+                }
             }
 
             let response =
@@ -412,13 +447,15 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::state_getStorage { key, hash } => {
-            // TODO: use hash
+            let hash = hash.as_ref().map(|h| h.0).unwrap_or(client.best_block);
 
-            let response = if let Some(value) = client.genesis_storage.get(&key.0[..]) {
-                methods::Response::state_getStorage(methods::HexString(value.clone()))
-                    .to_json_response(request_id)
-            } else {
-                json_rpc::parse::build_success_response(request_id, "null")
+            let response = match storage_query(client, &key.0, &hash).await {
+                Ok(Some(value)) => {
+                    methods::Response::state_getStorage(methods::HexString(value.to_owned())) // TODO: overhead
+                        .to_json_response(request_id)
+                }
+                Ok(None) => json_rpc::parse::build_success_response(request_id, "null"),
+                Err(()) => todo!(), // TODO:
             };
 
             (response, None)
@@ -454,16 +491,17 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             // TODO: have no idea what this describes actually
             let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.best_block.hash()),
+                block: methods::HashHexString(client.best_block),
                 changes: Vec::new(),
             };
 
+            let best_block_hash = client.best_block;
+
             for key in list {
-                let value = client
-                    .genesis_storage
-                    .get(&key.0[..])
-                    .map(|v| methods::HexString(v.to_vec()));
-                out.changes.push((key, value));
+                // TODO: parallelism?
+                if let Ok(value) = storage_query(client, &key.0, &best_block_hash).await {
+                    out.changes.push((key, value.map(methods::HexString)));
+                }
             }
 
             // TODO: hack
@@ -472,6 +510,8 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
                 &subscription,
                 &serde_json::to_string(&out).unwrap(),
             );
+
+            // TODO: subscription not actually implemented
 
             (response1, Some(response2))
         }
@@ -539,6 +579,50 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             panic!(); // TODO:
         }
     }
+}
+
+async fn storage_query(
+    client: &mut Client,
+    key: &[u8],
+    hash: &[u8; 32],
+) -> Result<Option<Vec<u8>>, ()> {
+    let trie_root_hash = if let Some(header) = client.known_blocks.get(hash) {
+        Some(header.state_root)
+    } else {
+        None
+    };
+
+    let mut result = Err(());
+
+    for target in client.peers.iter().take(3) {
+        if trie_root_hash.is_none() || result.is_ok() {
+            break;
+        }
+
+        result = client
+            .network_service
+            .clone()
+            .storage_proof_request(
+                target.clone(),
+                protocol::StorageProofRequestConfig {
+                    block_hash: *hash,
+                    keys: iter::once(key),
+                },
+            )
+            .await
+            .map_err(|_| ())
+            .and_then(|outcome| {
+                proof_verify::verify_proof(proof_verify::Config {
+                    proof: outcome.iter().map(|nv| &nv[..]),
+                    requested_key: key,
+                    trie_root_hash: trie_root_hash.as_ref().unwrap(),
+                })
+                .map_err(|_| ())
+                .map(|v| v.map(|v| v.to_owned()))
+            });
+    }
+
+    result
 }
 
 fn header_conv<'a>(header: impl Into<substrate_lite::header::HeaderRef<'a>>) -> methods::Header {
