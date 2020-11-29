@@ -122,19 +122,19 @@ pub struct RequestId(u64);
 pub struct SourceId(usize);
 
 /// Optimistic headers-only syncing.
-pub struct OptimisticSync<TRq, TSrc> {
+pub struct OptimisticSync<TRq, TSrc, TBl> {
     /// Data structure containing the blocks.
     ///
     /// The user data, [`Block`], isn't used internally but stores information later reported
     /// to the user.
-    chain: blocks_tree::NonFinalizedTree<Block>,
+    chain: blocks_tree::NonFinalizedTree<Block<TBl>>,
 
     /// Extra fields. In a separate structure in order to be moved around.
-    inner: OptimisticSyncInner<TRq, TSrc>,
+    inner: OptimisticSyncInner<TRq, TSrc, TBl>,
 }
 
 /// Extra fields. In a separate structure in order to be moved around.
-struct OptimisticSyncInner<TRq, TSrc> {
+struct OptimisticSyncInner<TRq, TSrc, TBl> {
     /// Configuration for the actual finalized block of the chain.
     /// Used if the `chain` field needs to be recreated.
     finalized_chain_information: blocks_tree::Config,
@@ -170,7 +170,7 @@ struct OptimisticSyncInner<TRq, TSrc> {
     cancelling_requests: bool,
 
     /// Queue of block requests, either waiting to be started, in progress, or completed.
-    verification_queue: VecDeque<VerificationQueueEntry<TRq>>,
+    verification_queue: VecDeque<VerificationQueueEntry<TRq, TBl>>,
 
     /// Identifier to assign to the next request.
     next_request_id: RequestId,
@@ -184,12 +184,12 @@ struct Source<TSrc> {
     banned: bool, // TODO: ban shouldn't be held forever
 }
 
-struct VerificationQueueEntry<TRq> {
+struct VerificationQueueEntry<TRq, TBl> {
     block_height: NonZeroU64,
-    ty: VerificationQueueEntryTy<TRq>,
+    ty: VerificationQueueEntryTy<TRq, TBl>,
 }
 
-enum VerificationQueueEntryTy<TRq> {
+enum VerificationQueueEntryTy<TRq, TBl> {
     Missing,
     Requested {
         id: RequestId,
@@ -198,11 +198,11 @@ enum VerificationQueueEntryTy<TRq> {
         // Index of this source within [`OptimisticSyncInner::sources`].
         source: usize,
     },
-    Queued(VecDeque<RequestSuccessBlock>),
+    Queued(VecDeque<RequestSuccessBlock<TBl>>),
 }
 
 // TODO: doc
-pub struct Block {
+pub struct Block<TBl> {
     /// Header of the block.
     pub header: header::Header,
 
@@ -217,9 +217,12 @@ pub struct Block {
 
     /// List of changes to the offchain storage that this block performs.
     pub offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
+
+    /// User data associated to the block.
+    pub user_data: TBl,
 }
 
-impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
+impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     /// Builds a new [`OptimisticSync`].
     pub fn new(config: Config) -> Self {
         let blocks_tree_config = blocks_tree::Config {
@@ -319,7 +322,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
 
     /// Returns an iterator that extracts all requests that need to be started and requests that
     /// need to be cancelled.
-    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc>> {
+    pub fn next_request_action(&mut self) -> Option<RequestAction<TRq, TSrc, TBl>> {
         if self.inner.cancelling_requests {
             while let Some(queue_elem) = self.inner.verification_queue.pop_back() {
                 if let VerificationQueueEntryTy::Requested {
@@ -435,7 +438,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
     pub fn finish_request(
         &mut self,
         request_id: RequestId,
-        outcome: Result<impl Iterator<Item = RequestSuccessBlock>, RequestFail>,
+        outcome: Result<impl Iterator<Item = RequestSuccessBlock<TBl>>, RequestFail>,
     ) -> (TRq, FinishRequestOutcome<TSrc>) {
         // TODO: what if cancelling requests?
 
@@ -495,7 +498,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
     ///
     /// Must be passed the current UNIX time in order to verify that the block doesn't pretend to
     /// come from the future.
-    pub fn process_one(mut self, now_from_unix_epoch: Duration) -> ProcessOne<TRq, TSrc> {
+    pub fn process_one(mut self, now_from_unix_epoch: Duration) -> ProcessOne<TRq, TSrc, TBl> {
         if self.inner.cancelling_requests {
             return ProcessOne::Idle { sync: self };
         }
@@ -526,6 +529,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
                     pending_encoded_justification: block.scale_encoded_justification,
                     expected_block_height,
                     inner: self.inner,
+                    block_user_data: Some(block.user_data),
                 },
             )
         } else {
@@ -546,6 +550,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
                         justification: block.scale_encoded_justification.clone(),
                         storage_top_trie_changes: Default::default(),
                         offchain_storage_changes: Default::default(),
+                        user_data: block.user_data,
                     });
                     ProcessOne::from(
                         Inner::JustificationVerif(self.chain),
@@ -553,6 +558,7 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
                             pending_encoded_justification: block.scale_encoded_justification,
                             expected_block_height,
                             inner: self.inner,
+                            block_user_data: None,
                         },
                     )
                 }
@@ -573,14 +579,15 @@ impl<TRq, TSrc> OptimisticSync<TRq, TSrc> {
     }
 }
 
-pub struct RequestSuccessBlock {
+pub struct RequestSuccessBlock<TBl> {
     pub scale_encoded_header: Vec<u8>,
     pub scale_encoded_justification: Option<Vec<u8>>,
     pub scale_encoded_extrinsics: Vec<Vec<u8>>,
+    pub user_data: TBl,
 }
 
 /// State of the processing of blocks.
-pub enum ProcessOne<TRq, TSrc> {
+pub enum ProcessOne<TRq, TSrc, TBl> {
     /// No processing is necessary.
     ///
     /// Calling [`OptimisticSync::process_one`] again is unnecessary.
@@ -588,7 +595,7 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The state machine.
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.
-        sync: OptimisticSync<TRq, TSrc>,
+        sync: OptimisticSync<TRq, TSrc, TBl>,
     },
 
     /// An issue happened when verifying the block or its justification, resulting in resetting
@@ -600,7 +607,7 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The state machine.
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.
-        sync: OptimisticSync<TRq, TSrc>,
+        sync: OptimisticSync<TRq, TSrc, TBl>,
 
         /// Height of the best block before the reset.
         previous_best_height: u64,
@@ -616,7 +623,7 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The state machine.
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.
-        sync: OptimisticSync<TRq, TSrc>,
+        sync: OptimisticSync<TRq, TSrc, TBl>,
 
         new_best_number: u64,
         new_best_hash: [u8; 32],
@@ -629,39 +636,41 @@ pub enum ProcessOne<TRq, TSrc> {
         /// The state machine.
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.
-        sync: OptimisticSync<TRq, TSrc>,
+        sync: OptimisticSync<TRq, TSrc, TBl>,
 
         /// Blocks that have been finalized. Includes the block that has just been verified.
-        finalized_blocks: Vec<Block>,
+        finalized_blocks: Vec<Block<TBl>>,
     },
 
     /// Loading a storage value of the finalized block is required in order to continue.
-    FinalizedStorageGet(StorageGet<TRq, TSrc>),
+    FinalizedStorageGet(StorageGet<TRq, TSrc, TBl>),
 
     /// Fetching the list of keys of the finalized block with a given prefix is required in order
     /// to continue.
-    FinalizedStoragePrefixKeys(StoragePrefixKeys<TRq, TSrc>),
+    FinalizedStoragePrefixKeys(StoragePrefixKeys<TRq, TSrc, TBl>),
 
     /// Fetching the key of the finalized block storage that follows a given one is required in
     /// order to continue.
-    FinalizedStorageNextKey(StorageNextKey<TRq, TSrc>),
+    FinalizedStorageNextKey(StorageNextKey<TRq, TSrc, TBl>),
 }
 
-enum Inner {
-    Step1(blocks_tree::BodyVerifyStep1<Block, vec::IntoIter<Vec<u8>>>),
-    Step2(blocks_tree::BodyVerifyStep2<Block>),
-    JustificationVerif(blocks_tree::NonFinalizedTree<Block>),
+enum Inner<TBl> {
+    Step1(blocks_tree::BodyVerifyStep1<Block<TBl>, vec::IntoIter<Vec<u8>>>),
+    Step2(blocks_tree::BodyVerifyStep2<Block<TBl>>),
+    JustificationVerif(blocks_tree::NonFinalizedTree<Block<TBl>>),
 }
 
-struct ProcessOneShared<TRq, TSrc> {
+struct ProcessOneShared<TRq, TSrc, TBl> {
     pending_encoded_justification: Option<Vec<u8>>,
     expected_block_height: u64,
     /// See [`OptimisticSync::inner`].
-    inner: OptimisticSyncInner<TRq, TSrc>,
+    inner: OptimisticSyncInner<TRq, TSrc, TBl>,
+    /// User data of the block being verified.
+    block_user_data: Option<TBl>,
 }
 
-impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
-    fn from(mut inner: Inner, mut shared: ProcessOneShared<TRq, TSrc>) -> Self {
+impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
+    fn from(mut inner: Inner<TBl>, mut shared: ProcessOneShared<TRq, TSrc, TBl>) -> Self {
         // This loop drives the process of the verification.
         // `inner` is updated at each iteration until a state that cannot be resolved internally
         // is found.
@@ -774,6 +783,7 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
                             justification: None,
                             storage_top_trie_changes,
                             offchain_storage_changes,
+                            user_data: shared.block_user_data.take().unwrap(),
                         })
                     };
 
@@ -958,25 +968,25 @@ impl<TRq, TSrc> ProcessOne<TRq, TSrc> {
 
 /// Loading a storage value is required in order to continue.
 #[must_use]
-pub struct StorageGet<TRq, TBl> {
-    inner: StorageGetTarget,
-    shared: ProcessOneShared<TRq, TBl>,
+pub struct StorageGet<TRq, TSrc, TBl> {
+    inner: StorageGetTarget<TBl>,
+    shared: ProcessOneShared<TRq, TSrc, TBl>,
 }
 
-enum StorageGetTarget {
-    Storage(blocks_tree::StorageGet<Block>),
-    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>),
+enum StorageGetTarget<TBl> {
+    Storage(blocks_tree::StorageGet<Block<TBl>>),
+    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>),
     Runtime(
-        blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>,
+        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>,
         u64,
     ),
     HeapPages(
-        blocks_tree::BodyVerifyRuntimeRequired<Block, vec::IntoIter<Vec<u8>>>,
+        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>,
         Vec<u8>,
     ),
 }
 
-impl<TRq, TBl> StorageGet<TRq, TBl> {
+impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     pub fn key<'b>(&'b self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
         match &self.inner {
@@ -1007,7 +1017,7 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
 
     /// Injects the corresponding storage value.
     // TODO: change API, see execute_block::StorageGet
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TBl> {
+    pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TSrc, TBl> {
         // TODO: simplify code inside here
         match self.inner {
             StorageGetTarget::Storage(inner) => {
@@ -1067,19 +1077,22 @@ impl<TRq, TBl> StorageGet<TRq, TBl> {
 
 /// Fetching the list of keys with a given prefix is required in order to continue.
 #[must_use]
-pub struct StoragePrefixKeys<TRq, TBl> {
-    inner: blocks_tree::StoragePrefixKeys<Block>,
-    shared: ProcessOneShared<TRq, TBl>,
+pub struct StoragePrefixKeys<TRq, TSrc, TBl> {
+    inner: blocks_tree::StoragePrefixKeys<Block<TBl>>,
+    shared: ProcessOneShared<TRq, TSrc, TBl>,
 }
 
-impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
+impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
     /// Returns the prefix whose keys to load.
     pub fn prefix(&self) -> &[u8] {
         self.inner.prefix()
     }
 
     /// Injects the list of keys.
-    pub fn inject_keys(self, keys: impl Iterator<Item = impl AsRef<[u8]>>) -> ProcessOne<TRq, TBl> {
+    pub fn inject_keys(
+        self,
+        keys: impl Iterator<Item = impl AsRef<[u8]>>,
+    ) -> ProcessOne<TRq, TSrc, TBl> {
         let mut keys = keys
             .map(|k| k.as_ref().to_owned())
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
@@ -1106,16 +1119,16 @@ impl<TRq, TBl> StoragePrefixKeys<TRq, TBl> {
 
 /// Fetching the key that follows a given one is required in order to continue.
 #[must_use]
-pub struct StorageNextKey<TRq, TBl> {
-    inner: blocks_tree::StorageNextKey<Block>,
-    shared: ProcessOneShared<TRq, TBl>,
+pub struct StorageNextKey<TRq, TSrc, TBl> {
+    inner: blocks_tree::StorageNextKey<Block<TBl>>,
+    shared: ProcessOneShared<TRq, TSrc, TBl>,
 
     /// If `Some`, ask for the key inside of this field rather than the one of `inner`. Used in
     /// corner-case situations where the key provided by the user has been erased from storage.
     key_overwrite: Option<Vec<u8>>,
 }
 
-impl<TRq, TBl> StorageNextKey<TRq, TBl> {
+impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
     /// Returns the key whose next key must be passed back.
     pub fn key(&self) -> &[u8] {
         if let Some(key_overwrite) = &self.key_overwrite {
@@ -1131,7 +1144,7 @@ impl<TRq, TBl> StorageNextKey<TRq, TBl> {
     ///
     /// Panics if the key passed as parameter isn't strictly superior to the requested key.
     ///
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ProcessOne<TRq, TBl> {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ProcessOne<TRq, TSrc, TBl> {
         let key = key.as_ref().map(|k| k.as_ref());
 
         // The key provided by the user as parameter is the next key in the storage of the
@@ -1193,7 +1206,7 @@ impl<TRq, TBl> StorageNextKey<TRq, TBl> {
 
 /// Request that should be emitted towards a certain source.
 #[derive(Debug)]
-pub enum RequestAction<'a, TRq, TSrc> {
+pub enum RequestAction<'a, TRq, TSrc, TBl> {
     /// A request must be emitted for the given source.
     ///
     /// The request has **not** been acknowledged when this event is emitted. You **must** call
@@ -1205,7 +1218,7 @@ pub enum RequestAction<'a, TRq, TSrc> {
         /// User data of source where to request blocks from.
         source: &'a mut TSrc,
         /// Must be used to accept the request.
-        start: Start<'a, TRq, TSrc>,
+        start: Start<'a, TRq, TSrc, TBl>,
         /// Height of the block to request.
         block_height: NonZeroU64,
         /// Number of blocks to request. Always smaller than the value passed through
@@ -1231,15 +1244,15 @@ pub enum RequestAction<'a, TRq, TSrc> {
 
 /// Must be used to accept the request.
 #[must_use]
-pub struct Start<'a, TRq, TSrc> {
-    verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq>>,
+pub struct Start<'a, TRq, TSrc, TBl> {
+    verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq, TBl>>,
     source: usize,
     missing_pos: usize,
     next_request_id: &'a mut RequestId,
     marker: PhantomData<&'a TSrc>,
 }
 
-impl<'a, TRq, TSrc> Start<'a, TRq, TSrc> {
+impl<'a, TRq, TSrc, TBl> Start<'a, TRq, TSrc, TBl> {
     /// Updates the [`OptimisticSync`] with the fact that the request has actually been started.
     /// Returns the identifier for the request that must later be passed back to
     /// [`OptimisticSync::finish_request`].
@@ -1257,7 +1270,7 @@ impl<'a, TRq, TSrc> Start<'a, TRq, TSrc> {
     }
 }
 
-impl<'a, TRq, TSrc> fmt::Debug for Start<'a, TRq, TSrc> {
+impl<'a, TRq, TSrc, TBl> fmt::Debug for Start<'a, TRq, TSrc, TBl> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Start").finish()
     }
@@ -1275,12 +1288,12 @@ pub enum RequestFail {
 }
 
 /// Iterator that drains requests after a source has been removed.
-pub struct RequestsDrain<'a, TRq> {
-    iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq>>>,
+pub struct RequestsDrain<'a, TRq, TBl> {
+    iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq, TBl>>>,
     source_index: usize,
 }
 
-impl<'a, TRq> Iterator for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> Iterator for RequestsDrain<'a, TRq, TBl> {
     type Item = (RequestId, TRq);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1307,13 +1320,13 @@ impl<'a, TRq> Iterator for RequestsDrain<'a, TRq> {
     }
 }
 
-impl<'a, TRq> fmt::Debug for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> fmt::Debug for RequestsDrain<'a, TRq, TBl> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("RequestsDrain").finish()
     }
 }
 
-impl<'a, TRq> Drop for RequestsDrain<'a, TRq> {
+impl<'a, TRq, TBl> Drop for RequestsDrain<'a, TRq, TBl> {
     fn drop(&mut self) {
         // Drain all remaining elements even if the iterator is dropped eagerly.
         // This is the reason why a custom iterator type is needed, rather than using combinators.

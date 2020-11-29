@@ -168,7 +168,7 @@ async fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_foreground: mpsc::Sender<FromBackground>,
 ) -> impl Future<Output = ()> {
-    let mut sync = optimistic::OptimisticSync::<_, network::PeerId>::new(optimistic::Config {
+    let mut sync = optimistic::OptimisticSync::<_, network::PeerId, ()>::new(optimistic::Config {
         chain_information,
         sources_capacity: 32,
         source_selection_randomness_seed: rand::random(),
@@ -361,6 +361,7 @@ async fn start_sync(
                             scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
                             scale_encoded_justification: block.justification,
                             scale_encoded_extrinsics: Vec::new(),
+                            user_data: (),
                         })).map_err(|()| optimistic::RequestFail::BlocksUnavailable));
                     }
                 },

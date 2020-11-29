@@ -223,7 +223,7 @@ enum FromBackground {
 }
 
 enum ToDatabase {
-    FinalizedBlocks(Vec<optimistic::Block>),
+    FinalizedBlocks(Vec<optimistic::Block<()>>),
 }
 
 /// Returns the background task of the sync service.
@@ -235,7 +235,7 @@ async fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_database: mpsc::Sender<ToDatabase>,
 ) -> impl Future<Output = ()> {
-    let mut sync = optimistic::OptimisticSync::<_, network::PeerId>::new(optimistic::Config {
+    let mut sync = optimistic::OptimisticSync::<_, network::PeerId, ()>::new(optimistic::Config {
         chain_information: database
             .to_chain_information(&database.finalized_block_hash().unwrap())
             .unwrap(),
@@ -462,6 +462,7 @@ async fn start_sync(
                             scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
                             scale_encoded_extrinsics: block.body.unwrap(), // TODO: don't unwrap
                             scale_encoded_justification: block.justification,
+                            user_data: (),
                         })).map_err(|()| optimistic::RequestFail::BlocksUnavailable));
                     }
                 },
