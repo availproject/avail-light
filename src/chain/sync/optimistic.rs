@@ -859,7 +859,9 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         .best_to_finalized_storage_diff
                         .get(&req.key_as_vec())
                     {
-                        inner = Inner::Step2(req.inject_value(value.as_ref().map(|v| &v[..])));
+                        inner = Inner::Step2(
+                            req.inject_value(value.as_ref().map(|v| iter::once(&v[..]))),
+                        );
                         continue 'verif_steps;
                     }
 
@@ -1016,12 +1018,11 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: change API, see execute_block::StorageGet
     pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TSrc, TBl> {
         // TODO: simplify code inside here
         match self.inner {
             StorageGetTarget::Storage(inner) => {
-                let inner = inner.inject_value(value);
+                let inner = inner.inject_value(value.map(iter::once));
                 ProcessOne::from(Inner::Step2(inner), self.shared)
             }
             StorageGetTarget::HeapPagesAndRuntime(inner) => {

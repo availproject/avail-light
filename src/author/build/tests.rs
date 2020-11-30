@@ -17,6 +17,8 @@
 
 #![cfg(test)]
 
+use core::iter;
+
 #[test]
 fn block_building_works() {
     let chain_specs = crate::chain_spec::ChainSpec::from_json_bytes(
@@ -73,7 +75,7 @@ fn block_building_works() {
                 let value = chain_specs
                     .genesis_storage()
                     .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v);
+                    .map(|(_, v)| iter::once(v));
                 builder = get.inject_value(value);
             }
             super::BlockBuild::NextKey(_) => unimplemented!(), // Not needed for this test.

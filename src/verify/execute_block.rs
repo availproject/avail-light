@@ -191,8 +191,7 @@ impl StorageGet {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
-    pub fn inject_value(self, value: Option<&[u8]>) -> Verify {
+    pub fn inject_value(self, value: Option<impl Iterator<Item = impl AsRef<[u8]>>>) -> Verify {
         Verify::from_inner(self.0.inject_value(value))
     }
 }

@@ -210,16 +210,26 @@ impl StorageGet {
     }
 
     /// Injects the corresponding storage value.
-    // TODO: `value` parameter should be something like `Iterator<Item = impl AsRef<[u8]>`
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> RuntimeHostVm {
+    pub fn inject_value(
+        mut self,
+        value: Option<impl Iterator<Item = impl AsRef<[u8]>>>,
+    ) -> RuntimeHostVm {
+        // TODO: update the implementation to not require the folding here
+        let value = value.map(|i| {
+            i.fold(Vec::new(), |mut a, b| {
+                a.extend_from_slice(b.as_ref());
+                a
+            })
+        });
+
         match self.inner.vm {
             host::HostVm::ExternalStorageGet(req) => {
                 // TODO: should actually report the offset and max_size in the API
-                self.inner.vm = req.resume_full_value(value);
+                self.inner.vm = req.resume_full_value(value.as_ref().map(|v| &v[..]));
             }
             host::HostVm::ExternalStorageAppend(req) => {
-                let mut value = value.map(|v| v.to_vec()).unwrap_or_default();
                 // TODO: could be less overhead?
+                let mut value = value.unwrap_or_default();
                 append_to_storage_value(&mut value, req.value());
                 self.inner
                     .top_trie_changes

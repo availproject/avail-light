@@ -320,7 +320,7 @@ impl StorageGet {
     }
 
     /// Injects the corresponding storage value.
-    pub fn inject_value(self, value: Option<&[u8]>) -> Verify {
+    pub fn inject_value(self, value: Option<impl Iterator<Item = impl AsRef<[u8]>>>) -> Verify {
         VerifyInner {
             inner: self.inner.inject_value(value),
             consensus_success: self.consensus_success,
