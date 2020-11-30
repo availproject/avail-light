@@ -520,15 +520,15 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
         if self.inner.full {
             ProcessOne::from(
-                Inner::Step1(self.chain.verify_body(
-                    block.scale_encoded_header,
-                    now_from_unix_epoch,
-                    block.scale_encoded_extrinsics.into_iter(),
-                )),
+                Inner::Step1(
+                    self.chain
+                        .verify_body(block.scale_encoded_header, now_from_unix_epoch),
+                ),
                 ProcessOneShared {
                     pending_encoded_justification: block.scale_encoded_justification,
                     expected_block_height,
                     inner: self.inner,
+                    block_body: block.scale_encoded_extrinsics,
                     block_user_data: Some(block.user_data),
                 },
             )
@@ -558,6 +558,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                             pending_encoded_justification: block.scale_encoded_justification,
                             expected_block_height,
                             inner: self.inner,
+                            block_body: Vec::new(),
                             block_user_data: None,
                         },
                     )
@@ -655,7 +656,7 @@ pub enum ProcessOne<TRq, TSrc, TBl> {
 }
 
 enum Inner<TBl> {
-    Step1(blocks_tree::BodyVerifyStep1<Block<TBl>, vec::IntoIter<Vec<u8>>>),
+    Step1(blocks_tree::BodyVerifyStep1<Block<TBl>>),
     Step2(blocks_tree::BodyVerifyStep2<Block<TBl>>),
     JustificationVerif(blocks_tree::NonFinalizedTree<Block<TBl>>),
 }
@@ -665,6 +666,8 @@ struct ProcessOneShared<TRq, TSrc, TBl> {
     expected_block_height: u64,
     /// See [`OptimisticSync::inner`].
     inner: OptimisticSyncInner<TRq, TSrc, TBl>,
+    /// Body of the block being verified.
+    block_body: Vec<Vec<u8>>,
     /// User data of the block being verified.
     block_user_data: Option<TBl>,
 }
@@ -747,6 +750,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
 
                     inner = Inner::Step2(req.resume(
                         parent_runtime,
+                        shared.block_body.iter(),
                         shared.inner.top_trie_root_calculation_cache.take(),
                     ));
                 }
@@ -778,7 +782,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         let header = insert.header().into();
                         insert.insert(Block {
                             header,
-                            body: Vec::new(), // TODO: // FIXME: wrong! dummy!
+                            body: mem::take(&mut shared.block_body),
                             // Set to `Some` below if the justification check success.
                             justification: None,
                             storage_top_trie_changes,
@@ -977,15 +981,9 @@ pub struct StorageGet<TRq, TSrc, TBl> {
 
 enum StorageGetTarget<TBl> {
     Storage(blocks_tree::StorageGet<Block<TBl>>),
-    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>),
-    Runtime(
-        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>,
-        u64,
-    ),
-    HeapPages(
-        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>, vec::IntoIter<Vec<u8>>>,
-        Vec<u8>,
-    ),
+    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>),
+    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>, u64),
+    HeapPages(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>, Vec<u8>),
 }
 
 impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
@@ -1048,6 +1046,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                 .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner = inner.resume(
                     wasm_vm,
+                    self.shared.block_body.iter(),
                     self.shared.inner.top_trie_root_calculation_cache.take(),
                 );
                 ProcessOne::from(Inner::Step2(inner), self.shared)
@@ -1068,6 +1067,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                 .expect("invalid runtime code?!?!"); // TODO: ?!?!
                 let inner = inner.resume(
                     wasm_vm,
+                    self.shared.block_body.iter(),
                     self.shared.inner.top_trie_root_calculation_cache.take(),
                 );
                 ProcessOne::from(Inner::Step2(inner), self.shared)
