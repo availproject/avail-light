@@ -28,7 +28,7 @@ pin-project = "1.0.2"
 rand = "0.7.3"
 slab = "0.4.2"
 substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }
-structopt = { version = "0.3.20", default-features = false, features = ["color", "suggestions", "wrap_help"] }
+structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.15"
 tracing = { version = "0.1.21", features = ["attributes"] }
 tracing-futures = { version = "0.2.4", default-features = false, features = ["std", "std-future"] }
