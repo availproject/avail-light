@@ -25,7 +25,7 @@ import * as fs from 'fs';
 // is possible for the wasm-js bindings to change between two Rust versions. Feel free to update
 // this version pin whenever you like, provided it continues to build.
 child_process.execSync(
-    "cargo +1.47.0 build --package substrate-lite-js --target wasm32-wasi --no-default-features --release",
+    "cargo +1.48.0 build --package substrate-lite-js --target wasm32-wasi --no-default-features --release",
     { 'stdio': 'inherit' }
 );
 
