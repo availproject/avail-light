@@ -526,7 +526,10 @@ where
                 })
             }
             Substream::PingIn(_) => None,
-            Substream::NotificationsOut { .. } => todo!(),
+            Substream::NotificationsOut { user_data, .. } => Some(Event::NotificationsOutReset {
+                id: SubstreamId(substream_id),
+                user_data,
+            }),
             Substream::NotificationsOutClosed { .. } => None,
             Substream::RequestInSend => None,
         }
@@ -1386,6 +1389,15 @@ pub enum Event<TRqUd, TNotifUd> {
         /// Identifier of the substream. Value that was returned by
         /// [`Established::open_notifications_substream`].
         id: SubstreamId,
+    },
+
+    /// Remote has reset an outgoing notifications substream. The substream is instantly closed.
+    NotificationsOutReset {
+        /// Identifier of the substream. Value that was returned by
+        /// [`Established::open_notifications_substream`].
+        id: SubstreamId,
+        /// Value that was passed to [`Established::open_notifications_substream`].
+        user_data: TNotifUd,
     },
 }
 

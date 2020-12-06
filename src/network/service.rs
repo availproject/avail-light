@@ -320,11 +320,6 @@ where
                 let peer_id = self.libp2p.connection_peer_id(*id).await;
                 let chain_index = overlay_network_index / 2;
                 *pending_in_accept = None;
-
-                return Event::ChainConnected {
-                    peer_id,
-                    chain_index,
-                };
             }
 
             match self.libp2p.next_event().await {
@@ -358,11 +353,20 @@ where
                     overlay_network_index,
                     remote_handshake,
                 } => {
-                    let chain_info = &self.chains[overlay_network_index / 2];
+                    let chain_index = overlay_network_index / 2;
                     if overlay_network_index % 2 == 0 {
                         let remote_handshake =
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
-                    // TODO: don't unwrap
+                        // TODO: don't unwrap
+                        // TODO: compare genesis hash with ours
+                        let peer_id = self.libp2p.connection_peer_id(id).await;
+                        return Event::ChainConnected {
+                            peer_id,
+                            chain_index,
+                            best_hash: *remote_handshake.best_hash,
+                            best_number: remote_handshake.best_number,
+                            role: remote_handshake.role,
+                        };
                     } else {
                     }
 
@@ -372,6 +376,23 @@ where
                     id,
                     overlay_network_index,
                 } => {
+                    // TODO:
+                }
+                libp2p::Event::NotificationsOutClose {
+                    id,
+                    overlay_network_index,
+                } => {
+                    let chain_index = overlay_network_index / 2;
+                    if overlay_network_index % 2 == 0 {
+                        let peer_id = self.libp2p.connection_peer_id(id).await;
+                        return Event::ChainDisconnected {
+                            peer_id,
+                            chain_index,
+                        };
+                    // TODO: don't unwrap
+                    } else {
+                    }
+
                     // TODO:
                 }
                 libp2p::Event::NotificationsInOpen {
@@ -532,6 +553,12 @@ pub enum Event {
     ChainConnected {
         chain_index: usize,
         peer_id: peer_id::PeerId,
+        /// Role the node reports playing on the network.
+        role: protocol::Role,
+        /// Height of the best block according to this node.
+        best_number: u64,
+        /// Hash of the best block according to this node.
+        best_hash: [u8; 32],
     },
     ChainDisconnected {
         chain_index: usize,

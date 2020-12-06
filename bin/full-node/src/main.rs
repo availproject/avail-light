@@ -28,6 +28,7 @@ use structopt::StructOpt as _;
 use substrate_lite::{
     chain, chain_spec,
     database::full_sled,
+    header,
     network::{connection, multiaddr, peer_id::PeerId},
 };
 use tracing::Instrument as _;
@@ -175,7 +176,12 @@ async fn async_main() {
         listen_addresses: Vec::new(),
         protocol_id: chain_spec.protocol_id().to_owned(),
         genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-        best_block: (0, database.finalized_block_hash().unwrap()),
+        best_block: {
+            let hash = database.finalized_block_hash().unwrap();
+            let header = database.block_scale_encoded_header(&hash).unwrap().unwrap();
+            let number = header::decode(&header).unwrap().number;
+            (number, hash)
+        },
         // TODO: add relay chain bootstrap nodes
         bootstrap_nodes: {
             let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());

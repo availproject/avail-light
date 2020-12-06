@@ -771,7 +771,7 @@ where
                     }) => {
                         let mut guarded = self.guarded.lock().await;
 
-                        let expected_id = guarded
+                        let _expected_id = guarded
                             .peerset
                             .connection_mut(connection_id.0)
                             .unwrap()
@@ -780,7 +780,7 @@ where
                                 peerset::SubstreamDirection::Out,
                             )
                             .unwrap();
-                        debug_assert_eq!(id, expected_id);
+                        debug_assert_eq!(id, _expected_id);
 
                         guarded
                             .events_tx
@@ -793,6 +793,32 @@ where
                     }
                     Some(connection::established::Event::NotificationsOutCloseDemanded { id }) => {
                         todo!()
+                    }
+                    Some(connection::established::Event::NotificationsOutReset {
+                        id,
+                        user_data: overlay_network_index,
+                    }) => {
+                        let mut guarded = self.guarded.lock().await;
+
+                        let _expected_id = guarded
+                            .peerset
+                            .connection_mut(connection_id.0)
+                            .unwrap()
+                            .remove_pending_substream(
+                                overlay_network_index,
+                                peerset::SubstreamDirection::Out,
+                            )
+                            .unwrap();
+                        debug_assert_eq!(id, _expected_id);
+
+                        guarded
+                            .events_tx
+                            .send(Event::NotificationsOutClose {
+                                id: connection_id,
+                                overlay_network_index,
+                            })
+                            .await
+                            .unwrap();
                     }
                 }
 
@@ -946,6 +972,11 @@ pub enum Event<TConn> {
     NotificationsOutReject {
         id: ConnectionId,
         // TODO: what if fallback?
+        overlay_network_index: usize,
+    },
+
+    NotificationsOutClose {
+        id: ConnectionId,
         overlay_network_index: usize,
     },
 

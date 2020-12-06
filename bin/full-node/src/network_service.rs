@@ -320,6 +320,7 @@ impl NetworkService {
                 service::Event::ChainConnected {
                     peer_id,
                     chain_index,
+                    ..
                 } => {
                     debug_assert_eq!(chain_index, 0);
                     return Event::Connected(peer_id);
