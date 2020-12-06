@@ -125,7 +125,7 @@ enum ConnectionTy<TConn, TPending> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
-enum SubstreamDirection {
+pub enum SubstreamDirection {
     In,
     Out,
 }
@@ -135,6 +135,7 @@ enum SubstreamDirection {
 enum SubstreamState<TSub, TPendingSub> {
     Pending(TPendingSub),
     Open(TSub),
+    Poisoned,
 }
 
 impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, TSub, TPendingSub> {
@@ -413,13 +414,88 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     }
 
     // TODO: uniqueness
-    pub fn add_pending_substream(&mut self, overlay_network: usize, user_data: TPendingSub) {
+    pub fn add_pending_substream(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+        user_data: TPendingSub,
+    ) {
         assert!(overlay_network < self.peerset.num_overlay_networks);
 
         self.peerset.connection_overlays.insert(
-            (self.id.0, overlay_network, SubstreamDirection::Out),
+            (self.id.0, overlay_network, direction),
             SubstreamState::Pending(user_data),
         );
+    }
+
+    /// Turns a pending substream into an established substream.
+    ///
+    /// Returns an error if there is no pending substream with this overlay network and direction
+    /// combination.
+    pub fn confirm_substream(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+        user_data: impl FnOnce(TPendingSub) -> TSub,
+    ) -> Result<(), ()> {
+        assert!(overlay_network < self.peerset.num_overlay_networks);
+
+        let entry = self
+            .peerset
+            .connection_overlays
+            .get_mut(&(self.id.0, overlay_network, direction))
+            .ok_or(())?;
+        if let SubstreamState::Pending(ud) = mem::replace(entry, SubstreamState::Poisoned) {
+            *entry = SubstreamState::Open(user_data(ud));
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Removes a pending substream.
+    ///
+    /// Returns an error if there is no pending substream with this overlay network and direction
+    /// combination.
+    pub fn remove_pending_substream(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+    ) -> Result<TPendingSub, ()> {
+        assert!(overlay_network < self.peerset.num_overlay_networks);
+
+        let entry = self
+            .peerset
+            .connection_overlays
+            .remove(&(self.id.0, overlay_network, direction))
+            .ok_or(())?;
+
+        if let SubstreamState::Pending(ud) = entry {
+            Ok(ud)
+        } else {
+            Err(())
+        }
+    }
+
+    /// Returns the list of open substreams.
+    pub fn open_substreams_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (usize, SubstreamDirection, &mut TSub)> {
+        self.peerset
+            .connection_overlays
+            .range_mut(
+                (self.id.0, 0, SubstreamDirection::In)
+                    ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+            )
+            .filter_map(
+                move |(&(_, ref overlay_network_index, ref direction), &mut ref mut state)| {
+                    match state {
+                        SubstreamState::Open(ud) => Some((*overlay_network_index, *direction, ud)),
+                        SubstreamState::Pending(_) => None,
+                        SubstreamState::Poisoned => unreachable!(),
+                    }
+                },
+            )
     }
 
     /// Gives access to the user data associated with the connection.
@@ -446,6 +522,18 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             .peer_connections
             .remove(&(connection.peer_index, self.id.0));
         debug_assert!(_was_in);
+        let overlays = self
+            .peerset
+            .connection_overlays
+            .range_mut(
+                (self.id.0, 0, SubstreamDirection::In)
+                    ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+            )
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<_>>();
+        for k in overlays {
+            self.peerset.connection_overlays.remove(&k).unwrap();
+        }
         match connection.ty {
             ConnectionTy::Connected { user_data, .. } => user_data,
             _ => unreachable!(),

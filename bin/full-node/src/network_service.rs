@@ -76,11 +76,17 @@ pub struct Config {
 pub enum Event {
     Connected(PeerId),
     Disconnected(PeerId),
+    BlockAnnounce {
+        peer_id: PeerId,
+        announce: service::EncodedBlockAnnounce,
+    },
 }
 
 pub struct NetworkService {
     /// Fields behind a mutex.
-    guarded: Mutex<Guarded>,
+    ///
+    /// A regular `Mutex` is used in order to avoid futures cancellation issues.
+    guarded: parking_lot::Mutex<Guarded>,
 
     /// Data structure holding the entire state of the networking.
     network: service::ChainNetwork<Instant, (), ()>,
@@ -157,7 +163,7 @@ impl NetworkService {
 
         // Initialize the network service.
         let network_service = Arc::new(NetworkService {
-            guarded: Mutex::new(Guarded {
+            guarded: parking_lot::Mutex::new(Guarded {
                 tasks_executor: config.tasks_executor,
             }),
             network: service::ChainNetwork::new(service::Config {
@@ -166,6 +172,10 @@ impl NetworkService {
                     in_slots: 25,
                     out_slots: 25,
                     protocol_id: config.protocol_id,
+                    best_hash: config.best_block.1,
+                    best_number: config.best_block.0,
+                    genesis_hash: config.genesis_block_hash,
+                    role: protocol::Role::Full,
                 }],
                 known_nodes: config
                     .bootstrap_nodes
@@ -181,13 +191,21 @@ impl NetworkService {
 
         // Spawn tasks dedicated to the Kademlia discovery.
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            let network_service = network_service.clone();
+            let network_service = Arc::downgrade(&network_service);
             async move {
                 let mut next_discovery = Duration::from_secs(5);
 
                 loop {
                     futures_timer::Delay::new(next_discovery).await;
                     next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
+
+                    let network_service = match network_service.upgrade() {
+                        Some(ns) => ns,
+                        None => {
+                            tracing::debug!("discovery-finish");
+                            return;
+                        }
+                    };
 
                     match network_service
                         .network
@@ -209,6 +227,22 @@ impl NetworkService {
             .instrument(tracing::debug_span!(parent: None, "kademlia-discovery"))
         }));
 
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            let network_service = network_service.clone();
+            async move {
+                // TODO: stop the task if the network service is destroyed
+                loop {
+                    network_service
+                        .network
+                        .next_substream()
+                        .await
+                        .open(Instant::now())
+                        .await;
+                }
+            }
+            .instrument(tracing::debug_span!(parent: None, "substreams-open"))
+        }));
+
         Ok(network_service)
     }
 
@@ -225,7 +259,7 @@ impl NetworkService {
         self: Arc<Self>,
         target: PeerId,
         config: protocol::BlocksRequestConfig,
-    ) -> Result<Vec<protocol::BlockData>, ()> {
+    ) -> Result<Vec<protocol::BlockData>, service::BlocksRequestError> {
         self.network
             .blocks_request(Instant::now(), target, 0, config)
             .await // TODO: chain_index
@@ -241,11 +275,17 @@ impl NetworkService {
             match self.network.next_event().await {
                 service::Event::Connected(peer_id) => {
                     tracing::debug!(%peer_id, "connected");
-                    return Event::Connected(peer_id);
                 }
-                service::Event::Disconnected(peer_id) => {
+                service::Event::Disconnected {
+                    peer_id,
+                    chain_indices,
+                } => {
                     tracing::debug!(%peer_id, "disconnected");
-                    return Event::Disconnected(peer_id);
+                    if !chain_indices.is_empty() {
+                        debug_assert_eq!(chain_indices.len(), 1);
+                        debug_assert_eq!(chain_indices[0], 0);
+                        return Event::Disconnected(peer_id);
+                    }
                 }
                 service::Event::StartConnect { id, multiaddr } => {
                     let span = tracing::debug_span!("start-connect", ?id, %multiaddr);
@@ -262,12 +302,34 @@ impl NetworkService {
                         }
                     };
 
-                    let mut guarded = self.guarded.lock().await;
+                    let mut guarded = self.guarded.lock();
                     (guarded.tasks_executor)(Box::pin(
                         connection_task(socket, self.clone(), id).instrument(
                             tracing::trace_span!(parent: None, "connection", address = %multiaddr),
                         ),
                     ));
+                }
+                service::Event::BlockAnnounce {
+                    chain_index,
+                    peer_id,
+                    announce,
+                } => {
+                    tracing::debug!(%chain_index, %peer_id, ?announce, "block-announce");
+                    return Event::BlockAnnounce { peer_id, announce };
+                }
+                service::Event::ChainConnected {
+                    peer_id,
+                    chain_index,
+                } => {
+                    debug_assert_eq!(chain_index, 0);
+                    return Event::Connected(peer_id);
+                }
+                service::Event::ChainDisconnected {
+                    peer_id,
+                    chain_index,
+                } => {
+                    debug_assert_eq!(chain_index, 0);
+                    return Event::Disconnected(peer_id);
                 }
             }
         }
@@ -322,7 +384,8 @@ async fn connection_task(
     loop {
         let (read_buffer, write_buffer) = match tcp_socket.buffers() {
             Ok(b) => b,
-            Err(_) => {
+            Err(error) => {
+                tracing::info!(%error, "task-finished");
                 // TODO: report disconnect to service
                 return;
             }
@@ -356,26 +419,35 @@ async fn connection_task(
             .await
         {
             Ok(rw) => rw,
-            Err(_) => return,
+            Err(error) => {
+                tracing::info!(%error, "task-finished");
+                return;
+            }
         };
 
-        if read_write.read_bytes != 0 || read_write.written_bytes != 0 {
+        if read_write.read_bytes != 0 || read_write.written_bytes != 0 || read_write.write_close {
             tracing::event!(
                 tracing::Level::TRACE,
                 read = read_write.read_bytes,
-                written = read_write.written_bytes
+                written = read_write.written_bytes,
+                "wake-up" = ?read_write.wake_up_after,  // TODO: ugly display
+                "write-close" = read_write.write_close,
             );
         }
 
-        // TODO:
-        /*if read_write.write_close && !tcp_socket.is_closed() {
-            tcp_socket.close();
-        }*/
-
         if read_write.write_close && read_buffer.is_none() {
             // Make sure to finish closing the TCP socket.
-            tcp_socket.flush_close().await;
+            tcp_socket
+                .flush_close()
+                .instrument(tracing::debug_span!("flush-close"))
+                .await;
+            tracing::info!("task-finished");
             return;
+        }
+
+        if read_write.write_close && !tcp_socket.is_closed() {
+            tcp_socket.close();
+            tracing::info!("write-closed");
         }
 
         if let Some(wake_up) = read_write.wake_up_after {
@@ -390,10 +462,6 @@ async fn connection_task(
         }
 
         tcp_socket.advance(read_write.read_bytes, read_write.written_bytes);
-
-        if read_write.read_bytes != 0 || read_write.written_bytes != 0 {
-            continue;
-        }
 
         // TODO: maybe optimize the code below so that multiple messages are pulled from `to_connection` at once
 

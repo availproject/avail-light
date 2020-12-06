@@ -22,6 +22,8 @@
 
 // TODO: expand docs
 
+use crate::header;
+
 use alloc::vec::Vec;
 use core::{
     convert::TryFrom,
@@ -313,6 +315,56 @@ pub enum Role {
     Authority,
 }
 
+/// Decoded block announcement notification.
+#[derive(Debug)]
+pub struct BlockAnnounceRef<'a> {
+    /// Header of the announced block.
+    pub header: header::HeaderRef<'a>,
+    /// True if the block is the new best block of the announcer.
+    pub is_best: bool,
+    // TODO: missing a `Vec<u8>` field that SCALE-decodes into this type: https://github.com/paritytech/polkadot/blob/fff4635925c12c80717a524367687fcc304bcb13/node%2Fprimitives%2Fsrc%2Flib.rs#L87
+}
+
+/// Turns a block announcement into its SCALE-encoding ready to be sent over the wire.
+///
+/// This function returns an iterator of buffers. The encoded message consists in the
+/// concatenation of the buffers.
+pub fn encode_block_announce<'a>(
+    announce: BlockAnnounceRef<'a>,
+) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    let is_best = if announce.is_best { [1u8] } else { [0u8] };
+    announce
+        .header
+        .scale_encoding()
+        .map(either::Left)
+        .chain(iter::once(either::Right(is_best)))
+}
+
+/// Decodes a block announcement.
+pub fn decode_block_announce(bytes: &[u8]) -> Result<BlockAnnounceRef, DecodeBlockAnnounceError> {
+    nom::combinator::all_consuming(nom::combinator::map(
+        nom::sequence::tuple((
+            |s| {
+                header::decode_partial(s).map(|(a, b)| (b, a)).map_err(|_| {
+                    nom::Err::Failure(nom::error::make_error(s, nom::error::ErrorKind::Verify))
+                })
+            },
+            nom::branch::alt((
+                nom::combinator::map(nom::bytes::complete::tag(&[0]), |_| false),
+                nom::combinator::map(nom::bytes::complete::tag(&[1]), |_| true),
+            )),
+            nom::multi::length_data(crate::util::nom_scale_compact_usize),
+        )),
+        |(header, is_best, _)| BlockAnnounceRef { header, is_best },
+    ))(&bytes)
+    .map(|(_, ann)| ann)
+    .map_err(DecodeBlockAnnounceError)
+}
+
+/// Error potentially returned by [`decode_block_announces_handshake`].
+#[derive(Debug, derive_more::Display)]
+pub struct DecodeBlockAnnounceError<'a>(nom::Err<nom::error::Error<&'a [u8]>>);
+
 /// Turns a block announces handshake into its SCALE-encoding ready to be sent over the wire.
 ///
 /// This function returns an iterator of buffers. The encoded message consists in the
@@ -339,7 +391,7 @@ pub fn encode_block_announces_handshake<'a>(
 /// Decodes a SCALE-encoded block announces handshake.
 pub fn decode_block_announces_handshake(
     handshake: &[u8],
-) -> Result<BlockAnnouncesHandshakeRef, BlockAnnouncesDecodeError> {
+) -> Result<BlockAnnouncesHandshakeRef, BlockAnnouncesHandshakeDecodeError> {
     nom::combinator::all_consuming(nom::combinator::map(
         nom::sequence::tuple((
             nom::branch::alt((
@@ -359,9 +411,9 @@ pub fn decode_block_announces_handshake(
         },
     ))(handshake)
     .map(|(_, hs)| hs)
-    .map_err(BlockAnnouncesDecodeError)
+    .map_err(BlockAnnouncesHandshakeDecodeError)
 }
 
 /// Error potentially returned by [`decode_block_announces_handshake`].
 #[derive(Debug, derive_more::Display)]
-pub struct BlockAnnouncesDecodeError<'a>(nom::Err<nom::error::Error<&'a [u8]>>);
+pub struct BlockAnnouncesHandshakeDecodeError<'a>(nom::Err<nom::error::Error<&'a [u8]>>);

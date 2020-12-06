@@ -48,6 +48,13 @@ pub struct Config {
     /// network.
     pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 
+    /// Hash of the genesis block of the chain. Sent to other nodes in order to determine whether
+    /// the chains match.
+    pub genesis_block_hash: [u8; 32],
+
+    /// Number and hash of the current best block. Can later be updated with // TODO: which function?
+    pub best_block: (u64, [u8; 32]),
+
     /// Identifier of the chain to connect to.
     ///
     /// Each blockchain has (or should have) a different "protocol id". This value identifies the
@@ -82,6 +89,10 @@ impl NetworkService {
                     in_slots: 25,
                     out_slots: 25,
                     protocol_id: config.protocol_id,
+                    best_hash: config.best_block.1,
+                    best_number: config.best_block.0,
+                    genesis_hash: config.genesis_block_hash,
+                    role: protocol::Role::Full,
                 }],
                 known_nodes: config
                     .bootstrap_nodes
@@ -98,12 +109,11 @@ impl NetworkService {
 
     /// Sends a blocks request to the given peer.
     // TODO: more docs
-    // TODO: proper error type
     pub async fn blocks_request(
         self: Arc<Self>,
         target: PeerId,
         config: protocol::BlocksRequestConfig,
-    ) -> Result<Vec<protocol::BlockData>, ()> {
+    ) -> Result<Vec<protocol::BlockData>, service::BlocksRequestError> {
         self.network
             .blocks_request(ffi::Instant::now(), target, 0, config)
             .await // TODO: chain_index
@@ -111,12 +121,11 @@ impl NetworkService {
 
     /// Sends a storage proof request to the given peer.
     // TODO: more docs
-    // TODO: proper error type
     pub async fn storage_proof_request(
         self: Arc<Self>,
         target: PeerId,
         config: protocol::StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
-    ) -> Result<Vec<Vec<u8>>, ()> {
+    ) -> Result<Vec<Vec<u8>>, service::StorageProofRequestError> {
         self.network
             .storage_proof_request(ffi::Instant::now(), target, 0, config)
             .await // TODO: chain_index
@@ -130,7 +139,14 @@ impl NetworkService {
         loop {
             match self.network.next_event().await {
                 service::Event::Connected(peer_id) => return Event::Connected(peer_id),
-                service::Event::Disconnected(peer_id) => return Event::Disconnected(peer_id),
+                service::Event::Disconnected {
+                    peer_id,
+                    chain_indices,
+                } => {
+                    if !chain_indices.is_empty() {
+                        return Event::Disconnected(peer_id);
+                    }
+                }
                 service::Event::StartConnect { id, multiaddr } => {
                     // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
                     // into a `Future<dyn Output = Result<TcpStream, ...>>`.
@@ -144,6 +160,25 @@ impl NetworkService {
 
                     let mut guarded = self.guarded.lock().await;
                     (guarded.tasks_executor)(Box::pin(connection_task(socket, self.clone(), id)));
+                }
+                service::Event::BlockAnnounce {
+                    chain_index,
+                    peer_id,
+                    announce,
+                } => {}
+                service::Event::ChainConnected {
+                    peer_id,
+                    chain_index,
+                } => {
+                    debug_assert_eq!(chain_index, 0);
+                    return Event::Connected(peer_id);
+                }
+                service::Event::ChainDisconnected {
+                    peer_id,
+                    chain_index,
+                } => {
+                    debug_assert_eq!(chain_index, 0);
+                    return Event::Disconnected(peer_id);
                 }
             }
         }
@@ -238,10 +273,6 @@ async fn connection_task(
         websocket.send(&write_buffer[..read_write.written_bytes]);
 
         websocket.advance_read_cursor(read_write.read_bytes);
-
-        if read_write.read_bytes != 0 || read_write.written_bytes != 0 {
-            continue;
-        }
 
         // TODO: maybe optimize the code below so that multiple messages are pulled from `to_connection` at once
 

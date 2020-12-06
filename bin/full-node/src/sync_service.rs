@@ -78,8 +78,11 @@ pub struct SyncService {
     from_background: Mutex<mpsc::Receiver<FromBackground>>,
 
     /// For each emitted blocks request, an element is stored here.
-    blocks_requests:
-        Mutex<slab::Slab<oneshot::Sender<Result<Vec<network::protocol::BlockData>, ()>>>>,
+    ///
+    /// A regular `Mutex` is used in order to avoid issues with futures cancellation.
+    blocks_requests: parking_lot::Mutex<
+        slab::Slab<oneshot::Sender<Result<Vec<network::protocol::BlockData>, ()>>>,
+    >,
 }
 
 impl SyncService {
@@ -123,7 +126,7 @@ impl SyncService {
             sync_state,
             to_background: Mutex::new(to_background),
             from_background: Mutex::new(from_background),
-            blocks_requests: Mutex::new(slab::Slab::new()),
+            blocks_requests: parking_lot::Mutex::new(slab::Slab::new()),
         })
     }
 
@@ -172,12 +175,7 @@ impl SyncService {
         id: BlocksRequestId,
         response: Result<Vec<network::protocol::BlockData>, ()>,
     ) {
-        let _ = self
-            .blocks_requests
-            .lock()
-            .await
-            .remove(id.0)
-            .send(response);
+        let _ = self.blocks_requests.lock().remove(id.0).send(response);
     }
 
     /// Returns the next event that happened in the sync service.
@@ -193,7 +191,7 @@ impl SyncService {
                     request,
                     send_back,
                 } => {
-                    let id = BlocksRequestId(self.blocks_requests.lock().await.insert(send_back));
+                    let id = BlocksRequestId(self.blocks_requests.lock().insert(send_back));
                     return Event::BlocksRequest {
                         id,
                         target,

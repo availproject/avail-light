@@ -91,6 +91,12 @@ async fn async_main() {
             .expect("Failed to decode chain specs")
     };
 
+    let genesis_chain_information =
+        chain::chain_information::ChainInformation::from_genesis_storage(
+            chain_spec.genesis_storage(),
+        )
+        .unwrap(); // TODO: don't unwrap?
+
     // If `chain_spec` define a parachain, also load the specs of the relay chain.
     let (relay_chain_spec, parachain_id) =
         if let Some((relay_chain_name, parachain_id)) = chain_spec.relay_chain() {
@@ -120,14 +126,32 @@ async fn async_main() {
             (None, None)
         };
 
+    let relay_genesis_chain_information = if let Some(relay_chain_spec) = &relay_chain_spec {
+        Some(
+            chain::chain_information::ChainInformation::from_genesis_storage(
+                relay_chain_spec.genesis_storage(),
+            )
+            .unwrap(),
+        ) // TODO: don't unwrap?
+    } else {
+        None
+    };
+
     let threads_pool = futures::executor::ThreadPool::builder()
         .name_prefix("tasks-pool-")
         .create()
         .unwrap();
 
-    let database = open_database(&chain_spec, cli_options.tmp).await;
+    let database = open_database(&chain_spec, &genesis_chain_information, cli_options.tmp).await;
     let relay_chain_database = if let Some(relay_chain_spec) = &relay_chain_spec {
-        Some(open_database(&relay_chain_spec, cli_options.tmp).await)
+        Some(
+            open_database(
+                &relay_chain_spec,
+                relay_genesis_chain_information.as_ref().unwrap(),
+                cli_options.tmp,
+            )
+            .await,
+        )
     } else {
         None
     };
@@ -150,12 +174,12 @@ async fn async_main() {
     let network_service = network_service::NetworkService::new(network_service::Config {
         listen_addresses: Vec::new(),
         protocol_id: chain_spec.protocol_id().to_owned(),
-        genesis_block_hash: database.finalized_block_hash().unwrap(),
+        genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
         best_block: (0, database.finalized_block_hash().unwrap()),
         // TODO: add relay chain bootstrap nodes
         bootstrap_nodes: {
             let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
-            for node in chain_spec.boot_nodes() {
+            for node in chain_spec.boot_nodes().iter() {
                 let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
                 if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
                     let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
@@ -233,6 +257,8 @@ async fn async_main() {
     })
     .map(|_| ());
 
+    let mut network_known_best = None;
+
     loop {
         futures::select! {
             _ = informant_timer.next() => {
@@ -263,10 +289,7 @@ async fn async_main() {
                         finalized_number: sync_state.finalized_block_number,
                         best_hash: &sync_state.best_block_hash,
                         finalized_hash: &sync_state.finalized_block_hash,
-                        network_known_best: None, /* TODO: match network_state.best_network_block_height.load(Ordering::Relaxed) {
-                            0 => None,
-                            n => Some(n)
-                        },*/
+                        network_known_best,
                     });
                 }
             },
@@ -278,6 +301,14 @@ async fn async_main() {
                     }
                     network_service::Event::Disconnected(peer_id) => {
                         sync_service.remove_source(peer_id).await;
+                    }
+                    network_service::Event::BlockAnnounce { peer_id, announce } => {
+                        // TODO: report to sync
+                        let decoded = announce.decode();
+                        match network_known_best {
+                            Some(n) if n >= decoded.header.number => {},
+                            _ => network_known_best = Some(decoded.header.number),
+                        }
                     }
                 }
             }
@@ -294,7 +325,7 @@ async fn async_main() {
                             let sync_service = sync_service.clone();
                             async move {
                                 let result = block_request.await;
-                                sync_service.answer_blocks_request(id, result).await;
+                                sync_service.answer_blocks_request(id, result.map_err(|_| ())).await;
                             }
                         });
                     }
@@ -319,7 +350,7 @@ async fn async_main() {
                             let sync_service = sync_service.clone();
                             async move {
                                 let result = block_request.await;
-                                sync_service.answer_blocks_request(id, result).await;
+                                sync_service.answer_blocks_request(id, result.map_err(|_| ())).await;
                             }
                         });
                     }
@@ -379,6 +410,7 @@ async fn async_main() {
 #[tracing::instrument(skip(chain_spec))]
 async fn open_database(
     chain_spec: &chain_spec::ChainSpec,
+    genesis_chain_information: &chain::chain_information::ChainInformation,
     tmp: bool,
 ) -> Arc<full_sled::SledFullDatabase> {
     Arc::new({
@@ -407,19 +439,11 @@ async fn open_database(
 
             // The database doesn't exist or is empty.
             full_sled::DatabaseOpen::Empty(empty) => {
-                // Build information about state of the chain at the genesis block, and fill the
-                // database with it.
-                let genesis_chain_information =
-                    chain::chain_information::ChainInformation::from_genesis_storage(
-                        chain_spec.genesis_storage(),
-                    )
-                    .unwrap(); // TODO: don't unwrap?
-
                 // The finalized block is the genesis block. As such, it has an empty body and
                 // no justification.
                 empty
                     .initialize(
-                        &genesis_chain_information,
+                        genesis_chain_information,
                         iter::empty(),
                         None,
                         chain_spec.genesis_storage(),
