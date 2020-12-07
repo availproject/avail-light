@@ -69,12 +69,21 @@ impl JitPrototype {
                 match import.ty() {
                     wasmtime::ExternType::Func(f) => {
                         // TODO: don't panic below
-                        let function_index = symbols(
+                        let function_index = match symbols(
                             import.module(),
                             import.name(),
                             &TryFrom::try_from(&f).unwrap(),
-                        )
-                        .unwrap();
+                        ) {
+                            Ok(idx) => idx,
+                            Err(()) => {
+                                return Err(NewErr::ModuleError(ModuleError(format!(
+                                    "unresolved import: `{}`:`{}`",
+                                    import.module(),
+                                    import.name()
+                                ))));
+                            }
+                        };
+
                         let interrupter = builder.interrupter();
                         imports.push(wasmtime::Extern::Func(wasmtime::Func::new(
                             &store,
