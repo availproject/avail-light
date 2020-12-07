@@ -25,7 +25,9 @@
 //! - A list of [`Multiaddr`]s onto which the node is believed to be reachable.
 //!   - For each multiaddr, optionally an active connection or pending dialing attempt.
 //! - A list of overlay networks the node is believed to belong to.
-//!   - For each overlay network the node belongs to, TODO
+//!   - For each overlay network the node belongs to, one optional inbound and one optional
+//!     outbound substream.
+//!     - Each substream can be either "pending" or "established".
 //!
 //! > **Note**: The [`Peerset`] does *do* anything by itself, such as opening new connections. It
 //! >           is purely a data structure that helps organize and maintain information about the
@@ -46,7 +48,7 @@ use crate::network::peer_id::PeerId;
 
 use ahash::RandomState;
 use alloc::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{btree_map, BTreeMap, BTreeSet},
     vec::Vec,
 };
 use core::mem;
@@ -73,12 +75,18 @@ pub struct Peerset<TPeer, TConn, TPending, TSub, TPendingSub> {
     /// Same as [`Config::num_overlay_networks`].
     num_overlay_networks: usize,
 
+    /// For every known [`PeerId`], its index in [`Peerset::peers`].
     peer_ids: HashMap<PeerId, usize, RandomState>,
 
+    /// List of all known peers and their data.
     peers: slab::Slab<Peer<TPeer>>,
 
     /// Active and pending connections.
     connections: slab::Slab<Connection<TConn, TPending>>,
+
+    /// Incremented by one every time a connection goes into a "connected" state. Decremented when
+    /// a connection is closed.
+    num_established_connections: usize,
 
     /// PRNG used to randomly select nodes.
     rng: rand_chacha::ChaCha20Rng,
@@ -104,7 +112,6 @@ struct Peer<TPeer> {
     peer_id: PeerId,
     user_data: TPeer,
     addresses: Vec<Multiaddr>,
-    connected: bool,
 }
 
 struct Connection<TConn, TPending> {
@@ -124,13 +131,17 @@ enum ConnectionTy<TConn, TPending> {
     },
 }
 
+/// Direction of a substream.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum SubstreamDirection {
+    /// Substream opened by the remote.
     In,
+    /// Substream opened by the local node.
     Out,
 }
 
-/// > **Note**: There is `Closed` variant, as this corresponds to a lack of entry in the hashmap.
+/// > **Note**: There is no `Closed` variant, as this corresponds to a lack of entry in the
+/// >           hashmap.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 enum SubstreamState<TSub, TPendingSub> {
     Pending(TPendingSub),
@@ -159,6 +170,7 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
             rng,
             peer_ids,
             peers: slab::Slab::with_capacity(config.peers_capacity),
+            num_established_connections: 0,
             connections: slab::Slab::with_capacity(config.peers_capacity * 2), // TODO: correct capacity?
             peer_connections: BTreeSet::new(),
             overlay_peers: BTreeSet::new(),
@@ -169,11 +181,15 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
 
     /// Returns the number of established connections in the peerset.
     pub fn num_established_connections(&self) -> usize {
-        // TODO: O(n)
-        self.connections
-            .iter()
-            .filter(|(_, c)| matches!(c.ty, ConnectionTy::Connected { .. }))
-            .count()
+        debug_assert_eq!(
+            self.connections
+                .iter()
+                .filter(|(_, c)| matches!(c.ty, ConnectionTy::Connected { .. }))
+                .count(),
+            self.num_established_connections
+        );
+
+        self.num_established_connections
     }
 
     /// Returns the [`PeerId`]s of all active connections.
@@ -377,7 +393,9 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
 
 /// Access to a connection in the [`Peerset`].
 pub enum PendingOrConnectionMut<'a, TPeer, TConn, TPending, TSub, TPendingSub> {
+    /// Connection is in the pending state.
     Pending(PendingMut<'a, TPeer, TConn, TPending, TSub, TPendingSub>),
+    /// Connection is in the established state.
     Connection(ConnectionMut<'a, TPeer, TConn, TPending, TSub, TPendingSub>),
 }
 
@@ -413,25 +431,46 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         }
     }
 
-    // TODO: uniqueness
+    /// Adds a pending substream of the given overlay network and direction to the connection.
+    ///
+    /// Only one substream per combination of connection, overlay network, and direction is
+    /// allowed at a time. An error is returned containing the user data passed as parameter if
+    /// there already exists an entry.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `overlay_network_index` is out of range.
+    ///
     pub fn add_pending_substream(
         &mut self,
         overlay_network: usize,
         direction: SubstreamDirection,
         user_data: TPendingSub,
-    ) {
+    ) -> Result<(), TPendingSub> {
         assert!(overlay_network < self.peerset.num_overlay_networks);
 
-        self.peerset.connection_overlays.insert(
-            (self.id.0, overlay_network, direction),
-            SubstreamState::Pending(user_data),
-        );
+        match self
+            .peerset
+            .connection_overlays
+            .entry((self.id.0, overlay_network, direction))
+        {
+            btree_map::Entry::Occupied(_) => Err(user_data),
+            btree_map::Entry::Vacant(e) => {
+                e.insert(SubstreamState::Pending(user_data));
+                Ok(())
+            }
+        }
     }
 
     /// Turns a pending substream into an established substream.
     ///
     /// Returns an error if there is no pending substream with this overlay network and direction
     /// combination.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `overlay_network_index` is out of range.
+    ///
     pub fn confirm_substream(
         &mut self,
         overlay_network: usize,
@@ -477,7 +516,9 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         }
     }
 
-    /// Returns the list of open substreams.
+    /// Returns the list of open substreams of this connection.
+    ///
+    /// > **Note**: *Pending* substreams aren't returned.
     pub fn open_substreams_mut(
         &mut self,
     ) -> impl Iterator<Item = (usize, SubstreamDirection, &mut TSub)> {
@@ -534,6 +575,7 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         for k in overlays {
             self.peerset.connection_overlays.remove(&k).unwrap();
         }
+        self.peerset.num_established_connections -= 1;
         match connection.ty {
             ConnectionTy::Connected { user_data, .. } => user_data,
             _ => unreachable!(),
@@ -580,6 +622,7 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             user_data: new_user_data,
             inbound: false,
         };
+        self.peerset.num_established_connections += 1;
         ConnectionMut {
             peerset: self.peerset,
             id: ConnectionId(self.id.0),
@@ -624,6 +667,17 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             ConnectionTy::Pending { user_data, target } => (user_data, target),
             _ => unreachable!(),
         };
+
+        debug_assert_eq!(
+            self.peerset
+                .connection_overlays
+                .range_mut(
+                    (self.id.0, 0, SubstreamDirection::In)
+                        ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+                )
+                .count(),
+            0
+        );
 
         if purge_addr {
             let addrs = &mut self
@@ -676,7 +730,7 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     pub fn into_known(self) -> Option<NodeMutKnown<'a, TPeer, TConn, TPending, TSub, TPendingSub>> {
         match self {
             NodeMut::Known(k) => Some(k),
-            NodeMut::Unknown(k) => None,
+            NodeMut::Unknown(_) => None,
         }
     }
 }
@@ -705,6 +759,17 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             },
         });
 
+        debug_assert_eq!(
+            self.peerset
+                .connection_overlays
+                .range_mut(
+                    (index, 0, SubstreamDirection::In)
+                        ..=(index, usize::max_value(), SubstreamDirection::Out),
+                )
+                .count(),
+            0
+        );
+
         let _newly_inserted = self
             .peerset
             .peer_connections
@@ -727,6 +792,17 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
                 target,
             },
         });
+
+        debug_assert_eq!(
+            self.peerset
+                .connection_overlays
+                .range_mut(
+                    (index, 0, SubstreamDirection::In)
+                        ..=(index, usize::max_value(), SubstreamDirection::Out),
+                )
+                .count(),
+            0
+        );
 
         let _newly_inserted = self
             .peerset
@@ -879,7 +955,6 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             peer_id: self.peer_id.clone(),
             user_data,
             addresses: Vec::new(),
-            connected: true,
         });
 
         let _was_in = self.peerset.peer_ids.insert(self.peer_id, peer_index);
@@ -889,5 +964,14 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             peerset: self.peerset,
             peer_index,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn substream_direction_order() {
+        // A lot of code above assumes that `In` < `Out`.
+        assert!(super::SubstreamDirection::In < super::SubstreamDirection::Out);
     }
 }
