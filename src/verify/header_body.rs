@@ -232,7 +232,6 @@ pub fn verify(
     let import_process = {
         let mut unsealed_header = config.block_header.clone();
         let _seal_log = unsealed_header.digest.pop_seal();
-        debug_assert!(_seal_log.is_some()); // should have been verified by consensus engine
 
         execute_block::execute_block(execute_block::Config {
             parent_runtime: config.parent_runtime,
