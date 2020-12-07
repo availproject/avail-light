@@ -63,7 +63,7 @@ serde = { version = "1.0.117", default-features = false, features = ["alloc", "d
 serde_json = { version = "1.0.60", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = { version = "0.9.2", default-features = false }
 slab = "0.4.2"  # TODO: doesn't support no_std and is unmaintained :-/
-smallvec = "1.5.0"
+smallvec = "1.5.1"
 snow = { version = "0.7.2", default-features = false, features = ["default-resolver"] }
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.6.0"
