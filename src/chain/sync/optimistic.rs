@@ -119,7 +119,7 @@ pub struct RequestId(u64);
 
 /// Identifier for a source in the [`OptimisticSync`].
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct SourceId(usize);
+pub struct SourceId(u64);
 
 /// Optimistic headers-only syncing.
 pub struct OptimisticSync<TRq, TSrc, TBl> {
@@ -163,7 +163,12 @@ struct OptimisticSyncInner<TRq, TSrc, TBl> {
     download_ahead_blocks: u32,
 
     /// List of sources of blocks.
-    sources: slab::Slab<Source<TSrc>>,
+    sources: HashMap<SourceId, Source<TSrc>, fnv::FnvBuildHasher>,
+
+    /// Next [`SourceId`] to allocate.
+    /// SourceIds are unique so that the source in [`VerificationQueueEntryTy`] doesn't
+    /// accidentally collide with a new source.
+    next_source_id: SourceId,
 
     /// If true, the next step of the state machine is to cancel requests in progress, as they
     /// are no longer valid.
@@ -180,8 +185,16 @@ struct OptimisticSyncInner<TRq, TSrc, TBl> {
 }
 
 struct Source<TSrc> {
+    /// Opaque value passed to [`OptimisticSync::add_source`].
     user_data: TSrc,
-    banned: bool, // TODO: ban shouldn't be held forever
+
+    /// Best block that the source has reported having.
+    best_block_number: u64,
+
+    /// If `true`, this source is banned and shouldn't use be used to request blocks.
+    /// Note that the ban is lifted if the source is removed. This ban isn't meant to be a line of
+    /// defense against malicious peers but rather an optimisation.
+    banned: bool,
 }
 
 struct VerificationQueueEntry<TRq, TBl> {
@@ -196,9 +209,12 @@ enum VerificationQueueEntryTy<TRq, TBl> {
         /// User-chosen data for this request.
         user_data: TRq,
         // Index of this source within [`OptimisticSyncInner::sources`].
-        source: usize,
+        source: SourceId,
     },
-    Queued(VecDeque<RequestSuccessBlock<TBl>>),
+    Queued {
+        source: SourceId,
+        blocks: VecDeque<RequestSuccessBlock<TBl>>,
+    },
 }
 
 // TODO: doc
@@ -241,7 +257,11 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                 runtime_code_cache: None,
                 top_trie_root_calculation_cache: None,
                 full: config.full,
-                sources: slab::Slab::with_capacity(config.sources_capacity),
+                sources: HashMap::with_capacity_and_hasher(
+                    config.sources_capacity,
+                    Default::default(),
+                ),
+                next_source_id: SourceId(0),
                 cancelling_requests: false,
                 verification_queue: VecDeque::with_capacity(
                     usize::try_from(
@@ -291,12 +311,38 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     }
 
     /// Inform the [`OptimisticSync`] of a new potential source of blocks.
-    // TODO: pass best block
-    pub fn add_source(&mut self, source: TSrc) -> SourceId {
-        SourceId(self.inner.sources.insert(Source {
-            user_data: source,
-            banned: false,
-        }))
+    pub fn add_source(&mut self, source: TSrc, best_block_number: u64) -> SourceId {
+        let new_id = {
+            let id = self.inner.next_source_id;
+            self.inner.next_source_id.0 += 1;
+            id
+        };
+
+        self.inner.sources.insert(
+            new_id,
+            Source {
+                user_data: source,
+                best_block_number,
+                banned: false,
+            },
+        );
+
+        new_id
+    }
+
+    /// Updates the best known block of the source.
+    ///
+    /// Has no effect if the previously-known best block is lower than the new one.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn raise_source_best_block(&mut self, id: SourceId, best_block_number: u64) {
+        let current = &mut self.inner.sources.get_mut(&id).unwrap().best_block_number;
+        if *current < best_block_number {
+            *current = best_block_number;
+        }
     }
 
     /// Inform the [`OptimisticSync`] that a source of blocks is no longer available.
@@ -310,12 +356,12 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     ///
     pub fn remove_source<'a>(
         &'a mut self,
-        source: SourceId,
+        source_id: SourceId,
     ) -> (TSrc, impl Iterator<Item = (RequestId, TRq)> + 'a) {
-        let src_user_data = self.inner.sources.remove(source.0).user_data;
+        let src_user_data = self.inner.sources.remove(&source_id).unwrap().user_data;
         let drain = RequestsDrain {
             iter: self.inner.verification_queue.iter_mut().fuse(),
-            source_index: source.0,
+            source_id,
         };
         (src_user_data, drain)
     }
@@ -334,8 +380,8 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                     return Some(RequestAction::Cancel {
                         request_id: id,
                         user_data,
-                        source_id: SourceId(source),
-                        source: &mut self.inner.sources[source].user_data,
+                        source_id: source,
+                        source: &mut self.inner.sources.get_mut(&source).unwrap().user_data,
                     });
                 }
             }
@@ -368,6 +414,13 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                 });
         }
 
+        // If all sources are banned, unban them.
+        if self.inner.sources.iter().all(|(_, s)| s.banned) {
+            for src in self.inner.sources.values_mut() {
+                src.banned = true;
+            }
+        }
+
         if let Some((missing_pos, _)) = self
             .inner
             .verification_queue
@@ -375,15 +428,15 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
             .enumerate()
             .find(|(_, e)| matches!(e.ty, VerificationQueueEntryTy::Missing))
         {
-            let source = self
+            let block_height = self.inner.verification_queue[missing_pos].block_height;
+
+            let source_id = *self
                 .inner
                 .sources
                 .iter()
-                .filter(|(_, src)| !src.banned)
+                .filter(|(_, src)| !src.banned && src.best_block_number >= block_height.get())
                 .choose(&mut self.inner.source_selection_rng)?
                 .0;
-
-            let block_height = self.inner.verification_queue[missing_pos].block_height;
 
             let num_blocks = if let Some(next) = self.inner.verification_queue.get(missing_pos + 1)
             {
@@ -403,15 +456,15 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
             };
 
             return Some(RequestAction::Start {
-                source_id: SourceId(source),
-                source: &mut self.inner.sources[source].user_data,
+                source_id,
+                source: &mut self.inner.sources.get_mut(&source_id).unwrap().user_data,
                 block_height,
                 num_blocks,
                 start: Start {
                     verification_queue: &mut self.inner.verification_queue,
                     missing_pos,
                     next_request_id: &mut self.inner.next_request_id,
-                    source,
+                    source: source_id,
                     marker: PhantomData,
                 },
             });
@@ -467,12 +520,12 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                     _ => unreachable!(),
                 };
 
-                // TODO: we don't actually punish the source
+                self.inner.sources.get_mut(&source_id).unwrap().banned = true;
 
                 return (
                     user_data,
                     FinishRequestOutcome::SourcePunished(
-                        &mut self.inner.sources[source_id].user_data,
+                        &mut self.inner.sources.get_mut(&source_id).unwrap().user_data,
                     ),
                 );
             }
@@ -482,7 +535,10 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
         let user_data = match mem::replace(
             &mut self.inner.verification_queue[verification_queue_entry].ty,
-            VerificationQueueEntryTy::Queued(blocks),
+            VerificationQueueEntryTy::Queued {
+                source: source_id,
+                blocks,
+            },
         ) {
             VerificationQueueEntryTy::Requested { user_data, .. } => user_data,
             _ => unreachable!(),
@@ -504,14 +560,17 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
         }
 
         // Extract the block to process next.
-        let block = loop {
+        // Be aware that `source_id` might refer to an obsolete source.
+        let (block, source_id) = loop {
             match &mut self.inner.verification_queue.get_mut(0).map(|b| &mut b.ty) {
-                Some(VerificationQueueEntryTy::Queued(blocks)) => match blocks.pop_front() {
-                    Some(b) => break b,
-                    None => {
-                        self.inner.verification_queue.pop_front().unwrap();
+                Some(VerificationQueueEntryTy::Queued { blocks, source }) => {
+                    match blocks.pop_front() {
+                        Some(b) => break (b, *source),
+                        None => {
+                            self.inner.verification_queue.pop_front().unwrap();
+                        }
                     }
-                },
+                }
                 _ => return ProcessOne::Idle { sync: self },
             }
         };
@@ -530,6 +589,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                     inner: self.inner,
                     block_body: block.scale_encoded_extrinsics,
                     block_user_data: Some(block.user_data),
+                    source_id,
                 },
             )
         } else {
@@ -560,10 +620,14 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                             inner: self.inner,
                             block_body: Vec::new(),
                             block_user_data: None,
+                            source_id,
                         },
                     )
                 }
                 Err(err) => {
+                    if let Some(src) = self.inner.sources.get_mut(&source_id) {
+                        src.banned = true;
+                    }
                     self.inner.cancelling_requests = true;
                     self.inner.best_to_finalized_storage_diff = Default::default();
                     self.inner.runtime_code_cache = None;
@@ -670,6 +734,8 @@ struct ProcessOneShared<TRq, TSrc, TBl> {
     block_body: Vec<Vec<u8>>,
     /// User data of the block being verified.
     block_user_data: Option<TBl>,
+    /// Source the block has been downloaded from. Might be obsolete.
+    source_id: SourceId,
 }
 
 impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
@@ -908,6 +974,9 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                 // - `chain` is recreated using `finalized_chain_information`.
                 //
                 Inner::Step1(blocks_tree::BodyVerifyStep1::InvalidHeader(old_chain, error)) => {
+                    if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
+                        source.banned = true;
+                    }
                     break ProcessOne::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
@@ -929,6 +998,9 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                 | Inner::Step1(blocks_tree::BodyVerifyStep1::BadParent {
                     chain: old_chain, ..
                 }) => {
+                    if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
+                        source.banned = true;
+                    }
                     break ProcessOne::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
@@ -950,6 +1022,9 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     chain: old_chain,
                     error,
                 }) => {
+                    if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
+                        source.banned = true;
+                    }
                     break ProcessOne::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
@@ -1247,7 +1322,7 @@ pub enum RequestAction<'a, TRq, TSrc, TBl> {
 #[must_use]
 pub struct Start<'a, TRq, TSrc, TBl> {
     verification_queue: &'a mut VecDeque<VerificationQueueEntry<TRq, TBl>>,
-    source: usize,
+    source: SourceId,
     missing_pos: usize,
     next_request_id: &'a mut RequestId,
     marker: PhantomData<&'a TSrc>,
@@ -1291,7 +1366,7 @@ pub enum RequestFail {
 /// Iterator that drains requests after a source has been removed.
 pub struct RequestsDrain<'a, TRq, TBl> {
     iter: iter::Fuse<alloc::collections::vec_deque::IterMut<'a, VerificationQueueEntry<TRq, TBl>>>,
-    source_index: usize,
+    source_id: SourceId,
 }
 
 impl<'a, TRq, TBl> Iterator for RequestsDrain<'a, TRq, TBl> {
@@ -1301,9 +1376,7 @@ impl<'a, TRq, TBl> Iterator for RequestsDrain<'a, TRq, TBl> {
         loop {
             let entry = self.iter.next()?;
             match entry.ty {
-                VerificationQueueEntryTy::Requested { source, .. }
-                    if source == self.source_index =>
-                {
+                VerificationQueueEntryTy::Requested { source, .. } if source == self.source_id => {
                     match mem::replace(&mut entry.ty, VerificationQueueEntryTy::Missing) {
                         VerificationQueueEntryTy::Requested { id, user_data, .. } => {
                             return Some((id, user_data));

@@ -435,6 +435,7 @@ where
                     overlay_network_index,
                     notification,
                 } => {
+                    // TODO: we shouldn't report events about nodes we don't have an outbound substream with
                     let chain_index = overlay_network_index / 2;
                     if overlay_network_index % 2 == 0 {
                         // TODO: don't unwrap

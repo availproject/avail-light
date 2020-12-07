@@ -141,11 +141,11 @@ impl SyncService {
 
     /// Registers a new source for blocks.
     #[tracing::instrument(skip(self))]
-    pub async fn add_source(&self, peer_id: network::PeerId) {
+    pub async fn add_source(&self, peer_id: network::PeerId, best_block_number: u64) {
         self.to_background
             .lock()
             .await
-            .send(ToBackground::PeerConnected(peer_id))
+            .send(ToBackground::PeerConnected(peer_id, best_block_number))
             .await
             .unwrap()
     }
@@ -157,6 +157,22 @@ impl SyncService {
             .lock()
             .await
             .send(ToBackground::PeerDisconnected(peer_id))
+            .await
+            .unwrap()
+    }
+
+    /// Updates the best known block of the source.
+    ///
+    /// Has no effect if the previously-known best block is lower than the new one.
+    #[tracing::instrument(skip(self))]
+    pub async fn raise_source_best_block(&self, peer_id: network::PeerId, best_block_number: u64) {
+        self.to_background
+            .lock()
+            .await
+            .send(ToBackground::PeerRaiseBest {
+                peer_id,
+                best_block_number,
+            })
             .await
             .unwrap()
     }
@@ -205,8 +221,12 @@ impl SyncService {
 
 /// Message sent to the background task.
 enum ToBackground {
-    PeerConnected(network::PeerId),
+    PeerConnected(network::PeerId, u64),
     PeerDisconnected(network::PeerId),
+    PeerRaiseBest {
+        peer_id: network::PeerId,
+        best_block_number: u64,
+    },
 }
 
 /// Messsage sent from the background task and dedicated to the main [`SyncService`]. Processed
@@ -436,8 +456,8 @@ async fn start_sync(
                     };
 
                     match message {
-                        ToBackground::PeerConnected(peer_id) => {
-                            let id = sync.add_source(peer_id.clone());
+                        ToBackground::PeerConnected(peer_id, best_block_number) => {
+                            let id = sync.add_source(peer_id.clone(), best_block_number);
                             peers_source_id_map.insert(peer_id.clone(), id);
                         },
                         ToBackground::PeerDisconnected(peer_id) => {
@@ -447,6 +467,10 @@ async fn start_sync(
                                 rq.abort();
                             }
                         },
+                        ToBackground::PeerRaiseBest { peer_id, best_block_number } => {
+                            let id = *peers_source_id_map.get(&peer_id).unwrap();
+                            sync.raise_source_best_block(id, best_block_number);
+                        }
                     }
                 },
 

@@ -302,15 +302,15 @@ async fn async_main() {
 
             network_message = network_service.next_event().fuse() => {
                 match network_message {
-                    network_service::Event::Connected(peer_id) => {
-                        sync_service.add_source(peer_id).await;
+                    network_service::Event::Connected { peer_id, best_block_number } => {
+                        sync_service.add_source(peer_id, best_block_number).await;
                     }
                     network_service::Event::Disconnected(peer_id) => {
                         sync_service.remove_source(peer_id).await;
                     }
                     network_service::Event::BlockAnnounce { peer_id, announce } => {
-                        // TODO: report to sync
                         let decoded = announce.decode();
+                        sync_service.raise_source_best_block(peer_id, decoded.header.number).await;
                         match network_known_best {
                             Some(n) if n >= decoded.header.number => {},
                             _ => network_known_best = Some(decoded.header.number),
