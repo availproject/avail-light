@@ -481,7 +481,7 @@ where
             Ok(DiscoveryInsert {
                 service: self,
                 outcome: decoded,
-                overlay_network_index: chain_index,
+                overlay_network_index: chain_index, // TODO: wrong
             })
         } else {
             Err(DiscoveryError::NoPeer)

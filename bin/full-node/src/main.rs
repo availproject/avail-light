@@ -174,28 +174,66 @@ async fn async_main() {
 
     let network_service = network_service::NetworkService::new(network_service::Config {
         listen_addresses: Vec::new(),
-        protocol_id: chain_spec.protocol_id().to_owned(),
-        genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-        best_block: {
-            let hash = database.finalized_block_hash().unwrap();
-            let header = database.block_scale_encoded_header(&hash).unwrap().unwrap();
-            let number = header::decode(&header).unwrap().number;
-            (number, hash)
-        },
-        // TODO: add relay chain bootstrap nodes
-        bootstrap_nodes: {
-            let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
-            for node in chain_spec.boot_nodes().iter() {
-                let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
-                if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
-                    let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
-                    list.push((peer_id, address));
-                } else {
-                    panic!() // TODO:
+        chains: iter::once(network_service::ChainConfig {
+            protocol_id: chain_spec.protocol_id().to_owned(),
+            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+            best_block: {
+                let hash = database.finalized_block_hash().unwrap();
+                let header = database.block_scale_encoded_header(&hash).unwrap().unwrap();
+                let number = header::decode(&header).unwrap().number;
+                (number, hash)
+            },
+            bootstrap_nodes: {
+                let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
+                for node in chain_spec.boot_nodes().iter() {
+                    let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
+                    if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
+                        let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                        list.push((peer_id, address));
+                    } else {
+                        panic!() // TODO:
+                    }
                 }
-            }
-            list
-        },
+                list
+            },
+        })
+        .chain(
+            relay_chain_spec
+                .as_ref()
+                .map(|relay_chains_specs| {
+                    network_service::ChainConfig {
+                        protocol_id: relay_chains_specs.protocol_id().to_owned(),
+                        genesis_block_hash: relay_genesis_chain_information
+                            .as_ref()
+                            .unwrap()
+                            .finalized_block_header
+                            .hash(),
+                        best_block: {
+                            let db = relay_chain_database.as_ref().unwrap();
+                            let hash = db.finalized_block_hash().unwrap();
+                            let header = db.block_scale_encoded_header(&hash).unwrap().unwrap();
+                            let number = header::decode(&header).unwrap().number;
+                            (number, hash)
+                        },
+                        bootstrap_nodes: {
+                            let mut list =
+                                Vec::with_capacity(relay_chains_specs.boot_nodes().len());
+                            for node in relay_chains_specs.boot_nodes().iter() {
+                                let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
+                                if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
+                                    let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                                    list.push((peer_id, address));
+                                } else {
+                                    panic!() // TODO:
+                                }
+                            }
+                            list
+                        },
+                    }
+                })
+                .into_iter(),
+        )
+        .collect(),
         noise_key: if let Some(node_key) = cli_options.node_key {
             connection::NoiseKey::new(node_key.as_ref())
         } else {
@@ -302,13 +340,19 @@ async fn async_main() {
 
             network_message = network_service.next_event().fuse() => {
                 match network_message {
-                    network_service::Event::Connected { peer_id, best_block_number } => {
+                    network_service::Event::Connected { chain_index: 0, peer_id, best_block_number } => {
                         sync_service.add_source(peer_id, best_block_number).await;
                     }
-                    network_service::Event::Disconnected(peer_id) => {
+                    network_service::Event::Connected { chain_index: 1, peer_id, best_block_number } => {
+                        relay_chain_sync_service.as_ref().unwrap().add_source(peer_id, best_block_number).await;
+                    }
+                    network_service::Event::Disconnected { chain_index: 0, peer_id } => {
                         sync_service.remove_source(peer_id).await;
                     }
-                    network_service::Event::BlockAnnounce { peer_id, announce } => {
+                    network_service::Event::Disconnected { chain_index: 1, peer_id } => {
+                        relay_chain_sync_service.as_ref().unwrap().remove_source(peer_id).await;
+                    }
+                    network_service::Event::BlockAnnounce { chain_index: 0, peer_id, announce } => {
                         let decoded = announce.decode();
                         sync_service.raise_source_best_block(peer_id, decoded.header.number).await;
                         match network_known_best {
@@ -316,6 +360,11 @@ async fn async_main() {
                             _ => network_known_best = Some(decoded.header.number),
                         }
                     }
+                    network_service::Event::BlockAnnounce { chain_index: 1, peer_id, announce } => {
+                        let decoded = announce.decode();
+                        relay_chain_sync_service.as_ref().unwrap().raise_source_best_block(peer_id, decoded.header.number).await;
+                    }
+                    _ => unreachable!()
                 }
             }
 
@@ -324,6 +373,7 @@ async fn async_main() {
                     sync_service::Event::BlocksRequest { id, target, request } => {
                         let block_request = network_service.clone().blocks_request(
                             target,
+                            0,
                             request,
                         );
 
@@ -349,14 +399,15 @@ async fn async_main() {
                     sync_service::Event::BlocksRequest { id, target, request } => {
                         let block_request = network_service.clone().blocks_request(
                             target,
+                            1,
                             request
                         );
 
                         threads_pool.spawn_ok({
-                            let sync_service = sync_service.clone();
+                            let relay_chain_sync_service = relay_chain_sync_service.as_ref().unwrap().clone();
                             async move {
                                 let result = block_request.await;
-                                sync_service.answer_blocks_request(id, result.map_err(|_| ())).await;
+                                relay_chain_sync_service.answer_blocks_request(id, result.map_err(|_| ())).await;
                             }
                         });
                     }
