@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 app_dirs = "1.2.1"
-async-std = "1.7.0"
+async-std = "1.8.0"
 atty = "0.2.14"
 derive_more = "0.99.11"
 ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "u64_backend"] }

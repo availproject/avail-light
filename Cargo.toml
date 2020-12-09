@@ -74,7 +74,7 @@ sled = { version = "0.34.6", optional = true, features = ["compression"] }
 
 # `std` feature
 # Add here the crates that cannot function without the help of the operating system or environment.
-async-std = { version = "1.7.0", optional = true }
+async-std = { version = "1.8.0", optional = true }
 soketto = { version = "0.4.2", optional = true }
 
 # BELOW: DEPENDENCIES TO REMOVE
@@ -90,7 +90,7 @@ wasmtime = { version = "0.21.0", default-features = false, optional = true }
 prost-build = "0.6.1"
 
 [dev-dependencies]
-async-std = "1.7.0"
+async-std = "1.8.0"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
