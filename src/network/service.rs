@@ -213,6 +213,11 @@ where
         self.libp2p.num_established_connections().await
     }
 
+    /// Returns the number of chains. Always equal to the length of [`Config::chains`].
+    pub fn num_chains(&self) -> usize {
+        self.chains.len()
+    }
+
     pub fn add_incoming_connection(
         &self,
         local_listen_address: &multiaddr::Multiaddr,

@@ -214,42 +214,44 @@ impl NetworkService {
         });
 
         // Spawn tasks dedicated to the Kademlia discovery.
-        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            let network_service = Arc::downgrade(&network_service);
-            async move {
-                let mut next_discovery = Duration::from_secs(5);
+        for chain_index in 0..network_service.network.num_chains() {
+            (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+                let network_service = Arc::downgrade(&network_service);
+                async move {
+                    let mut next_discovery = Duration::from_secs(5);
 
-                loop {
-                    futures_timer::Delay::new(next_discovery).await;
-                    next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
+                    loop {
+                        futures_timer::Delay::new(next_discovery).await;
+                        next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
 
-                    let network_service = match network_service.upgrade() {
-                        Some(ns) => ns,
-                        None => {
-                            tracing::debug!("discovery-finish");
-                            return;
-                        }
-                    };
+                        let network_service = match network_service.upgrade() {
+                            Some(ns) => ns,
+                            None => {
+                                tracing::debug!("discovery-finish");
+                                return;
+                            }
+                        };
 
-                    match network_service
-                        .network
-                        .kademlia_discovery_round(Instant::now(), 0)
-                        .await
-                    {
-                        Ok(insert) => {
-                            insert
-                                .insert(|_| ())
-                                .instrument(tracing::debug_span!("insert"))
-                                .await
-                        }
-                        Err(error) => {
-                            tracing::debug!(%error, "discovery-error")
+                        match network_service
+                            .network
+                            .kademlia_discovery_round(Instant::now(), chain_index)
+                            .await
+                        {
+                            Ok(insert) => {
+                                insert
+                                    .insert(|_| ())
+                                    .instrument(tracing::debug_span!("insert"))
+                                    .await
+                            }
+                            Err(error) => {
+                                tracing::debug!(%error, "discovery-error")
+                            }
                         }
                     }
                 }
-            }
-            .instrument(tracing::debug_span!(parent: None, "kademlia-discovery"))
-        }));
+                .instrument(tracing::debug_span!(parent: None, "kademlia-discovery"))
+            }));
+        }
 
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
             let network_service = network_service.clone();
