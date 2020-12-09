@@ -80,21 +80,23 @@ pub enum BlocksRequestConfigStart {
 
 /// Builds the bytes corresponding to a block request.
 pub fn build_block_request(config: BlocksRequestConfig) -> impl Iterator<Item = impl AsRef<[u8]>> {
+    // Note: while the API of this function allows for a zero-cost implementation, the protobuf
+    // library doesn't permit to avoid allocations.
+
     let request = {
         let mut fields = 0u32;
         if config.fields.header {
-            fields |= 0b00000001;
+            fields |= 1 << 24;
         }
         if config.fields.body {
-            fields |= 0b00000010;
+            fields |= 1 << 25;
         }
         if config.fields.justification {
-            fields |= 0b00010000;
+            fields |= 1 << 26;
         }
 
         schema::BlockRequest {
-            // TODO: make this cleaner; don't use swap_bytes
-            fields: fields.swap_bytes(),
+            fields,
             from_block: match config.start {
                 BlocksRequestConfigStart::Hash(h) => {
                     Some(schema::block_request::FromBlock::Hash(h.to_vec()))
@@ -217,6 +219,9 @@ pub struct StorageProofRequestConfig<TKeysIter> {
 pub fn build_storage_proof_request(
     config: StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
 ) -> impl Iterator<Item = impl AsRef<[u8]>> {
+    // Note: while the API of this function allows for a zero-cost implementation, the protobuf
+    // library doesn't permit to avoid allocations.
+
     let request = schema::Request {
         request: Some(schema::request::Request::RemoteReadRequest(
             schema::RemoteReadRequest {
