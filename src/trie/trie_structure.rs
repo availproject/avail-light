@@ -61,6 +61,18 @@ struct Node<TUd> {
 
 impl<TUd> TrieStructure<TUd> {
     /// Builds a new empty trie.
+    ///
+    /// Equivalent to calling [`TrieStructure::with_capacity`] with a capacity of 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::trie_structure;
+    ///
+    /// let trie = trie_structure::TrieStructure::<()>::new();
+    /// assert!(trie.is_empty());
+    /// assert_eq!(trie.capacity(), 0);
+    /// ```
     pub fn new() -> Self {
         TrieStructure {
             nodes: Slab::new(),
@@ -69,6 +81,16 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Builds a new empty trie with a capacity for the given number of nodes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::trie_structure;
+    ///
+    /// let trie = trie_structure::TrieStructure::<()>::with_capacity(12);
+    /// assert!(trie.is_empty());
+    /// assert_eq!(trie.capacity(), 12);
+    /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         TrieStructure {
             nodes: Slab::with_capacity(capacity),
@@ -76,29 +98,146 @@ impl<TUd> TrieStructure<TUd> {
         }
     }
 
+    /// Returns the number of nodes (storage or branch nodes) the trie can hold without
+    /// reallocating.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::trie_structure;
+    ///
+    /// let trie = trie_structure::TrieStructure::<()>::with_capacity(7);
+    /// assert_eq!(trie.capacity(), 7);
+    /// ```
     pub fn capacity(&self) -> usize {
         self.nodes.capacity()
     }
 
+    /// Returns `true` if the trie doesn't contain any node.
+    ///
+    /// Equivalent to [`TrieStructure::len`] returning 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::{self, trie_structure};
+    ///
+    /// let mut trie = trie_structure::TrieStructure::new();
+    /// assert!(trie.is_empty());
+    ///
+    /// // Insert a node.
+    /// trie
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert((), ());
+    /// assert!(!trie.is_empty());
+    ///
+    /// // Remove the newly-inserted node.
+    /// trie
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_occupied()
+    ///     .unwrap()
+    ///     .into_storage()
+    ///     .unwrap()
+    ///     .remove();
+    /// assert!(trie.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    /// Returns the number of nodes, both branch and storage nodes, in the trie structure.
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
     /// Reduces the capacity of the trie as much as possible.
+    ///
+    /// See [`Vec::shrink_to_fit`].
     pub fn shrink_to_fit(&mut self) {
         self.nodes.shrink_to_fit();
     }
 
     /// Returns the root node of the trie, or `None` if the trie is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::{self, trie_structure};
+    ///
+    /// let mut trie = trie_structure::TrieStructure::new();
+    /// assert!(trie.root_node().is_none());
+    ///
+    /// // Insert a node. It becomes the root.
+    /// trie
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert((), ());
+    ///
+    /// assert!(trie.root_node().is_some());
+    /// assert!(trie.root_node().unwrap().parent().is_none());
+    /// ```
     pub fn root_node(&mut self) -> Option<NodeAccess<TUd>> {
         Some(self.node_by_index_inner(self.root_index?).unwrap())
     }
 
-    /// Returns a [`Entry`] with the given node.
+    /// Returns an [`Entry`] corresponding to the node whose key is the concatenation of the list
+    /// of nibbles passed as parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::{self, trie_structure};
+    ///
+    /// let mut trie = trie_structure::TrieStructure::new();
+    ///
+    /// let node: trie_structure::Entry<_, _> = trie
+    ///     .node(trie::bytes_to_nibbles(b"ful".iter().cloned()));
+    ///
+    /// match node {
+    ///     // `Occupied` is returned if a node with this key exists.
+    ///     trie_structure::Entry::Occupied(_) => unreachable!(),
+    ///
+    ///     // `Vacant` is returned if no node with this key exists yet.
+    ///     // In this example, a node is inserted.
+    ///     trie_structure::Entry::Vacant(entry) => {
+    ///         entry.insert_storage_value().insert((), ())
+    ///     },
+    /// };
+    ///
+    /// // The same node can for example be queried again.
+    /// // This time, it will be in the `Occupied` state.
+    /// match trie.node(trie::bytes_to_nibbles(b"ful".iter().cloned())) {
+    ///     // `NodeAccess::Storage` is used if the node has been explicitly inserted.
+    ///     trie_structure::Entry::Occupied(trie_structure::NodeAccess::Storage(_)) => {},
+    ///
+    ///     // `Branch` would be returned if this was a branch node. See below.
+    ///     trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)) => {
+    ///         unreachable!()
+    ///     },
+    ///     trie_structure::Entry::Vacant(e) => unreachable!(),
+    /// };
+    ///
+    /// // In order to demonstrate branch nodes, let's insert a node at the key `fez`.
+    /// trie
+    ///     .node(trie::bytes_to_nibbles(b"fez".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert((), ());
+    ///
+    /// // The trie now contains not two but three nodes. A branch node whose key is `f` has
+    /// // automatically been inserted as the parent of both `ful` and `fez`.
+    /// assert_eq!(trie.len(), 3);
+    /// match trie.node(trie::bytes_to_nibbles(b"f".iter().cloned())) {
+    ///     trie_structure::Entry::Occupied(trie_structure::NodeAccess::Branch(_)) => {},
+    ///     _ => unreachable!(),
+    /// };
+    /// ```
     pub fn node<TKIter>(&mut self, key: TKIter) -> Entry<TUd, TKIter>
     where
         TKIter: Iterator<Item = Nibble> + Clone,
@@ -127,6 +266,9 @@ impl<TUd> TrieStructure<TUd> {
     }
 
     /// Returns the node with the given key, or `None` if no such node exists.
+    ///
+    /// This method is a shortcut for calling [`TrieStructure::node`] followed with
+    /// [`Entry::into_occupied`].
     pub fn existing_node(&mut self, key: impl Iterator<Item = Nibble>) -> Option<NodeAccess<TUd>> {
         if let ExistingNodeInnerResult::Found {
             node_index,
@@ -209,7 +351,7 @@ impl<TUd> TrieStructure<TUd> {
         &mut self,
         _prefix: impl Iterator<Item = Nibble> + Clone,
     ) -> Option<NodeAccess<TUd>> {
-        todo!() // TODO: implement
+        todo!() // TODO: implement and write example
                 /*// `ancestor` is the node that will stay in the tree and the common ancestor of all the
                 // nodes to remove.
                 let ancestor = match self.existing_node_inner(prefix.clone()) {
@@ -240,9 +382,46 @@ impl<TUd> TrieStructure<TUd> {
                 }*/
     }
 
-    /// Returns true if the structure of this trie is equal to the structure of `other`.
+    /// Returns true if the structure of this trie is the same as the structure of `other`.
     ///
-    /// Everything is compared for equality except the user datas.
+    /// Everything is compared for equality except for the user datas.
+    ///
+    /// > **Note**: This function does a preliminary check for `self.len() == other.len()`. If the
+    /// >           length are different, `false` is immediately returned. If the lengths are
+    /// >           equal, the function performs the expensive operation of traversing both
+    /// >           tries in order to detect a potential mismatch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::{self, trie_structure};
+    ///
+    /// let mut trie1 = trie_structure::TrieStructure::new();
+    /// let mut trie2 = trie_structure::TrieStructure::new();
+    /// assert!(trie1.structure_equal(&trie2));
+    ///
+    /// // Insert a node in the first trie.
+    /// trie1
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert(1234, 5678);
+    /// assert!(!trie1.structure_equal(&trie2));
+    ///
+    /// // Insert the same node in the second trie, but with a different user data.
+    /// // The type of the user data of the second trie (strings) isn't even the same as for the
+    /// // first trie (i32s).
+    /// trie2
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert("hello", "world");
+    ///
+    /// // `structure_equal` returns true because both tries have the same nodes.
+    /// assert!(trie1.structure_equal(&trie2));
+    /// ```
     pub fn structure_equal<T>(&self, other: &TrieStructure<T>) -> bool {
         if self.nodes.len() != other.nodes.len() {
             return false;
@@ -286,7 +465,43 @@ impl<TUd> TrieStructure<TUd> {
         }
     }
 
-    /// Returns the [`NodeAccess`] of the node at the given index.
+    /// Returns the [`NodeAccess`] of the node at the given index, or `None` if no such node
+    /// exists.
+    ///
+    /// # Context
+    ///
+    /// Each node inserted in the trie is placed in the underlying data structure at a specific
+    /// [`NodeIndex`] that never changes until the node is removed from the trie.
+    ///
+    /// This [`NodeIndex`] can be retreived by calling [`NodeAccess::node_index`],
+    /// [`StorageNodeAccess::node_index`] or [`BranchNodeAccess::node_index`]. The same node can
+    /// later be accessed again by calling [`TrieStructure::node_by_index`].
+    ///
+    /// A [`NodeIndex`] value can be reused after its previous node has been removed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use substrate_lite::trie::{self, trie_structure};
+    ///
+    /// let mut trie = trie_structure::TrieStructure::new();
+    ///
+    /// // Insert an example node.
+    /// let inserted_node = trie
+    ///     .node(trie::bytes_to_nibbles(b"foo".iter().cloned()))
+    ///     .into_vacant()
+    ///     .unwrap()
+    ///     .insert_storage_value()
+    ///     .insert(12, 80);
+    /// let node_index = inserted_node.node_index();
+    /// drop(inserted_node);  // Drops the borrow to this node.
+    ///
+    /// // At this point, no borrow of the `trie` object exists anymore.
+    ///
+    /// // Later, the same node can be accessed again.
+    /// let mut node = trie.node_by_index(node_index).unwrap();
+    /// assert_eq!(*node.user_data(), 12);
+    /// ```
     pub fn node_by_index(&mut self, node_index: NodeIndex) -> Option<NodeAccess<TUd>> {
         self.node_by_index_inner(node_index.0)
     }
@@ -306,7 +521,10 @@ impl<TUd> TrieStructure<TUd> {
         }
     }
 
-    /// Returns the [`NodeAccess`] of the node at the given index.
+    /// Returns the key of the node at the given index, or `None` if no such node exists.
+    ///
+    /// This method is a shortcut for [`TrieStructure::node_by_index`] followed with
+    /// [`NodeAccess::full_key`].
     pub fn node_full_key_by_index<'b>(
         &'b self,
         node_index: NodeIndex,
@@ -448,10 +666,14 @@ enum ExistingNodeInnerResult {
 }
 
 /// Index of a node in the trie. Never invalidated, except when if node in question is destroyed.
+///
+/// See [`TrieStructure::node_by_index`] for more information.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct NodeIndex(usize);
 
 /// Access to a entry for a potential node within the [`TrieStructure`].
+///
+/// See [`TrieStructure::node`] for more information.
 pub enum Entry<'a, TUd, TKIter> {
     /// There exists a node with this key.
     Occupied(NodeAccess<'a, TUd>),
