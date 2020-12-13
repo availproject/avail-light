@@ -106,11 +106,61 @@ impl NetworkService {
             }),
         });
 
+        // Spawn tasks dedicated to opening connections.
+        // TODO: spawn several, or do things asynchronously, so that we try open multiple connections simultaneously
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            let network_service = network_service.clone();
+            let network_service = Arc::downgrade(&network_service);
             async move {
-                // TODO: stop the task if the network service is destroyed
                 loop {
+                    // TODO: very crappy way of not spamming the network service ; instead we should wake this task up when a disconnect or a discovery happens
+                    ffi::Delay::new(Duration::from_secs(1)).await;
+
+                    let network_service = match network_service.upgrade() {
+                        Some(ns) => ns,
+                        None => {
+                            return;
+                        }
+                    };
+
+                    let start_connect = match network_service.network.fill_out_slots(0).await {
+                        Some(sc) => sc,
+                        None => continue,
+                    };
+
+                    // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
+                    // into a `Future<dyn Output = Result<TcpStream, ...>>`.
+                    let socket = match multiaddr_to_url(&start_connect.multiaddr) {
+                        Ok(url) => ffi::WebSocket::connect(&url),
+                        Err(_) => {
+                            network_service
+                                .network
+                                .pending_outcome_err(start_connect.id)
+                                .await;
+                            continue;
+                        }
+                    };
+
+                    // TODO: handle dialing timeout here
+
+                    let network_service2 = network_service.clone();
+                    (network_service.guarded.lock().await.tasks_executor)(Box::pin({
+                        connection_task(socket, network_service2, start_connect.id)
+                    }));
+                }
+            }
+        }));
+
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            let network_service = Arc::downgrade(&network_service);
+            async move {
+                loop {
+                    let network_service = match network_service.upgrade() {
+                        Some(ns) => ns,
+                        None => {
+                            return;
+                        }
+                    };
+
                     network_service
                         .network
                         .next_substream()
@@ -163,20 +213,6 @@ impl NetworkService {
                     if !chain_indices.is_empty() {
                         return Event::Disconnected(peer_id);
                     }
-                }
-                service::Event::StartConnect { id, multiaddr } => {
-                    // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
-                    // into a `Future<dyn Output = Result<TcpStream, ...>>`.
-                    let socket = match multiaddr_to_url(&multiaddr) {
-                        Ok(url) => ffi::WebSocket::connect(&url),
-                        Err(_) => {
-                            self.network.pending_outcome_err(id).await;
-                            continue;
-                        }
-                    };
-
-                    let mut guarded = self.guarded.lock().await;
-                    (guarded.tasks_executor)(Box::pin(connection_task(socket, self.clone(), id)));
                 }
                 service::Event::BlockAnnounce {
                     chain_index,
