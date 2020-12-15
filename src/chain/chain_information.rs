@@ -75,36 +75,52 @@ impl ChainInformation {
                     .clone()
                     .find(|(k2, _)| *k2 == k)
                     .map(|(_, v)| v.to_owned())
-            })
-            .ok(); // TODO: differentiate between errors and lack of Aura
+            });
 
             let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
                 genesis_storage
                     .clone()
                     .find(|(k2, _)| *k2 == k)
                     .map(|(_, v)| v.to_owned())
-            })
-            .ok(); // TODO: differentiate between errors and lack of Babe
+            });
 
             match (aura_genesis_config, babe_genesis_config) {
-                (Some(aura_genesis_config), None) => ChainInformationConsensus::Aura {
-                    finalized_authorities_list: aura_genesis_config.authorities_list,
-                    slot_duration: aura_genesis_config.slot_duration,
-                },
-                (None, Some(babe_genesis_config)) => ChainInformationConsensus::Babe {
-                    slots_per_epoch: babe_genesis_config.slots_per_epoch,
-                    finalized_block_epoch_information: None,
-                    finalized_next_epoch_transition: BabeEpochInformation {
-                        epoch_index: 0,
-                        start_slot_number: None,
-                        authorities: babe_genesis_config.epoch0_information.authorities,
-                        randomness: babe_genesis_config.epoch0_information.randomness,
-                        c: babe_genesis_config.epoch0_configuration.c,
-                        allowed_slots: babe_genesis_config.epoch0_configuration.allowed_slots,
-                    },
-                },
-                (None, None) => ChainInformationConsensus::AllAuthorized, // TODO: seems a bit risky to automatically fall back to this?
-                (Some(_), Some(_)) => {
+                (Ok(aura_genesis_config), Err(err)) if err.is_function_not_found() => {
+                    ChainInformationConsensus::Aura {
+                        finalized_authorities_list: aura_genesis_config.authorities_list,
+                        slot_duration: aura_genesis_config.slot_duration,
+                    }
+                }
+                (Err(err), Ok(babe_genesis_config)) if err.is_function_not_found() => {
+                    ChainInformationConsensus::Babe {
+                        slots_per_epoch: babe_genesis_config.slots_per_epoch,
+                        finalized_block_epoch_information: None,
+                        finalized_next_epoch_transition: BabeEpochInformation {
+                            epoch_index: 0,
+                            start_slot_number: None,
+                            authorities: babe_genesis_config.epoch0_information.authorities,
+                            randomness: babe_genesis_config.epoch0_information.randomness,
+                            c: babe_genesis_config.epoch0_configuration.c,
+                            allowed_slots: babe_genesis_config.epoch0_configuration.allowed_slots,
+                        },
+                    }
+                }
+                (Err(err1), Err(err2))
+                    if err1.is_function_not_found() && err2.is_function_not_found() =>
+                {
+                    // TODO: seems a bit risky to automatically fall back to this?
+                    ChainInformationConsensus::AllAuthorized
+                }
+                (Err(error), Err(other_err)) if other_err.is_function_not_found() => {
+                    return Err(FromGenesisStorageError::AuraConfigLoad(error));
+                }
+                (Err(other_err), Err(error)) if other_err.is_function_not_found() => {
+                    return Err(FromGenesisStorageError::BabeConfigLoad(error));
+                }
+                _ => {
+                    // This variant is also reached for example if reading the Aura config
+                    // succeeded but reading the Babe config failed for a reason other than
+                    // `is_function_not_found()`.
                     return Err(FromGenesisStorageError::MultipleConsensusAlgorithms);
                 }
             }
@@ -117,17 +133,16 @@ impl ChainInformation {
                         .clone()
                         .find(|(k, _)| *k == key)
                         .map(|(_, v)| v.to_owned())
-                })
-                .ok(); // TODO: differentiate between errors and lack of Grandpa
+                });
 
-            if let Some(grandpa_genesis_config) = grandpa_genesis_config {
-                ChainInformationFinality::Grandpa {
+            match grandpa_genesis_config {
+                Ok(grandpa_genesis_config) => ChainInformationFinality::Grandpa {
                     after_finalized_block_authorities_set_id: 0,
                     finalized_scheduled_change: None,
                     finalized_triggered_authorities: grandpa_genesis_config.initial_authorities,
-                }
-            } else {
-                ChainInformationFinality::Outsourced
+                },
+                Err(error) if error.is_function_not_found() => ChainInformationFinality::Outsourced,
+                Err(error) => return Err(FromGenesisStorageError::GrandpaConfigLoad(error)),
             }
         };
 
@@ -290,11 +305,13 @@ pub enum ChainInformationFinality {
     /// >           the relay chain.
     Outsourced,
 
+    /// Chain uses the Grandpa finality algorithm.
     Grandpa {
         /// Grandpa authorities set ID of the block right after finalized block.
         ///
-        /// If the finalized block is the genesis, should be 0. Otherwise,
-        // TODO: document how to know this
+        /// If the finalized block is the genesis block, should be 0. Otherwise, must be
+        /// incremented by one for every change in the Grandpa authorities reported by the
+        /// headers since the genesis block.
         after_finalized_block_authorities_set_id: u64,
 
         /// List of GrandPa authorities that need to finalize the block right after the finalized
@@ -325,6 +342,10 @@ pub enum ChainInformationFinality {
 pub enum FromGenesisStorageError {
     /// Error when retrieving the GrandPa configuration.
     GrandpaConfigLoad(grandpa::chain_config::FromGenesisStorageError),
+    /// Error when retrieving the Aura algorithm configuration.
+    AuraConfigLoad(aura::FromGenesisStorageError),
+    /// Error when retrieving the Babe algorithm configuration.
+    BabeConfigLoad(babe::FromGenesisStorageError),
     /// Multiple consensus algorithms have been detected.
     MultipleConsensusAlgorithms,
 }

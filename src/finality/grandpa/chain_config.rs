@@ -140,6 +140,16 @@ pub enum FromGenesisStorageError {
     VmError(FromVmPrototypeError),
 }
 
+impl FromGenesisStorageError {
+    /// Returns `true` if this error is about an invalid function.
+    pub fn is_function_not_found(&self) -> bool {
+        match self {
+            FromGenesisStorageError::VmError(err) => err.is_function_not_found(),
+            _ => false,
+        }
+    }
+}
+
 /// Error when retrieving the Grandpa configuration.
 #[derive(Debug, derive_more::Display)]
 pub enum FromVmPrototypeError {
@@ -149,6 +159,21 @@ pub enum FromVmPrototypeError {
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.
     HostFunctionNotAllowed,
+}
+
+impl FromVmPrototypeError {
+    /// Returns `true` if this error is about an invalid function.
+    pub fn is_function_not_found(&self) -> bool {
+        match self {
+            FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
+                vm::StartErr::FunctionNotFound,
+            ))
+            | FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
+                vm::StartErr::NotAFunction,
+            )) => true,
+            _ => false,
+        }
+    }
 }
 
 type ConfigScaleEncoding = Vec<([u8; 32], NonZeroU64)>;
