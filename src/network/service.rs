@@ -431,10 +431,20 @@ where
                 libp2p::Event::NotificationsIn {
                     id,
                     peer_id,
+                    has_symmetric_substream,
                     overlay_network_index,
                     notification,
                 } => {
-                    // TODO: we shouldn't report events about nodes we don't have an outbound substream with
+                    // Don't report events about nodes we don't have an outbound substream with.
+                    // TODO: think about possible race conditions regarding missing block
+                    // announcements, as the remote will think we know it's at a certain block
+                    // while we ignored its announcement ; it isn't problematic as long as blocks
+                    // are generated continuously, as announcements will be generated periodically
+                    // as well and the state will no longer mismatch
+                    if !has_symmetric_substream {
+                        continue;
+                    }
+
                     let chain_index = overlay_network_index / 2;
                     if overlay_network_index % 2 == 0 {
                         // TODO: don't unwrap

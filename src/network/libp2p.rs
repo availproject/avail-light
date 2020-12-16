@@ -711,17 +711,20 @@ where
 
                         let mut guarded = self.guarded.lock().await;
 
-                        let peer_id = guarded
-                            .peerset
-                            .connection_mut(connection_id.0)
-                            .unwrap()
-                            .peer_id()
-                            .clone();
+                        let mut connection =
+                            guarded.peerset.connection_mut(connection_id.0).unwrap();
+                        let peer_id = connection.peer_id().clone();
+                        let has_symmetric_substream = connection.has_open_substream(
+                            overlay_network_index,
+                            peerset::SubstreamDirection::Out,
+                        );
+
                         guarded
                             .events_tx
                             .send(Event::NotificationsIn {
                                 id: connection_id,
                                 peer_id,
+                                has_symmetric_substream,
                                 overlay_network_index,
                                 notification,
                             })
@@ -983,6 +986,9 @@ pub enum Event<TConn> {
     NotificationsIn {
         id: ConnectionId,
         peer_id: PeerId, // TODO: is this field necessary? + cloning :-/
+        /// `true` if there exists an open outbound substream with this peer on the same overlay
+        /// network.
+        has_symmetric_substream: bool,
         overlay_network_index: usize,
         notification: Vec<u8>,
     },

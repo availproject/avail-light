@@ -516,6 +516,32 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         }
     }
 
+    /// Returns `true` if there exists an open substream on this overlay network and this
+    /// direction.
+    ///
+    /// This only returns `true` if the substream is open. If there exists a pending substream,
+    /// `false` is returned.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `overlay_network_index` is out of range.
+    ///
+    pub fn has_open_substream(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+    ) -> bool {
+        assert!(overlay_network < self.peerset.num_overlay_networks);
+        match self
+            .peerset
+            .connection_overlays
+            .get(&(self.id.0, overlay_network, direction))
+        {
+            Some(SubstreamState::Open(_)) => true,
+            _ => false,
+        }
+    }
+
     /// Returns the list of open substreams of this connection.
     ///
     /// > **Note**: *Pending* substreams aren't returned.
