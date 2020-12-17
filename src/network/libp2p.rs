@@ -328,6 +328,91 @@ where
         }
     }
 
+    /// Adds a notification to the queue of notifications to send to the given peer.
+    ///
+    /// Each substream maintains a queue of notifications to be sent to the remote. This method
+    /// attempts to push a notification to this queue.
+    ///
+    /// As the API of this module is inherently subject to race conditions, it is possible for
+    /// connections and substreams to no longer exist with this peer. This is a normal situation,
+    /// and this error should simply be ignored apart from diagnostic purposes.
+    ///
+    /// An error is also returned if the queue exceeds a certain size in bytes, for two reasons:
+    ///
+    /// - Since the content of the queue is transferred at a limited rate, each notification
+    /// pushed at the end of the queue will take more time than the previous one to reach the
+    /// destination. Once the queue reaches a certain size, the time it would take for
+    /// newly-pushed notifications to reach the destination would start being unreasonably large.
+    ///
+    /// - If the remote deliberately applies back-pressure on the substream, it is undesirable to
+    /// increase the memory usage of the local node.
+    ///
+    /// Similarly, the queue being full is a normal situations and notification protocols should
+    /// be designed in such a way that discarding notifications shouldn't have a too negative
+    /// impact.
+    ///
+    /// Regardless of the success of this function, no guarantee exists about the successful
+    /// delivery of notifications.
+    ///
+    pub async fn queue_notification(
+        self,
+        target: &PeerId,
+        protocol_index: usize,
+        notification: impl Into<Vec<u8>>,
+    ) -> Result<(), QueueNotificationError> {
+        let (connection, substream_id) = {
+            let mut guarded = self.guarded.lock().await;
+
+            let connection = match guarded.peerset.node_mut(target.clone()) {
+                peerset::NodeMut::Known(n) => n
+                    .connections()
+                    .next()
+                    .ok_or(QueueNotificationError::NotConnected)?,
+                peerset::NodeMut::Unknown(_) => return Err(QueueNotificationError::NotConnected),
+            };
+
+            let substream = *guarded
+                .peerset
+                .connection_mut(connection)
+                .unwrap()
+                .open_substreams_mut()
+                .find(|(protocol, dir, _)| {
+                    *protocol == protocol_index && *dir == peerset::SubstreamDirection::Out
+                })
+                .ok_or(QueueNotificationError::NoSubstream)?
+                .2;
+
+            let connection_arc = guarded
+                .peerset
+                .connection_mut(connection)
+                .unwrap()
+                .into_user_data()
+                .clone();
+
+            (connection_arc, substream)
+        };
+
+        let mut connection_lock = connection.lock().await;
+
+        let waker = connection_lock.2.take();
+
+        // TODO: check if substream is still open to avoid a panic in `write_notification_unbounded`
+        // TODO: return an error if queue is full
+        connection_lock
+            .0
+            .as_mut()
+            .ok_or(QueueNotificationError::NotConnected)?
+            .write_notification_unbounded(substream_id, notification.into());
+
+        drop(connection_lock);
+
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+
+        Ok(())
+    }
+
     /// After calling [`Network::fill_out_slots`], notifies the [`Network`] of the success of the
     /// dialing attempt.
     ///
@@ -1094,4 +1179,14 @@ pub enum RequestError {
     ConnectionClosed,
     /// Error in the context of the connection.
     Connection(connection::established::RequestError),
+}
+
+#[derive(Debug, derive_more::Display)]
+pub enum QueueNotificationError {
+    /// Not connected to target.
+    NotConnected,
+    /// No substream with the given target of the given protocol.
+    NoSubstream,
+    /// Queue of notifications with that peer is full.
+    QueueFull,
 }
