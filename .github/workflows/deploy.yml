@@ -52,7 +52,7 @@ jobs:
       image: rust
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2.1.3
+      - uses: actions/setup-node@v2.1.4
         with:
           node-version: 12
       - run: apt-get update && apt install -y binaryen # For `wasm-opt`
