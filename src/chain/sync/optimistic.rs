@@ -55,7 +55,6 @@ use crate::{
 
 use alloc::{
     collections::{BTreeMap, VecDeque},
-    vec,
     vec::Vec,
 };
 use core::{

@@ -33,7 +33,7 @@ use core::{
 };
 use futures::{
     channel::{mpsc, oneshot},
-    lock::{Mutex, MutexGuard},
+    lock::Mutex,
     prelude::*,
 }; // TODO: no_std-ize
 use rand::Rng as _;

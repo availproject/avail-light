@@ -151,12 +151,6 @@ impl<T> WithBuffers<T> {
         Ok((read_buffer, write_buffer))
     }
 
-    /// After [`WithBuffers::buffers`] has returned an error, this method can be used in order to
-    /// obtain it.
-    pub fn into_error(mut self) -> Option<io::Error> {
-        self.error.take()
-    }
-
     /// Advances the cursors of the buffers.
     ///
     /// Discards the first `read_n` bytes of the read buffer, and the first `write_n` bytes of the

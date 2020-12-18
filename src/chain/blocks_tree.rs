@@ -68,7 +68,7 @@ use crate::{
 };
 
 use alloc::{sync::Arc, vec::Vec};
-use core::{cmp, convert::TryFrom as _, fmt, iter, mem, num::NonZeroU64, time::Duration};
+use core::{cmp, convert::TryFrom as _, fmt, mem, num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
 
 mod best_block;

@@ -603,7 +603,6 @@ impl<T> Yamux<T> {
                     for _ in 0..size_bytes_iter {
                         self.pending_out_header.remove(0);
                     }
-                    size_bytes_iter = 0;
                     buffers.push(either::Right(VecWithOffset(to_add, 0)));
                     break;
                 }
