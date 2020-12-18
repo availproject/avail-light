@@ -220,8 +220,7 @@ impl NetworkService {
                     announce,
                 } => {
                     debug_assert_eq!(chain_index, 0);
-                    // TODO: we don't report block announces at the moment because the networking stack might report announces before we received a ChainConnected
-                    //return Event::BlockAnnounce { peer_id, announce };
+                    return Event::BlockAnnounce { peer_id, announce };
                 }
                 service::Event::ChainConnected {
                     peer_id,
