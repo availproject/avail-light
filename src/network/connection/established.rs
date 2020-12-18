@@ -802,6 +802,7 @@ where
         if !matches!(substream.user_data(), Substream::NotificationsOut { .. }) {
             panic!()
         }
+        substream.write(leb128::encode_usize(notification.len()).collect());
         substream.write(notification)
     }
 
