@@ -92,7 +92,7 @@ pub fn build_block_request(config: BlocksRequestConfig) -> impl Iterator<Item = 
             fields |= 1 << 25;
         }
         if config.fields.justification {
-            fields |= 1 << 26;
+            fields |= 1 << 28;
         }
 
         schema::BlockRequest {
