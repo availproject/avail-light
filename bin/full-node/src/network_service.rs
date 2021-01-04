@@ -30,11 +30,13 @@
 use core::{cmp, pin::Pin, time::Duration};
 use futures::prelude::*;
 use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Instant};
-use substrate_lite::network::{
-    connection,
-    multiaddr::{Multiaddr, Protocol},
-    peer_id::PeerId,
-    protocol, service,
+use substrate_lite::{
+    libp2p::{
+        connection,
+        multiaddr::{Multiaddr, Protocol},
+        peer_id::PeerId,
+    },
+    network::{protocol, service},
 };
 use tracing::Instrument as _;
 

@@ -61,7 +61,7 @@
 //! [`Noise::inject_inbound_data`] when data is received.
 // TODO: review this last sentence, as this API might change after some experience with it
 
-use crate::network::peer_id::{PeerId, PublicKey};
+use crate::libp2p::peer_id::{PeerId, PublicKey};
 
 use alloc::{boxed::Box, collections::VecDeque, vec, vec::Vec};
 use core::{cmp, convert::TryFrom as _, fmt, iter};

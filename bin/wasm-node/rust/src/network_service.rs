@@ -32,11 +32,13 @@ use crate::ffi;
 use core::{num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{lock::Mutex, prelude::*};
 use std::sync::Arc;
-use substrate_lite::network::{
-    connection,
-    multiaddr::{Multiaddr, Protocol},
-    peer_id::PeerId,
-    protocol, service,
+use substrate_lite::{
+    libp2p::{
+        connection,
+        multiaddr::{Multiaddr, Protocol},
+        peer_id::PeerId,
+    },
+    network::{protocol, service},
 };
 
 /// Configuration for a [`NetworkService`].

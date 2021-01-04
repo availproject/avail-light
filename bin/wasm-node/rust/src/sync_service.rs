@@ -21,7 +21,7 @@ use futures::{
     prelude::*,
 };
 use std::{collections::HashMap, num::NonZeroU32, pin::Pin};
-use substrate_lite::{chain, chain::sync::optimistic, network};
+use substrate_lite::{chain, chain::sync::optimistic, libp2p, network};
 
 /// Configuration for a [`SyncService`].
 pub struct Config {
@@ -37,7 +37,7 @@ pub struct Config {
 pub enum Event {
     BlocksRequest {
         id: BlocksRequestId,
-        target: network::PeerId,
+        target: libp2p::PeerId,
         request: network::protocol::BlocksRequestConfig,
     },
     /// Current best block has been updated.
@@ -85,7 +85,7 @@ impl SyncService {
     }
 
     /// Registers a new source for blocks.
-    pub async fn add_source(&self, peer_id: network::PeerId, best_block_number: u64) {
+    pub async fn add_source(&self, peer_id: libp2p::PeerId, best_block_number: u64) {
         self.to_background
             .lock()
             .await
@@ -95,7 +95,7 @@ impl SyncService {
     }
 
     /// Removes a source of blocks.
-    pub async fn remove_source(&self, peer_id: network::PeerId) {
+    pub async fn remove_source(&self, peer_id: libp2p::PeerId) {
         self.to_background
             .lock()
             .await
@@ -107,7 +107,7 @@ impl SyncService {
     /// Updates the best known block of the source.
     ///
     /// Has no effect if the previously-known best block is lower than the new one.
-    pub async fn raise_source_best_block(&self, peer_id: network::PeerId, best_block_number: u64) {
+    pub async fn raise_source_best_block(&self, peer_id: libp2p::PeerId, best_block_number: u64) {
         self.to_background
             .lock()
             .await
@@ -183,7 +183,7 @@ async fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_foreground: mpsc::Sender<FromBackground>,
 ) -> impl Future<Output = ()> {
-    let mut sync = optimistic::OptimisticSync::<_, network::PeerId, ()>::new(optimistic::Config {
+    let mut sync = optimistic::OptimisticSync::<_, libp2p::PeerId, ()>::new(optimistic::Config {
         chain_information,
         sources_capacity: 32,
         source_selection_randomness_seed: rand::random(),
@@ -399,10 +399,10 @@ async fn start_sync(
 }
 
 enum ToBackground {
-    PeerConnected(network::PeerId, u64),
-    PeerDisconnected(network::PeerId),
+    PeerConnected(libp2p::PeerId, u64),
+    PeerDisconnected(libp2p::PeerId),
     PeerRaiseBest {
-        peer_id: network::PeerId,
+        peer_id: libp2p::PeerId,
         best_block_number: u64,
     },
 }
@@ -412,7 +412,7 @@ enum ToBackground {
 enum FromBackground {
     /// A blocks request must be started.
     RequestStart {
-        target: network::PeerId,
+        target: libp2p::PeerId,
         request: network::protocol::BlocksRequestConfig,
         send_back: oneshot::Sender<Result<Vec<network::protocol::BlockData>, ()>>, // TODO: proper error
     },

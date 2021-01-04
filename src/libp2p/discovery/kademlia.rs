@@ -17,7 +17,7 @@
 
 // TODO: work in progress
 
-use crate::network::{multiaddr, peer_id};
+use crate::libp2p::{multiaddr, peer_id};
 
 use alloc::vec::Vec;
 use core::convert::TryFrom as _;

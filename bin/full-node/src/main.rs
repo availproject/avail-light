@@ -29,7 +29,7 @@ use substrate_lite::{
     chain, chain_spec,
     database::full_sled,
     header,
-    network::{connection, multiaddr, peer_id::PeerId},
+    libp2p::{connection, multiaddr, peer_id::PeerId},
 };
 use tracing::Instrument as _;
 

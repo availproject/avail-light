@@ -202,6 +202,7 @@ pub mod finality;
 pub mod header;
 pub mod informant;
 pub mod json_rpc;
+pub mod libp2p;
 pub mod metadata;
 pub mod network;
 pub mod trie;

@@ -21,8 +21,6 @@
 //! buffering and interior mutability in order to provide a convenient-to-use API based around
 //! notifications protocols and request-response protocols.
 
-use crate::network::{connection, peerset, Multiaddr, PeerId};
-
 use alloc::sync::Arc;
 use core::{
     iter,
@@ -39,7 +37,16 @@ use futures::{
 use rand::Rng as _;
 use rand_chacha::{rand_core::SeedableRng as _, ChaCha20Rng};
 
+pub mod connection;
+pub mod discovery;
+pub mod peer_id;
+pub mod peerset;
+
 pub use connection::established::ConfigRequestResponse;
+pub use multiaddr::Multiaddr;
+#[doc(inline)]
+pub use parity_multiaddr as multiaddr;
+pub use peer_id::PeerId;
 
 /// Configuration for a [`Network`].
 pub struct Config<TPeer> {

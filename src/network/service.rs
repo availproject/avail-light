@@ -15,7 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::network::{connection, discovery::kademlia, libp2p, multiaddr, peer_id, protocol};
+use crate::libp2p::{self, connection, discovery::kademlia, multiaddr, peer_id};
+use crate::network::protocol;
 
 use core::{
     fmt, iter,
