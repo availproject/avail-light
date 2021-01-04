@@ -26,7 +26,7 @@ hashbrown = { version = "0.9.1", default-features = false }
 hex = { version = "0.4.2", default-features = false }
 parking_lot = { version = "0.11.1" }
 pin-project = "1.0.2"
-rand = "0.7.3"
+rand = "0.8.0"
 slab = "0.4.2"
 substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
