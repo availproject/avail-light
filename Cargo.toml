@@ -56,7 +56,7 @@ num-rational = { version = "0.3.2", default-features = false, features = ["num-b
 num-traits = { version = "0.2.14", default-features = false }
 parity-multiaddr = "0.9.6" # TODO: doesn't support no_std
 prost = "0.6.1"  # TODO: waiting for a published version that supports no_std
-rand = { version = "0.8.0", default-features = false, features = ["std", "std_rng"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
+rand = { version = "0.8.1", default-features = false, features = ["std", "std_rng"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
 rand_chacha = { version = "0.3.0", default-features = false }
 schnorrkel = { git = "https://github.com/w3f/schnorrkel", rev = "cfdbe9ae865a4d3ffa2566d896d4dbedf5107028", features = ["preaudit_deprecated"] } # TODO: waiting for a publication { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
 serde = { version = "1.0.118", default-features = false, features = ["alloc", "derive"] }
