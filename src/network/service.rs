@@ -126,6 +126,9 @@ impl<TNow, TPeer, TConn> ChainNetwork<TNow, TPeer, TConn>
 where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
 {
+    // Update this when a new request response protocol is added.
+    const PROTOCOLS_PER_CHAIN: usize = 4;
+
     /// Initializes a new [`ChainNetwork`].
     pub fn new(config: Config<TPeer>) -> Self {
         // TODO: figure out the cloning situation here
@@ -186,6 +189,13 @@ where
                 // TODO: `false` here means we don't insert ourselves in the DHT, which is the polite thing to do for as long as Kad isn't implemented
                 inbound_allowed: false,
             }))
+            .chain(iter::once(libp2p::ConfigRequestResponse {
+                name: format!("/{}/sync/warp", chain.protocol_id),
+                max_request_size: 32,
+                max_response_size: 16 * 1024 * 1024,
+                // We don't support inbound warp sync requests (yet).
+                inbound_allowed: false,
+            }))
         }))
         .collect();
 
@@ -207,6 +217,10 @@ where
             substreams_open_tx: Mutex::new(substreams_open_tx),
             substreams_open_rx: Mutex::new(substreams_open_rx),
         }
+    }
+
+    fn protocol_index(&self, chain_index: usize, protocol: usize) -> usize {
+        1 + chain_index * Self::PROTOCOLS_PER_CHAIN + protocol
     }
 
     /// Returns the number of established TCP connections, both incoming and outgoing.
@@ -247,10 +261,39 @@ where
         });
         let response = self
             .libp2p
-            .request(now, target, 1 + chain_index * 3, request_data)
+            .request(
+                now,
+                target,
+                self.protocol_index(chain_index, 0),
+                request_data,
+            )
             .map_err(BlocksRequestError::Request)
             .await?;
         protocol::decode_block_response(&response).map_err(BlocksRequestError::Decode)
+    }
+
+    pub async fn grandpa_warp_sync_request(
+        &self,
+        now: TNow,
+        target: peer_id::PeerId,
+        chain_index: usize,
+        begin_hash: [u8; 32],
+    ) -> Result<Vec<protocol::GrandpaWarpSyncResponseFragment>, GrandpaWarpSyncRequestError> {
+        let request_data = begin_hash.to_vec();
+
+        let response = self
+            .libp2p
+            .request(
+                now,
+                target,
+                self.protocol_index(chain_index, 3),
+                request_data,
+            )
+            .map_err(GrandpaWarpSyncRequestError::Request)
+            .await?;
+
+        protocol::decode_grandpa_warp_sync_response(&response)
+            .map_err(GrandpaWarpSyncRequestError::Decode)
     }
 
     /// Sends a storage request to the given peer.
@@ -269,7 +312,12 @@ where
             });
         let response = self
             .libp2p
-            .request(now, target, 1 + chain_index * 3 + 1, request_data)
+            .request(
+                now,
+                target,
+                self.protocol_index(chain_index, 1),
+                request_data,
+            )
             .map_err(StorageProofRequestError::Request)
             .await?;
         protocol::decode_storage_proof_response(&response).map_err(StorageProofRequestError::Decode)
@@ -483,7 +531,12 @@ where
             // TODO: better peer selection
             let response = self
                 .libp2p
-                .request(now, target, 1 + chain_index * 3 + 2, request_data)
+                .request(
+                    now,
+                    target,
+                    self.protocol_index(chain_index, 2),
+                    request_data,
+                )
                 .await
                 .map_err(DiscoveryError::RequestFailed)?;
             let decoded = kademlia::decode_find_node_response(&response)
@@ -733,4 +786,11 @@ pub enum BlocksRequestError {
 pub enum StorageProofRequestError {
     Request(libp2p::RequestError),
     Decode(protocol::DecodeStorageProofResponseError),
+}
+
+/// Error returned by [`ChainNetwork::grandpa_warp_sync_request`].
+#[derive(Debug, derive_more::Display)]
+pub enum GrandpaWarpSyncRequestError {
+    Request(libp2p::RequestError),
+    Decode(protocol::DecodeGrandpaWarpSyncResponseError),
 }

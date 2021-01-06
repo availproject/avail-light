@@ -125,7 +125,7 @@ pub fn decode(scale_encoded: &[u8]) -> Result<HeaderRef, Error> {
 /// Attempt to decode the given SCALE-encoded header.
 ///
 /// Contrary to [`decode`], doesn't return an error if the slice is too long but returns the
-/// remainer.
+/// remainder.
 pub fn decode_partial(mut scale_encoded: &[u8]) -> Result<(HeaderRef, &[u8]), Error> {
     if scale_encoded.len() < 32 + 1 {
         return Err(Error::TooShort);
