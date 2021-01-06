@@ -81,11 +81,13 @@ extern "C" {
     /// >           also <https://github.com/dcodeIO/webassembly/issues/26#issuecomment-410157370>.
     pub fn monotonic_clock_ms() -> f64;
 
-    /// After `milliseconds` milliseconds have passed, must call [`timer_finished`] with the `id`
-    /// passed as parameter.
+    /// After at least `milliseconds` milliseconds have passed, must call [`timer_finished`] with
+    /// the `id` passed as parameter.
     ///
     /// When [`timer_finished`] is called, the value of [`monotonic_clock_ms`] must have increased
-    /// by the given number of `milliseconds`.
+    /// by at least the given number of `milliseconds`.
+    ///
+    /// If `milliseconds` is 0, [`timer_finished`] should be called as soon as possible.
     pub fn start_timer(id: u32, milliseconds: f64);
 
     /// Must initialize a new WebSocket connection that tries to connect to the given URL.
