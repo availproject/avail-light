@@ -309,15 +309,19 @@ async fn async_main() {
         rx.fuse()
     };
 
-    let mut informant_timer = stream::unfold((), move |_| {
-        futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
-    })
-    .map(|_| ());
+    let mut informant_timer = stream::once(future::ready(())).chain(
+        stream::unfold((), move |_| {
+            futures_timer::Delay::new(Duration::from_secs(1)).map(|_| Some(((), ())))
+        })
+        .map(|_| ()),
+    );
 
-    let mut telemetry_timer = stream::unfold((), move |_| {
-        futures_timer::Delay::new(Duration::from_secs(5)).map(|_| Some(((), ())))
-    })
-    .map(|_| ());
+    let mut telemetry_timer = stream::once(future::ready(())).chain(
+        stream::unfold((), move |_| {
+            futures_timer::Delay::new(Duration::from_secs(5)).map(|_| Some(((), ())))
+        })
+        .map(|_| ()),
+    );
 
     let mut network_known_best = None;
 
