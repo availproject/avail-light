@@ -20,6 +20,8 @@
 
 use core::convert::TryFrom as _;
 
+pub(crate) mod leb128;
+
 /// Decodes a SCALE-encoded `Option`.
 ///
 /// > **Note**: When using this function outside of a `nom` "context", you might have to explicit

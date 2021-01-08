@@ -20,7 +20,6 @@
 **   Not ready yet                                      **
 *********************************************************/
 
-pub mod leb128;
 pub mod protocol;
 pub mod service;
 

@@ -57,7 +57,7 @@
 
 // TODO: write usage
 
-use crate::network::leb128;
+use crate::util::leb128;
 
 use alloc::{vec, vec::Vec};
 use core::{cmp, fmt, iter, mem, slice, str};

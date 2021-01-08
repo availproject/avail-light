@@ -29,18 +29,6 @@ use core::{cmp, convert::TryFrom as _, mem};
 ///
 /// This function accepts as parameter an `Into<u64>`. As such, one can also pass a `u8`, `u16`,
 /// or `u32` for example. Use [`encode_usize`] for the `usize` equivalent.
-///
-/// # Example
-///
-/// ```
-/// use substrate_lite::network::leb128;
-///
-/// assert_eq!(leb128::encode(0u64).collect::<Vec<_>>(), &[0]);
-/// assert_eq!(
-///     leb128::encode(0x123456789abcdefu64).collect::<Vec<_>>(),
-///     &[239, 155, 175, 205, 248, 172, 209, 145, 1]
-/// );
-/// ```
 pub fn encode(value: impl Into<u64>) -> impl ExactSizeIterator<Item = u8> + Clone {
     #[derive(Clone)]
     struct EncodeIter {
@@ -83,18 +71,6 @@ pub fn encode(value: impl Into<u64>) -> impl ExactSizeIterator<Item = u8> + Clon
 /// Returns an LEB128-encoded `usize` as a list of bytes.
 ///
 /// See also [`encode`].
-///
-/// # Example
-///
-/// ```
-/// use substrate_lite::network::leb128;
-///
-/// assert_eq!(leb128::encode_usize(0).collect::<Vec<_>>(), &[0]);
-/// assert_eq!(
-///     leb128::encode_usize(0x1234567).collect::<Vec<_>>(),
-///     &[231, 138, 141, 9]
-/// );
-/// ```
 pub fn encode_usize(value: usize) -> impl ExactSizeIterator<Item = u8> {
     encode(u64::try_from(value).unwrap())
 }

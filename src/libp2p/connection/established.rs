@@ -48,7 +48,7 @@
 
 // TODO: expand docs ^
 
-use crate::network::leb128;
+use crate::util::leb128;
 
 use super::{multistream_select, noise, yamux};
 
