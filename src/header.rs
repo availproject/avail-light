@@ -767,9 +767,33 @@ impl Digest {
         DigestRef::from(self).aura_seal()
     }
 
+    /// Pushes an Aura seal at the end of the list. Returns an error if there is already an Aura
+    /// seal.
+    pub fn push_aura_seal(&mut self, seal: [u8; 64]) -> Result<(), ()> {
+        if self.aura_seal_index.is_none() {
+            self.aura_seal_index = Some(self.list.len());
+            self.list.push(DigestItem::AuraSeal(seal));
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     /// Returns the Babe seal digest item, if any.
     pub fn babe_seal(&self) -> Option<&[u8; 64]> {
         DigestRef::from(self).babe_seal()
+    }
+
+    /// Pushes a Babe seal at the end of the list. Returns an error if there is already a Babe
+    /// seal.
+    pub fn push_babe_seal(&mut self, seal: [u8; 64]) -> Result<(), ()> {
+        if self.babe_seal_index.is_none() {
+            self.babe_seal_index = Some(self.list.len());
+            self.list.push(DigestItem::BabeSeal(seal));
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     /// Returns the Babe pre-runtime digest item, if any.
