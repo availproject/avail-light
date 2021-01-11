@@ -36,6 +36,17 @@ pub mod host;
 pub mod runtime_host;
 pub mod vm;
 
+/// Default number of heap pages if the storage doesn't specify otherwise.
+///
+/// # Context
+///
+/// In order to initialize a [`host::HostVmPrototype`], one needs to pass a certain number of
+/// heap pages that are available to the runtime.
+///
+/// This number is normally found in the storage, at the key `:heappages`. But if it is not
+/// specified, then the value of this constant must be used.
+pub const DEFAULT_HEAP_PAGES: u64 = 1024;
+
 /// Runs the `Core_version` function using the given virtual machine prototype, and returns
 /// the output.
 ///

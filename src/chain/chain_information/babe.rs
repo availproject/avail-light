@@ -16,7 +16,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-    executor::{host, vm},
+    executor::{self, host, vm},
     header,
 };
 
@@ -50,7 +50,7 @@ impl BabeGenesisConfiguration {
                     .map_err(FromGenesisStorageError::HeapPagesDecode)?,
             )
         } else {
-            1024 // TODO: default heap pages
+            executor::DEFAULT_HEAP_PAGES
         };
         let vm = host::HostVmPrototype::new(&wasm_code, heap_pages, vm::ExecHint::Oneshot)
             .map_err(FromGenesisStorageError::VmInitialization)?;

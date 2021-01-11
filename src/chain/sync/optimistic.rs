@@ -47,7 +47,7 @@
 
 use super::super::{blocks_tree, chain_information};
 use crate::{
-    executor::{host, vm},
+    executor::{self, host, vm},
     header,
     trie::calculate_root,
     verify,
@@ -1103,7 +1103,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                         <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
                     )
                 } else {
-                    1024 // TODO: default heap pages
+                    executor::DEFAULT_HEAP_PAGES
                 };
                 ProcessOne::FinalizedStorageGet(StorageGet {
                     inner: StorageGetTarget::Runtime(inner, heap_pages),
@@ -1131,7 +1131,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                         <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
                     )
                 } else {
-                    1024 // TODO: default heap pages
+                    executor::DEFAULT_HEAP_PAGES
                 };
                 let wasm_vm = host::HostVmPrototype::new(
                     &wasm_code,

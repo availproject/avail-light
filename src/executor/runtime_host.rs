@@ -38,7 +38,7 @@
 // TODO: more docs
 
 use crate::{
-    executor::{host, vm},
+    executor::{self, host, vm},
     trie::calculate_root,
 };
 
@@ -604,10 +604,10 @@ impl Inner {
                     // to be called only right before runtime upgrades. Considering that runtime
                     // upgrades are quite uncommon and that a caching system is rather non-trivial
                     // to set up, the approach of recompiling every single time is preferred here.
-                    // TODO: number of heap pages?! 1024 is default, but not sure whether that's correct or if we have to take the current heap pages
+                    // TODO: number of heap pages?! we use the default here, but not sure whether that's correct or if we have to take the current heap pages
                     let vm_prototype = match host::HostVmPrototype::new(
                         req.wasm_code(),
-                        1024,
+                        executor::DEFAULT_HEAP_PAGES,
                         vm::ExecHint::Oneshot,
                     ) {
                         Ok(w) => w,
