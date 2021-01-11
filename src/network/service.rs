@@ -544,7 +544,7 @@ where
             Ok(DiscoveryInsert {
                 service: self,
                 outcome: decoded,
-                overlay_network_index: chain_index, // TODO: wrong
+                chain_index,
             })
         } else {
             Err(DiscoveryError::NoPeer)
@@ -689,7 +689,9 @@ impl fmt::Debug for EncodedBlockAnnounce {
 pub struct DiscoveryInsert<'a, TNow, TPeer, TConn> {
     service: &'a ChainNetwork<TNow, TPeer, TConn>,
     outcome: Vec<(peer_id::PeerId, Vec<multiaddr::Multiaddr>)>,
-    overlay_network_index: usize,
+
+    /// Index within [`Config::chains`] corresponding to the chain the nodes belong to.
+    chain_index: usize,
 }
 
 impl<'a, TNow, TPeer, TConn> DiscoveryInsert<'a, TNow, TPeer, TConn>
@@ -704,7 +706,16 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.overlay_network_index,
+                    self.chain_index * 2,
+                    peer_id.clone(), // TODO: clone :(
+                    addrs.iter().cloned(),
+                )
+                .await;
+            self.service
+                .libp2p
+                .add_addresses(
+                    || or_insert(&peer_id),
+                    self.chain_index * 2 + 1,
                     peer_id.clone(), // TODO: clone :(
                     addrs,
                 )
