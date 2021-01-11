@@ -428,6 +428,7 @@ impl<T> VerifyContext<T> {
 
                     return BodyVerifyStep2::Finished {
                         parent_runtime: success.parent_runtime,
+                        new_runtime: success.new_runtime,
                         storage_top_trie_changes: success.storage_top_trie_changes,
                         offchain_storage_changes: success.offchain_storage_changes,
                         top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
@@ -461,6 +462,12 @@ impl<T> VerifyContext<T> {
                 }
                 verify::header_body::Verify::StoragePrefixKeys(inner) => {
                     return BodyVerifyStep2::StoragePrefixKeys(StoragePrefixKeys {
+                        context: self,
+                        inner,
+                    })
+                }
+                verify::header_body::Verify::RuntimeCompilation(inner) => {
+                    return BodyVerifyStep2::RuntimeCompilation(RuntimeCompilation {
                         context: self,
                         inner,
                     })
@@ -660,6 +667,10 @@ pub enum BodyVerifyStep2<T> {
     Finished {
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
         parent_runtime: host::HostVmPrototype,
+        /// Contains `Some` if and only if [`BodyVerifyStep2::Finished::storage_top_trie_changes`]
+        /// contains a change in the `:code` or `:heappages` keys, indicating that the runtime has
+        /// been modified. Contains the new runtime.
+        new_runtime: Option<host::HostVmPrototype>,
         /// List of changes to the storage top trie that the block performs.
         storage_top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
         /// List of changes to the offchain storage that this block performs.
@@ -684,6 +695,11 @@ pub enum BodyVerifyStep2<T> {
     StoragePrefixKeys(StoragePrefixKeys<T>),
     /// Fetching the key that follows a given one is required in order to continue.
     StorageNextKey(StorageNextKey<T>),
+    /// A new runtime must be compiled.
+    ///
+    /// This variant doesn't require any specific input from the user, but is provided in order to
+    /// make it possible to benchmark the time it takes to compile runtimes.
+    RuntimeCompilation(RuntimeCompilation<T>),
 }
 
 /// Loading a storage value is required in order to continue.
@@ -865,6 +881,24 @@ impl<T> StorageNextKey<T> {
     ///
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BodyVerifyStep2<T> {
         let inner = self.inner.inject_key(key);
+        self.context.with_body_verify(inner)
+    }
+}
+
+/// A new runtime must be compiled.
+///
+/// This variant doesn't require any specific input from the user, but is provided in order to
+/// make it possible to benchmark the time it takes to compile runtimes.
+#[must_use]
+pub struct RuntimeCompilation<T> {
+    inner: verify::header_body::RuntimeCompilation,
+    context: VerifyContext<T>,
+}
+
+impl<T> RuntimeCompilation<T> {
+    /// Performs the runtime compilation.
+    pub fn build(self) -> BodyVerifyStep2<T> {
+        let inner = self.inner.build();
         self.context.with_body_verify(inner)
     }
 }

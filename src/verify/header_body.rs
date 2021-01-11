@@ -18,14 +18,14 @@
 use super::execute_block;
 use crate::{
     chain::chain_information,
-    executor::host,
+    executor::{self, host, vm},
     header,
     trie::calculate_root,
     verify::{aura, babe},
 };
 
 use alloc::{string::String, vec::Vec};
-use core::{num::NonZeroU64, time::Duration};
+use core::{convert::TryFrom as _, num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
@@ -108,6 +108,11 @@ pub struct Success {
     /// Runtime that was passed by [`Config`].
     pub parent_runtime: host::HostVmPrototype,
 
+    /// Contains `Some` if and only if [`Success::storage_top_trie_changes`] contains a change in
+    /// the `:code` or `:heappages` keys, indicating that the runtime has been modified. Contains
+    /// the new runtime.
+    pub new_runtime: Option<host::HostVmPrototype>,
+
     /// Extra items in [`Success`] relevant to the consensus engine.
     pub consensus: SuccessConsensus,
 
@@ -165,6 +170,16 @@ pub enum Error {
     /// Failed to verify the authenticity of the block with the BABE algorithm.
     #[display(fmt = "{}", _0)]
     BabeVerification(babe::VerifyError),
+    /// Error while compiling new runtime.
+    NewRuntimeCompilationError(host::NewErr),
+    /// Block being verified has erased the `:code` key from the storage.
+    CodeKeyErased,
+    /// Block has modified the `:heappages` key in a way that fails to parse.
+    HeapPagesParseError,
+    /// Block has modified the `:heappages` key without modifying the `:code` key. This isn't
+    /// supported by substrate-lite.
+    // TODO: this is something that we should support but don't because it's annoying to implement and is clearly not worth the effort
+    HeapPagesOnlyModification,
 }
 
 /// Verifies whether a block is valid.
@@ -253,6 +268,11 @@ pub fn verify(
 pub enum Verify {
     /// Verification is over.
     Finished(Result<Success, Error>),
+    /// A new runtime must be compiled.
+    ///
+    /// This variant doesn't require any specific input from the user, but is provided in order to
+    /// make it possible to benchmark the time it takes to compile runtimes.
+    RuntimeCompilation(RuntimeCompilation),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.
@@ -272,14 +292,46 @@ impl VerifyInner {
             execute_block::Verify::Finished(Err(err)) => {
                 Verify::Finished(Err(Error::Unsealed(err)))
             }
-            execute_block::Verify::Finished(Ok(success)) => Verify::Finished(Ok(Success {
-                parent_runtime: success.parent_runtime,
-                consensus: self.consensus_success,
-                storage_top_trie_changes: success.storage_top_trie_changes,
-                offchain_storage_changes: success.offchain_storage_changes,
-                top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
-                logs: success.logs,
-            })),
+            execute_block::Verify::Finished(Ok(success)) => {
+                match (
+                    success.storage_top_trie_changes.get(&b":code"[..]),
+                    success.storage_top_trie_changes.get(&b":heappages"[..]),
+                ) {
+                    (None, None) => {}
+                    (Some(None), _) => return Verify::Finished(Err(Error::CodeKeyErased)),
+                    (None, Some(_)) => {
+                        return Verify::Finished(Err(Error::HeapPagesOnlyModification))
+                    }
+                    (Some(Some(code)), heap_pages) => {
+                        let heap_pages = match heap_pages {
+                            Some(Some(p)) if p.len() == 8 => {
+                                u64::from_le_bytes(<[u8; 8]>::try_from(&p[..]).unwrap())
+                            }
+                            Some(Some(_)) => {
+                                return Verify::Finished(Err(Error::HeapPagesParseError))
+                            }
+                            Some(None) => executor::DEFAULT_HEAP_PAGES,
+                            None => success.parent_runtime.heap_pages(),
+                        };
+
+                        return Verify::RuntimeCompilation(RuntimeCompilation {
+                            consensus_success: self.consensus_success,
+                            heap_pages,
+                            success,
+                        });
+                    }
+                }
+
+                Verify::Finished(Ok(Success {
+                    parent_runtime: success.parent_runtime,
+                    new_runtime: None,
+                    consensus: self.consensus_success,
+                    storage_top_trie_changes: success.storage_top_trie_changes,
+                    offchain_storage_changes: success.offchain_storage_changes,
+                    top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
+                    logs: success.logs,
+                }))
+            }
             execute_block::Verify::StorageGet(inner) => Verify::StorageGet(StorageGet {
                 inner,
                 consensus_success: self.consensus_success,
@@ -376,5 +428,50 @@ impl StorageNextKey {
             consensus_success: self.consensus_success,
         }
         .run()
+    }
+}
+
+/// A new runtime must be compiled.
+///
+/// This variant doesn't require any specific input from the user, but is provided in order to
+/// make it possible to benchmark the time it takes to compile runtimes.
+#[must_use]
+pub struct RuntimeCompilation {
+    success: execute_block::Success,
+    heap_pages: u64,
+    consensus_success: SuccessConsensus,
+}
+
+impl RuntimeCompilation {
+    /// Performs the runtime compilation.
+    pub fn build(self) -> Verify {
+        // A `RuntimeCompilation` object is built only if `:code` has been modified and to a
+        // specific value.
+        let code = self
+            .success
+            .storage_top_trie_changes
+            .get(&b":code"[..])
+            .unwrap()
+            .as_ref()
+            .unwrap();
+
+        let new_runtime = match host::HostVmPrototype::new(
+            code,
+            self.heap_pages,
+            vm::ExecHint::CompileAheadOfTime,
+        ) {
+            Ok(vm) => vm,
+            Err(err) => return Verify::Finished(Err(Error::NewRuntimeCompilationError(err))),
+        };
+
+        Verify::Finished(Ok(Success {
+            parent_runtime: self.success.parent_runtime,
+            new_runtime: Some(new_runtime),
+            consensus: self.consensus_success,
+            storage_top_trie_changes: self.success.storage_top_trie_changes,
+            offchain_storage_changes: self.success.offchain_storage_changes,
+            top_trie_root_calculation_cache: self.success.top_trie_root_calculation_cache,
+            logs: self.success.logs,
+        }))
     }
 }

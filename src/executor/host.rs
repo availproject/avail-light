@@ -195,6 +195,9 @@ pub struct HostVmPrototype {
     /// executor. Whenever the Wasm code invokes a host function, we obtain its index, and look
     /// within this `Vec` to know what to do.
     registered_functions: Vec<HostFunction>,
+
+    /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
+    heap_pages: u64,
 }
 
 impl HostVmPrototype {
@@ -243,7 +246,13 @@ impl HostVmPrototype {
             vm_proto,
             heap_base,
             registered_functions,
+            heap_pages,
         })
+    }
+
+    /// Returns the number of heap pages that were passed to [`HostVmPrototype::new`].
+    pub fn heap_pages(&self) -> u64 {
+        self.heap_pages
     }
 
     /// Starts the VM, calling the function passed as parameter.
@@ -300,6 +309,7 @@ impl HostVmPrototype {
             inner: Inner {
                 vm,
                 heap_base: self.heap_base,
+                heap_pages: self.heap_pages,
                 registered_functions: self.registered_functions,
                 within_storage_transaction: false,
                 allocator,
@@ -1939,6 +1949,9 @@ struct Inner {
     /// allocator in case we need to rebuild the VM.
     heap_base: u32,
 
+    /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
+    heap_pages: u64,
+
     /// If true, a transaction has been started using `ext_storage_start_transaction_version_1`.
     /// No further transaction start is allowed before the current one ends.
     within_storage_transaction: bool,
@@ -2065,6 +2078,7 @@ impl Inner {
             vm_proto: self.vm.into_prototype(),
             heap_base: self.heap_base,
             registered_functions: self.registered_functions,
+            heap_pages: self.heap_pages,
         }
     }
 }

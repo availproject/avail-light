@@ -598,6 +598,7 @@ impl Inner {
                 }
 
                 host::HostVm::CallRuntimeVersion(req) => {
+                    // TODO: make the user execute this ; see https://github.com/paritytech/substrate-lite/issues/144
                     // The code below compiles the provided WebAssembly runtime code, which is a
                     // relatively expensive operation (in the order of milliseconds).
                     // While it could be tempting to use a system cache, this function is expected

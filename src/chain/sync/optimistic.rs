@@ -825,6 +825,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     offchain_storage_changes,
                     top_trie_root_calculation_cache,
                     parent_runtime,
+                    new_runtime, // TODO: make use of this
                     insert,
                 }) => {
                     // Successfully verified block!
@@ -962,6 +963,12 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         inner: req,
                         shared,
                     });
+                }
+
+                Inner::Step2(blocks_tree::BodyVerifyStep2::RuntimeCompilation(c)) => {
+                    // The underlying verification process requires compiling a runtime code.
+                    inner = Inner::Step2(c.build());
+                    continue 'verif_steps;
                 }
 
                 // The three variants below correspond to problems during the verification.
