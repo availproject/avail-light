@@ -30,7 +30,7 @@ substrate_lite.start({
     chain_spec: JSON.stringify(westend_specs()),
     json_rpc_callback: (resp) => {
         if (ws_connection) {
-            console.log("Sending back:", resp.slice(0, 100));
+            console.log("Sending back:", resp.slice(0, 100) + (resp.length > 100 ? '…' : ''));
             ws_connection.sendUTF(resp);
         }
     }
@@ -40,14 +40,14 @@ substrate_lite.start({
         unsent_queue.forEach((m) => client.send_json_rpc(m));
         unsent_queue = [];
     })
-    
-let server = http.createServer(function(request, response) {
+
+let server = http.createServer(function (request, response) {
     console.log((new Date()) + ' Received request for ' + request.url);
     response.writeHead(404);
     response.end();
 });
 
-server.listen(9944, function() {
+server.listen(9944, function () {
     console.log((new Date()) + ' Server is listening on port 9944');
 });
 
@@ -56,14 +56,14 @@ let wsServer = new websocket.server({
     autoAcceptConnections: false,
 });
 
-wsServer.on('request', function(request) {
+wsServer.on('request', function (request) {
     var connection = request.accept(request.requestedProtocols[0], request.origin);
     console.log((new Date()) + ' Connection accepted.');
     ws_connection = connection;
 
-    connection.on('message', function(message) {
+    connection.on('message', function (message) {
         if (message.type === 'utf8') {
-            console.log('Received Message: ' + message.utf8Data.slice(0, 100));
+            console.log('Received Message:', message.utf8Data.slice(0, 100) + (message.utf8Data.length > 100 ? '…' : ''));
             if (client) {
                 client.send_json_rpc(message.utf8Data);
             } else {
@@ -74,7 +74,7 @@ wsServer.on('request', function(request) {
         }
     });
 
-    connection.on('close', function(reasonCode, description) {
+    connection.on('close', function (reasonCode, description) {
         console.log((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
         ws_connection = null;
     });
