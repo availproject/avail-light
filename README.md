@@ -10,6 +10,22 @@ In order to simplify the code, two main design decisions have been made compared
 
 - No pluggable architecture. `substrate-lite` supports a certain hardcoded list of consensus algorithms, at the moment Babe, Aura, and GrandPa. Support for other algorithms can only be added by modifying the code of substrate-lite, and it is not possible to plug a custom algorithm from outside.
 
+## How to test
+
+There exists two clients: the full client and the wasm light node.
+
+### Full client
+
+The full client is a binary similar to the official Polkadot client, and can be tested with `cargo run`.
+
+> Note: The `Cargo.toml` contains a section `[profile.dev] opt-level = 2`, and as such `cargo run` alone should give performances close to the ones in release mode.
+
+### Wasm light node
+
+The wasm light node can be tested with `cd bin/wasm-node/javascript` and `npm start`. This will start a WebSocket server capable of answering JSON-RPC requests. You can then navigate to <https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944> in order to interact with the Westend chain.
+
+> Note: The `npm start` command starts a small JavaScript shim, on top of the wasm light node, that hardcodes the chain to Westend and starts the WebSocket server. The wasm light node itself can connect to a variety of different chains (not only Westend) and doesn't start any server.
+
 # Objectives
 
 There exists multiple objectives behind this repository:
@@ -40,13 +56,3 @@ The following isn't done yet:
 - No actual database for the full client.
 - The changes trie isn't implemented (it is not enabled on Westend, Kusama and Polkadot at the moment).
 - A Prometheus server. While not difficult to implement, it seems a bit overkill to have one at the moment.
-
-## How to test
-
-There exists two clients.
-
-The full client can be tested with `cargo run`.
-
-> Note: The `Cargo.toml` contains a section `[profile.dev] opt-level = 2`, and as such `cargo run` alone should give performances close to the ones in release mode.
-
-The light client running in a browser can be tested with `cd wasm-node/javascript` and `npm run start`.
