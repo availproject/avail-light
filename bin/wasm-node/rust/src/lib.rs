@@ -293,12 +293,14 @@ pub async fn start_client(chain_spec: String) {
                             ffi::emit_json_rpc_response(&notification);
                         }
 
+                        // Load the entry of the finalized block in order to guarantee that it
+                        // remains in the LRU cache when `put` is called below.
+                        let _ = client.known_blocks.get(&client.finalized_block).unwrap();
+
                         client.best_block = decoded.hash();
                         client.known_blocks.put(client.best_block, decoded.into());
 
-                        // Load the entry of the finalized block in order to guarantee that it
-                        // remains in the LRU cache.
-                        let _ = client.known_blocks.get(&client.finalized_block).unwrap();
+                        debug_assert!(client.known_blocks.get(&client.finalized_block).is_some());
 
                         // TODO: need to update `best_block_metadata` if necessary, and notify the runtime version subscriptions
                     },
