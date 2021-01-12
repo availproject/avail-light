@@ -592,7 +592,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                 },
             )
         } else {
-            match self
+            let error = match self
                 .chain
                 .verify_header(block.scale_encoded_header, now_from_unix_epoch)
             {
@@ -611,17 +611,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                         offchain_storage_changes: Default::default(),
                         user_data: block.user_data,
                     });
-                    ProcessOne::from(
-                        Inner::JustificationVerif(self.chain),
-                        ProcessOneShared {
-                            pending_encoded_justification: block.scale_encoded_justification,
-                            expected_block_height,
-                            inner: self.inner,
-                            block_body: Vec::new(),
-                            block_user_data: None,
-                            source_id,
-                        },
-                    )
+                    None
                 }
                 Err(err) => {
                     if let Some(src) = self.inner.sources.get_mut(&source_id) {
@@ -631,13 +621,29 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                     self.inner.best_to_finalized_storage_diff = Default::default();
                     self.inner.runtime_code_cache = None;
                     self.inner.top_trie_root_calculation_cache = None;
-                    let previous_best_height = self.chain.best_block_header().number;
-                    ProcessOne::Reset {
-                        sync: self,
-                        previous_best_height,
-                        reason: ResetCause::HeaderError(err),
-                    }
+                    Some(err)
                 }
+            };
+
+            if let Some(error) = error {
+                let previous_best_height = self.chain.best_block_header().number;
+                ProcessOne::Reset {
+                    sync: self,
+                    previous_best_height,
+                    reason: ResetCause::HeaderError(error),
+                }
+            } else {
+                ProcessOne::from(
+                    Inner::JustificationVerif(self.chain),
+                    ProcessOneShared {
+                        pending_encoded_justification: block.scale_encoded_justification,
+                        expected_block_height,
+                        inner: self.inner,
+                        block_body: Vec::new(),
+                        block_user_data: None,
+                        source_id,
+                    },
+                )
             }
         }
     }
