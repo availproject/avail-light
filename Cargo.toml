@@ -84,7 +84,7 @@ parity-scale-codec = { version = "1.3.5", features = ["derive"] } # TODO: a lot 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 # `std` feature
 corooteen = { git = "https://github.com/tomaka/corooteen", optional = true } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
-wasmtime = { version = "0.21.0", default-features = false, optional = true }
+wasmtime = { version = "0.22.0", default-features = false, optional = true }
 
 [build-dependencies]
 prost-build = "0.7.0"

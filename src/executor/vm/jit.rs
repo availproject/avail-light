@@ -69,17 +69,15 @@ impl JitPrototype {
                 match import.ty() {
                     wasmtime::ExternType::Func(f) => {
                         // TODO: don't panic below
-                        let function_index = match symbols(
-                            import.module(),
-                            import.name(),
-                            &TryFrom::try_from(&f).unwrap(),
-                        ) {
-                            Ok(idx) => idx,
-                            Err(()) => {
+                        let function_index = match import.name().and_then(|name| {
+                            symbols(import.module(), name, &TryFrom::try_from(&f).unwrap()).ok()
+                        }) {
+                            Some(idx) => idx,
+                            None => {
                                 return Err(NewErr::ModuleError(ModuleError(format!(
                                     "unresolved import: `{}`:`{}`",
                                     import.module(),
-                                    import.name()
+                                    import.name().unwrap_or("<unnamed>")
                                 ))));
                             }
                         };
@@ -115,8 +113,14 @@ impl JitPrototype {
                             },
                         )));
                     }
-                    wasmtime::ExternType::Global(_) => unimplemented!(),
-                    wasmtime::ExternType::Table(_) => unimplemented!(),
+                    wasmtime::ExternType::Global(_)
+                    | wasmtime::ExternType::Table(_)
+                    | wasmtime::ExternType::Instance(_)
+                    | wasmtime::ExternType::Module(_) => {
+                        return Err(NewErr::ModuleError(ModuleError(
+                            "global/table/instance/module imports not supported".to_string(),
+                        )));
+                    }
                     wasmtime::ExternType::Memory(m) => {
                         let limits = {
                             // TODO: shouldn't heap_pages be u32 in the first place?
