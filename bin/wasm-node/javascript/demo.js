@@ -21,18 +21,30 @@ import * as substrate_lite from './index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
 import { default as westend_specs } from './westend_specs.js';
+import * as fs from 'fs';
 
 let client = null;
 var unsent_queue = [];
 let ws_connection = null;
+const database_path = 'substrate-lite-demo-db.json';
+
+var database_content = null;
+try {
+    database_content = fs.readFileSync(database_path, 'utf8');
+} catch(error) {}
 
 substrate_lite.start({
     chain_spec: JSON.stringify(westend_specs()),
+    database_content: database_content,
     json_rpc_callback: (resp) => {
         if (ws_connection) {
             console.log("Sending back:", resp.slice(0, 100) + (resp.length > 100 ? '…' : ''));
             ws_connection.sendUTF(resp);
         }
+    },
+    database_save_callback: (db_content) => {
+        console.log("Saving database");
+        fs.writeFileSync(database_path, db_content);
     }
 })
     .then((c) => {

@@ -28,6 +28,7 @@ use std::{
     convert::TryFrom as _,
     iter,
     sync::Arc,
+    time::Duration,
 };
 use substrate_lite::{
     chain, chain_spec,
@@ -135,7 +136,7 @@ watched and of the `:code` key.
 /// > **Note**: This function returns a `Result`. The return value according to the JavaScript
 /// >           function is what is in the `Ok`. If an `Err` is returned, a JavaScript exception
 /// >           is thrown.
-pub async fn start_client(chain_spec: String) {
+pub async fn start_client(chain_spec: String, database_content: Option<String>) {
     std::panic::set_hook(Box::new(|info| {
         ffi::throw(info.to_string());
     }));
@@ -149,6 +150,20 @@ pub async fn start_client(chain_spec: String) {
         Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
     };
 
+    // The database passed from the user is decoded. Any error while decoding is treated as if
+    // there was no database.
+    let database_content = if let Some(database_content) = database_content {
+        if let Ok(parsed) = substrate_lite::database::finalized_serialize::decode_chain_information(
+            &database_content,
+        ) {
+            Some(parsed)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Load the information about the chain from the chain specs. If a light sync state is
     // present in the chain specs, it is possible to start sync at the finalized block it
     // describes.
@@ -157,10 +172,23 @@ pub async fn start_client(chain_spec: String) {
             chain_spec.genesis_storage(),
         )
         .unwrap();
-    let chain_information = if let Some(light_sync_state) = chain_spec.light_sync_state() {
-        light_sync_state.as_chain_information()
-    } else {
-        genesis_chain_information.clone()
+    let chain_information = {
+        let base = if let Some(light_sync_state) = chain_spec.light_sync_state() {
+            light_sync_state.as_chain_information()
+        } else {
+            genesis_chain_information.clone()
+        };
+
+        // Only use the existing database if it is ahead of `base`.
+        if let Some(database_content) = database_content {
+            if database_content.finalized_block_header.number > base.finalized_block_header.number {
+                database_content
+            } else {
+                base
+            }
+        } else {
+            base
+        }
     };
 
     // TODO: un-Arc-ify
@@ -234,6 +262,13 @@ pub async fn start_client(chain_spec: String) {
             storage: HashSet::new(),
         }
     };
+
+    // This implementation of `futures::Stream` fires at a regular time interval.
+    // The state of the chain is saved every time it fires.
+    let mut database_save_timer = stream::unfold((), move |_| {
+        ffi::Delay::new(Duration::from_secs(15)).map(|_| Some(((), ())))
+    })
+    .map(|_| ());
 
     loop {
         futures::select! {
@@ -332,6 +367,17 @@ pub async fn start_client(chain_spec: String) {
                     ffi::emit_json_rpc_response(&response2);
                 }
             },
+
+            _interval = database_save_timer.next().fuse() => {
+                debug_assert!(_interval.is_some());
+                // A new task is spawned specifically for the saving, in order to not block the
+                // main processing while waiting for the serialization.
+                let sync_service = sync_service.clone();
+                ffi::spawn_task(async move {
+                    let database_content = sync_service.serialize_chain().await;
+                    ffi::database_save(&database_content);
+                });
+            }
         }
     }
 }

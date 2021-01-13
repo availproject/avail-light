@@ -24,7 +24,9 @@ import { default as wasm_base64 } from './autogen/wasm.js';
 
 export async function start(config) {
   const chain_spec = config.chain_spec;
+  const database_content = config.database_content;
   const json_rpc_callback = config.json_rpc_callback;
+  const database_save_callback = config.database_save_callback;
 
   if (Object.prototype.toString.call(chain_spec) !== '[object String]')
     throw 'config must include a string chain_spec';
@@ -84,6 +86,14 @@ export async function start(config) {
           setTimeout(() => {
             module.exports.timer_finished(id);
           }, ms)
+        }
+      },
+
+      // Must set the content of the database to the given string.
+      database_save: (ptr, len) => {
+        if (database_save_callback) {
+          let content = Buffer.from(module.exports.memory.buffer).toString('utf8', ptr, ptr + len);
+          database_save_callback(content);
         }
       },
 
@@ -242,7 +252,14 @@ export async function start(config) {
   Buffer.from(module.exports.memory.buffer)
     .write(chain_spec, chain_spec_ptr);
 
-  module.exports.init(chain_spec_ptr, chain_spec_len, 0, 0);
+  let database_len = database_content ? Buffer.byteLength(database_content, 'utf8') : 0;
+  let database_ptr = (database_len != 0) ? module.exports.alloc(database_len) : 0;
+  if (database_len != 0) {
+    Buffer.from(module.exports.memory.buffer)
+      .write(database_content, database_ptr);
+  }
+
+  module.exports.init(chain_spec_ptr, chain_spec_len, database_ptr, database_len);
 
   return {
     send_json_rpc: (request) => {

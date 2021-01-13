@@ -213,6 +213,16 @@ impl Sub<Instant> for Instant {
     }
 }
 
+/// Sets the content of the database to the given string.
+pub(crate) fn database_save(content: &str) {
+    unsafe {
+        bindings::database_save(
+            u32::try_from(content.as_bytes().as_ptr() as usize).unwrap(),
+            u32::try_from(content.as_bytes().len()).unwrap(),
+        );
+    }
+}
+
 /// WebSocket connected to a target.
 pub struct WebSocket {
     /// If `Some`, [`bindings::websocket_close`] must be called. Set to a value after
@@ -419,17 +429,18 @@ fn init(
     let chain_specs = String::from_utf8(Vec::from(chain_specs)).expect("non-utf8 chain specs");
 
     let database_content = if database_content_ptr != 0 {
-        Some(unsafe {
+        let data: Box<[u8]> = unsafe {
             Box::from_raw(slice::from_raw_parts_mut(
                 database_content_ptr as *mut u8,
                 database_content_len,
             ))
-        })
+        };
+        String::from_utf8(Vec::from(data)).ok()
     } else {
         None
     };
 
-    spawn_task(super::start_client(chain_specs));
+    spawn_task(super::start_client(chain_specs, database_content));
 }
 
 lazy_static::lazy_static! {

@@ -90,6 +90,16 @@ extern "C" {
     /// If `milliseconds` is 0, [`timer_finished`] should be called as soon as possible.
     pub fn start_timer(id: u32, milliseconds: f64);
 
+    /// Client wants to set the content of the database to a UTF-8 string found at offset `ptr`
+    /// and with length `len`.
+    ///
+    /// The entire content of the database should be replaced with that string.
+    ///
+    /// This value is meant to later be passed to [`init`] when restarting the client.
+    ///
+    /// Saving the database is entirely optional, and it is legal to simply do nothing.
+    pub fn database_save(ptr: u32, len: u32);
+
     /// Must initialize a new WebSocket connection that tries to connect to the given URL.
     ///
     /// The URL is a UTF-8 string found in the WebAssembly memory at offset `url_ptr` and with
