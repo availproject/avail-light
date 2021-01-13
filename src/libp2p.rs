@@ -145,7 +145,6 @@ pub struct Network<TNow, TPeer, TConn> {
     ping_protocol: String,
 
     /// Generator for randomness seeds given to the established connections.
-    // TODO: what if children use ChaCha20 as well? is that safe?
     randomness_seeds: Mutex<ChaCha20Rng>,
 
     /// Receiver connected to [`Guarded::events_tx`].
