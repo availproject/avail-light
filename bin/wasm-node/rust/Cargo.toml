@@ -16,7 +16,7 @@ derive_more = "0.99.11"
 futures = "0.3.10"
 lazy_static = "1.4.0"
 lru = "0.6.3"
-rand = "0.8.1"
+rand = "0.8.2"
 serde_json = "1.0.61"
 slab = "0.4.2"
 substrate-lite = { version = "0.1.0", path = "../../..", default-features = false }
