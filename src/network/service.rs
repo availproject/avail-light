@@ -122,13 +122,15 @@ pub struct ChainNetwork<TNow, TPeer, TConn> {
     substreams_open_rx: Mutex<mpsc::Receiver<()>>,
 }
 
+// Update this when a new request response protocol is added.
+const REQUEST_RESPONSE_PROTOCOLS_PER_CHAIN: usize = 4;
+// Update this when a new notifications protocol is added.
+const NOTIFICATIONS_PROTOCOLS_PER_CHAIN: usize = 3;
+
 impl<TNow, TPeer, TConn> ChainNetwork<TNow, TPeer, TConn>
 where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
 {
-    // Update this when a new request response protocol is added.
-    const PROTOCOLS_PER_CHAIN: usize = 4;
-
     /// Initializes a new [`ChainNetwork`].
     pub fn new(config: Config<TPeer>) -> Self {
         // TODO: figure out the cloning situation here
@@ -229,7 +231,7 @@ where
     }
 
     fn protocol_index(&self, chain_index: usize, protocol: usize) -> usize {
-        1 + chain_index * Self::PROTOCOLS_PER_CHAIN + protocol
+        1 + chain_index * REQUEST_RESPONSE_PROTOCOLS_PER_CHAIN + protocol
     }
 
     /// Returns the number of established TCP connections, both incoming and outgoing.
@@ -381,7 +383,7 @@ where
                     .await;
 
                 let peer_id = self.libp2p.connection_peer_id(*id).await;
-                let chain_index = overlay_network_index / 3;
+                let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
                 *pending_in_accept = None;
             }
 
@@ -396,9 +398,10 @@ where
                     mut out_overlay_network_indices,
                     ..
                 } => {
-                    out_overlay_network_indices.retain(|i| (i % 3) == 0);
+                    out_overlay_network_indices
+                        .retain(|i| (i % NOTIFICATIONS_PROTOCOLS_PER_CHAIN) == 0);
                     for elem in &mut out_overlay_network_indices {
-                        *elem /= 3;
+                        *elem /= NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
                     }
                     return Event::Disconnected {
                         peer_id,
@@ -410,8 +413,8 @@ where
                     overlay_network_index,
                     remote_handshake,
                 } => {
-                    let chain_index = overlay_network_index / 3;
-                    if overlay_network_index % 3 == 0 {
+                    let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
+                    if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 0 {
                         let remote_handshake =
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
@@ -439,8 +442,8 @@ where
                     id,
                     overlay_network_index,
                 } => {
-                    let chain_index = overlay_network_index / 3;
-                    if overlay_network_index % 3 == 0 {
+                    let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
+                    if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 0 {
                         let peer_id = self.libp2p.connection_peer_id(id).await;
                         return Event::ChainDisconnected {
                             peer_id,
@@ -457,12 +460,13 @@ where
                     overlay_network_index,
                     remote_handshake,
                 } => {
-                    if (overlay_network_index % 3) == 0 {
+                    if (overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN) == 0 {
                         let remote_handshake =
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
 
-                        let chain_config = &self.chains[overlay_network_index / 3];
+                        let chain_config =
+                            &self.chains[overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
 
                         let handshake = protocol::encode_block_announces_handshake(
                             protocol::BlockAnnouncesHandshakeRef {
@@ -503,8 +507,8 @@ where
                         continue;
                     }
 
-                    let chain_index = overlay_network_index / 3;
-                    if overlay_network_index % 3 == 0 {
+                    let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
+                    if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 0 {
                         // TODO: don't unwrap
                         let announce = protocol::decode_block_announce(&notification).unwrap();
                         return Event::BlockAnnounce {
@@ -512,7 +516,7 @@ where
                             peer_id,
                             announce: EncodedBlockAnnounce(notification),
                         };
-                    } else if overlay_network_index % 3 == 1 {
+                    } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 1 {
                         // TODO: transaction announce
                     } else {
                         // TODO: don't unwrap
@@ -722,7 +726,7 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.chain_index * 3,
+                    self.chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN,
                     peer_id.clone(), // TODO: clone :(
                     addrs.iter().cloned(),
                 )
@@ -731,7 +735,7 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.chain_index * 3 + 1,
+                    self.chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 1,
                     peer_id.clone(), // TODO: clone :(
                     addrs.iter().cloned(),
                 )
@@ -740,7 +744,7 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.chain_index * 3 + 2,
+                    self.chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 2,
                     peer_id.clone(), // TODO: clone :(
                     addrs,
                 )
@@ -781,24 +785,26 @@ where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
 {
     pub async fn open(self, now: TNow) {
-        let chain_config = &self.chains[self.inner.overlay_network_index() / 3];
+        let chain_config =
+            &self.chains[self.inner.overlay_network_index() / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
 
-        let handshake = if self.inner.overlay_network_index() % 3 == 0 {
-            protocol::encode_block_announces_handshake(protocol::BlockAnnouncesHandshakeRef {
-                best_hash: &chain_config.best_hash,
-                best_number: chain_config.best_number,
-                genesis_hash: &chain_config.genesis_hash,
-                role: chain_config.role,
-            })
-            .fold(Vec::new(), |mut a, b| {
-                a.extend_from_slice(b.as_ref());
-                a
-            })
-        } else if self.inner.overlay_network_index() % 3 == 1 {
-            Vec::new()
-        } else {
-            chain_config.role.scale_encoding().to_vec()
-        };
+        let handshake =
+            if self.inner.overlay_network_index() % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 0 {
+                protocol::encode_block_announces_handshake(protocol::BlockAnnouncesHandshakeRef {
+                    best_hash: &chain_config.best_hash,
+                    best_number: chain_config.best_number,
+                    genesis_hash: &chain_config.genesis_hash,
+                    role: chain_config.role,
+                })
+                .fold(Vec::new(), |mut a, b| {
+                    a.extend_from_slice(b.as_ref());
+                    a
+                })
+            } else if self.inner.overlay_network_index() % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 1 {
+                Vec::new()
+            } else {
+                chain_config.role.scale_encoding().to_vec()
+            };
 
         self.inner.open(now, handshake).await;
     }
