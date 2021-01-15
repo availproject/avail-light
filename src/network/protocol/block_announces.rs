@@ -47,6 +47,17 @@ pub enum Role {
     Authority,
 }
 
+impl Role {
+    /// Returns the SCALE encoding of this enum. Always guaranteed to be one byte.
+    pub fn scale_encoding(&self) -> [u8; 1] {
+        match *self {
+            Role::Full => [0b1],
+            Role::Light => [0b10],
+            Role::Authority => [0b100],
+        }
+    }
+}
+
 /// Decoded block announcement notification.
 #[derive(Debug)]
 pub struct BlockAnnounceRef<'a> {
@@ -105,11 +116,7 @@ pub fn encode_block_announces_handshake<'a>(
     handshake: BlockAnnouncesHandshakeRef<'a>,
 ) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
     let mut header = [0; 5];
-    header[0] = match handshake.role {
-        Role::Full => 0b1,
-        Role::Light => 0b10,
-        Role::Authority => 0b100,
-    };
+    header[0] = handshake.role.scale_encoding()[0];
 
     // TODO: the message actually contains a u32, and doesn't use compact encoding; as such, any block height superior to 2^32 cannot be encoded
     assert!(handshake.best_number < u64::from(u32::max_value()));

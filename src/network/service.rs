@@ -157,6 +157,15 @@ where
                     in_slots: chain.in_slots,
                     out_slots: chain.out_slots,
                 }))
+                .chain(iter::once(libp2p::OverlayNetwork {
+                    protocol_name: "/paritytech/grandpa/1".to_string(),
+                    fallback_protocol_names: Vec::new(),
+                    max_handshake_size: 256,      // TODO: arbitrary
+                    max_notification_size: 32768, // TODO: arbitrary
+                    bootstrap_nodes: chain.bootstrap_nodes.clone(),
+                    in_slots: chain.in_slots,
+                    out_slots: chain.out_slots,
+                }))
             })
             .collect();
 
@@ -372,7 +381,7 @@ where
                     .await;
 
                 let peer_id = self.libp2p.connection_peer_id(*id).await;
-                let chain_index = overlay_network_index / 2;
+                let chain_index = overlay_network_index / 3;
                 *pending_in_accept = None;
             }
 
@@ -387,9 +396,9 @@ where
                     mut out_overlay_network_indices,
                     ..
                 } => {
-                    out_overlay_network_indices.retain(|i| (i % 2) == 0);
+                    out_overlay_network_indices.retain(|i| (i % 3) == 0);
                     for elem in &mut out_overlay_network_indices {
-                        *elem /= 2;
+                        *elem /= 3;
                     }
                     return Event::Disconnected {
                         peer_id,
@@ -401,8 +410,8 @@ where
                     overlay_network_index,
                     remote_handshake,
                 } => {
-                    let chain_index = overlay_network_index / 2;
-                    if overlay_network_index % 2 == 0 {
+                    let chain_index = overlay_network_index / 3;
+                    if overlay_network_index % 3 == 0 {
                         let remote_handshake =
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
@@ -430,8 +439,8 @@ where
                     id,
                     overlay_network_index,
                 } => {
-                    let chain_index = overlay_network_index / 2;
-                    if overlay_network_index % 2 == 0 {
+                    let chain_index = overlay_network_index / 3;
+                    if overlay_network_index % 3 == 0 {
                         let peer_id = self.libp2p.connection_peer_id(id).await;
                         return Event::ChainDisconnected {
                             peer_id,
@@ -448,12 +457,12 @@ where
                     overlay_network_index,
                     remote_handshake,
                 } => {
-                    if (overlay_network_index % 2) == 0 {
+                    if (overlay_network_index % 3) == 0 {
                         let remote_handshake =
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
 
-                        let chain_config = &self.chains[overlay_network_index / 2];
+                        let chain_config = &self.chains[overlay_network_index / 3];
 
                         let handshake = protocol::encode_block_announces_handshake(
                             protocol::BlockAnnouncesHandshakeRef {
@@ -494,8 +503,8 @@ where
                         continue;
                     }
 
-                    let chain_index = overlay_network_index / 2;
-                    if overlay_network_index % 2 == 0 {
+                    let chain_index = overlay_network_index / 3;
+                    if overlay_network_index % 3 == 0 {
                         // TODO: don't unwrap
                         let announce = protocol::decode_block_announce(&notification).unwrap();
                         return Event::BlockAnnounce {
@@ -503,8 +512,10 @@ where
                             peer_id,
                             announce: EncodedBlockAnnounce(notification),
                         };
-                    } else {
+                    } else if overlay_network_index % 3 == 1 {
                         // TODO: transaction announce
+                    } else {
+                        // TODO: grandpa
                     }
                 }
             }
@@ -709,7 +720,7 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.chain_index * 2,
+                    self.chain_index * 3,
                     peer_id.clone(), // TODO: clone :(
                     addrs.iter().cloned(),
                 )
@@ -718,7 +729,16 @@ where
                 .libp2p
                 .add_addresses(
                     || or_insert(&peer_id),
-                    self.chain_index * 2 + 1,
+                    self.chain_index * 3 + 1,
+                    peer_id.clone(), // TODO: clone :(
+                    addrs.iter().cloned(),
+                )
+                .await;
+            self.service
+                .libp2p
+                .add_addresses(
+                    || or_insert(&peer_id),
+                    self.chain_index * 3 + 2,
                     peer_id.clone(), // TODO: clone :(
                     addrs,
                 )
@@ -759,9 +779,9 @@ where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
 {
     pub async fn open(self, now: TNow) {
-        let chain_config = &self.chains[self.inner.overlay_network_index() / 2];
+        let chain_config = &self.chains[self.inner.overlay_network_index() / 3];
 
-        let handshake = if self.inner.overlay_network_index() % 2 == 0 {
+        let handshake = if self.inner.overlay_network_index() % 3 == 0 {
             protocol::encode_block_announces_handshake(protocol::BlockAnnouncesHandshakeRef {
                 best_hash: &chain_config.best_hash,
                 best_number: chain_config.best_number,
@@ -772,8 +792,10 @@ where
                 a.extend_from_slice(b.as_ref());
                 a
             })
-        } else {
+        } else if self.inner.overlay_network_index() % 3 == 1 {
             Vec::new()
+        } else {
+            chain_config.role.scale_encoding().to_vec()
         };
 
         self.inner.open(now, handshake).await;
