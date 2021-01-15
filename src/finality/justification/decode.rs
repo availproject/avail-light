@@ -25,7 +25,7 @@ use core::{convert::TryFrom, fmt};
 pub fn decode(scale_encoded: &[u8]) -> Result<JustificationRef, Error> {
     match nom::combinator::all_consuming(justification)(scale_encoded) {
         Ok((_, justification)) => Ok(justification),
-        Err(nom::Err::Failure(err)) => Err(Error(err.code)),
+        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(Error(err.code)),
         Err(_) => unreachable!(),
     }
 }
@@ -37,7 +37,7 @@ pub fn decode(scale_encoded: &[u8]) -> Result<JustificationRef, Error> {
 pub fn decode_partial(scale_encoded: &[u8]) -> Result<(JustificationRef, &[u8]), Error> {
     match justification(scale_encoded) {
         Ok((remainder, justification)) => Ok((justification, remainder)),
-        Err(nom::Err::Failure(err)) => Err(Error(err.code)),
+        Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(Error(err.code)),
         Err(_) => unreachable!(),
     }
 }
@@ -175,7 +175,7 @@ impl<'a> Iterator for PrecommitsRefIter<'a> {
 
 impl<'a> ExactSizeIterator for PrecommitsRefIter<'a> {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PrecommitRef<'a> {
     /// Hash of the block concerned by the pre-commit.
     pub target_hash: &'a [u8; 32],
@@ -189,6 +189,19 @@ pub struct PrecommitRef<'a> {
     /// Authority that signed the precommit. Must be part of the authority set for the
     /// justification to be valid.
     pub authority_public_key: &'a [u8; 32],
+}
+
+impl<'a> PrecommitRef<'a> {
+    /// Decodes a SCALE-encoded precommit.
+    ///
+    /// Returns the rest of the data alongside with the decoded struct.
+    pub fn decode_partial(scale_encoded: &[u8]) -> Result<(PrecommitRef, &[u8]), Error> {
+        match precommit(scale_encoded) {
+            Ok((remainder, precommit)) => Ok((precommit, remainder)),
+            Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(Error(err.code)),
+            Err(_) => unreachable!(),
+        }
+    }
 }
 
 pub struct Precommit {
