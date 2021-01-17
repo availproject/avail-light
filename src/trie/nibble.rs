@@ -54,6 +54,9 @@ pub enum NibbleFromU8Error {
 }
 
 /// Turns an iterator of bytes into an iterator of nibbles corresponding to these bytes.
+///
+/// For each byte, the iterator yields a nibble containing the 4 most significant bits then a
+/// nibble containing the 4 least significant bits.
 pub fn bytes_to_nibbles<I>(bytes: I) -> BytesToNibbles<I> {
     BytesToNibbles {
         inner: bytes,
@@ -86,13 +89,80 @@ impl<I: Iterator<Item = u8>> Iterator for BytesToNibbles<I> {
 
         if self.next.is_some() {
             (
-                min.saturating_add(1),
-                max.and_then(|max| max.checked_add(1)),
+                min.saturating_mul(2).saturating_add(1),
+                max.and_then(|max| max.checked_mul(2))
+                    .and_then(|max| max.checked_add(1)),
             )
         } else {
-            (min, max)
+            (
+                min.saturating_mul(2),
+                max.and_then(|max| max.checked_mul(2)),
+            )
         }
     }
 }
 
 impl<I: ExactSizeIterator<Item = u8>> ExactSizeIterator for BytesToNibbles<I> {}
+
+#[cfg(test)]
+mod tests {
+    use super::{bytes_to_nibbles, Nibble, NibbleFromU8Error};
+    use core::convert::TryFrom as _;
+
+    #[test]
+    fn nibble_try_from() {
+        assert_eq!(u8::from(Nibble::try_from(0).unwrap()), 0);
+        assert_eq!(u8::from(Nibble::try_from(1).unwrap()), 1);
+        assert_eq!(u8::from(Nibble::try_from(15).unwrap()), 15);
+
+        assert!(matches!(
+            Nibble::try_from(16),
+            Err(NibbleFromU8Error::TooLarge)
+        ));
+        assert!(matches!(
+            Nibble::try_from(255),
+            Err(NibbleFromU8Error::TooLarge)
+        ));
+    }
+
+    #[test]
+    fn bytes_to_nibbles_works() {
+        assert_eq!(
+            bytes_to_nibbles([].iter().cloned()).collect::<Vec<_>>(),
+            &[]
+        );
+        assert_eq!(
+            bytes_to_nibbles([1].iter().cloned()).collect::<Vec<_>>(),
+            &[Nibble::try_from(0).unwrap(), Nibble::try_from(1).unwrap()]
+        );
+        assert_eq!(
+            bytes_to_nibbles([200].iter().cloned()).collect::<Vec<_>>(),
+            &[
+                Nibble::try_from(0xc).unwrap(),
+                Nibble::try_from(0x8).unwrap()
+            ]
+        );
+        assert_eq!(
+            bytes_to_nibbles([80, 200, 9].iter().cloned()).collect::<Vec<_>>(),
+            &[
+                Nibble::try_from(5).unwrap(),
+                Nibble::try_from(0).unwrap(),
+                Nibble::try_from(0xc).unwrap(),
+                Nibble::try_from(0x8).unwrap(),
+                Nibble::try_from(0).unwrap(),
+                Nibble::try_from(9).unwrap()
+            ]
+        );
+    }
+
+    #[test]
+    fn bytes_to_nibbles_len() {
+        assert_eq!(bytes_to_nibbles([].iter().cloned()).len(), 0);
+        assert_eq!(bytes_to_nibbles([1].iter().cloned()).len(), 2);
+        assert_eq!(bytes_to_nibbles([200].iter().cloned()).len(), 2);
+        assert_eq!(
+            bytes_to_nibbles([1, 2, 3, 4, 5, 6].iter().cloned()).len(),
+            12
+        );
+    }
+}
