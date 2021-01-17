@@ -33,7 +33,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Login to DockerHub
       uses: docker/login-action@v1 
-      # This `if` adds an additional satefy against accidental pushes.
+      # This `if` adds an additional safety against accidental pushes.
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       with:
         registry: docker.pkg.github.com
@@ -41,6 +41,8 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     - uses: docker/build-push-action@v2.2.2
       with:
+        context: .
+        file: ./bin/full-node/Dockerfile
         load: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         tags: docker.pkg.github.com/paritytech/smoldot/node:main
     - run: docker push docker.pkg.github.com/paritytech/smoldot/node:main

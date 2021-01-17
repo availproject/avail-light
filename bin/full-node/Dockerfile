@@ -1,7 +1,7 @@
 FROM rust:1 AS builder
 LABEL maintainer "Pierre Krieger <pierre.krieger1708@gmail.com>"
 
-COPY . /build
+COPY ./../.. /build
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y musl-tools
