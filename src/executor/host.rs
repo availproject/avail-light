@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -124,7 +124,7 @@
 //! ## Example
 //!
 //! ```
-//! use substrate_lite::executor::host::{HostVm, HostVmPrototype};
+//! use smoldot::executor::host::{HostVm, HostVmPrototype};
 //!
 //! # let wasm_binary_code: &[u8] = return;
 //!
@@ -133,7 +133,7 @@
 //!     let prototype = HostVmPrototype::new(
 //!         &wasm_binary_code,
 //!         1024,
-//!         substrate_lite::executor::vm::ExecHint::Oneshot
+//!         smoldot::executor::vm::ExecHint::Oneshot
 //!     ).unwrap();
 //!     prototype.run_no_param("Core_version").unwrap().into()
 //! };

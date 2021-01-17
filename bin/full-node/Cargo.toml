@@ -1,9 +1,9 @@
 [package]
-name = "substrate-lite-full-node"
+name = "smoldot-full-node"
 version = "0.1.0"
 authors = ["Parity Technologies <admin@parity.io>", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
-description = "Substrate/Polkadot full node using substrate-lite"
-repository = "https://github.com/paritytech/substrate-lite"
+description = "Substrate/Polkadot full node using smoldot"
+repository = "https://github.com/paritytech/smoldot"
 license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
 edition = "2018"
 publish = false
@@ -29,7 +29,7 @@ parking_lot = { version = "0.11.1" }
 pin-project = "1.0.4"
 rand = "0.8.2"
 slab = "0.4.2"
-substrate-lite = { path = "../..", default-features = false, features = ["database-sled", "std"] }
+smoldot = { path = "../..", default-features = false, features = ["database-sled", "std"] }
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.15"
 tracing = { version = "0.1.21", features = ["attributes"] }

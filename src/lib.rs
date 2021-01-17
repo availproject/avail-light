@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -216,10 +216,10 @@ mod util;
 ///
 /// ```no_run
 /// # let chain_spec_json: &[u8] = b"";
-/// let chain_spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(chain_spec_json)
+/// let chain_spec = smoldot::chain_spec::ChainSpec::from_json_bytes(chain_spec_json)
 ///     .unwrap();
 /// let genesis_block_header =
-///     substrate_lite::calculate_genesis_block_header(chain_spec.genesis_storage());
+///     smoldot::calculate_genesis_block_header(chain_spec.genesis_storage());
 /// println!("{:?}", genesis_block_header);
 /// ```
 pub fn calculate_genesis_block_header<'a>(

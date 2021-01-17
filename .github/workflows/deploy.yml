@@ -1,4 +1,4 @@
-# Substrate-lite
+# Smoldot
 # Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 # SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 #
@@ -42,8 +42,8 @@ jobs:
     - uses: docker/build-push-action@v2.2.2
       with:
         load: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        tags: docker.pkg.github.com/paritytech/substrate-lite/node:main
-    - run: docker push docker.pkg.github.com/paritytech/substrate-lite/node:main
+        tags: docker.pkg.github.com/paritytech/smoldot/node:main
+    - run: docker push docker.pkg.github.com/paritytech/smoldot/node:main
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
   npm-publish:
@@ -81,7 +81,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # TODO: this stage is planned to be removed once substrate-lite is published on crates.io and its doc available on docs.rs
+  # TODO: this stage is planned to be removed once smoldot is published on crates.io and its doc available on docs.rs
   deploy-gh-pages:
     runs-on: ubuntu-latest
     container:

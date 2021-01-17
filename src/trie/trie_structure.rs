@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -67,7 +67,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::trie_structure;
+    /// use smoldot::trie::trie_structure;
     ///
     /// let trie = trie_structure::TrieStructure::<()>::new();
     /// assert!(trie.is_empty());
@@ -85,7 +85,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::trie_structure;
+    /// use smoldot::trie::trie_structure;
     ///
     /// let trie = trie_structure::TrieStructure::<()>::with_capacity(12);
     /// assert!(trie.is_empty());
@@ -104,7 +104,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::trie_structure;
+    /// use smoldot::trie::trie_structure;
     ///
     /// let trie = trie_structure::TrieStructure::<()>::with_capacity(7);
     /// assert_eq!(trie.capacity(), 7);
@@ -120,7 +120,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::{self, trie_structure};
+    /// use smoldot::trie::{self, trie_structure};
     ///
     /// let mut trie = trie_structure::TrieStructure::new();
     /// assert!(trie.is_empty());
@@ -165,7 +165,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::{self, trie_structure};
+    /// use smoldot::trie::{self, trie_structure};
     ///
     /// let mut trie = trie_structure::TrieStructure::new();
     /// assert!(trie.root_node().is_none());
@@ -191,7 +191,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::{self, trie_structure};
+    /// use smoldot::trie::{self, trie_structure};
     ///
     /// let mut trie = trie_structure::TrieStructure::new();
     ///
@@ -394,7 +394,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::{self, trie_structure};
+    /// use smoldot::trie::{self, trie_structure};
     ///
     /// let mut trie1 = trie_structure::TrieStructure::new();
     /// let mut trie2 = trie_structure::TrieStructure::new();
@@ -482,7 +482,7 @@ impl<TUd> TrieStructure<TUd> {
     /// # Examples
     ///
     /// ```
-    /// use substrate_lite::trie::{self, trie_structure};
+    /// use smoldot::trie::{self, trie_structure};
     ///
     /// let mut trie = trie_structure::TrieStructure::new();
     ///

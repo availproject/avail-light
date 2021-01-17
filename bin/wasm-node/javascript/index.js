@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -50,8 +50,8 @@ export async function start(config) {
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
   // parameter provides their implementations.
   let result = await WebAssembly.instantiate(wasm_bytecode, {
-    // The functions with the "substrate-lite" prefix are specific to substrate-lite.
-    "substrate-lite": {
+    // The functions with the "smoldot" prefix are specific to smoldot.
+    "smoldot": {
       // Must throw an error. A human-readable message can be found in the WebAssembly memory in the
       // given buffer.
       throw: (ptr, len) => {

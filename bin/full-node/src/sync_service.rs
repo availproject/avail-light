@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -30,8 +30,8 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
+use smoldot::{chain::sync::optimistic, database::full_sled, libp2p, network};
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
-use substrate_lite::{chain::sync::optimistic, database::full_sled, libp2p, network};
 use tracing::Instrument as _;
 
 /// Configuration for a [`SyncService`].

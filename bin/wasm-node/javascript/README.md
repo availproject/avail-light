@@ -11,12 +11,12 @@ the full nodes of the network.
 ## Usage
 
 ```
-import * as substrate_lite from 'substrate-lite';
+import * as smoldot from 'smoldot';
 
 // Load a string chain specifications.
 const chain_spec = Buffer.from(fs.readFileSync('./westend.json')).toString('utf8');
 
-substrate_lite
+smoldot
   .start({
     chain_spec: chain_spec,
     json_rpc_callback: (resp) => {

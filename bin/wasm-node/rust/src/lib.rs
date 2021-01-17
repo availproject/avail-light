@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -23,19 +23,19 @@
 #![deny(unused_crate_dependencies)]
 
 use futures::prelude::*;
+use smoldot::{
+    chain, chain_spec,
+    json_rpc::{self, methods},
+    libp2p::{multiaddr, peer_id::PeerId},
+    network::protocol,
+    trie::proof_verify,
+};
 use std::{
     collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
     iter,
     sync::Arc,
     time::Duration,
-};
-use substrate_lite::{
-    chain, chain_spec,
-    json_rpc::{self, methods},
-    libp2p::{multiaddr, peer_id::PeerId},
-    network::protocol,
-    trie::proof_verify,
 };
 
 pub mod ffi;
@@ -72,10 +72,10 @@ Synchronizing the chain(s) consists in:
 optionally loading an existing database.
 - Connecting and staying connected to a set of full nodes.
 - Still at initialization, sending GrandPa warp sync queries to "jump" to the latest finalized
-  block (https://github.com/paritytech/substrate-lite/issues/270). We would end up with a
+  block (https://github.com/paritytech/smoldot/issues/270). We would end up with a
   `ChainInformation` object containing an almost up-to-chain chain.
 - Listening to incoming block announces (block announces contain block headers) and verifying them
-  (https://github.com/paritytech/substrate-lite/issues/271).
+  (https://github.com/paritytech/smoldot/issues/271).
 - Listening to incoming GrandPa gossiping messages in order to be up-to-date with blocks being
   finalized.
 - Every time the current best block is updated, downloading the values of a certain list of
@@ -153,9 +153,9 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
     // The database passed from the user is decoded. Any error while decoding is treated as if
     // there was no database.
     let database_content = if let Some(database_content) = database_content {
-        if let Ok(parsed) = substrate_lite::database::finalized_serialize::decode_chain_information(
-            &database_content,
-        ) {
+        if let Ok(parsed) =
+            smoldot::database::finalized_serialize::decode_chain_information(&database_content)
+        {
             Some(parsed)
         } else {
             None
@@ -233,7 +233,7 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
     let best_block_metadata = {
         let code = genesis_storage.get(&b":code"[..]).unwrap();
         let heap_pages = 1024; // TODO: laziness
-        substrate_lite::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
+        smoldot::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
     };
 
     let mut client = {
@@ -308,11 +308,11 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
                     sync_service::Event::NewBest { scale_encoded_header } => {
                         // TODO: this is also triggered if we reset the sync to a previous point, which isn't correct
 
-                        let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+                        let decoded = smoldot::header::decode(&scale_encoded_header).unwrap();
                         let header = header_conv(decoded.clone());
 
                         for subscription_id in &client.new_heads {
-                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                            let notification = smoldot::json_rpc::parse::build_subscription_event(
                                 "chain_newHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
@@ -320,7 +320,7 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
                             ffi::emit_json_rpc_response(&notification);
                         }
                         for subscription_id in &client.all_heads {
-                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                            let notification = smoldot::json_rpc::parse::build_subscription_event(
                                 "chain_newHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
@@ -340,11 +340,11 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
                         // TODO: need to update `best_block_metadata` if necessary, and notify the runtime version subscriptions
                     },
                     sync_service::Event::NewFinalized { scale_encoded_header } => {
-                        let decoded = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+                        let decoded = smoldot::header::decode(&scale_encoded_header).unwrap();
                         let header = header_conv(decoded.clone());
 
                         for subscription_id in &client.finalized_heads {
-                            let notification = substrate_lite::json_rpc::parse::build_subscription_event(
+                            let notification = smoldot::json_rpc::parse::build_subscription_event(
                                 "chain_finalizedHead",
                                 subscription_id,
                                 &serde_json::to_string(&header).unwrap(),
@@ -390,7 +390,7 @@ struct Client {
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
     ///
     /// Always contains `best_block` and `finalized_block`.
-    known_blocks: lru::LruCache<[u8; 32], substrate_lite::header::Header>,
+    known_blocks: lru::LruCache<[u8; 32], smoldot::header::Header>,
 
     /// Hash of the current best block.
     best_block: [u8; 32],
@@ -456,7 +456,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response = methods::Response::chain_subscribeAllHeads(&subscription)
                 .to_json_response(request_id);
 
-            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+            let response2 = smoldot::json_rpc::parse::build_subscription_event(
                 "chain_allHeads", // TODO: is this string correct?
                 &subscription,
                 &serde_json::to_string(&header_conv(
@@ -476,7 +476,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response = methods::Response::chain_subscribeNewHeads(&subscription)
                 .to_json_response(request_id);
 
-            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+            let response2 = smoldot::json_rpc::parse::build_subscription_event(
                 "chain_newHead",
                 &subscription,
                 &serde_json::to_string(&header_conv(
@@ -496,7 +496,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             let response = methods::Response::chain_subscribeFinalizedHeads(&subscription)
                 .to_json_response(request_id);
 
-            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+            let response2 = smoldot::json_rpc::parse::build_subscription_event(
                 "chain_finalizedHead",
                 &subscription,
                 &serde_json::to_string(&header_conv(
@@ -608,7 +608,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             // FIXME: hack
             let response2 = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
                 spec_name: "polkadot".to_string(),
-                impl_name: "substrate-lite".to_string(),
+                impl_name: "smoldot".to_string(),
                 authoring_version: 0,
                 spec_version: 23,
                 impl_version: 0,
@@ -642,7 +642,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             }
 
             // TODO: hack
-            let response2 = substrate_lite::json_rpc::parse::build_subscription_event(
+            let response2 = smoldot::json_rpc::parse::build_subscription_event(
                 "state_storage",
                 &subscription,
                 &serde_json::to_string(&out).unwrap(),
@@ -662,7 +662,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             // FIXME: hack
             let response = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
                 spec_name: "polkadot".to_string(),
-                impl_name: "substrate-lite".to_string(),
+                impl_name: "smoldot".to_string(),
                 authoring_version: 0,
                 spec_version: 23,
                 impl_version: 0,
@@ -691,8 +691,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::system_name {} => {
-            let response =
-                methods::Response::system_name("substrate-lite!").to_json_response(request_id);
+            let response = methods::Response::system_name("smoldot!").to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::system_peers {} => {
@@ -762,7 +761,7 @@ async fn storage_query(
     result
 }
 
-fn header_conv<'a>(header: impl Into<substrate_lite::header::HeaderRef<'a>>) -> methods::Header {
+fn header_conv<'a>(header: impl Into<smoldot::header::HeaderRef<'a>>) -> methods::Header {
     let header = header.into();
 
     methods::Header {

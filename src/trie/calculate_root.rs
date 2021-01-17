@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -28,7 +28,7 @@
 //!
 //! ```
 //! use std::collections::BTreeMap;
-//! use substrate_lite::trie::calculate_root;
+//! use smoldot::trie::calculate_root;
 //!
 //! // In this example, the storage consists in a binary tree map.
 //! let mut storage = BTreeMap::<Vec<u8>, Vec<u8>>::new();

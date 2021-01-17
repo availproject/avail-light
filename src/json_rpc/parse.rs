@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -67,7 +67,7 @@ pub struct ParseError(serde_json::Error);
 /// # Example
 ///
 /// ```
-/// # use substrate_lite::json_rpc::parse;
+/// # use smoldot::json_rpc::parse;
 /// let result_json = parse::build_success_response("27", r#"[1, 2, {"foo":"bar"}]"#);
 ///
 /// // Note that the output is guaranteed to be stable.

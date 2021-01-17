@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -29,8 +29,7 @@
 
 use core::{cmp, pin::Pin, time::Duration};
 use futures::prelude::*;
-use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Instant};
-use substrate_lite::{
+use smoldot::{
     libp2p::{
         connection,
         multiaddr::{Multiaddr, Protocol},
@@ -38,6 +37,7 @@ use substrate_lite::{
     },
     network::{protocol, service},
 };
+use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Instant};
 use tracing::Instrument as _;
 
 mod with_buffers;

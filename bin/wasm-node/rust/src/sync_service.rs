@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -20,8 +20,8 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
+use smoldot::{chain, chain::sync::optimistic, libp2p, network};
 use std::{collections::HashMap, num::NonZeroU32, pin::Pin};
-use substrate_lite::{chain, chain::sync::optimistic, libp2p, network};
 
 /// Configuration for a [`SyncService`].
 pub struct Config {
@@ -141,7 +141,7 @@ impl SyncService {
     }
 
     /// Returns a string representing the state of the chain using the
-    /// [`substrate_lite::database::finalized_serialize`] module.
+    /// [`smoldot::database::finalized_serialize`] module.
     pub async fn serialize_chain(&self) -> String {
         let (send_back, rx) = oneshot::channel();
 
@@ -386,7 +386,7 @@ async fn start_sync(
                         },
                         ToBackground::Serialize { send_back } => {
                             let chain = sync.as_chain_information();
-                            let serialized = substrate_lite::database::finalized_serialize::encode_chain_information(chain);
+                            let serialized = smoldot::database::finalized_serialize::encode_chain_information(chain);
                             let _ = send_back.send(serialized);
                         }
                     }

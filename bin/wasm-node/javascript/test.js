@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -26,7 +26,7 @@ client
   .start({
     chain_spec: JSON.stringify(westend_specs()),
     json_rpc_callback: (resp) => {
-      if (resp == '{"jsonrpc":"2.0","id":1,"result":"substrate-lite!"}') {
+      if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot!"}') {
         // Test successful
         console.info('Success');
         process.exit(0);

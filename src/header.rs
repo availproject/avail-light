@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -52,7 +52,7 @@
 //!
 //! // Decoding the header can panic if it is malformed. Do not unwrap if, for example, the
 //! // header has been received from a remote!
-//! let decoded_header = substrate_lite::header::decode(&scale_encoded_header).unwrap();
+//! let decoded_header = smoldot::header::decode(&scale_encoded_header).unwrap();
 //!
 //! println!("Block hash: {:?}", decoded_header.hash());
 //! println!("Header number: {}", decoded_header.number);

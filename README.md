@@ -2,13 +2,13 @@ Lightweight Substrate and Polkadot client.
 
 # Introduction
 
-`substrate-lite` is a prototype of an alternative client of [Substrate](https://github.com/paritytech/substrate)-based chains, including [Polkadot](https://github.com/paritytech/polkadot/).
+`smoldot` is a prototype of an alternative client of [Substrate](https://github.com/paritytech/substrate)-based chains, including [Polkadot](https://github.com/paritytech/polkadot/).
 
 In order to simplify the code, two main design decisions have been made compared to Substrate:
 
 - No native runtime. The execution time of the `wasmtime` library is satisfying enough that having a native runtime isn't critical anymore.
 
-- No pluggable architecture. `substrate-lite` supports a certain hardcoded list of consensus algorithms, at the moment Babe, Aura, and GrandPa. Support for other algorithms can only be added by modifying the code of substrate-lite, and it is not possible to plug a custom algorithm from outside.
+- No pluggable architecture. `smoldot` supports a certain hardcoded list of consensus algorithms, at the moment Babe, Aura, and GrandPa. Support for other algorithms can only be added by modifying the code of smoldot, and it is not possible to plug a custom algorithm from outside.
 
 ## How to test
 
@@ -30,7 +30,7 @@ The wasm light node can be tested with `cd bin/wasm-node/javascript` and `npm st
 
 There exists multiple objectives behind this repository:
 
-- Write a client implementation that is as comprehensive as possible, to make it easier to understand the various components of a Substrate/Polkadot client. A large emphasis is put on documentation, and the documentation of the `main` branch is automatically deployed [here](https://paritytech.github.io/substrate-lite/substrate_lite/index.html).
+- Write a client implementation that is as comprehensive as possible, to make it easier to understand the various components of a Substrate/Polkadot client. A large emphasis is put on documentation, and the documentation of the `main` branch is automatically deployed [here](https://paritytech.github.io/smoldot/smoldot/index.html).
 - Implement a client that is lighter than Substrate, in terms of memory consumption, number of threads, and code size, in order to compile it to WebAssembly and distribute it in webpages.
 - Experiment with a new code architecture, to maybe upstream some components to Substrate and Polkadot.
 

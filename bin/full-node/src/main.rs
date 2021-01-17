@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -20,17 +20,17 @@
 #![deny(unused_crate_dependencies)]
 
 use futures::{channel::oneshot, prelude::*};
-use std::{
-    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::Arc, thread,
-    time::Duration,
-};
-use structopt::StructOpt as _;
-use substrate_lite::{
+use smoldot::{
     chain, chain_spec,
     database::full_sled,
     header,
     libp2p::{connection, multiaddr, peer_id::PeerId},
 };
+use std::{
+    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::Arc, thread,
+    time::Duration,
+};
+use structopt::StructOpt as _;
 use tracing::Instrument as _;
 
 mod cli;
@@ -88,7 +88,7 @@ async fn async_main() {
             }
         };
 
-        substrate_lite::chain_spec::ChainSpec::from_json_bytes(&json)
+        smoldot::chain_spec::ChainSpec::from_json_bytes(&json)
             .expect("Failed to decode chain specs")
     };
 
@@ -115,7 +115,7 @@ async fn async_main() {
                 _ => panic!("Unexpected relay chain specified in hard-coded specs"),
             };
 
-            let spec = substrate_lite::chain_spec::ChainSpec::from_json_bytes(&json)
+            let spec = smoldot::chain_spec::ChainSpec::from_json_bytes(&json)
                 .expect("Failed to decode relay chain chain specs");
 
             // Make sure we're not accidentally opening the same chain twice, otherwise weird
@@ -158,7 +158,7 @@ async fn async_main() {
     };
 
     // TODO: remove; just for testing
-    /*let metadata = substrate_lite::metadata::metadata_from_runtime_code(
+    /*let metadata = smoldot::metadata::metadata_from_runtime_code(
         chain_spec
             .genesis_storage()
             .clone()
@@ -169,7 +169,7 @@ async fn async_main() {
     .unwrap();
     println!(
         "{:#?}",
-        substrate_lite::metadata::decode(&metadata).unwrap()
+        smoldot::metadata::decode(&metadata).unwrap()
     );*/
 
     let network_service = network_service::NetworkService::new(network_service::Config {
@@ -281,8 +281,8 @@ async fn async_main() {
             .map(|addr| (addr.as_ref().to_owned(), 0))
             .collect::<Vec<_>>();
 
-        substrate_lite::telemetry::init_telemetry(substrate_lite::telemetry::TelemetryConfig {
-            endpoints: substrate_lite::telemetry::TelemetryEndpoints::new(endpoints).unwrap(),
+        smoldot::telemetry::init_telemetry(smoldot::telemetry::TelemetryConfig {
+            endpoints: smoldot::telemetry::TelemetryEndpoints::new(endpoints).unwrap(),
             wasm_external_transport: None,
             tasks_executor: {
                 let threads_pool = threads_pool.clone();
@@ -333,7 +333,7 @@ async fn async_main() {
                     // If any other line gets printed, it will overwrite the informant, and the
                     // informant will then print itself below, which is a fine behaviour.
                     let sync_state = sync_service.sync_state().await;
-                    eprint!("{}\r", substrate_lite::informant::InformantLine {
+                    eprint!("{}\r", smoldot::informant::InformantLine {
                         enable_colors: match cli_options.color {
                             cli::ColorChoice::Always => true,
                             cli::ColorChoice::Never => false,
@@ -341,7 +341,7 @@ async fn async_main() {
                         chain_name: chain_spec.name(),
                         relay_chain: if let Some(relay_chain_spec) = &relay_chain_spec {
                             let relay_sync_state = relay_chain_sync_service.as_ref().unwrap().sync_state().await;
-                            Some(substrate_lite::informant::RelayChain {
+                            Some(smoldot::informant::RelayChain {
                                 chain_name: relay_chain_spec.name(),
                                 best_number: relay_sync_state.best_block_number,
                             })
@@ -437,9 +437,9 @@ async fn async_main() {
             }
 
             /*telemetry_event = telemetry.next_event().fuse() => {
-                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemConnected(substrate_lite::telemetry::message::SystemConnected {
+                telemetry.send(smoldot::telemetry::message::TelemetryMessage::SystemConnected(smoldot::telemetry::message::SystemConnected {
                     chain: chain_spec.name().to_owned().into_boxed_str(),
-                    name: String::from("Polkadot ✨ lite ✨").into_boxed_str(),  // TODO: node name
+                    name: String::from("✨ Smoldot ✨").into_boxed_str(),  // TODO: node name
                     implementation: String::from("Secret projet 🤫").into_boxed_str(),  // TODO:
                     version: String::from(env!("CARGO_PKG_VERSION")).into_boxed_str(),
                     validator: None,
@@ -452,8 +452,8 @@ async fn async_main() {
 
                 // Some of the fields below are set to `None` because there is no plan to
                 // implement reporting accurate metrics about the node.
-                telemetry.send(substrate_lite::telemetry::message::TelemetryMessage::SystemInterval(substrate_lite::telemetry::message::SystemInterval {
-                    stats: substrate_lite::telemetry::message::NodeStats {
+                telemetry.send(smoldot::telemetry::message::TelemetryMessage::SystemInterval(smoldot::telemetry::message::SystemInterval {
+                    stats: smoldot::telemetry::message::NodeStats {
                         peers: network_state.num_network_connections.load(Ordering::Relaxed),
                         txcount: 0,  // TODO:
                     },
@@ -463,7 +463,7 @@ async fn async_main() {
                     bandwidth_download: Some(0.0), // TODO:
                     finalized_height: Some(sync_state.finalized_block_number),
                     finalized_hash: Some(sync_state.finalized_block_hash.into()),
-                    block: substrate_lite::telemetry::message::Block {
+                    block: smoldot::telemetry::message::Block {
                         hash: sync_state.best_block_hash.into(),
                         height: sync_state.best_block_number,
                     },

@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -792,7 +792,7 @@ impl SledFullDatabase {
                     }
                 }
 
-                // TODO: the code below is very verbose and redundant with other similar code in substrate-lite ; could be improved
+                // TODO: the code below is very verbose and redundant with other similar code in smoldot ; could be improved
 
                 if let Some((new_epoch, next_config)) = block_header.digest.babe_epoch_information()
                 {

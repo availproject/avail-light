@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -26,7 +26,7 @@
 //! # Example
 //!
 //! ```
-//! use substrate_lite::chain::fork_tree::ForkTree;
+//! use smoldot::chain::fork_tree::ForkTree;
 //!
 //! let mut tree = ForkTree::new();
 //!

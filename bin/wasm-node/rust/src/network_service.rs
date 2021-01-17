@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -31,8 +31,7 @@ use crate::ffi;
 
 use core::{num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{lock::Mutex, prelude::*};
-use std::sync::Arc;
-use substrate_lite::{
+use smoldot::{
     libp2p::{
         connection,
         multiaddr::{Multiaddr, Protocol},
@@ -40,6 +39,7 @@ use substrate_lite::{
     },
     network::{protocol, service},
 };
+use std::sync::Arc;
 
 /// Configuration for a [`NetworkService`].
 pub struct Config {

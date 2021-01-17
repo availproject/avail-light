@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -17,7 +17,7 @@
 
 // This file launches a WebSocket server that exposes JSON-RPC functions.
 
-import * as substrate_lite from './index.js';
+import * as smoldot from './index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
 import { default as westend_specs } from './westend_specs.js';
@@ -26,14 +26,14 @@ import * as fs from 'fs';
 let client = null;
 var unsent_queue = [];
 let ws_connection = null;
-const database_path = 'substrate-lite-demo-db.json';
+const database_path = 'smoldot-demo-db.json';
 
 var database_content = null;
 try {
     database_content = fs.readFileSync(database_path, 'utf8');
 } catch(error) {}
 
-substrate_lite.start({
+smoldot.start({
     chain_spec: JSON.stringify(westend_specs()),
     database_content: database_content,
     json_rpc_callback: (resp) => {

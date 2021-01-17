@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 /// Information about the binary for the `app_dirs` library.
 pub const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
-    name: "substrate-lite",
+    name: "smoldot",
     author: "paritytech",
 };
 

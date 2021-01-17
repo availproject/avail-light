@@ -1,4 +1,4 @@
-// Substrate-lite
+// Smoldot
 // Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
 // SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
@@ -40,7 +40,7 @@
 //! to find documentation at the moment is <https://docs.rs/wasi>.
 //!
 
-#[link(wasm_import_module = "substrate-lite")]
+#[link(wasm_import_module = "smoldot")]
 extern "C" {
     /// Must throw an exception. The message is a UTF-8 string found in the memory of the
     /// WebAssembly at offset `message_ptr` and with length `message_len`.
