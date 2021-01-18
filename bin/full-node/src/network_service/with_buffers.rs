@@ -245,11 +245,11 @@ where
             match AsyncWrite::poll_close(this.socket.as_mut(), cx) {
                 Poll::Ready(Ok(())) => {
                     *this.close_pending = false;
-                    return Poll::Ready(());
+                    Poll::Ready(())
                 }
                 Poll::Ready(Err(err)) => {
                     *this.error = Some(err);
-                    return Poll::Ready(());
+                    Poll::Ready(())
                 }
                 Poll::Pending => Poll::Pending,
             }
@@ -353,7 +353,7 @@ where
                         AsyncWrite::poll_write(
                             this.socket.as_mut(),
                             cx,
-                            &mut this.write_buffer[*this.write_ready_start..*this.write_ready_end],
+                            &this.write_buffer[*this.write_ready_start..*this.write_ready_end],
                         )
                     } else {
                         let (buf2, buf1) = this.write_buffer.split_at(*this.write_ready_start);

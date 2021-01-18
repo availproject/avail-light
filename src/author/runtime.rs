@@ -155,7 +155,7 @@ pub enum Error {
 }
 
 /// Start a block building process.
-pub fn build_block<'a>(config: Config<'a>) -> BlockBuild {
+pub fn build_block(config: Config) -> BlockBuild {
     let init_result = runtime_host::run(runtime_host::Config {
         virtual_machine: config.parent_runtime,
         function_to_call: "Core_initialize_block",
@@ -475,7 +475,7 @@ impl InherentExtrinsics {
     /// Injects the inherents extrinsics and resumes execution.
     ///
     /// See the module-level documentation for more information.
-    pub fn inject_inherents<'a>(self, inherents: InherentData) -> BlockBuild {
+    pub fn inject_inherents(self, inherents: InherentData) -> BlockBuild {
         self.inject_raw_inherents_list(
             [
                 (*b"timstap0", inherents.timestamp.to_le_bytes()),
@@ -497,7 +497,7 @@ impl InherentExtrinsics {
     ///
     /// This method is a more weakly-typed equivalent to [`InherentExtrinsics::inject_inherents`].
     /// Only use this method if you know what you're doing.
-    pub fn inject_raw_inherents_list<'a>(
+    pub fn inject_raw_inherents_list(
         self,
         list: impl ExactSizeIterator<Item = ([u8; 8], impl AsRef<[u8]> + Clone)> + Clone,
     ) -> BlockBuild {

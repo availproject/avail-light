@@ -302,7 +302,7 @@ impl VerifyInner {
                     (None, Some(_)) => {
                         return Verify::Finished(Err(Error::HeapPagesOnlyModification))
                     }
-                    (Some(Some(code)), heap_pages) => {
+                    (Some(Some(_code)), heap_pages) => {
                         let heap_pages = match heap_pages {
                             Some(Some(p)) if p.len() == 8 => {
                                 u64::from_le_bytes(<[u8; 8]>::try_from(&p[..]).unwrap())

@@ -424,61 +424,57 @@ impl<T> VerifyContext<T> {
     }
 
     fn with_body_verify(mut self, inner: verify::header_body::Verify) -> BodyVerifyStep2<T> {
-        loop {
-            match inner {
-                verify::header_body::Verify::Finished(Ok(success)) => {
-                    // TODO: lots of code in common with header verification
+        match inner {
+            verify::header_body::Verify::Finished(Ok(success)) => {
+                // TODO: lots of code in common with header verification
 
-                    // Block verification is successful!
-                    let (is_new_best, consensus) = self.apply_success_body(success.consensus);
-                    let hash = self.header.hash();
+                // Block verification is successful!
+                let (is_new_best, consensus) = self.apply_success_body(success.consensus);
+                let hash = self.header.hash();
 
-                    return BodyVerifyStep2::Finished {
-                        parent_runtime: success.parent_runtime,
-                        new_runtime: success.new_runtime,
-                        storage_top_trie_changes: success.storage_top_trie_changes,
-                        offchain_storage_changes: success.offchain_storage_changes,
-                        top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
-                        insert: BodyInsert {
-                            context: self,
-                            is_new_best,
-                            hash,
-                            consensus,
-                        },
-                    };
-                }
-                verify::header_body::Verify::Finished(Err(error)) => {
-                    return BodyVerifyStep2::Error {
-                        chain: NonFinalizedTree {
-                            inner: Some(self.chain),
-                        },
-                        error,
-                    }
-                }
-                verify::header_body::Verify::StorageGet(inner) => {
-                    return BodyVerifyStep2::StorageGet(StorageGet {
+                BodyVerifyStep2::Finished {
+                    parent_runtime: success.parent_runtime,
+                    new_runtime: success.new_runtime,
+                    storage_top_trie_changes: success.storage_top_trie_changes,
+                    offchain_storage_changes: success.offchain_storage_changes,
+                    top_trie_root_calculation_cache: success.top_trie_root_calculation_cache,
+                    insert: BodyInsert {
                         context: self,
-                        inner,
-                    })
+                        is_new_best,
+                        hash,
+                        consensus,
+                    },
                 }
-                verify::header_body::Verify::StorageNextKey(inner) => {
-                    return BodyVerifyStep2::StorageNextKey(StorageNextKey {
-                        context: self,
-                        inner,
-                    })
-                }
-                verify::header_body::Verify::StoragePrefixKeys(inner) => {
-                    return BodyVerifyStep2::StoragePrefixKeys(StoragePrefixKeys {
-                        context: self,
-                        inner,
-                    })
-                }
-                verify::header_body::Verify::RuntimeCompilation(inner) => {
-                    return BodyVerifyStep2::RuntimeCompilation(RuntimeCompilation {
-                        context: self,
-                        inner,
-                    })
-                }
+            }
+            verify::header_body::Verify::Finished(Err(error)) => BodyVerifyStep2::Error {
+                chain: NonFinalizedTree {
+                    inner: Some(self.chain),
+                },
+                error,
+            },
+            verify::header_body::Verify::StorageGet(inner) => {
+                BodyVerifyStep2::StorageGet(StorageGet {
+                    context: self,
+                    inner,
+                })
+            }
+            verify::header_body::Verify::StorageNextKey(inner) => {
+                BodyVerifyStep2::StorageNextKey(StorageNextKey {
+                    context: self,
+                    inner,
+                })
+            }
+            verify::header_body::Verify::StoragePrefixKeys(inner) => {
+                BodyVerifyStep2::StoragePrefixKeys(StoragePrefixKeys {
+                    context: self,
+                    inner,
+                })
+            }
+            verify::header_body::Verify::RuntimeCompilation(inner) => {
+                BodyVerifyStep2::RuntimeCompilation(RuntimeCompilation {
+                    context: self,
+                    inner,
+                })
             }
         }
     }
@@ -642,7 +638,7 @@ impl<T> BodyVerifyRuntimeRequired<T> {
             },
             block_header: (&self.context.header).into(),
             parent_block_header: parent_block_header.into(),
-            block_body: block_body,
+            block_body,
             top_trie_root_calculation_cache,
         });
 

@@ -179,14 +179,13 @@ pub enum FromVmPrototypeError {
 impl FromVmPrototypeError {
     /// Returns `true` if this error is about an invalid function.
     pub fn is_function_not_found(&self) -> bool {
-        match self {
+        matches!(
+            self,
             FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
                 vm::StartErr::FunctionNotFound,
-            ))
-            | FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
+            )) | FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
                 vm::StartErr::NotAFunction,
-            )) => true,
-            _ => false,
-        }
+            ))
+        )
     }
 }
