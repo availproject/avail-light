@@ -349,7 +349,7 @@ where
     /// delivery of notifications.
     ///
     pub async fn queue_notification(
-        self,
+        &self,
         target: &PeerId,
         protocol_index: usize,
         notification: impl Into<Vec<u8>>,

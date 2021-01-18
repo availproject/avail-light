@@ -427,7 +427,30 @@ where
                             best_number: remote_handshake.best_number,
                             role: remote_handshake.role,
                         };
+                    } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 1 {
+                        // Nothing to do.
+                    } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 2 {
+                        // Grandpa notification has been opened. Send neighbor packet.
+                        // TODO: below is not futures-cancellation-safe!
+                        // TODO: should instead return some object so that user does it manually?
+                        let peer_id = self.libp2p.connection_peer_id(id).await;
+                        let packet =
+                            protocol::GrandpaNotificationRef::Neighbor(protocol::NeighborPacket {
+                                round_number: 1, // TODO: round number 1 apparently means we're not interested in rounds
+                                set_id: 0,       // TODO:
+                                commit_finalized_height: 0, // TODO:
+                            })
+                            .scale_encoding()
+                            .fold(Vec::new(), |mut a, b| {
+                                a.extend_from_slice(b.as_ref());
+                                a
+                            });
+                        let _ = self
+                            .libp2p
+                            .queue_notification(&peer_id, overlay_network_index, packet)
+                            .await;
                     } else {
+                        unreachable!()
                     }
 
                     // TODO:
@@ -484,10 +507,22 @@ where
                         // Accepting the substream isn't done immediately because of
                         // futures-cancellation-related concerns.
                         *pending_in_accept = Some((id, overlay_network_index, handshake));
-                    } else {
+                    } else if (overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN) == 1 {
                         // Accepting the substream isn't done immediately because of
                         // futures-cancellation-related concerns.
                         *pending_in_accept = Some((id, overlay_network_index, Vec::new()));
+                    } else if (overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN) == 2 {
+                        // Grandpa substream.
+                        let chain_config =
+                            &self.chains[overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
+
+                        let handshake = chain_config.role.scale_encoding().to_vec();
+
+                        // Accepting the substream isn't done immediately because of
+                        // futures-cancellation-related concerns.
+                        *pending_in_accept = Some((id, overlay_network_index, handshake));
+                    } else {
+                        unreachable!()
                     }
                 }
                 libp2p::Event::NotificationsIn {
@@ -518,10 +553,12 @@ where
                         };
                     } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 1 {
                         // TODO: transaction announce
-                    } else {
+                    } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 2 {
                         // TODO: don't unwrap
                         let _notif = protocol::decode_grandpa_notification(&notification).unwrap();
-                        // TODO: do something with these notifs
+                    // TODO: do something with these notifs
+                    } else {
+                        unreachable!()
                     }
                 }
             }
@@ -802,8 +839,10 @@ where
                 })
             } else if self.inner.overlay_network_index() % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 1 {
                 Vec::new()
-            } else {
+            } else if self.inner.overlay_network_index() % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 2 {
                 chain_config.role.scale_encoding().to_vec()
+            } else {
+                unreachable!()
             };
 
         self.inner.open(now, handshake).await;

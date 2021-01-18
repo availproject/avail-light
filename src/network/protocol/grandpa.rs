@@ -20,7 +20,7 @@
 use crate::finality::justification::decode::PrecommitRef;
 
 use alloc::vec::Vec;
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, iter};
 
 #[derive(Debug, Clone)]
 pub enum GrandpaNotificationRef<'a> {
@@ -29,6 +29,19 @@ pub enum GrandpaNotificationRef<'a> {
     Neighbor(NeighborPacket),
     CatchUpRequest(CatchUpRequest),
     CatchUp(CatchUpRef<'a>),
+}
+
+impl<'a> GrandpaNotificationRef<'a> {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + Clone> + Clone {
+        match self {
+            GrandpaNotificationRef::Neighbor(n) => {
+                iter::once(either::Left(&[2u8])).chain(n.scale_encoding().map(either::Right))
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +100,19 @@ pub struct NeighborPacket {
     pub round_number: u64,
     pub set_id: u64,
     pub commit_finalized_height: u32,
+}
+
+impl NeighborPacket {
+    /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
+    /// encoding of that object.
+    pub fn scale_encoding(&self) -> impl Iterator<Item = impl AsRef<[u8]> + Clone> + Clone {
+        iter::once(either::Right(either::Left([1u8])))
+            .chain(iter::once(either::Left(self.round_number.to_le_bytes())))
+            .chain(iter::once(either::Left(self.set_id.to_le_bytes())))
+            .chain(iter::once(either::Right(either::Right(
+                self.commit_finalized_height.to_le_bytes(),
+            ))))
+    }
 }
 
 #[derive(Debug, Clone)]
