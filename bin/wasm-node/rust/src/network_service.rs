@@ -294,29 +294,9 @@ async fn connection_task(
 
         let now = ffi::Instant::now();
 
-        // TODO: hacky code
-        struct Waker(std::sync::Mutex<(bool, Option<std::task::Waker>)>);
-        impl futures::task::ArcWake for Waker {
-            fn wake_by_ref(arc_self: &Arc<Self>) {
-                let mut lock = arc_self.0.lock().unwrap();
-                lock.0 = true;
-                if let Some(w) = lock.1.take() {
-                    w.wake();
-                }
-            }
-        }
-
-        let waker = Arc::new(Waker(std::sync::Mutex::new((false, None))));
-
         let read_write = match network_service
             .network
-            .read_write(
-                id,
-                now,
-                read_buffer,
-                (&mut write_buffer, &mut []),
-                &mut std::task::Context::from_waker(&*futures::task::waker_ref(&waker)),
-            )
+            .read_write(id, now, read_buffer, (&mut write_buffer, &mut []))
             .await
         {
             Ok(rw) => rw,
@@ -329,36 +309,25 @@ async fn connection_task(
             return;
         }
 
+        websocket.send(&write_buffer[..read_write.written_bytes]);
+
+        websocket.advance_read_cursor(read_write.read_bytes);
+
         if let Some(wake_up) = read_write.wake_up_after {
             if wake_up > now {
                 let dur = wake_up - now;
                 poll_after = ffi::Delay::new(dur);
             } else {
-                poll_after = ffi::Delay::new(Duration::from_secs(0));
+                continue;
             }
         } else {
+            // TODO: hack
             poll_after = ffi::Delay::new(Duration::from_secs(3600));
         }
 
-        websocket.send(&write_buffer[..read_write.written_bytes]);
-
-        websocket.advance_read_cursor(read_write.read_bytes);
-
-        // TODO: maybe optimize the code below so that multiple messages are pulled from `to_connection` at once
-
         futures::select! {
             _ = websocket.read_buffer().fuse() => {},
-            _ = future::poll_fn(move |cx| {
-                let mut lock = waker.0.lock().unwrap();
-                if lock.0 {
-                    return std::task::Poll::Ready(());
-                }
-                match lock.1 {
-                    Some(ref w) if w.will_wake(cx.waker()) => {}
-                    _ => lock.1 = Some(cx.waker().clone()),
-                }
-                std::task::Poll::Pending
-            }).fuse() => {}
+            _ = read_write.wake_up_future.fuse() => {},
             _ = (&mut poll_after).fuse() => { // TODO: no, ref mut + fuse() = probably panic
                 // Nothing to do, but guarantees that we loop again.
             },

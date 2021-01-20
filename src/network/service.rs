@@ -645,16 +645,16 @@ where
         now: TNow,
         incoming_buffer: Option<&[u8]>,
         outgoing_buffer: (&'a mut [u8], &'a mut [u8]),
-        cx: &mut Context<'_>,
     ) -> Result<ReadWrite<TNow>, libp2p::ConnectionError> {
         let inner = self
             .libp2p
-            .read_write(connection_id.0, now, incoming_buffer, outgoing_buffer, cx)
+            .read_write(connection_id.0, now, incoming_buffer, outgoing_buffer)
             .await?;
         Ok(ReadWrite {
             read_bytes: inner.read_bytes,
             written_bytes: inner.written_bytes,
             wake_up_after: inner.wake_up_after,
+            wake_up_future: inner.wake_up_future,
             write_close: inner.write_close,
         })
     }
@@ -803,6 +803,10 @@ pub struct ReadWrite<TNow> {
     /// If `Some`, [`ChainNetwork::read_write`] should be called again when the point in time
     /// reaches the value in the `Option`.
     pub wake_up_after: Option<TNow>,
+
+    /// [`ChainNetwork::read_write`] should be called again when this
+    /// [`libp2p::ConnectionReadyFuture`] returns `Ready`.
+    pub wake_up_future: libp2p::ConnectionReadyFuture,
 
     /// If `true`, the writing side the connection must be closed. Will always remain to `true`
     /// after it has been set.

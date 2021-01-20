@@ -26,7 +26,8 @@ use core::{
     iter,
     num::NonZeroUsize,
     ops::{Add, Sub},
-    task::{Context, Waker},
+    pin::Pin,
+    task::{Context, Poll},
     time::Duration,
 };
 use futures::{
@@ -306,7 +307,7 @@ where
             .ok_or(RequestError::ConnectionClosed)?
             .add_request(now, protocol_index, request_data, send_back);
         if let Some(waker) = connection_lock.waker.take() {
-            waker.wake();
+            let _ = waker.send(());
         }
 
         // Make sure to unlock the connection before waiting for the result.
@@ -401,7 +402,7 @@ where
         drop(connection_lock);
 
         if let Some(waker) = waker {
-            waker.wake();
+            let _ = waker.send(());
         }
 
         Ok(())
@@ -494,7 +495,7 @@ where
         let mut connection = connection_arc.lock().await;
 
         if let Some(waker) = connection.waker.take() {
-            waker.wake();
+            let _ = waker.send(());
         }
 
         connection
@@ -537,12 +538,14 @@ where
         now: TNow,
         incoming_buffer: Option<&[u8]>,
         outgoing_buffer: (&'a mut [u8], &'a mut [u8]),
-        cx: &mut Context<'_>,
     ) -> Result<ReadWrite<TNow>, ConnectionError> {
+        let (tx, rx) = oneshot::channel();
+
         let mut read_write = ReadWrite {
             read_bytes: 0,
             written_bytes: 0,
             wake_up_after: None,
+            wake_up_future: ConnectionReadyFuture(rx),
             write_close: false,
         };
 
@@ -576,6 +579,8 @@ where
 
                 let (handshake, user_data) = pending.take().unwrap();
 
+                let mut tx = Some(tx);
+
                 // TODO: check timeout
 
                 let mut result = {
@@ -595,7 +600,9 @@ where
                     read_write.read_bytes += num_read;
                     read_write.written_bytes += num_written;
                     if num_read != 0 || num_written != 0 {
-                        cx.waker().wake_by_ref();
+                        if let Some(tx) = tx.take() {
+                            let _ = tx.send(());
+                        }
                     }
                     result
                 };
@@ -619,13 +626,12 @@ where
 
                             pending.into_established({
                                 let config = self.build_connection_config().await;
-                                let waker = cx.waker().clone();
                                 move |_| {
                                     let established = connection.into_connection(config);
                                     Arc::new(Mutex::new(Connection {
                                         connection: Some(established),
                                         user_data: Some(user_data),
-                                        waker: Some(waker),
+                                        waker: None,
                                     }))
                                 }
                             });
@@ -636,7 +642,9 @@ where
                                 .await
                                 .unwrap();
 
-                            cx.waker().wake_by_ref();
+                            if let Some(tx) = tx.take() {
+                                let _ = tx.send(());
+                            }
                             break;
                         }
                         connection::handshake::Handshake::NoiseKeyRequired(key) => {
@@ -649,9 +657,12 @@ where
                 let established = established.user_data_mut().clone();
                 drop(guarded);
 
+                let mut established = established.lock().await;
+
+                // Update the waker.
+                established.waker = Some(tx);
+
                 established
-                    .lock()
-                    .await
                     .read_write(
                         &self.guarded,
                         connection_id,
@@ -659,7 +670,6 @@ where
                         incoming_buffer,
                         outgoing_buffer,
                         &mut read_write,
-                        cx,
                     )
                     .await?;
             }
@@ -757,7 +767,7 @@ struct Connection<TNow, TConn> {
         >,
     >,
     user_data: Option<TConn>,
-    waker: Option<Waker>,
+    waker: Option<oneshot::Sender<()>>,
 }
 
 impl<TNow, TConn> Connection<TNow, TConn>
@@ -774,14 +784,7 @@ where
         incoming_buffer: Option<&[u8]>,
         outgoing_buffer: (&'a mut [u8], &'a mut [u8]),
         read_write: &mut ReadWrite<TNow>,
-        cx: &mut Context<'_>,
     ) -> Result<(), ConnectionError> {
-        // Update the `core::task::Waker` if necessary.
-        match self.waker {
-            Some(ref w) if w.will_wake(cx.waker()) => {}
-            _ => self.waker = Some(cx.waker().clone()),
-        }
-
         let read_write_result =
             self.connection
                 .take()
@@ -843,7 +846,7 @@ where
             || read_write_result.event.is_some()
         {
             if let Some(waker) = self.waker.take() {
-                waker.wake();
+                let _ = waker.send(());
             }
         }
 
@@ -1132,12 +1135,34 @@ pub struct ReadWrite<TNow> {
     /// reaches the value in the `Option`.
     pub wake_up_after: Option<TNow>,
 
+    /// [`Network::read_write`] should be called again when this [`ConnectionReadyFuture`]
+    /// returns `Ready`.
+    pub wake_up_future: ConnectionReadyFuture,
+
     /// If `true`, the writing side the connection must be closed. Will always remain to `true`
     /// after it has been set.
     ///
     /// If, after calling [`Network::read_write`], the returned [`ReadWrite`] contains `true` here,
     /// and the inbound buffer is `None`, then the [`ConnectionId`] is now invalid.
     pub write_close: bool,
+}
+
+/// Future ready when a connection has data to give out via [`Network::read_write`].
+#[pin_project::pin_project]
+pub struct ConnectionReadyFuture(#[pin] oneshot::Receiver<()>);
+
+impl Future for ConnectionReadyFuture {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        // `Err(Canceled)` is mapped to `Poll::Pending`, meaning that the `oneshot::Sender` can
+        // be dropped in order to never notify this future.
+        match self.project().0.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok(())) => Poll::Ready(()),
+            Poll::Ready(Err(_)) => Poll::Pending,
+        }
+    }
 }
 
 /// Protocol error within the context of a connection. See [`Network::read_write`].
@@ -1188,7 +1213,7 @@ where
         };
 
         if let Some(waker) = connection.waker.take() {
-            waker.wake();
+            let _ = waker.send(());
         }
 
         drop(connection);
