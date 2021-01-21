@@ -592,7 +592,7 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
                         .to_json_response(request_id)
                 }
                 Ok(None) => json_rpc::parse::build_success_response(request_id, "null"),
-                Err(()) => todo!(), // TODO:
+                Err(_err) => todo!("{:?}", _err), // TODO: figure out the format of a JSON-RPC error and return that
             };
 
             (response, None)
@@ -721,21 +721,18 @@ async fn storage_query(
     client: &mut Client,
     key: &[u8],
     hash: &[u8; 32],
-) -> Result<Option<Vec<u8>>, ()> {
+) -> Result<Option<Vec<u8>>, StorageQueryError> {
     let trie_root_hash = if let Some(header) = client.known_blocks.get(hash) {
-        Some(header.state_root)
+        header.state_root
     } else {
-        None
+        // TODO: should make a block request towards a node
+        return Err(StorageQueryError::FindStorageRootHashError);
     };
 
-    let mut result = Err(());
+    let mut outcome_errors = Vec::with_capacity(3);
 
     for target in client.peers.iter().take(3) {
-        if trie_root_hash.is_none() || result.is_ok() {
-            break;
-        }
-
-        result = client
+        let result = client
             .network_service
             .clone()
             .storage_proof_request(
@@ -746,19 +743,47 @@ async fn storage_query(
                 },
             )
             .await
-            .map_err(|_| ())
+            .map_err(StorageQueryErrorDetail::Network)
             .and_then(|outcome| {
                 proof_verify::verify_proof(proof_verify::Config {
                     proof: outcome.iter().map(|nv| &nv[..]),
                     requested_key: key,
-                    trie_root_hash: trie_root_hash.as_ref().unwrap(),
+                    trie_root_hash: &trie_root_hash,
                 })
-                .map_err(|_| ())
+                .map_err(StorageQueryErrorDetail::ProofVerification)
                 .map(|v| v.map(|v| v.to_owned()))
             });
+
+        match result {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                outcome_errors.push(err);
+            }
+        }
     }
 
-    result
+    debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
+    Err(StorageQueryError::StorageRetrieval {
+        errors: outcome_errors,
+    })
+}
+
+#[derive(Debug)]
+enum StorageQueryError {
+    /// Error while finding the storage root hash of the requested block.
+    FindStorageRootHashError,
+    /// Error while retrieving the storage item from other nodes.
+    StorageRetrieval {
+        /// Contains one error per peer that has been contacted. If this list is empty, then we
+        /// aren't connected to any node.
+        errors: Vec<StorageQueryErrorDetail>,
+    },
+}
+
+#[derive(Debug)]
+enum StorageQueryErrorDetail {
+    Network(smoldot::network::service::StorageProofRequestError),
+    ProofVerification(proof_verify::Error),
 }
 
 fn header_conv<'a>(header: impl Into<smoldot::header::HeaderRef<'a>>) -> methods::Header {
