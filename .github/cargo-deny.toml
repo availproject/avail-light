@@ -17,17 +17,15 @@ copyleft = "allow"
 allow-osi-fsf-free = "either"
 default = "deny"
 
-[[licenses.clarify]]
-# This section is necessary because the `ring` library doesn't have a "standard" license.
-name = "ring"
-version = "*"
-expression = "MIT AND ISC AND OpenSSL"
-license-files = [
-    { path = "LICENSE", hash = 0xbd0eed23 }
-]
-
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"  # TODO: should be "deny", but this fails when we have git dependencies
 
 # TODO: deny git dependencies with a `[sources]` section
+
+# The `openssl` and `ring` libraries are easy to accidentally pull in, and are too annoying to
+# compile on a wide range of platforms.
+[[bans.deny]]
+name = "openssl"
+[[bans.deny]]
+name = "ring"
