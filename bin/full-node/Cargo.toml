@@ -31,7 +31,7 @@ rand = "0.8.2"
 slab = "0.4.2"
 smoldot = { path = "../..", default-features = false, features = ["database-sled", "std"] }
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
-terminal_size = "0.1.15"
+terminal_size = "0.1.16"
 tracing = { version = "0.1.21", features = ["attributes"] }
 tracing-futures = { version = "0.2.4", default-features = false, features = ["std", "std-future"] }
 tracing-subscriber = { version = "0.2.15", default-features = false, features = ["ansi", "chrono", "json", "fmt", "parking_lot", "smallvec"] }
