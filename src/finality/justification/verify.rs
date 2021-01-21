@@ -42,9 +42,9 @@ pub fn verify(config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>) ->
     // Check that justification contains a number of signatures equal to at least 2/3rd of the
     // number of authorities.
     // Duplicate signatures are checked below.
-    // The check is `actual >= (expected + 2) * 2 / 3` in order to round up.
+    // The logic of the check is `actual >= (expected * 2 / 3) + 1`.
     if config.justification.precommits.iter().count()
-        < (config.authorities_list.clone().count() + 2) * 2 / 3
+        < (config.authorities_list.clone().count() * 2 / 3) + 1
     {
         return Err(Error::NotEnoughSignatures);
     }
