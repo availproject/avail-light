@@ -381,9 +381,6 @@ where
                 self.libp2p
                     .accept_notifications_in(*id, *overlay_network_index, handshake.clone()) // TODO: clone :-/
                     .await;
-
-                let peer_id = self.libp2p.connection_peer_id(*id).await;
-                let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
                 *pending_in_accept = None;
             }
 
@@ -410,6 +407,7 @@ where
                 }
                 libp2p::Event::NotificationsOutAccept {
                     id,
+                    peer_id,
                     overlay_network_index,
                     remote_handshake,
                 } => {
@@ -419,7 +417,6 @@ where
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
                         // TODO: compare genesis hash with ours
-                        let peer_id = self.libp2p.connection_peer_id(id).await;
                         return Event::ChainConnected {
                             peer_id,
                             chain_index,
@@ -433,7 +430,6 @@ where
                         // Grandpa notification has been opened. Send neighbor packet.
                         // TODO: below is not futures-cancellation-safe!
                         // TODO: should instead return some object so that user does it manually?
-                        let peer_id = self.libp2p.connection_peer_id(id).await;
                         let packet =
                             protocol::GrandpaNotificationRef::Neighbor(protocol::NeighborPacket {
                                 round_number: 1, // TODO: round number 1 apparently means we're not interested in rounds
@@ -455,19 +451,16 @@ where
 
                     // TODO:
                 }
-                libp2p::Event::NotificationsOutReject {
-                    id,
-                    overlay_network_index,
-                } => {
+                libp2p::Event::NotificationsOutReject { .. } => {
                     // TODO:
                 }
                 libp2p::Event::NotificationsOutClose {
                     id,
+                    peer_id,
                     overlay_network_index,
                 } => {
                     let chain_index = overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN;
                     if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 0 {
-                        let peer_id = self.libp2p.connection_peer_id(id).await;
                         return Event::ChainDisconnected {
                             peer_id,
                             chain_index,

@@ -492,6 +492,29 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         }
     }
 
+    /// Returns the user data, if any, of a pending substream on this overlay network and this
+    /// direction.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `overlay_network_index` is out of range.
+    ///
+    pub fn pending_substream_user_data_mut(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+    ) -> Option<&mut TPendingSub> {
+        assert!(overlay_network < self.peerset.num_overlay_networks);
+        match self
+            .peerset
+            .connection_overlays
+            .get_mut(&(self.id.0, overlay_network, direction))
+        {
+            Some(SubstreamState::Pending(ud)) => Some(ud),
+            _ => None,
+        }
+    }
+
     /// Removes a pending substream.
     ///
     /// Returns an error if there is no pending substream with this overlay network and direction
@@ -839,7 +862,7 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
         ConnectionId(index)
     }
 
-    /// Returns an iterator to the list of current connections to that node.
+    /// Returns an iterator to the list of current established connections to that node.
     pub fn connections<'b>(&'b self) -> impl Iterator<Item = ConnectionId> + 'b {
         self.peerset.peer_connections
             .range((self.peer_index, 0)..=(self.peer_index, usize::max_value()))
