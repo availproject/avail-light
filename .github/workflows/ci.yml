@@ -122,3 +122,19 @@ jobs:
       - uses: actions-rs/clippy@master
         with:
           args: --all-features --all-targets
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The `advisories` check is done separately, in order to not block merging in case of a
+        # sudden announcement of a new advisory.
+        checks:
+          - advisories
+          - bans licenses sources
+    steps:
+    - uses: actions/checkout@v2
+    - uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        command: check --config .github/cargo-deny.toml ${{ matrix.checks }}
+        arguments: --workspace --all-features

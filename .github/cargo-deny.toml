@@ -1,0 +1,33 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "deny"
+yanked = "deny"
+notice = "deny"
+# Whenever an advisory is detected by the rules above, it should either be dealt with, or added
+# to the following list of advisories that we can't deal with.
+# The entries below should be removed over time but are considered to not be actual problems.
+ignore = [
+    "RUSTSEC-2020-0057",  # TODO: deprecated crate "block-cipher"
+    "RUSTSEC-2020-0058",  # TODO: deprecated crate "stream-cipher"
+]
+
+[licenses]
+unlicensed = "deny"
+copyleft = "allow"
+allow-osi-fsf-free = "either"
+default = "deny"
+
+[[licenses.clarify]]
+# This section is necessary because the `ring` library doesn't have a "standard" license.
+name = "ring"
+version = "*"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 }
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"  # TODO: should be "deny", but this fails when we have git dependencies
+
+# TODO: deny git dependencies with a `[sources]` section
