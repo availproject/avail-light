@@ -94,7 +94,7 @@ impl NetworkService {
                     best_hash: config.best_block.1,
                     best_number: config.best_block.0,
                     genesis_hash: config.genesis_block_hash,
-                    role: protocol::Role::Full,
+                    role: protocol::Role::Light,
                 }],
                 known_nodes: config
                     .bootstrap_nodes
