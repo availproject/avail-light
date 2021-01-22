@@ -33,7 +33,7 @@ use smoldot::{
 use std::{
     collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
-    iter,
+    fmt, iter,
     sync::Arc,
     time::Duration,
 };
@@ -592,7 +592,11 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
                         .to_json_response(request_id)
                 }
                 Ok(None) => json_rpc::parse::build_success_response(request_id, "null"),
-                Err(_err) => todo!("{:?}", _err), // TODO: figure out the format of a JSON-RPC error and return that
+                Err(error) => json_rpc::parse::build_error_response(
+                    request_id,
+                    json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
+                    None,
+                ),
             };
 
             (response, None)
@@ -780,9 +784,29 @@ enum StorageQueryError {
     },
 }
 
-#[derive(Debug)]
+impl fmt::Display for StorageQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StorageQueryError::FindStorageRootHashError => write!(f, "Unknown block"),
+            StorageQueryError::StorageRetrieval { errors } if errors.is_empty() => {
+                write!(f, "No node available for storage query")
+            }
+            StorageQueryError::StorageRetrieval { errors } => {
+                write!(f, "Storage query errors:")?;
+                for err in errors {
+                    write!(f, "\n- {}", err)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Debug, derive_more::Display)]
 enum StorageQueryErrorDetail {
+    #[display(fmt = "{}", _0)]
     Network(smoldot::network::service::StorageProofRequestError),
+    #[display(fmt = "{}", _0)]
     ProofVerification(proof_verify::Error),
 }
 

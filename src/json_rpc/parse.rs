@@ -109,6 +109,97 @@ pub fn build_subscription_event(method: &str, id: &str, result_json: &str) -> St
     .unwrap()
 }
 
+/// Builds a JSON response.
+///
+/// `id_json` must be the JSON-formatted identifier of the request, found in [`Call::id_json`].
+///
+/// # Example
+///
+/// ```
+/// # use smoldot::json_rpc::parse;
+/// let _result_json = parse::build_error_response("43", parse::ErrorResponse::ParseError, None);
+/// ```
+///
+/// # Panic
+///
+/// Panics if `id_json` or `data_json` aren't valid JSON.
+/// Panics if the code in the [`ErrorResponse`] doesn't respect the rules documented under
+/// certain variants.
+///
+pub fn build_error_response(
+    id_json: &str,
+    error: ErrorResponse,
+    data_json: Option<&str>,
+) -> String {
+    let (code, message) = match error {
+        ErrorResponse::ParseError => (
+            SerdeErrorCode::ParseError,
+            "Invalid JSON was received by the server.",
+        ),
+        ErrorResponse::InvalidRequest => (
+            SerdeErrorCode::InvalidRequest,
+            "The JSON sent is not a valid Request object.",
+        ),
+        ErrorResponse::MethodNotFound => (
+            SerdeErrorCode::MethodNotFound,
+            "The method does not exist / is not available.",
+        ),
+        ErrorResponse::InvalidParams => (
+            SerdeErrorCode::InvalidParams,
+            "Invalid method parameter(s).",
+        ),
+        ErrorResponse::InternalError => (SerdeErrorCode::InternalError, "Internal JSON-RPC error."),
+        ErrorResponse::ServerError(n, msg) => {
+            assert!(n >= -32099 && n <= -32000);
+            (SerdeErrorCode::ServerError(n), msg)
+        }
+        ErrorResponse::ApplicationDefined(n, msg) => {
+            assert!(n < -32700 || n > -32000);
+            (SerdeErrorCode::MethodError(n), msg)
+        }
+    };
+
+    serde_json::to_string(&SerdeFailure {
+        jsonrpc: SerdeVersion::V2,
+        id: serde_json::from_str(id_json).expect("invalid id_json"),
+        error: SerdeError {
+            code,
+            message,
+            data: data_json.map(|d| serde_json::from_str(d).expect("invalid result_json")),
+        },
+    })
+    .unwrap()
+}
+
+/// Error that can be reported to the JSON-RPC client.
+#[derive(Debug)]
+pub enum ErrorResponse<'a> {
+    /// Invalid JSON was received by the server.
+    ParseError,
+
+    /// The JSON sent is not a valid Request object.
+    InvalidRequest,
+
+    /// The method does not exist / is not available.
+    MethodNotFound,
+
+    /// Invalid method parameter(s).
+    InvalidParams,
+
+    /// Internal JSON-RPC error.
+    InternalError,
+
+    /// Other internal server error.
+    /// Contains a more precise error code and a custom message.
+    /// Error code be in the range -32000 to -32099 included.
+    ServerError(i64, &'a str),
+
+    /// Method-specific error.
+    /// Contains a more precise error code and a custom message.
+    /// Error code be outside of the range -32000 to -32700.
+    ApplicationDefined(i64, &'a str),
+}
+
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct SerdeCall<'a> {
     jsonrpc: SerdeVersion,
@@ -161,10 +252,10 @@ struct SerdeSuccess<'a> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SerdeFailure<'a> {
-    version: SerdeVersion,
+    jsonrpc: SerdeVersion,
     #[serde(borrow)]
     id: &'a serde_json::value::RawValue,
-    error: SerdeError,
+    error: SerdeError<'a>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -179,9 +270,10 @@ enum SerdeOutput<'a> {
 
 #[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SerdeError {
+struct SerdeError<'a> {
     code: SerdeErrorCode,
-    message: String,
+    #[serde(borrow)]
+    message: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<serde_json::Value>,
 }
