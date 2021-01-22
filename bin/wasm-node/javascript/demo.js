@@ -60,7 +60,8 @@ let server = http.createServer(function (request, response) {
 });
 
 server.listen(9944, function () {
-    console.log((new Date()) + ' Server is listening on port 9944');
+    console.log('Server is listening on port 9944');
+    console.log('Visit https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944');
 });
 
 let wsServer = new websocket.server({
