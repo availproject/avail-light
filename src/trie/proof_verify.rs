@@ -98,18 +98,20 @@ pub fn verify_proof<'a>(
         })
         .collect::<Vec<_>>();
 
-    // Find the expected trie root in the proof. This is the start point of the verification.
-    let mut proof_iter = merkle_values
-        .iter()
-        .position(|v| v[..] == config.trie_root_hash[..])
-        .ok_or(Error::TrieRootNotFound)?;
+    // Find the expected trie root in the proof and put it in `node_value`. This is the start
+    // point of the verification.
+    // `node_value` is updated as the decoding progresses.
+    let mut node_value = {
+        let proof_iter = merkle_values
+            .iter()
+            .position(|v| v[..] == config.trie_root_hash[..])
+            .ok_or(Error::TrieRootNotFound)?;
+        config.proof.clone().nth(proof_iter).unwrap()
+    };
 
-    // The verification consists in iterating using `expected_nibbles_iter` and `proof_iter`.
+    // The verification consists in iterating using `expected_nibbles_iter` and `node_value`.
     let mut expected_nibbles_iter = nibble::bytes_to_nibbles(config.requested_key.iter().copied());
     loop {
-        // Decode the node value of `proof_iter`.
-        // `node_value` is updated as the decoding progresses.
-        let mut node_value = config.proof.clone().nth(proof_iter).unwrap();
         if node_value.is_empty() {
             return Err(Error::InvalidNodeValue);
         }
@@ -200,12 +202,21 @@ pub fn verify_proof<'a>(
 
                 // The Merkle value that was just found is the one that interests us.
                 if n == u8::from(expected_nibble) {
-                    // Find the entry in `proof` matching this Merkle value and update
-                    // `proof_iter`.
-                    proof_iter = merkle_values
-                        .iter()
-                        .position(|v| v[..] == node_value[..len])
-                        .ok_or(Error::MissingProofEntry)?;
+                    if len < 32 {
+                        // If the node value is less than 32 bytes, it means it's unhashed. In that
+                        // case, the child isn't part of `proof`.
+                        node_value = &node_value[..len];
+                    } else {
+                        // Find the entry in `proof` matching this Merkle value and update
+                        // `proof_iter`.
+                        let proof_iter = merkle_values
+                            .iter()
+                            .position(|v| v[..] == node_value[..len])
+                            .ok_or(Error::MissingProofEntry)?;
+                        node_value = config.proof.clone().nth(proof_iter).unwrap();
+                    }
+
+                    // Break out of the children iteration, to jump to the next node.
                     break;
                 }
 
@@ -290,5 +301,64 @@ mod tests {
             obtained,
             Some(&hex::decode("0d1456fdda7b8ec7f9e5c794cd83194f0593e4ea").unwrap()[..])
         );
+    }
+
+    #[test]
+    fn node_values_smaller_than_32bytes() {
+        let proof = vec![
+            vec![
+                158, 195, 101, 195, 207, 89, 214, 113, 235, 114, 218, 14, 122, 65, 19, 196, 0, 3,
+                88, 95, 7, 141, 67, 77, 97, 37, 180, 4, 67, 254, 17, 253, 41, 45, 19, 164, 16, 2,
+                0, 0, 0, 104, 95, 15, 31, 5, 21, 244, 98, 205, 207, 132, 224, 241, 214, 4, 93, 252,
+                187, 32, 80, 82, 127, 41, 119, 1, 0, 0,
+            ],
+            vec![
+                128, 175, 188, 128, 15, 126, 137, 9, 189, 204, 29, 117, 244, 124, 194, 9, 181, 214,
+                119, 106, 91, 55, 85, 146, 101, 112, 37, 46, 31, 42, 133, 72, 101, 38, 60, 66, 128,
+                28, 186, 118, 76, 106, 111, 232, 204, 106, 88, 52, 218, 113, 2, 76, 119, 132, 172,
+                202, 215, 130, 198, 184, 230, 206, 134, 44, 171, 25, 86, 243, 121, 128, 233, 10,
+                145, 50, 95, 100, 17, 213, 147, 28, 9, 142, 56, 95, 33, 40, 56, 9, 39, 3, 193, 79,
+                169, 207, 115, 80, 61, 217, 4, 106, 172, 152, 128, 12, 255, 241, 157, 249, 219,
+                101, 33, 139, 178, 174, 121, 165, 33, 175, 0, 232, 230, 129, 23, 89, 219, 21, 35,
+                23, 48, 18, 153, 124, 96, 81, 66, 128, 30, 174, 194, 227, 100, 149, 97, 237, 23,
+                238, 114, 178, 106, 158, 238, 48, 166, 82, 19, 210, 129, 122, 70, 165, 94, 186, 31,
+                28, 80, 29, 73, 252, 128, 16, 56, 19, 158, 188, 178, 192, 234, 12, 251, 221, 107,
+                119, 243, 74, 155, 111, 53, 36, 107, 183, 204, 174, 253, 183, 67, 77, 199, 47, 121,
+                185, 162, 128, 17, 217, 226, 195, 240, 113, 144, 201, 129, 184, 240, 237, 204, 79,
+                68, 191, 165, 29, 219, 170, 152, 134, 160, 153, 245, 38, 181, 131, 83, 209, 245,
+                194, 128, 137, 217, 3, 84, 1, 224, 52, 199, 112, 213, 150, 42, 51, 214, 103, 194,
+                225, 224, 210, 84, 84, 53, 31, 159, 82, 201, 3, 104, 118, 212, 110, 7, 128, 240,
+                251, 81, 190, 126, 80, 60, 139, 88, 152, 39, 153, 231, 178, 31, 184, 56, 44, 133,
+                31, 47, 98, 234, 107, 15, 248, 64, 78, 36, 89, 9, 149, 128, 233, 75, 238, 120, 212,
+                149, 223, 135, 48, 174, 211, 219, 223, 217, 20, 172, 212, 172, 3, 234, 54, 130, 55,
+                225, 63, 17, 255, 217, 150, 252, 93, 15, 128, 89, 54, 254, 99, 202, 80, 50, 27, 92,
+                48, 57, 174, 8, 211, 44, 58, 108, 207, 129, 245, 129, 80, 170, 57, 130, 80, 166,
+                250, 214, 40, 156, 181,
+            ],
+            vec![
+                128, 65, 0, 128, 182, 204, 71, 61, 83, 76, 85, 166, 19, 22, 212, 242, 236, 229, 51,
+                88, 16, 191, 227, 125, 217, 54, 7, 31, 36, 176, 211, 111, 72, 220, 181, 241, 128,
+                149, 2, 12, 26, 95, 9, 193, 115, 207, 253, 90, 218, 0, 41, 140, 119, 189, 166, 101,
+                244, 74, 171, 53, 248, 82, 113, 79, 110, 25, 72, 62, 65,
+            ],
+        ];
+
+        let requested_key =
+            hex::decode("f0c365c3cf59d671eb72da0e7a4113c49f1f0515f462cdcf84e0f1d6045dfcbb")
+                .unwrap();
+
+        let trie_root = [
+            43, 100, 198, 174, 1, 66, 26, 95, 93, 119, 43, 242, 5, 176, 153, 134, 193, 74, 159,
+            215, 134, 15, 252, 135, 67, 129, 21, 16, 20, 211, 97, 217,
+        ];
+
+        let obtained = super::verify_proof(super::Config {
+            requested_key: &requested_key[..],
+            trie_root_hash: &trie_root,
+            proof: proof.iter().map(|p| &p[..]),
+        })
+        .unwrap();
+
+        assert_eq!(obtained, Some(&[80, 82, 127, 41, 119, 1, 0, 0][..]));
     }
 }
