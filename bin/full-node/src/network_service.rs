@@ -449,9 +449,6 @@ async fn connection_task(
     let tcp_socket = with_buffers::WithBuffers::new(tcp_socket);
     futures::pin_mut!(tcp_socket);
 
-    // Set to a timer after which the state machine of the connection needs an update.
-    let mut poll_after: futures_timer::Delay;
-
     loop {
         let (read_buffer, write_buffer) = match tcp_socket.buffers() {
             Ok(b) => b,
@@ -503,17 +500,17 @@ async fn connection_task(
 
         tcp_socket.advance(read_write.read_bytes, read_write.written_bytes);
 
-        if let Some(wake_up) = read_write.wake_up_after {
+        let mut poll_after = if let Some(wake_up) = read_write.wake_up_after {
             if wake_up > now {
                 let dur = wake_up - now;
-                poll_after = futures_timer::Delay::new(dur);
+                future::Either::Left(futures_timer::Delay::new(dur))
             } else {
                 continue;
             }
         } else {
-            // TODO: hack
-            poll_after = futures_timer::Delay::new(Duration::from_secs(3600));
+            future::Either::Right(future::pending())
         }
+        .fuse();
 
         futures::select! {
             _ = tcp_socket.as_mut().process().fuse() => {
@@ -523,7 +520,7 @@ async fn connection_task(
                 );
             },
             _ = read_write.wake_up_future.fuse() => {},
-            _ = (&mut poll_after).fuse() => { // TODO: no, ref mut + fuse() = probably panic
+            () = poll_after => {
                 // Nothing to do, but guarantees that we loop again.
                 tracing::event!(
                     tracing::Level::TRACE,

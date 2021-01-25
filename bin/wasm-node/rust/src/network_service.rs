@@ -284,9 +284,6 @@ async fn connection_task(
 
     let id = network_service.network.pending_outcome_ok(id, ()).await;
 
-    // Set to a timer after which the state machine of the connection needs an update.
-    let mut poll_after: ffi::Delay;
-
     let mut write_buffer = vec![0; 4096];
 
     loop {
@@ -313,22 +310,22 @@ async fn connection_task(
 
         websocket.advance_read_cursor(read_write.read_bytes);
 
-        if let Some(wake_up) = read_write.wake_up_after {
+        let mut poll_after = if let Some(wake_up) = read_write.wake_up_after {
             if wake_up > now {
                 let dur = wake_up - now;
-                poll_after = ffi::Delay::new(dur);
+                future::Either::Left(ffi::Delay::new(dur))
             } else {
                 continue;
             }
         } else {
-            // TODO: hack
-            poll_after = ffi::Delay::new(Duration::from_secs(3600));
+            future::Either::Right(future::pending())
         }
+        .fuse();
 
         futures::select! {
             _ = websocket.read_buffer().fuse() => {},
             _ = read_write.wake_up_future.fuse() => {},
-            _ = (&mut poll_after).fuse() => { // TODO: no, ref mut + fuse() = probably panic
+            () = poll_after => {
                 // Nothing to do, but guarantees that we loop again.
             },
         }
