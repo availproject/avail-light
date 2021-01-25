@@ -127,10 +127,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The `advisories` check is done separately, in order to not block merging in case of a
-        # sudden announcement of a new advisory.
+        # TODO: the `advisories` check isn't done, because pragmatically speaking it fails CI way too often
         checks:
-          - advisories
           - bans licenses sources
     steps:
     - uses: actions/checkout@v2

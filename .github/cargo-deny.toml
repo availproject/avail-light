@@ -3,13 +3,6 @@ vulnerability = "deny"
 unmaintained = "deny"
 yanked = "deny"
 notice = "deny"
-# Whenever an advisory is detected by the rules above, it should either be dealt with, or added
-# to the following list of advisories that we can't deal with.
-# The entries below should be removed over time but are considered to not be actual problems.
-ignore = [
-    "RUSTSEC-2020-0057",  # TODO: deprecated crate "block-cipher"
-    "RUSTSEC-2020-0058",  # TODO: deprecated crate "stream-cipher"
-]
 
 [licenses]
 unlicensed = "deny"
