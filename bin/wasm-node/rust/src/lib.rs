@@ -137,6 +137,12 @@ watched and of the `:code` key.
 /// >           function is what is in the `Ok`. If an `Err` is returned, a JavaScript exception
 /// >           is thrown.
 pub async fn start_client(chain_spec: String, database_content: Option<String>) {
+    // Try initialize the logging and the panic hook.
+    // Note that `start_client` can theoretically be called multiple times, meaning that these
+    // calls shouldn't panic if reached multiple times.
+    let _ = simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug) // TODO: make log level configurable from JS?
+        .init();
     std::panic::set_hook(Box::new(|info| {
         ffi::throw(info.to_string());
     }));
@@ -146,19 +152,22 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
     assert_ne!(rand::random::<u64>(), rand::random::<u64>());
 
     let chain_spec = match chain_spec::ChainSpec::from_json_bytes(&chain_spec) {
-        Ok(cs) => cs,
+        Ok(cs) => {
+            log::info!("Loaded chain specs for {}", cs.name());
+            cs
+        }
         Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
     };
 
     // The database passed from the user is decoded. Any error while decoding is treated as if
     // there was no database.
     let database_content = if let Some(database_content) = database_content {
-        if let Ok(parsed) =
-            smoldot::database::finalized_serialize::decode_chain_information(&database_content)
-        {
-            Some(parsed)
-        } else {
-            None
+        match smoldot::database::finalized_serialize::decode_chain_information(&database_content) {
+            Ok(parsed) => Some(parsed),
+            Err(error) => {
+                log::warn!("Failed to decode chain information: {}", error);
+                None
+            }
         }
     } else {
         None
@@ -174,6 +183,13 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
         .unwrap();
     let chain_information = {
         let base = if let Some(light_sync_state) = chain_spec.light_sync_state() {
+            log::info!(
+                "Using light checkpoint starting at #{}",
+                light_sync_state
+                    .as_chain_information()
+                    .finalized_block_header
+                    .number
+            );
             light_sync_state.as_chain_information()
         } else {
             genesis_chain_information.clone()
@@ -184,6 +200,7 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
             if database_content.finalized_block_header.number > base.finalized_block_header.number {
                 database_content
             } else {
+                log::info!("Skipping database as it is older than checkpoint");
                 base
             }
         } else {
@@ -269,6 +286,8 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
         ffi::Delay::new(Duration::from_secs(15)).map(|_| Some(((), ())))
     })
     .map(|_| ());
+
+    log::info!("Starting main loop");
 
     loop {
         futures::select! {
@@ -360,10 +379,31 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
 
             json_rpc_request = ffi::next_json_rpc().fuse() => {
                 // TODO: don't unwrap
+                let request_string = String::from_utf8(Vec::from(json_rpc_request)).unwrap();
+                log::debug!(
+                    target: "json-rpc",
+                    "JSON-RPC => {:?}{}",
+                    if request_string.len() > 100 { &request_string[..100] } else { &request_string[..] },
+                    if request_string.len() > 100 { "…" } else { "" }
+                );
+
                 // TODO: don't await here; use a queue
-                let (response1, response2) = handle_rpc(&String::from_utf8(Vec::from(json_rpc_request)).unwrap(), &mut client).await;
+                let (response1, response2) = handle_rpc(&request_string, &mut client).await;
+                log::debug!(
+                    target: "json-rpc",
+                    "JSON-RPC <= {:?}{}",
+                    if response1.len() > 100 { &response1[..100] } else { &response1[..] },
+                    if response1.len() > 100 { "…" } else { "" }
+                );
                 ffi::emit_json_rpc_response(&response1);
+
                 if let Some(response2) = response2 {
+                    log::debug!(
+                        target: "json-rpc",
+                        "JSON-RPC <= {:?}{}",
+                        if response2.len() > 100 { &response2[..100] } else { &response2[..] },
+                        if response2.len() > 100 { "…" } else { "" }
+                    );
                     ffi::emit_json_rpc_response(&response2);
                 }
             },
@@ -372,6 +412,7 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
                 debug_assert!(_interval.is_some());
                 // A new task is spawned specifically for the saving, in order to not block the
                 // main processing while waiting for the serialization.
+                log::debug!("Database save start");
                 let sync_service = sync_service.clone();
                 ffi::spawn_task(async move {
                     let database_content = sync_service.serialize_chain().await;

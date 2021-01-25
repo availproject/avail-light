@@ -46,6 +46,11 @@ export async function start(config) {
   // cross-platform cross-bundler approach.
   let wasm_bytecode = new Uint8Array(Buffer.from(wasm_base64, 'base64'));
 
+  // Buffers holding temporary data being written by the Rust code to respectively stdout and
+  // stderr.
+  let stdout_buffer = new String();
+  let stderr_buffer = new String();
+
   // Start the Wasm virtual machine.
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
   // parameter provides their implementations.
@@ -181,12 +186,29 @@ export async function start(config) {
           total_length += buf_len;
         }
 
-        // Note that it is questionnable to use `console.log` from within a library. However this
-        // simply reflects the usage of `println!` in the Rust code. In other words, it is
-        // `println!` that shouldn't be used in the first place. The harm of not showing text
-        // printed with `println!` at all is greater than the harm possibly caused by accidentally
-        // leaving a `println!` in the code.
-        console.log(to_write);
+        let flush_buffer = (string) => {
+          // As documented in the documentation of `println!`, lines are always split by a single
+          // `\n` in Rust.
+          let index = string.indexOf('\n');
+          if (index != -1) {
+            // TODO: it is questionnable to use `console.log` from within a library ; see https://github.com/paritytech/smoldot/issues/384
+            //       we might also consider making the logging of the node configurable
+            console.log(string.substring(0, index));
+            return string.substring(index + 1);
+          } else {
+            return string;
+          }
+        };
+
+        // Append the newly-written data to either `stdout_buffer` or `stderr_buffer`, and print
+        // their content if necessary.
+        if (fd == 1) {
+          stdout_buffer += to_write;
+          stdout_buffer = flush_buffer(stdout_buffer);
+        } else if (fd == 2) {
+          stderr_buffer += to_write;
+          stderr_buffer = flush_buffer(stderr_buffer);
+        }
 
         // Need to write in `out_ptr` how much data was "written".
         mem.writeUInt32LE(total_length, out_ptr);

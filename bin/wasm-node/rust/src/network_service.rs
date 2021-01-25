@@ -32,6 +32,7 @@ use crate::ffi;
 use core::{num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{lock::Mutex, prelude::*};
 use smoldot::{
+    informant::HashDisplay,
     libp2p::{
         connection,
         multiaddr::{Multiaddr, Protocol},
@@ -132,8 +133,12 @@ impl NetworkService {
                     // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
                     // into a `Future<dyn Output = Result<TcpStream, ...>>`.
                     let socket = match multiaddr_to_url(&start_connect.multiaddr) {
-                        Ok(url) => ffi::WebSocket::connect(&url),
-                        Err(_) => {
+                        Ok(url) => {
+                            log::debug!(target: "connections", "Pending({:?}) started: {}", start_connect.id, url);
+                            ffi::WebSocket::connect(&url)
+                        }
+                        Err(()) => {
+                            log::debug!(target: "connections", "Unsupported multiaddr: {}", start_connect.multiaddr);
                             network_service
                                 .network
                                 .pending_outcome_err(start_connect.id)
@@ -183,9 +188,21 @@ impl NetworkService {
         target: PeerId,
         config: protocol::BlocksRequestConfig,
     ) -> Result<Vec<protocol::BlockData>, service::BlocksRequestError> {
-        self.network
-            .blocks_request(ffi::Instant::now(), target, 0, config)
-            .await // TODO: chain_index
+        log::debug!(target: "network", "Connection({}) <= BlocksRequest({:?})", target, config);
+
+        let result = self
+            .network
+            .blocks_request(ffi::Instant::now(), target.clone(), 0, config)
+            .await; // TODO: chain_index
+
+        log::debug!(
+            target: "network",
+            "Connection({}) => BlocksRequest({:?})",
+            target,
+            result.as_ref().map(|b| b.len())
+        );
+
+        result
     }
 
     /// Sends a storage proof request to the given peer.
@@ -195,9 +212,27 @@ impl NetworkService {
         target: PeerId,
         config: protocol::StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
     ) -> Result<Vec<Vec<u8>>, service::StorageProofRequestError> {
-        self.network
-            .storage_proof_request(ffi::Instant::now(), target, 0, config)
-            .await // TODO: chain_index
+        log::debug!(
+            target: "network",
+            "Connection({}) <= StorageProofRequest({}, {})",
+            target,
+            HashDisplay(&config.block_hash),
+            config.keys.size_hint().0
+        );
+
+        let result = self
+            .network
+            .storage_proof_request(ffi::Instant::now(), target.clone(), 0, config)
+            .await; // TODO: chain_index
+
+        log::debug!(
+            target: "network",
+            "Connection({}) => StorageProofRequest({:?})",
+            target,
+            result.as_ref().map(|b| b.len())
+        );
+
+        result
     }
 
     /// Returns the next event that happens in the network service.
@@ -207,11 +242,14 @@ impl NetworkService {
     pub async fn next_event(self: &Arc<Self>) -> Event {
         loop {
             match self.network.next_event().await {
-                service::Event::Connected(_peer_id) => {}
+                service::Event::Connected(peer_id) => {
+                    log::info!(target: "network", "Connected to {}", peer_id);
+                }
                 service::Event::Disconnected {
                     peer_id,
                     chain_indices,
                 } => {
+                    log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
                     if !chain_indices.is_empty() {
                         return Event::Disconnected(peer_id);
                     }
@@ -221,6 +259,14 @@ impl NetworkService {
                     peer_id,
                     announce,
                 } => {
+                    log::debug!(
+                        target: "network",
+                        "Connection({}) => BlockAnnounce({}, {}, is_best={})",
+                        peer_id,
+                        chain_index,
+                        HashDisplay(&announce.decode().header.hash()),
+                        announce.decode().is_best
+                    );
                     debug_assert_eq!(chain_index, 0);
                     return Event::BlockAnnounce { peer_id, announce };
                 }
@@ -228,8 +274,17 @@ impl NetworkService {
                     peer_id,
                     chain_index,
                     best_number,
+                    best_hash,
                     ..
                 } => {
+                    log::debug!(
+                        target: "network",
+                        "Connection({}) => ChainConnected({}, {}, {})",
+                        peer_id,
+                        chain_index,
+                        best_number,
+                        HashDisplay(&best_hash)
+                    );
                     debug_assert_eq!(chain_index, 0);
                     return Event::Connected {
                         peer_id,
@@ -240,6 +295,12 @@ impl NetworkService {
                     peer_id,
                     chain_index,
                 } => {
+                    log::debug!(
+                        target: "network",
+                        "Connection({}) => ChainDisconnected({})",
+                        peer_id,
+                        chain_index,
+                    );
                     debug_assert_eq!(chain_index, 0);
                     return Event::Disconnected(peer_id);
                 }
@@ -271,18 +332,26 @@ pub enum InitError {
 async fn connection_task(
     websocket: impl Future<Output = Result<Pin<Box<ffi::WebSocket>>, ()>>,
     network_service: Arc<NetworkService>,
-    id: service::PendingId,
+    pending_id: service::PendingId,
 ) {
     // Finishing the ongoing connection process.
     let mut websocket = match websocket.await {
         Ok(s) => s,
-        Err(_) => {
-            network_service.network.pending_outcome_err(id).await;
+        Err(()) => {
+            log::debug!(target: "connections", "Pending({:?}) => Failed to reach", pending_id);
+            network_service
+                .network
+                .pending_outcome_err(pending_id)
+                .await;
             return;
         }
     };
 
-    let id = network_service.network.pending_outcome_ok(id, ()).await;
+    let id = network_service
+        .network
+        .pending_outcome_ok(pending_id, ())
+        .await;
+    log::debug!(target: "connections", "Pending({:?}) => Connection({:?})", pending_id, id);
 
     let mut write_buffer = vec![0; 4096];
 
@@ -297,12 +366,14 @@ async fn connection_task(
             .await
         {
             Ok(rw) => rw,
-            Err(_) => {
+            Err(_err) => {
+                log::debug!(target: "connections", "Connection({:?}) => Closed: {}", id, _err);
                 return;
             }
         };
 
         if read_write.write_close && read_buffer.is_none() {
+            log::debug!(target: "connections", "Connection({:?}) => Closed gracefully", id);
             return;
         }
 

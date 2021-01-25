@@ -48,6 +48,7 @@ futures = "0.3.12"   # TODO: no-std-ize
 hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] }   # TODO: remove serde feature
 hex = { version = "0.4.2", default-features = false }
 libsecp256k1 = { version = "0.3.5", default-features = false }
+# Reminder: `log` is forbidden
 merlin = { version = "2.0", default-features = false }
 multihash = "0.11.4"  # TODO: waiting for a crates.io publication of https://github.com/multiformats/rust-multihash/pull/82 that adds no_std support
 nom = { version = "6.1.0", default-features = false, features = ["alloc"] }

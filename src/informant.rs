@@ -190,7 +190,7 @@ impl<'a> fmt::Display for InformantLine<'a> {
 }
 
 /// Implements `fmt::Display` and displays hashes in a nice way.
-struct HashDisplay<'a>(&'a [u8]);
+pub struct HashDisplay<'a>(pub &'a [u8]);
 
 impl<'a> fmt::Display for HashDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

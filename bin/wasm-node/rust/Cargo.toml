@@ -15,8 +15,10 @@ crate-type = ["cdylib", "rlib"]
 derive_more = "0.99.11"
 futures = "0.3.12"
 lazy_static = "1.4.0"
+log = "0.4.13"
 lru = "0.6.3"
 rand = "0.8.2"
 serde_json = "1.0.61"
+simple_logger = { version = "1.11.0", default-features = false }
 slab = "0.4.2"
 smoldot = { version = "0.1.0", path = "../../..", default-features = false }
