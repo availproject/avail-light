@@ -416,7 +416,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
         // If all sources are banned, unban them.
         if self.inner.sources.iter().all(|(_, s)| s.banned) {
             for src in self.inner.sources.values_mut() {
-                src.banned = true;
+                src.banned = false;
             }
         }
 
