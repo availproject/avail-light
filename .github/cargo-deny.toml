@@ -1,9 +1,3 @@
-[advisories]
-vulnerability = "deny"
-unmaintained = "deny"
-yanked = "deny"
-notice = "deny"
-
 [licenses]
 unlicensed = "deny"
 copyleft = "allow"

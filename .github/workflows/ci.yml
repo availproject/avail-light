@@ -109,7 +109,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # TODO: the `advisories` check isn't done, because pragmatically speaking it fails CI way too often
+        # The `advisories` check isn't done, because pragmatically speaking it fails CI too often.
+        # See `audit.yml` instead.
         checks:
           - bans licenses sources
     steps:
