@@ -28,13 +28,7 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - uses: Swatinem/rust-cache@v1
     - name: Run tests, with all features
       run: cargo test --locked --workspace --all-features
 
@@ -45,13 +39,7 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - uses: Swatinem/rust-cache@v1
     - uses: actions/setup-node@v2.1.4
       with:
         node-version: '12'
@@ -68,13 +56,7 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - uses: Swatinem/rust-cache@v1
     - run: cargo check --package smoldot --locked --no-default-features
     - run: cargo check --package smoldot --locked --no-default-features --features database-sled
     - run: cargo check --package smoldot --locked --no-default-features --features std

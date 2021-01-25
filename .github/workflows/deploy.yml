@@ -64,13 +64,7 @@ jobs:
           toolchain: 1.48.0
           target: wasm32-wasi
           profile: minimal
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-wasm-node-${{ hashFiles('**/Cargo.lock') }}
+      - uses: Swatinem/rust-cache@v1
       - run: npm install
         working-directory: ./bin/wasm-node/javascript
       - run: npm publish --unsafe-perm --dry-run
@@ -90,13 +84,9 @@ jobs:
       image: rust
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/cache@v2
+    - uses: Swatinem/rust-cache@v1
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target/doc
-        key: ${{ runner.os }}-cargo-doc-${{ hashFiles('**/Cargo.lock') }}
+        key: docs
     - run: cargo doc --verbose --workspace --all-features --no-deps
     - uses: crazy-max/ghaction-github-pages@v2
       if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
