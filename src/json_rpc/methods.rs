@@ -302,7 +302,7 @@ pub struct RuntimeVersion {
     pub spec_version: u64,
     pub impl_version: u64,
     pub transaction_version: u64,
-    // TODO: apis missing
+    pub apis: Vec<([u8; 8], u32)>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -371,15 +371,22 @@ impl serde::Serialize for RuntimeVersion {
     where
         S: serde::Serializer,
     {
-        // TODO: not sure about the camelCasing
         #[derive(serde::Serialize)]
         struct SerdeRuntimeVersion<'a> {
+            #[serde(rename = "specName")]
             spec_name: &'a str,
+            #[serde(rename = "implName")]
             impl_name: &'a str,
+            #[serde(rename = "authoringVersion")]
             authoring_version: u64,
+            #[serde(rename = "specVersion")]
             spec_version: u64,
+            #[serde(rename = "implVersion")]
             impl_version: u64,
+            #[serde(rename = "transactionVersion")]
             transaction_version: u64,
+            // TODO: optimize?
+            apis: Vec<(HexString, u32)>,
         }
 
         SerdeRuntimeVersion {
@@ -389,6 +396,12 @@ impl serde::Serialize for RuntimeVersion {
             spec_version: self.spec_version,
             impl_version: self.impl_version,
             transaction_version: self.transaction_version,
+            // TODO: optimize?
+            apis: self
+                .apis
+                .iter()
+                .map(|(name, version)| (HexString(name.to_vec()), *version))
+                .collect(),
         }
         .serialize(serializer)
     }
