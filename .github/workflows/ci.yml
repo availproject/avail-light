@@ -27,7 +27,7 @@ jobs:
     container:
       image: rust
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - uses: Swatinem/rust-cache@v1
     - name: Run tests, with all features
       run: cargo test --locked --workspace --all-features
@@ -38,7 +38,7 @@ jobs:
     container:
       image: rust
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - uses: Swatinem/rust-cache@v1
     - uses: actions/setup-node@v2.1.4
       with:
@@ -55,7 +55,7 @@ jobs:
     container:
       image: rust
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - uses: Swatinem/rust-cache@v1
     - run: cargo check --package smoldot --locked --no-default-features
     - run: cargo check --package smoldot --locked --no-default-features --features database-sled
@@ -68,7 +68,7 @@ jobs:
     container:
       image: rust
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - name: Check rustdoc links
       run: cargo doc --verbose --workspace --all-features --no-deps --document-private-items
 
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v2.3.4
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -95,7 +95,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2.3.4
       - uses: actions-rs/toolchain@v1
         with:
             toolchain: nightly
@@ -114,7 +114,7 @@ jobs:
         checks:
           - bans licenses sources
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v2.3.4
     - uses: EmbarkStudios/cargo-deny-action@v1
       with:
         command: check --config .github/cargo-deny.toml ${{ matrix.checks }}
