@@ -269,6 +269,7 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
             known_blocks,
             best_block: finalized_block_hash,
             finalized_block: finalized_block_hash,
+            genesis_block: genesis_chain_information.finalized_block_header.hash(),
             genesis_storage,
             best_block_metadata,
             next_subscription: 0,
@@ -433,6 +434,10 @@ struct Client {
     /// Always contains `best_block` and `finalized_block`.
     known_blocks: lru::LruCache<[u8; 32], smoldot::header::Header>,
 
+    /// Hash of the genesis block.
+    /// Keeping the genesis block is important, as the genesis block hash is included in
+    /// transaction signatures, and must therefore be queried by upper-level UIs.
+    genesis_block: [u8; 32],
     /// Hash of the current best block.
     best_block: [u8; 32],
     /// Hash of the latest finalized block.
@@ -464,13 +469,44 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::chain_getBlockHash { height } => {
-            // TODO: implement correctly
-            let response = if height.is_some() {
-                methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+            let response = match height {
+                Some(0) => methods::Response::chain_getBlockHash(methods::HashHexString(
+                    client.genesis_block,
+                ))
+                .to_json_response(request_id),
+                None => {
+                    methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+                        .to_json_response(request_id)
+                }
+                Some(n)
+                    if client
+                        .known_blocks
+                        .get(&client.best_block)
+                        .map_or(false, |h| h.number == n) =>
+                {
+                    methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+                        .to_json_response(request_id)
+                }
+                Some(n)
+                    if client
+                        .known_blocks
+                        .get(&client.finalized_block)
+                        .map_or(false, |h| h.number == n) =>
+                {
+                    methods::Response::chain_getBlockHash(methods::HashHexString(
+                        client.finalized_block,
+                    ))
                     .to_json_response(request_id)
-            } else {
-                json_rpc::parse::build_success_response(request_id, "null")
+                }
+                Some(_) => {
+                    // While the block could be found in `known_blocks`, there is no guarantee
+                    // that blocks in `known_blocks` are canonical, and we have no choice but to
+                    // return null.
+                    // TODO: ask a full node instead? or maybe keep a list of canonical blocks?
+                    json_rpc::parse::build_success_response(request_id, "null")
+                }
             };
+
             (response, None)
         }
         methods::MethodCall::chain_getFinalizedHead {} => {
