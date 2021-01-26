@@ -24,7 +24,7 @@
 
 use futures::prelude::*;
 use smoldot::{
-    chain, chain_spec,
+    chain, chain_spec, executor,
     json_rpc::{self, methods},
     libp2p::{multiaddr, peer_id::PeerId},
     network::protocol,
@@ -648,19 +648,33 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
 
             let response = methods::Response::state_subscribeRuntimeVersion(&subscription)
                 .to_json_response(request_id);
+            // TODO: subscription has no effect right now
             client.runtime_version.insert(subscription.clone());
 
-            // FIXME: hack
+            let best_block_hash = client.best_block;
+            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash)
+                .await
+                .unwrap()
+                .unwrap();
+            // TODO: don't unwrap
+            // TODO: cache the VM
+            let vm = executor::host::HostVmPrototype::new(
+                &runtime_code,
+                executor::DEFAULT_HEAP_PAGES,
+                executor::vm::ExecHint::Oneshot,
+            )
+            .unwrap();
+            let (runtime_specs, _) = executor::core_version(vm).unwrap();
+
             let response2 = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
-                spec_name: "polkadot".to_string(),
-                impl_name: "smoldot".to_string(),
-                authoring_version: 0,
-                spec_version: 23,
-                impl_version: 0,
-                transaction_version: 4,
+                spec_name: runtime_specs.spec_name,
+                impl_name: runtime_specs.impl_name,
+                authoring_version: u64::from(runtime_specs.authoring_version),
+                spec_version: u64::from(runtime_specs.spec_version),
+                impl_version: u64::from(runtime_specs.impl_version),
+                transaction_version: u64::from(runtime_specs.transaction_version),
             })
             .to_json_response(request_id);
-
             (response, Some(response2))
         }
         methods::MethodCall::state_subscribeStorage { list } => {
@@ -704,14 +718,28 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::state_getRuntimeVersion {} => {
-            // FIXME: hack
+            let best_block_hash = client.best_block;
+            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash)
+                .await
+                .unwrap()
+                .unwrap();
+            // TODO: don't unwrap
+            // TODO: cache the VM
+            let vm = executor::host::HostVmPrototype::new(
+                &runtime_code,
+                executor::DEFAULT_HEAP_PAGES,
+                executor::vm::ExecHint::Oneshot,
+            )
+            .unwrap();
+            let (runtime_specs, _) = executor::core_version(vm).unwrap();
+
             let response = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
-                spec_name: "polkadot".to_string(),
-                impl_name: "smoldot".to_string(),
-                authoring_version: 0,
-                spec_version: 23,
-                impl_version: 0,
-                transaction_version: 4,
+                spec_name: runtime_specs.spec_name,
+                impl_name: runtime_specs.impl_name,
+                authoring_version: u64::from(runtime_specs.authoring_version),
+                spec_version: u64::from(runtime_specs.spec_version),
+                impl_version: u64::from(runtime_specs.impl_version),
+                transaction_version: u64::from(runtime_specs.transaction_version),
             })
             .to_json_response(request_id);
             (response, None)
