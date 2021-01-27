@@ -265,7 +265,6 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
         Client {
             chain_spec,
             network_service: network_service.clone(),
-            peers: Vec::new(),
             known_blocks,
             best_block: finalized_block_hash,
             finalized_block: finalized_block_hash,
@@ -295,11 +294,9 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
             network_message = network_service.next_event().fuse() => {
                 match network_message {
                     network_service::Event::Connected { peer_id, best_block_number } => {
-                        client.peers.push(peer_id.clone());
                         sync_service.add_source(peer_id, best_block_number).await;
                     }
                     network_service::Event::Disconnected(peer_id) => {
-                        client.peers.retain(|p| *p != peer_id);
                         sync_service.remove_source(peer_id).await;
                     }
                     network_service::Event::BlockAnnounce { peer_id, announce } => {
@@ -443,9 +440,6 @@ struct Client {
     /// Hash of the latest finalized block.
     finalized_block: [u8; 32],
 
-    // TODO: this is a hack before an actual requests distribution system is implemented
-    peers: Vec<PeerId>,
-
     // TODO: remove; unnecessary
     genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
 
@@ -466,6 +460,32 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
         methods::MethodCall::author_pendingExtrinsics {} => {
             let response = methods::Response::author_pendingExtrinsics(Vec::new())
                 .to_json_response(request_id);
+            (response, None)
+        }
+        methods::MethodCall::author_submitExtrinsic { transaction } => {
+            let response = match client
+                .network_service
+                .clone()
+                .announce_transaction(&transaction.0)
+                .await
+            {
+                Ok(_) => {
+                    let mut hash_context = blake2_rfc::blake2b::Blake2b::new(32);
+                    hash_context.update(transaction.0.as_slice());
+                    let mut transaction_hash: [u8; 32] = Default::default();
+                    transaction_hash.copy_from_slice(hash_context.finalize().as_bytes());
+
+                    methods::Response::author_submitExtrinsic(methods::HashHexString(
+                        transaction_hash,
+                    ))
+                    .to_json_response(request_id)
+                }
+                Err(error) => json_rpc::parse::build_error_response(
+                    request_id,
+                    json_rpc::parse::ErrorResponse::ServerError(-32000, &format!("{}", &error)),
+                    None,
+                ),
+            };
             (response, None)
         }
         methods::MethodCall::chain_getBlockHash { height } => {
@@ -654,10 +674,31 @@ async fn handle_rpc(rpc: &str, client: &mut Client) -> (String, Option<String>) 
             (response, None)
         }
         methods::MethodCall::state_getMetadata {} => {
-            let response = methods::Response::state_getMetadata(methods::HexString(
-                client.best_block_metadata.clone(),
-            ))
-            .to_json_response(request_id);
+            let best_block_hash = client.best_block.clone();
+            let response = match storage_query(client, &b":code"[..], &best_block_hash).await {
+                Ok(Some(value)) => {
+                    let best_block_metadata = {
+                        let heap_pages = executor::DEFAULT_HEAP_PAGES; // TODO: laziness
+                        smoldot::metadata::metadata_from_runtime_code(&value, heap_pages).unwrap()
+                    };
+
+                    client.best_block_metadata = best_block_metadata;
+
+                    methods::Response::state_getMetadata(methods::HexString(
+                        client.best_block_metadata.clone(),
+                    ))
+                    .to_json_response(request_id)
+                }
+                Ok(None) => json_rpc::parse::build_success_response(request_id, "null"),
+                Err(_) => {
+                    // Return the last known best_block_metadata
+                    methods::Response::state_getMetadata(methods::HexString(
+                        client.best_block_metadata.clone(),
+                    ))
+                    .to_json_response(request_id)
+                }
+            };
+
             (response, None)
         }
         methods::MethodCall::state_getStorage { key, hash } => {
@@ -846,7 +887,7 @@ async fn storage_query(
 
     let mut outcome_errors = Vec::with_capacity(3);
 
-    for target in client.peers.iter().take(3) {
+    for target in client.network_service.peers_list().await.take(3) {
         let result = client
             .network_service
             .clone()

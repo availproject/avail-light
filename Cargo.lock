@@ -2285,6 +2285,7 @@ dependencies = [
 name = "smoldot-js"
 version = "0.1.3"
 dependencies = [
+ "blake2-rfc",
  "derive_more",
  "futures",
  "lazy_static",

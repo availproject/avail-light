@@ -15,9 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::libp2p::{self, connection, discovery::kademlia, multiaddr, peer_id};
+use crate::libp2p::{
+    self, connection, discovery::kademlia, multiaddr, peer_id, PeerId, QueueNotificationError,
+};
 use crate::network::protocol;
-
+use crate::util;
 use core::{
     fmt, iter,
     num::NonZeroUsize,
@@ -334,7 +336,23 @@ where
         protocol::decode_storage_proof_response(&response).map_err(StorageProofRequestError::Decode)
     }
 
-    pub async fn announce_transaction(&self, transaction: Vec<u8>) {}
+    pub async fn announce_transaction(
+        &self,
+        target: &peer_id::PeerId,
+        chain_index: usize,
+        extrinsic: &[u8],
+    ) -> Result<(), QueueNotificationError> {
+        let mut val = Vec::with_capacity(1 + extrinsic.len());
+        val.extend_from_slice(util::encode_scale_compact_usize(1).as_ref());
+        val.extend_from_slice(extrinsic);
+        self.libp2p
+            .queue_notification(
+                &target,
+                chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 1,
+                val,
+            )
+            .await
+    }
 
     /// After calling [`ChainNetwork::fill_out_slots`], notifies the [`ChainNetwork`] of the
     /// success of the dialing attempt.
@@ -650,6 +668,12 @@ where
             wake_up_future: inner.wake_up_future,
             write_close: inner.write_close,
         })
+    }
+
+    /// Returns an iterator to the list of [`PeerId`]s that we have an established connection
+    /// with.
+    pub async fn peers_list(&self) -> impl Iterator<Item = PeerId> {
+        self.libp2p.peers_list_lock().await
     }
 }
 
