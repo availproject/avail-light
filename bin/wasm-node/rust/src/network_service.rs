@@ -30,7 +30,7 @@
 use crate::ffi;
 
 use core::{num::NonZeroUsize, pin::Pin, time::Duration};
-use futures::{lock::Mutex, prelude::*};
+use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     informant::HashDisplay,
     libp2p::{
@@ -49,6 +49,9 @@ pub struct AnnounceTransactionError;
 pub struct Config {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+
+    /// Number of event receivers returned by [`NetworkService::new`].
+    pub num_events_receivers: usize,
 
     /// List of node identities and addresses that are known to belong to the chain's peer-to-pee
     /// network.
@@ -84,7 +87,15 @@ struct Guarded {
 
 impl NetworkService {
     /// Initializes the network service with the given configuration.
-    pub async fn new(config: Config) -> Result<Arc<Self>, InitError> {
+    ///
+    /// Returns the networking service, plus a list of receivers on which events are pushed.
+    /// All of these receivers must be polled regularly to prevent the networking service from
+    /// slowing down.
+    pub async fn new(config: Config) -> (Arc<Self>, Vec<mpsc::Receiver<Event>>) {
+        let (mut senders, receivers): (Vec<_>, Vec<_>) = (0..config.num_events_receivers)
+            .map(|_| mpsc::channel(16))
+            .unzip();
+
         let network_service = Arc::new(NetworkService {
             guarded: Mutex::new(Guarded {
                 tasks_executor: config.tasks_executor,
@@ -112,9 +123,103 @@ impl NetworkService {
             }),
         });
 
+        // Spawn a task pulling events from the network and transmitting them to the event senders.
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            // TODO: keeping a Weak here doesn't really work to shut down tasks
+            let network_service = Arc::downgrade(&network_service);
+            async move {
+                loop {
+                    let event = loop {
+                        let network_service = match network_service.upgrade() {
+                            Some(ns) => ns,
+                            None => {
+                                return;
+                            }
+                        };
+
+                        match network_service.network.next_event().await {
+                            service::Event::Connected(peer_id) => {
+                                log::info!(target: "network", "Connected to {}", peer_id);
+                            }
+                            service::Event::Disconnected {
+                                peer_id,
+                                chain_indices,
+                            } => {
+                                log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
+                                if !chain_indices.is_empty() {
+                                    break Event::Disconnected(peer_id);
+                                }
+                            }
+                            service::Event::BlockAnnounce {
+                                chain_index,
+                                peer_id,
+                                announce,
+                            } => {
+                                log::debug!(
+                                    target: "network",
+                                    "Connection({}) => BlockAnnounce({}, {}, is_best={})",
+                                    peer_id,
+                                    chain_index,
+                                    HashDisplay(&announce.decode().header.hash()),
+                                    announce.decode().is_best
+                                );
+                                debug_assert_eq!(chain_index, 0);
+                                break Event::BlockAnnounce { peer_id, announce };
+                            }
+                            service::Event::ChainConnected {
+                                peer_id,
+                                chain_index,
+                                best_number,
+                                best_hash,
+                                ..
+                            } => {
+                                log::debug!(
+                                    target: "network",
+                                    "Connection({}) => ChainConnected({}, {}, {})",
+                                    peer_id,
+                                    chain_index,
+                                    best_number,
+                                    HashDisplay(&best_hash)
+                                );
+                                debug_assert_eq!(chain_index, 0);
+                                break Event::Connected {
+                                    peer_id,
+                                    best_block_number: best_number,
+                                };
+                            }
+                            service::Event::ChainDisconnected {
+                                peer_id,
+                                chain_index,
+                            } => {
+                                log::debug!(
+                                    target: "network",
+                                    "Connection({}) => ChainDisconnected({})",
+                                    peer_id,
+                                    chain_index,
+                                );
+                                debug_assert_eq!(chain_index, 0);
+                                break Event::Disconnected(peer_id);
+                            }
+                        }
+                    };
+
+                    // Dispatch the event to the various senders.
+                    // This little `if` avoids having to do `event.clone()` if we don't have to.
+                    if senders.len() == 1 {
+                        let _ = senders[0].send(event).await;
+                    } else {
+                        for sender in &mut senders {
+                            let _ = sender.send(event.clone()).await;
+                        }
+                    }
+                }
+            }
+        }));
+
         // Spawn tasks dedicated to opening connections.
         // TODO: spawn several, or do things asynchronously, so that we try open multiple connections simultaneously
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            // TODO: keeping a Weak here doesn't really work to shut down tasks
             let network_service = Arc::downgrade(&network_service);
             async move {
                 loop {
@@ -161,6 +266,7 @@ impl NetworkService {
         }));
 
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            // TODO: keeping a Weak here doesn't really work to shut down tasks
             let network_service = Arc::downgrade(&network_service);
             async move {
                 loop {
@@ -181,7 +287,7 @@ impl NetworkService {
             }
         }));
 
-        Ok(network_service)
+        (network_service, receivers)
     }
 
     /// Sends a blocks request to the given peer.
@@ -263,79 +369,6 @@ impl NetworkService {
         }
     }
 
-    /// Returns the next event that happens in the network service.
-    ///
-    /// If this method is called multiple times simultaneously, the events will be distributed
-    /// amongst the different calls in an unpredictable way.
-    pub async fn next_event(self: &Arc<Self>) -> Event {
-        loop {
-            match self.network.next_event().await {
-                service::Event::Connected(peer_id) => {
-                    log::info!(target: "network", "Connected to {}", peer_id);
-                }
-                service::Event::Disconnected {
-                    peer_id,
-                    chain_indices,
-                } => {
-                    log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
-                    if !chain_indices.is_empty() {
-                        return Event::Disconnected(peer_id);
-                    }
-                }
-                service::Event::BlockAnnounce {
-                    chain_index,
-                    peer_id,
-                    announce,
-                } => {
-                    log::debug!(
-                        target: "network",
-                        "Connection({}) => BlockAnnounce({}, {}, is_best={})",
-                        peer_id,
-                        chain_index,
-                        HashDisplay(&announce.decode().header.hash()),
-                        announce.decode().is_best
-                    );
-                    debug_assert_eq!(chain_index, 0);
-                    return Event::BlockAnnounce { peer_id, announce };
-                }
-                service::Event::ChainConnected {
-                    peer_id,
-                    chain_index,
-                    best_number,
-                    best_hash,
-                    ..
-                } => {
-                    log::debug!(
-                        target: "network",
-                        "Connection({}) => ChainConnected({}, {}, {})",
-                        peer_id,
-                        chain_index,
-                        best_number,
-                        HashDisplay(&best_hash)
-                    );
-                    debug_assert_eq!(chain_index, 0);
-                    return Event::Connected {
-                        peer_id,
-                        best_block_number: best_number,
-                    };
-                }
-                service::Event::ChainDisconnected {
-                    peer_id,
-                    chain_index,
-                } => {
-                    log::debug!(
-                        target: "network",
-                        "Connection({}) => ChainDisconnected({})",
-                        peer_id,
-                        chain_index,
-                    );
-                    debug_assert_eq!(chain_index, 0);
-                    return Event::Disconnected(peer_id);
-                }
-            }
-        }
-    }
-
     /// Returns an iterator to the list of [`PeerId`]s that we have an established connection
     /// with.
     pub async fn peers_list(&self) -> impl Iterator<Item = PeerId> {
@@ -344,6 +377,7 @@ impl NetworkService {
 }
 
 /// Event that can happen on the network service.
+#[derive(Debug, Clone)]
 pub enum Event {
     Connected {
         peer_id: PeerId,
@@ -354,12 +388,6 @@ pub enum Event {
         peer_id: PeerId,
         announce: service::EncodedBlockAnnounce,
     },
-}
-
-/// Error when initializing the network service.
-#[derive(Debug, derive_more::Display)]
-pub enum InitError {
-    // TODO: add variants or remove error altogether
 }
 
 /// Asynchronous task managing a specific WebSocket connection.

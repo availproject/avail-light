@@ -208,36 +208,38 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
         }
     };
 
-    // TODO: un-Arc-ify
-    let network_service = network_service::NetworkService::new(network_service::Config {
-        tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
-        bootstrap_nodes: {
-            let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
-            for node in chain_spec.boot_nodes() {
-                let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
-                if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
-                    let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
-                    list.push((peer_id, address));
-                } else {
-                    panic!() // TODO:
+    let (network_service, mut network_event_receivers) =
+        network_service::NetworkService::new(network_service::Config {
+            tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
+            num_events_receivers: 1, // Configures the length of `network_event_receivers`
+            bootstrap_nodes: {
+                let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
+                for node in chain_spec.boot_nodes() {
+                    let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
+                    if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
+                        let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                        list.push((peer_id, address));
+                    } else {
+                        panic!() // TODO:
+                    }
                 }
-            }
-            list
-        },
-        genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-        best_block: (
-            chain_information.finalized_block_header.number,
-            chain_information.finalized_block_header.hash(),
-        ),
-        protocol_id: chain_spec.protocol_id().to_string(),
-    })
-    .await
-    .unwrap();
+                list
+            },
+            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+            best_block: (
+                chain_information.finalized_block_header.number,
+                chain_information.finalized_block_header.hash(),
+            ),
+            protocol_id: chain_spec.protocol_id().to_string(),
+        })
+        .await;
 
     let sync_service = Arc::new(
         sync_service::SyncService::new(sync_service::Config {
             chain_information: chain_information.clone(),
             tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
+            network_service: network_service.clone(),
+            network_events_receiver: network_event_receivers.pop().unwrap(),
         })
         .await,
     );
@@ -291,37 +293,8 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
 
     loop {
         futures::select! {
-            network_message = network_service.next_event().fuse() => {
-                match network_message {
-                    network_service::Event::Connected { peer_id, best_block_number } => {
-                        sync_service.add_source(peer_id, best_block_number).await;
-                    }
-                    network_service::Event::Disconnected(peer_id) => {
-                        sync_service.remove_source(peer_id).await;
-                    }
-                    network_service::Event::BlockAnnounce { peer_id, announce } => {
-                        let decoded = announce.decode();
-                        sync_service.raise_source_best_block(peer_id, decoded.header.number).await;
-                    }
-                }
-            },
-
             sync_message = sync_service.next_event().fuse() => {
                 match sync_message {
-                    sync_service::Event::BlocksRequest { id, target, request } => {
-                        let block_request = network_service.clone().blocks_request(
-                            target,
-                            request
-                        );
-
-                        ffi::spawn_task({
-                            let sync_service = sync_service.clone();
-                            async move {
-                                let result = block_request.await;
-                                sync_service.answer_blocks_request(id, result.map_err(|_| ())).await;
-                            }
-                        });
-                    },
                     sync_service::Event::NewBest { scale_encoded_header } => {
                         // TODO: this is also triggered if we reset the sync to a previous point, which isn't correct
 

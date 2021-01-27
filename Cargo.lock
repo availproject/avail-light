@@ -2294,7 +2294,6 @@ dependencies = [
  "rand 0.8.3",
  "serde_json",
  "simple_logger",
- "slab",
  "smoldot",
 ]
 

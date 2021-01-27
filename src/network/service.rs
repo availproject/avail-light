@@ -743,6 +743,7 @@ impl fmt::Debug for EncodedBlockAnnounceHandshake {
 }
 
 /// Undecoded but valid block announce.
+#[derive(Clone)]
 pub struct EncodedBlockAnnounce(Vec<u8>);
 
 impl EncodedBlockAnnounce {
