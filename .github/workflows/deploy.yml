@@ -95,3 +95,11 @@ jobs:
         build_dir: target/doc
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  all-deploy:
+    # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
+    # considered successful.
+    needs: [build-push-docker-image, npm-publish, deploy-gh-pages]
+    runs-on: ubuntu-latest
+    steps:
+     - run: echo Success

@@ -119,3 +119,11 @@ jobs:
       with:
         command: check --config .github/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features
+
+  all-ci:
+    # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
+    # considered successful.
+    needs: [test, wasm-node-check, check-features, check-rustdoc-links, fmt, clippy, cargo-deny]
+    runs-on: ubuntu-latest
+    steps:
+     - run: echo Success
