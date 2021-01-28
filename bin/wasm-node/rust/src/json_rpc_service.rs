@@ -39,7 +39,7 @@ use std::{
 };
 
 /// Configuration for a JSON-RPC service.
-pub struct Config<'a> {
+pub struct Config {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
@@ -52,13 +52,13 @@ pub struct Config<'a> {
     /// Specifications of the chain.
     pub chain_spec: chain_spec::ChainSpec,
 
-    /// Information about the genesis block of the chain.
+    /// Hash of the genesis block of the chain.
     ///
     /// > **Note**: This can be derived from a [`chain_spec::ChainSpec`]. While the [`start`]
     /// >           function could in theory use the [`Config::chain_spec`] parameter to derive
     /// >           this value, doing so is quite expensive. We prefer to require this value
     /// >           from the upper layer instead, as it is most likely needed anyway.
-    pub genesis_chain_information: chain_information::ChainInformationRef<'a>,
+    pub genesis_block_hash: [u8; 32],
 }
 
 /// Initializes the JSON-RPC service with the given configuration.
@@ -68,7 +68,7 @@ pub struct Config<'a> {
 /// Because of the racy nature of these two functions, it is strongly discouraged to spawn
 /// multiple JSON-RPC services, especially if they don't use the same
 /// [`sync_service::SyncService`].
-pub async fn start(mut config: Config<'_>) {
+pub async fn start(mut config: Config) {
     let genesis_storage = config
         .chain_spec
         .genesis_storage()
@@ -99,10 +99,7 @@ pub async fn start(mut config: Config<'_>) {
         known_blocks,
         best_block: finalized_block_hash,
         finalized_block: finalized_block_hash,
-        genesis_block: config
-            .genesis_chain_information
-            .finalized_block_header
-            .hash(),
+        genesis_block: config.genesis_block_hash,
         genesis_storage,
         best_block_metadata,
         next_subscription: 0,

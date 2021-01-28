@@ -60,7 +60,7 @@ pub(crate) fn unix_time() -> Duration {
 }
 
 /// Spawn a background task that runs forever.
-pub(crate) fn spawn_task(future: impl Future<Output = ()> + Send + 'static) {
+fn spawn_task(future: impl Future<Output = ()> + Send + 'static) {
     struct Waker {
         done: atomic::AtomicBool,
         wake_up_registered: atomic::AtomicBool,

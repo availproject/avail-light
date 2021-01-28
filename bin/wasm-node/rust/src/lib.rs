@@ -22,6 +22,7 @@
 #![deny(broken_intra_doc_links)]
 #![deny(unused_crate_dependencies)]
 
+use futures::{channel::mpsc, prelude::*};
 use smoldot::{
     chain, chain_spec,
     libp2p::{multiaddr, peer_id::PeerId},
@@ -199,9 +200,21 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
         }
     };
 
+    // Starting here, the code below initializes the various "services" that make up the node.
+    // Services need to be able to spawn asynchronous tasks on their own. Since "spawning a task"
+    // isn't really something that a browser or Node environment can do efficiently, we instead
+    // combine all the asynchronous tasks into one `FuturesUnordered` below.
+    //
+    // The `new_task_tx` and `new_task_rx` variables are used when spawning a new task is
+    // required. Send a task on `new_task_tx` to start running it.
+    let (new_task_tx, mut new_task_rx) = mpsc::unbounded();
+
     let (network_service, mut network_event_receivers) =
         network_service::NetworkService::new(network_service::Config {
-            tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
             num_events_receivers: 1, // Configures the length of `network_event_receivers`
             bootstrap_nodes: {
                 let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
@@ -228,32 +241,77 @@ pub async fn start_client(chain_spec: String, database_content: Option<String>) 
     let sync_service = Arc::new(
         sync_service::SyncService::new(sync_service::Config {
             chain_information: chain_information.clone(),
-            tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
             network_service: network_service.clone(),
             network_events_receiver: network_event_receivers.pop().unwrap(),
         })
         .await,
     );
 
-    json_rpc_service::start(json_rpc_service::Config {
-        tasks_executor: Box::new(|fut| ffi::spawn_task(fut)),
-        network_service,
-        sync_service: sync_service.clone(),
-        chain_spec,
-        genesis_chain_information: (&genesis_chain_information).into(),
-    })
-    .await;
+    // TODO: little hack here; json_rpc_service::start uses the sync service, so if we `await`
+    // this function here, it would be frozen to dead, as the sync service hasn't properly started
+    // yet. Hence sending it to `new_task_tx`.
+    new_task_tx
+        .unbounded_send(
+            json_rpc_service::start(json_rpc_service::Config {
+                tasks_executor: Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }),
+                network_service,
+                sync_service: sync_service.clone(),
+                chain_spec,
+                genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+            })
+            .boxed(),
+        )
+        .unwrap();
 
-    ffi::spawn_task(async move {
-        loop {
-            ffi::Delay::new(Duration::from_secs(15)).await;
-            log::debug!("Database save start");
-            let database_content = sync_service.serialize_chain().await;
-            ffi::database_save(&database_content);
-        }
-    });
+    new_task_tx
+        .unbounded_send(
+            async move {
+                loop {
+                    ffi::Delay::new(Duration::from_secs(15)).await;
+                    log::debug!("Database save start");
+                    let database_content = sync_service.serialize_chain().await;
+                    ffi::database_save(&database_content);
+                }
+            }
+            .boxed(),
+        )
+        .unwrap();
 
     log::info!("Initialization complete");
+
+    // This is the main future that executes the entire client.
+    let mut all_tasks = stream::FuturesUnordered::new();
+    async move {
+        // Since `all_tasks` is initially empty, polling it would produce `None` and immediately
+        // interrupt the processing.
+        // As such, we start by filling it with the initial content of the `new_task` channel.
+        while let Some(Some(task)) = new_task_rx.next().now_or_never() {
+            all_tasks.push(task);
+        }
+
+        loop {
+            futures::select! {
+                new_task = new_task_rx.select_next_some() => {
+                    all_tasks.push(new_task);
+                },
+                outcome = all_tasks.next() => {
+                    // `outcome` is `None` if all the tasks have complete.
+                    if outcome.is_none() {
+                        log::info!("All tasks complete. Stopping client.");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    .await
 }
 
 /// Use in an asynchronous context to interrupt the current task execution and schedule it back.
