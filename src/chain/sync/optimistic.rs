@@ -285,6 +285,16 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
         self.chain.as_chain_information()
     }
 
+    /// Returns the header of the finalized block.
+    pub fn finalized_block_header(&self) -> header::HeaderRef {
+        (&self
+            .inner
+            .finalized_chain_information
+            .chain_information
+            .finalized_block_header)
+            .into()
+    }
+
     /// Returns the header of the best block.
     ///
     /// > **Note**: This value is provided only for informative purposes. Keep in mind that this

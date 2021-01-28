@@ -246,6 +246,15 @@ impl<'a> HeaderRef<'a> {
         .chain(self.digest.scale_encoding().map(either::Either::Right))
     }
 
+    /// Equivalent to [`HeaderRef::scale_encoding`] but returns the data in a `Vec`.
+    pub fn scale_encoding_vec(&self) -> Vec<u8> {
+        // TODO: Vec::with_capacity?
+        self.scale_encoding().fold(Vec::new(), |mut a, b| {
+            a.extend_from_slice(b.as_ref());
+            a
+        })
+    }
+
     /// Builds the hash of the header.
     pub fn hash(&self) -> [u8; 32] {
         hash_from_scale_encoded_header_vectored(self.scale_encoding())
