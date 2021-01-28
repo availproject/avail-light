@@ -23,13 +23,21 @@ import Websocket from 'websocket';
 import { default as wasm_base64 } from './autogen/wasm.js';
 
 export async function start(config) {
+  // Analyzing the content of `config`.
+
   const chain_spec = config.chain_spec;
   const database_content = config.database_content;
   const json_rpc_callback = config.json_rpc_callback;
   const database_save_callback = config.database_save_callback;
+  // Maximum level of log entries sent by the client.
+  // 0 = Logging disabled, 1 = Error, 2 = Warn, 3 = Info, 4 = Debug, 5 = Trace
+  const max_log_level = config.max_log_level || 5;
 
   if (Object.prototype.toString.call(chain_spec) !== '[object String]')
     throw 'config must include a string chain_spec';
+
+
+  // Start of the actual function body.
 
   var module;
 
@@ -69,6 +77,27 @@ export async function start(config) {
         let message = Buffer.from(module.exports.memory.buffer).toString('utf8', ptr, ptr + len);
         if (json_rpc_callback) {
           json_rpc_callback(message);
+        }
+      },
+
+      // Used by the Rust side to emit a log entry.
+      // See also the `max_log_level` parameter in the configuration.
+      log: (level, target_ptr, target_len, message_ptr, message_len) => {
+        let target = Buffer.from(module.exports.memory.buffer)
+          .toString('utf8', target_ptr, target_ptr + target_len);
+        let message = Buffer.from(module.exports.memory.buffer)
+          .toString('utf8', message_ptr, message_ptr + message_len);
+
+        if (level <= 1) {
+          console.error("[" + target + "]", message);
+        } else if (level == 2) {
+          console.warn("[" + target + "]", message);
+        } else if (level == 3) {
+          console.info("[" + target + "]", message);
+        } else if (level == 4) {
+          console.debug("[" + target + "]", message);
+        } else {
+          console.trace("[" + target + "]", message);
         }
       },
 
@@ -191,8 +220,11 @@ export async function start(config) {
           // `\n` in Rust.
           let index = string.indexOf('\n');
           if (index != -1) {
-            // TODO: it is questionnable to use `console.log` from within a library ; see https://github.com/paritytech/smoldot/issues/384
-            //       we might also consider making the logging of the node configurable
+            // Note that it is questionnable to use `console.log` from within a library. However
+            // this simply reflects the usage of `println!` in the Rust code. In other words, it
+            // is `println!` that shouldn't be used in the first place. The harm of not showing
+            // text printed with `println!` at all is greater than the harm possibly caused by
+            // accidentally leaving a `println!` in the code.
             console.log(string.substring(0, index));
             return string.substring(index + 1);
           } else {
@@ -281,7 +313,7 @@ export async function start(config) {
       .write(database_content, database_ptr);
   }
 
-  module.exports.init(chain_spec_ptr, chain_spec_len, database_ptr, database_len);
+  module.exports.init(chain_spec_ptr, chain_spec_len, database_ptr, database_len, max_log_level);
 
   return {
     send_json_rpc: (request) => {

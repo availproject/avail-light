@@ -128,13 +128,16 @@ watched and of the `:code` key.
 /// > **Note**: This function returns a `Result`. The return value according to the JavaScript
 /// >           function is what is in the `Ok`. If an `Err` is returned, a JavaScript exception
 /// >           is thrown.
-pub async fn start_client(chain_spec: String, database_content: Option<String>) {
+pub async fn start_client(
+    chain_spec: String,
+    database_content: Option<String>,
+    max_log_level: log::LevelFilter,
+) {
     // Try initialize the logging and the panic hook.
     // Note that `start_client` can theoretically be called multiple times, meaning that these
     // calls shouldn't panic if reached multiple times.
-    let _ = simple_logger::SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug) // TODO: make log level configurable from JS?
-        .init();
+    let _ =
+        log::set_boxed_logger(Box::new(ffi::Logger)).map(|()| log::set_max_level(max_log_level));
     std::panic::set_hook(Box::new(|info| {
         ffi::throw(info.to_string());
     }));

@@ -36,6 +36,7 @@ try {
 smoldot.start({
     chain_spec: JSON.stringify(westend_specs()),
     database_content: database_content,
+    max_log_level: 3,  // Can be increased for more verbosity
     json_rpc_callback: (resp) => {
         if (ws_connection) {
             ws_connection.sendUTF(resp);

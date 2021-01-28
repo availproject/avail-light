@@ -223,6 +223,32 @@ pub(crate) fn database_save(content: &str) {
     }
 }
 
+/// Implementation of [`log::Log`] that sends out logs to the FFI.
+pub(crate) struct Logger;
+
+impl log::Log for Logger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        let target = record.target();
+        let message = format!("{}", record.args());
+
+        unsafe {
+            bindings::log(
+                record.level() as usize as u32,
+                u32::try_from(target.as_bytes().as_ptr() as usize).unwrap(),
+                u32::try_from(target.as_bytes().len()).unwrap(),
+                u32::try_from(message.as_bytes().as_ptr() as usize).unwrap(),
+                u32::try_from(message.as_bytes().len()).unwrap(),
+            )
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 /// WebSocket connected to a target.
 pub struct WebSocket {
     /// If `Some`, [`bindings::websocket_close`] must be called. Set to a value after
@@ -413,6 +439,7 @@ fn init(
     chain_specs_len: u32,
     database_content_ptr: u32,
     database_content_len: u32,
+    max_log_level: u32,
 ) {
     let chain_specs_ptr = usize::try_from(chain_specs_ptr).unwrap();
     let chain_specs_len = usize::try_from(chain_specs_len).unwrap();
@@ -440,7 +467,20 @@ fn init(
         None
     };
 
-    spawn_task(super::start_client(chain_specs, database_content));
+    let max_log_level = match max_log_level {
+        0 => log::LevelFilter::Off,
+        1 => log::LevelFilter::Error,
+        2 => log::LevelFilter::Warn,
+        3 => log::LevelFilter::Info,
+        4 => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Trace,
+    };
+
+    spawn_task(super::start_client(
+        chain_specs,
+        database_content,
+        max_log_level,
+    ));
 }
 
 lazy_static::lazy_static! {

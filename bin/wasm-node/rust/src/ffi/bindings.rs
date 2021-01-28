@@ -53,6 +53,15 @@ extern "C" {
     /// virtual machine at offset `ptr` and with length `len`.
     pub fn json_rpc_respond(ptr: u32, len: u32);
 
+    /// Client is emitting a log entry.
+    ///
+    /// Each log entry is made of a log level (1 = Error, 2 = Warn, 3 = Info, 4 = Debug,
+    /// 5 = Trace), a log target (e.g. "network"), and a log message.
+    ///
+    /// The log target and message is a UTF-8 string found in the memory of the WebAssembly
+    /// virtual machine at offset `ptr` and with length `len`.
+    pub fn log(level: u32, target_ptr: u32, target_len: u32, message_ptr: u32, message_len: u32);
+
     /// Must return the number of milliseconds that have passed since the UNIX epoch, ignoring
     /// leap seconds.
     ///
@@ -173,18 +182,23 @@ pub extern "C" fn alloc(len: u32) -> u32 {
 /// Write the chain specs and the database content in these two buffers.
 /// Then, pass the pointer and length of these two buffers to this function.
 /// Pass `0` for `database_content_ptr` and `database_content_len` if the database is empty.
+///
+/// The client will emit log messages by calling the [`log()`] function, provided the log level is
+/// inferior or equal to the value of `max_log_level` passed here.
 #[no_mangle]
 pub extern "C" fn init(
     chain_specs_ptr: u32,
     chain_specs_len: u32,
     database_content_ptr: u32,
     database_content_len: u32,
+    max_log_level: u32,
 ) {
     super::init(
         chain_specs_ptr,
         chain_specs_len,
         database_content_ptr,
         database_content_len,
+        max_log_level,
     )
 }
 
