@@ -43,8 +43,9 @@ use crate::{finality::grandpa, header};
 use alloc::vec::Vec;
 use core::num::NonZeroU64;
 
-pub mod aura;
-pub mod babe;
+pub mod aura_config;
+pub mod babe_config;
+pub mod babe_current_epoch;
 
 // TODO: is it possible to build an inconsistent `ChainInformation` ; maybe use strong typing to provide a proof of the consistency ; see checks done at head of `blocks_tree.rs`
 
@@ -70,19 +71,21 @@ impl ChainInformation {
         genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
     ) -> Result<Self, FromGenesisStorageError> {
         let consensus = {
-            let aura_genesis_config = aura::AuraGenesisConfiguration::from_genesis_storage(|k| {
-                genesis_storage
-                    .clone()
-                    .find(|(k2, _)| *k2 == k)
-                    .map(|(_, v)| v.to_owned())
-            });
+            let aura_genesis_config =
+                aura_config::AuraGenesisConfiguration::from_genesis_storage(|k| {
+                    genesis_storage
+                        .clone()
+                        .find(|(k2, _)| *k2 == k)
+                        .map(|(_, v)| v.to_owned())
+                });
 
-            let babe_genesis_config = babe::BabeGenesisConfiguration::from_genesis_storage(|k| {
-                genesis_storage
-                    .clone()
-                    .find(|(k2, _)| *k2 == k)
-                    .map(|(_, v)| v.to_owned())
-            });
+            let babe_genesis_config =
+                babe_config::BabeGenesisConfiguration::from_genesis_storage(|k| {
+                    genesis_storage
+                        .clone()
+                        .find(|(k2, _)| *k2 == k)
+                        .map(|(_, v)| v.to_owned())
+                });
 
             match (aura_genesis_config, babe_genesis_config) {
                 (Ok(aura_genesis_config), Err(err)) if err.is_function_not_found() => {
@@ -228,7 +231,7 @@ pub enum ChainInformationConsensus {
         ///
         /// If the finalized block belongs to epoch #0, which starts at block #1, then this must
         /// contain the information about the epoch #0, which can be found by calling
-        /// [`babe::BabeGenesisConfiguration::from_genesis_storage`].
+        /// [`babe_config::BabeGenesisConfiguration::from_genesis_storage`].
         ///
         /// Must be `None` if and only if the finalized block is block #0.
         ///
@@ -248,7 +251,7 @@ pub enum ChainInformationConsensus {
         ///
         /// If the finalized block is block #0, then this must contain the information about the
         /// epoch #0, which can be found by calling
-        /// [`babe::BabeGenesisConfiguration::from_genesis_storage`].
+        /// [`babe_config::BabeGenesisConfiguration::from_genesis_storage`].
         finalized_next_epoch_transition: BabeEpochInformation,
     },
 }
@@ -343,9 +346,9 @@ pub enum FromGenesisStorageError {
     /// Error when retrieving the GrandPa configuration.
     GrandpaConfigLoad(grandpa::chain_config::FromGenesisStorageError),
     /// Error when retrieving the Aura algorithm configuration.
-    AuraConfigLoad(aura::FromGenesisStorageError),
+    AuraConfigLoad(aura_config::FromGenesisStorageError),
     /// Error when retrieving the Babe algorithm configuration.
-    BabeConfigLoad(babe::FromGenesisStorageError),
+    BabeConfigLoad(babe_config::FromGenesisStorageError),
     /// Multiple consensus algorithms have been detected.
     MultipleConsensusAlgorithms,
 }
