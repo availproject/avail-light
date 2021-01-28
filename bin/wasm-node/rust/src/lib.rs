@@ -124,10 +124,6 @@ watched and of the `:code` key.
 */
 
 /// Starts a client running the given chain specifications.
-///
-/// > **Note**: This function returns a `Result`. The return value according to the JavaScript
-/// >           function is what is in the `Ok`. If an `Err` is returned, a JavaScript exception
-/// >           is thrown.
 pub async fn start_client(
     chain_spec: String,
     database_content: Option<String>,
