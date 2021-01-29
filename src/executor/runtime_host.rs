@@ -620,8 +620,7 @@ impl Inner {
 
                     match super::core_version(vm_prototype) {
                         Ok((version, _)) => {
-                            // TODO: optimize
-                            self.vm = req.resume(Ok(&parity_scale_codec::Encode::encode(&version)));
+                            self.vm = req.resume(Ok(version.as_ref()));
                         }
                         Err(_) => {
                             self.vm = req.resume(Err(()));

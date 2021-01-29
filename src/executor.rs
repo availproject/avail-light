@@ -28,8 +28,8 @@
 //! This module contains everything necessary to execute runtime code. The highest-level
 //! sub-module is [`runtime_host`].
 
-use alloc::{string::String, vec::Vec};
-use parity_scale_codec::DecodeAll as _;
+use alloc::vec::Vec;
+use core::{convert::TryFrom as _, str};
 
 mod allocator; // TODO: make public after refactoring
 pub mod host;
@@ -66,10 +66,14 @@ pub fn core_version(
         match vm {
             host::HostVm::ReadyToRun(r) => vm = r.run(),
             host::HostVm::Finished(finished) => {
-                let decoded = CoreVersion::decode_all(&finished.value()).map_err(|_| ())?;
-                return Ok((decoded, finished.into_prototype()));
+                let _ = decode(&finished.value())?;
+                return Ok((
+                    CoreVersion(finished.value().to_vec()),
+                    finished.into_prototype(),
+                ));
             }
             host::HostVm::Error { .. } => return Err(()),
+            host::HostVm::LogEmit(log) => vm = log.resume(),
 
             // Since there are potential ambiguities we don't allow any storage access
             // or anything similar. The last thing we want is to have an infinite
@@ -79,16 +83,91 @@ pub fn core_version(
     }
 }
 
-/// Structure that the `CoreVersion` function returns.
-// TODO: don't expose Encode/Decode trait impls
-#[derive(Debug, Clone, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode)]
-pub struct CoreVersion {
-    pub spec_name: String,
-    pub impl_name: String,
+/// Buffer storing the SCALE-encoded core version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreVersion(Vec<u8>);
+
+impl CoreVersion {
+    pub fn decode(&self) -> CoreVersionRef {
+        decode(&self.0).unwrap()
+    }
+}
+
+impl AsRef<[u8]> for CoreVersion {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// Runtime specifications, once decoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreVersionRef<'a> {
+    pub spec_name: &'a str,
+    pub impl_name: &'a str,
     pub authoring_version: u32,
     pub spec_version: u32,
     pub impl_version: u32,
-    // TODO: stronger typing
+    // TODO: stronger typing, and don't use a Vec
     pub apis: Vec<([u8; 8], u32)>,
-    pub transaction_version: u32,
+    /// `None` if the field is missing.
+    pub transaction_version: Option<u32>,
+}
+
+fn decode(scale_encoded: &[u8]) -> Result<CoreVersionRef, ()> {
+    let result = nom::combinator::all_consuming(nom::combinator::map(
+        nom::sequence::tuple((
+            string_decode,
+            string_decode,
+            nom::number::complete::le_u32,
+            nom::number::complete::le_u32,
+            nom::number::complete::le_u32,
+            nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
+                nom::multi::many_m_n(
+                    num_elems,
+                    num_elems,
+                    nom::combinator::map(
+                        nom::sequence::tuple((
+                            nom::bytes::complete::take(8u32),
+                            nom::number::complete::le_u32,
+                        )),
+                        move |(hash, version)| (<[u8; 8]>::try_from(hash).unwrap(), version),
+                    ),
+                )
+            }),
+            nom::branch::alt((
+                nom::combinator::map(nom::number::complete::le_u32, Some),
+                nom::combinator::map(nom::combinator::eof, |_| None),
+            )),
+        )),
+        |(
+            spec_name,
+            impl_name,
+            authoring_version,
+            spec_version,
+            impl_version,
+            apis,
+            transaction_version,
+        )| CoreVersionRef {
+            spec_name,
+            impl_name,
+            authoring_version,
+            spec_version,
+            impl_version,
+            apis,
+            transaction_version,
+        },
+    ))(scale_encoded);
+
+    match result {
+        Ok((_, out)) => Ok(out),
+        Err(nom::Err::Error(_)) | Err(nom::Err::Failure(_)) => Err(()),
+        Err(_) => unreachable!(),
+    }
+}
+
+fn string_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
+    nom::combinator::map_res(
+        nom::multi::length_data(crate::util::nom_scale_compact_usize),
+        str::from_utf8,
+    )(bytes)
 }

@@ -301,7 +301,7 @@ pub struct RuntimeVersion {
     pub authoring_version: u64,
     pub spec_version: u64,
     pub impl_version: u64,
-    pub transaction_version: u64,
+    pub transaction_version: Option<u64>,
     pub apis: Vec<([u8; 8], u32)>,
 }
 
@@ -383,8 +383,8 @@ impl serde::Serialize for RuntimeVersion {
             spec_version: u64,
             #[serde(rename = "implVersion")]
             impl_version: u64,
-            #[serde(rename = "transactionVersion")]
-            transaction_version: u64,
+            #[serde(rename = "transactionVersion", skip_serializing_if = "Option::is_none")]
+            transaction_version: Option<u64>,
             // TODO: optimize?
             apis: Vec<(HexString, u32)>,
         }

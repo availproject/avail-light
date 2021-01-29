@@ -24,7 +24,6 @@ use crate::{ffi, network_service, sync_service};
 
 use futures::prelude::*;
 use smoldot::{
-    chain::chain_information,
     chain_spec, executor, header,
     json_rpc::{self, methods},
     network::protocol,
@@ -75,10 +74,22 @@ pub async fn start(mut config: Config) {
         .map(|(k, v)| (k.to_vec(), v.to_vec()))
         .collect::<BTreeMap<_, _>>();
 
+    // TODO: do this in a cleaner way
     let best_block_metadata = {
         let code = genesis_storage.get(&b":code"[..]).unwrap();
         let heap_pages = 1024; // TODO: laziness
         smoldot::metadata::metadata_from_runtime_code(code, heap_pages).unwrap()
+    };
+
+    // TODO: do this in a cleaner way
+    let best_block_runtime_spec = {
+        let vm = executor::host::HostVmPrototype::new(
+            &genesis_storage.get(&b":code"[..]).unwrap(),
+            executor::DEFAULT_HEAP_PAGES,
+            executor::vm::ExecHint::Oneshot,
+        )
+        .unwrap();
+        executor::core_version(vm).unwrap().0
     };
 
     let (finalized_block_header, mut finalized_blocks_subscription) =
@@ -102,6 +113,7 @@ pub async fn start(mut config: Config) {
         genesis_block: config.genesis_block_hash,
         genesis_storage,
         best_block_metadata,
+        best_block_runtime_spec,
         next_subscription: 0,
         runtime_version: HashSet::new(),
         all_heads: HashSet::new(),
@@ -221,6 +233,7 @@ struct JsonRpcService {
     genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
 
     best_block_metadata: Vec<u8>,
+    best_block_runtime_spec: executor::CoreVersion,
 
     next_subscription: u64,
 
@@ -508,30 +521,32 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
             client.runtime_version.insert(subscription.clone());
 
             let best_block_hash = client.best_block;
-            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash)
-                .await
-                .unwrap()
+            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash).await;
+            let runtime_specs = if let Ok(runtime_code) = runtime_code {
+                // TODO: don't unwrap
+                // TODO: cache the VM
+                let vm = executor::host::HostVmPrototype::new(
+                    &runtime_code.unwrap(),
+                    executor::DEFAULT_HEAP_PAGES,
+                    executor::vm::ExecHint::Oneshot,
+                )
                 .unwrap();
-            // TODO: don't unwrap
-            // TODO: cache the VM
-            let vm = executor::host::HostVmPrototype::new(
-                &runtime_code,
-                executor::DEFAULT_HEAP_PAGES,
-                executor::vm::ExecHint::Oneshot,
-            )
-            .unwrap();
-            let (runtime_specs, _) = executor::core_version(vm).unwrap();
+                executor::core_version(vm).unwrap().0
+            } else {
+                client.best_block_runtime_spec.clone()
+            };
 
+            let runtime_specs = runtime_specs.decode();
             let response2 = smoldot::json_rpc::parse::build_subscription_event(
                 "state_runtimeVersion",
                 &subscription,
                 &serde_json::to_string(&methods::RuntimeVersion {
-                    spec_name: runtime_specs.spec_name,
-                    impl_name: runtime_specs.impl_name,
+                    spec_name: runtime_specs.spec_name.into(),
+                    impl_name: runtime_specs.impl_name.into(),
                     authoring_version: u64::from(runtime_specs.authoring_version),
                     spec_version: u64::from(runtime_specs.spec_version),
                     impl_version: u64::from(runtime_specs.impl_version),
-                    transaction_version: u64::from(runtime_specs.transaction_version),
+                    transaction_version: runtime_specs.transaction_version.map(u64::from),
                     apis: runtime_specs.apis,
                 })
                 .unwrap(),
@@ -580,27 +595,29 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
         }
         methods::MethodCall::state_getRuntimeVersion {} => {
             let best_block_hash = client.best_block;
-            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash)
-                .await
-                .unwrap()
+            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash).await;
+            let runtime_specs = if let Ok(runtime_code) = runtime_code {
+                // TODO: don't unwrap
+                // TODO: cache the VM
+                let vm = executor::host::HostVmPrototype::new(
+                    &runtime_code.unwrap(),
+                    executor::DEFAULT_HEAP_PAGES,
+                    executor::vm::ExecHint::Oneshot,
+                )
                 .unwrap();
-            // TODO: don't unwrap
-            // TODO: cache the VM
-            let vm = executor::host::HostVmPrototype::new(
-                &runtime_code,
-                executor::DEFAULT_HEAP_PAGES,
-                executor::vm::ExecHint::Oneshot,
-            )
-            .unwrap();
-            let (runtime_specs, _) = executor::core_version(vm).unwrap();
+                executor::core_version(vm).unwrap().0
+            } else {
+                client.best_block_runtime_spec.clone()
+            };
 
+            let runtime_specs = runtime_specs.decode();
             let response = methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
-                spec_name: runtime_specs.spec_name,
-                impl_name: runtime_specs.impl_name,
+                spec_name: runtime_specs.spec_name.into(),
+                impl_name: runtime_specs.impl_name.into(),
                 authoring_version: u64::from(runtime_specs.authoring_version),
                 spec_version: u64::from(runtime_specs.spec_version),
                 impl_version: u64::from(runtime_specs.impl_version),
-                transaction_version: u64::from(runtime_specs.transaction_version),
+                transaction_version: runtime_specs.transaction_version.map(u64::from),
                 apis: runtime_specs.apis,
             })
             .to_json_response(request_id);
