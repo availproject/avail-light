@@ -67,6 +67,8 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: npm install
         working-directory: ./bin/wasm-node/javascript
+      - run: npm publish --unsafe-perm --dry-run
+        working-directory: ./bin/wasm-node/javascript
       - uses: JS-DevTools/npm-publish@v1
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
