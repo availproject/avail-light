@@ -71,6 +71,8 @@ jobs:
         working-directory: ./bin/wasm-node/javascript
       - uses: JS-DevTools/npm-publish@v1
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        # Warning: this GitHub action doesn't seem to run prepublish scripts, hence
+        # the `npm publish --dry-run` done right above is important to ensure this.
         with:
           token: ${{ secrets.NPM_TOKEN }}
           package: ./bin/wasm-node/javascript/package.json
