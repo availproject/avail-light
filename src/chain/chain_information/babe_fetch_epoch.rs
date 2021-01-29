@@ -24,14 +24,24 @@ use crate::{
 use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 
-/// Configuration for [`babe_current_epoch`].
-pub struct Config {
-    /// Runtime used to get the current babe epoch. Must be built using the Wasm code found at the
-    /// `:code` key of the block storage.
-    pub runtime: host::HostVmPrototype,
+/// The Babe epoch to fetch.
+pub enum BabeEpochToFetch {
+    /// Fetch the current epoch using `BabeApi_current_epoch`.
+    CurrentEpoch,
+    /// Fetch the next epoch using `BabeApi_next_epoch`.
+    NextEpoch,
 }
 
-/// Problem encountered during a call to [`babe_current_epoch`].
+/// Configuration for [`babe_fetch_epoch`].
+pub struct Config {
+    /// Runtime used to get the Babe epoch. Must be built using the Wasm code found at the
+    /// `:code` key of the block storage.
+    pub runtime: host::HostVmPrototype,
+    /// The Babe epoch to fetch.
+    pub epoch_to_fetch: BabeEpochToFetch,
+}
+
+/// Problem encountered during a call to [`babe_fetch_epoch`].
 #[derive(Debug, Clone, derive_more::Display)]
 pub enum Error {
     /// Error while starting the Wasm virtual machine.
@@ -45,12 +55,17 @@ pub enum Error {
     DecodeFailed(parity_scale_codec::Error),
 }
 
-/// Fetches the current Babe epoch using `BabeApi_current_epoch`.
-pub fn babe_current_epoch(config: Config) -> Query {
+/// Fetches a Babe epoch using `BabeApi_current_epoch` or `BabeApi_next_epoch`.
+pub fn babe_fetch_epoch(config: Config) -> Query {
+    let function_to_call = match config.epoch_to_fetch {
+        BabeEpochToFetch::CurrentEpoch => "BabeApi_current_epoch",
+        BabeEpochToFetch::NextEpoch => "BabeApi_next_epoch",
+    };
+
     let vm = read_only_runtime_host::run(read_only_runtime_host::Config {
         virtual_machine: config.runtime,
-        function_to_call: "BabeApi_current_epoch",
-        // `BabeApi_current_epoch` doesn't take any parameters.
+        function_to_call,
+        // The epoch functions don't take any parameters.
         parameter: core::iter::empty::<&[u8]>(),
     });
 

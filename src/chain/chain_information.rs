@@ -45,7 +45,7 @@ use core::num::NonZeroU64;
 
 pub mod aura_config;
 pub mod babe_config;
-pub mod babe_current_epoch;
+pub mod babe_fetch_epoch;
 
 // TODO: is it possible to build an inconsistent `ChainInformation` ; maybe use strong typing to provide a proof of the consistency ; see checks done at head of `blocks_tree.rs`
 
