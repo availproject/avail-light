@@ -67,15 +67,11 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: npm install
         working-directory: ./bin/wasm-node/javascript
-      - run: npm publish --unsafe-perm --dry-run
-        working-directory: ./bin/wasm-node/javascript
-        if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-      - run: npm publish --unsafe-perm
-        working-directory: ./bin/wasm-node/javascript
+      - uses: JS-DevTools/npm-publish@v1
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true  # TODO: this is necessary because the step fails if the package is already published; however continue-on-error is a crappy solution to the problem
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: ./bin/wasm-node/javascript/package.json
 
   # TODO: this stage is planned to be removed once smoldot is published on crates.io and its doc available on docs.rs
   deploy-gh-pages:
