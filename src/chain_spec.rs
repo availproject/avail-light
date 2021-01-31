@@ -170,6 +170,14 @@ impl ChainSpec {
         }
     }
 
+    /// Returns true if the chain is of a type for which a live network is expected.
+    pub fn has_live_network(&self) -> bool {
+        match &self.client_spec.chain_type {
+            structs::ChainType::Development | structs::ChainType::Custom(_) => true,
+            structs::ChainType::Local | structs::ChainType::Live => false,
+        }
+    }
+
     /// Returns the list of bootnode addresses in the chain specs.
     // TODO: more strongly typed?
     pub fn boot_nodes(&self) -> &[String] {

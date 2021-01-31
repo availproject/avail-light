@@ -107,6 +107,7 @@ pub async fn start(mut config: Config) {
     let mut client = JsonRpcService {
         chain_spec: config.chain_spec,
         network_service: config.network_service,
+        sync_service: config.sync_service,
         known_blocks,
         best_block: finalized_block_hash,
         finalized_block: finalized_block_hash,
@@ -214,6 +215,7 @@ struct JsonRpcService {
     chain_spec: chain_spec::ChainSpec,
 
     network_service: Arc<network_service::NetworkService>,
+    sync_service: Arc<sync_service::SyncService>,
 
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
     ///
@@ -635,9 +637,10 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
         }
         methods::MethodCall::system_health {} => {
             let response = methods::Response::system_health(methods::SystemHealth {
-                is_syncing: true,        // TODO:
-                peers: 1,                // TODO:
-                should_have_peers: true, // TODO:
+                is_syncing: !client.sync_service.is_above_network_finalized().await,
+                peers: u64::try_from(client.network_service.peers_list().await.count())
+                    .unwrap_or(u64::max_value()),
+                should_have_peers: client.chain_spec.has_live_network(),
             })
             .to_json_response(request_id);
             (response, None)
@@ -648,7 +651,20 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
         }
         methods::MethodCall::system_peers {} => {
             // TODO: return proper response
-            let response = methods::Response::system_peers(vec![]).to_json_response(request_id);
+            let response = methods::Response::system_peers(
+                client
+                    .network_service
+                    .peers_list()
+                    .await
+                    .map(|peer_id| methods::SystemPeer {
+                        peer_id: peer_id.to_string(),
+                        roles: "unknown".to_string(),
+                        best_hash: methods::HashHexString([0x0; 32]),
+                        best_number: 0,
+                    })
+                    .collect(),
+            )
+            .to_json_response(request_id);
             (response, None)
         }
         methods::MethodCall::system_properties {} => {
