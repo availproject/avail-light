@@ -296,16 +296,14 @@ pub async fn start_client(
         }
 
         loop {
-            futures::select! {
-                new_task = new_task_rx.select_next_some() => {
+            match future::select(new_task_rx.select_next_some(), all_tasks.next()).await {
+                future::Either::Left((new_task, _)) => {
                     all_tasks.push(new_task);
-                },
-                outcome = all_tasks.next() => {
-                    // `outcome` is `None` if all the tasks have complete.
-                    if outcome.is_none() {
-                        log::info!("All tasks complete. Stopping client.");
-                        break;
-                    }
+                }
+                future::Either::Right((Some(()), _)) => {}
+                future::Either::Right((None, _)) => {
+                    log::info!("All tasks complete. Stopping client.");
+                    break;
                 }
             }
         }

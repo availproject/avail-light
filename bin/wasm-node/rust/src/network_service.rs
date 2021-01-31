@@ -434,7 +434,10 @@ async fn connection_task(
             }
         };
 
-        if read_write.write_close && read_buffer.is_none() {
+        let read_buffer_has_data = read_buffer.map_or(false, |b| !b.is_empty());
+        let read_buffer_closed = read_buffer.is_none();
+
+        if read_write.write_close && read_buffer_closed {
             log::debug!(target: "connections", "Connection({:?}) => Closed gracefully", id);
             return;
         }
@@ -443,7 +446,11 @@ async fn connection_task(
 
         websocket.advance_read_cursor(read_write.read_bytes);
 
-        let mut poll_after = if let Some(wake_up) = read_write.wake_up_after {
+        // Starting from here, we block (or not) the current task until more processing needs
+        // to happen.
+
+        // Future ready when the connection state machine requests more processing.
+        let poll_after = if let Some(wake_up) = read_write.wake_up_after {
             if wake_up > now {
                 let dur = wake_up - now;
                 future::Either::Left(ffi::Delay::new(dur))
@@ -455,13 +462,22 @@ async fn connection_task(
         }
         .fuse();
 
-        futures::select! {
-            _ = websocket.read_buffer().fuse() => {},
-            _ = read_write.wake_up_future.fuse() => {},
-            () = poll_after => {
-                // Nothing to do, but guarantees that we loop again.
-            },
-        }
+        // Future that is woken up when new data is ready on the socket.
+        let read_buffer_ready =
+            if !(read_buffer_has_data && read_write.read_bytes == 0) && !read_buffer_closed {
+                future::Either::Left(websocket.read_buffer())
+            } else {
+                future::Either::Right(future::pending())
+            };
+
+        // Wait until either some data is ready on the socket, or the connection state machine
+        // has been requested to be polled again.
+        futures::pin_mut!(read_buffer_ready);
+        future::select(
+            future::select(read_buffer_ready, read_write.wake_up_future),
+            poll_after,
+        )
+        .await;
     }
 }
 
