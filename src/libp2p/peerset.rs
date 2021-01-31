@@ -526,14 +526,48 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ) -> Result<TPendingSub, ()> {
         assert!(overlay_network < self.peerset.num_overlay_networks);
 
-        let entry = self
-            .peerset
-            .connection_overlays
-            .remove(&(self.id.0, overlay_network, direction))
-            .ok_or(())?;
+        if let btree_map::Entry::Occupied(mut entry) =
+            self.peerset
+                .connection_overlays
+                .entry((self.id.0, overlay_network, direction))
+        {
+            if matches!(entry.get_mut(), SubstreamState::Pending(_)) {
+                match entry.remove() {
+                    SubstreamState::Pending(ud) => Ok(ud),
+                    _ => unreachable!(),
+                }
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
 
-        if let SubstreamState::Pending(ud) = entry {
-            Ok(ud)
+    /// Removes an established substream.
+    ///
+    /// Returns an error if there is no established substream with this overlay network and
+    /// direction combination.
+    pub fn remove_substream(
+        &mut self,
+        overlay_network: usize,
+        direction: SubstreamDirection,
+    ) -> Result<TSub, ()> {
+        assert!(overlay_network < self.peerset.num_overlay_networks);
+
+        if let btree_map::Entry::Occupied(mut entry) =
+            self.peerset
+                .connection_overlays
+                .entry((self.id.0, overlay_network, direction))
+        {
+            if matches!(entry.get_mut(), SubstreamState::Open(_)) {
+                match entry.remove() {
+                    SubstreamState::Open(ud) => Ok(ud),
+                    _ => unreachable!(),
+                }
+            } else {
+                Err(())
+            }
         } else {
             Err(())
         }

@@ -1157,10 +1157,7 @@ where
                 let mut connection = guarded.peerset.connection_mut(self.id).unwrap();
                 let peer_id = connection.peer_id().clone();
                 let _expected_id = connection
-                    .remove_pending_substream(
-                        overlay_network_index,
-                        peerset::SubstreamDirection::Out,
-                    )
+                    .remove_substream(overlay_network_index, peerset::SubstreamDirection::Out)
                     .unwrap();
                 debug_assert_eq!(id, _expected_id);
 
