@@ -44,6 +44,28 @@
 extern "C" {
     /// Must throw an exception. The message is a UTF-8 string found in the memory of the
     /// WebAssembly at offset `message_ptr` and with length `message_len`.
+    ///
+    /// After this function has been called, no further Wasm functions must be called again on
+    /// this Wasm virtual machine. Explanation below.
+    ///
+    /// # About throwing and safety
+    ///
+    /// Rust programs can be configured in two panicking modes: `abort`, or `unwind`. Safe or
+    /// unsafe Rust code must be written by keeping in mind that the execution of a function can
+    /// be suddenly interrupted by a panic, but can rely on the fact that this panic will either
+    /// completely abort the program, or unwind the stack. In the latter case, they can rely on
+    /// the fact that `std::panic::catch_unwind` will catch this unwinding and let them perform
+    /// some additional clean-ups.
+    ///
+    /// Calling `throw` is neither `abort`, because the JavaScript could call into the Wasm again
+    /// later, nor `unwind`, because it isn't caught by `std::panic::catch_unwind`. By being
+    /// neither of the two, it breaks the assumptions that some Rust codes might rely on for
+    /// either correctness or safety.
+    /// In order to solve this problem, we enforce that `throw` must behave like `abort`, and
+    /// forbid calling into the Wasm virtual machine again.
+    ///
+    /// Beyond the `throw` function itself, any other FFI function that throws must similarly
+    /// behave like `abort` and prevent any further execution.
     pub fn throw(message_ptr: u32, message_len: u32);
 
     /// Client is emitting a response to a previous JSON-RPC request sent using [`json_rpc_send`].

@@ -59,6 +59,11 @@ export async function start(config) {
   let stdout_buffer = new String();
   let stderr_buffer = new String();
 
+  // Set to `true` once `throw` has been called.
+  // As documented, after the `throw` function has been called, it is forbidden to call any
+  // further function of the Wasm virtual machine. This flag is used to enforce this.
+  let has_thrown = false;
+
   // Start the Wasm virtual machine.
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
   // parameter provides their implementations.
@@ -68,6 +73,16 @@ export async function start(config) {
       // Must throw an error. A human-readable message can be found in the WebAssembly memory in the
       // given buffer.
       throw: (ptr, len) => {
+        has_thrown = true;
+
+        Object.values(websockets).forEach(websocket => {
+          websocket.onopen = null;
+          websocket.onclose = null;
+          websocket.onmessage = null;
+          websocket.onerror = null;
+          websocket.close();
+        });
+
         let message = Buffer.from(module.exports.memory.buffer).toString('utf8', ptr, ptr + len);
         throw message;
       },
@@ -114,11 +129,15 @@ export async function start(config) {
         // with `1`) and wants you to use `setImmediate` instead.
         if (ms == 0 && typeof setImmediate === "function") {
           setImmediate(() => {
-            module.exports.timer_finished(id);
+            if (!has_thrown) {
+              module.exports.timer_finished(id);
+            }
           })
         } else {
           setTimeout(() => {
-            module.exports.timer_finished(id);
+            if (!has_thrown) {
+              module.exports.timer_finished(id);
+            }
           }, ms)
         }
       },
@@ -256,6 +275,7 @@ export async function start(config) {
       proc_exit: (ret_code) => {
         // This should ideally also clean up all resources (such as WebSockets and active timers),
         // but it is assumed that this function isn't going to be called anyway.
+        has_thrown = true;
         throw "proc_exit called: " + ret_code;
       },
 
@@ -317,6 +337,10 @@ export async function start(config) {
 
   return {
     send_json_rpc: (request) => {
+      if (has_thrown) {
+        return;
+      }
+
       let len = Buffer.byteLength(request, 'utf8');
       let ptr = module.exports.alloc(len);
       Buffer.from(module.exports.memory.buffer).write(request, ptr);
