@@ -49,4 +49,5 @@
 //       the time of writing only one is implemented
 
 // TODO: pub mod full_all_forks;
+pub mod grandpa_warp_sync;
 pub mod optimistic;

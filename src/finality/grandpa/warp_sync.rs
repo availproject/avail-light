@@ -19,7 +19,7 @@ use crate::chain::chain_information::{ChainInformation, ChainInformationFinality
 use crate::finality::justification::verify::{
     verify, Config as VerifyConfig, Error as VerifyError,
 };
-use crate::header::{DigestItemRef, GrandpaConsensusLogRef};
+use crate::header::{DigestItemRef, GrandpaConsensusLogRef, Header};
 use crate::network::protocol::GrandpaWarpSyncResponseFragment;
 
 #[derive(Debug)]
@@ -91,7 +91,34 @@ impl Verifier {
         self.authorities_set_id += 1;
 
         if self.index == self.fragments.len() {
-            Ok(Next::Success)
+            Ok(Next::Success {
+                header: fragment.header.clone(),
+                chain_information_finality: ChainInformationFinality::Grandpa {
+                    after_finalized_block_authorities_set_id: self.authorities_set_id,
+                    finalized_triggered_authorities: {
+                        fragment
+                            .header
+                            .digest
+                            .logs()
+                            .filter_map(|log_item| match log_item {
+                                DigestItemRef::GrandpaConsensus(grandpa_log_item) => {
+                                    match grandpa_log_item {
+                                        GrandpaConsensusLogRef::ScheduledChange(change)
+                                        | GrandpaConsensusLogRef::ForcedChange { change, .. } => {
+                                            Some(change.next_authorities)
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            })
+                            .flat_map(|next_authorities| next_authorities)
+                            .map(|authority_ref| authority_ref.into())
+                            .collect()
+                    },
+                    finalized_scheduled_change: None,
+                },
+            })
         } else {
             Ok(Next::NotFinished(self))
         }
@@ -100,5 +127,8 @@ impl Verifier {
 
 pub enum Next {
     NotFinished(Verifier),
-    Success,
+    Success {
+        header: Header,
+        chain_information_finality: ChainInformationFinality,
+    },
 }
