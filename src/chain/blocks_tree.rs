@@ -292,6 +292,16 @@ impl<T> NonFinalizedTree<T> {
             inner.finalized_block_hash
         }
     }
+
+    /// Gives access to a block stored by the [`NonFinalizedTree`], identified by its hash.
+    pub fn non_finalized_block_by_hash(&mut self, hash: &[u8; 32]) -> Option<BlockAccess<T>> {
+        let inner = self.inner.as_mut().unwrap();
+        let node_index = inner.blocks.find(|b| b.hash == *hash)?;
+        Some(BlockAccess {
+            tree: inner,
+            node_index,
+        })
+    }
 }
 
 impl<T> fmt::Debug for NonFinalizedTree<T>
