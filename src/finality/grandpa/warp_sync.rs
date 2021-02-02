@@ -32,10 +32,10 @@ pub struct Verifier {
 
 impl Verifier {
     pub fn new(
-        genesis_chain_infomation: &ChainInformation,
+        start_chain_information: &ChainInformation,
         warp_sync_response_fragments: Vec<GrandpaWarpSyncResponseFragment>,
     ) -> Self {
-        let (authorities_list, authorities_set_id) = match &genesis_chain_infomation.finality {
+        let (authorities_list, authorities_set_id) = match &start_chain_information.finality {
             ChainInformationFinality::Grandpa {
                 finalized_triggered_authorities,
                 after_finalized_block_authorities_set_id,
