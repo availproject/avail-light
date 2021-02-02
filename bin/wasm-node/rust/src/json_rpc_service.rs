@@ -22,17 +22,17 @@
 
 use crate::{ffi, network_service, sync_service};
 
-use futures::prelude::*;
+use futures::{channel::oneshot, lock::Mutex, prelude::*};
 use methods::MethodCall;
 use smoldot::{
     chain_spec, executor, header,
     json_rpc::{self, methods},
 };
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryFrom as _,
     pin::Pin,
-    sync::Arc,
+    sync::{atomic, Arc},
 };
 
 /// Configuration for a JSON-RPC service.
@@ -65,7 +65,7 @@ pub struct Config {
 /// Because of the racy nature of these two functions, it is strongly discouraged to spawn
 /// multiple JSON-RPC services, especially if they don't use the same
 /// [`sync_service::SyncService`].
-pub async fn start(mut config: Config) {
+pub async fn start(config: Config) {
     let genesis_storage = config
         .chain_spec
         .genesis_storage()
@@ -90,9 +90,9 @@ pub async fn start(mut config: Config) {
         executor::core_version(vm).unwrap().0
     };
 
-    let (finalized_block_header, mut finalized_blocks_subscription) =
+    let (finalized_block_header, finalized_blocks_subscription) =
         config.sync_service.subscribe_finalized().await;
-    let (_, mut best_blocks_subscription) = config.sync_service.subscribe_best().await;
+    let (_, best_blocks_subscription) = config.sync_service.subscribe_best().await;
 
     let finalized_block_hash = header::hash_from_scale_encoded_header(&finalized_block_header);
 
@@ -102,61 +102,65 @@ pub async fn start(mut config: Config) {
         header::decode(&finalized_block_header).unwrap().into(),
     );
 
-    let mut client = JsonRpcService {
+    let client = Arc::new(JsonRpcService {
+        tasks_executor: Mutex::new(config.tasks_executor),
         chain_spec: config.chain_spec,
         network_service: config.network_service,
         sync_service: config.sync_service,
-        known_blocks,
+        known_blocks: Mutex::new(known_blocks),
         best_block: finalized_block_hash,
         finalized_block: finalized_block_hash,
         genesis_block: config.genesis_block_hash,
         genesis_storage,
-        best_block_metadata,
+        best_block_metadata: Mutex::new(best_block_metadata),
         best_block_runtime_spec,
-        next_subscription: 0,
+        next_subscription: atomic::AtomicU64::new(0),
         runtime_version: HashSet::new(),
-        all_heads: HashSet::new(),
-        new_heads: HashSet::new(),
-        finalized_heads: HashSet::new(),
-        storage: HashSet::new(),
-    };
+        all_heads: Mutex::new(HashMap::new()),
+        new_heads: Mutex::new(HashMap::new()),
+        finalized_heads: Mutex::new(HashMap::new()),
+        storage: Mutex::new(HashMap::new()),
+    });
 
-    (config.tasks_executor)(Box::pin(async move {
+    (client.clone().tasks_executor.lock().await)(Box::pin(async move {
         loop {
-            futures::select! {
-                json_rpc_request = ffi::next_json_rpc().fuse() => {
-                    let request_string = match String::from_utf8(Vec::from(json_rpc_request)) {
-                        Ok(s) => s,
-                        Err(error) => {
-                            log::warn!(
-                                target: "json-rpc",
-                                "Failed to parse JSON-RPC query as UTF-8: {}", error
-                            );
-                            continue;
-                        },
-                    };
+            let json_rpc_request = ffi::next_json_rpc().await;
 
-                    log::debug!(
-                        target: "json-rpc",
-                        "JSON-RPC => {:?}{}",
-                        if request_string.len() > 100 { &request_string[..100] } else { &request_string[..] },
-                        if request_string.len() > 100 { "…" } else { "" }
-                    );
+            // Each incoming request gets its own separate task.
+            let client2 = client.clone();
+            (client.tasks_executor.lock().await)(Box::pin(async move {
+                let request_string = match String::from_utf8(Vec::from(json_rpc_request)) {
+                    Ok(s) => s,
+                    Err(error) => {
+                        log::warn!(
+                            target: "json-rpc",
+                            "Failed to parse JSON-RPC query as UTF-8: {}", error
+                        );
+                        return;
+                    }
+                };
 
-                    // TODO: don't await here; use a queue
+                log::debug!(
+                    target: "json-rpc",
+                    "JSON-RPC => {:?}{}",
+                    if request_string.len() > 100 { &request_string[..100] } else { &request_string[..] },
+                    if request_string.len() > 100 { "…" } else { "" }
+                );
 
-                    let (request_id, call) = match methods::parse_json_call(&request_string) {
-                        Ok(rq) => rq,
-                        Err(error) => {
-                            log::warn!(
-                                target: "json-rpc",
-                                "Ignoring malformed JSON-RPC call: {}", error
-                            );
-                            continue;
-                        }
-                    };
+                let (request_id, call) = match methods::parse_json_call(&request_string) {
+                    Ok(rq) => rq,
+                    Err(error) => {
+                        log::warn!(
+                            target: "json-rpc",
+                            "Ignoring malformed JSON-RPC call: {}", error
+                        );
+                        return;
+                    }
+                };
 
-                    let (response1, response2) = handle_rpc(request_id, call, &mut client).await;
+                let (response1, response2) = handle_rpc(request_id, call, client2.clone()).await;
+
+                if let Some(response1) = response1 {
                     log::debug!(
                         target: "json-rpc",
                         "JSON-RPC <= {:?}{}",
@@ -164,73 +168,26 @@ pub async fn start(mut config: Config) {
                         if response1.len() > 100 { "…" } else { "" }
                     );
                     ffi::emit_json_rpc_response(&response1);
-
-                    if let Some(response2) = response2 {
-                        log::debug!(
-                            target: "json-rpc",
-                            "JSON-RPC <= {:?}{}",
-                            if response2.len() > 100 { &response2[..100] } else { &response2[..] },
-                            if response2.len() > 100 { "…" } else { "" }
-                        );
-                        ffi::emit_json_rpc_response(&response2);
-                    }
                 }
-                scale_encoded_header = best_blocks_subscription.select_next_some() => {
-                    // TODO: this is also triggered if we reset the sync to a previous point, which isn't correct
 
-                    let decoded = smoldot::header::decode(&scale_encoded_header).unwrap();
-                    let header = header_conv(decoded.clone());
-
-                    for subscription_id in &client.new_heads {
-                        let notification = smoldot::json_rpc::parse::build_subscription_event(
-                            "chain_newHead",
-                            subscription_id,
-                            &serde_json::to_string(&header).unwrap(),
-                        );
-                        ffi::emit_json_rpc_response(&notification);
-                    }
-                    for subscription_id in &client.all_heads {
-                        let notification = smoldot::json_rpc::parse::build_subscription_event(
-                            "chain_newHead",
-                            subscription_id,
-                            &serde_json::to_string(&header).unwrap(),
-                        );
-                        ffi::emit_json_rpc_response(&notification);
-                    }
-
-                    // Load the entry of the finalized block in order to guarantee that it
-                    // remains in the LRU cache when `put` is called below.
-                    let _ = client.known_blocks.get(&client.finalized_block).unwrap();
-
-                    client.best_block = decoded.hash();
-                    client.known_blocks.put(client.best_block, decoded.into());
-
-                    debug_assert!(client.known_blocks.get(&client.finalized_block).is_some());
-
-                    // TODO: need to update `best_block_metadata` if necessary, and notify the runtime version subscriptions
-                },
-                scale_encoded_header = finalized_blocks_subscription.select_next_some() => {
-                    let decoded = smoldot::header::decode(&scale_encoded_header).unwrap();
-                    let header = header_conv(decoded.clone());
-
-                    for subscription_id in &client.finalized_heads {
-                        let notification = smoldot::json_rpc::parse::build_subscription_event(
-                            "chain_finalizedHead",
-                            subscription_id,
-                            &serde_json::to_string(&header).unwrap(),
-                        );
-                        ffi::emit_json_rpc_response(&notification);
-                    }
-
-                    client.finalized_block = decoded.hash();
-                    client.known_blocks.put(client.finalized_block, decoded.into());
-                },
-            }
+                if let Some(response2) = response2 {
+                    log::debug!(
+                        target: "json-rpc",
+                        "JSON-RPC <= {:?}{}",
+                        if response2.len() > 100 { &response2[..100] } else { &response2[..] },
+                        if response2.len() > 100 { "…" } else { "" }
+                    );
+                    ffi::emit_json_rpc_response(&response2);
+                }
+            }));
         }
     }));
 }
 
 struct JsonRpcService {
+    /// See [`Config::tasks_executor`].
+    tasks_executor: Mutex<Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+
     chain_spec: chain_spec::ChainSpec,
 
     network_service: Arc<network_service::NetworkService>,
@@ -239,7 +196,7 @@ struct JsonRpcService {
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
     ///
     /// Always contains `best_block` and `finalized_block`.
-    known_blocks: lru::LruCache<[u8; 32], header::Header>,
+    known_blocks: Mutex<lru::LruCache<[u8; 32], header::Header>>,
 
     /// Hash of the genesis block.
     /// Keeping the genesis block is important, as the genesis block hash is included in
@@ -253,28 +210,39 @@ struct JsonRpcService {
     // TODO: remove; unnecessary
     genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
 
-    best_block_metadata: Vec<u8>,
+    best_block_metadata: Mutex<Vec<u8>>,
     best_block_runtime_spec: executor::CoreVersion,
 
-    next_subscription: u64,
+    next_subscription: atomic::AtomicU64,
 
     runtime_version: HashSet<String>,
-    all_heads: HashSet<String>,
-    new_heads: HashSet<String>,
-    finalized_heads: HashSet<String>,
-    storage: HashSet<String>,
+
+    /// For each active finalized blocks subscription (the key), a sender. If the user
+    /// unsubscribes, send the unsubscription request ID of the channel in order to close the
+    /// subscription.
+    all_heads: Mutex<HashMap<String, oneshot::Sender<String>>>,
+
+    /// Same principle as [`JsonRpcService::all_heads`], but for new heads subscriptions.
+    new_heads: Mutex<HashMap<String, oneshot::Sender<String>>>,
+
+    /// Same principle as [`JsonRpcService::all_heads`], but for finalized heads subscriptions.
+    finalized_heads: Mutex<HashMap<String, oneshot::Sender<String>>>,
+
+    /// Same principle as [`JsonRpcService::all_heads`], but for storage subscriptions.
+    storage: Mutex<HashMap<String, oneshot::Sender<String>>>,
 }
 
+// TODO: remove second tuple item of the return value, once possible
 async fn handle_rpc(
     request_id: &str,
     call: MethodCall,
-    client: &mut JsonRpcService,
-) -> (String, Option<String>) {
+    client: Arc<JsonRpcService>,
+) -> (Option<String>, Option<String>) {
     match call {
         methods::MethodCall::author_pendingExtrinsics {} => {
             let response = methods::Response::author_pendingExtrinsics(Vec::new())
                 .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::author_submitExtrinsic { transaction } => {
             let response = match client
@@ -300,9 +268,11 @@ async fn handle_rpc(
                     None,
                 ),
             };
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::chain_getBlockHash { height } => {
+            let mut known_blocks = client.known_blocks.lock().await;
+
             let response = match height {
                 Some(0) => methods::Response::chain_getBlockHash(methods::HashHexString(
                     client.genesis_block,
@@ -313,8 +283,7 @@ async fn handle_rpc(
                         .to_json_response(request_id)
                 }
                 Some(n)
-                    if client
-                        .known_blocks
+                    if known_blocks
                         .get(&client.best_block)
                         .map_or(false, |h| h.number == n) =>
                 {
@@ -322,8 +291,7 @@ async fn handle_rpc(
                         .to_json_response(request_id)
                 }
                 Some(n)
-                    if client
-                        .known_blocks
+                    if known_blocks
                         .get(&client.finalized_block)
                         .map_or(false, |h| h.number == n) =>
                 {
@@ -341,92 +309,208 @@ async fn handle_rpc(
                 }
             };
 
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::chain_getFinalizedHead {} => {
             let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
                 client.finalized_block,
             ))
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::chain_getHeader { hash } => {
             let hash = hash.as_ref().map(|h| &h.0).unwrap_or(&client.best_block);
-            let response = if let Some(header) = client.known_blocks.get(hash) {
+            let response = if let Some(header) = client.known_blocks.lock().await.get(hash) {
                 methods::Response::chain_getHeader(header_conv(header)).to_json_response(request_id)
             } else {
                 json_rpc::parse::build_success_response(request_id, "null")
             };
 
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::chain_subscribeAllHeads {} => {
-            let subscription = client.next_subscription.to_string();
-            client.next_subscription += 1;
+            let subscription = client
+                .next_subscription
+                .fetch_add(1, atomic::Ordering::Relaxed)
+                .to_string();
 
-            let response = methods::Response::chain_subscribeAllHeads(&subscription)
+            let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+            client
+                .all_heads
+                .lock()
+                .await
+                .insert(subscription.clone(), unsubscribe_tx);
+
+            let mut blocks_list = {
+                // TODO: best blocks != all heads
+                let (block_header, blocks_subscription) =
+                    client.sync_service.subscribe_best().await;
+                stream::once(future::ready(block_header)).chain(blocks_subscription)
+            };
+
+            let confirmation = methods::Response::chain_subscribeAllHeads(&subscription)
                 .to_json_response(request_id);
 
-            // TODO: directly use sync_service
-            let response2 = smoldot::json_rpc::parse::build_subscription_event(
-                "chain_allHeads", // TODO: is this string correct?
-                &subscription,
-                &serde_json::to_string(&header_conv(
-                    client.known_blocks.get(&client.best_block).unwrap(),
-                ))
-                .unwrap(),
-            );
+            // Spawn a separate task for the subscription.
+            (client.tasks_executor.lock().await)(Box::pin(async move {
+                // Send back to the user the confirmation of the registration.
+                ffi::emit_json_rpc_response(&confirmation);
 
-            client.all_heads.insert(subscription.clone());
+                loop {
+                    // Wait for either a new block, or for the subscription to be canceled.
+                    let next_block = blocks_list.next();
+                    futures::pin_mut!(next_block);
+                    match future::select(next_block, &mut unsubscribe_rx).await {
+                        future::Either::Left((block, _)) => {
+                            let header = header_conv(header::decode(&block.unwrap()).unwrap());
+                            ffi::emit_json_rpc_response(
+                                &smoldot::json_rpc::parse::build_subscription_event(
+                                    "chain_newHead",
+                                    &subscription,
+                                    &serde_json::to_string(&header).unwrap(),
+                                ),
+                            );
+                        }
+                        future::Either::Right((Ok(unsub_request_id), _)) => {
+                            let response = methods::Response::chain_unsubscribeAllHeads(true)
+                                .to_json_response(&unsub_request_id);
+                            ffi::emit_json_rpc_response(&response);
+                            break;
+                        }
+                        future::Either::Right((Err(_), _)) => break,
+                    }
+                }
+            }));
 
-            (response, Some(response2))
+            (None, None)
         }
         methods::MethodCall::chain_subscribeNewHeads {} => {
-            let subscription = client.next_subscription.to_string();
-            client.next_subscription += 1;
+            let subscription = client
+                .next_subscription
+                .fetch_add(1, atomic::Ordering::Relaxed)
+                .to_string();
 
-            let response = methods::Response::chain_subscribeNewHeads(&subscription)
+            let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+            client
+                .new_heads
+                .lock()
+                .await
+                .insert(subscription.clone(), unsubscribe_tx);
+
+            let mut blocks_list = {
+                let (block_header, blocks_subscription) =
+                    client.sync_service.subscribe_best().await;
+                stream::once(future::ready(block_header)).chain(blocks_subscription)
+            };
+
+            let confirmation = methods::Response::chain_subscribeNewHeads(&subscription)
                 .to_json_response(request_id);
 
-            let response2 = smoldot::json_rpc::parse::build_subscription_event(
-                "chain_newHead",
-                &subscription,
-                &serde_json::to_string(&header_conv(
-                    client.known_blocks.get(&client.best_block).unwrap(),
-                ))
-                .unwrap(),
-            );
+            // Spawn a separate task for the subscription.
+            (client.tasks_executor.lock().await)(Box::pin(async move {
+                // Send back to the user the confirmation of the registration.
+                ffi::emit_json_rpc_response(&confirmation);
 
-            client.new_heads.insert(subscription.clone());
+                loop {
+                    // Wait for either a new block, or for the subscription to be canceled.
+                    let next_block = blocks_list.next();
+                    futures::pin_mut!(next_block);
+                    match future::select(next_block, &mut unsubscribe_rx).await {
+                        future::Either::Left((block, _)) => {
+                            let header = header_conv(header::decode(&block.unwrap()).unwrap());
+                            ffi::emit_json_rpc_response(
+                                &smoldot::json_rpc::parse::build_subscription_event(
+                                    "chain_newHead",
+                                    &subscription,
+                                    &serde_json::to_string(&header).unwrap(),
+                                ),
+                            );
+                        }
+                        future::Either::Right((Ok(unsub_request_id), _)) => {
+                            let response = methods::Response::chain_unsubscribeNewHeads(true)
+                                .to_json_response(&unsub_request_id);
+                            ffi::emit_json_rpc_response(&response);
+                            break;
+                        }
+                        future::Either::Right((Err(_), _)) => break,
+                    }
+                }
+            }));
 
-            (response, Some(response2))
+            (None, None)
         }
         methods::MethodCall::chain_subscribeFinalizedHeads {} => {
-            let subscription = client.next_subscription.to_string();
-            client.next_subscription += 1;
+            let subscription = client
+                .next_subscription
+                .fetch_add(1, atomic::Ordering::Relaxed)
+                .to_string();
 
-            let response = methods::Response::chain_subscribeFinalizedHeads(&subscription)
+            let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+            client
+                .finalized_heads
+                .lock()
+                .await
+                .insert(subscription.clone(), unsubscribe_tx);
+
+            let mut blocks_list = {
+                let (finalized_block_header, finalized_blocks_subscription) =
+                    client.sync_service.subscribe_finalized().await;
+                stream::once(future::ready(finalized_block_header))
+                    .chain(finalized_blocks_subscription)
+            };
+
+            let confirmation = methods::Response::chain_subscribeFinalizedHeads(&subscription)
                 .to_json_response(request_id);
 
-            // TODO: directly use sync_service
-            let response2 = smoldot::json_rpc::parse::build_subscription_event(
-                "chain_finalizedHead",
-                &subscription,
-                &serde_json::to_string(&header_conv(
-                    client.known_blocks.get(&client.finalized_block).unwrap(),
-                ))
-                .unwrap(),
-            );
+            // Spawn a separate task for the subscription.
+            (client.tasks_executor.lock().await)(Box::pin(async move {
+                // Send back to the user the confirmation of the registration.
+                ffi::emit_json_rpc_response(&confirmation);
 
-            client.finalized_heads.insert(subscription.clone());
+                loop {
+                    // Wait for either a new block, or for the subscription to be canceled.
+                    let next_block = blocks_list.next();
+                    futures::pin_mut!(next_block);
+                    match future::select(next_block, &mut unsubscribe_rx).await {
+                        future::Either::Left((block, _)) => {
+                            let header = header_conv(header::decode(&block.unwrap()).unwrap());
+                            ffi::emit_json_rpc_response(
+                                &smoldot::json_rpc::parse::build_subscription_event(
+                                    "chain_finalizedHead",
+                                    &subscription,
+                                    &serde_json::to_string(&header).unwrap(),
+                                ),
+                            );
+                        }
+                        future::Either::Right((Ok(unsub_request_id), _)) => {
+                            let response = methods::Response::chain_unsubscribeFinalizedHeads(true)
+                                .to_json_response(&unsub_request_id);
+                            ffi::emit_json_rpc_response(&response);
+                            break;
+                        }
+                        future::Either::Right((Err(_), _)) => break,
+                    }
+                }
+            }));
 
-            (response, Some(response2))
+            (None, None)
         }
         methods::MethodCall::chain_unsubscribeFinalizedHeads { subscription } => {
-            let valid = client.finalized_heads.remove(&subscription);
-            let response = methods::Response::chain_unsubscribeFinalizedHeads(valid)
-                .to_json_response(request_id);
-            (response, None)
+            let invalid = if let Some(cancel_tx) =
+                client.finalized_heads.lock().await.remove(&subscription)
+            {
+                cancel_tx.send(request_id.to_owned()).is_err()
+            } else {
+                true
+            };
+
+            if invalid {
+                let response = methods::Response::chain_unsubscribeFinalizedHeads(false)
+                    .to_json_response(request_id);
+                (Some(response), None)
+            } else {
+                (None, None)
+            }
         }
         methods::MethodCall::payment_queryInfo { extrinsic, hash } => {
             assert!(hash.is_none()); // TODO:
@@ -437,7 +521,7 @@ async fn handle_rpc(
                 partial_fee: 15600000001,              // TODO: no
             })
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::rpc_methods {} => {
             let response = methods::Response::rpc_methods(methods::RpcMethods {
@@ -447,7 +531,7 @@ async fn handle_rpc(
                     .collect(),
             })
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::state_queryStorageAt { keys, at } => {
             let at = at.as_ref().map(|h| h.0).unwrap_or(client.best_block);
@@ -460,14 +544,14 @@ async fn handle_rpc(
 
             for key in keys {
                 // TODO: parallelism?
-                if let Ok(value) = storage_query(client, &key.0, &at).await {
+                if let Ok(value) = storage_query(&client, &key.0, &at).await {
                     out.changes.push((key, value.map(methods::HexString)));
                 }
             }
 
             let response =
                 methods::Response::state_queryStorageAt(vec![out]).to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::state_getKeysPaged {
             prefix,
@@ -498,21 +582,21 @@ async fn handle_rpc(
             }
 
             let response = methods::Response::state_getKeysPaged(out).to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::state_getMetadata {} => {
             let best_block_hash = client.best_block.clone();
-            let response = match storage_query(client, &b":code"[..], &best_block_hash).await {
+            let response = match storage_query(&client, &b":code"[..], &best_block_hash).await {
                 Ok(Some(value)) => {
                     let best_block_metadata = {
                         let heap_pages = executor::DEFAULT_HEAP_PAGES; // TODO: laziness
                         smoldot::metadata::metadata_from_runtime_code(&value, heap_pages).unwrap()
                     };
 
-                    client.best_block_metadata = best_block_metadata;
+                    *client.best_block_metadata.lock().await = best_block_metadata;
 
                     methods::Response::state_getMetadata(methods::HexString(
-                        client.best_block_metadata.clone(),
+                        client.best_block_metadata.lock().await.clone(),
                     ))
                     .to_json_response(request_id)
                 }
@@ -520,18 +604,18 @@ async fn handle_rpc(
                 Err(_) => {
                     // Return the last known best_block_metadata
                     methods::Response::state_getMetadata(methods::HexString(
-                        client.best_block_metadata.clone(),
+                        client.best_block_metadata.lock().await.clone(),
                     ))
                     .to_json_response(request_id)
                 }
             };
 
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::state_getStorage { key, hash } => {
             let hash = hash.as_ref().map(|h| h.0).unwrap_or(client.best_block);
 
-            let response = match storage_query(client, &key.0, &hash).await {
+            let response = match storage_query(&client, &key.0, &hash).await {
                 Ok(Some(value)) => {
                     methods::Response::state_getStorage(methods::HexString(value.to_owned())) // TODO: overhead
                         .to_json_response(request_id)
@@ -544,19 +628,21 @@ async fn handle_rpc(
                 ),
             };
 
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::state_subscribeRuntimeVersion {} => {
-            let subscription = client.next_subscription.to_string();
-            client.next_subscription += 1;
+            let subscription = client
+                .next_subscription
+                .fetch_add(1, atomic::Ordering::Relaxed)
+                .to_string();
 
             let response = methods::Response::state_subscribeRuntimeVersion(&subscription)
                 .to_json_response(request_id);
             // TODO: subscription has no effect right now
-            client.runtime_version.insert(subscription.clone());
+            // TODO: client.runtime_version.insert(subscription.clone());
 
             let best_block_hash = client.best_block;
-            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash).await;
+            let runtime_code = storage_query(&client, &b":code"[..], &best_block_hash).await;
             let runtime_specs = if let Ok(runtime_code) = runtime_code {
                 // TODO: don't unwrap
                 // TODO: cache the VM
@@ -586,51 +672,138 @@ async fn handle_rpc(
                 })
                 .unwrap(),
             );
-            (response, Some(response2))
+            (Some(response), Some(response2))
         }
         methods::MethodCall::state_subscribeStorage { list } => {
-            let subscription = client.next_subscription.to_string();
-            client.next_subscription += 1;
+            let subscription = client
+                .next_subscription
+                .fetch_add(1, atomic::Ordering::Relaxed)
+                .to_string();
 
-            let response1 = methods::Response::state_subscribeStorage(&subscription)
-                .to_json_response(request_id);
-            client.storage.insert(subscription.clone());
+            let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+            client
+                .storage
+                .lock()
+                .await
+                .insert(subscription.clone(), unsubscribe_tx);
 
-            // TODO: have no idea what this describes actually
-            let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.best_block),
-                changes: Vec::new(),
+            // Build a stream of `methods::StorageChangeSet` items to send back to the user.
+            let storage_updates = {
+                let known_values = (0..list.len()).map(|_| None).collect::<Vec<_>>();
+                let client = client.clone();
+                let (block_header, blocks_subscription) =
+                    client.sync_service.subscribe_best().await;
+                let blocks_stream =
+                    stream::once(future::ready(block_header)).chain(blocks_subscription);
+
+                stream::unfold(
+                    (blocks_stream, list, known_values),
+                    move |(mut blocks_stream, list, mut known_values)| {
+                        let client = client.clone();
+                        async move {
+                            loop {
+                                let block = blocks_stream.next().await?;
+                                let block_hash = header::hash_from_scale_encoded_header(&block);
+                                let state_trie_root = header::decode(&block).unwrap().state_root;
+
+                                let mut out = methods::StorageChangeSet {
+                                    block: methods::HashHexString(block_hash),
+                                    changes: Vec::new(),
+                                };
+
+                                for (key_index, key) in list.iter().enumerate() {
+                                    // TODO: parallelism?
+                                    match client
+                                        .network_service
+                                        .clone()
+                                        .storage_query(&block_hash, state_trie_root, &key.0)
+                                        .await
+                                    {
+                                        Ok(value) => match &mut known_values[key_index] {
+                                            Some(v) if *v == value => {}
+                                            v @ _ => {
+                                                *v = Some(value.clone());
+                                                out.changes.push((
+                                                    key.clone(),
+                                                    value.map(methods::HexString),
+                                                ));
+                                            }
+                                        },
+                                        Err(error) => {
+                                            log::warn!(
+                                                target: "json-rpc",
+                                                "state_subscribeStorage changes check failed: {}",
+                                                error
+                                            );
+                                        }
+                                    }
+                                }
+
+                                if !out.changes.is_empty() {
+                                    return Some((out, (blocks_stream, list, known_values)));
+                                }
+                            }
+                        }
+                    },
+                )
             };
 
-            let best_block_hash = client.best_block;
+            let confirmation = methods::Response::state_subscribeStorage(&subscription)
+                .to_json_response(request_id);
 
-            for key in list {
-                // TODO: parallelism?
-                if let Ok(value) = storage_query(client, &key.0, &best_block_hash).await {
-                    out.changes.push((key, value.map(methods::HexString)));
+            // Spawn a separate task for the subscription.
+            (client.tasks_executor.lock().await)(Box::pin(async move {
+                futures::pin_mut!(storage_updates);
+
+                // Send back to the user the confirmation of the registration.
+                ffi::emit_json_rpc_response(&confirmation);
+
+                loop {
+                    // Wait for either a new storage update, or for the subscription to be canceled.
+                    let next_block = storage_updates.next();
+                    futures::pin_mut!(next_block);
+                    match future::select(next_block, &mut unsubscribe_rx).await {
+                        future::Either::Left((changes, _)) => {
+                            ffi::emit_json_rpc_response(
+                                &smoldot::json_rpc::parse::build_subscription_event(
+                                    "state_storage",
+                                    &subscription,
+                                    &serde_json::to_string(&changes).unwrap(),
+                                ),
+                            );
+                        }
+                        future::Either::Right((Ok(unsub_request_id), _)) => {
+                            let response = methods::Response::state_unsubscribeStorage(true)
+                                .to_json_response(&unsub_request_id);
+                            ffi::emit_json_rpc_response(&response);
+                            break;
+                        }
+                        future::Either::Right((Err(_), _)) => break,
+                    }
                 }
-            }
+            }));
 
-            // TODO: hack
-            let response2 = smoldot::json_rpc::parse::build_subscription_event(
-                "state_storage",
-                &subscription,
-                &serde_json::to_string(&out).unwrap(),
-            );
-
-            // TODO: subscription not actually implemented
-
-            (response1, Some(response2))
+            (None, None)
         }
         methods::MethodCall::state_unsubscribeStorage { subscription } => {
-            let valid = client.storage.remove(&subscription);
-            let response =
-                methods::Response::state_unsubscribeStorage(valid).to_json_response(request_id);
-            (response, None)
+            let invalid = if let Some(cancel_tx) = client.storage.lock().await.remove(&subscription)
+            {
+                cancel_tx.send(request_id.to_owned()).is_err()
+            } else {
+                true
+            };
+
+            if invalid {
+                let response =
+                    methods::Response::state_unsubscribeStorage(false).to_json_response(request_id);
+                (Some(response), None)
+            } else {
+                (None, None)
+            }
         }
         methods::MethodCall::state_getRuntimeVersion {} => {
             let best_block_hash = client.best_block;
-            let runtime_code = storage_query(client, &b":code"[..], &best_block_hash).await;
+            let runtime_code = storage_query(&client, &b":code"[..], &best_block_hash).await;
             let runtime_specs = if let Ok(runtime_code) = runtime_code {
                 // TODO: don't unwrap
                 // TODO: cache the VM
@@ -656,7 +829,7 @@ async fn handle_rpc(
                 apis: runtime_specs.apis,
             })
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_accountNextIndex { account } => {
             // TODO: implement
@@ -665,17 +838,17 @@ async fn handle_rpc(
                 json_rpc::parse::ErrorResponse::ServerError(-32000, "Unsupported call"),
                 None,
             );
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_chain {} => {
             let response = methods::Response::system_chain(client.chain_spec.name())
                 .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_chainType {} => {
             let response = methods::Response::system_chainType(client.chain_spec.chain_type())
                 .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_health {} => {
             let response = methods::Response::system_health(methods::SystemHealth {
@@ -685,11 +858,11 @@ async fn handle_rpc(
                 should_have_peers: client.chain_spec.has_live_network(),
             })
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_name {} => {
             let response = methods::Response::system_name("smoldot!").to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_peers {} => {
             // TODO: return proper response
@@ -707,18 +880,18 @@ async fn handle_rpc(
                     .collect(),
             )
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_properties {} => {
             let response = methods::Response::system_properties(
                 serde_json::from_str(client.chain_spec.properties()).unwrap(),
             )
             .to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         methods::MethodCall::system_version {} => {
             let response = methods::Response::system_version("1.0.0").to_json_response(request_id);
-            (response, None)
+            (Some(response), None)
         }
         _method => {
             log::warn!(target: "json-rpc", "JSON-RPC call not supported yet: {:?}", _method);
@@ -730,17 +903,17 @@ async fn handle_rpc(
                 ),
                 None,
             );
-            (response, None)
+            (Some(response), None)
         }
     }
 }
 
 async fn storage_query(
-    client: &mut JsonRpcService,
+    client: &Arc<JsonRpcService>,
     key: &[u8],
     hash: &[u8; 32],
 ) -> Result<Option<Vec<u8>>, StorageQueryError> {
-    let trie_root_hash = if let Some(header) = client.known_blocks.get(hash) {
+    let trie_root_hash = if let Some(header) = client.known_blocks.lock().await.get(hash) {
         header.state_root
     } else {
         // TODO: should make a block request towards a node
