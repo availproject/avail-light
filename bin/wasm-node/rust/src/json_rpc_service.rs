@@ -23,6 +23,7 @@
 use crate::{ffi, network_service, sync_service};
 
 use futures::prelude::*;
+use methods::MethodCall;
 use smoldot::{
     chain_spec, executor, header,
     json_rpc::{self, methods},
@@ -124,8 +125,17 @@ pub async fn start(mut config: Config) {
         loop {
             futures::select! {
                 json_rpc_request = ffi::next_json_rpc().fuse() => {
-                    // TODO: don't unwrap
-                    let request_string = String::from_utf8(Vec::from(json_rpc_request)).unwrap();
+                    let request_string = match String::from_utf8(Vec::from(json_rpc_request)) {
+                        Ok(s) => s,
+                        Err(error) => {
+                            log::warn!(
+                                target: "json-rpc",
+                                "Failed to parse JSON-RPC query as UTF-8: {}", error
+                            );
+                            continue;
+                        },
+                    };
+
                     log::debug!(
                         target: "json-rpc",
                         "JSON-RPC => {:?}{}",
@@ -134,7 +144,19 @@ pub async fn start(mut config: Config) {
                     );
 
                     // TODO: don't await here; use a queue
-                    let (response1, response2) = handle_rpc(&request_string, &mut client).await;
+
+                    let (request_id, call) = match methods::parse_json_call(&request_string) {
+                        Ok(rq) => rq,
+                        Err(error) => {
+                            log::warn!(
+                                target: "json-rpc",
+                                "Ignoring malformed JSON-RPC call: {}", error
+                            );
+                            continue;
+                        }
+                    };
+
+                    let (response1, response2) = handle_rpc(request_id, call, &mut client).await;
                     log::debug!(
                         target: "json-rpc",
                         "JSON-RPC <= {:?}{}",
@@ -243,8 +265,11 @@ struct JsonRpcService {
     storage: HashSet<String>,
 }
 
-async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<String>) {
-    let (request_id, call) = methods::parse_json_call(rpc).expect("bad request"); // TODO: don't unwrap
+async fn handle_rpc(
+    request_id: &str,
+    call: MethodCall,
+    client: &mut JsonRpcService,
+) -> (String, Option<String>) {
     match call {
         methods::MethodCall::author_pendingExtrinsics {} => {
             let response = methods::Response::author_pendingExtrinsics(Vec::new())
@@ -695,9 +720,17 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
             let response = methods::Response::system_version("1.0.0").to_json_response(request_id);
             (response, None)
         }
-        _ => {
-            println!("unimplemented: {:?}", call);
-            panic!(); // TODO:
+        _method => {
+            log::warn!(target: "json-rpc", "JSON-RPC call not supported yet: {:?}", _method);
+            let response = json_rpc::parse::build_error_response(
+                request_id,
+                json_rpc::parse::ErrorResponse::ServerError(
+                    -32000,
+                    "Not implemented in smoldot yet",
+                ),
+                None,
+            );
+            (response, None)
         }
     }
 }
