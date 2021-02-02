@@ -177,7 +177,7 @@ define_methods! {
     grandpa_roundState() -> (), // TODO:
     offchain_localStorageGet() -> (), // TODO:
     offchain_localStorageSet() -> (), // TODO:
-    payment_queryInfo() -> (), // TODO:
+    payment_queryInfo(extrinsic: HexString, hash: Option<HashHexString>) -> RuntimeDispatchInfo,
     rpc_methods() -> RpcMethods,
     state_call() -> () [state_callAt], // TODO:
     state_getKeys() -> (), // TODO:
@@ -195,7 +195,7 @@ define_methods! {
     state_subscribeStorage(list: Vec<HexString>) -> &'a str,
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
     state_unsubscribeStorage(subscription: String) -> bool,
-    system_accountNextIndex() -> (), // TODO:
+    system_accountNextIndex(account: String) -> u64, // TODO: String for the AccountId and u64 for the Index? shouldn't be hardcoded but determined from Metadata
     system_addReservedPeer() -> (), // TODO:
     system_chain() -> &'a str,
     system_chainType() -> &'a str,
@@ -305,6 +305,20 @@ pub struct RuntimeVersion {
     pub apis: Vec<([u8; 8], u32)>,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct RuntimeDispatchInfo {
+    pub weight: u64,
+    pub class: DispatchClass,
+    pub partial_fee: u64,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum DispatchClass {
+    Normal,
+    Operational,
+    Mandatory,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StorageChangeSet {
     pub block: HashHexString,
@@ -402,6 +416,33 @@ impl serde::Serialize for RuntimeVersion {
                 .iter()
                 .map(|(name, version)| (HexString(name.to_vec()), *version))
                 .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for RuntimeDispatchInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct SerdeRuntimeDispatchInfo {
+            weight: u64,
+            class: &'static str,
+            /// Sent back as a string in order to not accidentally lose precision.
+            #[serde(rename = "partialFee")]
+            partial_fee: String,
+        }
+
+        SerdeRuntimeDispatchInfo {
+            weight: self.weight,
+            class: match self.class {
+                DispatchClass::Normal => "normal",
+                DispatchClass::Operational => "operational",
+                DispatchClass::Mandatory => "mandatory",
+            },
+            partial_fee: self.partial_fee.to_string(),
         }
         .serialize(serializer)
     }
