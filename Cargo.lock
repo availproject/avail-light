@@ -2278,6 +2278,7 @@ version = "0.1.3"
 dependencies = [
  "blake2-rfc",
  "derive_more",
+ "fnv",
  "futures",
  "lazy_static",
  "log",

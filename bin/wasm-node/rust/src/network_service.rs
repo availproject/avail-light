@@ -41,7 +41,7 @@ use smoldot::{
     network::{protocol, service},
     trie::proof_verify,
 };
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 #[derive(derive_more::Display)]
 pub struct AnnounceTransactionError;
@@ -78,6 +78,10 @@ pub struct NetworkService {
 
     /// Data structure holding the entire state of the networking.
     network: service::ChainNetwork<ffi::Instant, (), ()>,
+
+    /// List of nodes that are considered as important for logging purposes.
+    // TODO: should also detect whenever we fail to open a block announces substream with any of these peers
+    important_nodes: HashSet<PeerId, fnv::FnvBuildHasher>,
 }
 
 /// Fields of [`NetworkService`] behind a mutex.
@@ -96,6 +100,12 @@ impl NetworkService {
         let (mut senders, receivers): (Vec<_>, Vec<_>) = (0..config.num_events_receivers)
             .map(|_| mpsc::channel(16))
             .unzip();
+
+        let important_nodes = config
+            .bootstrap_nodes
+            .iter()
+            .map(|(peer_id, _)| peer_id.clone())
+            .collect::<HashSet<_, _>>();
 
         let network_service = Arc::new(NetworkService {
             guarded: Mutex::new(Guarded {
@@ -122,6 +132,7 @@ impl NetworkService {
                 pending_api_events_buffer_size: NonZeroUsize::new(64).unwrap(),
                 randomness_seed: rand::random(),
             }),
+            important_nodes,
         });
 
         // Spawn a task pulling events from the network and transmitting them to the event senders.
@@ -258,9 +269,18 @@ impl NetworkService {
 
                     // TODO: handle dialing timeout here
 
+                    let is_important_peer = network_service
+                        .important_nodes
+                        .contains(&start_connect.expected_peer_id);
                     let network_service2 = network_service.clone();
                     (network_service.guarded.lock().await.tasks_executor)(Box::pin({
-                        connection_task(socket, network_service2, start_connect.id)
+                        connection_task(
+                            socket,
+                            network_service2,
+                            start_connect.id,
+                            start_connect.expected_peer_id,
+                            is_important_peer,
+                        )
                     }));
                 }
             }
@@ -487,20 +507,30 @@ pub enum StorageQueryErrorDetail {
 }
 
 /// Asynchronous task managing a specific WebSocket connection.
+///
+/// `is_important_peer` controls the log level used for problems that happen on this connection.
 async fn connection_task(
     websocket: impl Future<Output = Result<Pin<Box<ffi::WebSocket>>, ()>>,
     network_service: Arc<NetworkService>,
     pending_id: service::PendingId,
+    expected_peer_id: PeerId,
+    is_important_peer: bool,
 ) {
     // Finishing the ongoing connection process.
     let mut websocket = match websocket.await {
         Ok(s) => s,
         Err(()) => {
-            log::debug!(target: "connections", "Pending({:?}) => Failed to reach", pending_id);
+            log::debug!(
+                target: "connections",
+                "Pending({:?}, {}) => Failed to reach",
+                pending_id, expected_peer_id,
+            );
+
             network_service
                 .network
                 .pending_outcome_err(pending_id)
                 .await;
+
             return;
         }
     };
@@ -509,7 +539,14 @@ async fn connection_task(
         .network
         .pending_outcome_ok(pending_id, ())
         .await;
-    log::debug!(target: "connections", "Pending({:?}) => Connection({:?})", pending_id, id);
+
+    log::debug!(
+        target: "connections",
+        "Pending({:?}, {}) => Connection({:?})",
+        pending_id,
+        expected_peer_id,
+        id
+    );
 
     let mut write_buffer = vec![0; 4096];
 
@@ -525,7 +562,12 @@ async fn connection_task(
         {
             Ok(rw) => rw,
             Err(_err) => {
-                log::debug!(target: "connections", "Connection({:?}) => Closed: {}", id, _err);
+                if is_important_peer {
+                    log::warn!(target: "connections", "Error in connection with {}: {}", expected_peer_id, _err);
+                } else {
+                    log::debug!(target: "connections", "Connection({:?}, {}) => Closed: {}", id, expected_peer_id, _err);
+                }
+
                 return;
             }
         };
@@ -534,7 +576,7 @@ async fn connection_task(
         let read_buffer_closed = read_buffer.is_none();
 
         if read_write.write_close && read_buffer_closed {
-            log::debug!(target: "connections", "Connection({:?}) => Closed gracefully", id);
+            log::debug!(target: "connections", "Connection({:?}, {}) => Closed gracefully", id, expected_peer_id);
             return;
         }
 
