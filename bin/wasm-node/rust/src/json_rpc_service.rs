@@ -26,13 +26,10 @@ use futures::prelude::*;
 use smoldot::{
     chain_spec, executor, header,
     json_rpc::{self, methods},
-    network::protocol,
-    trie::proof_verify,
 };
 use std::{
     collections::{BTreeMap, HashSet},
     convert::TryFrom as _,
-    fmt, iter,
     pin::Pin,
     sync::Arc,
 };
@@ -685,7 +682,6 @@ async fn handle_rpc(rpc: &str, client: &mut JsonRpcService) -> (String, Option<S
     }
 }
 
-// TODO: move to network
 async fn storage_query(
     client: &mut JsonRpcService,
     key: &[u8],
@@ -698,81 +694,22 @@ async fn storage_query(
         return Err(StorageQueryError::FindStorageRootHashError);
     };
 
-    let mut outcome_errors = Vec::with_capacity(3);
-
-    for target in client.network_service.peers_list().await.take(3) {
-        let result = client
-            .network_service
-            .clone()
-            .storage_proof_request(
-                target.clone(),
-                protocol::StorageProofRequestConfig {
-                    block_hash: *hash,
-                    keys: iter::once(key),
-                },
-            )
-            .await
-            .map_err(StorageQueryErrorDetail::Network)
-            .and_then(|outcome| {
-                proof_verify::verify_proof(proof_verify::Config {
-                    proof: outcome.iter().map(|nv| &nv[..]),
-                    requested_key: key,
-                    trie_root_hash: &trie_root_hash,
-                })
-                .map_err(StorageQueryErrorDetail::ProofVerification)
-                .map(|v| v.map(|v| v.to_owned()))
-            });
-
-        match result {
-            Ok(value) => return Ok(value),
-            Err(err) => {
-                outcome_errors.push(err);
-            }
-        }
-    }
-
-    debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
-    Err(StorageQueryError::StorageRetrieval {
-        errors: outcome_errors,
-    })
-}
-
-#[derive(Debug)]
-enum StorageQueryError {
-    /// Error while finding the storage root hash of the requested block.
-    FindStorageRootHashError,
-    /// Error while retrieving the storage item from other nodes.
-    StorageRetrieval {
-        /// Contains one error per peer that has been contacted. If this list is empty, then we
-        /// aren't connected to any node.
-        errors: Vec<StorageQueryErrorDetail>,
-    },
-}
-
-impl fmt::Display for StorageQueryError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            StorageQueryError::FindStorageRootHashError => write!(f, "Unknown block"),
-            StorageQueryError::StorageRetrieval { errors } if errors.is_empty() => {
-                write!(f, "No node available for storage query")
-            }
-            StorageQueryError::StorageRetrieval { errors } => {
-                write!(f, "Storage query errors:")?;
-                for err in errors {
-                    write!(f, "\n- {}", err)?;
-                }
-                Ok(())
-            }
-        }
-    }
+    client
+        .network_service
+        .clone()
+        .storage_query(hash, &trie_root_hash, key)
+        .await
+        .map_err(StorageQueryError::StorageRetrieval)
 }
 
 #[derive(Debug, derive_more::Display)]
-enum StorageQueryErrorDetail {
+enum StorageQueryError {
+    /// Error while finding the storage root hash of the requested block.
+    #[display(fmt = "Unknown block")]
+    FindStorageRootHashError,
+    /// Error while retrieving the storage item from other nodes.
     #[display(fmt = "{}", _0)]
-    Network(smoldot::network::service::StorageProofRequestError),
-    #[display(fmt = "{}", _0)]
-    ProofVerification(proof_verify::Error),
+    StorageRetrieval(network_service::StorageQueryError),
 }
 
 fn header_conv<'a>(header: impl Into<smoldot::header::HeaderRef<'a>>) -> methods::Header {

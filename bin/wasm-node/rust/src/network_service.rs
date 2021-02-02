@@ -29,7 +29,7 @@
 
 use crate::ffi;
 
-use core::{num::NonZeroUsize, pin::Pin, time::Duration};
+use core::{fmt, iter, num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     informant::HashDisplay,
@@ -39,6 +39,7 @@ use smoldot::{
         peer_id::PeerId,
     },
     network::{protocol, service},
+    trie::proof_verify,
 };
 use std::sync::Arc;
 
@@ -314,7 +315,69 @@ impl NetworkService {
         result
     }
 
+    /// Performs one or more storage proof requests in order to find the value of the given
+    /// `requested_key`.
+    ///
+    /// Must be passed a block hash and the Merkle value of the root node of the storage trie of
+    /// this same block. The value of `storage_trie_root` corresponds to the value in the
+    /// [`smoldot::header::HeaderRef::state_root`] field.
+    ///
+    /// Returns the storage value of `requested_key` in the storage of the block, or an error if
+    /// it couldn't be determined.
+    ///
+    /// This function is equivalent to calling [`NetworkService::storage_proof_request`] and
+    /// verifying the proof, potentially multiple times until it succeeds. The number of attempts
+    /// and the selection of peers is done through reasonable heuristics.
+    pub async fn storage_query(
+        self: Arc<Self>,
+        block_hash: &[u8; 32],
+        storage_trie_root: &[u8; 32],
+        requested_key: &[u8],
+    ) -> Result<Option<Vec<u8>>, StorageQueryError> {
+        const NUM_ATTEMPTS: usize = 3;
+
+        let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
+
+        // TODO: better peers selection ; don't just take the first 3
+        for target in self.peers_list().await.take(NUM_ATTEMPTS) {
+            let result = self
+                .clone()
+                .storage_proof_request(
+                    target,
+                    protocol::StorageProofRequestConfig {
+                        block_hash: *block_hash,
+                        keys: iter::once(requested_key),
+                    },
+                )
+                .await
+                .map_err(StorageQueryErrorDetail::Network)
+                .and_then(|outcome| {
+                    proof_verify::verify_proof(proof_verify::Config {
+                        proof: outcome.iter().map(|nv| &nv[..]),
+                        requested_key,
+                        trie_root_hash: &storage_trie_root,
+                    })
+                    .map_err(StorageQueryErrorDetail::ProofVerification)
+                    .map(|v| v.map(|v| v.to_owned()))
+                });
+
+            match result {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    outcome_errors.push(err);
+                }
+            }
+        }
+
+        debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
+        Err(StorageQueryError {
+            errors: outcome_errors,
+        })
+    }
+
     /// Sends a storage proof request to the given peer.
+    ///
+    /// See also [`NetworkService::storage_query`].
     // TODO: more docs
     pub async fn storage_proof_request(
         self: Arc<Self>,
@@ -388,6 +451,39 @@ pub enum Event {
         peer_id: PeerId,
         announce: service::EncodedBlockAnnounce,
     },
+}
+
+/// Error that can happen when calling [`NetworkService::storage_query`].
+#[derive(Debug)]
+pub struct StorageQueryError {
+    /// Contains one error per peer that has been contacted. If this list is empty, then we
+    /// aren't connected to any node.
+    pub errors: Vec<StorageQueryErrorDetail>,
+}
+
+impl fmt::Display for StorageQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.errors.is_empty() {
+            write!(f, "No node available for storage query")
+        } else {
+            write!(f, "Storage query errors:")?;
+            for err in &self.errors {
+                write!(f, "\n- {}", err)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// See [`StorageQueryError`].
+#[derive(Debug, derive_more::Display)]
+pub enum StorageQueryErrorDetail {
+    /// Error during the network request.
+    #[display(fmt = "{}", _0)]
+    Network(service::StorageProofRequestError),
+    /// Error verifying the proof.
+    #[display(fmt = "{}", _0)]
+    ProofVerification(proof_verify::Error),
 }
 
 /// Asynchronous task managing a specific WebSocket connection.
