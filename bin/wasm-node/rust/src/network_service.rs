@@ -197,6 +197,7 @@ impl NetworkService {
                                 break Event::Connected {
                                     peer_id,
                                     best_block_number: best_number,
+                                    best_block_hash: best_hash,
                                 };
                             }
                             service::Event::ChainDisconnected {
@@ -465,6 +466,7 @@ pub enum Event {
     Connected {
         peer_id: PeerId,
         best_block_number: u64,
+        best_block_hash: [u8; 32],
     },
     Disconnected(PeerId),
     BlockAnnounce {

@@ -329,7 +329,7 @@ async fn start_sync(
                     };
 
                     match network_event {
-                        network_service::Event::Connected { peer_id, best_block_number } => {
+                        network_service::Event::Connected { peer_id, best_block_number, .. } => {
                             let id = sync.add_source(peer_id.clone(), best_block_number);
                             peers_source_id_map.insert(peer_id.clone(), id);
                         },
