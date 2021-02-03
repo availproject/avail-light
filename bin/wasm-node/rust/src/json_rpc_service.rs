@@ -90,16 +90,16 @@ pub async fn start(config: Config) {
         executor::core_version(vm).unwrap().0
     };
 
-    let (finalized_block_header, finalized_blocks_subscription) =
-        config.sync_service.subscribe_finalized().await;
-    let (_, best_blocks_subscription) = config.sync_service.subscribe_best().await;
-
-    let finalized_block_hash = header::hash_from_scale_encoded_header(&finalized_block_header);
+    let (_finalized_block_header, finalized_blocks_subscription) =
+        config.sync_service.subscribe_best().await;
+    let (best_block_header, best_blocks_subscription) = config.sync_service.subscribe_best().await;
+    debug_assert_eq!(_finalized_block_header, best_block_header);
+    let best_block_hash = header::hash_from_scale_encoded_header(&best_block_header);
 
     let mut known_blocks = lru::LruCache::new(256);
     known_blocks.put(
-        finalized_block_hash,
-        header::decode(&finalized_block_header).unwrap().into(),
+        best_block_hash,
+        header::decode(&best_block_header).unwrap().into(),
     );
 
     let client = Arc::new(JsonRpcService {
@@ -107,9 +107,11 @@ pub async fn start(config: Config) {
         chain_spec: config.chain_spec,
         network_service: config.network_service,
         sync_service: config.sync_service,
-        known_blocks: Mutex::new(known_blocks),
-        best_block: finalized_block_hash,
-        finalized_block: finalized_block_hash,
+        blocks: Mutex::new(Blocks {
+            known_blocks,
+            best_block: best_block_hash,
+            finalized_block: best_block_hash,
+        }),
         genesis_block: config.genesis_block_hash,
         genesis_storage,
         best_block_metadata: Mutex::new(best_block_metadata),
@@ -120,6 +122,45 @@ pub async fn start(config: Config) {
         new_heads: Mutex::new(HashMap::new()),
         finalized_heads: Mutex::new(HashMap::new()),
         storage: Mutex::new(HashMap::new()),
+    });
+
+    // Spawns a task whose role is to update `blocks` with the new best and finalized blocks.
+    (client.clone().tasks_executor.lock().await)({
+        let client = client.clone();
+        Box::pin(async move {
+            futures::pin_mut!(best_blocks_subscription, finalized_blocks_subscription);
+
+            loop {
+                match future::select(
+                    best_blocks_subscription.next(),
+                    finalized_blocks_subscription.next(),
+                )
+                .await
+                {
+                    future::Either::Left((Some(block), _)) => {
+                        let hash = header::hash_from_scale_encoded_header(&block);
+                        let mut blocks = client.blocks.lock().await;
+                        let blocks = &mut *blocks;
+                        blocks.best_block = hash;
+                        // As a small trick, we re-query the finalized block from `known_blocks` in
+                        let header = header::decode(&block).unwrap().into();
+                        // order to ensure that it never leaves the LRU cache.
+                        blocks.known_blocks.get(&blocks.finalized_block);
+                        blocks.known_blocks.put(hash, header);
+                    }
+                    future::Either::Right((Some(block), _)) => {
+                        let hash = header::hash_from_scale_encoded_header(&block);
+                        let header = header::decode(&block).unwrap().into();
+                        let mut blocks = client.blocks.lock().await;
+                        blocks.finalized_block = hash;
+                        blocks.known_blocks.put(hash, header);
+                    }
+
+                    // One of the two streams is over.
+                    _ => break,
+                }
+            }
+        })
     });
 
     (client.clone().tasks_executor.lock().await)(Box::pin(async move {
@@ -194,18 +235,12 @@ struct JsonRpcService {
     sync_service: Arc<sync_service::SyncService>,
 
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
-    ///
-    /// Always contains `best_block` and `finalized_block`.
-    known_blocks: Mutex<lru::LruCache<[u8; 32], header::Header>>,
+    blocks: Mutex<Blocks>,
 
     /// Hash of the genesis block.
     /// Keeping the genesis block is important, as the genesis block hash is included in
     /// transaction signatures, and must therefore be queried by upper-level UIs.
     genesis_block: [u8; 32],
-    /// Hash of the current best block.
-    best_block: [u8; 32],
-    /// Hash of the latest finalized block.
-    finalized_block: [u8; 32],
 
     // TODO: remove; unnecessary
     genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
@@ -230,6 +265,19 @@ struct JsonRpcService {
 
     /// Same principle as [`JsonRpcService::all_heads`], but for storage subscriptions.
     storage: Mutex<HashMap<String, oneshot::Sender<String>>>,
+}
+
+struct Blocks {
+    /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
+    ///
+    /// Always contains `best_block` and `finalized_block`.
+    known_blocks: lru::LruCache<[u8; 32], header::Header>,
+
+    /// Hash of the current best block.
+    best_block: [u8; 32],
+
+    /// Hash of the latest finalized block.
+    finalized_block: [u8; 32],
 }
 
 // TODO: remove second tuple item of the return value, once possible
@@ -271,7 +319,8 @@ async fn handle_rpc(
             (Some(response), None)
         }
         methods::MethodCall::chain_getBlockHash { height } => {
-            let mut known_blocks = client.known_blocks.lock().await;
+            let mut blocks = client.blocks.lock().await;
+            let blocks = &mut *blocks;
 
             let response = match height {
                 Some(0) => methods::Response::chain_getBlockHash(methods::HashHexString(
@@ -279,24 +328,26 @@ async fn handle_rpc(
                 ))
                 .to_json_response(request_id),
                 None => {
-                    methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+                    methods::Response::chain_getBlockHash(methods::HashHexString(blocks.best_block))
                         .to_json_response(request_id)
                 }
                 Some(n)
-                    if known_blocks
-                        .get(&client.best_block)
+                    if blocks
+                        .known_blocks
+                        .get(&blocks.best_block)
                         .map_or(false, |h| h.number == n) =>
                 {
-                    methods::Response::chain_getBlockHash(methods::HashHexString(client.best_block))
+                    methods::Response::chain_getBlockHash(methods::HashHexString(blocks.best_block))
                         .to_json_response(request_id)
                 }
                 Some(n)
-                    if known_blocks
-                        .get(&client.finalized_block)
+                    if blocks
+                        .known_blocks
+                        .get(&blocks.finalized_block)
                         .map_or(false, |h| h.number == n) =>
                 {
                     methods::Response::chain_getBlockHash(methods::HashHexString(
-                        client.finalized_block,
+                        blocks.finalized_block,
                     ))
                     .to_json_response(request_id)
                 }
@@ -313,14 +364,16 @@ async fn handle_rpc(
         }
         methods::MethodCall::chain_getFinalizedHead {} => {
             let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
-                client.finalized_block,
+                client.blocks.lock().await.finalized_block,
             ))
             .to_json_response(request_id);
             (Some(response), None)
         }
         methods::MethodCall::chain_getHeader { hash } => {
-            let hash = hash.as_ref().map(|h| &h.0).unwrap_or(&client.best_block);
-            let response = if let Some(header) = client.known_blocks.lock().await.get(hash) {
+            let mut blocks = client.blocks.lock().await;
+            let blocks = &mut *blocks;
+            let hash = hash.as_ref().map(|h| &h.0).unwrap_or(&blocks.best_block);
+            let response = if let Some(header) = blocks.known_blocks.get(hash) {
                 methods::Response::chain_getHeader(header_conv(header)).to_json_response(request_id)
             } else {
                 json_rpc::parse::build_success_response(request_id, "null")
@@ -534,13 +587,17 @@ async fn handle_rpc(
             (Some(response), None)
         }
         methods::MethodCall::state_queryStorageAt { keys, at } => {
-            let at = at.as_ref().map(|h| h.0).unwrap_or(client.best_block);
+            let blocks = client.blocks.lock().await;
+            let at = at.as_ref().map(|h| h.0).unwrap_or(blocks.best_block);
 
             // TODO: have no idea what this describes actually
             let mut out = methods::StorageChangeSet {
-                block: methods::HashHexString(client.best_block),
+                block: methods::HashHexString(blocks.best_block),
                 changes: Vec::new(),
             };
+
+            // Drop the lock to make sure that we don't accidentally lock it again below.
+            drop(blocks);
 
             for key in keys {
                 // TODO: parallelism?
@@ -585,7 +642,7 @@ async fn handle_rpc(
             (Some(response), None)
         }
         methods::MethodCall::state_getMetadata {} => {
-            let best_block_hash = client.best_block.clone();
+            let best_block_hash = client.blocks.lock().await.best_block;
             let response = match storage_query(&client, &b":code"[..], &best_block_hash).await {
                 Ok(Some(value)) => {
                     let best_block_metadata = {
@@ -613,7 +670,10 @@ async fn handle_rpc(
             (Some(response), None)
         }
         methods::MethodCall::state_getStorage { key, hash } => {
-            let hash = hash.as_ref().map(|h| h.0).unwrap_or(client.best_block);
+            let hash = hash
+                .as_ref()
+                .map(|h| h.0)
+                .unwrap_or(client.blocks.lock().await.best_block);
 
             let response = match storage_query(&client, &key.0, &hash).await {
                 Ok(Some(value)) => {
@@ -641,7 +701,7 @@ async fn handle_rpc(
             // TODO: subscription has no effect right now
             // TODO: client.runtime_version.insert(subscription.clone());
 
-            let best_block_hash = client.best_block;
+            let best_block_hash = client.blocks.lock().await.best_block;
             let runtime_code = storage_query(&client, &b":code"[..], &best_block_hash).await;
             let runtime_specs = if let Ok(runtime_code) = runtime_code {
                 // TODO: don't unwrap
@@ -802,7 +862,7 @@ async fn handle_rpc(
             }
         }
         methods::MethodCall::state_getRuntimeVersion {} => {
-            let best_block_hash = client.best_block;
+            let best_block_hash = client.blocks.lock().await.best_block;
             let runtime_code = storage_query(&client, &b":code"[..], &best_block_hash).await;
             let runtime_specs = if let Ok(runtime_code) = runtime_code {
                 // TODO: don't unwrap
@@ -913,7 +973,8 @@ async fn storage_query(
     key: &[u8],
     hash: &[u8; 32],
 ) -> Result<Option<Vec<u8>>, StorageQueryError> {
-    let trie_root_hash = if let Some(header) = client.known_blocks.lock().await.get(hash) {
+    // TODO: risk of deadlock here?
+    let trie_root_hash = if let Some(header) = client.blocks.lock().await.known_blocks.get(hash) {
         header.state_root
     } else {
         // TODO: should make a block request towards a node
