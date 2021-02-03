@@ -251,6 +251,10 @@ impl NetworkService {
                         None => continue,
                     };
 
+                    let is_important_peer = network_service
+                        .important_nodes
+                        .contains(&start_connect.expected_peer_id);
+
                     // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
                     // into a `Future<dyn Output = Result<TcpStream, ...>>`.
                     let socket = match multiaddr_to_url(&start_connect.multiaddr) {
@@ -259,7 +263,21 @@ impl NetworkService {
                             ffi::WebSocket::connect(&url)
                         }
                         Err(()) => {
-                            log::debug!(target: "connections", "Unsupported multiaddr: {}", start_connect.multiaddr);
+                            if is_important_peer {
+                                log::warn!(
+                                    target: "connections",
+                                    "Unsupported multiaddr ({}) when trying to connect to {}",
+                                    start_connect.multiaddr,
+                                    start_connect.expected_peer_id
+                                );
+                            } else {
+                                log::debug!(
+                                    target: "connections",
+                                     "Unsupported multiaddr: {}",
+                                     start_connect.multiaddr
+                                );
+                            }
+
                             network_service
                                 .network
                                 .pending_outcome_err(start_connect.id)
@@ -270,9 +288,6 @@ impl NetworkService {
 
                     // TODO: handle dialing timeout here
 
-                    let is_important_peer = network_service
-                        .important_nodes
-                        .contains(&start_connect.expected_peer_id);
                     let network_service2 = network_service.clone();
                     (network_service.guarded.lock().await.tasks_executor)(Box::pin({
                         connection_task(
