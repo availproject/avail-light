@@ -347,7 +347,7 @@ pub enum BabeAllowedSlots {
     /// Allow primary and secondary plain slot claims.
     PrimaryAndSecondaryPlainSlots,
     /// Allow primary and secondary VRF slot claims.
-    PrimaryAndSecondaryVRFSlots,
+    PrimaryAndSecondaryVrfSlots,
 }
 
 /// A BABE pre-runtime digest. This contains all data required to validate a

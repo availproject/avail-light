@@ -925,7 +925,7 @@ impl ReadyToRun {
                     // TODO: clean up
                     #[derive(parity_scale_codec::Encode)]
                     enum EcdsaVerifyError {
-                        RSError,
+                        RsError,
                         VError,
                         BadSignature,
                     }
@@ -935,7 +935,7 @@ impl ReadyToRun {
 
                     let result = (|| -> Result<_, EcdsaVerifyError> {
                         let rs = secp256k1::Signature::parse_slice(&sig[0..64])
-                            .map_err(|_| EcdsaVerifyError::RSError)?;
+                            .map_err(|_| EcdsaVerifyError::RsError)?;
                         let v = secp256k1::RecoveryId::parse(if sig[64] > 26 {
                             sig[64] - 27
                         } else {
@@ -966,7 +966,7 @@ impl ReadyToRun {
                     // TODO: clean up
                     #[derive(parity_scale_codec::Encode)]
                     enum EcdsaVerifyError {
-                        RSError,
+                        RsError,
                         VError,
                         BadSignature,
                     }
@@ -976,7 +976,7 @@ impl ReadyToRun {
 
                     let result = (|| -> Result<_, EcdsaVerifyError> {
                         let rs = secp256k1::Signature::parse_slice(&sig[0..64])
-                            .map_err(|_| EcdsaVerifyError::RSError)?;
+                            .map_err(|_| EcdsaVerifyError::RsError)?;
                         let v = secp256k1::RecoveryId::parse(if sig[64] > 26 {
                             sig[64] - 27
                         } else {

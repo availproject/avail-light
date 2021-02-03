@@ -352,7 +352,7 @@ enum SerializedBabeAllowedSlotsV1 {
     #[serde(rename = "primary-and-secondary-plain")]
     PrimaryAndSecondaryPlain,
     #[serde(rename = "primary-and-secondary-vrf")]
-    PrimaryAndSecondaryVRF,
+    PrimaryAndSecondaryVrf,
 }
 
 impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
@@ -362,8 +362,8 @@ impl From<header::BabeAllowedSlots> for SerializedBabeAllowedSlotsV1 {
             header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots => {
                 SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlain
             }
-            header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots => {
-                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRF
+            header::BabeAllowedSlots::PrimaryAndSecondaryVrfSlots => {
+                SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVrf
             }
         }
     }
@@ -376,8 +376,8 @@ impl From<SerializedBabeAllowedSlotsV1> for header::BabeAllowedSlots {
             SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryPlain => {
                 header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots
             }
-            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVRF => {
-                header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots
+            SerializedBabeAllowedSlotsV1::PrimaryAndSecondaryVrf => {
+                header::BabeAllowedSlots::PrimaryAndSecondaryVrfSlots
             }
         }
     }

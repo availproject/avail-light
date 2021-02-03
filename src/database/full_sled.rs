@@ -1351,7 +1351,7 @@ fn encode_babe_epoch_information(info: chain_information::BabeEpochInformationRe
     out.extend_from_slice(match info.allowed_slots {
         header::BabeAllowedSlots::PrimarySlots => &[0],
         header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots => &[1],
-        header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots => &[2],
+        header::BabeAllowedSlots::PrimaryAndSecondaryVrfSlots => &[2],
     });
     out
 }
@@ -1392,7 +1392,7 @@ fn decode_babe_epoch_information<E: From<AccessError>>(
                     header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots
                 }),
                 nom::combinator::map(nom::bytes::complete::tag(&[2]), |_| {
-                    header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots
+                    header::BabeAllowedSlots::PrimaryAndSecondaryVrfSlots
                 }),
             )),
         )),

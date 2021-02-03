@@ -319,7 +319,7 @@ pub fn verify_header(config: VerifyConfig) -> Result<VerifySuccess, VerifyError>
         (_, true, None) => unreachable!(),
         (_, true, Some(_)) => {}
         (header::BabeAllowedSlots::PrimaryAndSecondaryPlainSlots, false, None) => {}
-        (header::BabeAllowedSlots::PrimaryAndSecondaryVRFSlots, false, Some(_)) => {}
+        (header::BabeAllowedSlots::PrimaryAndSecondaryVrfSlots, false, Some(_)) => {}
         _ => return Err(VerifyError::ForbiddenSlotType),
     }
 
