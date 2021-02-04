@@ -26,7 +26,7 @@ client
   .start({
     chain_spec: JSON.stringify(westend_specs()),
     json_rpc_callback: (resp) => {
-      if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot!"}') {
+      if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot"}') {
         // Test successful
         console.info('Success');
         process.exit(0);
