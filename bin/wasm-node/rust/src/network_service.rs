@@ -375,6 +375,7 @@ impl NetworkService {
         let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
 
         // TODO: better peers selection ; don't just take the first 3
+        // TODO: must only ask the peers that know about this block
         for target in self.peers_list().await.take(NUM_ATTEMPTS) {
             let result = self
                 .clone()
