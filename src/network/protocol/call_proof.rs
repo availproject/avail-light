@@ -23,18 +23,19 @@ use prost::Message as _;
 
 /// Description of a call proof request that can be sent to a peer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallProofRequestConfig<'a> {
+pub struct CallProofRequestConfig<'a, I> {
     /// Hash of the block to request the storage of.
     pub block_hash: [u8; 32],
     /// Name of the runtime function to call.
     pub method: &'a str,
-    /// Bytes passed as input to the call. The semantics depend on which method is being called.
-    pub parameter: &'a [u8],
+    /// Iterator to buffers of bytes to be concatenated then passed as input to the call. The
+    /// semantics of these bytes depend on which method is being called.
+    pub parameter_vectored: I,
 }
 
 /// Builds the bytes corresponding to a call proof request.
 pub fn build_call_proof_request(
-    config: CallProofRequestConfig,
+    config: CallProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
 ) -> impl Iterator<Item = impl AsRef<[u8]>> {
     // Note: while the API of this function allows for a zero-cost implementation, the protobuf
     // library doesn't permit to avoid allocations.
@@ -44,7 +45,10 @@ pub fn build_call_proof_request(
             schema::RemoteCallRequest {
                 block: config.block_hash.to_vec(),
                 method: config.method.into(),
-                data: config.parameter.into(),
+                data: config.parameter_vectored.fold(Vec::new(), |mut a, b| {
+                    a.extend_from_slice(b.as_ref());
+                    a
+                }),
             },
         )),
     };

@@ -823,7 +823,7 @@ impl JsonRpcService {
                 }
             }
             methods::MethodCall::payment_queryInfo { extrinsic, hash } => {
-                assert!(hash.is_none()); // TODO:
+                assert!(hash.is_none()); // TODO: handle when hash != None
                                          // TODO: complete hack
                 let response = methods::Response::payment_queryInfo(methods::RuntimeDispatchInfo {
                     weight: 220429000,                     // TODO: no
@@ -1133,7 +1133,10 @@ impl JsonRpcService {
             }
             methods::MethodCall::system_accountNextIndex { account } => {
                 let response = match self
-                    .recent_best_block_runtime_call("AccountNonceApi_account_nonce", &account.0)
+                    .recent_best_block_runtime_call(
+                        "AccountNonceApi_account_nonce",
+                        iter::once(&account.0),
+                    )
                     .await
                 {
                     Ok(return_value) => {
@@ -1251,7 +1254,7 @@ impl JsonRpcService {
     async fn recent_best_block_runtime_call(
         self: &Arc<JsonRpcService>,
         method: &str,
-        parameter: &[u8],
+        parameter_vectored: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
     ) -> Result<Vec<u8>, RuntimeCallError> {
         // `latest_known_runtime` should be kept locked as little as possible.
         // In order to handle the possibility a runtime upgrade happening during the operation,
@@ -1285,7 +1288,7 @@ impl JsonRpcService {
                 .call_proof_query(protocol::CallProofRequestConfig {
                     block_hash: runtime_block_hash,
                     method,
-                    parameter,
+                    parameter_vectored: parameter_vectored.clone(),
                 })
                 .await
                 .unwrap_or(Vec::new());
@@ -1306,7 +1309,7 @@ impl JsonRpcService {
                 executor::read_only_runtime_host::run(executor::read_only_runtime_host::Config {
                     virtual_machine: runtime.virtual_machine.take().unwrap(),
                     function_to_call: method,
-                    parameter: iter::once(parameter),
+                    parameter: parameter_vectored,
                 })
                 .map_err(RuntimeCallError::StartError)?; // TODO: must put back virtual machine /!\
 

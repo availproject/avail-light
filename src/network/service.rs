@@ -351,7 +351,7 @@ where
         now: TNow,
         target: peer_id::PeerId,
         chain_index: usize,
-        config: protocol::CallProofRequestConfig<'a>,
+        config: protocol::CallProofRequestConfig<'a, impl Iterator<Item = impl AsRef<[u8]>>>,
     ) -> Result<Vec<Vec<u8>>, CallProofRequestError> {
         let request_data =
             protocol::build_call_proof_request(config).fold(Vec::new(), |mut a, b| {

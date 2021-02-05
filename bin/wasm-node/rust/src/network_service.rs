@@ -447,7 +447,10 @@ impl NetworkService {
     // TODO: documentation
     pub async fn call_proof_query<'a>(
         self: Arc<Self>,
-        config: protocol::CallProofRequestConfig<'a>,
+        config: protocol::CallProofRequestConfig<
+            'a,
+            impl Iterator<Item = impl AsRef<[u8]>> + Clone,
+        >,
     ) -> Result<Vec<Vec<u8>>, CallProofQueryError> {
         const NUM_ATTEMPTS: usize = 3;
 
@@ -482,7 +485,7 @@ impl NetworkService {
     pub async fn call_proof_request<'a>(
         self: Arc<Self>,
         target: PeerId,
-        config: protocol::CallProofRequestConfig<'a>,
+        config: protocol::CallProofRequestConfig<'a, impl Iterator<Item = impl AsRef<[u8]>>>,
     ) -> Result<Vec<Vec<u8>>, service::CallProofRequestError> {
         log::debug!(
             target: "network",
