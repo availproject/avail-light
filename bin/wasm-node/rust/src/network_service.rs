@@ -29,7 +29,7 @@
 
 use crate::ffi;
 
-use core::{fmt, iter, num::NonZeroUsize, pin::Pin, time::Duration};
+use core::{fmt, num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     informant::HashDisplay,
@@ -352,14 +352,15 @@ impl NetworkService {
     }
 
     /// Performs one or more storage proof requests in order to find the value of the given
-    /// `requested_key`.
+    /// `requested_keys`.
     ///
     /// Must be passed a block hash and the Merkle value of the root node of the storage trie of
     /// this same block. The value of `storage_trie_root` corresponds to the value in the
     /// [`smoldot::header::HeaderRef::state_root`] field.
     ///
-    /// Returns the storage value of `requested_key` in the storage of the block, or an error if
-    /// it couldn't be determined.
+    /// Returns the storage values of `requested_keys` in the storage of the block, or an error if
+    /// it couldn't be determined. If `Ok`, the `Vec` is guaranteed to have the same number of
+    /// elements as `requested_keys`.
     ///
     /// This function is equivalent to calling [`NetworkService::storage_proof_request`] and
     /// verifying the proof, potentially multiple times until it succeeds. The number of attempts
@@ -368,8 +369,8 @@ impl NetworkService {
         self: Arc<Self>,
         block_hash: &[u8; 32],
         storage_trie_root: &[u8; 32],
-        requested_key: &[u8],
-    ) -> Result<Option<Vec<u8>>, StorageQueryError> {
+        requested_keys: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
+    ) -> Result<Vec<Option<Vec<u8>>>, StorageQueryError> {
         const NUM_ATTEMPTS: usize = 3;
 
         let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
@@ -383,23 +384,30 @@ impl NetworkService {
                     target,
                     protocol::StorageProofRequestConfig {
                         block_hash: *block_hash,
-                        keys: iter::once(requested_key),
+                        keys: requested_keys.clone(),
                     },
                 )
                 .await
                 .map_err(StorageQueryErrorDetail::Network)
                 .and_then(|outcome| {
-                    proof_verify::verify_proof(proof_verify::Config {
-                        proof: outcome.iter().map(|nv| &nv[..]),
-                        requested_key,
-                        trie_root_hash: &storage_trie_root,
-                    })
-                    .map_err(StorageQueryErrorDetail::ProofVerification)
-                    .map(|v| v.map(|v| v.to_owned()))
+                    let mut result = Vec::with_capacity(outcome.len());
+                    for key in requested_keys.clone() {
+                        result.push(
+                            proof_verify::verify_proof(proof_verify::Config {
+                                proof: outcome.iter().map(|nv| &nv[..]),
+                                requested_key: key.as_ref(),
+                                trie_root_hash: &storage_trie_root,
+                            })
+                            .map_err(StorageQueryErrorDetail::ProofVerification)?
+                            .map(|v| v.to_owned()),
+                        );
+                    }
+                    debug_assert_eq!(result.len(), result.capacity());
+                    Ok(result)
                 });
 
             match result {
-                Ok(value) => return Ok(value),
+                Ok(values) => return Ok(values),
                 Err(err) => {
                     outcome_errors.push(err);
                 }

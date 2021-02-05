@@ -234,46 +234,31 @@ pub async fn start(config: Config) {
                 // Download the runtime code of this new best block.
                 let new_best_block_decoded = header::decode(&new_best_block).unwrap();
                 let new_best_block_hash = header::hash_from_scale_encoded_header(&new_best_block);
-                // TODO: download both at once
-                let new_code = match client
-                    .network_service
-                    .clone()
-                    .storage_query(
-                        &new_best_block_hash,
-                        new_best_block_decoded.state_root,
-                        b":code",
-                    )
-                    .await
-                {
-                    Ok(c) => c,
-                    Err(error) => {
-                        log::warn!(
-                            target: "json-rpc",
-                            "Failed to download :code of new best block: {}",
-                            error
-                        );
-                        continue;
-                    }
-                };
-                let new_heap_pages = match client
-                    .network_service
-                    .clone()
-                    .storage_query(
-                        &new_best_block_hash,
-                        new_best_block_decoded.state_root,
-                        b":heappages",
-                    )
-                    .await
-                {
-                    Ok(c) => c,
-                    Err(error) => {
-                        log::warn!(
-                            target: "json-rpc",
-                            "Failed to download :heappages of new best block: {}",
-                            error
-                        );
-                        continue;
-                    }
+                let (new_code, new_heap_pages) = {
+                    let mut results = match client
+                        .network_service
+                        .clone()
+                        .storage_query(
+                            &new_best_block_hash,
+                            new_best_block_decoded.state_root,
+                            iter::once(&b":code"[..]).chain(iter::once(&b":heappages"[..])),
+                        )
+                        .await
+                    {
+                        Ok(c) => c,
+                        Err(error) => {
+                            log::warn!(
+                                target: "json-rpc",
+                                "Failed to download :code and :heappages of new best block: {}",
+                                error
+                            );
+                            continue;
+                        }
+                    };
+
+                    let new_heap_pages = results.pop().unwrap();
+                    let new_code = results.pop().unwrap();
+                    (new_code, new_heap_pages)
                 };
 
                 // Only lock `latest_known_runtime` now that everything is synchronous.
@@ -1022,19 +1007,26 @@ impl JsonRpcService {
                                         match client
                                             .network_service
                                             .clone()
-                                            .storage_query(&block_hash, state_trie_root, &key.0)
+                                            .storage_query(
+                                                &block_hash,
+                                                state_trie_root,
+                                                iter::once(&key.0),
+                                            )
                                             .await
                                         {
-                                            Ok(value) => match &mut known_values[key_index] {
-                                                Some(v) if *v == value => {}
-                                                v @ _ => {
-                                                    *v = Some(value.clone());
-                                                    out.changes.push((
-                                                        key.clone(),
-                                                        value.map(methods::HexString),
-                                                    ));
+                                            Ok(mut values) => {
+                                                let value = values.pop().unwrap();
+                                                match &mut known_values[key_index] {
+                                                    Some(v) if *v == value => {}
+                                                    v @ _ => {
+                                                        *v = Some(value.clone());
+                                                        out.changes.push((
+                                                            key.clone(),
+                                                            value.map(methods::HexString),
+                                                        ));
+                                                    }
                                                 }
-                                            },
+                                            }
                                             Err(error) => {
                                                 log::warn!(
                                                     target: "json-rpc",
@@ -1238,11 +1230,13 @@ impl JsonRpcService {
             return Err(StorageQueryError::FindStorageRootHashError);
         };
 
-        self.network_service
+        let mut result = self
+            .network_service
             .clone()
-            .storage_query(hash, &trie_root_hash, key)
+            .storage_query(hash, &trie_root_hash, iter::once(key))
             .await
-            .map_err(StorageQueryError::StorageRetrieval)
+            .map_err(StorageQueryError::StorageRetrieval)?;
+        Ok(result.pop().unwrap())
     }
 
     /// Performs a runtime call using the best block, or a recent best block.
