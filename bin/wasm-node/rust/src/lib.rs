@@ -264,6 +264,9 @@ pub async fn start_client(
                 sync_service: sync_service.clone(),
                 chain_spec,
                 genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+                genesis_block_state_root: genesis_chain_information
+                    .finalized_block_header
+                    .state_root,
             })
             .boxed(),
         )

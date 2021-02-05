@@ -19,6 +19,7 @@
 
 use super::parse;
 use alloc::{format, string::String, vec::Vec};
+use core::convert::TryFrom as _;
 
 /// Parses a JSON call (usually received from a JSON-RPC server).
 ///
@@ -195,7 +196,7 @@ define_methods! {
     state_subscribeStorage(list: Vec<HexString>) -> &'a str,
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
     state_unsubscribeStorage(subscription: String) -> bool,
-    system_accountNextIndex(account: String) -> u64, // TODO: String for the AccountId and u64 for the Index? shouldn't be hardcoded but determined from Metadata
+    system_accountNextIndex(account: AccountId) -> u64,
     system_addReservedPeer() -> (), // TODO:
     system_chain() -> &'a str,
     system_chainType() -> &'a str,
@@ -260,6 +261,38 @@ impl<'a> serde::Deserialize<'a> for HashHexString {
         let mut out = [0; 32];
         out.copy_from_slice(&bytes);
         Ok(HashHexString(out))
+    }
+}
+
+/// Contains the public key of an account.
+///
+/// The deserialization involves decoding an SS58 address into this public key.
+#[derive(Debug, Clone)]
+pub struct AccountId(pub [u8; 32]);
+
+// TODO: not great for type in public API
+impl<'a> serde::Deserialize<'a> for AccountId {
+    fn deserialize<D>(deserializer: D) -> Result<AccountId, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let string = <&str>::deserialize(deserializer)?;
+        let decoded = match bs58::decode(&string).into_vec() {
+            // TODO: don't use into_vec
+            Ok(d) => d,
+            Err(_) => return Err(serde::de::Error::custom("AccountId isn't in base58 format")),
+        };
+
+        // TODO: soon might be 36 bytes as well
+        if decoded.len() != 35 {
+            return Err(serde::de::Error::custom("unexpected length for AccountId"));
+        }
+
+        // TODO: finish implementing this properly ; must notably check checksum
+        // see https://github.com/paritytech/substrate/blob/74a50abd6cbaad1253daf3585d5cdaa4592e9184/primitives/core/src/crypto.rs#L228
+
+        let account_id = <[u8; 32]>::try_from(&decoded[1..33]).unwrap();
+        Ok(AccountId(account_id))
     }
 }
 

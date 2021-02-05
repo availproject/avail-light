@@ -29,12 +29,14 @@
 
 mod block_announces;
 mod block_request;
+mod call_proof;
 mod grandpa;
 mod grandpa_warp_sync;
 mod storage_proof;
 
 pub use self::block_announces::*;
 pub use self::block_request::*;
+pub use self::call_proof::*;
 pub use self::grandpa::*;
 pub use self::grandpa_warp_sync::*;
 pub use self::storage_proof::*;

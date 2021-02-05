@@ -444,6 +444,69 @@ impl NetworkService {
         result
     }
 
+    // TODO: documentation
+    pub async fn call_proof_query<'a>(
+        self: Arc<Self>,
+        config: protocol::CallProofRequestConfig<'a>,
+    ) -> Result<Vec<Vec<u8>>, CallProofQueryError> {
+        const NUM_ATTEMPTS: usize = 3;
+
+        let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
+
+        // TODO: better peers selection ; don't just take the first 3
+        // TODO: must only ask the peers that know about this block
+        for target in self.peers_list().await.take(NUM_ATTEMPTS) {
+            let result = self
+                .clone()
+                .call_proof_request(target, config.clone())
+                .await;
+
+            match result {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    outcome_errors.push(err);
+                }
+            }
+        }
+
+        debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
+        Err(CallProofQueryError {
+            errors: outcome_errors,
+        })
+    }
+
+    /// Sends a call proof request to the given peer.
+    ///
+    /// See also [`NetworkService::call_proof_request`].
+    // TODO: more docs
+    pub async fn call_proof_request<'a>(
+        self: Arc<Self>,
+        target: PeerId,
+        config: protocol::CallProofRequestConfig<'a>,
+    ) -> Result<Vec<Vec<u8>>, service::CallProofRequestError> {
+        log::debug!(
+            target: "network",
+            "Connection({}) <= CallProofRequest({}, {})",
+            target,
+            HashDisplay(&config.block_hash),
+            config.method
+        );
+
+        let result = self
+            .network
+            .call_proof_request(ffi::Instant::now(), target.clone(), 0, config)
+            .await; // TODO: chain_index
+
+        log::debug!(
+            target: "network",
+            "Connection({}) => CallProofRequest({:?})",
+            target,
+            result.as_ref().map(|b| b.len())
+        );
+
+        result
+    }
+
     /// Announces transaction to the peers we are connected to.
     /// Returns an error if we aren't connected to any peer, or if we fail to send the transaction to all peers.
     pub async fn announce_transaction(
@@ -522,6 +585,28 @@ pub enum StorageQueryErrorDetail {
     /// Error verifying the proof.
     #[display(fmt = "{}", _0)]
     ProofVerification(proof_verify::Error),
+}
+
+/// Error that can happen when calling [`NetworkService::call_proof_query`].
+#[derive(Debug)]
+pub struct CallProofQueryError {
+    /// Contains one error per peer that has been contacted. If this list is empty, then we
+    /// aren't connected to any node.
+    pub errors: Vec<service::CallProofRequestError>,
+}
+
+impl fmt::Display for CallProofQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.errors.is_empty() {
+            write!(f, "No node available for call proof query")
+        } else {
+            write!(f, "Call proof query errors:")?;
+            for err in &self.errors {
+                write!(f, "\n- {}", err)?;
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Asynchronous task managing a specific WebSocket connection.

@@ -21,27 +21,30 @@ use alloc::vec::Vec;
 use core::iter;
 use prost::Message as _;
 
-/// Description of a storage proof request that can be sent to a peer.
+/// Description of a call proof request that can be sent to a peer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StorageProofRequestConfig<TKeysIter> {
+pub struct CallProofRequestConfig<'a> {
     /// Hash of the block to request the storage of.
     pub block_hash: [u8; 32],
-    /// List of storage keys to query.
-    pub keys: TKeysIter,
+    /// Name of the runtime function to call.
+    pub method: &'a str,
+    /// Bytes passed as input to the call. The semantics depend on which method is being called.
+    pub parameter: &'a [u8],
 }
 
-/// Builds the bytes corresponding to a storage proof request.
-pub fn build_storage_proof_request(
-    config: StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
+/// Builds the bytes corresponding to a call proof request.
+pub fn build_call_proof_request(
+    config: CallProofRequestConfig,
 ) -> impl Iterator<Item = impl AsRef<[u8]>> {
     // Note: while the API of this function allows for a zero-cost implementation, the protobuf
     // library doesn't permit to avoid allocations.
 
     let request = schema::Request {
-        request: Some(schema::request::Request::RemoteReadRequest(
-            schema::RemoteReadRequest {
+        request: Some(schema::request::Request::RemoteCallRequest(
+            schema::RemoteCallRequest {
                 block: config.block_hash.to_vec(),
-                keys: config.keys.map(|k| k.as_ref().to_vec()).collect(),
+                method: config.method.into(),
+                data: config.parameter.into(),
             },
         )),
     };
@@ -55,18 +58,18 @@ pub fn build_storage_proof_request(
     iter::once(request_bytes)
 }
 
-/// Decodes a response to a storage proof request.
+/// Decodes a response to a call proof request.
 // TODO: should have a more zero-cost API, but we're limited by the protobuf library for that
-pub fn decode_storage_proof_response(
+pub fn decode_call_proof_response(
     response_bytes: &[u8],
-) -> Result<Vec<Vec<u8>>, DecodeStorageProofResponseError> {
+) -> Result<Vec<Vec<u8>>, DecodeCallProofResponseError> {
     let response = schema::Response::decode(&response_bytes[..])
         .map_err(ProtobufDecodeError)
-        .map_err(DecodeStorageProofResponseError::ProtobufDecode)?;
+        .map_err(DecodeCallProofResponseError::ProtobufDecode)?;
 
     let proof = match response.response {
-        Some(schema::response::Response::RemoteReadResponse(rsp)) => rsp.proof,
-        _ => return Err(DecodeStorageProofResponseError::BadResponseTy),
+        Some(schema::response::Response::RemoteCallResponse(rsp)) => rsp.proof,
+        _ => return Err(DecodeCallProofResponseError::BadResponseTy),
     };
 
     // The proof itself is a SCALE-encoded `Vec<Vec<u8>>`.
@@ -85,19 +88,19 @@ pub fn decode_storage_proof_response(
         },
     ))(&proof)
     .map_err(|_: nom::Err<nom::error::Error<&[u8]>>| {
-        DecodeStorageProofResponseError::ProofDecodeError
+        DecodeCallProofResponseError::ProofDecodeError
     })?;
 
     Ok(decoded)
 }
 
-/// Error potentially returned by [`decode_storage_proof_response`].
+/// Error potentially returned by [`decode_call_proof_response`].
 #[derive(Debug, derive_more::Display)]
-pub enum DecodeStorageProofResponseError {
+pub enum DecodeCallProofResponseError {
     /// Error while decoding the protobuf encoding.
     ProtobufDecode(ProtobufDecodeError),
-    /// Response isn't a response to a storage proof request.
+    /// Response isn't a response to a call proof request.
     BadResponseTy,
-    /// Failed to decode response as a storage proof.
+    /// Failed to decode response as a call proof.
     ProofDecodeError,
 }

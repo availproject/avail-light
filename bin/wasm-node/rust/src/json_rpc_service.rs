@@ -28,10 +28,13 @@ use smoldot::{
     chain_spec, executor, header,
     json_rpc::{self, methods},
     metadata,
+    network::protocol,
+    trie::proof_verify,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryFrom as _,
+    iter,
     pin::Pin,
     sync::{atomic, Arc},
     time::Duration,
@@ -58,6 +61,14 @@ pub struct Config {
     /// >           this value, doing so is quite expensive. We prefer to require this value
     /// >           from the upper layer instead, as it is most likely needed anyway.
     pub genesis_block_hash: [u8; 32],
+
+    /// Hash of the storage trie root of the genesis block of the chain.
+    ///
+    /// > **Note**: This can be derived from a [`chain_spec::ChainSpec`]. While the [`start`]
+    /// >           function could in theory use the [`Config::chain_spec`] parameter to derive
+    /// >           this value, doing so is quite expensive. We prefer to require this value
+    /// >           from the upper layer instead.
+    pub genesis_block_state_root: [u8; 32],
 }
 
 /// Initializes the JSON-RPC service with the given configuration.
@@ -88,6 +99,8 @@ pub async fn start(config: Config) {
             runtime: Ok(runtime),
             runtime_code: code,
             heap_pages,
+            runtime_block_hash: config.genesis_block_hash,
+            runtime_block_state_root: config.genesis_block_state_root,
             runtime_version_subscriptions: HashSet::new(),
         }
     };
@@ -220,12 +233,13 @@ pub async fn start(config: Config) {
 
                 // Download the runtime code of this new best block.
                 let new_best_block_decoded = header::decode(&new_best_block).unwrap();
+                let new_best_block_hash = header::hash_from_scale_encoded_header(&new_best_block);
                 // TODO: download both at once
                 let new_code = match client
                     .network_service
                     .clone()
                     .storage_query(
-                        &header::hash_from_scale_encoded_header(&new_best_block),
+                        &new_best_block_hash,
                         new_best_block_decoded.state_root,
                         b":code",
                     )
@@ -245,7 +259,7 @@ pub async fn start(config: Config) {
                     .network_service
                     .clone()
                     .storage_query(
-                        &header::hash_from_scale_encoded_header(&new_best_block),
+                        &new_best_block_hash,
                         new_best_block_decoded.state_root,
                         b":heappages",
                     )
@@ -264,6 +278,11 @@ pub async fn start(config: Config) {
 
                 // Only lock `latest_known_runtime` now that everything is synchronous.
                 let mut latest_known_runtime = client.latest_known_runtime.lock().await;
+
+                // `runtime_block_hash` is always updated in order to have the most recent
+                // block possible.
+                latest_known_runtime.runtime_block_hash = new_best_block_hash;
+                latest_known_runtime.runtime_block_state_root = *new_best_block_decoded.state_root;
 
                 // `continue` if there wasn't any change in `:code` and `:heappages`.
                 if new_code == latest_known_runtime.runtime_code
@@ -432,6 +451,11 @@ struct LatestKnownRuntime {
     /// Undecoded storage value of `:heappages` corresponding to the
     /// [`LatestKnownRuntime::runtime`] field.
     heap_pages: Option<Vec<u8>>,
+    /// Hash of a block known to have the runtime found in the [`LatestKnownRuntime::runtime`]
+    /// field. Always updated to a recent block having this runtime.
+    runtime_block_hash: [u8; 32],
+    /// Storage trie root of the block whose hash is [`LatestKnownRuntime::runtime_block_hash`].
+    runtime_block_state_root: [u8; 32],
 
     /// List of active subscriptions for runtime version updates.
     /// Whenever [`LatestKnownRuntime::runtime`] is updated, one should emit a notification
@@ -447,8 +471,10 @@ struct SuccessfulRuntime {
     runtime_spec: executor::CoreVersion,
 
     /// Virtual machine itself, to perform additional calls.
-    // TODO: this field is unused at the moment, but will be necessary to implement some of the JSON-RPC calls
-    virtual_machine: executor::host::HostVmPrototype,
+    ///
+    /// Always `Some`, except for temporary extractions. Should always be `Some`, when the
+    /// [`SuccessfulRuntime`] is accessed.
+    virtual_machine: Option<executor::host::HostVmPrototype>,
 }
 
 impl SuccessfulRuntime {
@@ -491,7 +517,7 @@ impl SuccessfulRuntime {
         Ok(SuccessfulRuntime {
             metadata,
             runtime_spec,
-            virtual_machine: vm,
+            virtual_machine: Some(vm),
         })
     }
 }
@@ -1106,12 +1132,25 @@ impl JsonRpcService {
                 (Some(response), None)
             }
             methods::MethodCall::system_accountNextIndex { account } => {
-                // TODO: implement
-                let response = json_rpc::parse::build_error_response(
-                    request_id,
-                    json_rpc::parse::ErrorResponse::ServerError(-32000, "Unsupported call"),
-                    None,
-                );
+                let response = match self
+                    .recent_best_block_runtime_call("AccountNonceApi_account_nonce", &account.0)
+                    .await
+                {
+                    Ok(return_value) => {
+                        // TODO: we get a u32 when expecting a u64; figure out problem
+                        // TODO: don't unwrap
+                        let index =
+                            u32::from_le_bytes(<[u8; 4]>::try_from(&return_value[..]).unwrap());
+                        methods::Response::system_accountNextIndex(u64::from(index))
+                            .to_json_response(request_id)
+                    }
+                    Err(error) => json_rpc::parse::build_error_response(
+                        request_id,
+                        json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
+                        None,
+                    ),
+                };
+
                 (Some(response), None)
             }
             methods::MethodCall::system_chain {} => {
@@ -1202,6 +1241,111 @@ impl JsonRpcService {
             .await
             .map_err(StorageQueryError::StorageRetrieval)
     }
+
+    /// Performs a runtime call using the best block, or a recent best block.
+    ///
+    /// The [`JsonRpcService`] maintains the code of the runtime of a recent best block locally,
+    /// but doesn't know anything about the storage, which the runtime might have to access. In
+    /// order to make this work, a "call proof" is performed on the network in order to obtain
+    /// the storage values corresponding to this call.
+    async fn recent_best_block_runtime_call(
+        self: &Arc<JsonRpcService>,
+        method: &str,
+        parameter: &[u8],
+    ) -> Result<Vec<u8>, RuntimeCallError> {
+        // `latest_known_runtime` should be kept locked as little as possible.
+        // In order to handle the possibility a runtime upgrade happening during the operation,
+        // every time `latest_known_runtime` is locked, we compare the runtime version stored in
+        // it with the value previously found. If there is a mismatch, the entire runtime call
+        // is restarted from scratch.
+        loop {
+            // Get `runtime_block_hash` and `runtime_block_state_root`, the hash and state trie
+            // root of a recent best block that uses this runtime.
+            let (spec_version, runtime_block_hash, runtime_block_state_root) = {
+                let lock = self.latest_known_runtime.lock().await;
+                (
+                    lock.runtime
+                        .as_ref()
+                        .map_err(|()| RuntimeCallError::InvalidRuntime)?
+                        .runtime_spec
+                        .decode()
+                        .spec_version,
+                    lock.runtime_block_hash,
+                    lock.runtime_block_state_root,
+                )
+            };
+
+            // Perform the call proof request.
+            // Note that `latest_known_runtime` is not locked.
+            // If the call proof fail, do as if the proof was empty. This will enable the
+            // fallback consisting in performing individual storage proof requests.
+            let call_proof = self
+                .network_service
+                .clone()
+                .call_proof_query(protocol::CallProofRequestConfig {
+                    block_hash: runtime_block_hash,
+                    method,
+                    parameter,
+                })
+                .await
+                .unwrap_or(Vec::new());
+
+            // Lock `latest_known_runtime_lock` again. `continue` if the runtime has changed
+            // in-between.
+            let mut latest_known_runtime_lock = self.latest_known_runtime.lock().await;
+            let runtime = latest_known_runtime_lock
+                .runtime
+                .as_mut()
+                .map_err(|()| RuntimeCallError::InvalidRuntime)?;
+            if runtime.runtime_spec.decode().spec_version != spec_version {
+                continue;
+            }
+
+            // Perform the actual runtime call locally.
+            let mut runtime_call =
+                executor::read_only_runtime_host::run(executor::read_only_runtime_host::Config {
+                    virtual_machine: runtime.virtual_machine.take().unwrap(),
+                    function_to_call: method,
+                    parameter: iter::once(parameter),
+                })
+                .map_err(RuntimeCallError::StartError)?; // TODO: must put back virtual machine /!\
+
+            loop {
+                match runtime_call {
+                    executor::read_only_runtime_host::RuntimeHostVm::Finished(Ok(success)) => {
+                        if !success.logs.is_empty() {
+                            log::debug!(
+                                target: "json-rpc",
+                                "Runtime logs: {}",
+                                success.logs
+                            );
+                        }
+
+                        let return_value = success.virtual_machine.value().to_owned();
+                        runtime.virtual_machine = Some(success.virtual_machine.into_prototype());
+                        return Ok(return_value);
+                    }
+                    executor::read_only_runtime_host::RuntimeHostVm::Finished(Err(error)) => {
+                        // TODO: put back virtual_machine /!\
+                        return Err(RuntimeCallError::CallError(error));
+                    }
+                    executor::read_only_runtime_host::RuntimeHostVm::StorageGet(get) => {
+                        let requested_key = get.key_as_vec(); // TODO: optimization: don't use as_vec
+                        let storage_value = proof_verify::verify_proof(proof_verify::Config {
+                            requested_key: &requested_key,
+                            trie_root_hash: &runtime_block_state_root,
+                            proof: call_proof.iter().map(|v| &v[..]),
+                        })
+                        .unwrap(); // TODO: shouldn't unwrap but do storage_proof instead
+                        runtime_call = get.inject_value(storage_value.as_ref().map(iter::once));
+                    }
+                    executor::read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
+                        todo!() // TODO:
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -1212,6 +1356,22 @@ enum StorageQueryError {
     /// Error while retrieving the storage item from other nodes.
     #[display(fmt = "{}", _0)]
     StorageRetrieval(network_service::StorageQueryError),
+}
+
+#[derive(Debug, derive_more::Display)]
+enum RuntimeCallError {
+    /// Error during the runtime call.
+    #[display(fmt = "{}", _0)]
+    CallError(executor::read_only_runtime_host::Error),
+    /// Error initializing the runtime call.
+    #[display(fmt = "{}", _0)]
+    StartError(executor::host::StartErr),
+    /// Runtime of the best block isn't valid.
+    #[display(fmt = "Runtime of the best block isn't valid")]
+    InvalidRuntime,
+    /// Error while retrieving the storage item from other nodes.
+    #[display(fmt = "{}", _0)]
+    StorageRetrieval(network_service::CallProofQueryError),
 }
 
 fn header_conv<'a>(header: impl Into<smoldot::header::HeaderRef<'a>>) -> methods::Header {

@@ -336,6 +336,41 @@ where
         protocol::decode_storage_proof_response(&response).map_err(StorageProofRequestError::Decode)
     }
 
+    /// Sends a call proof request to the given peer.
+    ///
+    /// This request is similar to [`ChainNetwork::storage_proof_request`]. Instead of requesting
+    /// specific keys, we request the list of all the keys that are accessed for a specific
+    /// runtime call.
+    ///
+    /// There exists no guarantee that the proof is complete (i.e. that it contains all the
+    /// necessary entries), as it is impossible to know this from just the proof itself. As such,
+    /// this method is just an optimization. When performing the actual call, regular storage proof
+    /// requests should be performed if the key is not present in the call proof response.
+    pub async fn call_proof_request<'a>(
+        &self,
+        now: TNow,
+        target: peer_id::PeerId,
+        chain_index: usize,
+        config: protocol::CallProofRequestConfig<'a>,
+    ) -> Result<Vec<Vec<u8>>, CallProofRequestError> {
+        let request_data =
+            protocol::build_call_proof_request(config).fold(Vec::new(), |mut a, b| {
+                a.extend_from_slice(b.as_ref());
+                a
+            });
+        let response = self
+            .libp2p
+            .request(
+                now,
+                target,
+                self.protocol_index(chain_index, 1),
+                request_data,
+            )
+            .map_err(CallProofRequestError::Request)
+            .await?;
+        protocol::decode_call_proof_response(&response).map_err(CallProofRequestError::Decode)
+    }
+
     pub async fn announce_transaction(
         &self,
         target: &peer_id::PeerId,
@@ -894,6 +929,13 @@ pub enum BlocksRequestError {
 pub enum StorageProofRequestError {
     Request(libp2p::RequestError),
     Decode(protocol::DecodeStorageProofResponseError),
+}
+
+/// Error returned by [`ChainNetwork::call_proof_request`].
+#[derive(Debug, derive_more::Display)]
+pub enum CallProofRequestError {
+    Request(libp2p::RequestError),
+    Decode(protocol::DecodeCallProofResponseError),
 }
 
 /// Error returned by [`ChainNetwork::grandpa_warp_sync_request`].
