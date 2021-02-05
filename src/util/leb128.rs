@@ -139,7 +139,7 @@ impl FramedInProgress {
                     data = &data[1..];
                     total_read += 1;
 
-                    if self.buffer.len() >= mem::size_of::<usize>() {
+                    if self.buffer.len() >= 2 * mem::size_of::<usize>() {
                         return Err(FramedError::LengthPrefixTooLarge);
                     }
 
