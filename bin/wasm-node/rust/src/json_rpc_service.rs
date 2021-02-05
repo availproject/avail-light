@@ -16,6 +16,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Background JSON-RPC service.
+//!
+//! The [`start`] function returns a future whose role is to pull events using
+//! [`ffi::next_json_rpc`] and send back answers using [`ffi::emit_json_rpc_response`].
+//!
+//! > **Note**: Because of the racy nature of these two functions, it is strongly discouraged to
+//! >           spawn multiple JSON-RPC services, especially if they don't use the same
+//! >           [`sync_service::SyncService`].
 
 // TODO: doc
 // TODO: re-review this once finished
@@ -72,12 +79,6 @@ pub struct Config {
 }
 
 /// Initializes the JSON-RPC service with the given configuration.
-///
-/// It will run in the background, pulling events using [`ffi::next_json_rpc`] and sending back
-/// answers using [`ffi::emit_json_rpc_response`].
-/// Because of the racy nature of these two functions, it is strongly discouraged to spawn
-/// multiple JSON-RPC services, especially if they don't use the same
-/// [`sync_service::SyncService`].
 pub async fn start(config: Config) {
     // TODO: remove; this BTreeMap serves no purpose except convenience
     let genesis_storage = config

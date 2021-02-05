@@ -15,6 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Background syncing service.
+//!
+//! The role of the [`SyncService`] is to do whatever necessary to obtain and stay up-to-date
+//! with the best and the finalized blocks of a chain.
+//!
+//! The configuration of the chain to synchronize must be passed when creating a [`SyncService`],
+//! after which it will spawn background tasks and use the networking service to stay
+//! synchronized.
+//!
+//! Use [`SyncService::subscribe_best`] and [`SyncService::subscribe_finalized`] to get notified
+//! about updates of the best and finalized blocks.
+
 use crate::network_service;
 
 use futures::{

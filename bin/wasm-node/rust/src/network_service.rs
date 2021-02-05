@@ -18,14 +18,23 @@
 //! Background network service.
 //!
 //! The [`NetworkService`] manages background tasks dedicated to connecting to other nodes.
-//! Importantly, its design is oriented towards the particular use case of the full node.
+//! Importantly, its design is oriented towards the particular use case of the light client.
 //!
 //! The [`NetworkService`] spawns one background task (using the [`Config::tasks_executor`]) for
-//! each active TCP socket, plus one for each TCP listening socket. Messages are exchanged between
-//! the service and these background tasks.
-
-// TODO: doc
-// TODO: re-review this once finished
+//! each active WebSocket.
+//!
+//! The objective of the [`NetworkService`] in general is to try stay connected as much as
+//! possible to the nodes of the peer-to-peer network of the chain, and maintain open substreams
+//! with them in order to send out requests (e.g. block requests) and notifications (e.g. block
+//! announces).
+//!
+//! Connectivity to the network is performed in the background as an implementation detail of
+//! the service. The public API only allows emitting requests and notifications towards the
+//! already-connected nodes.
+//!
+//! An important part of the API is the list of channel receivers of [`Event`] returned by
+//! [`NetworkService::new`]. These channels inform the foreground about updates to the network
+//! connectivity.
 
 use crate::ffi;
 
