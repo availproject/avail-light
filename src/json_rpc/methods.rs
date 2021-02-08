@@ -154,12 +154,12 @@ define_methods! {
     author_hasKey() -> (), // TODO:
     author_hasSessionKeys() -> (), // TODO:
     author_insertKey() -> (), // TODO:
-    author_pendingExtrinsics() -> Vec<HexString>,
+    author_pendingExtrinsics() -> Vec<HexString>,  // TODO: what does the returned value mean?
     author_removeExtrinsic() -> (), // TODO:
     author_rotateKeys() -> HexString,
-    author_submitAndWatchExtrinsic() -> (), // TODO:
+    author_submitAndWatchExtrinsic(transaction: HexString) -> &'a str,
     author_submitExtrinsic(transaction: HexString) -> HashHexString,
-    author_unwatchExtrinsic() -> (), // TODO:
+    author_unwatchExtrinsic(subscription: String) -> bool,
     babe_epochAuthorship() -> (), // TODO:
     chain_getBlock(hash: Option<HashHexString>) -> Block,
     chain_getBlockHash(height: Option<u64>) -> HashHexString [chain_getHead],
@@ -376,6 +376,20 @@ pub struct SystemPeer {
     pub best_number: u64,
 }
 
+#[derive(Debug, Clone)]
+pub enum TransactionStatus {
+    Future,
+    Ready,
+    Broadcast(Vec<String>), // Base58 PeerIds  // TODO: stronger typing
+    InBlock([u8; 32]),
+    Retracted([u8; 32]),
+    FinalityTimeout([u8; 32]),
+    Finalized([u8; 32]),
+    Usurped([u8; 32]),
+    Dropped,
+    Invalid,
+}
+
 impl serde::Serialize for HashHexString {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -499,6 +513,53 @@ impl serde::Serialize for SystemHealth {
             is_syncing: self.is_syncing,
             peers: self.peers,
             should_have_peers: self.should_have_peers,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for TransactionStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        enum SerdeTransactionStatus<'a> {
+            #[serde(rename = "future")]
+            Future,
+            #[serde(rename = "ready")]
+            Ready,
+            #[serde(rename = "broadcast")]
+            Broadcast(&'a [String]), // Base58 libp2p PeerIds, example: "12D3KooWHEQXbvCzLYvc87obHV6HY4rruHz8BJ9Lw1Gg2csVfR6Z"
+            #[serde(rename = "inBlock")]
+            InBlock(HashHexString),
+            #[serde(rename = "retracted")]
+            Retracted(HashHexString),
+            #[serde(rename = "finalityTimeout")]
+            FinalityTimeout(HashHexString),
+            #[serde(rename = "finalized")]
+            Finalized(HashHexString),
+            #[serde(rename = "usurped")]
+            Usurped(HashHexString),
+            #[serde(rename = "dropped")]
+            Dropped,
+            #[serde(rename = "invalid")]
+            Invalid,
+        }
+
+        match self {
+            TransactionStatus::Future => SerdeTransactionStatus::Future,
+            TransactionStatus::Ready => SerdeTransactionStatus::Ready,
+            TransactionStatus::Broadcast(v) => SerdeTransactionStatus::Broadcast(v),
+            TransactionStatus::InBlock(v) => SerdeTransactionStatus::InBlock(HashHexString(*v)),
+            TransactionStatus::Retracted(v) => SerdeTransactionStatus::Retracted(HashHexString(*v)),
+            TransactionStatus::FinalityTimeout(v) => {
+                SerdeTransactionStatus::FinalityTimeout(HashHexString(*v))
+            }
+            TransactionStatus::Finalized(v) => SerdeTransactionStatus::Finalized(HashHexString(*v)),
+            TransactionStatus::Usurped(v) => SerdeTransactionStatus::Usurped(HashHexString(*v)),
+            TransactionStatus::Dropped => SerdeTransactionStatus::Dropped,
+            TransactionStatus::Invalid => SerdeTransactionStatus::Invalid,
         }
         .serialize(serializer)
     }

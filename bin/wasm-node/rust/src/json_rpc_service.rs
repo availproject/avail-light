@@ -27,7 +27,7 @@
 // TODO: doc
 // TODO: re-review this once finished
 
-use crate::{ffi, network_service, sync_service};
+use crate::{ffi, network_service, sync_service, transactions_service};
 
 use futures::{channel::oneshot, lock::Mutex, prelude::*};
 use methods::MethodCall;
@@ -57,6 +57,9 @@ pub struct Config {
 
     /// Service responsible for synchronizing the chain.
     pub sync_service: Arc<sync_service::SyncService>,
+
+    /// Service responsible for emitting transactions and tracking their state.
+    pub transactions_service: Arc<transactions_service::TransactionsService>,
 
     /// Specifications of the chain.
     pub chain_spec: chain_spec::ChainSpec,
@@ -123,6 +126,7 @@ pub async fn start(config: Config) {
         chain_spec: config.chain_spec,
         network_service: config.network_service,
         sync_service: config.sync_service,
+        transactions_service: config.transactions_service,
         blocks: Mutex::new(Blocks {
             known_blocks,
             best_block: best_block_hash,
@@ -136,6 +140,7 @@ pub async fn start(config: Config) {
         new_heads: Mutex::new(HashMap::new()),
         finalized_heads: Mutex::new(HashMap::new()),
         storage: Mutex::new(HashMap::new()),
+        transactions: Mutex::new(HashMap::new()),
     });
 
     // Spawns a task whose role is to update `blocks` with the new best and finalized blocks.
@@ -385,8 +390,12 @@ struct JsonRpcService {
 
     chain_spec: chain_spec::ChainSpec,
 
+    /// See [`Config::network_service`].
     network_service: Arc<network_service::NetworkService>,
+    /// See [`Config::sync_service`].
     sync_service: Arc<sync_service::SyncService>,
+    /// See [`Config::transactions_service`].
+    transactions_service: Arc<transactions_service::TransactionsService>,
 
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
     blocks: Mutex<Blocks>,
@@ -421,6 +430,9 @@ struct JsonRpcService {
 
     /// Same principle as [`JsonRpcService::all_heads`], but for storage subscriptions.
     storage: Mutex<HashMap<String, oneshot::Sender<String>>>,
+
+    /// Same principle as [`JsonRpcService::all_heads`], but for transactions.
+    transactions: Mutex<HashMap<String, oneshot::Sender<String>>>,
 }
 
 struct LatestKnownRuntime {
@@ -544,35 +556,140 @@ impl JsonRpcService {
     ) -> (Option<String>, Option<String>) {
         match call {
             methods::MethodCall::author_pendingExtrinsics {} => {
+                // TODO: ask transactions service
                 let response = methods::Response::author_pendingExtrinsics(Vec::new())
                     .to_json_response(request_id);
                 (Some(response), None)
             }
             methods::MethodCall::author_submitExtrinsic { transaction } => {
-                let response = match self
-                    .network_service
-                    .clone()
-                    .announce_transaction(&transaction.0)
-                    .await
-                {
-                    Ok(_) => {
-                        let mut hash_context = blake2_rfc::blake2b::Blake2b::new(32);
-                        hash_context.update(transaction.0.as_slice());
-                        let mut transaction_hash: [u8; 32] = Default::default();
-                        transaction_hash.copy_from_slice(hash_context.finalize().as_bytes());
+                // Send the transaction to the transactions service. It will be sent to the
+                // rest of the network asynchronously.
+                self.transactions_service
+                    .submit_extrinsic(&transaction.0)
+                    .await;
 
-                        methods::Response::author_submitExtrinsic(methods::HashHexString(
-                            transaction_hash,
-                        ))
-                        .to_json_response(request_id)
-                    }
-                    Err(error) => json_rpc::parse::build_error_response(
-                        request_id,
-                        json_rpc::parse::ErrorResponse::ServerError(-32000, &format!("{}", &error)),
-                        None,
-                    ),
-                };
+                // In Substrate, `author_submitExtrinsic` returns the hash of the extrinsic. It
+                // is unclear whether it has to actually be the hash of the transaction or if it
+                // could be any opaque value. Additionally, there isn't any other JSON-RPC method
+                // that accepts as parameter the value returned here. When in doubt, we return
+                // the hash as well.
+                let mut hash_context = blake2_rfc::blake2b::Blake2b::new(32);
+                hash_context.update(&transaction.0);
+                let mut transaction_hash: [u8; 32] = Default::default();
+                transaction_hash.copy_from_slice(hash_context.finalize().as_bytes());
+
+                let response = methods::Response::author_submitExtrinsic(methods::HashHexString(
+                    transaction_hash,
+                ))
+                .to_json_response(request_id);
                 (Some(response), None)
+            }
+            methods::MethodCall::author_submitAndWatchExtrinsic { transaction } => {
+                let mut transaction_updates = self
+                    .transactions_service
+                    .submit_extrinsic(&transaction.0)
+                    .await;
+
+                let subscription = self
+                    .next_subscription
+                    .fetch_add(1, atomic::Ordering::Relaxed)
+                    .to_string();
+
+                let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+                self.transactions
+                    .lock()
+                    .await
+                    .insert(subscription.clone(), unsubscribe_tx);
+
+                let confirmation = methods::Response::author_submitAndWatchExtrinsic(&subscription)
+                    .to_json_response(request_id);
+
+                // Spawn a separate task for the transaction updates.
+                let client = self.clone();
+                (self.tasks_executor.lock().await)(Box::pin(async move {
+                    // Send back to the user the confirmation of the registration.
+                    client.send_back(&confirmation);
+
+                    loop {
+                        // Wait for either a status update block, or for the subscription to
+                        // be canceled.
+                        let next_update = transaction_updates.next();
+                        futures::pin_mut!(next_update);
+                        match future::select(next_update, &mut unsubscribe_rx).await {
+                            future::Either::Left((Some(update), _)) => {
+                                let update = match update {
+                                    transactions_service::TransactionStatus::Broadcast(peers) => {
+                                        methods::TransactionStatus::Broadcast(
+                                            peers
+                                                .into_iter()
+                                                .map(|peer| peer.to_base58())
+                                                .collect(),
+                                        )
+                                    }
+                                    transactions_service::TransactionStatus::InBlock(block) => {
+                                        methods::TransactionStatus::InBlock(block)
+                                    }
+                                    transactions_service::TransactionStatus::Retracted(block) => {
+                                        methods::TransactionStatus::Retracted(block)
+                                    }
+                                    transactions_service::TransactionStatus::Dropped => {
+                                        methods::TransactionStatus::Dropped
+                                    }
+                                    transactions_service::TransactionStatus::Finalized(block) => {
+                                        methods::TransactionStatus::Finalized(block)
+                                    }
+                                    transactions_service::TransactionStatus::FinalityTimeout(
+                                        block,
+                                    ) => methods::TransactionStatus::FinalityTimeout(block),
+                                };
+
+                                client.send_back(
+                                    &smoldot::json_rpc::parse::build_subscription_event(
+                                        "author_extrinsicUpdate",
+                                        &subscription,
+                                        &serde_json::to_string(&update).unwrap(),
+                                    ),
+                                );
+                            }
+                            future::Either::Right((Ok(unsub_request_id), _)) => {
+                                let response = methods::Response::chain_unsubscribeNewHeads(true)
+                                    .to_json_response(&unsub_request_id);
+                                client.send_back(&response);
+                                break;
+                            }
+                            future::Either::Left((None, _)) => {
+                                // Channel from the transactions service has been closed.
+                                // Stop the task.
+                                // There is nothing more that can be done except hope that the
+                                // client understands that no new notification is expected and
+                                // unsubscribes.
+                                break;
+                            }
+                            future::Either::Right((Err(_), _)) => break,
+                        }
+                    }
+                }));
+
+                (None, None)
+            }
+            methods::MethodCall::author_unwatchExtrinsic { subscription } => {
+                let invalid =
+                    if let Some(cancel_tx) = self.transactions.lock().await.remove(&subscription) {
+                        // `cancel_tx` might have been closed if the channel from the transactions
+                        // service has been closed too. This is not an error.
+                        let _ = cancel_tx.send(request_id.to_owned());
+                        false
+                    } else {
+                        true
+                    };
+
+                if invalid {
+                    let response = methods::Response::author_unwatchExtrinsic(false)
+                        .to_json_response(request_id);
+                    (Some(response), None)
+                } else {
+                    (None, None)
+                }
             }
             methods::MethodCall::chain_getBlockHash { height } => {
                 let mut blocks = self.blocks.lock().await;

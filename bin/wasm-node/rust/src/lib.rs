@@ -34,6 +34,7 @@ pub mod ffi;
 mod json_rpc_service;
 mod network_service;
 mod sync_service;
+mod transactions_service;
 
 // Use the default "system" allocator. In the context of Wasm, this uses the `dlmalloc` library.
 // See <https://github.com/rust-lang/rust/tree/1.47.0/library/std/src/sys/wasm>.
@@ -250,6 +251,18 @@ pub async fn start_client(
         .await,
     );
 
+    let transactions_service = Arc::new(
+        transactions_service::TransactionsService::new(transactions_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            network_service: network_service.clone(),
+            sync_service: sync_service.clone(),
+        })
+        .await,
+    );
+
     // TODO: little hack here; json_rpc_service::start uses the sync service, so if we `await`
     // this function here, it would be frozen to dead, as the sync service hasn't properly started
     // yet. Hence sending it to `new_task_tx`.
@@ -262,6 +275,7 @@ pub async fn start_client(
                 }),
                 network_service,
                 sync_service: sync_service.clone(),
+                transactions_service,
                 chain_spec,
                 genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
                 genesis_block_state_root: genesis_chain_information

@@ -52,9 +52,6 @@ use smoldot::{
 };
 use std::{collections::HashSet, sync::Arc};
 
-#[derive(derive_more::Display)]
-pub struct AnnounceTransactionError;
-
 /// Configuration for a [`NetworkService`].
 pub struct Config {
     /// Closure that spawns background tasks.
@@ -528,12 +525,18 @@ impl NetworkService {
     }
 
     /// Announces transaction to the peers we are connected to.
-    /// Returns an error if we aren't connected to any peer, or if we fail to send the transaction to all peers.
-    pub async fn announce_transaction(
-        self: Arc<Self>,
-        transaction: &[u8],
-    ) -> Result<(), AnnounceTransactionError> {
-        let mut any_propagated = false;
+    ///
+    /// Returns a list of peers that we have sent the transaction to. Can return an empty `Vec`
+    /// if we didn't send the transaction to any peer.
+    ///
+    /// Note that the remote doesn't confirm that it has received the transaction. Because
+    /// networking is inherently unreliable, successfully sending a transaction to a peer doesn't
+    /// necessarily mean that the remote has received it. In practice, however, the likelyhood of
+    /// a transaction not being received are extremely low. This can be considered as known flaw.
+    pub async fn announce_transaction(self: Arc<Self>, transaction: &[u8]) -> Vec<PeerId> {
+        let mut sent_peers = Vec::with_capacity(16); // TODO: capacity?
+
+        // TODO: keep track of which peer knows about which transaction, and don't send it again
 
         for target in self.peers_list().await {
             if self
@@ -542,14 +545,11 @@ impl NetworkService {
                 .await
                 .is_ok()
             {
-                any_propagated = true
+                sent_peers.push(target);
             };
         }
-        if any_propagated {
-            Ok(())
-        } else {
-            Err(AnnounceTransactionError)
-        }
+
+        sent_peers
     }
 
     /// Returns an iterator to the list of [`PeerId`]s that we have an established connection
