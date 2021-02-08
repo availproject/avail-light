@@ -191,6 +191,11 @@ pub async fn start(config: Config) {
             stream::once(future::ready(best_block_header)).chain(best_blocks_subscription)
         };
 
+        // Set to `true` when we expect the runtime in `latest_known_runtime` to match the runtime
+        // of the best block. Initially `false`, as `latest_known_runtime` uses the genesis
+        // runtime.
+        let mut runtime_matches_best_block = false;
+
         Box::pin(async move {
             futures::pin_mut!(blocks_stream);
 
@@ -274,15 +279,21 @@ pub async fn start(config: Config) {
                 if new_code == latest_known_runtime.runtime_code
                     && new_heap_pages == latest_known_runtime.heap_pages
                 {
+                    runtime_matches_best_block = true;
                     continue;
                 }
 
-                log::info!(
-                    target: "json-rpc",
-                    "New runtime code detected around block #{} (block number might be wrong)",
-                    new_best_block_decoded.number
-                );
+                // Don't notify the user of an upgrade if we didn't expect the runtime to match
+                // the best block in the first place.
+                if runtime_matches_best_block {
+                    log::info!(
+                        target: "json-rpc",
+                        "New runtime code detected around block #{} (block number might be wrong)",
+                        new_best_block_decoded.number
+                    );
+                }
 
+                runtime_matches_best_block = true;
                 latest_known_runtime.runtime_code = new_code;
                 latest_known_runtime.heap_pages = new_heap_pages;
                 latest_known_runtime.runtime = SuccessfulRuntime::from_params(
