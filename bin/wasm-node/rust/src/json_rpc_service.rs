@@ -339,7 +339,7 @@ pub async fn start(config: Config) {
             let json_rpc_request = ffi::next_json_rpc().await;
 
             // Each incoming request gets its own separate task.
-            let client2 = client.clone();
+            let client_clone = client.clone();
             (client.tasks_executor.lock().await)(Box::pin(async move {
                 let request_string = match String::from_utf8(Vec::from(json_rpc_request)) {
                     Ok(s) => s,
@@ -370,15 +370,7 @@ pub async fn start(config: Config) {
                     }
                 };
 
-                let (response1, response2) = client2.clone().handle_rpc(request_id, call).await;
-
-                if let Some(response1) = response1 {
-                    client2.send_back(&response1);
-                }
-
-                if let Some(response2) = response2 {
-                    client2.send_back(&response2);
-                }
+                client_clone.handle_rpc(request_id, call).await;
             }));
         }
     }));
@@ -548,18 +540,18 @@ impl JsonRpcService {
         ffi::emit_json_rpc_response(message);
     }
 
-    // TODO: remove second tuple item of the return value, once possible
-    async fn handle_rpc(
-        self: Arc<JsonRpcService>,
-        request_id: &str,
-        call: MethodCall,
-    ) -> (Option<String>, Option<String>) {
+    /// Analyzes the given JSON-RPC call and processes it.
+    ///
+    /// Depending on the request, either calls [`JsonRpcService::send_back`] immediately or
+    /// spawns a background task for further processing.
+    async fn handle_rpc(self: Arc<JsonRpcService>, request_id: &str, call: MethodCall) {
         match call {
             methods::MethodCall::author_pendingExtrinsics {} => {
                 // TODO: ask transactions service
-                let response = methods::Response::author_pendingExtrinsics(Vec::new())
-                    .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::author_pendingExtrinsics(Vec::new())
+                        .to_json_response(request_id),
+                );
             }
             methods::MethodCall::author_submitExtrinsic { transaction } => {
                 // Send the transaction to the transactions service. It will be sent to the
@@ -578,11 +570,12 @@ impl JsonRpcService {
                 let mut transaction_hash: [u8; 32] = Default::default();
                 transaction_hash.copy_from_slice(hash_context.finalize().as_bytes());
 
-                let response = methods::Response::author_submitExtrinsic(methods::HashHexString(
-                    transaction_hash,
-                ))
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::author_submitExtrinsic(methods::HashHexString(
+                        transaction_hash,
+                    ))
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::author_submitAndWatchExtrinsic { transaction } => {
                 let mut transaction_updates = self
@@ -669,8 +662,6 @@ impl JsonRpcService {
                         }
                     }
                 }));
-
-                (None, None)
             }
             methods::MethodCall::author_unwatchExtrinsic { subscription } => {
                 let invalid =
@@ -684,18 +675,18 @@ impl JsonRpcService {
                     };
 
                 if invalid {
-                    let response = methods::Response::author_unwatchExtrinsic(false)
-                        .to_json_response(request_id);
-                    (Some(response), None)
+                    self.send_back(
+                        &methods::Response::author_unwatchExtrinsic(false)
+                            .to_json_response(request_id),
+                    );
                 } else {
-                    (None, None)
                 }
             }
             methods::MethodCall::chain_getBlockHash { height } => {
                 let mut blocks = self.blocks.lock().await;
                 let blocks = &mut *blocks;
 
-                let response = match height {
+                self.send_back(&match height {
                     Some(0) => methods::Response::chain_getBlockHash(methods::HashHexString(
                         self.genesis_block,
                     ))
@@ -733,29 +724,26 @@ impl JsonRpcService {
                         // TODO: ask a full node instead? or maybe keep a list of canonical blocks?
                         json_rpc::parse::build_success_response(request_id, "null")
                     }
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::chain_getFinalizedHead {} => {
-                let response = methods::Response::chain_getFinalizedHead(methods::HashHexString(
-                    self.blocks.lock().await.finalized_block,
-                ))
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::chain_getFinalizedHead(methods::HashHexString(
+                        self.blocks.lock().await.finalized_block,
+                    ))
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::chain_getHeader { hash } => {
                 let mut blocks = self.blocks.lock().await;
                 let blocks = &mut *blocks;
                 let hash = hash.as_ref().map(|h| &h.0).unwrap_or(&blocks.best_block);
-                let response = if let Some(header) = blocks.known_blocks.get(hash) {
+                self.send_back(&if let Some(header) = blocks.known_blocks.get(hash) {
                     methods::Response::chain_getHeader(header_conv(header))
                         .to_json_response(request_id)
                 } else {
                     json_rpc::parse::build_success_response(request_id, "null")
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::chain_subscribeAllHeads {} => {
                 let subscription = self
@@ -811,8 +799,6 @@ impl JsonRpcService {
                         }
                     }
                 }));
-
-                (None, None)
             }
             methods::MethodCall::chain_subscribeNewHeads {} => {
                 let subscription = self
@@ -867,8 +853,6 @@ impl JsonRpcService {
                         }
                     }
                 }));
-
-                (None, None)
             }
             methods::MethodCall::chain_subscribeFinalizedHeads {} => {
                 let subscription = self
@@ -925,8 +909,6 @@ impl JsonRpcService {
                         }
                     }
                 }));
-
-                (None, None)
             }
             methods::MethodCall::chain_unsubscribeFinalizedHeads { subscription } => {
                 let invalid = if let Some(cancel_tx) =
@@ -938,33 +920,35 @@ impl JsonRpcService {
                 };
 
                 if invalid {
-                    let response = methods::Response::chain_unsubscribeFinalizedHeads(false)
-                        .to_json_response(request_id);
-                    (Some(response), None)
+                    self.send_back(
+                        &methods::Response::chain_unsubscribeFinalizedHeads(false)
+                            .to_json_response(request_id),
+                    );
                 } else {
-                    (None, None)
                 }
             }
             methods::MethodCall::payment_queryInfo { extrinsic, hash } => {
                 assert!(hash.is_none()); // TODO: handle when hash != None
                                          // TODO: complete hack
-                let response = methods::Response::payment_queryInfo(methods::RuntimeDispatchInfo {
-                    weight: 220429000,                     // TODO: no
-                    class: methods::DispatchClass::Normal, // TODO: no
-                    partial_fee: 15600000001,              // TODO: no
-                })
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::payment_queryInfo(methods::RuntimeDispatchInfo {
+                        weight: 220429000,                     // TODO: no
+                        class: methods::DispatchClass::Normal, // TODO: no
+                        partial_fee: 15600000001,              // TODO: no
+                    })
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::rpc_methods {} => {
-                let response = methods::Response::rpc_methods(methods::RpcMethods {
-                    version: 1,
-                    methods: methods::MethodCall::method_names()
-                        .map(|n| n.into())
-                        .collect(),
-                })
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::rpc_methods(methods::RpcMethods {
+                        version: 1,
+                        methods: methods::MethodCall::method_names()
+                            .map(|n| n.into())
+                            .collect(),
+                    })
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::state_queryStorageAt { keys, at } => {
                 let blocks = self.blocks.lock().await;
@@ -986,9 +970,10 @@ impl JsonRpcService {
                     }
                 }
 
-                let response =
-                    methods::Response::state_queryStorageAt(vec![out]).to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::state_queryStorageAt(vec![out])
+                        .to_json_response(request_id),
+                );
             }
             methods::MethodCall::state_getKeysPaged {
                 prefix,
@@ -1018,15 +1003,15 @@ impl JsonRpcService {
                     out.push(methods::HexString(k.to_vec()));
                 }
 
-                let response =
-                    methods::Response::state_getKeysPaged(out).to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::state_getKeysPaged(out).to_json_response(request_id),
+                );
             }
             methods::MethodCall::state_getMetadata {} => {
                 let latest_known_runtime = self.latest_known_runtime.lock().await;
 
                 // `runtime` is `Ok` if the latest known runtime is valid, and `Err` if it isn't.
-                let response = if let Ok(runtime) = &latest_known_runtime.runtime {
+                self.send_back(&if let Ok(runtime) = &latest_known_runtime.runtime {
                     methods::Response::state_getMetadata(methods::HexString(
                         runtime.metadata.clone(), // TODO: expensive clone
                     ))
@@ -1037,9 +1022,7 @@ impl JsonRpcService {
                         json_rpc::parse::ErrorResponse::ServerError(-32000, "Invalid runtime"),
                         None,
                     )
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::state_getStorage { key, hash } => {
                 let hash = hash
@@ -1047,7 +1030,7 @@ impl JsonRpcService {
                     .map(|h| h.0)
                     .unwrap_or(self.blocks.lock().await.best_block);
 
-                let response = match self.storage_query(&key.0, &hash).await {
+                self.send_back(&match self.storage_query(&key.0, &hash).await {
                     Ok(Some(value)) => {
                         methods::Response::state_getStorage(methods::HexString(value.to_owned())) // TODO: overhead
                             .to_json_response(request_id)
@@ -1058,9 +1041,7 @@ impl JsonRpcService {
                         json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
                         None,
                     ),
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::state_subscribeRuntimeVersion {} => {
                 let subscription = self
@@ -1069,12 +1050,11 @@ impl JsonRpcService {
                     .to_string();
 
                 let mut latest_known_runtime = self.latest_known_runtime.lock().await;
-                latest_known_runtime
-                    .runtime_version_subscriptions
-                    .insert(subscription.clone());
 
-                let response = methods::Response::state_subscribeRuntimeVersion(&subscription)
-                    .to_json_response(request_id);
+                self.send_back(
+                    &methods::Response::state_subscribeRuntimeVersion(&subscription)
+                        .to_json_response(request_id),
+                );
 
                 let notification = if let Ok(runtime) = &latest_known_runtime.runtime {
                     let runtime_spec = runtime.runtime_spec.decode();
@@ -1092,16 +1072,18 @@ impl JsonRpcService {
                     "null".to_string()
                 };
 
-                let response2 = smoldot::json_rpc::parse::build_subscription_event(
+                self.send_back(&smoldot::json_rpc::parse::build_subscription_event(
                     "state_runtimeVersion",
                     &subscription,
                     &notification,
-                );
+                ));
 
-                // TODO: in theory it is possible for the subscription to take effect and return
-                // a notification before these responses are sent back ; should be fixed by more refactoring
-
-                (Some(response), Some(response2))
+                // Insert and make sure that `latest_known_runtime` is kept locked until here,
+                // otherwise it is possible for the background task to send a notification to
+                // the subscription before the two messages above have been sent.
+                latest_known_runtime
+                    .runtime_version_subscriptions
+                    .insert(subscription);
             }
             methods::MethodCall::state_subscribeStorage { list } => {
                 let subscription = self
@@ -1220,8 +1202,6 @@ impl JsonRpcService {
                         }
                     }
                 }));
-
-                (None, None)
             }
             methods::MethodCall::state_unsubscribeStorage { subscription } => {
                 let invalid =
@@ -1232,16 +1212,16 @@ impl JsonRpcService {
                     };
 
                 if invalid {
-                    let response = methods::Response::state_unsubscribeStorage(false)
-                        .to_json_response(request_id);
-                    (Some(response), None)
+                    self.send_back(
+                        &methods::Response::state_unsubscribeStorage(false)
+                            .to_json_response(request_id),
+                    );
                 } else {
-                    (None, None)
                 }
             }
             methods::MethodCall::state_getRuntimeVersion {} => {
                 let latest_known_runtime = self.latest_known_runtime.lock().await;
-                let response = if let Ok(runtime) = &latest_known_runtime.runtime {
+                self.send_back(&if let Ok(runtime) = &latest_known_runtime.runtime {
                     let runtime_spec = runtime.runtime_spec.decode();
                     methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
                         spec_name: runtime_spec.spec_name.into(),
@@ -1259,12 +1239,10 @@ impl JsonRpcService {
                         json_rpc::parse::ErrorResponse::ServerError(-32000, "Invalid runtime"),
                         None,
                     )
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::system_accountNextIndex { account } => {
-                let response = match self
+                self.send_back(&match self
                     .recent_best_block_runtime_call(
                         "AccountNonceApi_account_nonce",
                         iter::once(&account.0),
@@ -1284,75 +1262,77 @@ impl JsonRpcService {
                         json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
                         None,
                     ),
-                };
-
-                (Some(response), None)
+                });
             }
             methods::MethodCall::system_chain {} => {
-                let response = methods::Response::system_chain(self.chain_spec.name())
-                    .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_chain(self.chain_spec.name())
+                        .to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_chainType {} => {
-                let response = methods::Response::system_chainType(self.chain_spec.chain_type())
-                    .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_chainType(self.chain_spec.chain_type())
+                        .to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_health {} => {
-                let response = methods::Response::system_health(methods::SystemHealth {
-                    is_syncing: !self.sync_service.is_above_network_finalized().await,
-                    peers: u64::try_from(self.network_service.peers_list().await.count())
-                        .unwrap_or(u64::max_value()),
-                    should_have_peers: self.chain_spec.has_live_network(),
-                })
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_health(methods::SystemHealth {
+                        is_syncing: !self.sync_service.is_above_network_finalized().await,
+                        peers: u64::try_from(self.network_service.peers_list().await.count())
+                            .unwrap_or(u64::max_value()),
+                        should_have_peers: self.chain_spec.has_live_network(),
+                    })
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_name {} => {
-                let response =
-                    methods::Response::system_name("smoldot").to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_name("smoldot").to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_peers {} => {
                 // TODO: return proper response
-                let response = methods::Response::system_peers(
-                    self.network_service
-                        .peers_list()
-                        .await
-                        .map(|peer_id| methods::SystemPeer {
-                            peer_id: peer_id.to_string(),
-                            roles: "unknown".to_string(),
-                            best_hash: methods::HashHexString([0x0; 32]),
-                            best_number: 0,
-                        })
-                        .collect(),
-                )
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_peers(
+                        self.network_service
+                            .peers_list()
+                            .await
+                            .map(|peer_id| methods::SystemPeer {
+                                peer_id: peer_id.to_string(),
+                                roles: "unknown".to_string(),
+                                best_hash: methods::HashHexString([0x0; 32]),
+                                best_number: 0,
+                            })
+                            .collect(),
+                    )
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_properties {} => {
-                let response = methods::Response::system_properties(
-                    serde_json::from_str(self.chain_spec.properties()).unwrap(),
-                )
-                .to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_properties(
+                        serde_json::from_str(self.chain_spec.properties()).unwrap(),
+                    )
+                    .to_json_response(request_id),
+                );
             }
             methods::MethodCall::system_version {} => {
-                let response =
-                    methods::Response::system_version("1.0.0").to_json_response(request_id);
-                (Some(response), None)
+                self.send_back(
+                    &methods::Response::system_version("1.0.0").to_json_response(request_id),
+                );
             }
             _method => {
                 log::error!(target: "json-rpc", "JSON-RPC call not supported yet: {:?}", _method);
-                let response = json_rpc::parse::build_error_response(
+                self.send_back(&json_rpc::parse::build_error_response(
                     request_id,
                     json_rpc::parse::ErrorResponse::ServerError(
                         -32000,
                         "Not implemented in smoldot yet",
                     ),
                     None,
-                );
-                (Some(response), None)
+                ));
             }
         }
     }
