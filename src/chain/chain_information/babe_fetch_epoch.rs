@@ -16,7 +16,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::{
-    chain::chain_information::BabeEpochInformation,
     executor::{host, read_only_runtime_host},
     header,
 };
@@ -75,11 +74,19 @@ pub fn babe_fetch_epoch(config: Config) -> Query {
     }
 }
 
+/// Partial information about a Babe epoch.
+pub struct PartialBabeEpochInformation {
+    pub epoch_index: u64,
+    pub start_slot_number: Option<u64>,
+    pub authorities: Vec<header::BabeAuthority>,
+    pub randomness: [u8; 32],
+}
+
 /// Current state of the operation.
 #[must_use]
 pub enum Query {
     /// Fetching the Babe epoch is over.
-    Finished(Result<(BabeEpochInformation, host::HostVmPrototype), Error>),
+    Finished(Result<(PartialBabeEpochInformation, host::HostVmPrototype), Error>),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the key that follows a given one is required in order to continue.
@@ -96,9 +103,9 @@ impl Query {
 
                 match decoded {
                     Ok(epoch) => Query::Finished(Ok((
-                        BabeEpochInformation {
+                        PartialBabeEpochInformation {
                             epoch_index: epoch.epoch_index,
-                            start_slot_number: epoch.start_slot_number,
+                            start_slot_number: Some(epoch.start_slot_number),
                             authorities: epoch
                                 .authorities
                                 .into_iter()
@@ -108,8 +115,6 @@ impl Query {
                                 })
                                 .collect(),
                             randomness: epoch.randomness,
-                            c: epoch.c,
-                            allowed_slots: epoch.allowed_slots,
                         },
                         success.virtual_machine.into_prototype(),
                     ))),
@@ -174,15 +179,61 @@ impl NextKey {
 #[derive(Decode, Encode)]
 struct DecodableBabeEpochInformation {
     epoch_index: u64,
-    start_slot_number: Option<u64>,
+    start_slot_number: u64,
+    duration: u64,
     authorities: Vec<DecodableBabeAuthority>,
     randomness: [u8; 32],
-    c: (u64, u64),
-    allowed_slots: header::BabeAllowedSlots,
 }
 
 #[derive(Decode, Encode)]
 struct DecodableBabeAuthority {
     public_key: [u8; 32],
     weight: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use parity_scale_codec::DecodeAll;
+
+    #[test]
+    fn sample_decode() {
+        // Sample taken from an actual Westend block.
+        let sample_data = [
+            56, 28, 0, 0, 0, 0, 0, 0, 183, 64, 4, 16, 0, 0, 0, 0, 88, 2, 0, 0, 0, 0, 0, 0, 60, 60,
+            97, 197, 140, 161, 35, 106, 9, 104, 63, 251, 75, 144, 118, 18, 29, 88, 185, 48, 164,
+            143, 72, 93, 222, 75, 226, 200, 243, 57, 201, 118, 21, 1, 0, 0, 0, 0, 0, 0, 0, 72, 105,
+            150, 202, 243, 225, 149, 178, 90, 117, 160, 248, 93, 21, 236, 233, 121, 194, 129, 13,
+            194, 139, 82, 228, 203, 126, 230, 106, 158, 203, 20, 61, 1, 0, 0, 0, 0, 0, 0, 0, 120,
+            247, 35, 155, 29, 63, 210, 75, 46, 34, 22, 61, 148, 66, 136, 114, 59, 233, 15, 92, 58,
+            180, 145, 38, 15, 130, 239, 86, 184, 238, 37, 8, 1, 0, 0, 0, 0, 0, 0, 0, 244, 172, 144,
+            91, 15, 86, 0, 219, 89, 86, 154, 133, 200, 106, 49, 249, 156, 212, 209, 73, 49, 112,
+            157, 175, 95, 74, 111, 148, 136, 6, 150, 74, 1, 0, 0, 0, 0, 0, 0, 0, 36, 252, 143, 20,
+            44, 163, 149, 46, 24, 54, 105, 255, 34, 228, 9, 100, 92, 216, 80, 241, 158, 26, 136,
+            232, 203, 10, 189, 174, 210, 52, 117, 12, 1, 0, 0, 0, 0, 0, 0, 0, 226, 224, 72, 174,
+            181, 236, 236, 251, 33, 91, 57, 64, 68, 29, 57, 163, 3, 179, 240, 46, 143, 31, 221,
+            108, 128, 163, 149, 185, 92, 130, 172, 6, 1, 0, 0, 0, 0, 0, 0, 0, 54, 26, 79, 126, 74,
+            132, 12, 26, 50, 91, 228, 1, 140, 245, 62, 210, 228, 18, 216, 231, 183, 234, 134, 177,
+            12, 41, 50, 214, 88, 243, 93, 51, 1, 0, 0, 0, 0, 0, 0, 0, 178, 55, 231, 234, 22, 84,
+            107, 248, 251, 136, 165, 252, 218, 141, 73, 245, 149, 40, 114, 234, 243, 255, 249, 244,
+            48, 36, 75, 31, 28, 195, 136, 41, 1, 0, 0, 0, 0, 0, 0, 0, 224, 77, 167, 191, 55, 175,
+            174, 214, 210, 95, 118, 134, 197, 147, 96, 214, 90, 64, 233, 11, 207, 112, 72, 138,
+            230, 5, 131, 17, 114, 241, 240, 5, 1, 0, 0, 0, 0, 0, 0, 0, 174, 228, 151, 65, 101, 59,
+            215, 82, 126, 147, 118, 12, 49, 248, 100, 20, 126, 41, 16, 73, 162, 13, 223, 253, 34,
+            206, 207, 180, 97, 133, 93, 12, 1, 0, 0, 0, 0, 0, 0, 0, 198, 2, 2, 108, 95, 64, 139,
+            172, 245, 38, 202, 193, 153, 18, 232, 69, 112, 117, 104, 105, 190, 163, 81, 213, 184,
+            41, 188, 124, 206, 159, 158, 101, 1, 0, 0, 0, 0, 0, 0, 0, 134, 62, 201, 97, 144, 120,
+            161, 90, 90, 76, 111, 227, 172, 5, 230, 35, 178, 192, 59, 243, 42, 149, 243, 62, 215,
+            175, 28, 84, 192, 243, 7, 83, 1, 0, 0, 0, 0, 0, 0, 0, 6, 231, 39, 255, 69, 74, 142, 80,
+            58, 243, 174, 47, 127, 251, 19, 72, 239, 124, 172, 199, 80, 33, 232, 211, 51, 226, 180,
+            236, 131, 38, 146, 68, 1, 0, 0, 0, 0, 0, 0, 0, 100, 218, 128, 168, 54, 65, 39, 134,
+            166, 245, 23, 111, 67, 120, 237, 235, 96, 193, 163, 55, 230, 200, 73, 10, 35, 80, 68,
+            226, 135, 252, 65, 68, 1, 0, 0, 0, 0, 0, 0, 0, 4, 137, 113, 107, 23, 103, 214, 113,
+            181, 180, 178, 84, 240, 214, 246, 172, 192, 216, 253, 150, 200, 231, 45, 187, 242, 215,
+            236, 224, 104, 36, 94, 86, 1, 0, 0, 0, 0, 0, 0, 0, 158, 0, 242, 159, 152, 81, 251, 247,
+            62, 14, 42, 94, 43, 144, 26, 193, 253, 127, 175, 217, 134, 74, 124, 230, 87, 141, 242,
+            114, 212, 93, 3, 108,
+        ];
+
+        super::DecodableBabeEpochInformation::decode_all(&sample_data).unwrap();
+    }
 }

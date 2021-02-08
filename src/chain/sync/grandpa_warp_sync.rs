@@ -17,7 +17,8 @@
 
 use crate::{
     chain::chain_information::{
-        babe_fetch_epoch, BabeEpochInformation, ChainInformation, ChainInformationConsensus,
+        babe_fetch_epoch::{self, PartialBabeEpochInformation},
+        BabeEpochInformation, ChainInformation, ChainInformationConsensus,
         ChainInformationFinality,
     },
     executor::{
@@ -56,7 +57,9 @@ pub struct Config {
 /// Starts syncing via GrandPa warp sync.
 pub fn grandpa_warp_sync<TSrc>(config: Config) -> GrandpaWarpSync<TSrc> {
     GrandpaWarpSync::WaitingForSources(WaitingForSources {
-        start_chain_information: config.start_chain_information,
+        state: PreVerificationState {
+            start_chain_information: config.start_chain_information,
+        },
         sources: Vec::with_capacity(config.sources_capacity),
         previous_verifier_values: None,
     })
@@ -83,25 +86,47 @@ pub enum GrandpaWarpSync<TSrc> {
 impl<TSrc> GrandpaWarpSync<TSrc> {
     fn from_babe_fetch_epoch_query(
         query: babe_fetch_epoch::Query,
-        fetched_current_epoch: Option<BabeEpochInformation>,
+        fetched_current_epoch: Option<PartialBabeEpochInformation>,
         state: PostVerificationState<TSrc>,
     ) -> Self {
         match (query, fetched_current_epoch) {
             (babe_fetch_epoch::Query::Finished(Ok((next_epoch, runtime))), Some(current_epoch)) => {
-                let slots_per_epoch = match state.start_chain_information.consensus {
-                    ChainInformationConsensus::Babe {
-                        slots_per_epoch, ..
-                    } => slots_per_epoch,
-                    _ => unreachable!(),
-                };
+                let (slots_per_epoch, babe_config_c, babe_config_allowed_slots) =
+                    match state.start_chain_information.consensus {
+                        ChainInformationConsensus::Babe {
+                            slots_per_epoch,
+                            finalized_next_epoch_transition,
+                            ..
+                        } => (
+                            slots_per_epoch,
+                            // TODO: /!\ /!\ shouldn't take the same configuration as the genesis; this is a hack while waiting for https://github.com/paritytech/substrate/issues/8060
+                            finalized_next_epoch_transition.c,
+                            finalized_next_epoch_transition.allowed_slots,
+                        ),
+                        _ => unreachable!(),
+                    };
 
                 Self::Finished(Ok((
                     ChainInformation {
                         finalized_block_header: state.header,
                         finality: state.chain_information_finality,
                         consensus: ChainInformationConsensus::Babe {
-                            finalized_block_epoch_information: Some(current_epoch),
-                            finalized_next_epoch_transition: next_epoch,
+                            finalized_block_epoch_information: Some(BabeEpochInformation {
+                                epoch_index: current_epoch.epoch_index,
+                                start_slot_number: current_epoch.start_slot_number,
+                                authorities: current_epoch.authorities,
+                                randomness: current_epoch.randomness,
+                                c: babe_config_c,
+                                allowed_slots: babe_config_allowed_slots,
+                            }),
+                            finalized_next_epoch_transition: BabeEpochInformation {
+                                epoch_index: next_epoch.epoch_index,
+                                start_slot_number: next_epoch.start_slot_number,
+                                authorities: next_epoch.authorities,
+                                randomness: next_epoch.randomness,
+                                c: babe_config_c,
+                                allowed_slots: babe_config_allowed_slots,
+                            },
                             slots_per_epoch,
                         },
                     },
@@ -141,7 +166,7 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
 #[must_use]
 pub struct StorageGet<TSrc> {
     inner: babe_fetch_epoch::StorageGet,
-    fetched_current_epoch: Option<BabeEpochInformation>,
+    fetched_current_epoch: Option<PartialBabeEpochInformation>,
     state: PostVerificationState<TSrc>,
 }
 
@@ -185,7 +210,7 @@ impl<TSrc> StorageGet<TSrc> {
 #[must_use]
 pub struct NextKey<TSrc> {
     inner: babe_fetch_epoch::NextKey,
-    fetched_current_epoch: Option<BabeEpochInformation>,
+    fetched_current_epoch: Option<PartialBabeEpochInformation>,
     state: PostVerificationState<TSrc>,
 }
 
@@ -223,7 +248,7 @@ impl<TSrc> NextKey<TSrc> {
 /// Verifying the warp sync response is required to continue.
 pub struct Verifier<TSrc> {
     verifier: warp_sync::Verifier,
-    start_chain_information: ChainInformation,
+    state: PreVerificationState,
     warp_sync_source_index: usize,
     sources: Vec<TSrc>,
     final_set_of_fragments: bool,
@@ -234,7 +259,7 @@ impl<TSrc> Verifier<TSrc> {
         match self.verifier.next() {
             Ok(warp_sync::Next::NotFinished(next_verifier)) => GrandpaWarpSync::Verifier(Self {
                 verifier: next_verifier,
-                start_chain_information: self.start_chain_information,
+                state: self.state,
                 sources: self.sources,
                 warp_sync_source_index: self.warp_sync_source_index,
                 final_set_of_fragments: self.final_set_of_fragments,
@@ -248,7 +273,7 @@ impl<TSrc> Verifier<TSrc> {
                         state: PostVerificationState {
                             header,
                             chain_information_finality,
-                            start_chain_information: self.start_chain_information,
+                            start_chain_information: self.state.start_chain_information,
                             warp_sync_source: self.sources.remove(self.warp_sync_source_index),
                         },
                     })
@@ -256,7 +281,7 @@ impl<TSrc> Verifier<TSrc> {
                     GrandpaWarpSync::WarpSyncRequest(WarpSyncRequest {
                         source_index: self.warp_sync_source_index,
                         sources: self.sources,
-                        start_chain_information: self.start_chain_information,
+                        state: self.state,
                         previous_verifier_values: Some((header, chain_information_finality)),
                     })
                 }
@@ -264,6 +289,10 @@ impl<TSrc> Verifier<TSrc> {
             Err(error) => GrandpaWarpSync::Finished(Err(Error::Verifier(error))),
         }
     }
+}
+
+struct PreVerificationState {
+    start_chain_information: ChainInformation,
 }
 
 struct PostVerificationState<TSrc> {
@@ -277,7 +306,7 @@ struct PostVerificationState<TSrc> {
 pub struct WarpSyncRequest<TSrc> {
     source_index: usize,
     sources: Vec<TSrc>,
-    start_chain_information: ChainInformation,
+    state: PreVerificationState,
     previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
@@ -291,7 +320,11 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
     pub fn start_block_hash(&self) -> [u8; 32] {
         match self.previous_verifier_values.as_ref() {
             Some((header, _)) => header.hash(),
-            None => self.start_chain_information.finalized_block_header.hash(),
+            None => self
+                .state
+                .start_chain_information
+                .finalized_block_header
+                .hash(),
         }
     }
 
@@ -314,14 +347,14 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
             if next_index == self.sources.len() {
                 GrandpaWarpSync::WaitingForSources(WaitingForSources {
                     sources: self.sources,
-                    start_chain_information: self.start_chain_information,
+                    state: self.state,
                     previous_verifier_values: self.previous_verifier_values,
                 })
             } else {
                 GrandpaWarpSync::WarpSyncRequest(Self {
                     source_index: next_index,
                     sources: self.sources,
-                    start_chain_information: self.start_chain_information,
+                    state: self.state,
                     previous_verifier_values: self.previous_verifier_values,
                 })
             }
@@ -344,7 +377,7 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
 
     /// Submit a GrandPa warp sync response if the request succeeded or `None` if it did not.
     pub fn handle_response(
-        mut self,
+        self,
         mut response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
     ) -> GrandpaWarpSync<TSrc> {
         // Count a response of 0 fragments as a failed response.
@@ -368,7 +401,7 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
                         response_fragments,
                     ),
                     None => warp_sync::Verifier::new(
-                        (&self.start_chain_information.finality).into(),
+                        (&self.state.start_chain_information.finality).into(),
                         response_fragments,
                     ),
                 };
@@ -376,7 +409,7 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
                 GrandpaWarpSync::Verifier(Verifier {
                     final_set_of_fragments,
                     verifier,
-                    start_chain_information: self.start_chain_information,
+                    state: self.state,
                     sources: self.sources,
                     warp_sync_source_index: self.source_index,
                 })
@@ -384,12 +417,12 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
             None if next_index < self.sources.len() => GrandpaWarpSync::WarpSyncRequest(Self {
                 source_index: next_index,
                 sources: self.sources,
-                start_chain_information: self.start_chain_information,
+                state: self.state,
                 previous_verifier_values: self.previous_verifier_values,
             }),
             None => GrandpaWarpSync::WaitingForSources(WaitingForSources {
                 sources: self.sources,
-                start_chain_information: self.start_chain_information,
+                state: self.state,
                 previous_verifier_values: self.previous_verifier_values,
             }),
         }
@@ -448,7 +481,7 @@ impl<TSrc> VirtualMachineParamsGet<TSrc> {
 /// Adding more sources of GrandPa warp sync data to is required to continue.
 pub struct WaitingForSources<TSrc> {
     sources: Vec<TSrc>,
-    start_chain_information: ChainInformation,
+    state: PreVerificationState,
     previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
@@ -462,7 +495,7 @@ impl<TSrc: PartialEq> WaitingForSources<TSrc> {
         GrandpaWarpSync::WarpSyncRequest(WarpSyncRequest {
             source_index: self.sources.len() - 1,
             sources: self.sources,
-            start_chain_information: self.start_chain_information,
+            state: self.state,
             previous_verifier_values: self.previous_verifier_values,
         })
     }
