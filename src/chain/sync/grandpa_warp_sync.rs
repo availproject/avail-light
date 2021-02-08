@@ -23,9 +23,10 @@ use crate::{
     executor::{
         host::{HostVmPrototype, NewErr},
         vm::ExecHint,
+        DEFAULT_HEAP_PAGES,
     },
     finality::{grandpa::warp_sync, justification::verify},
-    header::Header,
+    header::{Header, HeaderRef},
     network::protocol::GrandpaWarpSyncResponseFragment,
 };
 use core::convert::TryInto as _;
@@ -33,8 +34,8 @@ use core::convert::TryInto as _;
 /// Problem encountered during a call to [`grandpa_warp_sync`].
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
-    #[display(fmt = "Missing code or heap pages")]
-    MissingCodeOrHeapPages,
+    #[display(fmt = "Missing :code")]
+    MissingCode,
     #[display(fmt = "Failed to parse heap pages: {}", _0)]
     FailedToParseHeapPages(std::array::TryFromSliceError),
     #[display(fmt = "{}", _0)]
@@ -58,6 +59,7 @@ pub fn grandpa_warp_sync<TSrc>(config: Config) -> GrandpaWarpSync<TSrc> {
     GrandpaWarpSync::WaitingForSources(WaitingForSources {
         start_chain_information: config.start_chain_information,
         sources: Vec::with_capacity(config.sources_capacity),
+        previous_verifier_values: None,
     })
 }
 
@@ -155,6 +157,11 @@ impl<TSrc> StorageGet<TSrc> {
         &self.state.warp_sync_source
     }
 
+    /// Returns the header that we're warp syncing up to.
+    pub fn warp_sync_header(&self) -> HeaderRef {
+        (&self.state.header).into()
+    }
+
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     ///
     /// This method is a shortcut for calling `key` and concatenating the returned slices.
@@ -194,6 +201,11 @@ impl<TSrc> NextKey<TSrc> {
         &self.state.warp_sync_source
     }
 
+    /// Returns the header that we're warp syncing up to.
+    pub fn warp_sync_header(&self) -> HeaderRef {
+        (&self.state.header).into()
+    }
+
     /// Injects the key.
     ///
     /// # Panic
@@ -213,28 +225,43 @@ impl<TSrc> NextKey<TSrc> {
 pub struct Verifier<TSrc> {
     verifier: warp_sync::Verifier,
     start_chain_information: ChainInformation,
-    warp_sync_source: TSrc,
+    warp_sync_source_index: usize,
+    sources: Vec<TSrc>,
+    final_set_of_fragments: bool,
 }
 
 impl<TSrc> Verifier<TSrc> {
-    pub fn next(self) -> GrandpaWarpSync<TSrc> {
+    pub fn next(mut self) -> GrandpaWarpSync<TSrc> {
         match self.verifier.next() {
             Ok(warp_sync::Next::NotFinished(next_verifier)) => GrandpaWarpSync::Verifier(Self {
                 verifier: next_verifier,
                 start_chain_information: self.start_chain_information,
-                warp_sync_source: self.warp_sync_source,
+                sources: self.sources,
+                warp_sync_source_index: self.warp_sync_source_index,
+                final_set_of_fragments: self.final_set_of_fragments,
             }),
             Ok(warp_sync::Next::Success {
                 header,
                 chain_information_finality,
-            }) => GrandpaWarpSync::VirtualMachineParamsGet(VirtualMachineParamsGet {
-                state: PostVerificationState {
-                    header,
-                    chain_information_finality,
-                    start_chain_information: self.start_chain_information,
-                    warp_sync_source: self.warp_sync_source,
-                },
-            }),
+            }) => {
+                if self.final_set_of_fragments {
+                    GrandpaWarpSync::VirtualMachineParamsGet(VirtualMachineParamsGet {
+                        state: PostVerificationState {
+                            header,
+                            chain_information_finality,
+                            start_chain_information: self.start_chain_information,
+                            warp_sync_source: self.sources.remove(self.warp_sync_source_index),
+                        },
+                    })
+                } else {
+                    GrandpaWarpSync::WarpSyncRequest(WarpSyncRequest {
+                        source_index: self.warp_sync_source_index,
+                        sources: self.sources,
+                        start_chain_information: self.start_chain_information,
+                        previous_verifier_values: Some((header, chain_information_finality)),
+                    })
+                }
+            }
             Err(error) => GrandpaWarpSync::Finished(Err(Error::Verifier(error))),
         }
     }
@@ -252,12 +279,21 @@ pub struct WarpSyncRequest<TSrc> {
     source_index: usize,
     sources: Vec<TSrc>,
     start_chain_information: ChainInformation,
+    previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
 impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
     /// The source to make a GrandPa warp sync request to.
     pub fn current_source(&self) -> &TSrc {
         &self.sources[self.source_index]
+    }
+
+    /// The hash of the header to warp sync from.
+    pub fn start_block_hash(&self) -> [u8; 32] {
+        match self.previous_verifier_values.as_ref() {
+            Some((header, _)) => header.hash(),
+            None => self.start_chain_information.finalized_block_header.hash(),
+        }
     }
 
     /// Add a source to the list of sources.
@@ -280,12 +316,14 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
                 GrandpaWarpSync::WaitingForSources(WaitingForSources {
                     sources: self.sources,
                     start_chain_information: self.start_chain_information,
+                    previous_verifier_values: self.previous_verifier_values,
                 })
             } else {
                 GrandpaWarpSync::WarpSyncRequest(Self {
                     source_index: next_index,
                     sources: self.sources,
                     start_chain_information: self.start_chain_information,
+                    previous_verifier_values: self.previous_verifier_values,
                 })
             }
         } else {
@@ -308,27 +346,52 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
     /// Submit a GrandPa warp sync response if the request succeeded or `None` if it did not.
     pub fn handle_response(
         mut self,
-        response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
+        mut response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
     ) -> GrandpaWarpSync<TSrc> {
+        // Count a response of 0 fragments as a failed response.
+        if response
+            .as_ref()
+            .map(|fragments| fragments.is_empty())
+            .unwrap_or(false)
+        {
+            response = None;
+        }
+
         let next_index = self.source_index + 1;
 
         match response {
-            Some(response_fragments) => GrandpaWarpSync::Verifier(Verifier {
-                verifier: warp_sync::Verifier::new(
-                    &self.start_chain_information,
-                    response_fragments,
-                ),
-                start_chain_information: self.start_chain_information,
-                warp_sync_source: self.sources.remove(self.source_index),
-            }),
+            Some(response_fragments) => {
+                let final_set_of_fragments = response_fragments.len() == 1;
+
+                let verifier = match self.previous_verifier_values {
+                    Some((_, chain_information_finality)) => warp_sync::Verifier::new(
+                        (&chain_information_finality).into(),
+                        response_fragments,
+                    ),
+                    None => warp_sync::Verifier::new(
+                        (&self.start_chain_information.finality).into(),
+                        response_fragments,
+                    ),
+                };
+
+                GrandpaWarpSync::Verifier(Verifier {
+                    final_set_of_fragments,
+                    verifier,
+                    start_chain_information: self.start_chain_information,
+                    sources: self.sources,
+                    warp_sync_source_index: self.source_index,
+                })
+            }
             None if next_index < self.sources.len() => GrandpaWarpSync::WarpSyncRequest(Self {
                 source_index: next_index,
                 sources: self.sources,
                 start_chain_information: self.start_chain_information,
+                previous_verifier_values: self.previous_verifier_values,
             }),
             None => GrandpaWarpSync::WaitingForSources(WaitingForSources {
                 sources: self.sources,
                 start_chain_information: self.start_chain_information,
+                previous_verifier_values: self.previous_verifier_values,
             }),
         }
     }
@@ -340,6 +403,11 @@ pub struct VirtualMachineParamsGet<TSrc> {
 }
 
 impl<TSrc> VirtualMachineParamsGet<TSrc> {
+    /// Returns the header that we're warp syncing up to.
+    pub fn warp_sync_header(&self) -> HeaderRef {
+        (&self.state.header).into()
+    }
+
     /// Set the code and heappages from storage using the keys `:code` and `:heappages`
     /// respectively. Also allows setting an execution hint for the virtual machine.
     pub fn set_virtual_machine_params(
@@ -348,18 +416,19 @@ impl<TSrc> VirtualMachineParamsGet<TSrc> {
         heap_pages: Option<impl AsRef<[u8]>>,
         exec_hint: ExecHint,
     ) -> GrandpaWarpSync<TSrc> {
-        let (code, heap_pages) = match (code, heap_pages) {
-            (Some(code), Some(heap_pages)) => {
-                let heap_pages = match heap_pages.as_ref().try_into() {
-                    Ok(heap_pages) => heap_pages,
-                    Err(error) => {
-                        return GrandpaWarpSync::Finished(Err(Error::FailedToParseHeapPages(error)))
-                    }
-                };
+        let code = match code {
+            Some(code) => code,
+            None => return GrandpaWarpSync::Finished(Err(Error::MissingCode)),
+        };
 
-                (code, u64::from_le_bytes(heap_pages))
-            }
-            _ => return GrandpaWarpSync::Finished(Err(Error::MissingCodeOrHeapPages)),
+        let heap_pages = match heap_pages {
+            Some(heap_pages) => match heap_pages.as_ref().try_into() {
+                Ok(heap_pages) => u64::from_le_bytes(heap_pages),
+                Err(error) => {
+                    return GrandpaWarpSync::Finished(Err(Error::FailedToParseHeapPages(error)))
+                }
+            },
+            None => DEFAULT_HEAP_PAGES,
         };
 
         match HostVmPrototype::new(code, heap_pages, exec_hint) {
@@ -385,6 +454,7 @@ impl<TSrc> VirtualMachineParamsGet<TSrc> {
 pub struct WaitingForSources<TSrc> {
     sources: Vec<TSrc>,
     start_chain_information: ChainInformation,
+    previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
 impl<TSrc: PartialEq> WaitingForSources<TSrc> {
@@ -398,6 +468,7 @@ impl<TSrc: PartialEq> WaitingForSources<TSrc> {
             source_index: self.sources.len() - 1,
             sources: self.sources,
             start_chain_information: self.start_chain_information,
+            previous_verifier_values: self.previous_verifier_values,
         })
     }
 }

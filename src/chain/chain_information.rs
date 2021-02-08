@@ -401,21 +401,7 @@ impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
                     finalized_next_epoch_transition: finalized_next_epoch_transition.into(),
                 },
             },
-            finality: match &info.finality {
-                ChainInformationFinality::Outsourced => ChainInformationFinalityRef::Outsourced,
-                ChainInformationFinality::Grandpa {
-                    finalized_triggered_authorities,
-                    after_finalized_block_authorities_set_id,
-                    finalized_scheduled_change,
-                } => ChainInformationFinalityRef::Grandpa {
-                    after_finalized_block_authorities_set_id:
-                        *after_finalized_block_authorities_set_id,
-                    finalized_triggered_authorities,
-                    finalized_scheduled_change: finalized_scheduled_change
-                        .as_ref()
-                        .map(|(n, l)| (*n, &l[..])),
-                },
-            },
+            finality: (&info.finality).into(),
         }
     }
 }
@@ -500,4 +486,23 @@ pub enum ChainInformationFinalityRef<'a> {
         /// See equivalent field in [`ChainInformationFinality`].
         finalized_scheduled_change: Option<(u64, &'a [header::GrandpaAuthority])>,
     },
+}
+
+impl<'a> From<&'a ChainInformationFinality> for ChainInformationFinalityRef<'a> {
+    fn from(finality: &'a ChainInformationFinality) -> ChainInformationFinalityRef<'a> {
+        match finality {
+            ChainInformationFinality::Outsourced => ChainInformationFinalityRef::Outsourced,
+            ChainInformationFinality::Grandpa {
+                finalized_triggered_authorities,
+                after_finalized_block_authorities_set_id,
+                finalized_scheduled_change,
+            } => ChainInformationFinalityRef::Grandpa {
+                after_finalized_block_authorities_set_id: *after_finalized_block_authorities_set_id,
+                finalized_triggered_authorities,
+                finalized_scheduled_change: finalized_scheduled_change
+                    .as_ref()
+                    .map(|(n, l)| (*n, &l[..])),
+            },
+        }
+    }
 }
