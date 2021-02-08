@@ -357,6 +357,31 @@ impl NetworkService {
         result
     }
 
+    /// Sends a grandpa warp sync request to the given peer.
+    // TODO: more docs
+    pub async fn grandpa_warp_sync_request(
+        self: Arc<Self>,
+        target: PeerId,
+        begin_hash: [u8; 32],
+    ) -> Result<Vec<protocol::GrandpaWarpSyncResponseFragment>, service::GrandpaWarpSyncRequestError>
+    {
+        log::debug!(target: "network", "Connection({}) <= GrandpaWarpSyncRequest({:?})", target, begin_hash);
+
+        let result = self
+            .network
+            .grandpa_warp_sync_request(ffi::Instant::now(), target.clone(), 0, begin_hash)
+            .await; // TODO: chain_index
+
+        log::debug!(
+            target: "network",
+            "Connection({}) => GrandpaWarpSyncRequest({:?})",
+            target,
+            result.as_ref().map(|fragments| fragments.len()),
+        );
+
+        result
+    }
+
     /// Performs one or more storage proof requests in order to find the value of the given
     /// `requested_keys`.
     ///
