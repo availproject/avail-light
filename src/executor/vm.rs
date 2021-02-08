@@ -118,7 +118,7 @@ impl VirtualMachinePrototype {
     /// See [the module-level documentation](..) for an explanation of the parameters.
     pub fn new(
         module: impl AsRef<[u8]>,
-        heap_pages: u64,
+        heap_pages: HeapPages,
         exec_hint: ExecHint,
         symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
@@ -295,6 +295,29 @@ pub enum ExecHint {
     Oneshot,
     /// The WebAssembly code running through this VM is untrusted.
     Untrusted,
+}
+
+/// Number of heap pages available to the Wasm code.
+// TODO: shouldn't that be in `host` module?
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HeapPages(u32);
+
+impl HeapPages {
+    pub const fn new(v: u32) -> Self {
+        HeapPages(v)
+    }
+}
+
+impl From<u32> for HeapPages {
+    fn from(v: u32) -> Self {
+        HeapPages(v)
+    }
+}
+
+impl From<HeapPages> for u32 {
+    fn from(v: HeapPages) -> Self {
+        v.0
+    }
 }
 
 /// Low-level Wasm function signature.

@@ -18,8 +18,8 @@
 //! Implements the API documented [in the parent module](..).
 
 use super::{
-    ExecOutcome, GlobalValueErr, ModuleError, NewErr, OutOfBoundsError, RunErr, Signature,
-    StartErr, Trap, WasmValue,
+    ExecOutcome, GlobalValueErr, HeapPages, ModuleError, NewErr, OutOfBoundsError, RunErr,
+    Signature, StartErr, Trap, WasmValue,
 };
 
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -46,7 +46,7 @@ impl JitPrototype {
     /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
         module: impl AsRef<[u8]>,
-        heap_pages: u64,
+        heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         let mut config = wasmtime::Config::new();
@@ -123,8 +123,7 @@ impl JitPrototype {
                     }
                     wasmtime::ExternType::Memory(m) => {
                         let limits = {
-                            // TODO: shouldn't heap_pages be u32 in the first place?
-                            let heap_pages = u32::try_from(heap_pages).unwrap_or(u32::max_value());
+                            let heap_pages = u32::from(heap_pages);
                             let min = cmp::max(m.limits().min(), heap_pages);
                             let max = m.limits().max(); // TODO: make sure it's > to min, otherwise error
                             let num = min + heap_pages;

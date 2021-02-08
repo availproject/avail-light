@@ -45,14 +45,9 @@ impl AuraGenesisConfiguration {
     ) -> Result<Self, FromGenesisStorageError> {
         let wasm_code =
             genesis_storage_access(b":code").ok_or(FromGenesisStorageError::RuntimeNotFound)?;
-        let heap_pages = if let Some(bytes) = genesis_storage_access(b":heappages") {
-            u64::from_le_bytes(
-                <[u8; 8]>::try_from(&bytes[..])
-                    .map_err(FromGenesisStorageError::HeapPagesDecode)?,
-            )
-        } else {
-            executor::DEFAULT_HEAP_PAGES
-        };
+        let heap_pages =
+            executor::storage_heap_pages_to_value(genesis_storage_access(b":heappages").as_deref())
+                .map_err(FromGenesisStorageError::HeapPagesDecode)?;
         let vm = host::HostVmPrototype::new(&wasm_code, heap_pages, vm::ExecHint::Oneshot)
             .map_err(FromGenesisStorageError::VmInitialization)?;
         let (cfg, _) = Self::from_virtual_machine_prototype(vm, genesis_storage_access)
@@ -142,10 +137,8 @@ impl AuraGenesisConfiguration {
 pub enum FromGenesisStorageError {
     /// Runtime couldn't be found in the genesis storage.
     RuntimeNotFound,
-    /// Number of heap pages couldn't be found in the genesis storage.
-    HeapPagesNotFound,
     /// Failed to decode heap pages from the genesis storage.
-    HeapPagesDecode(core::array::TryFromSliceError),
+    HeapPagesDecode(executor::InvalidHeapPagesError),
     /// Error when initializing the virtual machine.
     VmInitialization(host::NewErr),
     /// Error while executing the runtime.

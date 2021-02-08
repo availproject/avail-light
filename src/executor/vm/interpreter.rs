@@ -18,8 +18,8 @@
 //! Implements the API documented [in the parent module](..).
 
 use super::{
-    ExecOutcome, GlobalValueErr, ModuleError, NewErr, OutOfBoundsError, RunErr, Signature,
-    StartErr, Trap, ValueType, WasmValue,
+    ExecOutcome, GlobalValueErr, HeapPages, ModuleError, NewErr, OutOfBoundsError, RunErr,
+    Signature, StartErr, Trap, ValueType, WasmValue,
 };
 
 use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
@@ -53,7 +53,7 @@ impl InterpreterPrototype {
     /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
         module_bytes: impl AsRef<[u8]>,
-        heap_pages: u64,
+        heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
         let module = wasmi::Module::from_buffer(module_bytes.as_ref())
@@ -167,7 +167,7 @@ impl InterpreterPrototype {
             }
         }
 
-        let heap_pages = usize::try_from(heap_pages).unwrap_or(usize::max_value());
+        let heap_pages = usize::try_from(u32::from(heap_pages)).unwrap_or(usize::max_value());
 
         let mut import_memory = None;
         let not_started = {

@@ -21,23 +21,22 @@ use crate::{
         ChainInformationFinality,
     },
     executor::{
+        self,
         host::{HostVmPrototype, NewErr},
         vm::ExecHint,
-        DEFAULT_HEAP_PAGES,
     },
     finality::{grandpa::warp_sync, justification::verify},
     header::{Header, HeaderRef},
     network::protocol::GrandpaWarpSyncResponseFragment,
 };
-use core::convert::TryInto as _;
 
 /// Problem encountered during a call to [`grandpa_warp_sync`].
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
     #[display(fmt = "Missing :code")]
     MissingCode,
-    #[display(fmt = "Failed to parse heap pages: {}", _0)]
-    FailedToParseHeapPages(std::array::TryFromSliceError),
+    #[display(fmt = "{}", _0)]
+    InvalidHeapPages(executor::InvalidHeapPagesError),
     #[display(fmt = "{}", _0)]
     Verifier(verify::Error),
     #[display(fmt = "{}", _0)]
@@ -421,15 +420,11 @@ impl<TSrc> VirtualMachineParamsGet<TSrc> {
             None => return GrandpaWarpSync::Finished(Err(Error::MissingCode)),
         };
 
-        let heap_pages = match heap_pages {
-            Some(heap_pages) => match heap_pages.as_ref().try_into() {
-                Ok(heap_pages) => u64::from_le_bytes(heap_pages),
-                Err(error) => {
-                    return GrandpaWarpSync::Finished(Err(Error::FailedToParseHeapPages(error)))
-                }
-            },
-            None => DEFAULT_HEAP_PAGES,
-        };
+        let heap_pages =
+            match executor::storage_heap_pages_to_value(heap_pages.as_ref().map(|p| p.as_ref())) {
+                Ok(hp) => hp,
+                Err(err) => return GrandpaWarpSync::Finished(Err(Error::InvalidHeapPages(err))),
+            };
 
         match HostVmPrototype::new(code, heap_pages, exec_hint) {
             Ok(runtime) => {

@@ -46,7 +46,32 @@ pub mod vm;
 ///
 /// This number is normally found in the storage, at the key `:heappages`. But if it is not
 /// specified, then the value of this constant must be used.
-pub const DEFAULT_HEAP_PAGES: u64 = 1024;
+pub const DEFAULT_HEAP_PAGES: vm::HeapPages = vm::HeapPages::new(1024);
+
+/// Converts a value of the key `:heappages` found in the storage to an actual number of heap
+/// pages.
+pub fn storage_heap_pages_to_value(
+    storage_value: Option<&[u8]>,
+) -> Result<vm::HeapPages, InvalidHeapPagesError> {
+    if let Some(storage_value) = storage_value {
+        let bytes =
+            <[u8; 8]>::try_from(storage_value).map_err(|_| InvalidHeapPagesError::WrongLen)?;
+        let num = u64::from_le_bytes(bytes);
+        let num = u32::try_from(num).map_err(|_| InvalidHeapPagesError::TooLarge)?;
+        Ok(vm::HeapPages::from(num))
+    } else {
+        Ok(DEFAULT_HEAP_PAGES)
+    }
+}
+
+/// Error potentially returned by [`storage_heap_pages_to_value`].
+#[derive(Debug, derive_more::Display)]
+pub enum InvalidHeapPagesError {
+    /// Storage value has the wrong length.
+    WrongLen,
+    /// Number of heap pages is too large.
+    TooLarge,
+}
 
 /// Runs the `Core_version` function using the given virtual machine prototype, and returns
 /// the output.

@@ -35,7 +35,7 @@ fn block_building_works() {
             .1;
         crate::executor::host::HostVmPrototype::new(
             code,
-            1024,
+            crate::executor::DEFAULT_HEAP_PAGES,
             crate::executor::vm::ExecHint::Oneshot,
         )
         .unwrap()

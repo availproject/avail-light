@@ -786,10 +786,10 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                                 (Some(wasm_code), Some(heap_pages)) => {
                                     let wasm_code =
                                         wasm_code.as_ref().expect("no runtime code?!?!"); // TODO: what to do?
-                                    let heap_pages = u64::from_le_bytes(
-                                        <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
-                                            .unwrap(), // TODO: don't unwrap
-                                    );
+                                    let heap_pages = executor::storage_heap_pages_to_value(
+                                        heap_pages.as_deref(),
+                                    )
+                                    .unwrap(); // TODO: don't unwrap
                                     host::HostVmPrototype::new(
                                         &wasm_code,
                                         heap_pages,
@@ -807,10 +807,10 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                                     });
                                 }
                                 (None, Some(heap_pages)) => {
-                                    let heap_pages = u64::from_le_bytes(
-                                        <[u8; 8]>::try_from(&heap_pages.as_ref().unwrap()[..])
-                                            .unwrap(), // TODO: don't unwrap
-                                    );
+                                    let heap_pages = executor::storage_heap_pages_to_value(
+                                        heap_pages.as_deref(),
+                                    )
+                                    .unwrap(); // TODO: don't unwrap
                                     return ProcessOne::FinalizedStorageGet(StorageGet {
                                         inner: StorageGetTarget::Runtime(req, heap_pages), // TODO: don't unwrap
                                         shared,
@@ -1079,7 +1079,10 @@ pub struct StorageGet<TRq, TSrc, TBl> {
 enum StorageGetTarget<TBl> {
     Storage(blocks_tree::StorageGet<Block<TBl>>),
     HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>),
-    Runtime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>, u64),
+    Runtime(
+        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>,
+        vm::HeapPages,
+    ),
     HeapPages(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>, Vec<u8>),
 }
 
@@ -1121,13 +1124,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                 ProcessOne::from(Inner::Step2(inner), self.shared)
             }
             StorageGetTarget::HeapPagesAndRuntime(inner) => {
-                let heap_pages = if let Some(value) = value {
-                    u64::from_le_bytes(
-                        <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
-                    )
-                } else {
-                    executor::DEFAULT_HEAP_PAGES
-                };
+                let heap_pages = executor::storage_heap_pages_to_value(value.as_deref()).unwrap(); // TODO: don't unwrap
                 ProcessOne::FinalizedStorageGet(StorageGet {
                     inner: StorageGetTarget::Runtime(inner, heap_pages),
                     shared: self.shared,
@@ -1149,13 +1146,8 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
                 ProcessOne::from(Inner::Step2(inner), self.shared)
             }
             StorageGetTarget::HeapPages(inner, wasm_code) => {
-                let heap_pages = if let Some(value) = value {
-                    u64::from_le_bytes(
-                        <[u8; 8]>::try_from(&value[..]).unwrap(), // TODO: don't unwrap
-                    )
-                } else {
-                    executor::DEFAULT_HEAP_PAGES
-                };
+                // TODO: don't unwrap
+                let heap_pages = executor::storage_heap_pages_to_value(value).unwrap();
                 let wasm_vm = host::HostVmPrototype::new(
                     &wasm_code,
                     heap_pages,

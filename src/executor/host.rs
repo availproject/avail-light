@@ -124,7 +124,7 @@
 //! ## Example
 //!
 //! ```
-//! use smoldot::executor::host::{HostVm, HostVmPrototype};
+//! use smoldot::executor::{host::{HostVm, HostVmPrototype}, vm::HeapPages};
 //!
 //! # let wasm_binary_code: &[u8] = return;
 //!
@@ -132,7 +132,7 @@
 //! let mut vm: HostVm = {
 //!     let prototype = HostVmPrototype::new(
 //!         &wasm_binary_code,
-//!         1024,
+//!         HeapPages::from(1024),
 //!         smoldot::executor::vm::ExecHint::Oneshot
 //!     ).unwrap();
 //!     prototype.run_no_param("Core_version").unwrap().into()
@@ -197,7 +197,7 @@ pub struct HostVmPrototype {
     registered_functions: Vec<HostFunction>,
 
     /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
-    heap_pages: u64,
+    heap_pages: vm::HeapPages,
 }
 
 impl HostVmPrototype {
@@ -205,7 +205,7 @@ impl HostVmPrototype {
     // TODO: document `heap_pages`; I know it comes from storage, but it's unclear what it means exactly
     pub fn new(
         module: impl AsRef<[u8]>,
-        heap_pages: u64,
+        heap_pages: vm::HeapPages,
         exec_hint: vm::ExecHint,
     ) -> Result<Self, NewErr> {
         // Initialize the virtual machine.
@@ -251,7 +251,7 @@ impl HostVmPrototype {
     }
 
     /// Returns the number of heap pages that were passed to [`HostVmPrototype::new`].
-    pub fn heap_pages(&self) -> u64 {
+    pub fn heap_pages(&self) -> vm::HeapPages {
         self.heap_pages
     }
 
@@ -1993,7 +1993,7 @@ struct Inner {
     heap_base: u32,
 
     /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
-    heap_pages: u64,
+    heap_pages: vm::HeapPages,
 
     /// If true, a transaction has been started using `ext_storage_start_transaction_version_1`.
     /// No further transaction start is allowed before the current one ends.

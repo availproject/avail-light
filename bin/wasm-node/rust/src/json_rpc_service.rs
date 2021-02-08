@@ -470,7 +470,7 @@ impl SuccessfulRuntime {
     fn from_params(code: &Option<Vec<u8>>, heap_pages: &Option<Vec<u8>>) -> Result<Self, ()> {
         let vm = match executor::host::HostVmPrototype::new(
             code.as_ref().ok_or(())?,
-            executor::DEFAULT_HEAP_PAGES, // TODO: proper heap pages
+            executor::storage_heap_pages_to_value(heap_pages.as_deref()).map_err(|_| ())?,
             executor::vm::ExecHint::CompileAheadOfTime,
         ) {
             Ok(vm) => vm,

@@ -25,7 +25,7 @@ use crate::{
 };
 
 use alloc::{string::String, vec::Vec};
-use core::{convert::TryFrom as _, num::NonZeroU64, time::Duration};
+use core::{num::NonZeroU64, time::Duration};
 use hashbrown::HashMap;
 
 /// Configuration for a block verification.
@@ -175,7 +175,7 @@ pub enum Error {
     /// Block being verified has erased the `:code` key from the storage.
     CodeKeyErased,
     /// Block has modified the `:heappages` key in a way that fails to parse.
-    HeapPagesParseError,
+    HeapPagesParseError(executor::InvalidHeapPagesError),
     /// Block has modified the `:heappages` key without modifying the `:code` key. This isn't
     /// supported by smoldot.
     // TODO: this is something that we should support but don't because it's annoying to implement and is clearly not worth the effort
@@ -304,13 +304,16 @@ impl VerifyInner {
                     }
                     (Some(Some(_code)), heap_pages) => {
                         let heap_pages = match heap_pages {
-                            Some(Some(p)) if p.len() == 8 => {
-                                u64::from_le_bytes(<[u8; 8]>::try_from(&p[..]).unwrap())
+                            Some(heap_pages) => {
+                                match executor::storage_heap_pages_to_value(heap_pages.as_deref()) {
+                                    Ok(hp) => hp,
+                                    Err(err) => {
+                                        return Verify::Finished(Err(Error::HeapPagesParseError(
+                                            err,
+                                        )))
+                                    }
+                                }
                             }
-                            Some(Some(_)) => {
-                                return Verify::Finished(Err(Error::HeapPagesParseError))
-                            }
-                            Some(None) => executor::DEFAULT_HEAP_PAGES,
                             None => success.parent_runtime.heap_pages(),
                         };
 
@@ -438,7 +441,7 @@ impl StorageNextKey {
 #[must_use]
 pub struct RuntimeCompilation {
     success: execute_block::Success,
-    heap_pages: u64,
+    heap_pages: vm::HeapPages,
     consensus_success: SuccessConsensus,
 }
 
