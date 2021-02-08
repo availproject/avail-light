@@ -104,12 +104,12 @@ impl GrandpaGenesisConfiguration {
             match vm {
                 host::HostVm::ReadyToRun(r) => vm = r.run(),
                 host::HostVm::Finished(data) => {
-                    break data.value().to_owned();
+                    break data.value().as_ref().to_owned();
                 }
                 host::HostVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 host::HostVm::ExternalStorageGet(rq) => {
-                    let value = genesis_storage_access(rq.key());
+                    let value = genesis_storage_access(rq.key().as_ref());
                     vm = rq.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 

@@ -71,7 +71,7 @@ pub fn metadata_from_virtual_machine_prototype(
         match vm {
             host::HostVm::ReadyToRun(r) => vm = r.run(),
             host::HostVm::Finished(finished) => {
-                let value = remove_length_prefix(finished.value())?.to_owned();
+                let value = remove_length_prefix(finished.value().as_ref())?.to_owned();
                 return Ok((value, finished.into_prototype()));
             }
             host::HostVm::Error { .. } => return Err(Error::Trapped),

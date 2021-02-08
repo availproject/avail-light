@@ -80,7 +80,7 @@ fn block_building_works() {
             }
             super::BlockBuild::NextKey(_) => unimplemented!(), // Not needed for this test.
             super::BlockBuild::PrefixKeys(prefix) => {
-                let p = prefix.prefix().to_owned();
+                let p = prefix.prefix().as_ref().to_owned();
                 let list = chain_specs
                     .genesis_storage()
                     .filter(move |(k, _)| k.starts_with(&p))

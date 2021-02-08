@@ -1182,7 +1182,7 @@ pub struct StoragePrefixKeys<TRq, TSrc, TBl> {
 
 impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
     /// Returns the prefix whose keys to load.
-    pub fn prefix(&self) -> &[u8] {
+    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.inner.prefix()
     }
 
@@ -1195,18 +1195,20 @@ impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
             .map(|k| k.as_ref().to_owned())
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
 
-        let prefix = self.inner.prefix();
-        for (k, v) in self
-            .shared
-            .inner
-            .best_to_finalized_storage_diff
-            .range(prefix.to_owned()..)
-            .take_while(|(k, _)| k.starts_with(prefix))
         {
-            if v.is_some() {
-                keys.insert(k.clone());
-            } else {
-                keys.remove(k);
+            let prefix = self.inner.prefix();
+            for (k, v) in self
+                .shared
+                .inner
+                .best_to_finalized_storage_diff
+                .range(prefix.as_ref().to_owned()..)
+                .take_while(|(k, _)| k.starts_with(prefix.as_ref()))
+            {
+                if v.is_some() {
+                    keys.insert(k.clone());
+                } else {
+                    keys.remove(k);
+                }
             }
         }
 
@@ -1227,12 +1229,11 @@ pub struct StorageNextKey<TRq, TSrc, TBl> {
 }
 
 impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
-    /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         if let Some(key_overwrite) = &self.key_overwrite {
-            key_overwrite
+            either::Left(key_overwrite)
         } else {
-            self.inner.key()
+            either::Right(self.inner.key())
         }
     }
 
@@ -1250,10 +1251,11 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
         // `best_to_finalized_storage_diff` needs to be taken into account in order to provide
         // the next key in the best block instead.
 
+        let inner_key = self.inner.key();
         let requested_key = if let Some(key_overwrite) = &self.key_overwrite {
             key_overwrite
         } else {
-            self.inner.key()
+            inner_key.as_ref()
         };
 
         if let Some(key) = key {
@@ -1281,6 +1283,7 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
                 // This `clone()` is necessary, as `b` borrows from
                 // `self.shared.best_to_finalized_storage_diff`.
                 let key_overwrite = Some(b.clone());
+                drop(inner_key); // Solves borrowing errors.
                 return ProcessOne::FinalizedStorageNextKey(StorageNextKey {
                     inner: self.inner,
                     shared: self.shared,
@@ -1297,6 +1300,7 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
             (None, None) => None,
         };
 
+        drop(inner_key); // Solves borrowing errors.
         let inner = self.inner.inject_key(outcome);
         ProcessOne::from(Inner::Step2(inner), self.shared)
     }

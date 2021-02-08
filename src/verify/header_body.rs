@@ -389,7 +389,7 @@ pub struct StoragePrefixKeys {
 
 impl StoragePrefixKeys {
     /// Returns the prefix whose keys to load.
-    pub fn prefix(&self) -> &[u8] {
+    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.inner.prefix()
     }
 
@@ -412,7 +412,7 @@ pub struct StorageNextKey {
 
 impl StorageNextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.inner.key()
     }
 

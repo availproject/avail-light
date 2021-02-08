@@ -148,7 +148,7 @@
 //!         HostVm::Finished(finished) => {
 //!             // `finished.value()` here is an opaque blob of bytes returned by the runtime.
 //!             // In the case of a call to `"Core_version"`, we know that it must be empty.
-//!             assert!(finished.value().is_empty());
+//!             assert!(finished.value().as_ref().is_empty());
 //!             println!("Success!");
 //!             break;
 //!         },
@@ -162,7 +162,7 @@
 //!         // All the other variants correspond to function calls that the runtime might perform.
 //!         // `ExternalStorageGet` is shown here as an example.
 //!         HostVm::ExternalStorageGet(req) => {
-//!             println!("Runtime requires the storage value at {:?}", req.key());
+//!             println!("Runtime requires the storage value at {:?}", req.key().as_ref());
 //!             // Injects the value into the virtual machine and updates the state.
 //!             vm = req.resume(None); // Just a stub
 //!         }
@@ -424,23 +424,19 @@ impl ReadyToRun {
                     // According to the runtime environment specifications, the return value is two
                     // consecutive I32s representing the length and size of the SCALE-encoded
                     // return value.
-                    let ret_len = u32::try_from(ret >> 32).unwrap();
-                    let ret_ptr = u32::try_from(ret & 0xffffffff).unwrap();
+                    let value_size = u32::try_from(ret >> 32).unwrap();
+                    let value_ptr = u32::try_from(ret & 0xffffffff).unwrap();
 
-                    let ret_data = self
-                        .inner
-                        .vm
-                        .read_memory(ret_ptr, ret_len)
-                        .map(|d| d.as_ref().to_vec());
-                    if let Ok(value) = ret_data {
+                    if value_size.saturating_add(value_ptr) <= self.inner.vm.memory_size() {
                         return HostVm::Finished(Finished {
                             inner: self.inner,
-                            value,
+                            value_ptr,
+                            value_size,
                         });
                     } else {
                         let error = Error::ReturnedPtrOutOfRange {
-                            pointer: ret_ptr,
-                            size: ret_len,
+                            pointer: value_ptr,
+                            size: value_size,
                             memory_size: self.inner.vm.memory_size(),
                         };
 
@@ -651,6 +647,19 @@ impl ReadyToRun {
 
                     let len = u32::try_from(val >> 32).unwrap();
                     let ptr = u32::try_from(val & 0xffffffff).unwrap();
+
+                    if len.saturating_add(ptr) > self.inner.vm.memory_size() {
+                        return HostVm::Error {
+                            error: Error::ParamOutOfRange {
+                                function: host_fn.name(),
+                                param_num: $num,
+                                pointer: ptr,
+                                length: len,
+                            },
+                            prototype: self.inner.into_prototype(),
+                        };
+                    }
+
                     (ptr, len)
                 }};
             }
@@ -713,18 +722,20 @@ impl ReadyToRun {
             // instead return an `ExternalVm` to the user.
             match host_fn {
                 HostFunction::ext_storage_set_version_1 => {
-                    let key = expect_pointer_size!(0);
-                    let value = expect_pointer_size!(1);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
+                    let (value_ptr, value_size) = expect_pointer_size_raw!(1);
                     return HostVm::ExternalStorageSet(ExternalStorageSet {
-                        key,
-                        value: Some(value),
+                        key_ptr,
+                        key_size,
+                        value: Some((value_ptr, value_size)),
                         inner: self.inner,
                     });
                 }
                 HostFunction::ext_storage_get_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalStorageGet(ExternalStorageGet {
-                        key,
+                        key_ptr,
+                        key_size,
                         calling: id,
                         value_out_ptr: None,
                         offset: 0,
@@ -733,11 +744,12 @@ impl ReadyToRun {
                     });
                 }
                 HostFunction::ext_storage_read_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     let (value_out_ptr, value_out_size) = expect_pointer_size_raw!(1);
                     let offset = expect_u32!(2);
                     return HostVm::ExternalStorageGet(ExternalStorageGet {
-                        key,
+                        key_ptr,
+                        key_size,
                         calling: id,
                         value_out_ptr: Some(value_out_ptr),
                         offset,
@@ -746,17 +758,19 @@ impl ReadyToRun {
                     });
                 }
                 HostFunction::ext_storage_clear_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalStorageSet(ExternalStorageSet {
-                        key,
+                        key_ptr,
+                        key_size,
                         value: None,
                         inner: self.inner,
                     });
                 }
                 HostFunction::ext_storage_exists_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalStorageGet(ExternalStorageGet {
-                        key,
+                        key_ptr,
+                        key_size,
                         calling: id,
                         value_out_ptr: None,
                         offset: 0,
@@ -765,9 +779,10 @@ impl ReadyToRun {
                     });
                 }
                 HostFunction::ext_storage_clear_prefix_version_1 => {
-                    let prefix = expect_pointer_size!(0);
+                    let (prefix_ptr, prefix_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalStorageClearPrefix(ExternalStorageClearPrefix {
-                        prefix,
+                        prefix_ptr,
+                        prefix_size,
                         inner: self.inner,
                     });
                 }
@@ -781,18 +796,21 @@ impl ReadyToRun {
                     });
                 }
                 HostFunction::ext_storage_next_key_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalStorageNextKey(ExternalStorageNextKey {
-                        key,
+                        key_ptr,
+                        key_size,
                         inner: self.inner,
                     });
                 }
                 HostFunction::ext_storage_append_version_1 => {
-                    let key = expect_pointer_size!(0);
-                    let value = expect_pointer_size!(1);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
+                    let (value_ptr, value_size) = expect_pointer_size_raw!(1);
                     return HostVm::ExternalStorageAppend(ExternalStorageAppend {
-                        key,
-                        value,
+                        key_ptr,
+                        key_size,
+                        value_ptr,
+                        value_size,
                         inner: self.inner,
                     });
                 }
@@ -1132,18 +1150,20 @@ impl ReadyToRun {
                     }
                 }
                 HostFunction::ext_offchain_index_set_version_1 => {
-                    let key = expect_pointer_size!(0);
-                    let value = expect_pointer_size!(1);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
+                    let (value_ptr, value_size) = expect_pointer_size_raw!(1);
                     return HostVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
-                        key,
-                        value: Some(value),
+                        key_ptr,
+                        key_size,
+                        value: Some((value_ptr, value_size)),
                         inner: self.inner,
                     });
                 }
                 HostFunction::ext_offchain_index_clear_version_1 => {
-                    let key = expect_pointer_size!(0);
+                    let (key_ptr, key_size) = expect_pointer_size_raw!(0);
                     return HostVm::ExternalOffchainStorageSet(ExternalOffchainStorageSet {
-                        key,
+                        key_ptr,
+                        key_size,
                         value: None,
                         inner: self.inner,
                     });
@@ -1287,10 +1307,11 @@ impl ReadyToRun {
                     });
                 }
                 HostFunction::ext_misc_runtime_version_version_1 => {
-                    let wasm_blob = expect_pointer_size!(0);
+                    let (wasm_blob_ptr, wasm_blob_size) = expect_pointer_size_raw!(0);
                     return HostVm::CallRuntimeVersion(CallRuntimeVersion {
                         inner: self.inner,
-                        wasm_blob,
+                        wasm_blob_ptr,
+                        wasm_blob_size,
                     });
                 }
                 HostFunction::ext_allocator_malloc_version_1 => {
@@ -1378,17 +1399,19 @@ impl fmt::Debug for ReadyToRun {
 pub struct Finished {
     inner: Inner,
 
-    /// Value returned by the VM.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    value: Vec<u8>,
+    /// Pointer to the value returned by the VM. Guaranteed to be in range.
+    value_ptr: u32,
+    /// Size of the value returned by the VM. Guaranteed to be in range.
+    value_size: u32,
 }
 
 impl Finished {
     /// Returns the value the called function has returned.
-    pub fn value(&self) -> &[u8] {
-        &self.value
+    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.value_ptr, self.value_size)
+            .unwrap()
     }
 
     /// Turns the virtual machine back into a prototype.
@@ -1415,11 +1438,10 @@ pub struct ExternalStorageGet {
     /// output should be stored.
     value_out_ptr: Option<u32>,
 
-    /// Key whose value must be loaded.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    key: Vec<u8>,
+    /// Pointer to the key whose value must be loaded. Guaranteed to be in range.
+    key_ptr: u32,
+    /// Size of the key whose value must be loaded. Guaranteed to be in range.
+    key_size: u32,
     /// Offset within the value that the Wasm VM requires.
     offset: u32,
     /// Maximum size that the Wasm VM would accept.
@@ -1428,8 +1450,11 @@ pub struct ExternalStorageGet {
 
 impl ExternalStorageGet {
     /// Returns the key whose value must be provided back with [`ExternalStorageGet::resume`].
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.key_ptr, self.key_size)
+            .unwrap()
     }
 
     /// Offset within the value that is requested.
@@ -1564,30 +1589,33 @@ impl fmt::Debug for ExternalStorageGet {
 pub struct ExternalStorageSet {
     inner: Inner,
 
-    /// Key whose value must be set.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    key: Vec<u8>,
+    /// Pointer to the key whose value must be set. Guaranteed to be in range.
+    key_ptr: u32,
+    /// Size of the key whose value must be set. Guaranteed to be in range.
+    key_size: u32,
 
-    /// Value to set.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    value: Option<Vec<u8>>,
+    /// Pointer and size of the value to set. `None` for clearing. Guaranteed to be in range.
+    value: Option<(u32, u32)>,
 }
 
 impl ExternalStorageSet {
     /// Returns the key whose value must be set.
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.key_ptr, self.key_size)
+            .unwrap()
     }
 
     /// Returns the value to set.
     ///
     /// If `None` is returned, the key should be removed from the storage entirely.
-    pub fn value(&self) -> Option<&[u8]> {
-        self.value.as_ref().map(|b| &b[..])
+    pub fn value<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
+        if let Some((ptr, size)) = self.value {
+            Some(self.inner.vm.read_memory(ptr, size).unwrap())
+        } else {
+            None
+        }
     }
 
     /// Resumes execution after having set the value.
@@ -1627,28 +1655,32 @@ impl fmt::Debug for ExternalStorageSet {
 pub struct ExternalStorageAppend {
     inner: Inner,
 
-    /// Key whose value must be set.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    key: Vec<u8>,
+    /// Pointer to the key whose value must be set. Guaranteed to be in range.
+    key_ptr: u32,
+    /// Size of the key whose value must be set. Guaranteed to be in range.
+    key_size: u32,
 
-    /// Value to append to the entry.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    value: Vec<u8>,
+    /// Pointer to the value to append. Guaranteed to be in range.
+    value_ptr: u32,
+    /// Size of the value to append. Guaranteed to be in range.
+    value_size: u32,
 }
 
 impl ExternalStorageAppend {
     /// Returns the key whose value must be set.
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.key_ptr, self.key_size)
+            .unwrap()
     }
 
     /// Returns the value to append.
-    pub fn value(&self) -> &[u8] {
-        &self.value
+    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.value_ptr, self.value_size)
+            .unwrap()
     }
 
     /// Resumes execution after having set the value.
@@ -1670,17 +1702,19 @@ impl fmt::Debug for ExternalStorageAppend {
 pub struct ExternalStorageClearPrefix {
     inner: Inner,
 
-    /// Prefix of the keys to remove.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    prefix: Vec<u8>,
+    /// Pointer to the prefix to remove. Guaranteed to be in range.
+    prefix_ptr: u32,
+    /// Size of the prefix to remove. Guaranteed to be in range.
+    prefix_size: u32,
 }
 
 impl ExternalStorageClearPrefix {
     /// Returns the prefix whose keys must be removed.
-    pub fn prefix(&self) -> &[u8] {
-        &self.prefix
+    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.prefix_ptr, self.prefix_size)
+            .unwrap()
     }
 
     /// Resumes execution after having set the value.
@@ -1754,17 +1788,19 @@ impl fmt::Debug for ExternalStorageChangesRoot {
 pub struct ExternalStorageNextKey {
     inner: Inner,
 
-    /// Key whose follow-up must be provided.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    key: Vec<u8>,
+    /// Pointer to the key whose value must be set. Guaranteed to be in range.
+    key_ptr: u32,
+    /// Size of the key whose value must be set. Guaranteed to be in range.
+    key_size: u32,
 }
 
 impl ExternalStorageNextKey {
     /// Returns the key whose following key must be returned.
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.key_ptr, self.key_size)
+            .unwrap()
     }
 
     /// Writes the follow-up key in the Wasm VM memory and prepares it for execution.
@@ -1800,17 +1836,19 @@ impl fmt::Debug for ExternalStorageNextKey {
 pub struct CallRuntimeVersion {
     inner: Inner,
 
-    /// Wasm code whose runtime version must be provided.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    wasm_blob: Vec<u8>,
+    /// Pointer to the wasm code whose runtime version must be provided. Guaranteed to be in range.
+    wasm_blob_ptr: u32,
+    /// Size of the wasm code whose runtime version must be provided. Guaranteed to be in range.
+    wasm_blob_size: u32,
 }
 
 impl CallRuntimeVersion {
     /// Returns the Wasm code whose runtime version must be provided.
-    pub fn wasm_code(&self) -> &[u8] {
-        &self.wasm_blob
+    pub fn wasm_code<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.wasm_blob_ptr, self.wasm_blob_size)
+            .unwrap()
     }
 
     /// Writes the SCALE-encoded runtime version to the memory and prepares for execution.
@@ -1838,30 +1876,33 @@ impl fmt::Debug for CallRuntimeVersion {
 pub struct ExternalOffchainStorageSet {
     inner: Inner,
 
-    /// Key whose value must be set.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    key: Vec<u8>,
+    /// Pointer to the key whose value must be set. Guaranteed to be in range.
+    key_ptr: u32,
+    /// Size of the key whose value must be set. Guaranteed to be in range.
+    key_size: u32,
 
-    /// Value to set.
-    // TODO: This should be a value length and pointer intead, so that we can read from the
-    //       VM's memory without copying. However the underlying Wasm VM code doesn't support
-    //       reading without copies.
-    value: Option<Vec<u8>>,
+    /// Pointer and size of the value to set. `None` for clearing. Guaranteed to be in range.
+    value: Option<(u32, u32)>,
 }
 
 impl ExternalOffchainStorageSet {
     /// Returns the key whose value must be set.
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+        self.inner
+            .vm
+            .read_memory(self.key_ptr, self.key_size)
+            .unwrap()
     }
 
     /// Returns the value to set.
     ///
     /// If `None` is returned, the key should be removed from the storage entirely.
-    pub fn value(&self) -> Option<&[u8]> {
-        self.value.as_ref().map(|b| &b[..])
+    pub fn value<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
+        if let Some((ptr, size)) = self.value {
+            Some(self.inner.vm.read_memory(ptr, size).unwrap())
+        } else {
+            None
+        }
     }
 
     /// Resumes execution after having set the value.

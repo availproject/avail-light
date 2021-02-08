@@ -363,20 +363,20 @@ fn start_sync(
                     }
                     optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
                         // TODO: to_vec() :-/
-                        let req_key = req.key().to_vec();
+                        let req_key = req.key().as_ref().to_vec();
                         // TODO: to_vec() :-/
                         let next_key = finalized_block_storage
-                            .range(req.key().to_vec()..)
+                            .range(req.key().as_ref().to_vec()..)
                             .find(move |(k, _)| k[..] > req_key[..])
                             .map(|(k, _)| k);
                         process = req.inject_key(next_key);
                     }
                     optimistic::ProcessOne::FinalizedStoragePrefixKeys(req) => {
                         // TODO: to_vec() :-/
-                        let prefix = req.prefix().to_vec();
+                        let prefix = req.prefix().as_ref().to_vec();
                         // TODO: to_vec() :-/
                         let keys = finalized_block_storage
-                            .range(req.prefix().to_vec()..)
+                            .range(req.prefix().as_ref().to_vec()..)
                             .take_while(|(k, _)| k.starts_with(&prefix))
                             .map(|(k, _)| k);
                         process = req.inject_keys(keys);

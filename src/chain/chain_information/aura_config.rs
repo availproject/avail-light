@@ -80,7 +80,7 @@ impl AuraGenesisConfiguration {
                 host::HostVm::ReadyToRun(r) => vm = r.run(),
                 host::HostVm::Finished(finished) => {
                     let slot_duration = NonZeroU64::new(u64::from_le_bytes(
-                        <[u8; 8]>::try_from(finished.value())
+                        <[u8; 8]>::try_from(finished.value().as_ref())
                             .map_err(|_| FromVmPrototypeError::BadSlotDuration)?,
                     ))
                     .ok_or(FromVmPrototypeError::BadSlotDuration)?;
@@ -89,7 +89,7 @@ impl AuraGenesisConfiguration {
                 host::HostVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 host::HostVm::ExternalStorageGet(req) => {
-                    let value = genesis_storage_access(req.key());
+                    let value = genesis_storage_access(req.key().as_ref());
                     vm = req.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 
@@ -108,16 +108,17 @@ impl AuraGenesisConfiguration {
             match vm {
                 host::HostVm::ReadyToRun(r) => vm = r.run(),
                 host::HostVm::Finished(finished) => {
-                    let authorities_list = header::AuraAuthoritiesIter::decode(finished.value())
-                        .map_err(|_| FromVmPrototypeError::AuthoritiesListDecodeError)?
-                        .map(header::AuraAuthority::from)
-                        .collect::<Vec<_>>();
+                    let authorities_list =
+                        header::AuraAuthoritiesIter::decode(finished.value().as_ref())
+                            .map_err(|_| FromVmPrototypeError::AuthoritiesListDecodeError)?
+                            .map(header::AuraAuthority::from)
+                            .collect::<Vec<_>>();
                     break (authorities_list, finished.into_prototype());
                 }
                 host::HostVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 host::HostVm::ExternalStorageGet(req) => {
-                    let value = genesis_storage_access(req.key());
+                    let value = genesis_storage_access(req.key().as_ref());
                     vm = req.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 

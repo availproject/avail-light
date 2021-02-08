@@ -66,7 +66,7 @@ pub struct SuccessVirtualMachine(host::Finished);
 
 impl SuccessVirtualMachine {
     /// Returns the value the called function has returned.
-    pub fn value(&self) -> &[u8] {
+    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.0.value()
     }
 
@@ -171,7 +171,7 @@ pub struct NextKey {
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         match &self.inner.vm {
             host::HostVm::ExternalStorageNextKey(req) => req.key(),
             _ => unreachable!(),

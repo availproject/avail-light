@@ -458,6 +458,7 @@ impl Interpreter {
             }
         };
 
+        // TODO: remove the memory copy after https://github.com/paritytech/wasmi/pull/246
         mem.get(offset, size.try_into().map_err(|_| OutOfBoundsError)?)
             .map_err(|_| OutOfBoundsError)
     }

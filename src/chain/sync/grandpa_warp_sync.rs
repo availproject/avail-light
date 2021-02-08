@@ -185,7 +185,7 @@ pub struct NextKey<TSrc> {
 
 impl<TSrc> NextKey<TSrc> {
     /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.inner.key()
     }
 

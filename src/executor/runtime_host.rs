@@ -112,7 +112,7 @@ pub struct SuccessVirtualMachine(host::Finished);
 
 impl SuccessVirtualMachine {
     /// Returns the value the called function has returned.
-    pub fn value(&self) -> &[u8] {
+    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.0.value()
     }
 
@@ -166,12 +166,12 @@ impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
         match &self.inner.vm {
-            host::HostVm::ExternalStorageGet(req) => {
-                either::Either::Left(iter::once(either::Either::Left(req.key())))
-            }
-            host::HostVm::ExternalStorageAppend(req) => {
-                either::Either::Left(iter::once(either::Either::Left(req.key())))
-            }
+            host::HostVm::ExternalStorageGet(req) => either::Left(iter::once(either::Left(
+                either::Left(either::Left(req.key())),
+            ))),
+            host::HostVm::ExternalStorageAppend(req) => either::Left(iter::once(either::Left(
+                either::Left(either::Right(req.key())),
+            ))),
 
             host::HostVm::ExternalStorageRoot(_) => {
                 if let calculate_root::RootMerkleValueCalculation::StorageValue(value_request) =
@@ -190,9 +190,9 @@ impl StorageGet {
                 }
             }
 
-            host::HostVm::ExternalStorageChangesRoot(_) => {
-                either::Either::Left(iter::once(either::Either::Left(&b":changes_trie"[..])))
-            }
+            host::HostVm::ExternalStorageChangesRoot(_) => either::Left(iter::once(either::Left(
+                either::Right(&b":changes_trie"[..]),
+            ))),
 
             // We only create a `StorageGet` if the state is one of the above.
             _ => unreachable!(),
@@ -230,10 +230,10 @@ impl StorageGet {
             host::HostVm::ExternalStorageAppend(req) => {
                 // TODO: could be less overhead?
                 let mut value = value.unwrap_or_default();
-                append_to_storage_value(&mut value, req.value());
+                append_to_storage_value(&mut value, req.value().as_ref());
                 self.inner
                     .top_trie_changes
-                    .insert(req.key().to_vec(), Some(value));
+                    .insert(req.key().as_ref().to_vec(), Some(value));
                 self.inner.vm = req.resume();
             }
             host::HostVm::ExternalStorageRoot(_) => {
@@ -271,10 +271,10 @@ pub struct PrefixKeys {
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    pub fn prefix(&self) -> &[u8] {
+    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         match &self.inner.vm {
-            host::HostVm::ExternalStorageClearPrefix(req) => req.prefix(),
-            host::HostVm::ExternalStorageRoot { .. } => &[],
+            host::HostVm::ExternalStorageClearPrefix(req) => either::Left(req.prefix()),
+            host::HostVm::ExternalStorageRoot { .. } => either::Right(&[]),
 
             // We only create a `PrefixKeys` if the state is one of the above.
             _ => unreachable!(),
@@ -300,7 +300,7 @@ impl PrefixKeys {
                 }
                 // TODO: O(n) complexity here
                 for (key, value) in self.inner.top_trie_changes.iter_mut() {
-                    if !key.starts_with(req.prefix()) {
+                    if !key.starts_with(req.prefix().as_ref()) {
                         continue;
                     }
                     if value.is_none() {
@@ -365,13 +365,13 @@ pub struct NextKey {
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         if let Some(key_overwrite) = &self.key_overwrite {
-            return key_overwrite;
+            return either::Left(key_overwrite);
         }
 
         match &self.inner.vm {
-            host::HostVm::ExternalStorageNextKey(req) => req.key(),
+            host::HostVm::ExternalStorageNextKey(req) => either::Right(req.key()),
             _ => unreachable!(),
         }
     }
@@ -387,10 +387,11 @@ impl NextKey {
 
         match self.inner.vm {
             host::HostVm::ExternalStorageNextKey(req) => {
+                let req_key = req.key();
                 let requested_key = if let Some(key_overwrite) = &self.key_overwrite {
                     &key_overwrite[..]
                 } else {
-                    req.key()
+                    req_key.as_ref()
                 };
 
                 if let Some(key) = key {
@@ -422,6 +423,7 @@ impl NextKey {
                         // This `clone()` is necessary, as `b` borrows from
                         // `self.inner.top_trie_changes`.
                         let key_overwrite = Some(b.clone());
+                        drop(req_key); // Solves borrowing errors.
                         self.inner.vm = host::HostVm::ExternalStorageNextKey(req);
                         return RuntimeHostVm::NextKey(NextKey {
                             inner: self.inner,
@@ -438,6 +440,7 @@ impl NextKey {
                     (None, None) => None,
                 };
 
+                drop(req_key); // Solves borrowing errors.
                 self.inner.vm = req.resume(outcome.as_ref().map(|v| &v[..]));
             }
 
@@ -499,7 +502,8 @@ impl Inner {
                 }
 
                 host::HostVm::ExternalStorageGet(req) => {
-                    if let Some(overlay) = self.top_trie_changes.get(req.key()) {
+                    let change = self.top_trie_changes.get(req.key().as_ref());
+                    if let Some(overlay) = change {
                         self.vm = req.resume_full_value(overlay.as_ref().map(|v| &v[..]));
                     } else {
                         self.vm = req.into();
@@ -511,9 +515,11 @@ impl Inner {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
-                        .storage_value_update(req.key(), req.value().is_some());
-                    self.top_trie_changes
-                        .insert(req.key().to_vec(), req.value().map(|v| v.to_vec()));
+                        .storage_value_update(req.key().as_ref(), req.value().is_some());
+                    self.top_trie_changes.insert(
+                        req.key().as_ref().to_vec(),
+                        req.value().map(|v| v.as_ref().to_vec()),
+                    );
                     self.vm = req.resume();
                 }
 
@@ -521,13 +527,14 @@ impl Inner {
                     self.top_trie_root_calculation_cache
                         .as_mut()
                         .unwrap()
-                        .storage_value_update(req.key(), true);
+                        .storage_value_update(req.key().as_ref(), true);
 
-                    if let Some(current_value) = self.top_trie_changes.get(req.key()) {
+                    let current_value = self.top_trie_changes.get(req.key().as_ref());
+                    if let Some(current_value) = current_value {
                         let mut current_value = current_value.clone().unwrap_or_default();
-                        append_to_storage_value(&mut current_value, req.value());
+                        append_to_storage_value(&mut current_value, req.value().as_ref());
                         self.top_trie_changes
-                            .insert(req.key().to_vec(), Some(current_value));
+                            .insert(req.key().as_ref().to_vec(), Some(current_value));
                         self.vm = req.resume();
                     } else {
                         self.vm = req.into();
@@ -592,8 +599,10 @@ impl Inner {
                 }
 
                 host::HostVm::ExternalOffchainStorageSet(req) => {
-                    self.offchain_storage_changes
-                        .insert(req.key().to_vec(), req.value().map(|v| v.to_vec()));
+                    self.offchain_storage_changes.insert(
+                        req.key().as_ref().to_vec(),
+                        req.value().map(|v| v.as_ref().to_vec()),
+                    );
                     self.vm = req.resume();
                 }
 

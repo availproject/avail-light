@@ -1341,7 +1341,7 @@ impl JsonRpcService {
                             );
                         }
 
-                        let return_value = success.virtual_machine.value().to_owned();
+                        let return_value = success.virtual_machine.value().as_ref().to_owned();
                         runtime.virtual_machine = Some(success.virtual_machine.into_prototype());
                         return Ok(return_value);
                     }

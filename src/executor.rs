@@ -66,11 +66,9 @@ pub fn core_version(
         match vm {
             host::HostVm::ReadyToRun(r) => vm = r.run(),
             host::HostVm::Finished(finished) => {
-                let _ = decode(&finished.value())?;
-                return Ok((
-                    CoreVersion(finished.value().to_vec()),
-                    finished.into_prototype(),
-                ));
+                let _ = decode(&finished.value().as_ref())?;
+                let version = finished.value().as_ref().to_vec();
+                return Ok((CoreVersion(version), finished.into_prototype()));
             }
             host::HostVm::Error { .. } => return Err(()),
             host::HostVm::LogEmit(log) => vm = log.resume(),

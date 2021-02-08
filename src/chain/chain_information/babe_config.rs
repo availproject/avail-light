@@ -78,7 +78,8 @@ impl BabeGenesisConfiguration {
             match vm {
                 host::HostVm::ReadyToRun(r) => vm = r.run(),
                 host::HostVm::Finished(finished) => {
-                    break match OwnedGenesisConfiguration::decode_all(finished.value()) {
+                    let decoded = OwnedGenesisConfiguration::decode_all(finished.value().as_ref());
+                    break match decoded {
                         Ok(cfg) => (cfg, finished.into_prototype()),
                         Err(err) => return Err(FromVmPrototypeError::OutputDecode(err)),
                     };
@@ -86,7 +87,7 @@ impl BabeGenesisConfiguration {
                 host::HostVm::Error { .. } => return Err(FromVmPrototypeError::Trapped),
 
                 host::HostVm::ExternalStorageGet(req) => {
-                    let value = genesis_storage_access(req.key());
+                    let value = genesis_storage_access(req.key().as_ref());
                     vm = req.resume_full_value(value.as_ref().map(|v| &v[..]));
                 }
 

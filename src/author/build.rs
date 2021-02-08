@@ -306,7 +306,7 @@ pub struct PrefixKeys(runtime::PrefixKeys, Shared);
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    pub fn prefix(&self) -> &[u8] {
+    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.0.prefix()
     }
 
@@ -323,7 +323,7 @@ pub struct NextKey(runtime::NextKey, Shared);
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key(&self) -> &[u8] {
+    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
         self.0.key()
     }
 
