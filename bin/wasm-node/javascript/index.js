@@ -22,6 +22,12 @@ import Websocket from 'websocket';
 
 import { default as wasm_base64 } from './autogen/wasm.js';
 
+export class SmoldotError extends Error {
+  constructor(message) {
+    super(message);
+  }
+}
+
 export async function start(config) {
   // Analyzing the content of `config`.
 
@@ -34,7 +40,7 @@ export async function start(config) {
   const max_log_level = config.max_log_level || 5;
 
   if (Object.prototype.toString.call(chain_spec) !== '[object String]')
-    throw 'config must include a string chain_spec';
+    throw new SmoldotError('config must include a string chain_spec');
 
 
   // Start of the actual function body.
@@ -84,7 +90,7 @@ export async function start(config) {
         });
 
         let message = Buffer.from(module.exports.memory.buffer).toString('utf8', ptr, ptr + len);
-        throw message;
+        throw new SmoldotError(message);
       },
 
       // Used by the Rust side to emit a JSON-RPC response or subscription notification.
@@ -158,7 +164,7 @@ export async function start(config) {
             .toString('utf8', url_ptr, url_ptr + url_len);
 
           if (!!websockets[id]) {
-            throw "internal error: WebSocket already allocated";
+            throw new SmoldotError("internal error: WebSocket already allocated");
           }
 
           let websocket = new Websocket.w3cwebsocket(url);
@@ -276,7 +282,7 @@ export async function start(config) {
         // This should ideally also clean up all resources (such as WebSockets and active timers),
         // but it is assumed that this function isn't going to be called anyway.
         has_thrown = true;
-        throw "proc_exit called: " + ret_code;
+        throw new SmoldotError(`proc_exit called: ${ret_code}`);
       },
 
       // Return the number of environment variables and the total size of all environment variables.
