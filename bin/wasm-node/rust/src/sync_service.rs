@@ -136,16 +136,17 @@ impl SyncService {
         rx.await.unwrap()
     }
 
-    /// Returns `true` if the best block is known to be above the finalized block of the network.
+    /// Returns true if it is believed that we are near the head of the chain.
     ///
-    /// Also returns `false` if unknown.
-    pub async fn is_above_network_finalized(&self) -> bool {
+    /// The way this method is implemented is opaque and cannot be relied on. The return value
+    /// should only ever be shown to the user and not used for any meaningful logic.
+    pub async fn is_near_head_of_chain_heuristic(&self) -> bool {
         let (send_back, rx) = oneshot::channel();
 
         self.to_background
             .lock()
             .await
-            .send(ToBackground::IsAboveNetworkFinalized { send_back })
+            .send(ToBackground::IsNearHeadOfChainHeuristic { send_back })
             .await
             .unwrap();
 
@@ -425,9 +426,8 @@ async fn start_sync(
                             let serialized = smoldot::database::finalized_serialize::encode_chain_information(chain);
                             let _ = send_back.send(serialized);
                         }
-                        ToBackground::IsAboveNetworkFinalized { send_back } => {
-                            // TODO: only optimistic syncing is implemented yet, hence false
-                            let _ = send_back.send(false);
+                        ToBackground::IsNearHeadOfChainHeuristic { send_back } => {
+                            let _ = send_back.send(sync_idle.is_near_head_of_chain_heuristic());
                         }
                         ToBackground::SubscribeFinalized { send_back } => {
                             let (tx, rx) = lossy_channel::channel();
@@ -504,8 +504,8 @@ async fn start_sync(
 enum ToBackground {
     /// See [`SyncService::serialize_chain`].
     Serialize { send_back: oneshot::Sender<String> },
-    /// See [`SyncService::is_above_network_finalized`].
-    IsAboveNetworkFinalized { send_back: oneshot::Sender<bool> },
+    /// See [`SyncService::is_near_head_of_chain_heuristic`].
+    IsNearHeadOfChainHeuristic { send_back: oneshot::Sender<bool> },
     /// See [`SyncService::subscribe_finalized`].
     SubscribeFinalized {
         send_back: oneshot::Sender<(Vec<u8>, lossy_channel::Receiver<Vec<u8>>)>,

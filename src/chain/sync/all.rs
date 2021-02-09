@@ -202,6 +202,18 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         }
     }
 
+    /// Returns true if it is believed that we are near the head of the chain.
+    ///
+    /// The way this method is implemented is opaque and cannot be relied on. The return value
+    /// should only ever be shown to the user and not used for any meaningful logic.
+    pub fn is_near_head_of_chain_heuristic(&self) -> bool {
+        match &self.inner {
+            IdleInner::Optimistic(_) => false,
+            IdleInner::AllForks(_) => true,
+            IdleInner::GrandpaWarpSync(_) => false,
+        }
+    }
+
     /// Adds a new source to the sync state machine.
     ///
     /// Must be passed the best block number and hash of the source, as usually reported by itself.
