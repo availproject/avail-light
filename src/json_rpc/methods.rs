@@ -18,6 +18,7 @@
 //! List of requests and how to answer them.
 
 use super::parse;
+use crate::util;
 use alloc::{format, string::String, vec::Vec};
 use core::convert::TryFrom as _;
 
@@ -296,12 +297,15 @@ impl<'a> serde::Deserialize<'a> for AccountId {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct Block {
-    pub extrinsics: Vec<HexString>,
+    pub extrinsics: Vec<Extrinsic>,
     pub header: Header,
-    pub justification: HexString, // TODO: unsure of the type
+    pub justification: Option<HexString>,
 }
+
+#[derive(Debug, Clone)]
+pub struct Extrinsic(pub Vec<u8>);
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Header {
@@ -423,6 +427,49 @@ impl serde::Serialize for RpcMethods {
             version: self.version,
             methods: &self.methods,
         }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct SerdeBlock<'a> {
+            block: SerdeBlockInner<'a>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct SerdeBlockInner<'a> {
+            extrinsics: &'a [Extrinsic],
+            header: &'a Header,
+            justification: Option<&'a HexString>, // TODO: unsure of the type
+        }
+
+        SerdeBlock {
+            block: SerdeBlockInner {
+                extrinsics: &self.extrinsics,
+                header: &self.header,
+                justification: self.justification.as_ref(),
+            },
+        }
+        .serialize(serializer)
+    }
+}
+
+impl serde::Serialize for Extrinsic {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let length_prefix = util::encode_scale_compact_usize(self.0.len());
+        format!(
+            "0x{}{}",
+            hex::encode(length_prefix.as_ref()),
+            hex::encode(&self.0[..])
+        )
         .serialize(serializer)
     }
 }

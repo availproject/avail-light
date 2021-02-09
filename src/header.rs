@@ -300,6 +300,11 @@ impl Header {
         HeaderRef::from(self).scale_encoding()
     }
 
+    /// Equivalent to [`Header::scale_encoding`] but returns the data in a `Vec`.
+    pub fn scale_encoding_vec(&self) -> Vec<u8> {
+        HeaderRef::from(self).scale_encoding_vec()
+    }
+
     /// Builds the hash of the header.
     pub fn hash(&self) -> [u8; 32] {
         HeaderRef::from(self).hash()

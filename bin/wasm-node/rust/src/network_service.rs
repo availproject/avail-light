@@ -38,9 +38,15 @@
 
 use crate::ffi;
 
-use core::{fmt, num::NonZeroUsize, pin::Pin, time::Duration};
+use core::{
+    fmt,
+    num::{NonZeroU32, NonZeroUsize},
+    pin::Pin,
+    time::Duration,
+};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
+    header,
     informant::HashDisplay,
     libp2p::{
         connection,
@@ -331,6 +337,76 @@ impl NetworkService {
         }));
 
         (network_service, receivers)
+    }
+
+    // TODO: doc; explain the guarantees
+    pub async fn block_query(
+        self: Arc<Self>,
+        hash: [u8; 32],
+        fields: protocol::BlocksRequestFields,
+    ) -> Result<protocol::BlockData, ()> {
+        // TODO: better error?
+        const NUM_ATTEMPTS: usize = 3;
+
+        let request_config = protocol::BlocksRequestConfig {
+            start: protocol::BlocksRequestConfigStart::Hash(hash),
+            desired_count: NonZeroU32::new(1).unwrap(),
+            direction: protocol::BlocksRequestDirection::Ascending,
+            fields: fields.clone(),
+        };
+
+        // TODO: better peers selection ; don't just take the first 3
+        // TODO: must only ask the peers that know about this block
+        for target in self.peers_list().await.take(NUM_ATTEMPTS) {
+            let mut result = match self
+                .clone()
+                .blocks_request(target, request_config.clone())
+                .await
+            {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            if result.len() != 1 {
+                continue;
+            }
+
+            let result = result.remove(0);
+
+            if result.header.is_none() && fields.header {
+                continue;
+            }
+            if result
+                .header
+                .as_ref()
+                .map_or(false, |h| header::decode(h).is_err())
+            {
+                continue;
+            }
+            if result.body.is_none() && fields.body {
+                continue;
+            }
+            // Note: the presence of a justification isn't checked and can't be checked, as not
+            // all blocks have a justification in the first place.
+            if result.hash != hash {
+                continue;
+            }
+            if result.header.as_ref().map_or(false, |h| {
+                header::hash_from_scale_encoded_header(&h) != result.hash
+            }) {
+                continue;
+            }
+            match (&result.header, &result.body) {
+                (Some(_), Some(_)) => {
+                    // TODO: verify correctness of body
+                }
+                _ => {}
+            }
+
+            return Ok(result);
+        }
+
+        Err(())
     }
 
     /// Sends a blocks request to the given peer.
