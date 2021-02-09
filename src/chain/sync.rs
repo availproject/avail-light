@@ -21,10 +21,13 @@
 //! > **Note**: While the above summary is a bit abstract, in practice it is almost always
 //! >           done by exchanging messages through a peer-to-peer network.
 //!
-//! Multiple strategies exist for syncing, and which one to employ depends on the amount of
-//! information that is desired (e.g. is it required to know the header and/or body of every
-//! single block, or can some blocks be skipped?) and the distance between the highest block of
-//! the local chain and the highest block available on the remotes.
+//! Multiple strategies exist for syncing, one for each sub-module, and which one to employ
+//! depends on the amount of information that is desired (e.g. is it required to know the header
+//! and/or body of every single block, or can some blocks be skipped?) and the distance between
+//! the highest block of the local chain and the highest block available on the remotes.
+//!
+//! The [`all`] module represents a good combination of all syncing strategies and should be the
+//! default choice for most clients.
 //!
 //! # About safety
 //!
@@ -45,6 +48,7 @@
 //! nodes and not only rely on incoming connections, as there is otherwise the possibility of a
 //! single actor controlling all said incoming connections.
 
+pub mod all;
 pub mod all_forks;
 pub mod grandpa_warp_sync;
 pub mod optimistic;

@@ -27,15 +27,15 @@
 //! Use [`SyncService::subscribe_best`] and [`SyncService::subscribe_finalized`] to get notified
 //! about updates of the best and finalized blocks.
 
-use crate::network_service;
+use crate::{ffi, network_service};
 
 use futures::{
     channel::{mpsc, oneshot},
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{chain, chain::sync::optimistic, informant::HashDisplay, libp2p, network};
-use std::{collections::HashMap, num::NonZeroU32, pin::Pin, sync::Arc};
+use smoldot::{chain, chain::sync::all, informant::HashDisplay, libp2p, network};
+use std::{collections::HashMap, convert::TryFrom as _, num::NonZeroU32, pin::Pin, sync::Arc};
 
 mod lossy_channel;
 
@@ -159,7 +159,8 @@ async fn start_sync(
     network_service: Arc<network_service::NetworkService>,
     mut from_network_service: mpsc::Receiver<network_service::Event>,
 ) -> impl Future<Output = ()> {
-    let mut sync = optimistic::OptimisticSync::<_, libp2p::PeerId, ()>::new(optimistic::Config {
+    // TODO: implicit generics
+    let mut sync = all::AllSync::<(), libp2p::PeerId, ()>::new(all::Config {
         chain_information,
         sources_capacity: 32,
         source_selection_randomness_seed: rand::random(),
@@ -188,188 +189,239 @@ async fn start_sync(
     });
 
     async move {
+        // TODO: remove
         let mut peers_source_id_map = HashMap::new();
-        let mut block_requests_finished = stream::FuturesUnordered::new();
 
+        // List of block requests currently in progress.
+        let mut pending_block_requests = stream::FuturesUnordered::new();
+
+        // TODO: remove; should store the aborthandle in the TRq user data instead
+        let mut pending_requests = HashMap::new();
+
+        // TODO: finalized isn't notified
         let mut finalized_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
         let mut best_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
 
+        // If non-empty, contains a request that the sync state machine wants to start on a source.
+        let mut requests_to_start = Vec::<all::Action>::with_capacity(16);
+
+        // TODO: crappy way to handle that
+        let mut has_new_best = false;
+
+        // Main loop of the syncing logic.
         loop {
-            while let Some(action) = sync.next_request_action() {
-                match action {
-                    optimistic::RequestAction::Start {
-                        start,
-                        block_height,
-                        source,
-                        num_blocks,
-                        ..
+            // The sync state machine can be in a few various states. At the time of writing:
+            // idle, verifying header, verifying block, verifying grandpa warp sync proof,
+            // verifying storage proof.
+            // If the state is one of the "verifying" states, perform the actual verification and
+            // loop again until the sync is in an idle state.
+            let mut sync_idle: all::Idle<_, _, _> = loop {
+                match sync {
+                    all::AllSync::Idle(idle) => break idle,
+                    all::AllSync::HeaderVerify(verify) => {
+                        match verify.perform(ffi::unix_time(), ()) {
+                            all::HeaderVerifyOutcome::Success {
+                                sync: sync_idle,
+                                next_actions,
+                                is_new_best,
+                                ..
+                            } => {
+                                requests_to_start.extend(next_actions);
+
+                                if is_new_best {
+                                    has_new_best = true;
+                                }
+
+                                sync = sync_idle.into();
+                            }
+                            all::HeaderVerifyOutcome::Error {
+                                sync: sync_idle,
+                                next_actions,
+                                error,
+                                ..
+                            } => {
+                                log::warn!(
+                                    target: "sync-verify",
+                                    "Error while verifying header: {}",
+                                    error
+                                );
+                                requests_to_start.extend(next_actions);
+                                sync = sync_idle.into();
+                            }
+                        }
+                    }
+                }
+            };
+
+            // TODO: handle this differently
+            if has_new_best {
+                let scale_encoded_header = sync_idle.best_block_header().scale_encoding_vec();
+                // TODO: remove expired senders
+                for notif in &mut best_notifications {
+                    let _ = notif.send(scale_encoded_header.clone());
+                }
+            }
+
+            // `sync_idle` is now an `Idle` that has been extracted from `sync`.
+            // All the code paths below will need to put back `sync_idle` into `sync` before
+            // looping again.
+
+            // Drain the content of `requests_to_start` to actually start the requests that have
+            // been queued by the previous iteration of the main loop.
+            // TODO: do this earlier, before the verifications
+            for request in requests_to_start.drain(..) {
+                match request {
+                    all::Action::Start {
+                        source_id,
+                        request_id,
+                        detail:
+                            all::RequestDetail::BlocksRequest {
+                                first_block,
+                                ascending,
+                                num_blocks,
+                                request_headers,
+                                request_bodies,
+                                request_justification,
+                            },
                     } => {
+                        let peer_id = sync_idle.source_user_data_mut(source_id).clone();
+
                         let block_request = network_service.clone().blocks_request(
-                            source.clone(),
+                            peer_id.clone(),
                             network::protocol::BlocksRequestConfig {
-                                start: network::protocol::BlocksRequestConfigStart::Number(
-                                    block_height,
-                                ),
-                                desired_count: num_blocks,
-                                direction: network::protocol::BlocksRequestDirection::Ascending,
+                                start: match first_block {
+                                    all::BlocksRequestFirstBlock::Hash(h) => {
+                                        network::protocol::BlocksRequestConfigStart::Hash(h)
+                                    }
+                                    all::BlocksRequestFirstBlock::Number(n) => {
+                                        network::protocol::BlocksRequestConfigStart::Number(n)
+                                    }
+                                },
+                                desired_count: NonZeroU32::new(
+                                    u32::try_from(num_blocks.get()).unwrap_or(u32::max_value()),
+                                )
+                                .unwrap(),
+                                direction: if ascending {
+                                    network::protocol::BlocksRequestDirection::Ascending
+                                } else {
+                                    network::protocol::BlocksRequestDirection::Descending
+                                },
                                 fields: network::protocol::BlocksRequestFields {
-                                    header: true,
-                                    body: false,
-                                    justification: true,
+                                    header: request_headers,
+                                    body: request_bodies,
+                                    justification: request_justification,
                                 },
                             },
                         );
 
                         let (block_request, abort) = future::abortable(block_request);
-                        let request_id = start.start(abort);
-                        block_requests_finished
-                            .push(async move { (request_id, block_request.await.map_err(|_| ())) });
+                        pending_requests.insert(request_id, abort);
+
+                        pending_block_requests
+                            .push(async move { (request_id, block_request.await) });
                     }
-                    optimistic::RequestAction::Cancel { user_data, .. } => {
-                        user_data.abort();
+                    all::Action::Start {
+                        source_id,
+                        request_id: id,
+                        detail:
+                            all::RequestDetail::GrandpaWarpSync {
+                                local_finalized_block_height,
+                            },
+                    } => {
+                        todo!()
+                    }
+                    all::Action::Start {
+                        source_id,
+                        request_id: id,
+                        detail:
+                            all::RequestDetail::StorageGet {
+                                block_hash,
+                                state_trie_root,
+                                key,
+                            },
+                    } => todo!(),
+                    all::Action::Cancel(request_id) => {
+                        pending_requests.remove(&request_id).unwrap().abort();
                     }
                 }
             }
 
-            let mut verified_blocks = 0u64;
-
-            // Verify blocks that have been fetched from queries.
-            // TODO: tweak this mechanism of stopping sync from time to time
-            while verified_blocks < 4096 {
-                match sync.process_one(crate::ffi::unix_time()) {
-                    optimistic::ProcessOne::Idle { sync: s } => {
-                        sync = s;
-                        break;
-                    }
-
-                    optimistic::ProcessOne::NewBest {
-                        sync: s,
-                        new_best_number,
-                        new_best_hash,
-                    } => {
-                        sync = s;
-
-                        log::debug!(
-                            target: "sync-verify",
-                            "New best block: #{} ({})",
-                            new_best_number,
-                            HashDisplay(&new_best_hash),
-                        );
-
-                        let scale_encoded_header = sync.best_block_header().scale_encoding_vec();
-                        // TODO: remove expired senders
-                        for notif in &mut best_notifications {
-                            let _ = notif.send(scale_encoded_header.clone());
-                        }
-                    }
-
-                    optimistic::ProcessOne::Reset {
-                        sync: s,
-                        reason,
-                        previous_best_height,
-                    } => {
-                        sync = s;
-
-                        log::warn!(
-                            target: "sync-verify",
-                            "Failed to verify block #{}: {}",
-                            previous_best_height + 1,
-                            reason
-                        );
-
-                        let scale_encoded_header = sync.best_block_header().scale_encoding_vec();
-                        // TODO: remove expired senders
-                        for notif in &mut best_notifications {
-                            let _ = notif.send(scale_encoded_header.clone());
-                        }
-                    }
-
-                    optimistic::ProcessOne::Finalized {
-                        sync: s,
-                        finalized_blocks,
-                        ..
-                    } => {
-                        sync = s;
-                        verified_blocks += 1;
-
-                        log::debug!(
-                            target: "sync-verify",
-                            "Finalized {} block",
-                            finalized_blocks.len()
-                        );
-
-                        let scale_encoded_header = finalized_blocks
-                            .last()
-                            .unwrap()
-                            .header
-                            .scale_encoding()
-                            .fold(Vec::new(), |mut a, b| {
-                                a.extend_from_slice(b.as_ref());
-                                a
-                            });
-
-                        // TODO: remove expired senders
-                        for notif in &mut best_notifications {
-                            let _ = notif.send(scale_encoded_header.clone());
-                        }
-
-                        // TODO: remove expired senders
-                        for notif in &mut finalized_notifications {
-                            let _ = notif.send(scale_encoded_header.clone());
-                        }
-                    }
-
-                    // Other variants can be produced if the sync state machine is configured for
-                    // syncing the storage, which is not the case here.
-                    _ => unreachable!(),
-                }
-            }
-
-            // Since `process_one` is a CPU-heavy operation, looping until it is done can
-            // take a long time. In order to avoid blocking the rest of the program in the
-            // meanwhile, the `yield_once` function interrupts the current task and gives a
-            // chance for other tasks to progress.
-            crate::yield_once().await;
-
+            // The sync state machine is idle, and all requests have been started.
+            // Now waiting for some event to happen: a network event, a request from the frontend
+            // of the sync service, or a request being finished.
             futures::select! {
                 network_event = from_network_service.next() => {
+                    // Something happened on the network.
+
                     let network_event = match network_event {
                         Some(m) => m,
                         None => {
+                            // The channel from the network service has been closed. Closing the
+                            // sync background task as well.
                             return
                         },
                     };
 
                     match network_event {
-                        network_service::Event::Connected { peer_id, best_block_number, .. } => {
-                            let id = sync.add_source(peer_id.clone(), best_block_number);
-                            peers_source_id_map.insert(peer_id.clone(), id);
+                        network_service::Event::Connected { peer_id, best_block_number, best_block_hash } => {
+                            let (id, requests) = sync_idle.add_source(peer_id.clone(), best_block_number, best_block_hash);
+                            peers_source_id_map.insert(peer_id, id);
+                            requests_to_start.extend(requests);
+                            sync = sync_idle.into();
                         },
                         network_service::Event::Disconnected(peer_id) => {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
-                            let (_, rq_list) = sync.remove_source(id);
-                            for (_, rq) in rq_list {
+                            let rq_list = sync_idle.remove_source(id);
+                            // TODO:
+                            /*for (_, rq) in rq_list {
                                 rq.abort();
-                            }
+                            }*/
+                            sync = sync_idle.into();
                         },
                         network_service::Event::BlockAnnounce { peer_id, announce } => {
                             let id = *peers_source_id_map.get(&peer_id).unwrap();
-                            sync.raise_source_best_block(id, announce.decode().header.number);
+                            let decoded = announce.decode();
+                            // TODO: stupid to re-encode
+                            match sync_idle.block_announce(id, decoded.header.scale_encoding_vec(), decoded.is_best) {
+                                all::BlockAnnounceOutcome::HeaderVerify(verify) => {
+                                    sync = verify.into();
+                                },
+                                all::BlockAnnounceOutcome::TooOld(idle) => {
+                                    sync = idle.into();
+                                },
+                                all::BlockAnnounceOutcome::AlreadyInChain(idle) => {
+                                    sync = idle.into();
+                                },
+                                all::BlockAnnounceOutcome::NotFinalizedChain(idle) => {
+                                    sync = idle.into();
+                                },
+                                all::BlockAnnounceOutcome::Disjoint { sync: sync_idle, next_actions, .. } => {
+                                    requests_to_start.extend(next_actions);
+                                    sync = sync_idle.into();
+                                },
+                                all::BlockAnnounceOutcome::InvalidHeader { sync: sync_idle, .. } => {
+                                    sync = sync_idle.into();
+                                },
+                            }
                         },
                     }
+
                 }
 
                 message = from_foreground.next() => {
+                    // Received message from the front `SyncService`.
                     let message = match message {
                         Some(m) => m,
                         None => {
+                            // The channel with the frontend sync service has been closed.
+                            // Closing the sync background task as a result.
                             return
                         },
                     };
 
                     match message {
                         ToBackground::Serialize { send_back } => {
-                            let chain = sync.as_chain_information();
+                            let chain = sync_idle.as_chain_information();
                             let serialized = smoldot::database::finalized_serialize::encode_chain_information(chain);
                             let _ = send_back.send(serialized);
                         }
@@ -380,39 +432,70 @@ async fn start_sync(
                         ToBackground::SubscribeFinalized { send_back } => {
                             let (tx, rx) = lossy_channel::channel();
                             finalized_notifications.push(tx);
-                            let current = sync.finalized_block_header().scale_encoding_vec();
+                            let current = sync_idle.finalized_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
                         ToBackground::SubscribeBest { send_back } => {
                             let (tx, rx) = lossy_channel::channel();
                             best_notifications.push(tx);
-                            let current = sync.best_block_header().scale_encoding_vec();
+                            let current = sync_idle.best_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
-                    }
+                    };
+
+                    sync = sync_idle.into();
                 },
 
-                (request_id, result) = block_requests_finished.select_next_some() => {
+                (request_id, result) = pending_block_requests.select_next_some() => {
+                    pending_requests.remove(&request_id);
+
+                    // A request (e.g. a block request, warp sync request, etc.) has been finished.
                     // `result` is an error if the block request got cancelled by the sync state
                     // machine.
                     if let Ok(result) = result {
-                        let result = result.map_err(|_| ());
-                        let _ = sync.finish_request(request_id, result.map(|v| v.into_iter().map(|block| optimistic::RequestSuccessBlock {
-                            scale_encoded_header: block.header.unwrap(), // TODO: don't unwrap
-                            scale_encoded_justification: block.justification,
-                            scale_encoded_extrinsics: Vec::new(),
-                            user_data: (),
-                        })).map_err(|()| optimistic::RequestFail::BlocksUnavailable));
+                        // Inject the result of the request into the sync state machine.
+                        let outcome = sync_idle.blocks_request_response(
+                            request_id,
+                            result.map_err(|_| ()).map(|v| {
+                                v.into_iter().filter_map(|block| {
+                                    Some(all::BlockRequestSuccessBlock {
+                                        scale_encoded_header: block.header?,
+                                        scale_encoded_justification: block.justification,
+                                        scale_encoded_extrinsics: Vec::new(),
+                                        user_data: (),
+                                    })
+                                })
+                            }),
+                            ffi::unix_time(),
+                        );
+
+                        match outcome {
+                            all::BlocksRequestResponseOutcome::VerifyHeader(verify) => {
+                                sync = verify.into();
+                            },
+                            all::BlocksRequestResponseOutcome::Queued { sync: sync_idle, next_actions } => {
+                                requests_to_start.extend(next_actions);
+                                sync = sync_idle.into();
+                            },
+                            all::BlocksRequestResponseOutcome::NotFinalizedChain { sync: sync_idle, next_actions, .. } => {
+                                requests_to_start.extend(next_actions);
+                                sync = sync_idle.into();
+                            },
+                            all::BlocksRequestResponseOutcome::Inconclusive { sync: sync_idle, next_actions, .. } => {
+                                requests_to_start.extend(next_actions);
+                                sync = sync_idle.into();
+                            },
+                            all::BlocksRequestResponseOutcome::AllAlreadyInChain { sync: sync_idle, next_actions, .. } => {
+                                requests_to_start.extend(next_actions);
+                                sync = sync_idle.into();
+                            },
+                        }
+                    } else {
+                        // The sync state machine has emitted a `Action::Cancel` earlier, and is
+                        // thus no longer interested in the response.
+                        sync = sync_idle.into();
                     }
                 },
-
-                _ = async move {
-                    if verified_blocks == 0 {
-                        loop {
-                            futures::pending!()
-                        }
-                    }
-                }.fuse() => {}
             }
         }
     }
