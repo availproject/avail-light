@@ -1,6 +1,6 @@
 {
   "name": "smoldot",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Light client that connects to Polkadot and Substrate-based blockchains",
   "author": "Parity Technologies <admin@parity.io>",
   "license": "GPL-3.0-or-later WITH Classpath-exception-2.0",
