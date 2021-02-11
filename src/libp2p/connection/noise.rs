@@ -839,7 +839,10 @@ mod tests {
 
             while !matches!(
                 (&handshake1, &handshake2),
-                (NoiseHandshake::Success { .. }, NoiseHandshake::Success { .. })
+                (
+                    NoiseHandshake::Success { .. },
+                    NoiseHandshake::Success { .. }
+                )
             ) {
                 match handshake1 {
                     NoiseHandshake::Success { .. } => {}

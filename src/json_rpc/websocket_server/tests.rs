@@ -43,9 +43,10 @@ fn basic_works() {
                     soketto::handshake::Client::new(io, "example.com", "/")
                 };
 
-                assert!(
-                    matches!(client.handshake().await.unwrap(), soketto::handshake::ServerResponse::Accepted {..})
-                );
+                assert!(matches!(
+                    client.handshake().await.unwrap(),
+                    soketto::handshake::ServerResponse::Accepted { .. }
+                ));
                 client.into_builder().finish()
             };
 

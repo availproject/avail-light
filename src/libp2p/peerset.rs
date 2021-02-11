@@ -898,22 +898,30 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
 
     /// Returns an iterator to the list of current established connections to that node.
     pub fn connections<'b>(&'b self) -> impl Iterator<Item = ConnectionId> + 'b {
-        self.peerset.peer_connections
+        self.peerset
+            .peer_connections
             .range((self.peer_index, 0)..=(self.peer_index, usize::max_value()))
             .map(|(_, i)| *i)
             .filter(move |idx| {
-                matches!(self.peerset.connections[*idx].ty, ConnectionTy::Connected { .. })
+                matches!(
+                    self.peerset.connections[*idx].ty,
+                    ConnectionTy::Connected { .. }
+                )
             })
             .map(ConnectionId)
     }
 
     /// Returns an iterator to the list of current pending connections to that node.
     pub fn pending_connections<'b>(&'b self) -> impl Iterator<Item = ConnectionId> + 'b {
-        self.peerset.peer_connections
+        self.peerset
+            .peer_connections
             .range((self.peer_index, 0)..=(self.peer_index, usize::max_value()))
             .map(|(_, i)| *i)
             .filter(move |idx| {
-                matches!(self.peerset.connections[*idx].ty, ConnectionTy::Pending { .. })
+                matches!(
+                    self.peerset.connections[*idx].ty,
+                    ConnectionTy::Pending { .. }
+                )
             })
             .map(ConnectionId)
     }
