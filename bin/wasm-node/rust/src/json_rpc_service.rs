@@ -258,8 +258,9 @@ pub async fn start(config: Config) {
                     {
                         Ok(c) => c,
                         Err(error) => {
-                            log::warn!(
+                            log::log!(
                                 target: "json-rpc",
+                                if error.is_network_problem() { log::Level::Debug } else { log::Level::Warn },
                                 "Failed to download :code and :heappages of new best block: {}",
                                 error
                             );
@@ -1346,8 +1347,9 @@ impl JsonRpcService {
                                         }
                                     }
                                     Err(error) => {
-                                        log::warn!(
+                                        log::log!(
                                             target: "json-rpc",
+                                            if error.is_network_problem() { log::Level::Debug } else { log::Level::Warn },
                                             "state_subscribeStorage changes check failed: {}",
                                             error
                                         );
@@ -1567,6 +1569,17 @@ enum StorageQueryError {
     /// Error while retrieving the storage item from other nodes.
     #[display(fmt = "{}", _0)]
     StorageRetrieval(network_service::StorageQueryError),
+}
+
+impl StorageQueryError {
+    /// Returns `true` if this is caused by networking issues, as opposed to a consensus-related
+    /// issue.
+    fn is_network_problem(&self) -> bool {
+        match self {
+            StorageQueryError::FindStorageRootHashError => true, // TODO: do properly
+            StorageQueryError::StorageRetrieval(error) => error.is_network_problem(),
+        }
+    }
 }
 
 #[derive(Debug, derive_more::Display)]

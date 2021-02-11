@@ -683,6 +683,22 @@ pub struct StorageQueryError {
     pub errors: Vec<StorageQueryErrorDetail>,
 }
 
+impl StorageQueryError {
+    /// Returns `true` if this is caused by networking issues, as opposed to a consensus-related
+    /// issue.
+    pub fn is_network_problem(&self) -> bool {
+        self.errors.iter().all(|err| match err {
+            StorageQueryErrorDetail::Network(service::StorageProofRequestError::Request(_)) => true,
+            StorageQueryErrorDetail::Network(service::StorageProofRequestError::Decode(_)) => false,
+            // TODO: as a temporary hack, we consider `TrieRootNotFound` as the remote not knowing about the requested block; see https://github.com/paritytech/substrate/pull/8046
+            StorageQueryErrorDetail::ProofVerification(proof_verify::Error::TrieRootNotFound) => {
+                true
+            }
+            StorageQueryErrorDetail::ProofVerification(_) => false,
+        })
+    }
+}
+
 impl fmt::Display for StorageQueryError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.errors.is_empty() {
