@@ -485,8 +485,96 @@ impl StorageValue {
     }
 }
 
-// TODO: tests
-
 // TODO: add a test that generates a random trie, calculates its root using a cache, modifies it
 // randomly, invalidating the cache in the process, then calculates the root again, once with
 // cache and once without cache, and compares the two values
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::BTreeMap;
+
+    fn calculate_root(trie: BTreeMap<Vec<u8>, Vec<u8>>) -> [u8; 32] {
+        let mut calculation = super::root_merkle_value(None);
+
+        loop {
+            match calculation {
+                super::RootMerkleValueCalculation::Finished { hash, .. } => {
+                    return hash;
+                }
+                super::RootMerkleValueCalculation::AllKeys(keys) => {
+                    calculation = keys.inject(trie.keys().map(|k| k.iter().cloned()));
+                }
+                super::RootMerkleValueCalculation::StorageValue(value) => {
+                    let key = value.key().collect::<Vec<u8>>();
+                    calculation = value.inject(trie.get(&key));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trie_root_one_node() {
+        let mut trie = BTreeMap::new();
+        trie.insert(b"abcd".to_vec(), b"hello world".to_vec());
+
+        let expected = [
+            122, 177, 134, 89, 211, 178, 120, 158, 242, 64, 13, 16, 113, 4, 199, 212, 251, 147,
+            208, 109, 154, 182, 168, 182, 65, 165, 222, 124, 63, 236, 200, 81,
+        ];
+
+        assert_eq!(calculate_root(trie), &expected[..]);
+    }
+
+    #[test]
+    fn trie_root_empty() {
+        let trie = BTreeMap::new();
+        let expected = blake2_rfc::blake2b::blake2b(32, &[], &[0x0]);
+        assert_eq!(calculate_root(trie), expected.as_bytes());
+    }
+
+    #[test]
+    fn trie_root_single_tuple() {
+        let mut trie = BTreeMap::new();
+        trie.insert([0xaa].to_vec(), [0xbb].to_vec());
+
+        let expected = blake2_rfc::blake2b::blake2b(
+            32,
+            &[],
+            &[
+                0x42,   // leaf 0x40 (2^6) with (+) key of 2 nibbles (0x02)
+                0xaa,   // key data
+                1 << 2, // length of value in bytes as Compact
+                0xbb,   // value data
+            ],
+        );
+
+        assert_eq!(calculate_root(trie), expected.as_bytes());
+    }
+
+    #[test]
+    fn trie_root_example() {
+        let mut trie = BTreeMap::new();
+        trie.insert([0x48, 0x19].to_vec(), [0xfe].to_vec());
+        trie.insert([0x13, 0x14].to_vec(), [0xff].to_vec());
+
+        let mut ex = Vec::<u8>::new();
+        ex.push(0x80); // branch, no value (0b_10..) no nibble
+        ex.push(0x12); // slots 1 & 4 are taken from 0-7
+        ex.push(0x00); // no slots from 8-15
+        ex.push(0x05 << 2); // first slot: LEAF, 5 bytes long.
+        ex.push(0x43); // leaf 0x40 with 3 nibbles
+        ex.push(0x03); // first nibble
+        ex.push(0x14); // second & third nibble
+        ex.push(0x01 << 2); // 1 byte data
+        ex.push(0xff); // value data
+        ex.push(0x05 << 2); // second slot: LEAF, 5 bytes long.
+        ex.push(0x43); // leaf with 3 nibbles
+        ex.push(0x08); // first nibble
+        ex.push(0x19); // second & third nibble
+        ex.push(0x01 << 2); // 1 byte data
+        ex.push(0xfe); // value data
+
+        let expected = blake2_rfc::blake2b::blake2b(32, &[], &ex);
+        assert_eq!(calculate_root(trie), expected.as_bytes());
+    }
+}
