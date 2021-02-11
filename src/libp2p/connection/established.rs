@@ -637,7 +637,7 @@ where
             _ => unreachable!(),
         }
 
-        let timeout = now + Duration::from_secs(20); // TODO:
+        let timeout = now + self.inner.request_protocols[protocol_index].timeout;
 
         if self
             .inner
@@ -1497,6 +1497,11 @@ pub struct ConfigRequestResponse {
 
     /// If true, incoming substreams are allowed to negotiate this protocol.
     pub inbound_allowed: bool,
+
+    /// Timeout between the moment the substream is opened and the moment the response is sent
+    /// back. If the emitter doesn't send the request or if the receiver doesn't answer during
+    /// this time window, the request is considered failed.
+    pub timeout: Duration,
 }
 
 /// Configuration for a notifications protocol.

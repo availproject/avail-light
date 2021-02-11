@@ -180,6 +180,7 @@ where
             max_request_size: 8,
             max_response_size: 4096,
             inbound_allowed: false,
+            timeout: Duration::from_secs(20),
         })
         .chain(config.chains.iter().flat_map(|chain| {
             // TODO: limits are arbitrary
@@ -188,12 +189,14 @@ where
                 max_request_size: 1024,
                 max_response_size: 10 * 1024 * 1024,
                 inbound_allowed: true,
+                timeout: Duration::from_secs(20),
             })
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/light/2", chain.protocol_id),
                 max_request_size: 1024 * 512,
                 max_response_size: 10 * 1024 * 1024,
                 inbound_allowed: true,
+                timeout: Duration::from_secs(20),
             }))
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/kad", chain.protocol_id),
@@ -201,6 +204,7 @@ where
                 max_response_size: 1024 * 1024,
                 // TODO: `false` here means we don't insert ourselves in the DHT, which is the polite thing to do for as long as Kad isn't implemented
                 inbound_allowed: false,
+                timeout: Duration::from_secs(20),
             }))
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/sync/warp", chain.protocol_id),
@@ -208,6 +212,7 @@ where
                 max_response_size: 16 * 1024 * 1024,
                 // We don't support inbound warp sync requests (yet).
                 inbound_allowed: false,
+                timeout: Duration::from_secs(20),
             }))
         }))
         .collect();
