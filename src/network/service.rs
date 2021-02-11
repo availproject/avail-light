@@ -177,30 +177,34 @@ where
         // to pass to libp2p or that libp2p produces.
         let request_response_protocols = iter::once(libp2p::ConfigRequestResponse {
             name: "/ipfs/id/1.0.0".into(),
-            max_request_size: 8,
+            inbound_config: libp2p::ConfigRequestResponseIn::Empty,
             max_response_size: 4096,
-            inbound_allowed: false,
+            inbound_allowed: true,
             timeout: Duration::from_secs(20),
         })
         .chain(config.chains.iter().flat_map(|chain| {
             // TODO: limits are arbitrary
             iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/sync/2", chain.protocol_id),
-                max_request_size: 1024,
+                inbound_config: libp2p::ConfigRequestResponseIn::Payload { max_size: 1024 },
                 max_response_size: 10 * 1024 * 1024,
-                inbound_allowed: true,
+                // TODO: make this configurable
+                inbound_allowed: false,
                 timeout: Duration::from_secs(20),
             })
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/light/2", chain.protocol_id),
-                max_request_size: 1024 * 512,
+                inbound_config: libp2p::ConfigRequestResponseIn::Payload {
+                    max_size: 1024 * 512,
+                },
                 max_response_size: 10 * 1024 * 1024,
-                inbound_allowed: true,
+                // TODO: make this configurable
+                inbound_allowed: false,
                 timeout: Duration::from_secs(20),
             }))
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/kad", chain.protocol_id),
-                max_request_size: 1024,
+                inbound_config: libp2p::ConfigRequestResponseIn::Payload { max_size: 1024 },
                 max_response_size: 1024 * 1024,
                 // TODO: `false` here means we don't insert ourselves in the DHT, which is the polite thing to do for as long as Kad isn't implemented
                 inbound_allowed: false,
@@ -208,7 +212,7 @@ where
             }))
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/sync/warp", chain.protocol_id),
-                max_request_size: 32,
+                inbound_config: libp2p::ConfigRequestResponseIn::Payload { max_size: 32 },
                 max_response_size: 16 * 1024 * 1024,
                 // We don't support inbound warp sync requests (yet).
                 inbound_allowed: false,
@@ -463,6 +467,30 @@ where
                         chain_indices: out_overlay_network_indices,
                     };
                 }
+                libp2p::Event::RequestIn { protocol_index, .. } => {
+                    // Only protocol 0 (identify) can receive requests at the moment.
+                    debug_assert_eq!(protocol_index, 0);
+
+                    let _response = protocol::build_identify_response(protocol::IdentifyResponse {
+                        protocol_version: "/substrate/1.0", // TODO: same value as in Substrate
+                        agent_version: "smoldot",           // TODO: more details?
+                        ed25519_public_key: self.libp2p.noise_key().libp2p_public_ed25519_key(),
+                        listen_addrs: iter::empty(), // TODO:
+                        observed_addr: &libp2p::Multiaddr::empty(), // TODO:
+                        protocols: self
+                            .libp2p
+                            .request_response_protocols()
+                            .filter(|p| p.inbound_allowed)
+                            .map(|p| &p.name[..])
+                            .chain(self.libp2p.overlay_networks().map(|p| &p.protocol_name[..])),
+                    })
+                    .fold(Vec::new(), |mut a, b| {
+                        a.extend_from_slice(b.as_ref());
+                        a
+                    });
+
+                    // TODO: finish and send back response
+                }
                 libp2p::Event::NotificationsOutAccept {
                     id,
                     peer_id,
@@ -628,7 +656,7 @@ where
         let random_peer_id = {
             // FIXME: don't use rand::random()! use randomness seed
             let pub_key = rand::random::<[u8; 32]>();
-            peer_id::PeerId::from_public_key(peer_id::PublicKey::Ed25519(pub_key))
+            peer_id::PeerId::from_public_key(&peer_id::PublicKey::Ed25519(pub_key))
         };
 
         let request_data = kademlia::build_find_node_request(random_peer_id.as_bytes());

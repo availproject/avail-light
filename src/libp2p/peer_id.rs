@@ -41,7 +41,7 @@ pub enum PublicKey {
 impl PublicKey {
     /// Encode the public key into a protobuf structure for storage or
     /// exchange with other nodes.
-    pub fn into_protobuf_encoding(self) -> Vec<u8> {
+    pub fn to_protobuf_encoding(&self) -> Vec<u8> {
         let public_key = match self {
             PublicKey::Ed25519(key) => keys_proto::PublicKey {
                 r#type: keys_proto::KeyType::Ed25519 as i32,
@@ -120,8 +120,8 @@ pub struct PeerId {
 
 impl PeerId {
     /// Builds the [`PeerId`] corresponding to a public key.
-    pub fn from_public_key(key: PublicKey) -> PeerId {
-        let key_enc = key.into_protobuf_encoding();
+    pub fn from_public_key(key: &PublicKey) -> PeerId {
+        let key_enc = key.to_protobuf_encoding();
 
         let hash_algorithm = if key_enc.len() <= MAX_INLINE_KEY_LENGTH {
             multihash::Code::Identity
@@ -187,14 +187,20 @@ impl PeerId {
     /// given public key, otherwise `Some` boolean as the result of an equality check.
     pub fn is_public_key(&self, public_key: &PublicKey) -> Option<bool> {
         let alg = self.multihash.algorithm();
-        let enc = public_key.clone().into_protobuf_encoding();
+        let enc = public_key.to_protobuf_encoding();
         Some(alg.digest(&enc) == self.multihash)
+    }
+}
+
+impl<'a> From<&'a PublicKey> for PeerId {
+    fn from(public_key: &'a PublicKey) -> PeerId {
+        PeerId::from_public_key(public_key)
     }
 }
 
 impl From<PublicKey> for PeerId {
     fn from(public_key: PublicKey) -> PeerId {
-        PeerId::from_public_key(public_key)
+        PeerId::from_public_key(&public_key)
     }
 }
 

@@ -117,7 +117,7 @@ pub mod discovery;
 pub mod peer_id;
 pub mod peerset;
 
-pub use established::ConfigRequestResponse;
+pub use established::{ConfigRequestResponse, ConfigRequestResponseIn};
 pub use multiaddr::Multiaddr;
 #[doc(inline)]
 pub use parity_multiaddr as multiaddr;
@@ -292,6 +292,24 @@ where
             .await
             .peerset
             .num_established_connections()
+    }
+
+    /// Returns the Noise key originalled passed as [`Config::noise_key`].
+    pub fn noise_key(&self) -> &connection::NoiseKey {
+        &self.noise_key
+    }
+
+    /// Returns the list the overlay networks originally passed as [`Config::overlay_networks`].
+    pub fn overlay_networks(&self) -> impl ExactSizeIterator<Item = &OverlayNetwork> {
+        self.overlay_networks.iter()
+    }
+
+    /// Returns the list the request-response protocols originally passed as
+    /// [`Config::request_response_protocols`].
+    pub fn request_response_protocols(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &ConfigRequestResponse> {
+        self.request_response_protocols.iter()
     }
 
     /// Returns an iterator to the list of [`PeerId`]s that we have an established connection
@@ -1022,7 +1040,25 @@ where
                 id,
                 protocol_index,
                 request,
-            })) => todo!(),
+            })) => {
+                let peer_id = guarded
+                    .peerset
+                    .connection_mut(self.id)
+                    .unwrap()
+                    .peer_id()
+                    .clone();
+
+                guarded
+                    .events_tx
+                    .send(Event::RequestIn {
+                        id: ConnectionId(self.id),
+                        peer_id,
+                        protocol_index,
+                        request_payload: request,
+                    })
+                    .await
+                    .unwrap();
+            }
             Some(PendingEvent::Inner(established::Event::Response {
                 response,
                 user_data: send_back,
@@ -1245,6 +1281,14 @@ pub enum Event<TConn> {
         user_data: TConn,
         out_overlay_network_indices: Vec<usize>,
         in_overlay_network_indices: Vec<usize>,
+    },
+
+    /// Received a request from a request-response protocol.
+    RequestIn {
+        id: ConnectionId,
+        peer_id: PeerId,
+        protocol_index: usize,
+        request_payload: Vec<u8>,
     },
 
     NotificationsOutAccept {

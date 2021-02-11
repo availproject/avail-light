@@ -101,6 +101,8 @@ pub struct NoiseKey {
     key: snow::Keypair,
     /// Handshake to encrypt then send on the wire.
     handshake_message: Vec<u8>,
+    /// Ed25519 public key used for the signature in the handshake message.
+    libp2p_public_ed25519_key: [u8; 32],
 }
 
 impl NoiseKey {
@@ -119,6 +121,11 @@ impl NoiseKey {
         };
 
         unsigned.sign(libp2p_public_key.to_bytes(), signature.to_bytes())
+    }
+
+    /// Returns the libp2p public key associated to the signature contained in this noise key.
+    pub fn libp2p_public_ed25519_key(&self) -> &[u8; 32] {
+        &self.libp2p_public_ed25519_key
     }
 }
 
@@ -163,7 +170,7 @@ impl UnsignedNoiseKey {
     /// private key.
     pub fn sign(self, libp2p_public_ed25519_key: [u8; 32], signature: [u8; 64]) -> NoiseKey {
         let libp2p_pubkey_protobuf =
-            PublicKey::Ed25519(libp2p_public_ed25519_key).into_protobuf_encoding();
+            PublicKey::Ed25519(libp2p_public_ed25519_key).to_protobuf_encoding();
 
         let handshake_message = {
             let mut protobuf = payload_proto::NoiseHandshakePayload::default();
@@ -177,6 +184,7 @@ impl UnsignedNoiseKey {
 
         NoiseKey {
             key: self.key,
+            libp2p_public_ed25519_key,
             handshake_message,
         }
     }

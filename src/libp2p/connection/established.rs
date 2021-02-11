@@ -166,7 +166,10 @@ enum Substream<TNow, TRqUd, TNotifUd> {
         /// State of the protocol negotiation.
         negotiation: multistream_select::InProgress<vec::IntoIter<String>, String>,
         /// Bytes of the request to send after the substream is open.
-        request: Vec<u8>,
+        ///
+        /// If `None`, nothing should be sent on the substream at all, not even the length prefix.
+        /// This contrasts with `Some(empty_vec)` where a `0` length prefix must be sent.
+        request: Option<Vec<u8>>,
         /// Data passed by the user to [`Established::add_request`].
         user_data: TRqUd,
     },
@@ -297,6 +300,7 @@ where
                                 .inner
                                 .request_protocols
                                 .iter()
+                                .filter(|p| p.inbound_allowed)
                                 .map(|p| p.name.clone())
                                 .chain(
                                     self.inner
@@ -388,6 +392,7 @@ where
                             });
                         }
                         Substream::RequestInRecv { .. } => {}
+                        Substream::RequestInSend { .. } => {}
                         Substream::NotificationsInHandshake { .. } => {}
                         Substream::NotificationsInWait { protocol_index, .. } => {
                             let wake_up_after = self.inner.next_timeout.clone();
@@ -628,8 +633,18 @@ where
                 requested_protocol: self.inner.request_protocols[protocol_index].name.clone(), // TODO: clone :-/
             });
 
-        // TODO: turn this assert into something that can't panic?
-        assert!(request.len() <= self.inner.request_protocols[protocol_index].max_request_size);
+        let has_length_prefix = match self.inner.request_protocols[protocol_index].inbound_config {
+            ConfigRequestResponseIn::Payload { max_size } => {
+                // TODO: turn this assert into something that can't panic?
+                assert!(request.len() <= max_size);
+                true
+            }
+            ConfigRequestResponseIn::Empty => {
+                // TODO: turn this assert into something that can't panic?
+                assert!(request.is_empty());
+                false
+            }
+        };
 
         let (new_state, _, out_buffer) = negotiation.read_write_vec(&[]).unwrap();
         match new_state {
@@ -654,7 +669,11 @@ where
             .open_substream(Substream::RequestOutNegotiating {
                 timeout,
                 negotiation,
-                request,
+                request: if has_length_prefix {
+                    Some(request)
+                } else {
+                    None
+                },
                 user_data,
             });
 
@@ -888,12 +907,22 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                                 .iter()
                                 .position(|p| p.name == protocol)
                             {
-                                *substream.user_data() = Substream::RequestInRecv {
-                                    protocol_index,
-                                    request: leb128::FramedInProgress::new(
-                                        self.request_protocols[protocol_index].max_request_size,
-                                    ),
-                                };
+                                if let ConfigRequestResponseIn::Payload { max_size } =
+                                    self.request_protocols[protocol_index].inbound_config
+                                {
+                                    *substream.user_data() = Substream::RequestInRecv {
+                                        protocol_index,
+                                        request: leb128::FramedInProgress::new(max_size),
+                                    };
+                                } else {
+                                    // TODO: make sure that data is empty?
+                                    *substream.user_data() = Substream::RequestInSend;
+                                    return Some(Event::RequestIn {
+                                        id: substream_id,
+                                        protocol_index,
+                                        request: Vec::new(),
+                                    });
+                                }
                             } else if let Some(protocol_index) = self
                                 .notifications_protocols
                                 .iter()
@@ -1026,8 +1055,10 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                         Ok((multistream_select::Negotiation::Success(_), num_read, out_buffer)) => {
                             substream.write(out_buffer);
                             data = &data[num_read..];
-                            substream.write(leb128::encode_usize(request.len()).collect());
-                            substream.write(request);
+                            if let Some(request) = request {
+                                substream.write(leb128::encode_usize(request.len()).collect());
+                                substream.write(request);
+                            }
                             *substream.user_data() = Substream::RequestOut {
                                 timeout,
                                 user_data,
@@ -1492,7 +1523,13 @@ pub struct Config {
 pub struct ConfigRequestResponse {
     /// Name of the protocol transferred on the wire.
     pub name: String,
-    pub max_request_size: usize,
+
+    /// Configuration related to sending out requests through this protocol.
+    ///
+    /// > **Note**: This is used even if `inbound_allowed` is `false` when performing outgoing
+    /// >           requests.
+    pub inbound_config: ConfigRequestResponseIn,
+
     pub max_response_size: usize,
 
     /// If true, incoming substreams are allowed to negotiate this protocol.
@@ -1502,6 +1539,18 @@ pub struct ConfigRequestResponse {
     /// back. If the emitter doesn't send the request or if the receiver doesn't answer during
     /// this time window, the request is considered failed.
     pub timeout: Duration,
+}
+
+/// See [`ConfigRequestResponse::inbound_config`].
+#[derive(Debug, Clone)]
+pub enum ConfigRequestResponseIn {
+    /// Request must be completely empty, not even a length prefix.
+    Empty,
+    /// Request must contain a length prefix plus a potentially empty payload.
+    Payload {
+        /// Maximum allowed size for the payload in bytes.
+        max_size: usize,
+    },
 }
 
 /// Configuration for a notifications protocol.
