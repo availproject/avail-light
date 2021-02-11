@@ -86,6 +86,9 @@ impl LightSyncState {
 
         epochs.sort_unstable_by_key(|(&block_num, _)| block_num);
 
+        // TODO: it seems that multiple identical epochs can be found in the list ; figure out why Substrate does that and fix it
+        epochs.dedup_by_key(|(_, epoch)| epoch.epoch_index);
+
         // Get the latest two epochs.
         let current_epoch = &epochs[epochs.len() - 2].1;
         let next_epoch = &epochs[epochs.len() - 1].1;
