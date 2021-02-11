@@ -203,7 +203,8 @@ async fn start_sync(
         let mut finalized_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
         let mut best_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
 
-        // If non-empty, contains a request that the sync state machine wants to start on a source.
+        // Queue of requests that the sync state machine wants to start and that haven't been
+        // sent out yet.
         let mut requests_to_start = Vec::<all::Action>::with_capacity(16);
 
         // TODO: crappy way to handle that
@@ -211,47 +212,131 @@ async fn start_sync(
 
         // Main loop of the syncing logic.
         loop {
+            // Drain the content of `requests_to_start` to actually start the requests that have
+            // been queued by the previous iteration of the main loop.
+            //
+            // Note that the code below assumes that the `source_id`s found in `requests_to_start`
+            // still exist. This is only guaranteed to be case because we process
+            // `requests_to_start` as soon as an entry is added and before disconnect events can
+            // remove sources from the state machine.
+            if let all::AllSync::Idle(ref mut sync_idle) = &mut sync {
+                for request in requests_to_start.drain(..) {
+                    match request {
+                        all::Action::Start {
+                            source_id,
+                            request_id,
+                            detail:
+                                all::RequestDetail::BlocksRequest {
+                                    first_block,
+                                    ascending,
+                                    num_blocks,
+                                    request_headers,
+                                    request_bodies,
+                                    request_justification,
+                                },
+                        } => {
+                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
+
+                            let block_request = network_service.clone().blocks_request(
+                                peer_id.clone(),
+                                network::protocol::BlocksRequestConfig {
+                                    start: match first_block {
+                                        all::BlocksRequestFirstBlock::Hash(h) => {
+                                            network::protocol::BlocksRequestConfigStart::Hash(h)
+                                        }
+                                        all::BlocksRequestFirstBlock::Number(n) => {
+                                            network::protocol::BlocksRequestConfigStart::Number(n)
+                                        }
+                                    },
+                                    desired_count: NonZeroU32::new(
+                                        u32::try_from(num_blocks.get()).unwrap_or(u32::max_value()),
+                                    )
+                                    .unwrap(),
+                                    direction: if ascending {
+                                        network::protocol::BlocksRequestDirection::Ascending
+                                    } else {
+                                        network::protocol::BlocksRequestDirection::Descending
+                                    },
+                                    fields: network::protocol::BlocksRequestFields {
+                                        header: request_headers,
+                                        body: request_bodies,
+                                        justification: request_justification,
+                                    },
+                                },
+                            );
+
+                            let (block_request, abort) = future::abortable(block_request);
+                            pending_requests.insert(request_id, abort);
+
+                            pending_block_requests
+                                .push(async move { (request_id, block_request.await) });
+                        }
+                        all::Action::Start {
+                            source_id,
+                            request_id: id,
+                            detail:
+                                all::RequestDetail::GrandpaWarpSync {
+                                    local_finalized_block_height,
+                                },
+                        } => {
+                            todo!()
+                        }
+                        all::Action::Start {
+                            source_id,
+                            request_id: id,
+                            detail:
+                                all::RequestDetail::StorageGet {
+                                    block_hash,
+                                    state_trie_root,
+                                    key,
+                                },
+                        } => todo!(),
+                        all::Action::Cancel(request_id) => {
+                            pending_requests.remove(&request_id).unwrap().abort();
+                        }
+                    }
+                }
+            }
+
             // The sync state machine can be in a few various states. At the time of writing:
             // idle, verifying header, verifying block, verifying grandpa warp sync proof,
             // verifying storage proof.
             // If the state is one of the "verifying" states, perform the actual verification and
             // loop again until the sync is in an idle state.
-            let mut sync_idle: all::Idle<_, _, _> = loop {
-                match sync {
-                    all::AllSync::Idle(idle) => break idle,
-                    all::AllSync::HeaderVerify(verify) => {
-                        match verify.perform(ffi::unix_time(), ()) {
-                            all::HeaderVerifyOutcome::Success {
-                                sync: sync_idle,
-                                next_actions,
-                                is_new_best,
-                                ..
-                            } => {
-                                requests_to_start.extend(next_actions);
+            let mut sync_idle: all::Idle<_, _, _> = match sync {
+                all::AllSync::Idle(idle) => idle,
+                all::AllSync::HeaderVerify(verify) => match verify.perform(ffi::unix_time(), ()) {
+                    all::HeaderVerifyOutcome::Success {
+                        sync: sync_idle,
+                        next_actions,
+                        is_new_best,
+                        ..
+                    } => {
+                        requests_to_start.extend(next_actions);
 
-                                if is_new_best {
-                                    has_new_best = true;
-                                }
-
-                                sync = sync_idle.into();
-                            }
-                            all::HeaderVerifyOutcome::Error {
-                                sync: sync_idle,
-                                next_actions,
-                                error,
-                                ..
-                            } => {
-                                log::warn!(
-                                    target: "sync-verify",
-                                    "Error while verifying header: {}",
-                                    error
-                                );
-                                requests_to_start.extend(next_actions);
-                                sync = sync_idle.into();
-                            }
+                        if is_new_best {
+                            has_new_best = true;
                         }
+
+                        sync = sync_idle.into();
+                        continue;
                     }
-                }
+                    all::HeaderVerifyOutcome::Error {
+                        sync: sync_idle,
+                        next_actions,
+                        error,
+                        ..
+                    } => {
+                        log::warn!(
+                            target: "sync-verify",
+                            "Error while verifying header: {}",
+                            error
+                        );
+                        requests_to_start.extend(next_actions);
+                        sync = sync_idle.into();
+                        continue;
+                    }
+                },
             };
 
             // TODO: handle this differently
@@ -266,86 +351,6 @@ async fn start_sync(
             // `sync_idle` is now an `Idle` that has been extracted from `sync`.
             // All the code paths below will need to put back `sync_idle` into `sync` before
             // looping again.
-
-            // Drain the content of `requests_to_start` to actually start the requests that have
-            // been queued by the previous iteration of the main loop.
-            // TODO: do this earlier, before the verifications
-            for request in requests_to_start.drain(..) {
-                match request {
-                    all::Action::Start {
-                        source_id,
-                        request_id,
-                        detail:
-                            all::RequestDetail::BlocksRequest {
-                                first_block,
-                                ascending,
-                                num_blocks,
-                                request_headers,
-                                request_bodies,
-                                request_justification,
-                            },
-                    } => {
-                        let peer_id = sync_idle.source_user_data_mut(source_id).clone();
-
-                        let block_request = network_service.clone().blocks_request(
-                            peer_id.clone(),
-                            network::protocol::BlocksRequestConfig {
-                                start: match first_block {
-                                    all::BlocksRequestFirstBlock::Hash(h) => {
-                                        network::protocol::BlocksRequestConfigStart::Hash(h)
-                                    }
-                                    all::BlocksRequestFirstBlock::Number(n) => {
-                                        network::protocol::BlocksRequestConfigStart::Number(n)
-                                    }
-                                },
-                                desired_count: NonZeroU32::new(
-                                    u32::try_from(num_blocks.get()).unwrap_or(u32::max_value()),
-                                )
-                                .unwrap(),
-                                direction: if ascending {
-                                    network::protocol::BlocksRequestDirection::Ascending
-                                } else {
-                                    network::protocol::BlocksRequestDirection::Descending
-                                },
-                                fields: network::protocol::BlocksRequestFields {
-                                    header: request_headers,
-                                    body: request_bodies,
-                                    justification: request_justification,
-                                },
-                            },
-                        );
-
-                        let (block_request, abort) = future::abortable(block_request);
-                        pending_requests.insert(request_id, abort);
-
-                        pending_block_requests
-                            .push(async move { (request_id, block_request.await) });
-                    }
-                    all::Action::Start {
-                        source_id,
-                        request_id: id,
-                        detail:
-                            all::RequestDetail::GrandpaWarpSync {
-                                local_finalized_block_height,
-                            },
-                    } => {
-                        todo!()
-                    }
-                    all::Action::Start {
-                        source_id,
-                        request_id: id,
-                        detail:
-                            all::RequestDetail::StorageGet {
-                                block_hash,
-                                state_trie_root,
-                                key,
-                            },
-                    } => todo!(),
-                    all::Action::Cancel(request_id) => {
-                        pending_requests.remove(&request_id).unwrap().abort();
-                    }
-                }
-            }
 
             // The sync state machine is idle, and all requests have been started.
             // Now waiting for some event to happen: a network event, a request from the frontend
