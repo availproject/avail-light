@@ -192,6 +192,7 @@ enum Substream<TNow, TRqUd, TNotifUd> {
         /// Protocol that was negotiated.
         protocol_index: usize,
     },
+    /// A request has been sent by the remote. API user must now send back the response.
     RequestInSend,
 
     /// Inbound ping substream. Waiting for the ping payload to be received.
@@ -857,6 +858,28 @@ where
         }
         *substream.user_data() = Substream::NotificationsOutClosed;
         substream.close();
+    }
+
+    /// Responds to an incoming request. Must be called in response to a [`Event::RequestIn`].
+    ///
+    /// Passing an `Err` corresponds, on the other side, to a [`RequestError::SubstreamClosed`].
+    pub fn respond_in_request(&mut self, substream_id: SubstreamId, response: Result<Vec<u8>, ()>) {
+        let mut substream = self.inner.yamux.substream_by_id(substream_id.0).unwrap();
+
+        match substream.user_data() {
+            Substream::RequestInSend => {
+                if let Ok(response) = response {
+                    substream.write(leb128::encode_usize(response.len()).collect());
+                    substream.write(response);
+                }
+
+                // TODO: proper state transition
+                *substream.user_data() = Substream::NegotiationFailed;
+
+                substream.close();
+            }
+            _ => panic!(),
+        }
     }
 }
 

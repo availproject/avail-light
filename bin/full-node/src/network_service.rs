@@ -402,6 +402,10 @@ impl NetworkService {
                         peer_id,
                     };
                 }
+                service::Event::IdentifyRequestIn { peer_id, request } => {
+                    tracing::debug!(%peer_id, "identify-request");
+                    request.respond("smoldot").await;
+                }
             }
         }
     }

@@ -661,6 +661,54 @@ where
             .unwrap();
     }
 
+    /// Responds to an incoming request. Must be called in response to a [`Event::RequestIn`].
+    ///
+    /// Passing an `Err` corresponds, on the other side, to a
+    /// [`established::RequestError::SubstreamClosed`].
+    ///
+    /// Has no effect if the connection has been closed in the meanwhile.
+    pub async fn respond_in_request(
+        &self,
+        id: ConnectionId,
+        substream_id: established::SubstreamId,
+        response: Result<Vec<u8>, ()>,
+    ) {
+        // Find the connection corresponding to the parameter.
+        let connection_arc: Arc<Mutex<Connection<_, _>>> = {
+            let mut guarded = self.guarded.lock().await;
+
+            match guarded.peerset.connection_mut(id.0) {
+                Some(mut c) => c.user_data_mut().clone(),
+                None => return,
+            }
+        };
+
+        let mut connection_lock = connection_arc.lock().await;
+
+        // In order to guarantee a proper ordering of events, any pending event must first be
+        // delivered.
+        if connection_lock.pending_event.is_some() {
+            let mut guarded = self.guarded.lock().await;
+            connection_lock.propagate_pending_event(&mut guarded).await;
+            debug_assert!(connection_lock.pending_event.is_none());
+        }
+
+        if let Some(connection) = connection_lock.connection.as_alive() {
+            // TODO: must check if substream_id is still valid
+            connection.respond_in_request(substream_id, response);
+        } else {
+            // The connection no longer exists. This state mismatch is a normal situation. See
+            // the implementations notes at the top of the file for more information.
+            return;
+        }
+
+        // Wake up the connection in order for the substream confirmation to be sent back to the
+        // remote.
+        if let Some(waker) = connection_lock.waker.take() {
+            let _ = waker.send(());
+        }
+    }
+
     /// Returns the next event produced by the service.
     ///
     /// This function should be called at a high enough rate that [`Network::read_write`] can
@@ -1037,7 +1085,7 @@ where
         match self.pending_event.take() {
             None => {}
             Some(PendingEvent::Inner(established::Event::RequestIn {
-                id,
+                id: substream_id,
                 protocol_index,
                 request,
             })) => {
@@ -1052,6 +1100,7 @@ where
                     .events_tx
                     .send(Event::RequestIn {
                         id: ConnectionId(self.id),
+                        substream_id,
                         peer_id,
                         protocol_index,
                         request_payload: request,
@@ -1286,6 +1335,9 @@ pub enum Event<TConn> {
     /// Received a request from a request-response protocol.
     RequestIn {
         id: ConnectionId,
+        /// Substream on which the request has been received. Must be passed back when providing
+        /// the response.
+        substream_id: established::SubstreamId,
         peer_id: PeerId,
         protocol_index: usize,
         request_payload: Vec<u8>,
