@@ -694,8 +694,13 @@ where
         }
 
         if let Some(connection) = connection_lock.connection.as_alive() {
-            // TODO: must check if substream_id is still valid
-            connection.respond_in_request(substream_id, response);
+            // As explained in the documentation, ignore the error where the substream has
+            // already been closed. This is a normal situation caused by the racy nature of the
+            // API.
+            match connection.respond_in_request(substream_id, response) {
+                Ok(()) => {}
+                Err(established::RespondInRequestError::SubstreamClosed) => {}
+            }
         } else {
             // The connection no longer exists. This state mismatch is a normal situation. See
             // the implementations notes at the top of the file for more information.

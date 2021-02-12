@@ -863,8 +863,18 @@ where
     /// Responds to an incoming request. Must be called in response to a [`Event::RequestIn`].
     ///
     /// Passing an `Err` corresponds, on the other side, to a [`RequestError::SubstreamClosed`].
-    pub fn respond_in_request(&mut self, substream_id: SubstreamId, response: Result<Vec<u8>, ()>) {
-        let mut substream = self.inner.yamux.substream_by_id(substream_id.0).unwrap();
+    ///
+    /// Returns an error if the [`SubstreamId`] is invalid.
+    pub fn respond_in_request(
+        &mut self,
+        substream_id: SubstreamId,
+        response: Result<Vec<u8>, ()>,
+    ) -> Result<(), RespondInRequestError> {
+        let mut substream = self
+            .inner
+            .yamux
+            .substream_by_id(substream_id.0)
+            .ok_or(RespondInRequestError::SubstreamClosed)?;
 
         match substream.user_data() {
             Substream::RequestInSend => {
@@ -877,6 +887,7 @@ where
                 *substream.user_data() = Substream::NegotiationFailed;
 
                 substream.close();
+                Ok(())
             }
             _ => panic!(),
         }
@@ -1587,4 +1598,11 @@ pub struct ConfigNotifications {
 
     /// Maximum size, in bytes, of a notification that can be received.
     pub max_notification_size: usize,
+}
+
+/// Error potentially returned by [`Established::respond_in_request`].
+#[derive(Debug, derive_more::Display)]
+pub enum RespondInRequestError {
+    /// The substream has already been closed.
+    SubstreamClosed,
 }
