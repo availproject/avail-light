@@ -17,6 +17,8 @@
 
 //! Runtime-provided metadata
 //!
+//! # Overview
+//!
 //! From the point of the view of the Substrate/Polkadot client, the runtime is a program
 //! compiled to WebAssembly that provides a certain list of entry points and has access to a
 //! *storage* (provided by the client) as a way to hold information.
@@ -30,7 +32,8 @@
 //!
 //! - A list of storage keys whose value contains information that might be useful to the client.
 //! - A list of calls that can be performed by emitting transactions.
-//! - A list of *events* that can happen in a block, such as a new account.
+//! - A list of *events* that can happen in a block, such as a new account. See the
+//! [`events`](events) module for more information.
 //! - ...
 //!
 //! In order to obtain the metadata, a call to an entry point of the runtime code is necessary.
@@ -42,6 +45,7 @@
 //!
 
 pub mod decode;
+pub mod events;
 mod query;
 
 pub use query::*;
