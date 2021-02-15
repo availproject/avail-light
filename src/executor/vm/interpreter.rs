@@ -451,16 +451,53 @@ impl Interpreter {
             Some(m) => m,
             None => {
                 return if offset == 0 && size == 0 {
-                    Ok(Vec::new())
+                    Ok(AccessOffset::Empty)
                 } else {
                     Err(OutOfBoundsError)
                 }
             }
         };
 
-        // TODO: remove the memory copy after https://github.com/paritytech/wasmi/pull/246
-        mem.get(offset, size.try_into().map_err(|_| OutOfBoundsError)?)
-            .map_err(|_| OutOfBoundsError)
+        let offset = usize::try_from(offset).map_err(|_| OutOfBoundsError)?;
+
+        let max = offset
+            .checked_add(size.try_into().map_err(|_| OutOfBoundsError)?)
+            .ok_or(OutOfBoundsError)?;
+
+        enum AccessOffset<T> {
+            Enabled {
+                access: T,
+                offset: usize,
+                max: usize,
+            },
+            Empty,
+        }
+
+        impl<T: AsRef<[u8]>> AsRef<[u8]> for AccessOffset<T> {
+            fn as_ref(&self) -> &[u8] {
+                if let AccessOffset::Enabled {
+                    access,
+                    offset,
+                    max,
+                } = self
+                {
+                    &access.as_ref()[*offset..*max]
+                } else {
+                    &[]
+                }
+            }
+        }
+
+        let access = mem.direct_access();
+        if max > access.as_ref().len() {
+            return Err(OutOfBoundsError);
+        }
+
+        Ok(AccessOffset::Enabled {
+            access,
+            offset,
+            max,
+        })
     }
 
     /// See [`super::VirtualMachine::write_memory`].
