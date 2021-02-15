@@ -22,8 +22,9 @@
 //! doesn't know block 6, it has to store block 7 for later, then download block 6. The container
 //! in this module is where block 7 is temporarily stored.
 //!
-//! In addition to a set of blocks, this data structure also stores a set of ongoing requests for
-//! these blocks.
+//! In addition to a set of blocks, this data structure also stores a set of ongoing requests that
+//! related to these blocks. In the example above, it would store the request that asks for block
+//! 6 from the network.
 //!
 //! # Blocks
 //!
@@ -43,7 +44,8 @@
 //! it, as it is not pending anymore.
 //! - Calling [`OccupiedBlockEntry::remove_verify_failed`] marks a block and all its descendants
 //! as invalid. This may or may not remove the block itself and all its descendants.
-//! - Pending blocks might automatically be pruned by the state machine if the list is too big.  TODO not implemented
+//! - Calling [`OccupiedBlockEntry::remove_uninteresting`] removes a block in order to reduce
+//! the memory usage of the data structure.
 //!
 //! # Requests
 //!
@@ -56,8 +58,6 @@
 //! [`PendingBlocks::desired_queries`].
 //! Call [`PendingBlocks::finish_request`] to destroy a request after it has finished.
 //!
-
-// TODO: remove the requests user data? depends if need to be cancellable or not
 
 use crate::header;
 
@@ -73,26 +73,6 @@ pub struct Config {
     /// Pre-allocated capacity for the number of blocks between the finalized block and the head
     /// of the chain.
     pub blocks_capacity: usize,
-
-    /// Maximum number of blocks of unknown ancestry to keep in memory. A good default is 1024.
-    ///
-    /// When a potential long fork is detected, its blocks are downloaded progressively in
-    /// descending order until a common ancestor is found.
-    /// Unfortunately, an attack could generate fake very long forks in order to make the node
-    /// consume a lot of memory keeping track of the blocks in that fork.
-    /// In order to avoid this, a limit is added to the number of blocks of unknown ancestry that
-    /// are kept in memory.
-    ///
-    /// Note that the download of long forks will always work no matter this limit. In the worst
-    /// case scenario, the same blocks will be downloaded multiple times. There is an implicit
-    /// minimum size equal to the number of sources that have been added to the state machine.
-    ///
-    /// Increasing this value has no drawback, except for increasing the maximum possible memory
-    /// consumption of this state machine.
-    //
-    // Implementation note: the size of `disjoint_headers` can temporarily grow above this limit
-    // due to the internal processing of the state machine.
-    pub max_disjoint_headers: usize,
 
     /// Maximum number of simultaneous pending requests made towards the same block.
     ///
@@ -128,9 +108,6 @@ pub struct PendingBlocks<TBl, TRq> {
 
     /// All ongoing requests.
     requests: slab::Slab<Request<TRq>>,
-
-    // TODO: unused
-    max_blocks: usize,
 
     /// See [`Config::max_requests_per_block`].
     /// Since it is always compared with `usize`s, converted to `usize` ahead of time.
@@ -183,7 +160,6 @@ impl<TBl, TRq> PendingBlocks<TBl, TRq> {
         PendingBlocks {
             blocks: Default::default(),
             blocks_requests: Default::default(),
-            max_blocks: 1024, // TODO: configurable
             requests: slab::Slab::with_capacity(
                 config.blocks_capacity
                     * usize::try_from(config.max_requests_per_block.get())
@@ -192,6 +168,11 @@ impl<TBl, TRq> PendingBlocks<TBl, TRq> {
             max_requests_per_block: usize::try_from(config.max_requests_per_block.get())
                 .unwrap_or(usize::max_value()),
         }
+    }
+
+    /// Returns the number of blocks stored in the data structure.
+    pub fn num_blocks(&self) -> usize {
+        self.blocks.len()
     }
 
     /// Marks the request as finished.
@@ -239,7 +220,7 @@ impl<TBl, TRq> PendingBlocks<TBl, TRq> {
             .iter()
             .filter(|(_, s)| matches!(s.inner, BlockInner::Unknown))
             .filter_map(
-                move |(&(ref unknown_block_height, ref unknown_block_hash), &ref block)| {
+                move |(&(ref unknown_block_height, ref unknown_block_hash), _)| {
                     let num_existing_requests = self
                         .blocks_requests
                         .range(
@@ -364,6 +345,7 @@ impl<TBl, TRq> PendingBlocks<TBl, TRq> {
     }
 }
 
+/// See [`PendingBlocks::desired_queries`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct DesiredQuery {
     /// Height of the first block to request.
@@ -459,7 +441,7 @@ impl<'a, TBl, TRq> OccupiedBlockEntry<'a, TBl, TRq> {
     ///
     /// Returns the list of blocks that are children of this one, and are thus ready to be
     /// verified as well.
-    pub fn remove_verify_success(self) -> RemoveVerifySuccessOutcome {
+    pub fn remove_verify_success(self) -> RemoveVerifySuccessOutcome<TBl, TRq> {
         let children_iter = self.parent.children_mut(self.key.0, &self.key.1);
 
         // List of blocks that are now ready to be verified.
@@ -489,9 +471,35 @@ impl<'a, TBl, TRq> OccupiedBlockEntry<'a, TBl, TRq> {
 
         // Actually remove from list.
         let removed_block: Block<_> = self.parent.blocks.remove(&self.key).unwrap();
-        // TODO: remove ongoing requests?
 
-        RemoveVerifySuccessOutcome { verify_next }
+        let cancelled_requests = {
+            let ids = self
+                .parent
+                .blocks_requests
+                .range(
+                    (self.key.0, self.key.1, RequestId(usize::min_value()))
+                        ..=(self.key.0, self.key.1, RequestId(usize::max_value())),
+                )
+                .map(|(_, _, id)| *id)
+                .collect::<Vec<_>>();
+
+            let mut cancelled_requests = Vec::with_capacity(ids.len());
+            for id in ids {
+                self.parent
+                    .blocks_requests
+                    .remove(&(self.key.0, self.key.1, id));
+                let request = self.parent.requests.remove(id.0);
+                debug_assert_eq!(request.target_block, self.key);
+                cancelled_requests.push((id, request.user_data));
+            }
+            cancelled_requests
+        };
+
+        RemoveVerifySuccessOutcome {
+            verify_next,
+            user_data: removed_block.user_data,
+            cancelled_requests,
+        }
     }
 
     /// Removes the block from the collection, as its verification has failed.
@@ -502,9 +510,38 @@ impl<'a, TBl, TRq> OccupiedBlockEntry<'a, TBl, TRq> {
         // Actually remove from list.
         let removed_block: Block<_> = self.parent.blocks.remove(&self.key).unwrap();
 
+        let cancelled_requests = {
+            let ids = self
+                .parent
+                .blocks_requests
+                .range(
+                    (self.key.0, self.key.1, RequestId(usize::min_value()))
+                        ..=(self.key.0, self.key.1, RequestId(usize::max_value())),
+                )
+                .map(|(_, _, id)| *id)
+                .collect::<Vec<_>>();
+
+            let mut cancelled_requests = Vec::with_capacity(ids.len());
+            for id in ids {
+                self.parent
+                    .blocks_requests
+                    .remove(&(self.key.0, self.key.1, id));
+                let request = self.parent.requests.remove(id.0);
+                debug_assert_eq!(request.target_block, self.key);
+                cancelled_requests.push((id, request.user_data));
+            }
+            cancelled_requests
+        };
+
         // TODO: remove children of the block as well
         // TODO: remove ongoing requests?
         todo!()
+    }
+
+    /// Removes the block from the collection in order to leave space.
+    pub fn remove_uninteresting(self) {
+        // TODO: temporary implementation
+        self.remove_verify_failed();
     }
 
     /// Adds a new request to the collection. Allocates a new [`RequestId`].
@@ -533,13 +570,20 @@ impl<'a, TBl, TRq> OccupiedBlockEntry<'a, TBl, TRq> {
 
 /// Outcome of calling `remove_verify_success`.
 #[must_use]
-pub struct RemoveVerifySuccessOutcome {
+pub struct RemoveVerifySuccessOutcome<TBl, TRq> {
     /// List of blocks whose parent was the block that has just been successfully verified.
     ///
     /// These blocks are ready to be verified.
     ///
     /// Contains the block height, hash, and SCALE-encoded header.
     pub verify_next: Vec<(u64, [u8; 32], Vec<u8>)>,
+
+    /// User data of the block that has been removed.
+    pub user_data: TBl,
+
+    /// List of requests that concerned the block that has been successfully verified. These
+    /// request IDs are now invalid.
+    pub cancelled_requests: Vec<(RequestId, TRq)>,
 }
 
 /// Access to a block absent from the container.
