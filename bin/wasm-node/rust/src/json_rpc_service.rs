@@ -83,16 +83,17 @@ pub struct Config {
 
 /// Initializes the JSON-RPC service with the given configuration.
 pub async fn start(config: Config) {
-    // TODO: remove; this BTreeMap serves no purpose except convenience
-    let genesis_storage = config
-        .chain_spec
-        .genesis_storage()
-        .map(|(k, v)| (k.to_vec(), v.to_vec()))
-        .collect::<BTreeMap<_, _>>();
-
     let latest_known_runtime = {
-        let code = genesis_storage.get(&b":code"[..]).map(|v| v.to_vec());
-        let heap_pages = genesis_storage.get(&b":heappages"[..]).map(|v| v.to_vec());
+        let code = config
+            .chain_spec
+            .genesis_storage()
+            .find(|(k, _)| k == b":code")
+            .map(|(_, v)| v.to_vec());
+        let heap_pages = config
+            .chain_spec
+            .genesis_storage()
+            .find(|(k, _)| k == b":heappages")
+            .map(|(_, v)| v.to_vec());
 
         // Note that in the absolute we don't need to panic in case of a problem, and could simply
         // store an `Err` and continue running.
@@ -133,7 +134,6 @@ pub async fn start(config: Config) {
             finalized_block: best_block_hash,
         }),
         genesis_block: config.genesis_block_hash,
-        genesis_storage,
         latest_known_runtime: Mutex::new(latest_known_runtime),
         next_subscription: atomic::AtomicU64::new(0),
         all_heads: Mutex::new(HashMap::new()),
@@ -397,9 +397,6 @@ struct JsonRpcService {
     /// Keeping the genesis block is important, as the genesis block hash is included in
     /// transaction signatures, and must therefore be queried by upper-level UIs.
     genesis_block: [u8; 32],
-
-    // TODO: remove; unnecessary
-    genesis_storage: BTreeMap<Vec<u8>, Vec<u8>>,
 
     /// Initially contains the runtime code of the genesis block. Whenever a best block is
     /// received, updated with the runtime of this new best block.
@@ -742,38 +739,6 @@ impl JsonRpcService {
                 self.send_back(
                     &methods::Response::state_queryStorageAt(vec![out])
                         .to_json_response(request_id),
-                );
-            }
-            methods::MethodCall::state_getKeysPaged {
-                prefix,
-                count,
-                start_key,
-                hash,
-            } => {
-                assert!(hash.is_none()); // TODO:
-
-                let mut out = Vec::new();
-                // TODO: check whether start_key should be included of the set
-                for (k, _) in self
-                    .genesis_storage
-                    .range(start_key.map(|p| p.0).unwrap_or(Vec::new())..)
-                {
-                    if out.len() >= usize::try_from(count).unwrap_or(usize::max_value()) {
-                        break;
-                    }
-
-                    if prefix
-                        .as_ref()
-                        .map_or(false, |prefix| !k.starts_with(&prefix.0))
-                    {
-                        break;
-                    }
-
-                    out.push(methods::HexString(k.to_vec()));
-                }
-
-                self.send_back(
-                    &methods::Response::state_getKeysPaged(out).to_json_response(request_id),
                 );
             }
             methods::MethodCall::state_getMetadata {} => {
