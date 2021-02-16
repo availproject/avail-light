@@ -428,7 +428,7 @@ async fn start_sync(
                     match message {
                         ToBackground::Serialize { send_back } => {
                             let chain = sync_idle.as_chain_information();
-                            let serialized = smoldot::database::finalized_serialize::encode_chain_information(chain);
+                            let serialized = smoldot::database::finalized_serialize::encode_chain(chain);
                             let _ = send_back.send(serialized);
                         }
                         ToBackground::IsNearHeadOfChainHeuristic { send_back } => {

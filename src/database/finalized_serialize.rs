@@ -17,9 +17,11 @@
 
 //! Serializing/deserializing a [`chain_information::ChainInformation`].
 //!
-//! This module contains the [`encode_chain_information`] and [`decode_chain_information`]
-//! functions that can turn a [`chain_information::ChainInformation`] into a string, and back.
-//! The string is expected to be in the order of magniture of a few dozens of kilobytes.
+//! This module contains the [`encode_chain_storage`] and [`decode_chain`] functions that can turn
+//! a [`chain_information::ChainInformation`] into a string and back, with optionally the state of
+//! the finalized block.
+//! With no finalized block storage, the string is expected to be in the order of magniture of a
+//! few dozens kilobytes.
 //!
 //! The string format designed to be stable even if the structure of
 //! [`chain_information::ChainInformation`] is later modified.
@@ -29,30 +31,49 @@
 
 use crate::chain::chain_information;
 
-use core::convert::TryFrom;
+use core::iter;
+use hashbrown::HashMap;
 
 mod defs;
 
-/// Stores the given information in the local storage.
+/// Serializes the given chain information as a string.
 ///
-/// Errors are expected to be extremely rare, but might happen for example if the serialized
-/// data exceeds the browser-specific limit.
-pub fn encode_chain_information(information: chain_information::ChainInformationRef<'_>) -> String {
-    let decoded = defs::SerializedChainInformation::V1(information.into());
+/// This is a shortcut for [`encode_chain_storage`] with no `finalized_storage`.
+pub fn encode_chain(information: chain_information::ChainInformationRef<'_>) -> String {
+    encode_chain_storage(information, None::<iter::Empty<(Vec<u8>, Vec<u8>)>>)
+}
+
+/// Serializes the given chain information and finalized block storage as a string.
+pub fn encode_chain_storage(
+    information: chain_information::ChainInformationRef<'_>,
+    finalized_storage: Option<impl Iterator<Item = (impl AsRef<[u8]>, impl AsRef<[u8]>)>>,
+) -> String {
+    let decoded = defs::SerializedChainInformation::V1(defs::SerializedChainInformationV1::new(
+        information,
+        finalized_storage,
+    ));
+
     serde_json::to_string(&decoded).unwrap()
 }
 
-/// Loads information about the chain from the local storage.
-pub fn decode_chain_information(
+/// Deserializes the information about the chain.
+///
+/// This is the invert operation of [`encode_chain_storage`].
+pub fn decode_chain(
     encoded: &str,
-) -> Result<chain_information::ChainInformation, CorruptedError> {
-    let decoded: defs::SerializedChainInformation = serde_json::from_str(&encoded)
+) -> Result<
+    (
+        chain_information::ChainInformation,
+        Option<HashMap<Vec<u8>, Vec<u8>, fnv::FnvBuildHasher>>,
+    ),
+    CorruptedError,
+> {
+    let encoded: defs::SerializedChainInformation = serde_json::from_str(&encoded)
         .map_err(|e| CorruptedError(CorruptedErrorInner::Serde(e)))?;
 
-    match decoded {
-        defs::SerializedChainInformation::V1(decoded) => Ok(TryFrom::try_from(decoded)
-            .map_err(|err| CorruptedError(CorruptedErrorInner::Deserialize(err)))?),
-    }
+    Ok(encoded
+        .decode()
+        .map_err(|err| CorruptedError(CorruptedErrorInner::Deserialize(err)))?)
 }
 
 /// Opaque error indicating a corruption in the data stored in the local storage.

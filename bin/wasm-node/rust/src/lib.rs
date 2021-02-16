@@ -154,8 +154,8 @@ pub async fn start_client(
     // The database passed from the user is decoded. Any error while decoding is treated as if
     // there was no database.
     let database_content = if let Some(database_content) = database_content {
-        match smoldot::database::finalized_serialize::decode_chain_information(&database_content) {
-            Ok(parsed) => Some(parsed),
+        match smoldot::database::finalized_serialize::decode_chain(&database_content) {
+            Ok((parsed, _)) => Some(parsed),
             Err(error) => {
                 log::warn!("Failed to decode chain information: {}", error);
                 None

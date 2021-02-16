@@ -20,7 +20,8 @@
 use crate::{chain::chain_information, header};
 
 use alloc::vec::Vec;
-use core::{convert::TryFrom, fmt, num::NonZeroU64};
+use core::{fmt, num::NonZeroU64};
+use hashbrown::HashMap;
 
 /// Error that can happen when deserializing the data.
 #[derive(Debug, derive_more::Display)]
@@ -38,12 +39,18 @@ pub(super) enum SerializedChainInformation {
     V1(SerializedChainInformationV1),
 }
 
-impl TryFrom<SerializedChainInformation> for chain_information::ChainInformation {
-    type Error = DeserializeError;
-
-    fn try_from(from: SerializedChainInformation) -> Result<Self, Self::Error> {
-        Ok(match from {
-            SerializedChainInformation::V1(from) => TryFrom::try_from(from)?,
+impl SerializedChainInformation {
+    pub(super) fn decode(
+        self,
+    ) -> Result<
+        (
+            chain_information::ChainInformation,
+            Option<HashMap<Vec<u8>, Vec<u8>, fnv::FnvBuildHasher>>,
+        ),
+        DeserializeError,
+    > {
+        Ok(match self {
+            SerializedChainInformation::V1(from) => from.decode()?,
         })
     }
 }
@@ -72,10 +79,15 @@ pub(super) struct SerializedChainInformationV1 {
     grandpa_finalized_triggered_authorities: Vec<SerializedGrandpaAuthorityV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     grandpa_finalized_scheduled_change: Option<SerializedFinalizedScheduledChangeV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finalized_storage: Option<Vec<SerializedFinalizedStorageEntryV1>>,
 }
 
-impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInformationV1 {
-    fn from(from: chain_information::ChainInformationRef<'a>) -> Self {
+impl SerializedChainInformationV1 {
+    pub(super) fn new<'a>(
+        from: chain_information::ChainInformationRef<'a>,
+        finalized_storage: Option<impl Iterator<Item = (impl AsRef<[u8]>, impl AsRef<[u8]>)>>,
+    ) -> Self {
         SerializedChainInformationV1 {
             finalized_block_header: from.finalized_block_header.scale_encoding().fold(
                 Vec::new(),
@@ -162,20 +174,34 @@ impl<'a> From<chain_information::ChainInformationRef<'a>> for SerializedChainInf
                     })
                 }
             },
+            finalized_storage: finalized_storage.map(|storage| {
+                storage
+                    .map(|(k, v)| SerializedFinalizedStorageEntryV1 {
+                        key: k.as_ref().to_vec(),
+                        value: v.as_ref().to_vec(),
+                    })
+                    .collect()
+            }),
         }
     }
 }
 
-impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformation {
-    type Error = DeserializeError;
-
-    fn try_from(from: SerializedChainInformationV1) -> Result<Self, Self::Error> {
+impl SerializedChainInformationV1 {
+    pub(super) fn decode(
+        self,
+    ) -> Result<
+        (
+            chain_information::ChainInformation,
+            Option<HashMap<Vec<u8>, Vec<u8>, fnv::FnvBuildHasher>>,
+        ),
+        DeserializeError,
+    > {
         let consensus = match (
-            from.aura_finalized_authorities,
-            from.aura_slot_duration,
-            from.babe_slots_per_epoch,
-            from.babe_finalized_block_epoch_information,
-            from.babe_finalized_next_epoch_transition,
+            self.aura_finalized_authorities,
+            self.aura_slot_duration,
+            self.babe_slots_per_epoch,
+            self.babe_finalized_block_epoch_information,
+            self.babe_finalized_next_epoch_transition,
         ) {
             (Some(aura_authorities), Some(slot_duration), None, None, None) => {
                 chain_information::ChainInformationConsensus::Aura {
@@ -206,20 +232,20 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
             _ => return Err(DeserializeError::ConsensusAlgorithmsMismatch),
         };
 
-        Ok(chain_information::ChainInformation {
-            finalized_block_header: header::decode(&from.finalized_block_header)
+        let chain_info = chain_information::ChainInformation {
+            finalized_block_header: header::decode(&self.finalized_block_header)
                 .map_err(DeserializeError::Header)?
                 .into(),
             consensus,
-            finality: if let Some(set_id) = from.grandpa_after_finalized_block_authorities_set_id {
+            finality: if let Some(set_id) = self.grandpa_after_finalized_block_authorities_set_id {
                 chain_information::ChainInformationFinality::Grandpa {
                     after_finalized_block_authorities_set_id: set_id,
-                    finalized_triggered_authorities: from
+                    finalized_triggered_authorities: self
                         .grandpa_finalized_triggered_authorities
                         .into_iter()
                         .map(Into::into)
                         .collect(),
-                    finalized_scheduled_change: from.grandpa_finalized_scheduled_change.map(
+                    finalized_scheduled_change: self.grandpa_finalized_scheduled_change.map(
                         |change| {
                             (
                                 change.trigger_block_height,
@@ -235,8 +261,37 @@ impl TryFrom<SerializedChainInformationV1> for chain_information::ChainInformati
             } else {
                 chain_information::ChainInformationFinality::Outsourced
             },
-        })
+        };
+
+        // TODO: consider checking integrity of the storage against the header
+        let finalized_storage = if let Some(storage) = self.finalized_storage {
+            Some(
+                storage
+                    .into_iter()
+                    .map(|entry| (entry.key, entry.value))
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        Ok((chain_info, finalized_storage))
     }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SerializedFinalizedStorageEntryV1 {
+    #[serde(
+        serialize_with = "serialize_bytes",
+        deserialize_with = "deserialize_bytes"
+    )]
+    key: Vec<u8>,
+    #[serde(
+        serialize_with = "serialize_bytes",
+        deserialize_with = "deserialize_bytes"
+    )]
+    value: Vec<u8>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
