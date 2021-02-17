@@ -253,6 +253,9 @@ impl<T> NonFinalizedTreeInner<T> {
                         slots_per_epoch: *slots_per_epoch,
                         now_from_unix_epoch,
                     },
+                    (FinalizedConsensus::AllAuthorized, VerifyConsensusSpecific::AllAuthorized) => {
+                        verify::header_only::ConfigConsensus::AllAuthorized
+                    }
                     // TODO: don't panic! this is before any verification
                     _ => unreachable!(),
                 },
