@@ -20,5 +20,5 @@ lazy_static = "1.4.0"
 log = { version = "0.4.14", features = ["std"] }
 lru = "0.6.3"
 rand = "0.8.3"
-serde_json = "1.0.61"
+serde_json = "1.0.62"
 smoldot = { version = "0.1.0", path = "../../..", default-features = false }
