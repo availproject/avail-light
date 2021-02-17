@@ -20,7 +20,8 @@
 import * as smoldot from './index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
-import { default as westend_specs } from './westend_specs.js';
+// Adjust these chain specs for the chain you want to connect to.
+import { default as chain_specs } from './westend_specs.js';
 import * as fs from 'fs';
 
 let client = null;
@@ -34,7 +35,7 @@ try {
 } catch(error) {}
 
 smoldot.start({
-    chain_spec: JSON.stringify(westend_specs()),
+    chain_spec: JSON.stringify(chain_specs()),
     database_content: database_content,
     max_log_level: 3,  // Can be increased for more verbosity
     json_rpc_callback: (resp) => {

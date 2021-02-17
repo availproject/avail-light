@@ -179,6 +179,10 @@ pub enum FramedError {
     /// The variable-length prefix is too large and cannot possibly represent a valid size.
     LengthPrefixTooLarge,
     /// Maximum length of the frame has been exceeded.
+    #[display(
+        fmt = "Maximum length of the frame ({}) has been exceeded",
+        max_allowed
+    )]
     MaxLengthExceeded {
         /// Maximum number of bytes allowed.
         max_allowed: usize,

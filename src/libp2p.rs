@@ -1446,10 +1446,13 @@ impl Future for ConnectionReadyFuture {
 #[derive(Debug, derive_more::Display)]
 pub enum ConnectionError {
     /// Protocol error after the connection has been established.
+    #[display(fmt = "{}", _0)]
     Established(established::Error),
     /// Protocol error during the handshake phase.
+    #[display(fmt = "{}", _0)]
     Handshake(connection::handshake::HandshakeError),
     /// Mismatch between the actual [`PeerId`] and the [`PeerId`] expected by the local node.
+    #[display(fmt = "Mismatch between the actual PeerId and PeerId expected by the local node")]
     PeerIdMismatch,
 }
 

@@ -822,6 +822,7 @@ pub enum HandshakeError {
 }
 
 /// Error while decoding data.
+#[display(fmt = "Error while decrypting the Noise payload")]
 #[derive(Debug, derive_more::Display)]
 pub struct CipherError(snow::Error);
 

@@ -1024,7 +1024,7 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                                 user_data,
                             };
                         }
-                        _ => todo!(), // TODO:
+                        _err => todo!("{:?}", _err), // TODO:
                     }
                 }
                 Substream::NotificationsOutHandshakeRecv {
