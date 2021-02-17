@@ -856,6 +856,7 @@ where
                                 .count()
                                 == 1
                             {
+                                // TODO: must convert this code to thread-safe design
                                 guarded
                                     .events_tx
                                     .send(Event::Connected(remote_peer_id))
@@ -1086,14 +1087,30 @@ where
     /// accordingly.
     /// See the implementations notes at the top of the file for more information.
     async fn propagate_pending_event<TPeer>(&mut self, guarded: &mut Guarded<TNow, TPeer, TConn>) {
-        // TODO: futures cancellation problem when sending event on channel
-        match self.pending_event.take() {
-            None => {}
-            Some(PendingEvent::Inner(established::Event::RequestIn {
+        if self.pending_event.is_none() {
+            return;
+        }
+
+        // The body of this function consists in two operations: extracting the event from
+        // `pending_event`, then sending a corresponding event on `events_tx`. Because sending an
+        // item on `events_tx` might block, and because the user is free to cancel the future at
+        // it heir will, it is possible for the event to have been extracted then get lost into
+        // oblivion.
+        //
+        // To prevent this from happening, we first wait for `events_tx` to be ready to accept
+        // an item, then use `try_send` to send items on it in a non-blocking way.
+        future::poll_fn(|cx| guarded.events_tx.poll_ready(cx))
+            .await
+            .unwrap();
+
+        // The line below does `pending_event.take()`. After this, no more `await` must be present
+        // in the function's body without precautionnary measures.
+        match self.pending_event.take().unwrap() {
+            PendingEvent::Inner(established::Event::RequestIn {
                 id: substream_id,
                 protocol_index,
                 request,
-            })) => {
+            }) => {
                 let peer_id = guarded
                     .peerset
                     .connection_mut(self.id)
@@ -1103,28 +1120,27 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::RequestIn {
+                    .try_send(Event::RequestIn {
                         id: ConnectionId(self.id),
                         substream_id,
                         peer_id,
                         protocol_index,
                         request_payload: request,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::Response {
+            PendingEvent::Inner(established::Event::Response {
                 response,
                 user_data: send_back,
                 ..
-            })) => {
+            }) => {
                 let _ = send_back.send(response.map_err(RequestError::Connection));
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsInOpen {
+            PendingEvent::Inner(established::Event::NotificationsInOpen {
                 id,
                 protocol_index: overlay_network_index,
                 handshake,
-            })) => {
+            }) => {
                 guarded
                     .peerset
                     .connection_mut(self.id)
@@ -1138,18 +1154,17 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::NotificationsInOpen {
+                    .try_send(Event::NotificationsInOpen {
                         id: ConnectionId(self.id),
                         overlay_network_index,
                         remote_handshake: handshake,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsInOpenCancel {
+            PendingEvent::Inner(established::Event::NotificationsInOpenCancel {
                 protocol_index,
                 ..
-            })) => {
+            }) => {
                 guarded
                     .peerset
                     .connection_mut(self.id)
@@ -1157,7 +1172,7 @@ where
                     .remove_pending_substream(protocol_index, peerset::SubstreamDirection::In)
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::NotificationIn { id, notification })) => {
+            PendingEvent::Inner(established::Event::NotificationIn { id, notification }) => {
                 let overlay_network_index = *self
                     .connection
                     .as_alive()
@@ -1172,20 +1187,19 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::NotificationsIn {
+                    .try_send(Event::NotificationsIn {
                         id: ConnectionId(self.id),
                         peer_id,
                         has_symmetric_substream,
                         overlay_network_index,
                         notification,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsOutAccept {
+            PendingEvent::Inner(established::Event::NotificationsOutAccept {
                 id,
                 remote_handshake,
-            })) => {
+            }) => {
                 let overlay_network_index = *self
                     .connection
                     .as_alive()
@@ -1205,19 +1219,18 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::NotificationsOutAccept {
+                    .try_send(Event::NotificationsOutAccept {
                         id: ConnectionId(self.id),
                         peer_id,
                         overlay_network_index,
                         remote_handshake,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsOutReject {
+            PendingEvent::Inner(established::Event::NotificationsOutReject {
                 id,
                 user_data: overlay_network_index,
-            })) => {
+            }) => {
                 let mut connection = guarded.peerset.connection_mut(self.id).unwrap();
                 let peer_id = connection.peer_id().clone();
                 let _expected_id = connection
@@ -1230,21 +1243,20 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::NotificationsOutReject {
+                    .try_send(Event::NotificationsOutReject {
                         id: ConnectionId(self.id),
                         peer_id,
                         overlay_network_index,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsOutCloseDemanded { id })) => {
+            PendingEvent::Inner(established::Event::NotificationsOutCloseDemanded { id }) => {
                 todo!()
             }
-            Some(PendingEvent::Inner(established::Event::NotificationsOutReset {
+            PendingEvent::Inner(established::Event::NotificationsOutReset {
                 id,
                 user_data: overlay_network_index,
-            })) => {
+            }) => {
                 let mut connection = guarded.peerset.connection_mut(self.id).unwrap();
                 let peer_id = connection.peer_id().clone();
                 let _expected_id = connection
@@ -1254,15 +1266,14 @@ where
 
                 guarded
                     .events_tx
-                    .send(Event::NotificationsOutClose {
+                    .try_send(Event::NotificationsOutClose {
                         id: ConnectionId(self.id),
                         overlay_network_index,
                         peer_id,
                     })
-                    .await
                     .unwrap();
             }
-            Some(PendingEvent::Disconnect) => {
+            PendingEvent::Disconnect => {
                 let mut out_overlay_network_indices =
                     Vec::with_capacity(guarded.peerset.num_overlay_networks());
                 let mut in_overlay_network_indices =
@@ -1296,13 +1307,12 @@ where
                 {
                     guarded
                         .events_tx
-                        .send(Event::Disconnected {
+                        .try_send(Event::Disconnected {
                             peer_id,
                             user_data: self.user_data.take().unwrap(),
                             in_overlay_network_indices,
                             out_overlay_network_indices,
                         })
-                        .await
                         .unwrap();
                 }
             }
