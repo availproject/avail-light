@@ -20,12 +20,10 @@ use crate::libp2p::{
 };
 use crate::network::protocol;
 use crate::util;
-use connection::established;
 use core::{
     fmt, iter,
     num::NonZeroUsize,
     ops::{Add, Sub},
-    task::Context,
     time::Duration,
 };
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
@@ -88,6 +86,9 @@ pub struct ChainConfig {
     /// List of node identities that are known to belong to this overlay network. The node
     /// identities are indices in [`Config::known_nodes`].
     pub bootstrap_nodes: Vec<usize>,
+
+    /// If true, the chain uses the GrandPa networking protocol.
+    pub has_grandpa_protocol: bool,
 
     pub in_slots: u32,
 
@@ -162,15 +163,25 @@ where
                     in_slots: chain.in_slots,
                     out_slots: chain.out_slots,
                 }))
-                .chain(iter::once(libp2p::OverlayNetwork {
-                    protocol_name: "/paritytech/grandpa/1".to_string(),
-                    fallback_protocol_names: Vec::new(),
-                    max_handshake_size: 256,      // TODO: arbitrary
-                    max_notification_size: 32768, // TODO: arbitrary
-                    bootstrap_nodes: chain.bootstrap_nodes.clone(),
-                    in_slots: chain.in_slots,
-                    out_slots: chain.out_slots,
-                }))
+                .chain({
+                    // The `has_grandpa_protocol` flag controls whether the chain uses GrandPa.
+                    // Note, however, that GrandPa is technically left enabled (but unused) on all
+                    // chains, in order to make the rest of the code of this module more
+                    // comprehensible.
+                    iter::once(libp2p::OverlayNetwork {
+                        protocol_name: "/paritytech/grandpa/1".to_string(),
+                        fallback_protocol_names: Vec::new(),
+                        max_handshake_size: 256,      // TODO: arbitrary
+                        max_notification_size: 32768, // TODO: arbitrary
+                        bootstrap_nodes: if chain.has_grandpa_protocol {
+                            chain.bootstrap_nodes.clone()
+                        } else {
+                            Vec::new()
+                        },
+                        in_slots: chain.in_slots,
+                        out_slots: chain.out_slots,
+                    })
+                })
             })
             .collect();
 
@@ -872,15 +883,18 @@ where
                     addrs.iter().cloned(),
                 )
                 .await;
-            self.service
-                .libp2p
-                .add_addresses(
-                    || or_insert(&peer_id),
-                    self.chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 2,
-                    peer_id.clone(), // TODO: clone :(
-                    addrs,
-                )
-                .await;
+
+            if self.service.chains[self.chain_index].has_grandpa_protocol {
+                self.service
+                    .libp2p
+                    .add_addresses(
+                        || or_insert(&peer_id),
+                        self.chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 2,
+                        peer_id.clone(), // TODO: clone :(
+                        addrs,
+                    )
+                    .await;
+            }
         }
     }
 }

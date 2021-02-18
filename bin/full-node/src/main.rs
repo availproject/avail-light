@@ -176,6 +176,7 @@ async fn async_main() {
         listen_addresses: Vec::new(),
         chains: iter::once(network_service::ChainConfig {
             protocol_id: chain_spec.protocol_id().to_owned(),
+            has_grandpa_protocol: false,
             genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
             best_block: {
                 let hash = database.finalized_block_hash().unwrap();
@@ -203,6 +204,7 @@ async fn async_main() {
                 .map(|relay_chains_specs| {
                     network_service::ChainConfig {
                         protocol_id: relay_chains_specs.protocol_id().to_owned(),
+                        has_grandpa_protocol: true,
                         genesis_block_hash: relay_genesis_chain_information
                             .as_ref()
                             .unwrap()

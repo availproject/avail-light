@@ -82,6 +82,9 @@ pub struct Config {
     /// Each blockchain has (or should have) a different "protocol id". This value identifies the
     /// chain, so as to not introduce conflicts in the networking messages.
     pub protocol_id: String,
+
+    /// If true, the chain uses the GrandPa networking protocol.
+    pub has_grandpa_protocol: bool,
 }
 
 pub struct NetworkService {
@@ -128,6 +131,7 @@ impl NetworkService {
                     bootstrap_nodes: (0..config.bootstrap_nodes.len()).collect(),
                     in_slots: 25,
                     out_slots: 25,
+                    has_grandpa_protocol: config.has_grandpa_protocol,
                     protocol_id: config.protocol_id,
                     best_hash: config.best_block.1,
                     best_number: config.best_block.0,

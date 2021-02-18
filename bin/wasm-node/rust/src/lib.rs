@@ -243,6 +243,7 @@ pub async fn start_client(
                             }
                             list
                         },
+                        has_grandpa_protocol: chain_spec.relay_chain().is_none(),
                         genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
                         best_block: (
                             chain_information.finalized_block_header.number,
