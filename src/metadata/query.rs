@@ -18,8 +18,7 @@
 //! Retrieving the metadata from the runtime.
 //!
 //! The metadata can be obtained by calling the `Metadata_metadata` entry point of the runtime.
-//! The runtime normally straight-up outputs some hardcoded structures, and no access to the
-//! storage (or any other host function) is necessary.
+//! The runtime normally straight-up outputs some hardcoded structures.
 //!
 //! # About the length prefix
 //!
@@ -37,52 +36,76 @@
 //! prefix. It would be confusing and error-prone if the value returned here obeyed a slightly
 //! different definition.
 //!
+//! # About storage accesses
+//!
+//! Generating the metadata might require access to the storage.
+//! When that is the case, there is a chance that the content of the metadata depends on the
+//! storage values that have been retrieved. Consequently, if these storage values change from one
+//! block to the next, the metadata might change as well.
+//!
+//! In a perfect world, one would watch for changes in the storage keys that the metadata
+//! generation accesses. At the time of the writing of this comment, however, runtimes only access
+//! the storage during the metadata generation as hacks to circumvent limitations in the Rust
+//! programming language used to write the runtime. It isn't known of any runtime that uses a
+//! storage value during the generation of the metadata and that also potentially modifies these
+//! same storage values.
+//!
+//! For this reason, it is considered as totally acceptable to not implement watching for changes
+//! in these storage values, and consider that the metadata can only change after a modification
+//! of the runtime itself.
+//!
 
-use crate::executor::{host, vm};
+use crate::executor::{host, read_only_runtime_host};
 
 use alloc::vec::Vec;
-
-/// Retrieves the SCALE-encoded metadata from the runtime code of a block.
-///
-/// > **Note**: This function is a convenient shortcut for
-/// >           [`metadata_from_virtual_machine_prototype`]. In performance-critical situations,
-/// >           where the overhead of the Wasm compilation is undesirable, you are encouraged to
-/// >           call [`metadata_from_virtual_machine_prototype`] instead.
-// TODO: document heap_pages
-pub fn metadata_from_runtime_code(
-    wasm_code: &[u8],
-    heap_pages: vm::HeapPages,
-) -> Result<Vec<u8>, Error> {
-    let vm = host::HostVmPrototype::new(&wasm_code, heap_pages, vm::ExecHint::Oneshot)
-        .map_err(Error::VmInitialization)?;
-    let (out, _vm) = metadata_from_virtual_machine_prototype(vm)?;
-    Ok(out)
-}
 
 /// Retrieves the SCALE-encoded metadata from the given virtual machine prototype.
 ///
 /// Returns back the same virtual machine prototype as was passed as parameter.
-pub fn metadata_from_virtual_machine_prototype(
-    vm: host::HostVmPrototype,
-) -> Result<(Vec<u8>, host::HostVmPrototype), Error> {
-    let mut vm: host::HostVm = vm
-        .run_no_param("Metadata_metadata")
-        .map_err(Error::VmStart)?
-        .into();
+pub fn query_metadata(virtual_machine: host::HostVmPrototype) -> Query {
+    let vm = read_only_runtime_host::run(read_only_runtime_host::Config {
+        virtual_machine,
+        function_to_call: "Metadata_metadata",
+        // The epoch functions don't take any parameters.
+        parameter: core::iter::empty::<&[u8]>(),
+    });
 
-    loop {
-        match vm {
-            host::HostVm::ReadyToRun(r) => vm = r.run(),
-            host::HostVm::Finished(finished) => {
-                let value = remove_length_prefix(finished.value().as_ref())?.to_owned();
-                return Ok((value, finished.into_prototype()));
+    match vm {
+        Ok(vm) => Query::from_inner(vm),
+        Err(err) => Query::Finished(Err(Error::VmStart(err))),
+    }
+}
+
+/// Current state of the operation.
+#[must_use]
+pub enum Query {
+    /// Fetching the metadata is over.
+    Finished(Result<(Vec<u8>, host::HostVmPrototype), Error>),
+    /// Loading a storage value is required in order to continue.
+    StorageGet(StorageGet),
+}
+
+impl Query {
+    fn from_inner(inner: read_only_runtime_host::RuntimeHostVm) -> Self {
+        match inner {
+            read_only_runtime_host::RuntimeHostVm::Finished(Ok(success)) => {
+                let value =
+                    match remove_metadata_length_prefix(success.virtual_machine.value().as_ref()) {
+                        Ok(value) => value.to_owned(),
+                        Err(err) => return Query::Finished(Err(Error::BadLengthPrefix(err))),
+                    };
+
+                Query::Finished(Ok((value, success.virtual_machine.into_prototype())))
             }
-            host::HostVm::Error { .. } => return Err(Error::Trapped),
-            host::HostVm::LogEmit(rq) => vm = rq.resume(),
-
-            // Querying the metadata shouldn't require any extrinsic such as accessing the
-            // storage.
-            _ => return Err(Error::HostFunctionNotAllowed),
+            read_only_runtime_host::RuntimeHostVm::Finished(Err(err)) => {
+                Query::Finished(Err(Error::WasmRun(err)))
+            }
+            read_only_runtime_host::RuntimeHostVm::StorageGet(inner) => {
+                Query::StorageGet(StorageGet(inner))
+            }
+            read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
+                Query::Finished(Err(Error::HostFunctionNotAllowed))
+            }
         }
     }
 }
@@ -94,24 +117,57 @@ pub enum Error {
     VmInitialization(host::NewErr),
     /// Error when starting the virtual machine.
     VmStart(host::StartErr),
-    /// Crash while running the virtual machine.
-    Trapped,
+    /// Error while running the Wasm virtual machine.
+    #[display(fmt = "{}", _0)]
+    WasmRun(read_only_runtime_host::Error),
     /// Virtual machine tried to call a host function that isn't valid in this context.
     HostFunctionNotAllowed,
     /// Length prefix doesn't match actual length of the metadata.
-    BadLengthPrefix,
+    BadLengthPrefix(RemoveMetadataLengthPrefixError),
+}
+
+/// Loading a storage value is required in order to continue.
+#[must_use]
+pub struct StorageGet(read_only_runtime_host::StorageGet);
+
+impl StorageGet {
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+        self.0.key()
+    }
+
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    pub fn key_as_vec(&self) -> Vec<u8> {
+        self.0.key_as_vec()
+    }
+
+    /// Injects the corresponding storage value.
+    pub fn inject_value(self, value: Option<impl Iterator<Item = impl AsRef<[u8]>>>) -> Query {
+        Query::from_inner(self.0.inject_value(value))
+    }
 }
 
 /// Removes the length prefix at the beginning of `metadata`. Returns an error if there is no
 /// valid length prefix.
-fn remove_length_prefix(metadata: &[u8]) -> Result<&[u8], Error> {
+///
+/// See the module-level documentation for more information.
+pub fn remove_metadata_length_prefix(
+    metadata: &[u8],
+) -> Result<&[u8], RemoveMetadataLengthPrefixError> {
     let (after_prefix, length) = crate::util::nom_scale_compact_usize(metadata)
-        .map_err(|_: nom::Err<nom::error::Error<&[u8]>>| Error::BadLengthPrefix)?;
+        .map_err(|_: nom::Err<nom::error::Error<&[u8]>>| RemoveMetadataLengthPrefixError)?;
 
     // Verify that the length prefix indeed matches the metadata's length.
     if length != after_prefix.len() {
-        return Err(Error::BadLengthPrefix);
+        return Err(RemoveMetadataLengthPrefixError);
     }
 
     Ok(after_prefix)
 }
+
+/// Potential error when calling [`remove_metadata_length_prefix`].
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "No valid prefix in front of metadata")]
+pub struct RemoveMetadataLengthPrefixError;
