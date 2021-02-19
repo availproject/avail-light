@@ -1569,11 +1569,14 @@ impl JsonRpcService {
             let call_proof = self
                 .network_service
                 .clone()
-                .call_proof_query(protocol::CallProofRequestConfig {
-                    block_hash: runtime_block_hash,
-                    method,
-                    parameter_vectored: parameter_vectored.clone(),
-                })
+                .call_proof_query(
+                    self.network_chain_index,
+                    protocol::CallProofRequestConfig {
+                        block_hash: runtime_block_hash,
+                        method,
+                        parameter_vectored: parameter_vectored.clone(),
+                    },
+                )
                 .await
                 .unwrap_or(Vec::new());
 

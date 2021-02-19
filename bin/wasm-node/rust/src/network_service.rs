@@ -129,12 +129,16 @@ impl NetworkService {
             .map(|(peer_id, _)| peer_id.clone())
             .collect::<HashSet<_, _>>();
 
-        let mut chains = Vec::with_capacity(config.chains.len());
+        let num_chains = config.chains.len();
+        let mut chains = Vec::with_capacity(num_chains);
+        // TODO: this `bootstrap_nodes` field is weird ; should we de-duplicate entry in known_nodes?
         let mut known_nodes = Vec::new();
 
         for chain in config.chains {
             chains.push(service::ChainConfig {
-                bootstrap_nodes: (0..chain.bootstrap_nodes.len()).collect(),
+                bootstrap_nodes: (known_nodes.len()
+                    ..(known_nodes.len() + chain.bootstrap_nodes.len()))
+                    .collect(),
                 in_slots: 25,
                 out_slots: 25,
                 has_grandpa_protocol: chain.has_grandpa_protocol,
@@ -192,7 +196,15 @@ impl NetworkService {
                             } => {
                                 log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
                                 if !chain_indices.is_empty() {
-                                    break Event::Disconnected(peer_id);
+                                    // TODO: properly implement when multiple chains
+                                    if chain_indices.len() == 1 {
+                                        break Event::Disconnected {
+                                            peer_id,
+                                            chain_index: chain_indices[0],
+                                        };
+                                    } else {
+                                        todo!()
+                                    }
                                 }
                             }
                             service::Event::BlockAnnounce {
@@ -208,8 +220,11 @@ impl NetworkService {
                                     HashDisplay(&announce.decode().header.hash()),
                                     announce.decode().is_best
                                 );
-                                debug_assert_eq!(chain_index, 0);
-                                break Event::BlockAnnounce { peer_id, announce };
+                                break Event::BlockAnnounce {
+                                    chain_index,
+                                    peer_id,
+                                    announce,
+                                };
                             }
                             service::Event::ChainConnected {
                                 peer_id,
@@ -226,9 +241,9 @@ impl NetworkService {
                                     best_number,
                                     HashDisplay(&best_hash)
                                 );
-                                debug_assert_eq!(chain_index, 0);
                                 break Event::Connected {
                                     peer_id,
+                                    chain_index,
                                     best_block_number: best_number,
                                     best_block_hash: best_hash,
                                 };
@@ -243,8 +258,10 @@ impl NetworkService {
                                     peer_id,
                                     chain_index,
                                 );
-                                debug_assert_eq!(chain_index, 0);
-                                break Event::Disconnected(peer_id);
+                                break Event::Disconnected {
+                                    peer_id,
+                                    chain_index,
+                                };
                             }
                             service::Event::IdentifyRequestIn { peer_id, request } => {
                                 log::debug!(
@@ -272,76 +289,79 @@ impl NetworkService {
 
         // Spawn tasks dedicated to opening connections.
         // TODO: spawn several, or do things asynchronously, so that we try open multiple connections simultaneously
-        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            // TODO: keeping a Weak here doesn't really work to shut down tasks
-            let network_service = Arc::downgrade(&network_service);
-            async move {
-                loop {
-                    // TODO: very crappy way of not spamming the network service ; instead we should wake this task up when a disconnect or a discovery happens
-                    ffi::Delay::new(Duration::from_secs(1)).await;
+        for chain_index in 0..num_chains {
+            (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+                // TODO: keeping a Weak here doesn't really work to shut down tasks
+                let network_service = Arc::downgrade(&network_service);
+                async move {
+                    loop {
+                        // TODO: very crappy way of not spamming the network service ; instead we should wake this task up when a disconnect or a discovery happens
+                        ffi::Delay::new(Duration::from_secs(1)).await;
 
-                    let network_service = match network_service.upgrade() {
-                        Some(ns) => ns,
-                        None => {
-                            return;
-                        }
-                    };
-
-                    let start_connect = match network_service.network.fill_out_slots(0).await {
-                        Some(sc) => sc,
-                        None => continue,
-                    };
-
-                    let is_important_peer = network_service
-                        .important_nodes
-                        .contains(&start_connect.expected_peer_id);
-
-                    // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
-                    // into a `Future<dyn Output = Result<TcpStream, ...>>`.
-                    let socket = match multiaddr_to_url(&start_connect.multiaddr) {
-                        Ok(url) => {
-                            log::debug!(target: "connections", "Pending({:?}) started: {}", start_connect.id, url);
-                            ffi::WebSocket::connect(&url)
-                        }
-                        Err(()) => {
-                            if is_important_peer {
-                                log::warn!(
-                                    target: "connections",
-                                    "Unsupported multiaddr ({}) when trying to connect to {}",
-                                    start_connect.multiaddr,
-                                    start_connect.expected_peer_id
-                                );
-                            } else {
-                                log::debug!(
-                                    target: "connections",
-                                     "Unsupported multiaddr: {}",
-                                     start_connect.multiaddr
-                                );
+                        let network_service = match network_service.upgrade() {
+                            Some(ns) => ns,
+                            None => {
+                                return;
                             }
+                        };
 
-                            network_service
-                                .network
-                                .pending_outcome_err(start_connect.id)
-                                .await;
-                            continue;
-                        }
-                    };
+                        let start_connect =
+                            match network_service.network.fill_out_slots(chain_index).await {
+                                Some(sc) => sc,
+                                None => continue,
+                            };
 
-                    // TODO: handle dialing timeout here
+                        let is_important_peer = network_service
+                            .important_nodes
+                            .contains(&start_connect.expected_peer_id);
 
-                    let network_service2 = network_service.clone();
-                    (network_service.guarded.lock().await.tasks_executor)(Box::pin({
-                        connection_task(
-                            socket,
-                            network_service2,
-                            start_connect.id,
-                            start_connect.expected_peer_id,
-                            is_important_peer,
-                        )
-                    }));
+                        // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
+                        // into a `Future<dyn Output = Result<TcpStream, ...>>`.
+                        let socket = match multiaddr_to_url(&start_connect.multiaddr) {
+                            Ok(url) => {
+                                log::debug!(target: "connections", "Pending({:?}) started: {}", start_connect.id, url);
+                                ffi::WebSocket::connect(&url)
+                            }
+                            Err(()) => {
+                                if is_important_peer {
+                                    log::warn!(
+                                        target: "connections",
+                                        "Unsupported multiaddr ({}) when trying to connect to {}",
+                                        start_connect.multiaddr,
+                                        start_connect.expected_peer_id
+                                    );
+                                } else {
+                                    log::debug!(
+                                        target: "connections",
+                                        "Unsupported multiaddr: {}",
+                                        start_connect.multiaddr
+                                    );
+                                }
+
+                                network_service
+                                    .network
+                                    .pending_outcome_err(start_connect.id)
+                                    .await;
+                                continue;
+                            }
+                        };
+
+                        // TODO: handle dialing timeout here
+
+                        let network_service2 = network_service.clone();
+                        (network_service.guarded.lock().await.tasks_executor)(Box::pin({
+                            connection_task(
+                                socket,
+                                network_service2,
+                                start_connect.id,
+                                start_connect.expected_peer_id,
+                                is_important_peer,
+                            )
+                        }));
+                    }
                 }
-            }
-        }));
+            }));
+        }
 
         (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
             // TODO: keeping a Weak here doesn't really work to shut down tasks
@@ -597,6 +617,7 @@ impl NetworkService {
     // TODO: documentation
     pub async fn call_proof_query<'a>(
         self: Arc<Self>,
+        chain_index: usize,
         config: protocol::CallProofRequestConfig<
             'a,
             impl Iterator<Item = impl AsRef<[u8]>> + Clone,
@@ -611,7 +632,7 @@ impl NetworkService {
         for target in self.peers_list().await.take(NUM_ATTEMPTS) {
             let result = self
                 .clone()
-                .call_proof_request(target, config.clone())
+                .call_proof_request(chain_index, target, config.clone())
                 .await;
 
             match result {
@@ -634,6 +655,7 @@ impl NetworkService {
     // TODO: more docs
     pub async fn call_proof_request<'a>(
         self: Arc<Self>,
+        chain_index: usize,
         target: PeerId,
         config: protocol::CallProofRequestConfig<'a, impl Iterator<Item = impl AsRef<[u8]>>>,
     ) -> Result<Vec<Vec<u8>>, service::CallProofRequestError> {
@@ -647,8 +669,8 @@ impl NetworkService {
 
         let result = self
             .network
-            .call_proof_request(ffi::Instant::now(), target.clone(), 0, config)
-            .await; // TODO: chain_index
+            .call_proof_request(ffi::Instant::now(), target.clone(), chain_index, config)
+            .await;
 
         log::debug!(
             target: "network",
@@ -669,7 +691,11 @@ impl NetworkService {
     /// networking is inherently unreliable, successfully sending a transaction to a peer doesn't
     /// necessarily mean that the remote has received it. In practice, however, the likelyhood of
     /// a transaction not being received are extremely low. This can be considered as known flaw.
-    pub async fn announce_transaction(self: Arc<Self>, transaction: &[u8]) -> Vec<PeerId> {
+    pub async fn announce_transaction(
+        self: Arc<Self>,
+        chain_index: usize,
+        transaction: &[u8],
+    ) -> Vec<PeerId> {
         let mut sent_peers = Vec::with_capacity(16); // TODO: capacity?
 
         // TODO: keep track of which peer knows about which transaction, and don't send it again
@@ -677,7 +703,7 @@ impl NetworkService {
         for target in self.peers_list().await {
             if self
                 .network
-                .announce_transaction(&target, 0, &transaction)
+                .announce_transaction(&target, chain_index, &transaction)
                 .await
                 .is_ok()
             {
@@ -700,12 +726,17 @@ impl NetworkService {
 pub enum Event {
     Connected {
         peer_id: PeerId,
+        chain_index: usize,
         best_block_number: u64,
         best_block_hash: [u8; 32],
     },
-    Disconnected(PeerId),
+    Disconnected {
+        peer_id: PeerId,
+        chain_index: usize,
+    },
     BlockAnnounce {
         peer_id: PeerId,
+        chain_index: usize,
         announce: service::EncodedBlockAnnounce,
     },
 }

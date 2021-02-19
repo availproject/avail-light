@@ -712,8 +712,12 @@ where
 
     /// Spawns new outgoing connections in order to fill empty outgoing slots.
     // TODO: give more control, with number of slots and node choice
-    pub async fn fill_out_slots<'a>(&self, overlay_network_index: usize) -> Option<StartConnect> {
-        let inner = self.libp2p.fill_out_slots(overlay_network_index).await?;
+    pub async fn fill_out_slots<'a>(&self, chain_index: usize) -> Option<StartConnect> {
+        let inner = self
+            .libp2p
+            .fill_out_slots(chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN)
+            .await?;
+
         Some(StartConnect {
             id: PendingId(inner.id),
             multiaddr: inner.multiaddr,

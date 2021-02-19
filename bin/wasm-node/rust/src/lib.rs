@@ -342,7 +342,7 @@ pub async fn start_client(
                                     let new_task_tx = new_task_tx.clone();
                                     move |fut| new_task_tx.unbounded_send(fut).unwrap()
                                 }),
-                                network_service: network_service.clone(),
+                                network_service: (network_service.clone(), chain_index),
                                 sync_service: sync_service.clone(),
                             },
                         )

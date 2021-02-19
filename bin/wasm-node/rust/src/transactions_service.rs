@@ -36,8 +36,9 @@ pub struct Config {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
-    /// Service responsible for the networking of the chain.
-    pub network_service: Arc<network_service::NetworkService>,
+    /// Access to the network, and index of the chain to sync from the point of view of the
+    /// network service.
+    pub network_service: (Arc<network_service::NetworkService>, usize),
 
     /// Service responsible for synchronizing the chain.
     pub sync_service: Arc<sync_service::SyncService>,
@@ -55,7 +56,8 @@ impl TransactionsService {
         let (to_background, from_foreground) = mpsc::channel(8);
 
         (config.tasks_executor)(Box::pin(background_task(
-            config.network_service,
+            config.network_service.0,
+            config.network_service.1,
             config.sync_service,
             from_foreground,
         )));
@@ -129,6 +131,7 @@ enum ToBackground {
 /// Background task running in parallel of the front service.
 async fn background_task(
     network_service: Arc<network_service::NetworkService>,
+    network_chain_index: usize,
     sync_service: Arc<sync_service::SyncService>,
     mut from_foreground: mpsc::Receiver<ToBackground>,
 ) {
@@ -147,7 +150,7 @@ async fn background_task(
             }) => {
                 let peers_sent = network_service
                     .clone()
-                    .announce_transaction(&transaction_bytes)
+                    .announce_transaction(network_chain_index, &transaction_bytes)
                     .await;
 
                 if !peers_sent.is_empty() {

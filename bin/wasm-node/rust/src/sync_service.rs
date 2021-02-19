@@ -373,13 +373,17 @@ async fn start_sync(
                     };
 
                     match network_event {
-                        network_service::Event::Connected { peer_id, best_block_number, best_block_hash } => {
+                        network_service::Event::Connected { peer_id, chain_index, best_block_number, best_block_hash }
+                            if chain_index == network_chain_index =>
+                        {
                             let (id, requests) = sync_idle.add_source(peer_id.clone(), best_block_number, best_block_hash);
                             peers_source_id_map.insert(peer_id, id);
                             requests_to_start.extend(requests);
                             sync = sync_idle.into();
                         },
-                        network_service::Event::Disconnected(peer_id) => {
+                        network_service::Event::Disconnected { peer_id, chain_index }
+                            if chain_index == network_chain_index =>
+                        {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
                             let rq_list = sync_idle.remove_source(id);
                             // TODO:
@@ -388,7 +392,9 @@ async fn start_sync(
                             }*/
                             sync = sync_idle.into();
                         },
-                        network_service::Event::BlockAnnounce { peer_id, announce } => {
+                        network_service::Event::BlockAnnounce { chain_index, peer_id, announce }
+                            if chain_index == network_chain_index =>
+                        {
                             let id = *peers_source_id_map.get(&peer_id).unwrap();
                             let decoded = announce.decode();
                             // TODO: stupid to re-encode
@@ -414,6 +420,10 @@ async fn start_sync(
                                 },
                             }
                         },
+                        _ => {
+                            // Different chain index.
+                            sync = sync_idle.into();
+                        }
                     }
 
                 }
