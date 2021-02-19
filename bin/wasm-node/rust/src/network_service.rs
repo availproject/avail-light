@@ -66,6 +66,12 @@ pub struct Config {
     /// Number of event receivers returned by [`NetworkService::new`].
     pub num_events_receivers: usize,
 
+    /// List of chains to connect to. Chains are later referred to by their index in this list.
+    pub chains: Vec<ConfigChain>,
+}
+
+/// See [`Config::chains`].
+pub struct ConfigChain {
     /// List of node identities and addresses that are known to belong to the chain's peer-to-pee
     /// network.
     pub bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
@@ -117,32 +123,43 @@ impl NetworkService {
             .unzip();
 
         let important_nodes = config
-            .bootstrap_nodes
+            .chains
             .iter()
+            .flat_map(|chain| chain.bootstrap_nodes.iter())
             .map(|(peer_id, _)| peer_id.clone())
             .collect::<HashSet<_, _>>();
+
+        let mut chains = Vec::with_capacity(config.chains.len());
+        let mut known_nodes = Vec::new();
+
+        for chain in config.chains {
+            chains.push(service::ChainConfig {
+                bootstrap_nodes: (0..chain.bootstrap_nodes.len()).collect(),
+                in_slots: 25,
+                out_slots: 25,
+                has_grandpa_protocol: chain.has_grandpa_protocol,
+                protocol_id: chain.protocol_id.clone(),
+                best_hash: chain.best_block.1,
+                best_number: chain.best_block.0,
+                genesis_hash: chain.genesis_block_hash,
+                role: protocol::Role::Light,
+            });
+
+            known_nodes.extend(
+                chain
+                    .bootstrap_nodes
+                    .into_iter()
+                    .map(|(peer_id, addr)| ((), peer_id, addr)),
+            );
+        }
 
         let network_service = Arc::new(NetworkService {
             guarded: Mutex::new(Guarded {
                 tasks_executor: config.tasks_executor,
             }),
             network: service::ChainNetwork::new(service::Config {
-                chains: vec![service::ChainConfig {
-                    bootstrap_nodes: (0..config.bootstrap_nodes.len()).collect(),
-                    in_slots: 25,
-                    out_slots: 25,
-                    has_grandpa_protocol: config.has_grandpa_protocol,
-                    protocol_id: config.protocol_id,
-                    best_hash: config.best_block.1,
-                    best_number: config.best_block.0,
-                    genesis_hash: config.genesis_block_hash,
-                    role: protocol::Role::Light,
-                }],
-                known_nodes: config
-                    .bootstrap_nodes
-                    .into_iter()
-                    .map(|(peer_id, addr)| ((), peer_id, addr))
-                    .collect(),
+                chains,
+                known_nodes,
                 listen_addresses: Vec::new(), // TODO:
                 noise_key: connection::NoiseKey::new(&rand::random()),
                 pending_api_events_buffer_size: NonZeroUsize::new(64).unwrap(),
@@ -354,6 +371,7 @@ impl NetworkService {
     // TODO: doc; explain the guarantees
     pub async fn block_query(
         self: Arc<Self>,
+        chain_index: usize,
         hash: [u8; 32],
         fields: protocol::BlocksRequestFields,
     ) -> Result<protocol::BlockData, ()> {
@@ -372,7 +390,7 @@ impl NetworkService {
         for target in self.peers_list().await.take(NUM_ATTEMPTS) {
             let mut result = match self
                 .clone()
-                .blocks_request(target, request_config.clone())
+                .blocks_request(target, chain_index, request_config.clone())
                 .await
             {
                 Ok(b) => b,
@@ -426,14 +444,15 @@ impl NetworkService {
     pub async fn blocks_request(
         self: Arc<Self>,
         target: PeerId,
+        chain_index: usize,
         config: protocol::BlocksRequestConfig,
     ) -> Result<Vec<protocol::BlockData>, service::BlocksRequestError> {
         log::debug!(target: "network", "Connection({}) <= BlocksRequest({:?})", target, config);
 
         let result = self
             .network
-            .blocks_request(ffi::Instant::now(), target.clone(), 0, config)
-            .await; // TODO: chain_index
+            .blocks_request(ffi::Instant::now(), target.clone(), chain_index, config)
+            .await;
 
         log::debug!(
             target: "network",
@@ -450,6 +469,7 @@ impl NetworkService {
     pub async fn grandpa_warp_sync_request(
         self: Arc<Self>,
         target: PeerId,
+        chain_index: usize,
         begin_hash: [u8; 32],
     ) -> Result<Vec<protocol::GrandpaWarpSyncResponseFragment>, service::GrandpaWarpSyncRequestError>
     {
@@ -457,8 +477,8 @@ impl NetworkService {
 
         let result = self
             .network
-            .grandpa_warp_sync_request(ffi::Instant::now(), target.clone(), 0, begin_hash)
-            .await; // TODO: chain_index
+            .grandpa_warp_sync_request(ffi::Instant::now(), target.clone(), chain_index, begin_hash)
+            .await;
 
         log::debug!(
             target: "network",
@@ -486,6 +506,7 @@ impl NetworkService {
     /// and the selection of peers is done through reasonable heuristics.
     pub async fn storage_query(
         self: Arc<Self>,
+        chain_index: usize,
         block_hash: &[u8; 32],
         storage_trie_root: &[u8; 32],
         requested_keys: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
@@ -500,6 +521,7 @@ impl NetworkService {
             let result = self
                 .clone()
                 .storage_proof_request(
+                    chain_index,
                     target,
                     protocol::StorageProofRequestConfig {
                         block_hash: *block_hash,
@@ -545,6 +567,7 @@ impl NetworkService {
     // TODO: more docs
     pub async fn storage_proof_request(
         self: Arc<Self>,
+        chain_index: usize,
         target: PeerId,
         config: protocol::StorageProofRequestConfig<impl Iterator<Item = impl AsRef<[u8]>>>,
     ) -> Result<Vec<Vec<u8>>, service::StorageProofRequestError> {
@@ -558,8 +581,8 @@ impl NetworkService {
 
         let result = self
             .network
-            .storage_proof_request(ffi::Instant::now(), target.clone(), 0, config)
-            .await; // TODO: chain_index
+            .storage_proof_request(ffi::Instant::now(), target.clone(), chain_index, config)
+            .await;
 
         log::debug!(
             target: "network",

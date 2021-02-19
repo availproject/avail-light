@@ -124,10 +124,14 @@ watched and of the `:code` key.
 
 */
 
+pub struct ChainConfig {
+    pub specification: String,
+    pub database_content: Option<String>,
+}
+
 /// Starts a client running the given chain specifications.
 pub async fn start_client(
-    chain_spec: String,
-    database_content: Option<String>,
+    chains: impl Iterator<Item = ChainConfig>,
     max_log_level: log::LevelFilter,
 ) {
     // Try initialize the logging and the panic hook.
@@ -143,62 +147,86 @@ pub async fn start_client(
     assert_ne!(rand::random::<u64>(), 0);
     assert_ne!(rand::random::<u64>(), rand::random::<u64>());
 
-    let chain_spec = match chain_spec::ChainSpec::from_json_bytes(&chain_spec) {
-        Ok(cs) => {
-            log::info!("Loaded chain specs for {}", cs.name());
-            cs
-        }
-        Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
-    };
+    // Decode the chain specifications and database content.
+    // Any error while decoding is treated as if there was no database.
+    let (chain_specs, database_content) = {
+        let mut chain_specs = Vec::new();
+        let mut database_content = Vec::new();
 
-    // The database passed from the user is decoded. Any error while decoding is treated as if
-    // there was no database.
-    let database_content = if let Some(database_content) = database_content {
-        match smoldot::database::finalized_serialize::decode_chain(&database_content) {
-            Ok((parsed, _)) => Some(parsed),
-            Err(error) => {
-                log::warn!("Failed to decode chain information: {}", error);
+        for chain in chains {
+            chain_specs.push(
+                match chain_spec::ChainSpec::from_json_bytes(&chain.specification) {
+                    Ok(cs) => {
+                        log::info!("Loaded chain specs for {}", cs.name());
+                        cs
+                    }
+                    Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
+                },
+            );
+
+            database_content.push(if let Some(database_content) = &chain.database_content {
+                match smoldot::database::finalized_serialize::decode_chain(database_content) {
+                    Ok((parsed, _)) => Some(parsed),
+                    Err(error) => {
+                        log::warn!("Failed to decode chain information: {}", error);
+                        None
+                    }
+                }
+            } else {
                 None
-            }
+            });
         }
-    } else {
-        None
+
+        (chain_specs, database_content)
     };
 
-    // Load the information about the chain from the chain specs. If a light sync state is
+    // Load the information about the chains from the chain specs. If a light sync state is
     // present in the chain specs, it is possible to start sync at the finalized block it
     // describes.
-    let genesis_chain_information =
-        chain::chain_information::ChainInformation::from_genesis_storage(
-            chain_spec.genesis_storage(),
-        )
-        .unwrap();
-    let chain_information = {
-        let base = if let Some(light_sync_state) = chain_spec.light_sync_state() {
-            log::info!(
-                "Using light checkpoint starting at #{}",
-                light_sync_state
-                    .as_chain_information()
-                    .finalized_block_header
-                    .number
-            );
-            light_sync_state.as_chain_information()
-        } else {
-            genesis_chain_information.clone()
-        };
+    let genesis_chain_information = chain_specs
+        .iter()
+        .map(|chain_spec| {
+            chain::chain_information::ChainInformation::from_genesis_storage(
+                chain_spec.genesis_storage(),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let chain_information = chain_specs
+        .iter()
+        .zip(database_content.into_iter())
+        .zip(genesis_chain_information.iter())
+        .map(
+            |((chain_spec, database_content), genesis_chain_information)| {
+                let base = if let Some(light_sync_state) = chain_spec.light_sync_state() {
+                    log::info!(
+                        "Using light checkpoint starting at #{}",
+                        light_sync_state
+                            .as_chain_information()
+                            .finalized_block_header
+                            .number
+                    );
+                    light_sync_state.as_chain_information()
+                } else {
+                    genesis_chain_information.clone()
+                };
 
-        // Only use the existing database if it is ahead of `base`.
-        if let Some(database_content) = database_content {
-            if database_content.finalized_block_header.number > base.finalized_block_header.number {
-                database_content
-            } else {
-                log::info!("Skipping database as it is older than checkpoint");
-                base
-            }
-        } else {
-            base
-        }
-    };
+                // Only use the existing database if it is ahead of `base`.
+                if let Some(database_content) = database_content {
+                    if database_content.finalized_block_header.number
+                        > base.finalized_block_header.number
+                    {
+                        database_content
+                    } else {
+                        log::info!("Skipping database as it is older than checkpoint");
+                        base
+                    }
+                } else {
+                    base
+                }
+            },
+        )
+        .collect::<Vec<_>>();
 
     // Starting here, the code below initializes the various "services" that make up the node.
     // Services need to be able to spawn asynchronous tasks on their own. Since "spawning a task"
@@ -229,104 +257,140 @@ pub async fn start_client(
                             let new_task_tx = new_task_tx.clone();
                             move |fut| new_task_tx.unbounded_send(fut).unwrap()
                         }),
-                        num_events_receivers: 1, // Configures the length of `network_event_receivers`
-                        bootstrap_nodes: {
-                            let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
-                            for node in chain_spec.boot_nodes() {
-                                let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
-                                if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
-                                    let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
-                                    list.push((peer_id, address));
-                                } else {
-                                    panic!() // TODO:
+                        num_events_receivers: chain_information.len(), // Configures the length of `network_event_receivers`
+                        chains: chain_information
+                            .iter()
+                            .zip(chain_specs.iter())
+                            .zip(genesis_chain_information.iter())
+                            .map(|((chain_information, chain_spec), genesis_chain_information)| {
+                                network_service::ConfigChain {
+                                    bootstrap_nodes: {
+                                        let mut list =
+                                            Vec::with_capacity(chain_spec.boot_nodes().len());
+                                        for node in chain_spec.boot_nodes() {
+                                            let mut address: multiaddr::Multiaddr =
+                                                node.parse().unwrap(); // TODO: don't unwrap?
+                                            if let Some(multiaddr::Protocol::P2p(peer_id)) =
+                                                address.pop()
+                                            {
+                                                let peer_id =
+                                                    PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                                                list.push((peer_id, address));
+                                            } else {
+                                                panic!() // TODO:
+                                            }
+                                        }
+                                        list
+                                    },
+                                    has_grandpa_protocol: matches!(
+                                        genesis_chain_information.finality,
+                                        chain::chain_information::ChainInformationFinality::Grandpa { .. }
+                                    ),
+                                    genesis_block_hash: genesis_chain_information
+                                        .finalized_block_header
+                                        .hash(),
+                                    best_block: (
+                                        chain_information.finalized_block_header.number,
+                                        chain_information.finalized_block_header.hash(),
+                                    ),
+                                    protocol_id: chain_spec.protocol_id().to_string(),
                                 }
-                            }
-                            list
-                        },
-                        has_grandpa_protocol: matches!(
-                            genesis_chain_information.finality,
-                            chain::chain_information::ChainInformationFinality::Grandpa { .. }
-                        ),
-                        genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-                        best_block: (
-                            chain_information.finalized_block_header.number,
-                            chain_information.finalized_block_header.hash(),
-                        ),
-                        protocol_id: chain_spec.protocol_id().to_string(),
+                            })
+                            .collect(),
                     })
                     .await;
 
-                // The sync service is leveraging the network service, downloads block headers,
-                // and verifies them, to determine what are the best and finalized blocks of the
-                // chain.
-                let sync_service = Arc::new(
-                    sync_service::SyncService::new(sync_service::Config {
-                        chain_information: chain_information.clone(),
-                        tasks_executor: Box::new({
-                            let new_task_tx = new_task_tx.clone();
-                            move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                        }),
-                        network_service: network_service.clone(),
-                        network_events_receiver: network_event_receivers.pop().unwrap(),
-                    })
-                    .await,
-                );
-
-                // The transactions service is responsible for sending out transactions over the
-                // peer-to-peer network and checking whether they got included in blocks.
-                let transactions_service = Arc::new(
-                    transactions_service::TransactionsService::new(transactions_service::Config {
-                        tasks_executor: Box::new({
-                            let new_task_tx = new_task_tx.clone();
-                            move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                        }),
-                        network_service: network_service.clone(),
-                        sync_service: sync_service.clone(),
-                    })
-                    .await,
-                );
-
-                // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC
-                // requests and sending back responses.
-                new_task_tx
-                    .unbounded_send(
-                        json_rpc_service::start(json_rpc_service::Config {
+                // The network service is the only one in common between all chains. Other
+                // services run once per chain.
+                for (chain_index, ((chain_information, chain_spec), genesis_chain_information)) in
+                    chain_information
+                        .iter()
+                        .zip(chain_specs.into_iter())
+                        .zip(genesis_chain_information.iter())
+                        .enumerate()
+                {
+                    // The sync service is leveraging the network service, downloads block headers,
+                    // and verifies them, to determine what are the best and finalized blocks of the
+                    // chain.
+                    let sync_service = Arc::new(
+                        sync_service::SyncService::new(sync_service::Config {
+                            chain_information: chain_information.clone(),
                             tasks_executor: Box::new({
                                 let new_task_tx = new_task_tx.clone();
                                 move |fut| new_task_tx.unbounded_send(fut).unwrap()
                             }),
-                            network_service,
-                            sync_service: sync_service.clone(),
-                            transactions_service,
-                            chain_spec,
-                            genesis_block_hash: genesis_chain_information
-                                .finalized_block_header
-                                .hash(),
-                            genesis_block_state_root: genesis_chain_information
-                                .finalized_block_header
-                                .state_root,
+                            network_service: (network_service.clone(), chain_index),
+                            network_events_receiver: network_event_receivers.pop().unwrap(),
                         })
-                        .boxed(),
-                    )
-                    .unwrap();
+                        .await,
+                    );
 
-                // Spawn a task responsible for serializing the chain from the sync service at
-                // a periodic interval.
-                new_task_tx
-                    .unbounded_send(
-                        async move {
-                            loop {
-                                ffi::Delay::new(Duration::from_secs(15)).await;
-                                log::debug!("Database save start");
-                                let database_content = sync_service.serialize_chain().await;
-                                ffi::database_save(&database_content);
+                    // TODO: At the moment the JSON-RPC and database save tasks would conflict
+                    // with each other if run multiple times. For now, we only run them for
+                    // chain 0. Doing this properly requires a bigger refactoring of the FFI
+                    // bindings.
+                    if chain_index != 0 {
+                        continue;
+                    }
+
+                    // The transactions service is responsible for sending out transactions over the
+                    // peer-to-peer network and checking whether they got included in blocks.
+                    let transactions_service = Arc::new(
+                        transactions_service::TransactionsService::new(
+                            transactions_service::Config {
+                                tasks_executor: Box::new({
+                                    let new_task_tx = new_task_tx.clone();
+                                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                                }),
+                                network_service: network_service.clone(),
+                                sync_service: sync_service.clone(),
+                            },
+                        )
+                        .await,
+                    );
+
+                    // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC
+                    // requests and sending back responses.
+                    new_task_tx
+                        .unbounded_send(
+                            json_rpc_service::start(json_rpc_service::Config {
+                                tasks_executor: Box::new({
+                                    let new_task_tx = new_task_tx.clone();
+                                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                                }),
+                                network_service: (network_service.clone(), chain_index),
+                                sync_service: sync_service.clone(),
+                                transactions_service,
+                                chain_spec,
+                                genesis_block_hash: genesis_chain_information
+                                    .finalized_block_header
+                                    .hash(),
+                                genesis_block_state_root: genesis_chain_information
+                                    .finalized_block_header
+                                    .state_root,
+                            })
+                            .boxed(),
+                        )
+                        .unwrap();
+
+                    // Spawn a task responsible for serializing the chain from the sync service at
+                    // a periodic interval.
+                    new_task_tx
+                        .unbounded_send(
+                            async move {
+                                loop {
+                                    ffi::Delay::new(Duration::from_secs(15)).await;
+                                    log::debug!("Database save start");
+                                    let database_content = sync_service.serialize_chain().await;
+                                    ffi::database_save(&database_content);
+                                }
                             }
-                        }
-                        .boxed(),
-                    )
-                    .unwrap();
+                            .boxed(),
+                        )
+                        .unwrap();
 
-                log::info!("Initialization complete");
+                    log::info!("Initialization complete");
+                }
             }
             .boxed(),
         )

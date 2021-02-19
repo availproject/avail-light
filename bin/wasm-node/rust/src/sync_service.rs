@@ -49,8 +49,9 @@ pub struct Config {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
-    /// Access to the network.
-    pub network_service: Arc<network_service::NetworkService>,
+    /// Access to the network, and index of the chain to sync from the point of view of the
+    /// network service.
+    pub network_service: (Arc<network_service::NetworkService>, usize),
 
     /// Receiver for events coming from the network, as returned by
     /// [`network_service::NetworkService::new`].
@@ -74,7 +75,8 @@ impl SyncService {
             start_sync(
                 config.chain_information,
                 from_foreground,
-                config.network_service,
+                config.network_service.0,
+                config.network_service.1,
                 config.network_events_receiver,
             )
             .await,
@@ -158,6 +160,7 @@ async fn start_sync(
     chain_information: chain::chain_information::ChainInformation,
     mut from_foreground: mpsc::Receiver<ToBackground>,
     network_service: Arc<network_service::NetworkService>,
+    network_chain_index: usize,
     mut from_network_service: mpsc::Receiver<network_service::Event>,
 ) -> impl Future<Output = ()> {
     // TODO: implicit generics
@@ -239,6 +242,7 @@ async fn start_sync(
 
                             let block_request = network_service.clone().blocks_request(
                                 peer_id.clone(),
+                                network_chain_index,
                                 network::protocol::BlocksRequestConfig {
                                     start: match first_block {
                                         all::BlocksRequestFirstBlock::Hash(h) => {

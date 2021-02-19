@@ -22,7 +22,7 @@ use core::{
     convert::TryFrom as _,
     fmt,
     future::Future,
-    marker,
+    iter, marker,
     ops::{Add, Sub},
     pin::Pin,
     slice,
@@ -477,8 +477,10 @@ fn init(
     };
 
     spawn_task(super::start_client(
-        chain_specs,
-        database_content,
+        iter::once(super::ChainConfig {
+            specification: chain_specs,
+            database_content,
+        }),
         max_log_level,
     ));
 }

@@ -56,8 +56,9 @@ pub struct Config {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
-    /// Service responsible for the networking of the chain.
-    pub network_service: Arc<network_service::NetworkService>,
+    /// Service responsible for the networking of the chain, and index of the chain within the
+    /// network service to handle.
+    pub network_service: (Arc<network_service::NetworkService>, usize),
 
     /// Service responsible for synchronizing the chain.
     pub sync_service: Arc<sync_service::SyncService>,
@@ -154,7 +155,8 @@ pub async fn start(config: Config) {
     let client = Arc::new(JsonRpcService {
         tasks_executor: Mutex::new(config.tasks_executor),
         chain_spec: config.chain_spec,
-        network_service: config.network_service,
+        network_service: config.network_service.0,
+        network_chain_index: config.network_service.1,
         sync_service: config.sync_service,
         transactions_service: config.transactions_service,
         blocks: Mutex::new(Blocks {
@@ -279,6 +281,7 @@ pub async fn start(config: Config) {
                         .network_service
                         .clone()
                         .storage_query(
+                            client.network_chain_index,
                             &new_best_block_hash,
                             new_best_block_decoded.state_root,
                             iter::once(&b":code"[..]).chain(iter::once(&b":heappages"[..])),
@@ -414,6 +417,8 @@ struct JsonRpcService {
 
     /// See [`Config::network_service`].
     network_service: Arc<network_service::NetworkService>,
+    /// See [`Config::network_service`].
+    network_chain_index: usize,
     /// See [`Config::sync_service`].
     sync_service: Arc<sync_service::SyncService>,
     /// See [`Config::transactions_service`].
@@ -644,6 +649,7 @@ impl JsonRpcService {
                     .network_service
                     .clone()
                     .block_query(
+                        self.network_chain_index,
                         hash,
                         protocol::BlocksRequestFields {
                             header: true,
@@ -1380,7 +1386,12 @@ impl JsonRpcService {
                                 match client
                                     .network_service
                                     .clone()
-                                    .storage_query(&block_hash, state_trie_root, iter::once(&key.0))
+                                    .storage_query(
+                                        client.network_chain_index,
+                                        &block_hash,
+                                        state_trie_root,
+                                        iter::once(&key.0),
+                                    )
                                     .await
                                 {
                                     Ok(mut values) => {
@@ -1467,7 +1478,12 @@ impl JsonRpcService {
         let mut result = self
             .network_service
             .clone()
-            .storage_query(hash, &trie_root_hash, iter::once(key))
+            .storage_query(
+                self.network_chain_index,
+                hash,
+                &trie_root_hash,
+                iter::once(key),
+            )
             .await
             .map_err(StorageQueryError::StorageRetrieval)?;
         Ok(result.pop().unwrap())
@@ -1486,6 +1502,7 @@ impl JsonRpcService {
                 .network_service
                 .clone()
                 .block_query(
+                    self.network_chain_index,
                     *hash,
                     protocol::BlocksRequestFields {
                         header: true,
