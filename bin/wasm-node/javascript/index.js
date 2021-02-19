@@ -33,6 +33,7 @@ export async function start(config) {
 
   const chain_spec = config.chain_spec;
   const database_content = config.database_content;
+  const relay_chain_spec = config.relay_chain_spec;
   const json_rpc_callback = config.json_rpc_callback;
   const database_save_callback = config.database_save_callback;
   // Maximum level of log entries sent by the client.
@@ -339,7 +340,19 @@ export async function start(config) {
       .write(database_content, database_ptr);
   }
 
-  module.exports.init(chain_spec_ptr, chain_spec_len, database_ptr, database_len, max_log_level);
+  let relay_chain_spec_len = relay_chain_spec ? Buffer.byteLength(relay_chain_spec, 'utf8') : 0;
+  let relay_chain_spec_ptr = (relay_chain_spec_len != 0) ? module.exports.alloc(relay_chain_spec_len) : 0;
+  if (relay_chain_spec_len != 0) {
+    Buffer.from(module.exports.memory.buffer)
+      .write(relay_chain_spec, relay_chain_spec_ptr);
+  }
+
+  module.exports.init(
+    chain_spec_ptr, chain_spec_len,
+    database_ptr, database_len,
+    relay_chain_spec_ptr, relay_chain_spec_len,
+    max_log_level
+  );
 
   return {
     send_json_rpc: (request) => {

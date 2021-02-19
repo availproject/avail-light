@@ -31,6 +31,7 @@ export interface SmoldotOptions {
   json_rpc_callback: SmoldotJsonRpcCallback;
   database_save_callback: SmoldotDatabaseSaveCallback;
   database_content?: string;
+  relay_chain_spec?: string;
 }
 
 export interface Smoldot {
