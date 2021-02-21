@@ -491,9 +491,6 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
     /// > **Note**: This information is normally reported by the source itself. In the case of a
     /// >           a networking peer, call this when the source sent a block announce.
     ///
-    /// Must be passed the current UNIX time in order to verify that the block doesn't pretend to
-    /// come from the future.
-    ///
     /// # Panic
     ///
     /// Panics if `source_id` is invalid.
