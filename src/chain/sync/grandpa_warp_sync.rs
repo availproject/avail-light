@@ -60,10 +60,16 @@ pub fn grandpa_warp_sync<TSrc>(config: Config) -> GrandpaWarpSync<TSrc> {
         state: PreVerificationState {
             start_chain_information: config.start_chain_information,
         },
-        sources: Vec::with_capacity(config.sources_capacity),
+        sources: slab::Slab::with_capacity(config.sources_capacity),
         previous_verifier_values: None,
     })
 }
+
+/// Identifier for a source in the [`GrandpaWarpSync`].
+//
+// Implementation note: this represents the index within the `Slab` used for the list of sources.
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct SourceId(usize);
 
 /// The GrandPa warp sync state machine.
 pub enum GrandpaWarpSync<TSrc> {
@@ -249,8 +255,8 @@ impl<TSrc> NextKey<TSrc> {
 pub struct Verifier<TSrc> {
     verifier: warp_sync::Verifier,
     state: PreVerificationState,
-    warp_sync_source_index: usize,
-    sources: Vec<TSrc>,
+    warp_sync_source_id: SourceId,
+    sources: slab::Slab<Source<TSrc>>,
     final_set_of_fragments: bool,
 }
 
@@ -261,7 +267,7 @@ impl<TSrc> Verifier<TSrc> {
                 verifier: next_verifier,
                 state: self.state,
                 sources: self.sources,
-                warp_sync_source_index: self.warp_sync_source_index,
+                warp_sync_source_id: self.warp_sync_source_id,
                 final_set_of_fragments: self.final_set_of_fragments,
             }),
             Ok(warp_sync::Next::Success {
@@ -274,12 +280,15 @@ impl<TSrc> Verifier<TSrc> {
                             header,
                             chain_information_finality,
                             start_chain_information: self.state.start_chain_information,
-                            warp_sync_source: self.sources.remove(self.warp_sync_source_index),
+                            warp_sync_source: self
+                                .sources
+                                .remove(self.warp_sync_source_id.0)
+                                .user_data,
                         },
                     })
                 } else {
                     GrandpaWarpSync::WarpSyncRequest(WarpSyncRequest {
-                        source_index: self.warp_sync_source_index,
+                        source_id: self.warp_sync_source_id,
                         sources: self.sources,
                         state: self.state,
                         previous_verifier_values: Some((header, chain_information_finality)),
@@ -304,16 +313,16 @@ struct PostVerificationState<TSrc> {
 
 /// Requesting GrandPa warp sync data from a source is required to continue.
 pub struct WarpSyncRequest<TSrc> {
-    source_index: usize,
-    sources: Vec<TSrc>,
+    source_id: SourceId,
+    sources: slab::Slab<Source<TSrc>>,
     state: PreVerificationState,
     previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
-impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
+impl<TSrc> WarpSyncRequest<TSrc> {
     /// The source to make a GrandPa warp sync request to.
-    pub fn current_source(&self) -> &TSrc {
-        &self.sources[self.source_index]
+    pub fn current_source(&self) -> (SourceId, &TSrc) {
+        (self.source_id, &self.sources[self.source_id.0].user_data)
     }
 
     /// The hash of the header to warp sync from.
@@ -329,9 +338,11 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
     }
 
     /// Add a source to the list of sources.
-    pub fn add_source(&mut self, source: TSrc) {
-        assert!(!self.sources.iter().any(|s| s == &source));
-        self.sources.push(source);
+    pub fn add_source(&mut self, user_data: TSrc) -> SourceId {
+        SourceId(self.sources.insert(Source {
+            user_data,
+            already_tried: false,
+        }))
     }
 
     /// Remove a source from the list of sources.
@@ -340,46 +351,45 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
     ///
     /// Panics if the source wasn't added to the list earlier.
     ///
-    pub fn remove_source(mut self, to_remove: TSrc) -> GrandpaWarpSync<TSrc> {
-        if &to_remove == self.current_source() {
-            let next_index = self.source_index + 1;
+    pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, GrandpaWarpSync<TSrc>) {
+        if to_remove == self.source_id {
+            let next_id = self
+                .sources
+                .iter()
+                .find(|(_, s)| !s.already_tried)
+                .map(|(id, _)| SourceId(id));
 
-            if next_index == self.sources.len() {
-                GrandpaWarpSync::WaitingForSources(WaitingForSources {
+            let removed = self.sources.remove(to_remove.0).user_data;
+
+            let next_state = if let Some(next_id) = next_id {
+                GrandpaWarpSync::WarpSyncRequest(Self {
+                    source_id: next_id,
                     sources: self.sources,
                     state: self.state,
                     previous_verifier_values: self.previous_verifier_values,
                 })
             } else {
-                GrandpaWarpSync::WarpSyncRequest(Self {
-                    source_index: next_index,
+                GrandpaWarpSync::WaitingForSources(WaitingForSources {
                     sources: self.sources,
                     state: self.state,
                     previous_verifier_values: self.previous_verifier_values,
                 })
-            }
+            };
+
+            (removed, next_state)
         } else {
-            let index = self
-                .sources
-                .iter()
-                .position(|source| source == &to_remove)
-                .unwrap();
-
-            self.sources.remove(index);
-
-            if index < self.source_index {
-                self.source_index -= 1;
-            }
-
-            GrandpaWarpSync::WarpSyncRequest(self)
+            let removed = self.sources.remove(to_remove.0).user_data;
+            (removed, GrandpaWarpSync::WarpSyncRequest(self))
         }
     }
 
     /// Submit a GrandPa warp sync response if the request succeeded or `None` if it did not.
     pub fn handle_response(
-        self,
+        mut self,
         mut response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
     ) -> GrandpaWarpSync<TSrc> {
+        self.sources[self.source_id.0].already_tried = true;
+
         // Count a response of 0 fragments as a failed response.
         if response
             .as_ref()
@@ -388,8 +398,6 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
         {
             response = None;
         }
-
-        let next_index = self.source_index + 1;
 
         match response {
             Some(response_fragments) => {
@@ -411,20 +419,31 @@ impl<TSrc: PartialEq> WarpSyncRequest<TSrc> {
                     verifier,
                     state: self.state,
                     sources: self.sources,
-                    warp_sync_source_index: self.source_index,
+                    warp_sync_source_id: self.source_id,
                 })
             }
-            None if next_index < self.sources.len() => GrandpaWarpSync::WarpSyncRequest(Self {
-                source_index: next_index,
-                sources: self.sources,
-                state: self.state,
-                previous_verifier_values: self.previous_verifier_values,
-            }),
-            None => GrandpaWarpSync::WaitingForSources(WaitingForSources {
-                sources: self.sources,
-                state: self.state,
-                previous_verifier_values: self.previous_verifier_values,
-            }),
+            None => {
+                let next_id = self
+                    .sources
+                    .iter()
+                    .find(|(_, s)| !s.already_tried)
+                    .map(|(id, _)| SourceId(id));
+
+                if let Some(next_id) = next_id {
+                    GrandpaWarpSync::WarpSyncRequest(Self {
+                        source_id: next_id,
+                        sources: self.sources,
+                        state: self.state,
+                        previous_verifier_values: self.previous_verifier_values,
+                    })
+                } else {
+                    GrandpaWarpSync::WaitingForSources(WaitingForSources {
+                        sources: self.sources,
+                        state: self.state,
+                        previous_verifier_values: self.previous_verifier_values,
+                    })
+                }
+            }
         }
     }
 }
@@ -480,23 +499,33 @@ impl<TSrc> VirtualMachineParamsGet<TSrc> {
 
 /// Adding more sources of GrandPa warp sync data to is required to continue.
 pub struct WaitingForSources<TSrc> {
-    sources: Vec<TSrc>,
+    /// List of sources. It is guaranteed that they all have `already_tried` equal to `true`.
+    sources: slab::Slab<Source<TSrc>>,
     state: PreVerificationState,
     previous_verifier_values: Option<(Header, ChainInformationFinality)>,
 }
 
-impl<TSrc: PartialEq> WaitingForSources<TSrc> {
+impl<TSrc> WaitingForSources<TSrc> {
     /// Add a source to the list of sources.
-    pub fn add_source(mut self, source: TSrc) -> GrandpaWarpSync<TSrc> {
-        assert!(!self.sources.iter().any(|p| p == &source));
-
-        self.sources.push(source);
+    pub fn add_source(mut self, user_data: TSrc) -> GrandpaWarpSync<TSrc> {
+        let source_id = SourceId(self.sources.insert(Source {
+            user_data,
+            already_tried: false,
+        }));
 
         GrandpaWarpSync::WarpSyncRequest(WarpSyncRequest {
-            source_index: self.sources.len() - 1,
+            source_id,
             sources: self.sources,
             state: self.state,
             previous_verifier_values: self.previous_verifier_values,
         })
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Source<TSrc> {
+    user_data: TSrc,
+    /// `true` if this source has been in a past `WarpSyncRequest`. `false` if the source is
+    /// currently in a `WarpSyncRequest`.
+    already_tried: bool,
 }
