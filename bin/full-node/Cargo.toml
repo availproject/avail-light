@@ -33,4 +33,4 @@ smoldot = { path = "../..", default-features = false, features = ["database-sled
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
 terminal_size = "0.1.16"
 tracing = { version = "0.1.24", features = ["attributes"] }
-tracing-subscriber = { version = "0.2.15", default-features = false, features = ["ansi", "chrono", "json", "fmt", "parking_lot", "smallvec"] }
+tracing-subscriber = { version = "0.2.16", default-features = false, features = ["ansi", "chrono", "json", "fmt", "parking_lot", "smallvec"] }
