@@ -249,30 +249,30 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-/// WebSocket connected to a target.
-pub struct WebSocket {
-    /// If `Some`, [`bindings::websocket_close`] must be called. Set to a value after
-    /// [`bindings::websocket_new`] returns success.
+/// Connection connected to a target.
+pub struct Connection {
+    /// If `Some`, [`bindings::connection_close`] must be called. Set to a value after
+    /// [`bindings::connection_new`] returns success.
     id: Option<u32>,
-    /// True if [`bindings::websocket_open`] has been called.
+    /// True if [`bindings::connection_open`] has been called.
     open: bool,
-    /// True if [`bindings::websocket_closed`] has been called.
+    /// True if [`bindings::connection_closed`] has been called.
     closed: bool,
-    /// List of messages received through [`bindings::websocket_message`]. Must never contain
+    /// List of messages received through [`bindings::connection_message`]. Must never contain
     /// empty messages.
     messages_queue: VecDeque<Box<[u8]>>,
-    /// Position of the read cursor within the first element of [`WebSocket::messages_queue`].
+    /// Position of the read cursor within the first element of [`Connection::messages_queue`].
     messages_queue_first_offset: usize,
     /// Waker to wake up whenever one of the fields above is modified.
     waker: Option<Waker>,
-    /// Prevents the [`WebSocket`] from being unpinned.
+    /// Prevents the [`Connection`] from being unpinned.
     _pinned: marker::PhantomPinned,
 }
 
-impl WebSocket {
-    /// Connects to the given URL. Returns a [`WebSocket`] on success.
+impl Connection {
+    /// Connects to the given URL. Returns a [`Connection`] on success.
     pub fn connect(url: &str) -> impl Future<Output = Result<Pin<Box<Self>>, ()>> {
-        let mut pointer = Box::pin(WebSocket {
+        let mut pointer = Box::pin(Connection {
             id: None,
             open: false,
             closed: false,
@@ -282,10 +282,10 @@ impl WebSocket {
             _pinned: marker::PhantomPinned,
         });
 
-        let id = u32::try_from(&*pointer as *const WebSocket as usize).unwrap();
+        let id = u32::try_from(&*pointer as *const Connection as usize).unwrap();
 
         let ret_code = unsafe {
-            bindings::websocket_new(
+            bindings::connection_new(
                 id,
                 u32::try_from(url.as_bytes().as_ptr() as usize).unwrap(),
                 u32::try_from(url.as_bytes().len()).unwrap(),
@@ -327,12 +327,12 @@ impl WebSocket {
         }
     }
 
-    /// Returns a buffer containing data received on the WebSocket.
+    /// Returns a buffer containing data received on the connection.
     ///
     /// Never returns an empty buffer. If no data is available, this function waits until more
     /// data arrives.
     ///
-    /// Returns `None` if the WebSocket has been closed.
+    /// Returns `None` if the connection has been closed.
     pub async fn read_buffer<'a>(self: &'a mut Pin<Box<Self>>) -> Option<&'a [u8]> {
         future::poll_fn(|cx| {
             if !self.messages_queue.is_empty() || self.closed {
@@ -364,12 +364,12 @@ impl WebSocket {
     }
 
     /// Advances the read cursor by the given amount of bytes. The first `bytes` will no longer
-    /// be returned by [`WebSocket::read_buffer`] the next time it is called.
+    /// be returned by [`Connection::read_buffer`] the next time it is called.
     ///
     /// # Panic
     ///
     /// Panics if `bytes` is larger than the size of the buffer returned by
-    /// [`WebSocket::read_buffer`].
+    /// [`Connection::read_buffer`].
     ///
     pub fn advance_read_cursor(self: &mut Pin<Box<Self>>, bytes: usize) {
         let this = unsafe { Pin::get_unchecked_mut(self.as_mut()) };
@@ -387,17 +387,17 @@ impl WebSocket {
         };
     }
 
-    /// Queue of the given buffer as a WebSocket binary frame.
+    /// Queues the given buffer. For WebSocket connections, queues it as a binary frame.
     pub fn send(self: &mut Pin<Box<Self>>, data: &[u8]) {
         unsafe {
             let this = Pin::get_unchecked_mut(self.as_mut());
 
-            // WebSocket might have been closed, but API user hasn't detected it yet.
+            // Connection might have been closed, but API user hasn't detected it yet.
             if this.closed {
                 return;
             }
 
-            bindings::websocket_send(
+            bindings::connection_send(
                 this.id.unwrap(),
                 u32::try_from(data.as_ptr() as usize).unwrap(),
                 u32::try_from(data.len()).unwrap(),
@@ -406,19 +406,19 @@ impl WebSocket {
     }
 }
 
-impl fmt::Debug for WebSocket {
+impl fmt::Debug for Connection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("WebSocket")
+        f.debug_tuple("Connection")
             .field(self.id.as_ref().unwrap())
             .finish()
     }
 }
 
-impl Drop for WebSocket {
+impl Drop for Connection {
     fn drop(&mut self) {
         if let Some(id) = self.id {
             unsafe {
-                bindings::websocket_close(id);
+                bindings::connection_close(id);
             }
         }
     }
@@ -552,16 +552,16 @@ fn timer_finished(timer_id: u32) {
     callback();
 }
 
-fn websocket_open(id: u32) {
-    let websocket = unsafe { &mut *(usize::try_from(id).unwrap() as *mut WebSocket) };
-    websocket.open = true;
-    if let Some(waker) = websocket.waker.take() {
+fn connection_open(id: u32) {
+    let connection = unsafe { &mut *(usize::try_from(id).unwrap() as *mut Connection) };
+    connection.open = true;
+    if let Some(waker) = connection.waker.take() {
         waker.wake();
     }
 }
 
-fn websocket_message(id: u32, ptr: u32, len: u32) {
-    let websocket = unsafe { &mut *(usize::try_from(id).unwrap() as *mut WebSocket) };
+fn connection_message(id: u32, ptr: u32, len: u32) {
+    let connection = unsafe { &mut *(usize::try_from(id).unwrap() as *mut Connection) };
 
     let ptr = usize::try_from(ptr).unwrap();
     let len = usize::try_from(len).unwrap();
@@ -574,23 +574,23 @@ fn websocket_message(id: u32, ptr: u32, len: u32) {
         return;
     }
 
-    if websocket.messages_queue.is_empty() {
-        websocket.messages_queue_first_offset = 0;
+    if connection.messages_queue.is_empty() {
+        connection.messages_queue_first_offset = 0;
     }
 
     // TODO: add some limit to `messages_queue`, to avoid DoS attacks?
 
-    websocket.messages_queue.push_back(message);
+    connection.messages_queue.push_back(message);
 
-    if let Some(waker) = websocket.waker.take() {
+    if let Some(waker) = connection.waker.take() {
         waker.wake();
     }
 }
 
-fn websocket_closed(id: u32) {
-    let websocket = unsafe { &mut *(usize::try_from(id).unwrap() as *mut WebSocket) };
-    websocket.closed = true;
-    if let Some(waker) = websocket.waker.take() {
+fn connection_closed(id: u32) {
+    let connection = unsafe { &mut *(usize::try_from(id).unwrap() as *mut Connection) };
+    connection.closed = true;
+    if let Some(waker) = connection.waker.take() {
         waker.wake();
     }
 }

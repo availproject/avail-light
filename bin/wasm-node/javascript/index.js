@@ -19,6 +19,7 @@ import { Buffer } from 'buffer';
 import { default as now } from 'performance-now';
 import { default as randombytes } from 'randombytes';
 import Websocket from 'websocket';
+import { default as net } from './tcp-nodejs.js';
 
 import { default as wasm_base64 } from './autogen/wasm.js';
 
@@ -52,9 +53,9 @@ export async function start(config) {
   // Example usage: `let env_vars = ["RUST_BACKTRACE=1", "RUST_LOG=foo"];`
   let env_vars = [];
 
-  // Used below to store the list of all WebSockets.
+  // Used below to store the list of all connections.
   // The indices within this array are chosen by the Rust code.
-  let websockets = {};
+  let connections = {};
 
   // The actual Wasm bytecode is base64-decoded from a constant found in a different file.
   // This is suboptimal compared to using `instantiateStreaming`, but it is the most
@@ -77,17 +78,23 @@ export async function start(config) {
   let result = await WebAssembly.instantiate(wasm_bytecode, {
     // The functions with the "smoldot" prefix are specific to smoldot.
     "smoldot": {
-      // Must throw an error. A human-readable message can be found in the WebAssembly memory in the
-      // given buffer.
+      // Must throw an error. A human-readable message can be found in the WebAssembly memory in
+      // the given buffer.
       throw: (ptr, len) => {
         has_thrown = true;
 
-        Object.values(websockets).forEach(websocket => {
-          websocket.onopen = null;
-          websocket.onclose = null;
-          websocket.onmessage = null;
-          websocket.onerror = null;
-          websocket.close();
+        Object.values(connections).forEach(connection => {
+          if (connection.close) {
+            // WebSocket
+            connection.onopen = null;
+            connection.onclose = null;
+            connection.onmessage = null;
+            connection.onerror = null;
+            connection.close();
+          } else {
+            // TCP
+            connection.destroy();
+          }
         });
 
         let message = Buffer.from(module.exports.memory.buffer).toString('utf8', ptr, ptr + len);
@@ -157,34 +164,83 @@ export async function start(config) {
         }
       },
 
-      // Must create a new WebSocket object. This implementation stores the created object in
-      // `websockets`.
-      websocket_new: (id, url_ptr, url_len) => {
+      // Must create a new connection object. This implementation stores the created object in
+      // `connections`.
+      connection_new: (id, addr_ptr, addr_len) => {
         try {
-          let url = Buffer.from(module.exports.memory.buffer)
-            .toString('utf8', url_ptr, url_ptr + url_len);
-
-          if (!!websockets[id]) {
-            throw new SmoldotError("internal error: WebSocket already allocated");
+          if (!!connections[id]) {
+            throw new SmoldotError("internal error: connection already allocated");
           }
 
-          let websocket = new Websocket.w3cwebsocket(url);
-          websocket.binaryType = 'arraybuffer';
+          let addr = Buffer.from(module.exports.memory.buffer)
+            .toString('utf8', addr_ptr, addr_ptr + addr_len);
 
-          websocket.onopen = () => {
-            module.exports.websocket_open(id);
-          };
-          websocket.onclose = () => {
-            module.exports.websocket_closed(id);
-          };
-          websocket.onmessage = (msg) => {
-            let message = Buffer.from(msg.data);
-            let ptr = module.exports.alloc(message.length);
-            message.copy(Buffer.from(module.exports.memory.buffer), ptr);
-            module.exports.websocket_message(id, ptr, message.length);
-          };
+          let connection;
 
-          websockets[id] = websocket;
+          // Attempt to parse the multiaddress.
+          // Note: peers can decide of the content of `addr`, meaning that it shouldn't be
+          // trusted.
+          let ws_parsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)\/(ws|wss)$/);
+          let tcp_parsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)$/);
+
+          if (ws_parsed != null) {
+            let proto = 'wss';
+            if (ws_parsed[4] == 'ws') {
+              proto = 'ws';
+            }
+            if (ws_parsed[1] == 'ip6') {
+              connection = new Websocket.w3cwebsocket(proto + "://[" + ws_parsed[2] + "]:" + ws_parsed[3]);
+            } else {
+              connection = new Websocket.w3cwebsocket(proto + "://" + ws_parsed[2] + ":" + ws_parsed[3]);
+            }
+
+            connection.binaryType = 'arraybuffer';
+
+            connection.onopen = () => {
+              module.exports.connection_open(id);
+            };
+            connection.onclose = () => {
+              module.exports.connection_closed(id);
+            };
+            connection.onmessage = (msg) => {
+              let message = Buffer.from(msg.data);
+              let ptr = module.exports.alloc(message.length);
+              message.copy(Buffer.from(module.exports.memory.buffer), ptr);
+              module.exports.connection_message(id, ptr, message.length);
+            };
+
+          } else if (tcp_parsed != null) {
+            if (!net) {
+              // `net` module not available, most likely because we're not in NodeJS.
+              return 1;
+            }
+
+            connection = net.createConnection({
+              host: tcp_parsed[2],
+              port: parseInt(tcp_parsed[3], 10),
+            });
+            connection.setNoDelay();
+
+            connection.addEventListener('connect', () => {
+              if (connection.destroyed) return;
+              module.exports.connection_open(id);
+            });
+            connection.addEventListener('close', () => {
+              if (connection.destroyed) return;
+              module.exports.connection_closed(id);
+            });
+            connection.addEventListener('data', (message) => {
+              if (connection.destroyed) return;
+              let ptr = module.exports.alloc(message.length);
+              message.copy(Buffer.from(module.exports.memory.buffer), ptr);
+              module.exports.connection_message(id, ptr, message.length);
+            });
+
+          } else {
+            return 1;
+          }
+
+          connections[id] = connection;
           return 0;
 
         } catch (error) {
@@ -192,22 +248,35 @@ export async function start(config) {
         }
       },
 
-      // Must close and destroy the WebSocket object.
-      websocket_close: (id) => {
-        let websocket = websockets[id];
-        websocket.onopen = null;
-        websocket.onclose = null;
-        websocket.onmessage = null;
-        websocket.onerror = null;
-        websocket.close();
-        websockets[id] = undefined;
+      // Must close and destroy the connection object.
+      connection_close: (id) => {
+        let connection = connections[id];
+        if (connection.close) {
+          // WebSocket
+          connection.onopen = null;
+          connection.onclose = null;
+          connection.onmessage = null;
+          connection.onerror = null;
+          connection.close();
+        } else {
+          // TCP
+          connection.destroy();
+        }
+        connections[id] = undefined;
       },
 
       // Must queue the data found in the WebAssembly memory at the given pointer. It is assumed
-      // that this function is called only when the WebSocket is in an open state.
-      websocket_send: (id, ptr, len) => {
+      // that this function is called only when the connection is in an open state.
+      connection_send: (id, ptr, len) => {
         let data = Buffer.from(module.exports.memory.buffer).slice(ptr, ptr + len);
-        websockets[id].send(data);
+        let connection = connections[id];
+        if (connection.send) {
+          // WebSocket
+          connection.send(data);
+        } else {
+          // TCP
+          connection.write(data);
+        }
       }
     },
 
@@ -280,7 +349,7 @@ export async function start(config) {
 
       // Used by Rust in catastrophic situations, such as a double panic.
       proc_exit: (ret_code) => {
-        // This should ideally also clean up all resources (such as WebSockets and active timers),
+        // This should ideally also clean up all resources (such as connections and active timers),
         // but it is assumed that this function isn't going to be called anyway.
         has_thrown = true;
         throw new SmoldotError(`proc_exit called: ${ret_code}`);

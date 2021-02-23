@@ -131,59 +131,58 @@ extern "C" {
     /// Saving the database is entirely optional, and it is legal to simply do nothing.
     pub fn database_save(ptr: u32, len: u32);
 
-    /// Must initialize a new WebSocket connection that tries to connect to the given URL.
+    /// Must initialize a new connection that tries to connect to the given multiaddress.
     ///
-    /// The URL is a UTF-8 string found in the WebAssembly memory at offset `url_ptr` and with
-    /// `url_len` bytes. The string is in a format suitable for
-    /// [`new WebSocket()`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/WebSocket).
+    /// The multiaddress is a UTF-8 string found in the WebAssembly memory at offset `addr_ptr`
+    /// and with `addr_len` bytes. The string is a multiaddres such as `/ip4/1.2.3.4/tcp/5/ws`.
     ///
-    /// The `id` parameter is an identifier for this WebSocket, as chosen by the Rust code. It
-    /// must be passed on every interaction with this WebSocket.
+    /// The `id` parameter is an identifier for this connection, as chosen by the Rust code. It
+    /// must be passed on every interaction with this connection.
     ///
     /// Returns 0 to indicate success, or 1 to indicate that an error happened. If an error is
     /// returned, the `id` doesn't correspond to anything.
     ///
-    /// > **Note**: If you implement this function using `new WebSocket()`, please keep in mind
-    /// >           that exceptions should be caught and turned into an error code.
+    /// > **Note**: If you implement this function using for example `new WebSocket()`, please
+    /// >           keep in mind that exceptions should be caught and turned into an error code.
     ///
-    /// At any time, a WebSocket can be in one of the three following states:
+    /// At any time, a connection can be in one of the three following states:
     ///
     /// - `Opening` (initial state)
     /// - `Open`
     /// - `Closed`
     ///
-    /// When in the `Opening` or `Open` state, the WebSocket can transition to the `Closed` state
+    /// When in the `Opening` or `Open` state, the connection can transition to the `Closed` state
     /// if the remote closes the connection or refuses the connection altogether. When that
-    /// happens, [`websocket_closed`] must be called. Once in the `Closed` state, the WebSocket
+    /// happens, [`connection_closed`] must be called. Once in the `Closed` state, the connection
     /// cannot transition back to another state.
     ///
-    /// Initially in the `Opening` state, the WebSocket can transition to the `Open` state if the
-    /// remote accepts the connection. When that happens, [`websocket_open`] must be called.
+    /// Initially in the `Opening` state, the connection can transition to the `Open` state if the
+    /// remote accepts the connection. When that happens, [`connection_open`] must be called.
     ///
-    /// When in the `Open` state, the WebSocket can receive messages. When a message is received,
+    /// When in the `Open` state, the connection can receive messages. When a message is received,
     /// [`alloc`] must be called in order to allocate memory for this message, then
-    /// [`websocket_message`] must be called with the pointer returned by [`alloc`].
-    pub fn websocket_new(id: u32, url_ptr: u32, url_len: u32) -> u32;
+    /// [`connection_message`] must be called with the pointer returned by [`alloc`].
+    pub fn connection_new(id: u32, addr_ptr: u32, addr_len: u32) -> u32;
 
-    /// Close a WebSocket previously initialized with [`websocket_new`].
+    /// Close a connection previously initialized with [`connection_new`].
     ///
     /// This destroys the identifier passed as parameter. This identifier must never be passed
     /// through the FFI boundary, unless the same identifier is later allocated again with
-    /// [`websocket_new`].
+    /// [`connection_new`].
     ///
-    /// The WebSocket connection must be closed in the background. The Rust code isn't interested
-    /// in incoming messages from this WebSocket anymore.
+    /// The connection must be closed in the background. The Rust code isn't interested in incoming
+    /// messages from this connection anymore.
     ///
-    /// > **Note**: If implemented using the `WebSocket` API, remember to unregister event
-    /// >           handlers before calling `WebSocket.close()`.
-    pub fn websocket_close(id: u32);
+    /// > **Note**: In JavaScript, remember to unregister event handlers before calling for
+    /// >           example `WebSocket.close()`.
+    pub fn connection_close(id: u32);
 
-    /// Queues data on the given WebSocket. The data is found in the memory of the WebAssembly
+    /// Queues data on the given connection. The data is found in the memory of the WebAssembly
     /// virtual machine, at the given pointer. The data must be sent as a binary frame.
     ///
-    /// The WebSocket must currently be in the `Open` state. See the documentation of
-    /// [`websocket_new`] for details.
-    pub fn websocket_send(id: u32, ptr: u32, len: u32);
+    /// The connection must currently be in the `Open` state. See the documentation of
+    /// [`connection_new`] for details.
+    pub fn connection_send(id: u32, ptr: u32, len: u32);
 }
 
 /// Allocates a buffer of the given length, with an alignment of 1.
@@ -254,35 +253,36 @@ pub extern "C" fn timer_finished(timer_id: u32) {
     super::timer_finished(timer_id);
 }
 
-/// Called by the JavaScript code if the WebSocket switches to the `Open` state. The WebSocket
+/// Called by the JavaScript code if the connection switches to the `Open` state. The connection
 /// must be in the `Opening` state.
 ///
-/// Must only be called once per WebSocket object.
+/// Must only be called once per connection object.
 ///
-/// See also [`websocket_open`].
+/// See also [`connection_open`].
 #[no_mangle]
-pub extern "C" fn websocket_open(id: u32) {
-    super::websocket_open(id);
+pub extern "C" fn connection_open(id: u32) {
+    super::connection_open(id);
 }
 
-/// Notify of a message being received on the WebSocket. The WebSocket must be in the `Open` state.
+/// Notify of a message being received on the connection. The connection must be in the `Open`
+/// state.
 ///
-/// See also [`websocket_open`].
+/// See also [`connection_open`].
 ///
 /// The buffer **must** have been allocated with [`alloc`]. It is freed when this function is
 /// called.
 #[no_mangle]
-pub extern "C" fn websocket_message(id: u32, ptr: u32, len: u32) {
-    super::websocket_message(id, ptr, len)
+pub extern "C" fn connection_message(id: u32, ptr: u32, len: u32) {
+    super::connection_message(id, ptr, len)
 }
 
-/// Can be called at any point by the JavaScript code if the WebSocket switches to the `Closed`
+/// Can be called at any point by the JavaScript code if the connection switches to the `Closed`
 /// state.
 ///
-/// Must only be called once per WebSocket object.
+/// Must only be called once per connection object.
 ///
-/// See also [`websocket_open`].
+/// See also [`connection_open`].
 #[no_mangle]
-pub extern "C" fn websocket_closed(id: u32) {
-    super::websocket_closed(id)
+pub extern "C" fn connection_closed(id: u32) {
+    super::connection_closed(id)
 }
