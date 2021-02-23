@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 blake2-rfc = { version = "0.2.18", default-features = false }
 derive_more = "0.99.11"
 fnv = { version = "1.0.7", default-features = false }
-futures = "0.3.12"
+futures = "0.3.13"
 lazy_static = "1.4.0"
 log = { version = "0.4.14", features = ["std"] }
 lru = "0.6.3"
