@@ -112,7 +112,7 @@ pub struct SuccessVirtualMachine(host::Finished);
 
 impl SuccessVirtualMachine {
     /// Returns the value the called function has returned.
-    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn value(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.0.value()
     }
 
@@ -164,7 +164,7 @@ pub struct StorageGet {
 
 impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    pub fn key(&'_ self) -> impl Iterator<Item = impl AsRef<[u8]> + '_> + '_ {
         match &self.inner.vm {
             host::HostVm::ExternalStorageGet(req) => either::Left(iter::once(either::Left(
                 either::Left(either::Left(req.key())),
@@ -271,7 +271,7 @@ pub struct PrefixKeys {
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn prefix(&'_ self) -> impl AsRef<[u8]> + '_ {
         match &self.inner.vm {
             host::HostVm::ExternalStorageClearPrefix(req) => either::Left(req.prefix()),
             host::HostVm::ExternalStorageRoot { .. } => either::Right(&[]),
@@ -365,7 +365,7 @@ pub struct NextKey {
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         if let Some(key_overwrite) = &self.key_overwrite {
             return either::Left(key_overwrite);
         }

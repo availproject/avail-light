@@ -229,11 +229,11 @@ impl VirtualMachine {
     /// Copies the given memory range into a `Vec<u8>`.
     ///
     /// Returns an error if the range is invalid or out of range.
-    pub fn read_memory<'a>(
-        &'a self,
+    pub fn read_memory(
+        &'_ self,
         offset: u32,
         size: u32,
-    ) -> Result<impl AsRef<[u8]> + 'a, OutOfBoundsError> {
+    ) -> Result<impl AsRef<[u8]> + '_, OutOfBoundsError> {
         Ok(match &self.inner {
             #[cfg(all(target_arch = "x86_64", feature = "std"))]
             VirtualMachineInner::Jit(inner) => either::Left(inner.read_memory(offset, size)?),

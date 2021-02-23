@@ -1130,7 +1130,7 @@ enum StorageGetTarget<TBl> {
 
 impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    pub fn key<'b>(&'b self) -> impl Iterator<Item = impl AsRef<[u8]> + 'b> + 'b {
+    pub fn key(&'_ self) -> impl Iterator<Item = impl AsRef<[u8]> + '_> + '_ {
         match &self.inner {
             StorageGetTarget::Storage(inner) => {
                 either::Either::Left(inner.key().map(either::Either::Left))
@@ -1216,7 +1216,7 @@ pub struct StoragePrefixKeys<TRq, TSrc, TBl> {
 
 impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
     /// Returns the prefix whose keys to load.
-    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn prefix(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner.prefix()
     }
 
@@ -1263,7 +1263,7 @@ pub struct StorageNextKey<TRq, TSrc, TBl> {
 }
 
 impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         if let Some(key_overwrite) = &self.key_overwrite {
             either::Left(key_overwrite)
         } else {

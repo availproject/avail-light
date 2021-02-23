@@ -659,7 +659,7 @@ pub struct StorageGet(runtime_host::StorageGet, Shared);
 
 impl StorageGet {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
-    pub fn key<'a>(&'a self) -> impl Iterator<Item = impl AsRef<[u8]> + 'a> + 'a {
+    pub fn key(&'_ self) -> impl Iterator<Item = impl AsRef<[u8]> + '_> + '_ {
         self.0.key()
     }
 
@@ -683,7 +683,7 @@ pub struct PrefixKeys(runtime_host::PrefixKeys, Shared);
 
 impl PrefixKeys {
     /// Returns the prefix whose keys to load.
-    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn prefix(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.0.prefix()
     }
 
@@ -700,7 +700,7 @@ pub struct NextKey(runtime_host::NextKey, Shared);
 
 impl NextKey {
     /// Returns the key whose next key must be passed back.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.0.key()
     }
 

@@ -442,11 +442,11 @@ impl Interpreter {
     }
 
     /// See [`super::VirtualMachine::read_memory`].
-    pub fn read_memory<'a>(
-        &'a self,
+    pub fn read_memory(
+        &'_ self,
         offset: u32,
         size: u32,
-    ) -> Result<impl AsRef<[u8]> + 'a, OutOfBoundsError> {
+    ) -> Result<impl AsRef<[u8]> + '_, OutOfBoundsError> {
         let mem = match self.memory.as_ref() {
             Some(m) => m,
             None => {

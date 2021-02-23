@@ -294,9 +294,9 @@ pub struct Header {
 impl Header {
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE
     /// encoding of the header.
-    pub fn scale_encoding<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
+    pub fn scale_encoding(
+        &'_ self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + '_> + Clone + '_ {
         HeaderRef::from(self).scale_encoding()
     }
 
@@ -921,22 +921,22 @@ pub enum DigestItemRef<'a> {
 impl<'a> DigestItemRef<'a> {
     /// True if the item is relevant to the Aura consensus engine.
     pub fn is_aura(&self) -> bool {
-        match self {
-            DigestItemRef::AuraPreDigest(_) => true,
-            DigestItemRef::AuraSeal(_) => true,
-            DigestItemRef::AuraConsensus(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DigestItemRef::AuraPreDigest(_)
+                | DigestItemRef::AuraSeal(_)
+                | DigestItemRef::AuraConsensus(_)
+        )
     }
 
     /// True if the item is relevant to the Babe consensus engine.
     pub fn is_babe(&self) -> bool {
-        match self {
-            DigestItemRef::BabePreDigest(_) => true,
-            DigestItemRef::BabeConsensus(_) => true,
-            DigestItemRef::BabeSeal(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            DigestItemRef::BabePreDigest(_)
+                | DigestItemRef::BabeConsensus(_)
+                | DigestItemRef::BabeSeal(_)
+        )
     }
 
     /// Returns an iterator to list of buffers which, when concatenated, produces the SCALE

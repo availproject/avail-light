@@ -347,10 +347,8 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
 
         // Iterate through the headers. If the request has failed, treat it the same way as if
         // no blocks were returned.
-        for (index_in_response, scale_encoded_header) in scale_encoded_headers
-            .into_iter()
-            .flat_map(|l| l)
-            .enumerate()
+        for (index_in_response, scale_encoded_header) in
+            scale_encoded_headers.into_iter().flatten().enumerate()
         {
             let scale_encoded_header = scale_encoded_header.as_ref();
 

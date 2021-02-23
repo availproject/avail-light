@@ -1407,7 +1407,7 @@ pub struct Finished {
 
 impl Finished {
     /// Returns the value the called function has returned.
-    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn value(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.value_ptr, self.value_size)
@@ -1450,7 +1450,7 @@ pub struct ExternalStorageGet {
 
 impl ExternalStorageGet {
     /// Returns the key whose value must be provided back with [`ExternalStorageGet::resume`].
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.key_ptr, self.key_size)
@@ -1600,7 +1600,7 @@ pub struct ExternalStorageSet {
 
 impl ExternalStorageSet {
     /// Returns the key whose value must be set.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.key_ptr, self.key_size)
@@ -1610,7 +1610,7 @@ impl ExternalStorageSet {
     /// Returns the value to set.
     ///
     /// If `None` is returned, the key should be removed from the storage entirely.
-    pub fn value<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
+    pub fn value(&'_ self) -> Option<impl AsRef<[u8]> + '_> {
         if let Some((ptr, size)) = self.value {
             Some(self.inner.vm.read_memory(ptr, size).unwrap())
         } else {
@@ -1668,7 +1668,7 @@ pub struct ExternalStorageAppend {
 
 impl ExternalStorageAppend {
     /// Returns the key whose value must be set.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.key_ptr, self.key_size)
@@ -1676,7 +1676,7 @@ impl ExternalStorageAppend {
     }
 
     /// Returns the value to append.
-    pub fn value<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn value(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.value_ptr, self.value_size)
@@ -1710,7 +1710,7 @@ pub struct ExternalStorageClearPrefix {
 
 impl ExternalStorageClearPrefix {
     /// Returns the prefix whose keys must be removed.
-    pub fn prefix<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn prefix(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.prefix_ptr, self.prefix_size)
@@ -1796,7 +1796,7 @@ pub struct ExternalStorageNextKey {
 
 impl ExternalStorageNextKey {
     /// Returns the key whose following key must be returned.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.key_ptr, self.key_size)
@@ -1887,7 +1887,7 @@ pub struct ExternalOffchainStorageSet {
 
 impl ExternalOffchainStorageSet {
     /// Returns the key whose value must be set.
-    pub fn key<'a>(&'a self) -> impl AsRef<[u8]> + 'a {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
         self.inner
             .vm
             .read_memory(self.key_ptr, self.key_size)
@@ -1897,7 +1897,7 @@ impl ExternalOffchainStorageSet {
     /// Returns the value to set.
     ///
     /// If `None` is returned, the key should be removed from the storage entirely.
-    pub fn value<'a>(&'a self) -> Option<impl AsRef<[u8]> + 'a> {
+    pub fn value(&'_ self) -> Option<impl AsRef<[u8]> + '_> {
         if let Some((ptr, size)) = self.value {
             Some(self.inner.vm.read_memory(ptr, size).unwrap())
         } else {

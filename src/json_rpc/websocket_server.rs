@@ -167,22 +167,15 @@ pub struct WsServer<T> {
     ///
     /// The output can be an error if the handshake fails.
     negotiating: stream::FuturesUnordered<
-        Pin<
-            Box<
-                dyn Future<Output = (ConnectionId, u64, Result<Server<'static, TcpStream>, ()>)>
-                    + Send,
-            >,
-        >,
+        future::BoxFuture<'static, (ConnectionId, u64, Result<Server<'static, TcpStream>, ()>)>,
     >,
 
     /// List of streams of incoming messages for all connections.
-    incoming_messages: stream::SelectAll<
-        Pin<Box<dyn Stream<Item = (ConnectionId, u64, Result<String, ()>)> + Send>>,
-    >,
+    incoming_messages:
+        stream::SelectAll<stream::BoxStream<'static, (ConnectionId, u64, Result<String, ()>)>>,
 
     /// Tasks dedicated to sending messages on connections. One per healthy connection.
-    sending_tasks:
-        stream::FuturesUnordered<Pin<Box<dyn Future<Output = (ConnectionId, u64)> + Send>>>,
+    sending_tasks: stream::FuturesUnordered<future::BoxFuture<'static, (ConnectionId, u64)>>,
 
     /// List of connections that are either negotiating or open.
     connections: slab::Slab<Connection<T>>,
@@ -191,7 +184,7 @@ pub struct WsServer<T> {
     next_unique_id: u64,
 
     /// Tasks dedicated to closing sockets that have been rejected.
-    rejected_sockets: stream::FuturesUnordered<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    rejected_sockets: stream::FuturesUnordered<future::BoxFuture<'static, ()>>,
 }
 
 struct Connection<T> {

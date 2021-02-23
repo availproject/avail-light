@@ -150,11 +150,11 @@ pub fn build_error_response(
         ),
         ErrorResponse::InternalError => (SerdeErrorCode::InternalError, "Internal JSON-RPC error."),
         ErrorResponse::ServerError(n, msg) => {
-            assert!(n >= -32099 && n <= -32000);
+            assert!((-32099..=-32000).contains(&n));
             (SerdeErrorCode::ServerError(n), msg)
         }
         ErrorResponse::ApplicationDefined(n, msg) => {
-            assert!(n < -32700 || n > -32000);
+            assert!(!(-32700..=-32000).contains(&n));
             (SerdeErrorCode::MethodError(n), msg)
         }
     };
