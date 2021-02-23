@@ -198,6 +198,8 @@ async fn start_sync(
 
         // List of block requests currently in progress.
         let mut pending_block_requests = stream::FuturesUnordered::new();
+        // List of grandpa warp sync requests currently in progress.
+        let mut pending_grandpa_requests = stream::FuturesUnordered::new();
 
         // TODO: remove; should store the aborthandle in the TRq user data instead
         let mut pending_requests = HashMap::new();
@@ -277,13 +279,26 @@ async fn start_sync(
                         }
                         all::Action::Start {
                             source_id,
-                            request_id: id,
+                            request_id,
                             detail:
                                 all::RequestDetail::GrandpaWarpSync {
-                                    local_finalized_block_height,
+                                    sync_start_block_hash,
                                 },
                         } => {
-                            todo!()
+                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
+
+                            let grandpa_request =
+                                network_service.clone().grandpa_warp_sync_request(
+                                    peer_id.clone(),
+                                    network_chain_index,
+                                    sync_start_block_hash,
+                                );
+
+                            let (grandpa_request, abort) = future::abortable(grandpa_request);
+                            pending_requests.insert(request_id, abort);
+
+                            pending_grandpa_requests
+                                .push(async move { (request_id, grandpa_request.await) });
                         }
                         all::Action::Start {
                             source_id,
@@ -468,7 +483,7 @@ async fn start_sync(
                 (request_id, result) = pending_block_requests.select_next_some() => {
                     pending_requests.remove(&request_id);
 
-                    // A request (e.g. a block request, warp sync request, etc.) has been finished.
+                    // A block(s) request has been finished.
                     // `result` is an error if the block request got cancelled by the sync state
                     // machine.
                     if let Ok(result) = result {
@@ -509,6 +524,27 @@ async fn start_sync(
                                 sync = sync_idle.into();
                             },
                         }
+                    } else {
+                        // The sync state machine has emitted a `Action::Cancel` earlier, and is
+                        // thus no longer interested in the response.
+                        sync = sync_idle.into();
+                    }
+                },
+
+                (request_id, result) = pending_grandpa_requests.select_next_some() => {
+                    pending_requests.remove(&request_id);
+
+                    // A GrandPa warp sync request has been finished.
+                    // `result` is an error if the block request got cancelled by the sync state
+                    // machine.
+                    if let Ok(result) = result {
+                        // Inject the result of the request into the sync state machine.
+                        let new_sync = sync_idle.grandpa_warp_sync_response(
+                            request_id,
+                            result.ok(),
+                        );
+
+                        sync = new_sync;
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
