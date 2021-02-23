@@ -221,15 +221,16 @@ export async function start(config) {
             });
             connection.setNoDelay();
 
-            connection.addEventListener('connect', () => {
+            connection.on('connect', () => {
               if (connection.destroyed) return;
               module.exports.connection_open(id);
             });
-            connection.addEventListener('close', () => {
+            connection.on('close', () => {
               if (connection.destroyed) return;
               module.exports.connection_closed(id);
             });
-            connection.addEventListener('data', (message) => {
+            connection.on('error', () => {});
+            connection.on('data', (message) => {
               if (connection.destroyed) return;
               let ptr = module.exports.alloc(message.length);
               message.copy(Buffer.from(module.exports.memory.buffer), ptr);
