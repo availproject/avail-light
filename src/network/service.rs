@@ -87,8 +87,8 @@ pub struct ChainConfig {
     /// identities are indices in [`Config::known_nodes`].
     pub bootstrap_nodes: Vec<usize>,
 
-    /// If true, the chain uses the GrandPa networking protocol.
-    pub has_grandpa_protocol: bool,
+    /// If `Some`, the chain uses the GrandPa networking protocol.
+    pub grandpa_protocol_config: Option<GrandpaState>,
 
     pub in_slots: u32,
 
@@ -101,6 +101,14 @@ pub struct ChainConfig {
     /// Hash of the genesis block (i.e. block number 0) according to the local node.
     pub genesis_hash: [u8; 32],
     pub role: protocol::Role,
+}
+
+#[derive(Debug, Copy, Clone)]
+// TODO: link to some doc about how GrandPa works: what is a round, what is the set id, etc.
+pub struct GrandpaState {
+    pub round_number: u64,
+    pub set_id: u64,
+    pub commit_finalized_height: u32,
 }
 
 /// Identifier of a pending connection requested by the network through a [`StartConnect`].
@@ -118,7 +126,11 @@ pub struct ChainNetwork<TNow, TPeer, TConn> {
     libp2p: libp2p::Network<TNow, TPeer, TConn>,
 
     /// See [`Config::chains`].
-    chains: Vec<ChainConfig>,
+    chain_configs: Vec<ChainConfig>,
+
+    /// For each item in [`ChainNetwork::chain_configs`].
+    // TODO: merge with chain_configs?
+    chain_grandpa_config: Vec<Option<Mutex<GrandpaState>>>,
 
     pending_in_accept: Mutex<Option<(libp2p::ConnectionId, usize, Vec<u8>)>>,
 
@@ -173,7 +185,7 @@ where
                         fallback_protocol_names: Vec::new(),
                         max_handshake_size: 256,      // TODO: arbitrary
                         max_notification_size: 32768, // TODO: arbitrary
-                        bootstrap_nodes: if chain.has_grandpa_protocol {
+                        bootstrap_nodes: if chain.grandpa_protocol_config.is_some() {
                             chain.bootstrap_nodes.clone()
                         } else {
                             Vec::new()
@@ -235,6 +247,12 @@ where
 
         let (substreams_open_tx, substreams_open_rx) = mpsc::channel(0);
 
+        let chain_grandpa_config = config
+            .chains
+            .iter()
+            .map(|chain| chain.grandpa_protocol_config.clone().map(Mutex::new))
+            .collect();
+
         ChainNetwork {
             libp2p: libp2p::Network::new(libp2p::Config {
                 known_nodes: config.known_nodes,
@@ -246,7 +264,8 @@ where
                 overlay_networks,
                 ping_protocol: "/ipfs/ping/1.0.0".into(),
             }),
-            chains: config.chains,
+            chain_configs: config.chains,
+            chain_grandpa_config,
             pending_in_accept: Mutex::new(None),
             substreams_open_tx: Mutex::new(substreams_open_tx),
             substreams_open_rx: Mutex::new(substreams_open_rx),
@@ -264,7 +283,7 @@ where
 
     /// Returns the number of chains. Always equal to the length of [`Config::chains`].
     pub fn num_chains(&self) -> usize {
-        self.chains.len()
+        self.chain_configs.len()
     }
 
     pub fn add_incoming_connection(
@@ -278,6 +297,66 @@ where
             remote_addr,
             user_data,
         ))
+    }
+
+    /// Update the state of the local node with regards to GrandPa rounds.
+    ///
+    /// Calling this method does two things:
+    ///
+    /// - Send on all the active GrandPa substreams a "neighbor packet" indicating the state of
+    ///   the local node.
+    /// - Update the neighbor packet that is automatically sent to peers when a GrandPa substream
+    ///   gets opened.
+    ///
+    /// In other words, calling this function atomically informs all the present and future peers
+    /// of the state of the local node regarding the GrandPa protocol.
+    ///
+    /// > **Note**: The information passed as parameter isn't validated in any way by this method.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `chain_index` is out of range, or if the chain has GrandPa disabled.
+    ///
+    pub async fn set_local_grandpa_state(&self, chain_index: usize, grandpa_state: GrandpaState) {
+        // TODO: futures cancellation policy?
+        // TODO: right now we just try to send to everyone no matter which substream is open, which is wasteful
+
+        let grandpa_config = self.chain_grandpa_config[chain_index].as_ref().unwrap();
+        *grandpa_config.lock().await = grandpa_state;
+
+        // Grab the list of peers to send to. This is done *after* updating
+        // `chain_grandpa_config`, so that new substreams that are opened after grabbing this
+        // list are guaranteed to get informed of the updated state.
+        //
+        // It is possible that some of the peers in this list have *just* been opened and are
+        // already aware of the new state. We ignore this problem and just send another neighbor
+        // packet.
+        let target_peers = self.libp2p.peers_list_lock().await.collect::<Vec<_>>();
+
+        // Bytes of the neighbor packet to send out.
+        let packet = protocol::GrandpaNotificationRef::Neighbor(protocol::NeighborPacket {
+            round_number: grandpa_state.round_number,
+            set_id: grandpa_state.set_id,
+            commit_finalized_height: grandpa_state.commit_finalized_height,
+        })
+        .scale_encoding()
+        .fold(Vec::new(), |mut a, b| {
+            a.extend_from_slice(b.as_ref());
+            a
+        });
+
+        // Now sending out.
+        for target in target_peers {
+            // Ignore sending errors.
+            let _ = self
+                .libp2p
+                .queue_notification(
+                    &target,
+                    chain_index * NOTIFICATIONS_PROTOCOLS_PER_CHAIN + 2,
+                    packet.clone(),
+                )
+                .await;
+        }
     }
 
     /// Sends a blocks request to the given peer.
@@ -522,12 +601,17 @@ where
                     } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 2 {
                         // Grandpa notification has been opened. Send neighbor packet.
                         // TODO: below is not futures-cancellation-safe!
-                        // TODO: should instead return some object so that user does it manually?
+                        let grandpa_config = self.chain_grandpa_config[chain_index]
+                            .as_ref()
+                            .unwrap()
+                            .lock()
+                            .await
+                            .clone();
                         let packet =
                             protocol::GrandpaNotificationRef::Neighbor(protocol::NeighborPacket {
-                                round_number: 1, // TODO: round number 1 apparently means we're not interested in rounds
-                                set_id: 0,       // TODO:
-                                commit_finalized_height: 0, // TODO:
+                                round_number: grandpa_config.round_number,
+                                set_id: grandpa_config.set_id,
+                                commit_finalized_height: grandpa_config.commit_finalized_height,
                             })
                             .scale_encoding()
                             .fold(Vec::new(), |mut a, b| {
@@ -574,8 +658,8 @@ where
                             protocol::decode_block_announces_handshake(&remote_handshake).unwrap();
                         // TODO: don't unwrap
 
-                        let chain_config =
-                            &self.chains[overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
+                        let chain_config = &self.chain_configs
+                            [overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
 
                         let handshake = protocol::encode_block_announces_handshake(
                             protocol::BlockAnnouncesHandshakeRef {
@@ -599,8 +683,8 @@ where
                         *pending_in_accept = Some((id, overlay_network_index, Vec::new()));
                     } else if (overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN) == 2 {
                         // Grandpa substream.
-                        let chain_config =
-                            &self.chains[overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
+                        let chain_config = &self.chain_configs
+                            [overlay_network_index / NOTIFICATIONS_PROTOCOLS_PER_CHAIN];
 
                         let handshake = chain_config.role.scale_encoding().to_vec();
 
@@ -700,7 +784,7 @@ where
                 Some(inner) => {
                     return SubstreamOpen {
                         inner,
-                        chains: &self.chains,
+                        chains: &self.chain_configs,
                     }
                 }
                 None => {
@@ -888,7 +972,10 @@ where
                 )
                 .await;
 
-            if self.service.chains[self.chain_index].has_grandpa_protocol {
+            if self.service.chain_configs[self.chain_index]
+                .grandpa_protocol_config
+                .is_some()
+            {
                 self.service
                     .libp2p
                     .add_addresses(

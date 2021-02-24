@@ -141,7 +141,16 @@ impl NetworkService {
                     .collect(),
                 in_slots: 25,
                 out_slots: 25,
-                has_grandpa_protocol: chain.has_grandpa_protocol,
+                grandpa_protocol_config: if chain.has_grandpa_protocol {
+                    // TODO: dummy values
+                    Some(service::GrandpaState {
+                        commit_finalized_height: 0,
+                        round_number: 1,
+                        set_id: 0,
+                    })
+                } else {
+                    None
+                },
                 protocol_id: chain.protocol_id.clone(),
                 best_hash: chain.best_block.1,
                 best_number: chain.best_block.0,

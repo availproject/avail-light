@@ -200,7 +200,16 @@ impl NetworkService {
                 best_number: chain.best_block.0,
                 genesis_hash: chain.genesis_block_hash,
                 role: protocol::Role::Full,
-                has_grandpa_protocol: chain.has_grandpa_protocol,
+                grandpa_protocol_config: if chain.has_grandpa_protocol {
+                    // TODO: dummy values
+                    Some(service::GrandpaState {
+                        commit_finalized_height: 0,
+                        round_number: 1,
+                        set_id: 0,
+                    })
+                } else {
+                    None
+                },
             });
         }
 
