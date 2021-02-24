@@ -90,7 +90,7 @@ impl SyncService {
     #[tracing::instrument(skip(config))]
     pub async fn new(mut config: Config) -> Arc<Self> {
         let (to_foreground, from_background) = mpsc::channel(16);
-        let (to_background, from_foreground) = mpsc::channel(16);
+        let (to_background, from_foreground) = mpsc::channel(1024 * 1024); // TODO: hack around https://github.com/paritytech/smoldot/issues/520
         let (to_database, messages_rx) = mpsc::channel(4);
 
         let finalized_block_hash = config.database.finalized_block_hash().unwrap();
