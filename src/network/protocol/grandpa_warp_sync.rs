@@ -49,7 +49,6 @@ pub fn decode_grandpa_warp_sync_response(
                                 ))
                             })
                     },
-                    crate::util::nom_scale_compact_usize,
                     |s| {
                         crate::finality::justification::decode::decode_partial(s)
                             .map(|(a, b)| (b, a))
@@ -61,7 +60,7 @@ pub fn decode_grandpa_warp_sync_response(
                             })
                     },
                 )),
-                move |(header, _, justification)| GrandpaWarpSyncResponseFragment {
+                move |(header, justification)| GrandpaWarpSyncResponseFragment {
                     header: header.into(),
                     justification: justification.into(),
                 },

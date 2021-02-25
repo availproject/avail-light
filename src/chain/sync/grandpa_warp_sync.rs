@@ -26,7 +26,7 @@ use crate::{
         host::{HostVmPrototype, NewErr},
         vm::ExecHint,
     },
-    finality::{grandpa::warp_sync, justification::verify},
+    finality::grandpa::warp_sync,
     header::{Header, HeaderRef},
     network::protocol::GrandpaWarpSyncResponseFragment,
 };
@@ -39,7 +39,7 @@ pub enum Error {
     #[display(fmt = "{}", _0)]
     InvalidHeapPages(executor::InvalidHeapPagesError),
     #[display(fmt = "{}", _0)]
-    Verifier(verify::Error),
+    Verifier(warp_sync::Error),
     #[display(fmt = "{}", _0)]
     BabeFetchEpoch(babe_fetch_epoch::Error),
     #[display(fmt = "{}", _0)]
@@ -428,13 +428,32 @@ impl<TSrc> WarpSyncRequest<TSrc> {
     ) -> GrandpaWarpSync<TSrc> {
         self.sources[self.source_id.0].already_tried = true;
 
-        // Count a response of 0 fragments as a failed response.
+        // If the response is empty, then we've warp synced to the head of the
+        // chain.
         if response
             .as_ref()
             .map(|fragments| fragments.is_empty())
             .unwrap_or(false)
         {
-            response = None;
+            let (header, chain_information_finality) = match self.previous_verifier_values {
+                Some((header, chain_information_finality)) => (header, chain_information_finality),
+                None => (
+                    self.state
+                        .start_chain_information
+                        .finalized_block_header
+                        .clone(),
+                    self.state.start_chain_information.finality.clone(),
+                ),
+            };
+
+            return GrandpaWarpSync::VirtualMachineParamsGet(VirtualMachineParamsGet {
+                state: PostVerificationState {
+                    header,
+                    chain_information_finality,
+                    start_chain_information: self.state.start_chain_information,
+                    warp_sync_source: self.sources.remove(self.source_id.0).user_data,
+                },
+            });
         }
 
         match response {
