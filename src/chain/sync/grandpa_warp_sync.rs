@@ -71,11 +71,21 @@ pub fn grandpa_warp_sync<TSrc>(config: Config) -> GrandpaWarpSync<TSrc> {
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct SourceId(usize);
 
+/// The result of a successful warp sync.
+pub struct Success<TSrc> {
+    /// The synced chain information.
+    pub chain_information: ChainInformation,
+    /// The runtime constructed in `VirtualMachineParamsGet`.
+    pub runtime: HostVmPrototype,
+    /// The list of sources that were added to the state machine.
+    pub sources: Vec<TSrc>,
+}
+
 /// The GrandPa warp sync state machine.
 #[derive(derive_more::From)]
 pub enum GrandpaWarpSync<TSrc> {
     /// Warp syncing is over.
-    Finished(Result<(ChainInformation, HostVmPrototype), Error>),
+    Finished(Result<Success<TSrc>, Error>),
     /// Loading a storage value is required in order to continue.
     #[from]
     StorageGet(StorageGet<TSrc>),
@@ -100,7 +110,7 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
     fn from_babe_fetch_epoch_query(
         query: babe_fetch_epoch::Query,
         fetched_current_epoch: Option<PartialBabeEpochInformation>,
-        state: PostVerificationState<TSrc>,
+        mut state: PostVerificationState<TSrc>,
     ) -> Self {
         match (query, fetched_current_epoch) {
             (babe_fetch_epoch::Query::Finished(Ok((next_epoch, runtime))), Some(current_epoch)) => {
@@ -119,8 +129,8 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                         _ => unreachable!(),
                     };
 
-                Self::Finished(Ok((
-                    ChainInformation {
+                Self::Finished(Ok(Success {
+                    chain_information: ChainInformation {
                         finalized_block_header: state.header,
                         finality: state.chain_information_finality,
                         consensus: ChainInformationConsensus::Babe {
@@ -144,7 +154,12 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                         },
                     },
                     runtime,
-                )))
+                    sources: state
+                        .sources
+                        .drain()
+                        .map(|source| source.user_data)
+                        .collect(),
+                }))
             }
             (babe_fetch_epoch::Query::Finished(Ok((current_epoch, runtime))), None) => {
                 let babe_next_epoch_query =
@@ -191,7 +206,7 @@ impl<TSrc> StorageGet<TSrc> {
 
     /// Returns the source that we received the warp sync data from.
     pub fn warp_sync_source(&self) -> &TSrc {
-        &self.state.warp_sync_source
+        &self.state.sources[self.state.warp_sync_source_id.0].user_data
     }
 
     /// Returns the header that we're warp syncing up to.
@@ -240,7 +255,7 @@ impl<TSrc> NextKey<TSrc> {
 
     /// Returns the source that we received the warp sync data from.
     pub fn warp_sync_source(&self) -> &TSrc {
-        &self.state.warp_sync_source
+        &self.state.sources[self.state.warp_sync_source_id.0].user_data
     }
 
     /// Returns the header that we're warp syncing up to.
@@ -283,7 +298,7 @@ impl<TSrc> Verifier<TSrc> {
         (&self.state.start_chain_information).into()
     }
 
-    pub fn next(mut self) -> GrandpaWarpSync<TSrc> {
+    pub fn next(self) -> GrandpaWarpSync<TSrc> {
         match self.verifier.next() {
             Ok(warp_sync::Next::NotFinished(next_verifier)) => GrandpaWarpSync::Verifier(Self {
                 verifier: next_verifier,
@@ -302,10 +317,8 @@ impl<TSrc> Verifier<TSrc> {
                             header,
                             chain_information_finality,
                             start_chain_information: self.state.start_chain_information,
-                            warp_sync_source: self
-                                .sources
-                                .remove(self.warp_sync_source_id.0)
-                                .user_data,
+                            sources: self.sources,
+                            warp_sync_source_id: self.warp_sync_source_id,
                         },
                     })
                 } else {
@@ -330,7 +343,8 @@ struct PostVerificationState<TSrc> {
     header: Header,
     chain_information_finality: ChainInformationFinality,
     start_chain_information: ChainInformation,
-    warp_sync_source: TSrc,
+    sources: slab::Slab<Source<TSrc>>,
+    warp_sync_source_id: SourceId,
 }
 
 /// Requesting GrandPa warp sync data from a source is required to continue.
@@ -424,7 +438,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
     /// Submit a GrandPa warp sync response if the request succeeded or `None` if it did not.
     pub fn handle_response(
         mut self,
-        mut response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
+        response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
     ) -> GrandpaWarpSync<TSrc> {
         self.sources[self.source_id.0].already_tried = true;
 
@@ -451,7 +465,8 @@ impl<TSrc> WarpSyncRequest<TSrc> {
                     header,
                     chain_information_finality,
                     start_chain_information: self.state.start_chain_information,
-                    warp_sync_source: self.sources.remove(self.source_id.0).user_data,
+                    sources: self.sources,
+                    warp_sync_source_id: self.source_id,
                 },
             });
         }
