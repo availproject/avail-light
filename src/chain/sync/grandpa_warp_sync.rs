@@ -28,7 +28,7 @@ use crate::{
     },
     finality::grandpa::warp_sync,
     header::{Header, HeaderRef},
-    network::protocol::GrandpaWarpSyncResponseFragment,
+    network::protocol::GrandpaWarpSyncResponse,
 };
 
 /// Problem encountered during a call to [`grandpa_warp_sync`].
@@ -438,7 +438,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
     /// Submit a GrandPa warp sync response if the request succeeded or `None` if it did not.
     pub fn handle_response(
         mut self,
-        response: Option<Vec<GrandpaWarpSyncResponseFragment>>,
+        response: Option<GrandpaWarpSyncResponse>,
     ) -> GrandpaWarpSync<TSrc> {
         self.sources[self.source_id.0].already_tried = true;
 
@@ -446,7 +446,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
         // chain.
         if response
             .as_ref()
-            .map(|fragments| fragments.is_empty())
+            .map(|response| response.fragments.is_empty())
             .unwrap_or(false)
         {
             let (header, chain_information_finality) = match self.previous_verifier_values {
@@ -472,17 +472,21 @@ impl<TSrc> WarpSyncRequest<TSrc> {
         }
 
         match response {
-            Some(response_fragments) => {
-                let final_set_of_fragments = response_fragments.len() == 1;
+            Some(response) => {
+                // TODO: remove this `unwrap_or` when a polkadot version that
+                // serves `is_finished` is released.
+                let final_set_of_fragments = response
+                    .is_finished
+                    .unwrap_or(response.fragments.len() == 1);
 
                 let verifier = match self.previous_verifier_values {
                     Some((_, chain_information_finality)) => warp_sync::Verifier::new(
                         (&chain_information_finality).into(),
-                        response_fragments,
+                        response.fragments,
                     ),
                     None => warp_sync::Verifier::new(
                         (&self.state.start_chain_information.finality).into(),
-                        response_fragments,
+                        response.fragments,
                     ),
                 };
 

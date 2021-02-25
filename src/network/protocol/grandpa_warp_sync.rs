@@ -18,6 +18,15 @@
 use alloc::vec::Vec;
 
 #[derive(Debug)]
+pub struct GrandpaWarpSyncResponse {
+    pub fragments: Vec<GrandpaWarpSyncResponseFragment>,
+    // TODO: remove this `Option` when a polkadot version that serves
+    // `is_finished` is released. The `Option` is only here to allow for
+    // backwards compatibility.
+    pub is_finished: Option<bool>,
+}
+
+#[derive(Debug)]
 pub struct GrandpaWarpSyncResponseFragment {
     pub header: crate::header::Header,
     pub justification: crate::finality::justification::decode::Justification,
@@ -32,7 +41,24 @@ pub enum DecodeGrandpaWarpSyncResponseError {
 // TODO: make this a zero-cost API
 pub fn decode_grandpa_warp_sync_response(
     bytes: &[u8],
-) -> Result<Vec<GrandpaWarpSyncResponseFragment>, DecodeGrandpaWarpSyncResponseError> {
+) -> Result<GrandpaWarpSyncResponse, DecodeGrandpaWarpSyncResponseError> {
+    nom::combinator::map(
+        nom::sequence::tuple((
+            decode_fragments,
+            // TODO: remove this `opt` when a polkadot version that serves
+            // `is_finished` is released.
+            nom::combinator::opt(nom::number::complete::le_u8),
+        )),
+        |(fragments, is_finished)| GrandpaWarpSyncResponse {
+            fragments,
+            is_finished: is_finished.map(|byte| byte != 0),
+        },
+    )(bytes)
+    .map(|(_, parse_result)| parse_result)
+    .map_err(|_| DecodeGrandpaWarpSyncResponseError::BadResponse)
+}
+
+fn decode_fragments(bytes: &[u8]) -> nom::IResult<&[u8], Vec<GrandpaWarpSyncResponseFragment>> {
     nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
         nom::multi::many_m_n(
             num_elems,
@@ -67,8 +93,4 @@ pub fn decode_grandpa_warp_sync_response(
             ),
         )
     })(bytes)
-    .map(|(_, parse_result)| parse_result)
-    .map_err(|_: nom::Err<(&[u8], nom::error::ErrorKind)>| {
-        DecodeGrandpaWarpSyncResponseError::BadResponse
-    })
 }

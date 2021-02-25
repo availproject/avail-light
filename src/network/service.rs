@@ -391,7 +391,7 @@ where
         target: peer_id::PeerId,
         chain_index: usize,
         begin_hash: [u8; 32],
-    ) -> Result<Vec<protocol::GrandpaWarpSyncResponseFragment>, GrandpaWarpSyncRequestError> {
+    ) -> Result<protocol::GrandpaWarpSyncResponse, GrandpaWarpSyncRequestError> {
         let request_data = begin_hash.to_vec();
 
         let response = self

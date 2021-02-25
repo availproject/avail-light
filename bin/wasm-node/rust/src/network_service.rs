@@ -476,8 +476,7 @@ impl NetworkService {
         target: PeerId,
         chain_index: usize,
         begin_hash: [u8; 32],
-    ) -> Result<Vec<protocol::GrandpaWarpSyncResponseFragment>, service::GrandpaWarpSyncRequestError>
-    {
+    ) -> Result<protocol::GrandpaWarpSyncResponse, service::GrandpaWarpSyncRequestError> {
         log::debug!(target: "network", "Connection({}) <= GrandpaWarpSyncRequest({:?})", target, begin_hash);
 
         let result = self
@@ -489,7 +488,7 @@ impl NetworkService {
             target: "network",
             "Connection({}) => GrandpaWarpSyncRequest({:?})",
             target,
-            result.as_ref().map(|fragments| fragments.len()),
+            result.as_ref().map(|response| response.fragments.len()),
         );
 
         result
