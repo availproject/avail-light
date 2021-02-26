@@ -21,14 +21,8 @@ export default function westend_specs() {
       "0x53849a2121fe81fde85859dcebe8cc9c37791c01a9702ce65615b1dcb8ac53e5"
     ],
     "bootNodes": [
-      "/dns/0.westend.paritytech.net/tcp/30333/p2p/12D3KooWKer94o1REDPtAhjtYR4SdLehnSrN8PEhBnZm5NBoCrMC",
-      "/dns/0.westend.paritytech.net/tcp/30334/ws/p2p/12D3KooWKer94o1REDPtAhjtYR4SdLehnSrN8PEhBnZm5NBoCrMC",
-      "/dns/1.westend.paritytech.net/tcp/30333/p2p/12D3KooWPVPzs42GvRBShdUMtFsk4SvnByrSdWqb6aeAAHvLMSLS",
-      "/dns/1.westend.paritytech.net/tcp/30334/ws/p2p/12D3KooWPVPzs42GvRBShdUMtFsk4SvnByrSdWqb6aeAAHvLMSLS",
-      "/dns/2.westend.paritytech.net/tcp/30333/p2p/12D3KooWByVpK92hMi9CzTjyFg9cPHDU5ariTM3EPMq9vdh5S5Po",
-      "/dns/2.westend.paritytech.net/tcp/30334/ws/p2p/12D3KooWByVpK92hMi9CzTjyFg9cPHDU5ariTM3EPMq9vdh5S5Po",
-      "/dns/3.westend.paritytech.net/tcp/30333/p2p/12D3KooWGi1tCpKXLMYED9y28QXLnwgD4neYb1Arqq4QpeV1Sv3K",
-      "/dns/3.westend.paritytech.net/tcp/30334/ws/p2p/12D3KooWGi1tCpKXLMYED9y28QXLnwgD4neYb1Arqq4QpeV1Sv3K"
+      "/dns/westend-connect-0.polkadot.io/tcp/443/wss/p2p/12D3KooWR3UGwwSP5wdBMk2JXXuzXoscPSudv8hmQkzfZTBzSbeE",
+      "/dns/westend-connect-1.polkadot.io/tcp/443/wss/p2p/12D3KooWQeuYtdKUgC9A2wNchxQDXWHbotZWUHxnraBwiV15GH4K"
     ],
     "chainType": "Live",
     "consensusEngine": null,

@@ -34,8 +34,12 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{chain, chain::sync::all, informant::HashDisplay, libp2p, network};
-use std::{collections::HashMap, convert::TryFrom as _, num::NonZeroU32, pin::Pin, sync::Arc};
+use smoldot::{
+    chain, chain::sync::all, informant::HashDisplay, libp2p, network, trie::proof_verify,
+};
+use std::{
+    collections::HashMap, convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin, sync::Arc,
+};
 
 mod lossy_channel;
 
@@ -200,6 +204,8 @@ async fn start_sync(
         let mut pending_block_requests = stream::FuturesUnordered::new();
         // List of grandpa warp sync requests currently in progress.
         let mut pending_grandpa_requests = stream::FuturesUnordered::new();
+        // List of storage requests currently in progress.
+        let mut pending_storage_requests = stream::FuturesUnordered::new();
 
         // TODO: remove; should store the aborthandle in the TRq user data instead
         let mut pending_requests = HashMap::new();
@@ -302,14 +308,54 @@ async fn start_sync(
                         }
                         all::Action::Start {
                             source_id,
-                            request_id: id,
+                            request_id,
                             detail:
                                 all::RequestDetail::StorageGet {
                                     block_hash,
                                     state_trie_root,
-                                    key,
+                                    keys,
                                 },
-                        } => todo!(),
+                        } => {
+                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
+
+                            let storage_request = network_service.clone().storage_proof_request(
+                                network_chain_index,
+                                peer_id.clone(),
+                                network::protocol::StorageProofRequestConfig {
+                                    block_hash,
+                                    keys: keys.clone().into_iter(),
+                                },
+                            );
+
+                            let storage_request = async move {
+                                if let Ok(outcome) = storage_request.await {
+                                    // TODO: lots of copying around
+                                    // TODO: log what happens
+                                    keys.into_iter()
+                                        .map(|key| {
+                                            proof_verify::verify_proof(proof_verify::Config {
+                                                proof: outcome.iter().map(|nv| &nv[..]),
+                                                requested_key: key.as_ref(),
+                                                trie_root_hash: &state_trie_root,
+                                            })
+                                            .map_err(|_err| {
+                                                panic!("{:?}", _err); // TODO: remove panic, it's just for debugging
+                                                ()
+                                            })
+                                            .map(|v| v.map(|v| v.to_vec()))
+                                        })
+                                        .collect::<Result<Vec<_>, ()>>()
+                                } else {
+                                    Err(())
+                                }
+                            };
+
+                            let (storage_request, abort) = future::abortable(storage_request);
+                            pending_requests.insert(request_id, abort);
+
+                            pending_storage_requests
+                                .push(async move { (request_id, storage_request.await) });
+                        }
                         all::Action::Cancel(request_id) => {
                             pending_requests.remove(&request_id).unwrap().abort();
                         }
@@ -539,12 +585,49 @@ async fn start_sync(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        let new_sync = sync_idle.grandpa_warp_sync_response(
+                        let outcome = sync_idle.grandpa_warp_sync_response(
                             request_id,
                             result.ok(),
                         );
 
-                        sync = new_sync;
+                        match outcome {
+                            all::GrandpaWarpSyncResponseOutcome::Queued {
+                                sync: sync_idle, next_actions
+                            } => {
+                                sync = sync_idle.into();
+                                requests_to_start.extend(next_actions);
+                            }
+                        }
+
+                    } else {
+                        // The sync state machine has emitted a `Action::Cancel` earlier, and is
+                        // thus no longer interested in the response.
+                        sync = sync_idle.into();
+                    }
+                },
+
+                (request_id, result) = pending_storage_requests.select_next_some() => {
+                    pending_requests.remove(&request_id);
+
+                    // A storage request has been finished.
+                    // `result` is an error if the block request got cancelled by the sync state
+                    // machine.
+                    if let Ok(result) = result {
+                        // Inject the result of the request into the sync state machine.
+                        let outcome = sync_idle.storage_get_response(
+                            request_id,
+                            result.map(|list| list.into_iter()),
+                        );
+
+                        match outcome {
+                            all::StorageGetResponseOutcome::Queued {
+                                sync: sync_idle, next_actions
+                            } => {
+                                sync = sync_idle.into();
+                                requests_to_start.extend(next_actions);
+                            }
+                        }
+
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
