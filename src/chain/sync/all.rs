@@ -174,24 +174,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         match &self.inner {
             IdleInner::Optimistic(sync) => sync.as_chain_information(),
             IdleInner::AllForks(sync) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(sync),
-            ) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::NextKey(
-                sync,
-            )) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(
-                sync,
-            )) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync),
-            ) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync),
-            ) => sync.as_chain_information(),
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(sync),
-            ) => sync.as_chain_information(),
+            IdleInner::GrandpaWarpSync(sync) => sync.as_chain_information(),
             IdleInner::Poisoned => unreachable!(),
         }
     }
@@ -201,24 +184,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         match &self.inner {
             IdleInner::Optimistic(sync) => sync.finalized_block_header(),
             IdleInner::AllForks(sync) => sync.finalized_block_header(),
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(sync),
-            ) => sync.as_chain_information().finalized_block_header,
-            IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::NextKey(
-                sync,
-            )) => sync.as_chain_information().finalized_block_header,
-            IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(
-                sync,
-            )) => sync.as_chain_information().finalized_block_header,
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync),
-            ) => sync.as_chain_information().finalized_block_header,
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync),
-            ) => sync.as_chain_information().finalized_block_header,
-            IdleInner::GrandpaWarpSync(
-                grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(sync),
-            ) => sync.as_chain_information().finalized_block_header,
+            IdleInner::GrandpaWarpSync(sync) => sync.as_chain_information().finalized_block_header,
             IdleInner::Poisoned => unreachable!(),
         }
     }
@@ -441,42 +407,9 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
             (IdleInner::AllForks(sync), SourceMapping::AllForks(src)) => {
                 &mut sync.source_mut(*src).unwrap().into_user_data().user_data
             }
-            (
-                IdleInner::GrandpaWarpSync(
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync),
-                ),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
-            (
-                IdleInner::GrandpaWarpSync(
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(sync),
-                ),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
-            (
-                IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::NextKey(
-                    sync,
-                )),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
-            (
-                IdleInner::GrandpaWarpSync(
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(sync),
-                ),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
-            (
-                IdleInner::GrandpaWarpSync(
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync),
-                ),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
-            (
-                IdleInner::GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(
-                    sync,
-                )),
-                SourceMapping::GrandpaWarpSync(source_id),
-            ) => &mut sync.source_user_data_mut(*source_id).user_data,
+            (IdleInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
+                &mut sync.source_user_data_mut(*src).user_data
+            }
             (IdleInner::Poisoned, _) => unreachable!(),
             _ => todo!(), // TODO: !
         }
