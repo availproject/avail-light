@@ -49,7 +49,7 @@ hashbrown = { version = "0.9.1", default-features = false, features = ["serde"] 
 hex = { version = "0.4.2", default-features = false }
 libsecp256k1 = { version = "0.3.5", default-features = false }
 # Reminder: `log` is forbidden
-merlin = { version = "2.0", default-features = false }
+merlin = { version = "3.0", default-features = false }
 multihash = "0.11.4"  # TODO: waiting for a crates.io publication of https://github.com/multiformats/rust-multihash/pull/82 that adds no_std support
 nom = { version = "6.1.2", default-features = false, features = ["alloc"] }
 num-bigint = { version = "0.3.1", default-features = false }
@@ -60,7 +60,7 @@ pin-project = "1.0.5"
 prost = { version = "0.7.0", default-features = false }
 rand = { version = "0.8.3", default-features = false, features = ["std", "std_rng"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
 rand_chacha = { version = "0.3.0", default-features = false }
-schnorrkel = { git = "https://github.com/w3f/schnorrkel", rev = "cfdbe9ae865a4d3ffa2566d896d4dbedf5107028", features = ["preaudit_deprecated"] } # TODO: waiting for a publication { version = "0.9.1", default-features = false, features = ["preaudit_deprecated"] }
+schnorrkel = { version = "0.9.2", default-features = false, features = ["preaudit_deprecated", "u64_backend"] }
 serde = { version = "1.0.123", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.63", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = { version = "0.9.3", default-features = false }
