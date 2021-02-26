@@ -1330,7 +1330,17 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
             }
 
             (Some(a), None) => Some(a),
-            (None, Some((b, _))) => Some(&b[..]),
+            (None, Some((b, true))) => Some(&b[..]),
+            (None, Some((b, false))) => {
+                debug_assert!(&b[..] > requested_key);
+                self.shared
+                    .inner
+                    .best_to_finalized_storage_diff
+                    .range(b.clone()..) // TODO: don't clone?
+                    .filter(|(_, value)| value.is_some())
+                    .map(|(k, _)| &k[..])
+                    .next()
+            }
             (None, None) => None,
         };
 
