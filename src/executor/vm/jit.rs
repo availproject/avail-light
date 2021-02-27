@@ -29,6 +29,27 @@ use core::{
     fmt,
 };
 
+/// See [`super::Module`].
+#[derive(Clone)]
+pub struct Module {
+    inner: wasmtime::Module,
+}
+
+impl Module {
+    /// See [`super::Module::new`].
+    pub fn new(module_bytes: impl AsRef<[u8]>) -> Result<Self, NewErr> {
+        let mut config = wasmtime::Config::new();
+        config.cranelift_nan_canonicalization(true);
+        config.cranelift_opt_level(wasmtime::OptLevel::Speed);
+        let engine = wasmtime::Engine::new(&config);
+
+        let inner = wasmtime::Module::from_binary(&engine, module_bytes.as_ref())
+            .map_err(|err| NewErr::ModuleError(ModuleError(err.to_string())))?;
+
+        Ok(Module { inner })
+    }
+}
+
 /// See [`super::VirtualMachinePrototype`].
 pub struct JitPrototype {
     /// Coroutine that contains the Wasm execution stack.
@@ -45,18 +66,11 @@ pub struct JitPrototype {
 impl JitPrototype {
     /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
-        module: impl AsRef<[u8]>,
+        module: &Module,
         heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        let mut config = wasmtime::Config::new();
-        config.cranelift_nan_canonicalization(true);
-        config.cranelift_opt_level(wasmtime::OptLevel::Speed);
-        let engine = wasmtime::Engine::new(&config);
-
-        let store = wasmtime::Store::new(&engine);
-        let module = wasmtime::Module::from_binary(&engine, module.as_ref())
-            .map_err(|err| NewErr::ModuleError(ModuleError(err.to_string())))?;
+        let store = wasmtime::Store::new(&module.inner.engine());
 
         let builder = corooteen::CoroutineBuilder::new();
 
@@ -64,8 +78,8 @@ impl JitPrototype {
 
         // Building the list of symbols that the Wasm VM is able to use.
         let imports = {
-            let mut imports = Vec::with_capacity(module.imports().len());
-            for import in module.imports() {
+            let mut imports = Vec::with_capacity(module.inner.imports().len());
+            for import in module.inner.imports() {
                 match import.ty() {
                     wasmtime::ExternType::Func(f) => {
                         // TODO: don't panic below
@@ -147,7 +161,7 @@ impl JitPrototype {
         };
 
         // TODO: don't unwrap
-        let instance = wasmtime::Instance::new(&store, &module, &imports).unwrap();
+        let instance = wasmtime::Instance::new(&store, &module.inner, &imports).unwrap();
 
         let exported_memory = if let Some(mem) = instance.get_export("memory") {
             if let Some(mem) = mem.into_memory() {

@@ -181,7 +181,16 @@ use sha2::Digest as _;
 use tiny_keccak::Hasher as _;
 
 /// Prototype for an [`HostVm`].
+///
+/// > **Note**: This struct implements `Clone`. Cloning a [`HostVmPrototype`] allocates memory
+/// >           necessary for the clone to run.
+// TODO: this behaviour ^ interacts with zero-ing memory when resetting from a vm to a prototype; figure out and clarify
 pub struct HostVmPrototype {
+    /// Original module used to instantiate the prototype.
+    ///
+    /// > **Note**: Cloning this object is cheap.
+    module: vm::Module,
+
     /// Inner virtual machine prototype.
     vm_proto: vm::VirtualMachinePrototype,
 
@@ -208,6 +217,11 @@ impl HostVmPrototype {
         heap_pages: vm::HeapPages,
         exec_hint: vm::ExecHint,
     ) -> Result<Self, NewErr> {
+        let module = vm::Module::new(module, exec_hint)?;
+        Self::from_module(module, heap_pages)
+    }
+
+    fn from_module(module: vm::Module, heap_pages: vm::HeapPages) -> Result<Self, NewErr> {
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
@@ -215,9 +229,8 @@ impl HostVmPrototype {
         let (mut vm_proto, registered_functions) = {
             let mut registered_functions = Vec::new();
             let vm_proto = vm::VirtualMachinePrototype::new(
-                module,
+                &module,
                 heap_pages,
-                exec_hint,
                 // This closure is called back for each function that the runtime imports.
                 |mod_name, f_name, _signature| {
                     if mod_name != "env" {
@@ -243,6 +256,7 @@ impl HostVmPrototype {
             .map_err(|_| NewErr::HeapBaseNotFound)?;
 
         Ok(HostVmPrototype {
+            module,
             vm_proto,
             heap_base,
             registered_functions,
@@ -307,6 +321,7 @@ impl HostVmPrototype {
         Ok(ReadyToRun {
             resume_value: None,
             inner: Inner {
+                module: self.module,
                 vm,
                 heap_base: self.heap_base,
                 heap_pages: self.heap_pages,
@@ -315,6 +330,15 @@ impl HostVmPrototype {
                 allocator,
             },
         })
+    }
+}
+
+impl Clone for HostVmPrototype {
+    fn clone(&self) -> Self {
+        // The `from_module` function returns an error if the format of the module is invalid.
+        // Since we have successfully called `from_module` with that same `module` earlier, it
+        // is assumed that errors cannot happen.
+        Self::from_module(self.module.clone(), self.heap_pages).unwrap()
     }
 }
 
@@ -1985,6 +2009,9 @@ impl EndStorageTransaction {
 
 /// Running virtual machine. Shared between all the variants in [`HostVm`].
 struct Inner {
+    /// See [`HostVmPrototype::module`].
+    module: vm::Module,
+
     /// Inner lower-level virtual machine.
     vm: vm::VirtualMachine,
 
@@ -2118,6 +2145,7 @@ impl Inner {
     /// Turns the virtual machine back into a prototype.
     fn into_prototype(self) -> HostVmPrototype {
         HostVmPrototype {
+            module: self.module,
             vm_proto: self.vm.into_prototype(),
             heap_base: self.heap_base,
             registered_functions: self.registered_functions,

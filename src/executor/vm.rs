@@ -97,6 +97,47 @@ use alloc::vec::Vec;
 use core::{convert::TryFrom, fmt};
 use smallvec::SmallVec;
 
+/// Compiled Wasm code.
+///
+/// > **Note**: This struct implements `Clone`. The internals are reference-counted, meaning that
+/// >           cloning is cheap.
+#[derive(Clone)]
+pub struct Module {
+    inner: ModuleInner,
+}
+
+#[derive(Clone)]
+enum ModuleInner {
+    #[cfg(all(target_arch = "x86_64", feature = "std"))]
+    Jit(jit::Module),
+    Interpreter(interpreter::Module),
+}
+
+impl Module {
+    /// Compiles the given Wasm code.
+    pub fn new(module: impl AsRef<[u8]>, exec_hint: ExecHint) -> Result<Self, NewErr> {
+        let use_wasmtime = match exec_hint {
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            ExecHint::CompileAheadOfTime => true,
+            #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+            ExecHint::CompileAheadOfTime => false,
+            ExecHint::Oneshot | ExecHint::Untrusted => false,
+        };
+
+        Ok(Module {
+            inner: if use_wasmtime {
+                #[cfg(all(target_arch = "x86_64", feature = "std"))]
+                let out = ModuleInner::Jit(jit::Module::new(module)?);
+                #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
+                let out = unreachable!();
+                out
+            } else {
+                ModuleInner::Interpreter(interpreter::Module::new(module)?)
+            },
+        })
+    }
+}
+
 pub struct VirtualMachinePrototype {
     inner: VirtualMachinePrototypeInner,
 }
@@ -108,7 +149,8 @@ enum VirtualMachinePrototypeInner {
 }
 
 impl VirtualMachinePrototype {
-    /// Creates a new process state machine from the given module.
+    /// Creates a new process state machine from the given module. This method notably allocates
+    /// the memory necessary for the virtual machine to run.
     ///
     /// The closure is called for each import that the module has. It must assign a number to each
     /// import, or return an error if the import can't be resolved. When the VM calls one of these
@@ -117,32 +159,19 @@ impl VirtualMachinePrototype {
     ///
     /// See [the module-level documentation](..) for an explanation of the parameters.
     pub fn new(
-        module: impl AsRef<[u8]>,
+        module: &Module,
         heap_pages: HeapPages,
-        exec_hint: ExecHint,
         symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        let use_wasmtime = match exec_hint {
-            #[cfg(all(target_arch = "x86_64", feature = "std"))]
-            ExecHint::CompileAheadOfTime => true,
-            #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
-            ExecHint::CompileAheadOfTime => false,
-            ExecHint::Oneshot | ExecHint::Untrusted => false,
-        };
-
         Ok(VirtualMachinePrototype {
-            inner: if use_wasmtime {
+            inner: match &module.inner {
+                ModuleInner::Interpreter(module) => VirtualMachinePrototypeInner::Interpreter(
+                    interpreter::InterpreterPrototype::new(module, heap_pages, symbols)?,
+                ),
                 #[cfg(all(target_arch = "x86_64", feature = "std"))]
-                let out = VirtualMachinePrototypeInner::Jit(jit::JitPrototype::new(
-                    module, heap_pages, symbols,
-                )?);
-                #[cfg(not(all(target_arch = "x86_64", feature = "std")))]
-                let out = unreachable!();
-                out
-            } else {
-                VirtualMachinePrototypeInner::Interpreter(interpreter::InterpreterPrototype::new(
-                    module, heap_pages, symbols,
-                )?)
+                ModuleInner::Jit(module) => VirtualMachinePrototypeInner::Jit(
+                    jit::JitPrototype::new(module, heap_pages, symbols)?,
+                ),
             },
         })
     }

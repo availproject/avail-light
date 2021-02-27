@@ -22,13 +22,35 @@ use super::{
     Signature, StartErr, Trap, ValueType, WasmValue,
 };
 
-use alloc::{borrow::ToOwned as _, boxed::Box, format, vec::Vec};
+use alloc::{borrow::ToOwned as _, boxed::Box, format, sync::Arc, vec::Vec};
 use core::{
     cell::RefCell,
     convert::{TryFrom, TryInto as _},
     fmt,
 };
 use wasmi::memory_units::ByteSize as _;
+
+/// See [`super::Module`].
+#[derive(Clone)]
+pub struct Module {
+    // Note: an `Arc` is used in order to expose the same API as wasmtime does. If in the future
+    // wasmtime happened to no longer use internal reference counting, this `Arc` should be
+    // removed.
+    inner: Arc<wasmi::Module>,
+}
+
+impl Module {
+    /// See [`super::Module::new`].
+    pub fn new(module_bytes: impl AsRef<[u8]>) -> Result<Self, NewErr> {
+        let module = wasmi::Module::from_buffer(module_bytes.as_ref())
+            .map_err(|err| ModuleError(err.to_string()))
+            .map_err(NewErr::ModuleError)?;
+
+        Ok(Module {
+            inner: Arc::new(module),
+        })
+    }
+}
 
 /// See [`super::VirtualMachinePrototype`].
 pub struct InterpreterPrototype {
@@ -52,14 +74,10 @@ pub struct InterpreterPrototype {
 impl InterpreterPrototype {
     /// See [`super::VirtualMachinePrototype::new`].
     pub fn new(
-        module_bytes: impl AsRef<[u8]>,
+        module: &Module,
         heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        let module = wasmi::Module::from_buffer(module_bytes.as_ref())
-            .map_err(|err| ModuleError(err.to_string()))
-            .map_err(NewErr::ModuleError)?;
-
         struct ImportResolve<'a> {
             functions: RefCell<&'a mut dyn FnMut(&str, &str, &Signature) -> Result<usize, ()>>,
             import_memory: RefCell<&'a mut Option<wasmi::MemoryRef>>,
@@ -176,7 +194,7 @@ impl InterpreterPrototype {
                 import_memory: RefCell::new(&mut import_memory),
                 heap_pages,
             };
-            wasmi::ModuleInstance::new(&module, &resolver)
+            wasmi::ModuleInstance::new(&module.inner, &resolver)
                 .map_err(|err| ModuleError(err.to_string()))
                 .map_err(NewErr::ModuleError)?
         };
