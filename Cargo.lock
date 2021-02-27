@@ -2039,9 +2039,9 @@ checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
 
 [[package]]
 name = "schnorrkel"
-version = "0.9.2"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7766dbddf1ec618a994bffdec5fa1186102232ea92891072fd96e15c528c266"
+checksum = "05159e0a43ca18e8bc49d5885e10682456c9d2981dd197277d38673a44f99459"
 dependencies = [
  "arrayref",
  "arrayvec 0.5.2",
