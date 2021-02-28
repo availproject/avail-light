@@ -17,7 +17,7 @@
 
 use crate::header::BabeNextConfig;
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
 use parity_scale_codec::{Decode, DecodeAll as _, Encode};
 use serde::{Deserialize, Serialize};
 

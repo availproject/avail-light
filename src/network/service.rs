@@ -20,6 +20,12 @@ use crate::libp2p::{
 };
 use crate::network::protocol;
 use crate::util;
+
+use alloc::{
+    format,
+    string::{String, ToString as _},
+    vec::Vec,
+};
 use core::{
     fmt, iter,
     num::NonZeroUsize,

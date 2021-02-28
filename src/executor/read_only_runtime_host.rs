@@ -21,7 +21,10 @@
 
 use crate::executor::{self, host, vm};
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    string::{String, ToString as _},
+    vec::Vec,
+};
 use core::{fmt, iter};
 
 /// Configuration for [`run`].

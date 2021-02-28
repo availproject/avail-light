@@ -39,7 +39,7 @@ use super::{
     yamux,
 };
 
-use alloc::vec;
+use alloc::{boxed::Box, vec};
 use core::{fmt, iter};
 
 mod tests;

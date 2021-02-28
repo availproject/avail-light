@@ -93,7 +93,7 @@ mod interpreter;
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod jit;
 
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use core::{convert::TryFrom, fmt};
 use smallvec::SmallVec;
 

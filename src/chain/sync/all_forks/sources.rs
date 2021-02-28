@@ -25,7 +25,7 @@
 //! - An opaque user data, of type `TSrc`.
 //!
 
-use alloc::collections::BTreeSet;
+use alloc::{collections::BTreeSet, vec::Vec};
 use core::fmt;
 
 /// Identifier for a source in the [`AllForksSources`].

@@ -37,7 +37,7 @@
 use crate::chain::chain_information::{
     BabeEpochInformation, ChainInformation, ChainInformationConsensus, ChainInformationFinality,
 };
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use core::num::NonZeroU64;
 
 mod light_sync_state;

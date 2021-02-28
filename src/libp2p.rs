@@ -94,7 +94,7 @@
 // the substream which is thought to be the old one but is actually the new one.
 //
 
-use alloc::sync::Arc;
+use alloc::{string::String, sync::Arc, vec::Vec};
 use connection::established;
 use core::{
     iter, mem,

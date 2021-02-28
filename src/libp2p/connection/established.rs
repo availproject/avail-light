@@ -52,7 +52,10 @@ use crate::util::leb128;
 
 use super::{multistream_select, noise, yamux};
 
-use alloc::vec::{self, Vec};
+use alloc::{
+    string::String,
+    vec::{self, Vec},
+};
 use core::{
     cmp, fmt, iter, mem,
     ops::{Add, Sub},

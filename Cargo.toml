@@ -21,6 +21,7 @@ members = [
 default = ["database-sled", "std"]
 database-sled = [
     "sled",
+    "std"   # A database stored on the filesystem can't reasonably work without a filesystem.
 ]
 std = [
     "async-std",

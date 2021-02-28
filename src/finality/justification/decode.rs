@@ -133,7 +133,7 @@ pub struct PrecommitsRefIter<'a> {
 }
 
 enum PrecommitsRefIterInner<'a> {
-    Decoded(std::slice::Iter<'a, Precommit>),
+    Decoded(core::slice::Iter<'a, Precommit>),
     Undecoded {
         remaining_len: usize,
         pointer: &'a [u8],

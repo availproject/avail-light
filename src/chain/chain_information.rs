@@ -40,7 +40,7 @@
 
 use crate::{finality::grandpa, header};
 
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned as _, vec::Vec};
 use core::num::NonZeroU64;
 
 pub mod aura_config;

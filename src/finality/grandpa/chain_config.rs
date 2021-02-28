@@ -20,7 +20,7 @@ use crate::{
     header,
 };
 
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned as _, vec::Vec};
 use core::num::NonZeroU64;
 use parity_scale_codec::DecodeAll as _;
 

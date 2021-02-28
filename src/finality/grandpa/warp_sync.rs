@@ -22,6 +22,8 @@ use crate::finality::justification::verify::{
 use crate::header::{DigestItemRef, GrandpaConsensusLogRef, Header};
 use crate::network::protocol::GrandpaWarpSyncResponseFragment;
 
+use alloc::vec::Vec;
+
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
     #[display(fmt = "{}", _0)]

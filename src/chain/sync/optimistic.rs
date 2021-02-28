@@ -54,6 +54,7 @@ use crate::{
 };
 
 use alloc::{
+    borrow::ToOwned as _,
     collections::{BTreeMap, VecDeque},
     vec::Vec,
 };

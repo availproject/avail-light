@@ -87,7 +87,7 @@ use crate::{
     header, verify,
 };
 
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, vec::Vec};
 use core::{
     iter, mem,
     num::{NonZeroU32, NonZeroU64},

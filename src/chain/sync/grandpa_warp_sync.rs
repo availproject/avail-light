@@ -31,6 +31,8 @@ use crate::{
     network::protocol::GrandpaWarpSyncResponse,
 };
 
+use alloc::vec::Vec;
+
 /// Problem encountered during a call to [`grandpa_warp_sync`].
 #[derive(Debug, derive_more::Display)]
 pub enum Error {

@@ -61,7 +61,10 @@
 
 use crate::header;
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
 use core::{
     convert::TryFrom as _,
     num::{NonZeroU32, NonZeroU64},

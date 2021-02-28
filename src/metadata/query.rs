@@ -57,7 +57,7 @@
 
 use crate::executor::{host, read_only_runtime_host};
 
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned as _, vec::Vec};
 
 /// Retrieves the SCALE-encoded metadata from the given virtual machine prototype.
 ///

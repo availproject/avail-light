@@ -22,7 +22,7 @@
 
 use super::light_sync_state::LightSyncState;
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, format, string::String, vec::Vec};
 use fnv::FnvBuildHasher;
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};

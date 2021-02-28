@@ -18,7 +18,7 @@
 use super::schema;
 use crate::libp2p::{peer_id::PublicKey, Multiaddr};
 
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned as _, vec::Vec};
 use core::iter;
 use prost::Message as _;
 

@@ -22,7 +22,7 @@ use super::{
     Signature, StartErr, Trap, ValueType, WasmValue,
 };
 
-use alloc::{borrow::ToOwned as _, boxed::Box, format, sync::Arc, vec::Vec};
+use alloc::{borrow::ToOwned as _, boxed::Box, format, string::ToString as _, sync::Arc, vec::Vec};
 use core::{
     cell::RefCell,
     convert::{TryFrom, TryInto as _},

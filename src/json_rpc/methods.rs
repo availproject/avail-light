@@ -19,7 +19,14 @@
 
 use super::parse;
 use crate::util;
-use alloc::{format, string::String, vec::Vec};
+
+use alloc::{
+    borrow::ToOwned as _,
+    boxed::Box,
+    format,
+    string::{String, ToString as _},
+    vec::Vec,
+};
 use core::convert::TryFrom as _;
 
 /// Parses a JSON call (usually received from a JSON-RPC server).

@@ -54,7 +54,7 @@ use crate::{
     util,
 };
 
-use alloc::{string::String, vec::Vec};
+use alloc::{borrow::ToOwned as _, string::String, vec::Vec};
 use core::{iter, mem};
 use hashbrown::HashMap;
 

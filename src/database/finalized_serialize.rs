@@ -31,6 +31,7 @@
 
 use crate::chain::chain_information;
 
+use alloc::{string::String, vec::Vec};
 use core::iter;
 use hashbrown::HashMap;
 
