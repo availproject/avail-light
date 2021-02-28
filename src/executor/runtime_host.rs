@@ -40,6 +40,7 @@
 use crate::{
     executor::{self, host, vm},
     trie::calculate_root,
+    util,
 };
 
 use alloc::{string::String, vec::Vec};
@@ -671,40 +672,35 @@ impl Inner {
 
 /// Performs the action described by [`host::HostVm::ExternalStorageAppend`] on an
 /// encoded storage value.
-// TODO: remove usage of parity_scale_codec
 fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {
-    let curr_len = match <parity_scale_codec::Compact<u64> as parity_scale_codec::Decode>::decode(
-        &mut &value[..],
-    ) {
-        Ok(l) => l,
-        Err(_) => {
-            value.clear();
-            parity_scale_codec::Encode::encode_to(&parity_scale_codec::Compact(1u64), value);
-            value.extend_from_slice(to_add);
-            return;
-        }
-    };
+    let (curr_len, curr_len_encoded_size) =
+        match util::nom_scale_compact_usize::<nom::error::Error<&[u8]>>(&value) {
+            Ok((rest, l)) => (l, value.len() - rest.len()),
+            Err(_) => {
+                value.clear();
+                value.reserve(to_add.len() + 1);
+                value.extend_from_slice(util::encode_scale_compact_usize(1).as_ref());
+                value.extend_from_slice(to_add);
+                return;
+            }
+        };
 
     // Note: we use `checked_add`, as it is possible that the storage entry erroneously starts
     // with `u64::max_value()`.
-    let new_len = match curr_len.0.checked_add(1) {
-        Some(l) => parity_scale_codec::Compact(l),
+    let new_len = match curr_len.checked_add(1) {
+        Some(l) => l,
         None => {
             value.clear();
-            parity_scale_codec::Encode::encode_to(&parity_scale_codec::Compact(1u64), value);
+            value.reserve(to_add.len() + 1);
+            value.extend_from_slice(util::encode_scale_compact_usize(1).as_ref());
             value.extend_from_slice(to_add);
             return;
         }
     };
 
-    let curr_len_encoded_size =
-        <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
-            &curr_len.0,
-        );
-    let new_len_encoded_size =
-        <parity_scale_codec::Compact<u64> as parity_scale_codec::CompactLen<u64>>::compact_len(
-            &new_len.0,
-        );
+    let new_len_encoded = util::encode_scale_compact_usize(new_len);
+
+    let new_len_encoded_size = new_len_encoded.as_ref().len();
     debug_assert!(
         new_len_encoded_size == curr_len_encoded_size
             || new_len_encoded_size == curr_len_encoded_size + 1
@@ -714,6 +710,6 @@ fn append_to_storage_value(value: &mut Vec<u8>, to_add: &[u8]) {
         value.insert(0, 0);
     }
 
-    parity_scale_codec::Encode::encode_to(&new_len, &mut (&mut value[..new_len_encoded_size]));
+    value[..new_len_encoded_size].copy_from_slice(new_len_encoded.as_ref());
     value.extend_from_slice(to_add);
 }
