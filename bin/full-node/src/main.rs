@@ -482,7 +482,12 @@ async fn async_main() {
                 }));*/
             },
 
-            _ = ctrlc_rx => return,
+            _ = ctrlc_rx => {
+                // Adding a new line after the informant so that the user's shell doesn't
+                // overwrite it.
+                eprintln!("");
+                return
+            },
         }
     }
 }
