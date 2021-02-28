@@ -2221,6 +2221,7 @@ dependencies = [
  "futures",
  "hashbrown",
  "hex",
+ "itertools 0.10.0",
  "libsecp256k1",
  "merlin 3.0.0",
  "multihash",

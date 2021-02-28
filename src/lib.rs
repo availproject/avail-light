@@ -191,8 +191,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-
 pub mod author;
 pub mod chain;
 pub mod chain_spec;
@@ -238,11 +236,9 @@ pub fn calculate_genesis_block_header<'a>(
                         keys.inject(genesis_storage.clone().map(|(k, _)| k.iter().cloned()));
                 }
                 trie::calculate_root::RootMerkleValueCalculation::StorageValue(val) => {
-                    // TODO: don't allocate
-                    let key = val.key().collect::<Vec<_>>();
                     let value = genesis_storage
                         .clone()
-                        .find(|(k, _)| *k == &key[..])
+                        .find(|(k, _)| itertools::equal(k.iter().copied(), val.key()))
                         .map(|(_, v)| v);
                     calculation = val.inject(value);
                 }
