@@ -504,8 +504,18 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                     }
                 }
             }
-            (IdleInner::GrandpaWarpSync(sync), &SourceMapping::GrandpaWarpSync(_)) => {
-                // TODO: block announces are simply ignored at the moment; update the user data
+            (IdleInner::GrandpaWarpSync(mut sync), &SourceMapping::GrandpaWarpSync(source_id)) => {
+                // If GrandPa warp syncing is in progress, the best block of the source is stored
+                // in the user data. It will be useful later when transitioning to another
+                // syncing strategy.
+                if is_best {
+                    let mut user_data = sync.source_user_data_mut(source_id);
+                    // TODO: this can't panic right now, but it should be made explicit in the API that the header must be valid
+                    let header = header::decode(&announced_scale_encoded_header).unwrap();
+                    user_data.best_block_number = header.number;
+                    user_data.best_block_hash = header.hash();
+                }
+
                 self.inner = IdleInner::GrandpaWarpSync(sync);
                 BlockAnnounceOutcome::Disjoint {
                     sync: self,
