@@ -62,7 +62,7 @@ pin-project = "1.0.5"
 prost = { version = "0.7.0", default-features = false }
 rand = { version = "0.8.3", default-features = false, features = ["std", "std_rng"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
 rand_chacha = { version = "0.3.0", default-features = false }
-schnorrkel = { version = "0.10.0", default-features = false, features = ["preaudit_deprecated", "u64_backend"] }
+schnorrkel = { version = "0.10.1", default-features = false, features = ["preaudit_deprecated", "u64_backend"] }
 serde = { version = "1.0.123", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.63", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = { version = "0.9.3", default-features = false }
