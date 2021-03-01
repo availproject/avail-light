@@ -64,7 +64,7 @@ rand = { version = "0.8.3", default-features = false, features = ["std", "std_rn
 rand_chacha = { version = "0.3.0", default-features = false }
 schnorrkel = { version = "0.10.1", default-features = false, features = ["preaudit_deprecated", "u64_backend"] }
 serde = { version = "1.0.123", default-features = false, features = ["alloc", "derive"] }
-serde_json = { version = "1.0.63", default-features = false, features = ["alloc", "raw_value"] }
+serde_json = { version = "1.0.64", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = { version = "0.9.3", default-features = false }
 slab = "0.4.2"  # TODO: doesn't support no_std and is unmaintained :-/
 smallvec = "1.6.1"
