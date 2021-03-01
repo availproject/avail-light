@@ -18,7 +18,6 @@
 use crate::finality::justification::decode;
 
 use alloc::vec::Vec;
-use core::convert::TryFrom as _;
 
 /// Configuration for a justification verification process.
 #[derive(Debug)]
@@ -51,9 +50,11 @@ pub fn verify(config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>) ->
 
     // Verifying all the signatures together brings better performances than verifying them one
     // by one.
-    let mut messages = Vec::with_capacity(config.justification.precommits.iter().len());
-    let mut signatures = Vec::with_capacity(config.justification.precommits.iter().len());
-    let mut public_keys = Vec::with_capacity(config.justification.precommits.iter().len());
+    // Note that batched ed25519 verification has some issues. The code below uses a special
+    // flavour of ed25519 where ambiguities are removed.
+    // See https://docs.rs/ed25519-zebra/2.2.0/ed25519_zebra/batch/index.html and
+    // https://github.com/zcash/zips/blob/master/zip-0215.rst
+    let mut batch = ed25519_zebra::batch::Verifier::new();
 
     for (precommit_num, precommit) in config.justification.precommits.iter().enumerate() {
         if !config
@@ -76,39 +77,27 @@ pub fn verify(config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>) ->
 
         // TODO: must check signed block ancestry using `votes_ancestries`
 
-        messages.push({
-            let mut msg = Vec::with_capacity(1 + 32 + 4 + 8 + 8);
-            msg.push(1u8); // This `1` indicates which kind of message is being signed.
-            msg.extend_from_slice(&precommit.target_hash[..]);
-            msg.extend_from_slice(&u32::to_le_bytes(precommit.target_number)[..]);
-            msg.extend_from_slice(&u64::to_le_bytes(config.justification.round)[..]);
-            msg.extend_from_slice(&u64::to_le_bytes(config.authorities_set_id)[..]);
-            debug_assert_eq!(msg.len(), msg.capacity());
-            msg
-        });
+        let mut msg = Vec::with_capacity(1 + 32 + 4 + 8 + 8);
+        msg.push(1u8); // This `1` indicates which kind of message is being signed.
+        msg.extend_from_slice(&precommit.target_hash[..]);
+        msg.extend_from_slice(&u32::to_le_bytes(precommit.target_number)[..]);
+        msg.extend_from_slice(&u64::to_le_bytes(config.justification.round)[..]);
+        msg.extend_from_slice(&u64::to_le_bytes(config.authorities_set_id)[..]);
+        debug_assert_eq!(msg.len(), msg.capacity());
 
-        // Can only panic in case of bad signature length, which we know can't happen.
-        signatures.push(ed25519_dalek::Signature::try_from(&precommit.signature[..]).unwrap());
-
-        public_keys.push(
-            ed25519_dalek::PublicKey::from_bytes(precommit.authority_public_key)
-                .map_err(|_| Error::BadPublicKey)?,
-        );
+        batch.queue(ed25519_zebra::batch::Item::from((
+            ed25519_zebra::VerificationKeyBytes::from(*precommit.authority_public_key),
+            ed25519_zebra::Signature::from(*precommit.signature),
+            &msg,
+        )));
     }
 
-    debug_assert_eq!(messages.len(), public_keys.len());
-    debug_assert_eq!(messages.len(), signatures.len());
-    debug_assert_eq!(public_keys.len(), signatures.len());
-
-    debug_assert_eq!(messages.len(), messages.capacity());
-    debug_assert_eq!(signatures.len(), signatures.capacity());
-    debug_assert_eq!(public_keys.len(), public_keys.capacity());
-
-    {
-        let messages_refs = messages.iter().map(|m| &m[..]).collect::<Vec<_>>();
-        ed25519_dalek::verify_batch(&messages_refs, &signatures, &public_keys)
-            .map_err(|_| Error::BadSignature)?;
-    }
+    // Actual signatures verification performed here.
+    // TODO: thread_rng()?!?! what to do here?
+    // TODO: ed25519_zebra depends on rand_core 0.5, which forces us to use an older version of rand; really annoying
+    batch
+        .verify(rand7::thread_rng())
+        .map_err(|_| Error::BadSignature)?;
 
     // TODO: must check that votes_ancestries doesn't contain any unused entry
     // TODO: there's also a "ghost" thing?

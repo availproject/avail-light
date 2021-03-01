@@ -19,7 +19,7 @@ async-std = "1.9.0"
 atty = "0.2.14"
 ctrlc = "3.1.8"
 derive_more = "0.99.11"
-ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "u64_backend"] }
+ed25519-zebra = { version = "2.2.0", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 futures = { version = "0.3.13", default-features = false, features = ["std", "thread-pool"] }
 futures-timer = "3.0"

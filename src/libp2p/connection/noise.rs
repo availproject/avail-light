@@ -112,15 +112,14 @@ impl NoiseKey {
 
         let (libp2p_public_key, signature) = {
             // Creating a `SecretKey` can fail only if the length isn't 32 bytes.
-            let secret = ed25519_dalek::SecretKey::from_bytes(libp2p_ed25519_private_key).unwrap();
-            let expanded = ed25519_dalek::ExpandedSecretKey::from(&secret);
-            let public = ed25519_dalek::PublicKey::from(&expanded);
+            let secret = ed25519_zebra::SigningKey::from(*libp2p_ed25519_private_key);
+            let public = ed25519_zebra::VerificationKey::from(&secret);
             // TODO: use sign_prehashed or sign_vectored (https://github.com/dalek-cryptography/ed25519-dalek/pull/143) to not allocate Vec
-            let signature = expanded.sign(&unsigned.payload_to_sign_as_vec(), &public);
+            let signature = secret.sign(&unsigned.payload_to_sign_as_vec());
             (public, signature)
         };
 
-        unsigned.sign(libp2p_public_key.to_bytes(), signature.to_bytes())
+        unsigned.sign(libp2p_public_key.into(), signature.into())
     }
 
     /// Returns the libp2p public key associated to the signature contained in this noise key.

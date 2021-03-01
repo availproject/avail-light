@@ -42,7 +42,7 @@ arrayvec = { version = "0.5.2", default-features = false }
 blake2-rfc = { version = "0.2.18", default-features = false }
 bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
 derive_more = "0.99.11"
-ed25519-dalek = { version = "1.0.1", default-features = false, features = ["alloc", "batch", "u64_backend"] }
+ed25519-zebra = { version = "2.2.0", default-features = false }
 either = { version = "1.6.1", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 futures = "0.3.13"   # TODO: no-std-ize
@@ -60,6 +60,7 @@ num-traits = { version = "0.2.14", default-features = false }
 parity-multiaddr = "0.9.6" # TODO: doesn't support no_std
 pin-project = "1.0.5"
 prost = { version = "0.7.0", default-features = false }
+rand7 = { package = "rand", version = "0.7.3", default-features = false, features = ["std"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
 rand = { version = "0.8.3", default-features = false, features = ["std", "std_rng"] }  # TODO: rand is used in hack-y ways at the moment ; these features should be removed
 rand_chacha = { version = "0.3.0", default-features = false }
 schnorrkel = { version = "0.10.1", default-features = false, features = ["preaudit_deprecated", "u64_backend"] }

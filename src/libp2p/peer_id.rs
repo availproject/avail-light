@@ -84,11 +84,9 @@ impl PublicKey {
     /// public key.
     pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<(), ()> {
         let PublicKey::Ed25519(public_key) = self;
-        let public_key = ed25519_dalek::PublicKey::from_bytes(public_key).map_err(|_| ())?;
-        let signature = ed25519_dalek::Signature::try_from(signature).map_err(|_| ())?;
-        public_key
-            .verify_strict(message, &signature)
-            .map_err(|_| ())?;
+        let public_key = ed25519_zebra::VerificationKey::try_from(*public_key).map_err(|_| ())?;
+        let signature = ed25519_zebra::Signature::try_from(signature).map_err(|_| ())?;
+        public_key.verify(&signature, message).map_err(|_| ())?;
         Ok(())
     }
 }
