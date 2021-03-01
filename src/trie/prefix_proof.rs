@@ -77,7 +77,7 @@ impl PrefixScan {
     pub fn resume<'a>(
         mut self,
         proof: impl Iterator<Item = &'a [u8]> + Clone + 'a,
-    ) -> Result<ResumeOutcome, proof_verify::Error> {
+    ) -> Result<ResumeOutcome, (Self, proof_verify::Error)> {
         // The entire body is executed as long as verifying at least one proof succeeds.
         for is_first_iteration in iter::once(true).chain(iter::repeat(false)) {
             // Filled with the queries to perform at the next iteration.
@@ -96,7 +96,7 @@ impl PrefixScan {
                     proof: proof.clone(),
                 }) {
                     Ok(info) => info,
-                    Err(err) if is_first_iteration => return Err(err),
+                    Err(err) if is_first_iteration => return Err((self, err)),
                     Err(_) => continue,
                 };
 

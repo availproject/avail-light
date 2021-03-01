@@ -611,7 +611,11 @@ impl NetworkService {
                             Ok(prefix_proof::ResumeOutcome::Success { keys }) => {
                                 return Ok(keys);
                             }
-                            Err(err) => todo!("{:?}", err),
+                            Err((scan, err)) => {
+                                prefix_scan = scan;
+                                outcome_errors
+                                    .push(StorageQueryErrorDetail::ProofVerification(err));
+                            }
                         }
                     }
                     Err(err) => {
