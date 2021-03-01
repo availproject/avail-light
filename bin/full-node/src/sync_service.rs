@@ -30,7 +30,7 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{chain::sync::optimistic, database::full_sled, libp2p, network};
+use smoldot::{chain::sync::optimistic, database::full_sled, executor, libp2p, network};
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 use tracing::Instrument as _;
 
@@ -245,25 +245,6 @@ fn start_sync(
     mut from_foreground: mpsc::Receiver<ToBackground>,
     mut to_database: mpsc::Sender<ToDatabase>,
 ) -> impl Future<Output = ()> {
-    let mut sync = optimistic::OptimisticSync::<_, libp2p::PeerId, ()>::new(optimistic::Config {
-        chain_information: database
-            .to_chain_information(&database.finalized_block_hash().unwrap())
-            .unwrap(),
-        sources_capacity: 32,
-        blocks_capacity: {
-            // This is the maximum number of blocks between two consecutive justifications.
-            1024
-        },
-        source_selection_randomness_seed: rand::random(),
-        blocks_request_granularity: NonZeroU32::new(128).unwrap(),
-        download_ahead_blocks: {
-            // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
-            // the number of blocks to download ahead of time in order to not block is 1000.
-            1024
-        },
-        full: true,
-    });
-
     // Holds, in parallel of the database, the storage of the latest finalized block.
     // At the time of writing, this state is stable around ~3MiB for Polkadot, meaning that it is
     // completely acceptable to hold it entirely in memory.
@@ -282,6 +263,44 @@ fn start_sync(
             finalized_block_storage.insert(key.to_owned(), value.to_owned());
         }
     }
+
+    let mut sync = optimistic::OptimisticSync::<_, libp2p::PeerId, ()>::new(optimistic::Config {
+        chain_information: database
+            .to_chain_information(&database.finalized_block_hash().unwrap())
+            .unwrap(),
+        sources_capacity: 32,
+        blocks_capacity: {
+            // This is the maximum number of blocks between two consecutive justifications.
+            1024
+        },
+        source_selection_randomness_seed: rand::random(),
+        blocks_request_granularity: NonZeroU32::new(128).unwrap(),
+        download_ahead_blocks: {
+            // Assuming a verification speed of 1k blocks/sec and a 95% latency of one second,
+            // the number of blocks to download ahead of time in order to not block is 1000.
+            1024
+        },
+        full: Some(optimistic::ConfigFull {
+            finalized_runtime: {
+                // Builds the runtime of the finalized block.
+                // Assumed to always be valid, otherwise the block wouldn't have been saved in the
+                // database, hence the large number of unwraps here.
+                let module = finalized_block_storage.get(&b":code"[..]).unwrap();
+                let heap_pages = executor::storage_heap_pages_to_value(
+                    finalized_block_storage
+                        .get(&b":heappages"[..])
+                        .map(|v| &v[..]),
+                )
+                .unwrap();
+                executor::host::HostVmPrototype::new(
+                    module,
+                    heap_pages,
+                    executor::vm::ExecHint::CompileAheadOfTime, // TODO: probably should be decided by the optimisticsync
+                )
+                .unwrap()
+            },
+        }),
+    });
 
     async move {
         let mut peers_source_id_map = hashbrown::HashMap::<_, _, fnv::FnvBuildHasher>::default();

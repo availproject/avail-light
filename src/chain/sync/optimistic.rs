@@ -46,12 +46,7 @@
 // TODO: this entire module needs clean up
 
 use super::super::{blocks_tree, chain_information};
-use crate::{
-    executor::{self, host, vm},
-    header,
-    trie::calculate_root,
-    verify,
-};
+use crate::{executor::host, header, trie::calculate_root, verify};
 
 use alloc::{
     borrow::ToOwned as _,
@@ -109,8 +104,16 @@ pub struct Config {
     /// situations where determinism/reproducibility is desired.
     pub source_selection_randomness_seed: u64,
 
-    /// If true, the block bodies and storage are also synchronized.
-    pub full: bool,
+    /// If `Some`, the block bodies and storage are also synchronized. Contains the extra
+    /// configuration.
+    pub full: Option<ConfigFull>,
+}
+
+/// See [`Config::full`].
+#[derive(Debug)]
+pub struct ConfigFull {
+    /// Compiled runtime code of the finalized block.
+    pub finalized_runtime: host::HostVmPrototype,
 }
 
 /// Identifier for an ongoing request in the [`OptimisticSync`].
@@ -139,22 +142,21 @@ struct OptimisticSyncInner<TRq, TSrc, TBl> {
     /// Used if the `chain` field needs to be recreated.
     finalized_chain_information: blocks_tree::Config,
 
+    /// See [`ConfigFull::finalized_runtime`]. `None` in non-full mode.
+    finalized_runtime: Option<host::HostVmPrototype>,
+
     /// Changes in the storage of the best block compared to the finalized block.
     /// The `BTreeMap`'s keys are storage keys, and its values are new values or `None` if the
     /// value has been erased from the storage.
     best_to_finalized_storage_diff: BTreeMap<Vec<u8>, Option<Vec<u8>>>,
 
-    /// Compiled runtime code of the best block.
-    /// This field is a cache. As such, it will stay at `None` until this value has been needed
-    /// for the first time.
-    runtime_code_cache: Option<host::HostVmPrototype>,
+    /// Compiled runtime code of the best block. `None` if it is the same as
+    /// [`OptimisticSyncInner::finalized_runtime`].
+    best_runtime: Option<host::HostVmPrototype>,
 
     /// Cache of calculation for the storage trie of the best block.
     /// Providing this value when verifying a block considerably speeds up the verification.
     top_trie_root_calculation_cache: Option<calculate_root::CalculationCache>,
-
-    /// See [`Config::full`].
-    full: bool,
 
     /// See [`Config::blocks_request_granularity`].
     blocks_request_granularity: NonZeroU32,
@@ -253,10 +255,10 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
             chain,
             inner: OptimisticSyncInner {
                 finalized_chain_information: blocks_tree_config,
+                finalized_runtime: config.full.map(|f| f.finalized_runtime),
                 best_to_finalized_storage_diff: BTreeMap::new(),
-                runtime_code_cache: None,
+                best_runtime: None,
                 top_trie_root_calculation_cache: None,
-                full: config.full,
                 sources: HashMap::with_capacity_and_hasher(
                     config.sources_capacity,
                     Default::default(),
@@ -625,7 +627,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
         let expected_block_height = self.inner.verification_queue[0].block_height.get();
 
-        if self.inner.full {
+        if self.inner.finalized_runtime.is_some() {
             ProcessOne::from(
                 Inner::Step1(
                     self.chain
@@ -669,7 +671,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                     }
                     self.inner.cancelling_requests = true;
                     self.inner.best_to_finalized_storage_diff = Default::default();
-                    self.inner.runtime_code_cache = None;
+                    self.inner.best_runtime = None;
                     self.inner.top_trie_root_calculation_cache = None;
                     Some(err)
                 }
@@ -809,64 +811,9 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     //
                     // The code below extracts that re-usable virtual machine with the intention
                     // to store it back after the verification is over.
-                    let parent_runtime = match shared.inner.runtime_code_cache.take() {
+                    let parent_runtime = match shared.inner.best_runtime.take() {
                         Some(r) => r,
-                        None => {
-                            // TODO: simplify code below
-                            match (
-                                shared
-                                    .inner
-                                    .best_to_finalized_storage_diff
-                                    .get(&b":code"[..]),
-                                shared
-                                    .inner
-                                    .best_to_finalized_storage_diff
-                                    .get(&b":heappages"[..]),
-                            ) {
-                                (Some(wasm_code), Some(heap_pages)) => {
-                                    let wasm_code =
-                                        wasm_code.as_ref().expect("no runtime code?!?!"); // TODO: what to do?
-                                    let heap_pages = executor::storage_heap_pages_to_value(
-                                        heap_pages.as_deref(),
-                                    )
-                                    .unwrap(); // TODO: don't unwrap
-                                    host::HostVmPrototype::new(
-                                        &wasm_code,
-                                        heap_pages,
-                                        vm::ExecHint::CompileAheadOfTime,
-                                    )
-                                    .expect("invalid runtime code?!?!") // TODO: what to do?
-                                }
-                                (Some(wasm_code), None) => {
-                                    return ProcessOne::FinalizedStorageGet(StorageGet {
-                                        inner: StorageGetTarget::HeapPages(
-                                            req,
-                                            wasm_code.as_ref().unwrap().clone(),
-                                        ), // TODO: don't unwrap
-                                        shared,
-                                    });
-                                }
-                                (None, Some(heap_pages)) => {
-                                    let heap_pages = executor::storage_heap_pages_to_value(
-                                        heap_pages.as_deref(),
-                                    )
-                                    .unwrap(); // TODO: don't unwrap
-                                    return ProcessOne::FinalizedStorageGet(StorageGet {
-                                        inner: StorageGetTarget::Runtime(req, heap_pages), // TODO: don't unwrap
-                                        shared,
-                                    });
-                                }
-                                (None, None) => {
-                                    // No cache has been found anywhere in the hierarchy.
-                                    // The user needs to be asked for the storage entry containing the
-                                    // runtime code.
-                                    return ProcessOne::FinalizedStorageGet(StorageGet {
-                                        inner: StorageGetTarget::HeapPagesAndRuntime(req),
-                                        shared,
-                                    });
-                                }
-                            }
-                        }
+                        None => shared.inner.finalized_runtime.take().unwrap(),
                     };
 
                     inner = Inner::Step2(req.resume(
@@ -881,16 +828,36 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     offchain_storage_changes,
                     top_trie_root_calculation_cache,
                     parent_runtime,
-                    new_runtime, // TODO: make use of this
+                    new_runtime,
                     insert,
                 }) => {
                     // Successfully verified block!
-                    // Inserting it into the chain and updated all the caches.
-                    if !storage_top_trie_changes.contains_key(&b":code"[..])
-                        && !storage_top_trie_changes.contains_key(&b":heappages"[..])
-                    {
-                        shared.inner.runtime_code_cache = Some(parent_runtime);
+
+                    debug_assert_eq!(
+                        new_runtime.is_some(),
+                        storage_top_trie_changes.contains_key(&b":code"[..])
+                            || storage_top_trie_changes.contains_key(&b":heappages"[..])
+                    );
+
+                    // Before the verification, we extracted the runtime either from
+                    // `finalized_runtime` or `best_runtime`.
+                    if shared.inner.finalized_runtime.is_some() {
+                        // If `finalized_runtime` is still `Some` now, that means we have
+                        // extracted from `best_runtime`.
+                        shared.inner.best_runtime = if let Some(new_runtime) = new_runtime {
+                            Some(new_runtime)
+                        } else {
+                            Some(parent_runtime)
+                        };
+                    } else {
+                        shared.inner.finalized_runtime = Some(parent_runtime);
+
+                        debug_assert!(shared.inner.best_runtime.is_none());
+                        if let Some(new_runtime) = new_runtime {
+                            shared.inner.best_runtime = Some(new_runtime);
+                        }
                     }
+
                     shared.inner.top_trie_root_calculation_cache =
                         Some(top_trie_root_calculation_cache);
                     for (key, value) in &storage_top_trie_changes {
@@ -950,6 +917,11 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         debug_assert!(chain.is_empty());
                         shared.inner.best_to_finalized_storage_diff.clear();
 
+                        debug_assert!(shared.inner.finalized_runtime.is_some());
+                        if let Some(runtime) = shared.inner.best_runtime.take() {
+                            shared.inner.finalized_runtime = Some(runtime);
+                        }
+
                         shared.inner.finalized_chain_information.chain_information =
                             chain.as_chain_information().into();
 
@@ -997,10 +969,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     // The value hasn't been found in any of the diffs, meaning that the storage
                     // value of the parent is the same as the one of the finalized block. The
                     // user needs to be queried.
-                    break ProcessOne::FinalizedStorageGet(StorageGet {
-                        inner: StorageGetTarget::Storage(req),
-                        shared,
-                    });
+                    break ProcessOne::FinalizedStorageGet(StorageGet { inner: req, shared });
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::StorageNextKey(req)) => {
@@ -1050,7 +1019,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                             ),
                             inner: OptimisticSyncInner {
                                 best_to_finalized_storage_diff: Default::default(),
-                                runtime_code_cache: None,
+                                best_runtime: None,
                                 top_trie_root_calculation_cache: None,
                                 cancelling_requests: true,
                                 ..shared.inner
@@ -1074,7 +1043,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                             ),
                             inner: OptimisticSyncInner {
                                 best_to_finalized_storage_diff: Default::default(),
-                                runtime_code_cache: None,
+                                best_runtime: None,
                                 top_trie_root_calculation_cache: None,
                                 cancelling_requests: true,
                                 ..shared.inner
@@ -1098,7 +1067,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                             ),
                             inner: OptimisticSyncInner {
                                 best_to_finalized_storage_diff: Default::default(),
-                                runtime_code_cache: None,
+                                best_runtime: None,
                                 top_trie_root_calculation_cache: None,
                                 cancelling_requests: true,
                                 ..shared.inner
@@ -1115,96 +1084,27 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
 /// Loading a storage value is required in order to continue.
 #[must_use]
 pub struct StorageGet<TRq, TSrc, TBl> {
-    inner: StorageGetTarget<TBl>,
+    inner: blocks_tree::StorageGet<Block<TBl>>,
     shared: ProcessOneShared<TRq, TSrc, TBl>,
-}
-
-enum StorageGetTarget<TBl> {
-    Storage(blocks_tree::StorageGet<Block<TBl>>),
-    HeapPagesAndRuntime(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>),
-    Runtime(
-        blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>,
-        vm::HeapPages,
-    ),
-    HeapPages(blocks_tree::BodyVerifyRuntimeRequired<Block<TBl>>, Vec<u8>),
 }
 
 impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     pub fn key(&'_ self) -> impl Iterator<Item = impl AsRef<[u8]> + '_> + '_ {
-        match &self.inner {
-            StorageGetTarget::Storage(inner) => {
-                either::Either::Left(inner.key().map(either::Either::Left))
-            }
-            StorageGetTarget::HeapPagesAndRuntime(_) | StorageGetTarget::HeapPages(_, _) => {
-                either::Either::Right(iter::once(either::Either::Right(&b":heappages"[..])))
-            }
-            StorageGetTarget::Runtime(_, _) => {
-                either::Either::Right(iter::once(either::Either::Right(&b":code"[..])))
-            }
-        }
+        self.inner.key()
     }
 
     /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
     ///
     /// This method is a shortcut for calling `key` and concatenating the returned slices.
     pub fn key_as_vec(&self) -> Vec<u8> {
-        match &self.inner {
-            StorageGetTarget::Storage(inner) => inner.key_as_vec(),
-            StorageGetTarget::HeapPagesAndRuntime(_) | StorageGetTarget::HeapPages(_, _) => {
-                b":heappages".to_vec()
-            }
-            StorageGetTarget::Runtime(_, _) => b":code".to_vec(),
-        }
+        self.inner.key_as_vec()
     }
 
     /// Injects the corresponding storage value.
-    pub fn inject_value(mut self, value: Option<&[u8]>) -> ProcessOne<TRq, TSrc, TBl> {
-        // TODO: simplify code inside here
-        match self.inner {
-            StorageGetTarget::Storage(inner) => {
-                let inner = inner.inject_value(value.map(iter::once));
-                ProcessOne::from(Inner::Step2(inner), self.shared)
-            }
-            StorageGetTarget::HeapPagesAndRuntime(inner) => {
-                let heap_pages = executor::storage_heap_pages_to_value(value.as_deref()).unwrap(); // TODO: don't unwrap
-                ProcessOne::FinalizedStorageGet(StorageGet {
-                    inner: StorageGetTarget::Runtime(inner, heap_pages),
-                    shared: self.shared,
-                })
-            }
-            StorageGetTarget::Runtime(inner, heap_pages) => {
-                let wasm_code = value.expect("no runtime code in storage?"); // TODO: ?!?!
-                let wasm_vm = host::HostVmPrototype::new(
-                    wasm_code,
-                    heap_pages,
-                    vm::ExecHint::CompileAheadOfTime,
-                )
-                .expect("invalid runtime code?!?!"); // TODO: ?!?!
-                let inner = inner.resume(
-                    wasm_vm,
-                    self.shared.block_body.iter(),
-                    self.shared.inner.top_trie_root_calculation_cache.take(),
-                );
-                ProcessOne::from(Inner::Step2(inner), self.shared)
-            }
-            StorageGetTarget::HeapPages(inner, wasm_code) => {
-                // TODO: don't unwrap
-                let heap_pages = executor::storage_heap_pages_to_value(value).unwrap();
-                let wasm_vm = host::HostVmPrototype::new(
-                    &wasm_code,
-                    heap_pages,
-                    vm::ExecHint::CompileAheadOfTime,
-                )
-                .expect("invalid runtime code?!?!"); // TODO: ?!?!
-                let inner = inner.resume(
-                    wasm_vm,
-                    self.shared.block_body.iter(),
-                    self.shared.inner.top_trie_root_calculation_cache.take(),
-                );
-                ProcessOne::from(Inner::Step2(inner), self.shared)
-            }
-        }
+    pub fn inject_value(self, value: Option<&[u8]>) -> ProcessOne<TRq, TSrc, TBl> {
+        let inner = self.inner.inject_value(value.map(iter::once));
+        ProcessOne::from(Inner::Step2(inner), self.shared)
     }
 }
 

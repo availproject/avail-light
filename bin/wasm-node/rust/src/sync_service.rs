@@ -193,7 +193,7 @@ async fn start_sync(
             // is 5k.
             5000
         },
-        full: false,
+        full: None,
     });
 
     async move {

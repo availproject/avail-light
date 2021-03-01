@@ -342,6 +342,12 @@ impl Clone for HostVmPrototype {
     }
 }
 
+impl fmt::Debug for HostVmPrototype {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("HostVmPrototype").finish()
+    }
+}
+
 /// Running virtual machine.
 #[must_use]
 #[derive(derive_more::From)]

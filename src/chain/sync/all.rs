@@ -24,7 +24,7 @@ use crate::{
         chain_information,
         sync::{all_forks, grandpa_warp_sync, optimistic},
     },
-    executor::vm::ExecHint,
+    executor::{host, vm::ExecHint},
     header, verify,
 };
 
@@ -76,8 +76,16 @@ pub struct Config {
     /// situations where determinism/reproducibility is desired.
     pub source_selection_randomness_seed: u64,
 
-    /// If true, the block bodies and storage are also synchronized.
-    pub full: bool,
+    /// If `Some`, the block bodies and storage are also synchronized. Contains the extra
+    /// configuration.
+    pub full: Option<ConfigFull>,
+}
+
+/// See [`Config::full`].
+#[derive(Debug)]
+pub struct ConfigFull {
+    /// Compiled runtime code of the finalized block.
+    pub finalized_runtime: host::HostVmPrototype,
 }
 
 #[derive(derive_more::From)]
@@ -141,7 +149,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
     /// Initializes a new state machine.
     pub fn new(config: Config) -> Self {
         Idle {
-            inner: if true || config.full {
+            inner: if true || config.full.is_some() {
                 // TODO: remove the `true ||` once GP warp sync is ready
                 IdleInner::Optimistic(optimistic::OptimisticSync::new(optimistic::Config {
                     chain_information: config.chain_information,
@@ -150,7 +158,9 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                     blocks_request_granularity: config.blocks_request_granularity,
                     download_ahead_blocks: config.download_ahead_blocks,
                     source_selection_randomness_seed: config.source_selection_randomness_seed,
-                    full: config.full,
+                    full: config.full.map(|cfg| optimistic::ConfigFull {
+                        finalized_runtime: cfg.finalized_runtime,
+                    }),
                 }))
             } else {
                 IdleInner::GrandpaWarpSync(grandpa_warp_sync::grandpa_warp_sync(
