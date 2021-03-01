@@ -333,11 +333,13 @@ async fn start_sync(
                                     // TODO: log what happens
                                     keys.into_iter()
                                         .map(|key| {
-                                            proof_verify::verify_proof(proof_verify::Config {
-                                                proof: outcome.iter().map(|nv| &nv[..]),
-                                                requested_key: key.as_ref(),
-                                                trie_root_hash: &state_trie_root,
-                                            })
+                                            proof_verify::verify_proof(
+                                                proof_verify::VerifyProofConfig {
+                                                    proof: outcome.iter().map(|nv| &nv[..]),
+                                                    requested_key: key.as_ref(),
+                                                    trie_root_hash: &state_trie_root,
+                                                },
+                                            )
                                             .map_err(|_err| {
                                                 panic!("{:?}", _err); // TODO: remove panic, it's just for debugging
                                                 ()

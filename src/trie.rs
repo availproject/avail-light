@@ -91,10 +91,14 @@ mod nibble;
 
 pub mod calculate_root;
 pub mod node_value;
+pub mod prefix_proof;
 pub mod proof_verify;
 pub mod trie_structure;
 
-pub use nibble::{bytes_to_nibbles, BytesToNibbles, Nibble, NibbleFromU8Error};
+pub use nibble::{
+    all_nibbles, bytes_to_nibbles, nibbles_to_bytes_extend, BytesToNibbles, Nibble,
+    NibbleFromU8Error,
+};
 
 /// Radix-16 Merkle-Patricia trie.
 // TODO: probably useless, remove

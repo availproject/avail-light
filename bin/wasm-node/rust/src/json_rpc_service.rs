@@ -754,6 +754,49 @@ impl JsonRpcService {
                     .to_json_response(request_id),
                 );
             }
+            methods::MethodCall::state_getKeysPaged {
+                prefix,
+                count,
+                start_key,
+                hash,
+            } => {
+                assert!(hash.is_none()); // TODO: not implemented
+
+                let mut lock = self.blocks.lock().await;
+
+                let block_hash = lock.best_block;
+                let state_root = lock.known_blocks.get(&block_hash).unwrap().state_root;
+                drop(lock);
+
+                let outcome = self
+                    .network_service
+                    .clone()
+                    .storage_prefix_keys_query(
+                        self.network_chain_index,
+                        &block_hash,
+                        &prefix.unwrap().0, // TODO: don't unwrap! what is this Option?
+                        &state_root,
+                    )
+                    .await;
+
+                self.send_back(&match outcome {
+                    Ok(keys) => {
+                        // TODO: instead of requesting all keys with that prefix from the network, pass `start_key` to the network service
+                        let out = keys
+                            .into_iter()
+                            .filter(|k| start_key.as_ref().map_or(true, |start| k >= &start.0)) // TODO: not sure if start should be in the set or not?
+                            .map(methods::HexString)
+                            .take(usize::try_from(count).unwrap_or(usize::max_value()))
+                            .collect::<Vec<_>>();
+                        methods::Response::state_getKeysPaged(out).to_json_response(request_id)
+                    }
+                    Err(error) => json_rpc::parse::build_error_response(
+                        request_id,
+                        json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
+                        None,
+                    ),
+                });
+            }
             methods::MethodCall::state_queryStorageAt { keys, at } => {
                 let blocks = self.blocks.lock().await;
                 let at = at.as_ref().map(|h| h.0).unwrap_or(blocks.best_block);
@@ -1621,12 +1664,13 @@ impl JsonRpcService {
                     }
                     executor::read_only_runtime_host::RuntimeHostVm::StorageGet(get) => {
                         let requested_key = get.key_as_vec(); // TODO: optimization: don't use as_vec
-                        let storage_value = proof_verify::verify_proof(proof_verify::Config {
-                            requested_key: &requested_key,
-                            trie_root_hash: &runtime_block_state_root,
-                            proof: call_proof.iter().map(|v| &v[..]),
-                        })
-                        .unwrap(); // TODO: shouldn't unwrap but do storage_proof instead
+                        let storage_value =
+                            proof_verify::verify_proof(proof_verify::VerifyProofConfig {
+                                requested_key: &requested_key,
+                                trie_root_hash: &runtime_block_state_root,
+                                proof: call_proof.iter().map(|v| &v[..]),
+                            })
+                            .unwrap(); // TODO: shouldn't unwrap but do storage_proof instead
                         runtime_call = get.inject_value(storage_value.as_ref().map(iter::once));
                     }
                     executor::read_only_runtime_host::RuntimeHostVm::NextKey(_) => {

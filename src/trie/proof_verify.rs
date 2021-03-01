@@ -51,7 +51,7 @@ use alloc::vec::Vec;
 use core::{convert::TryFrom as _, iter};
 
 /// Configuration to pass to [`verify_proof`].
-pub struct Config<'a, I> {
+pub struct VerifyProofConfig<'a, I> {
     /// Key whose storage value needs to be found.
     pub requested_key: &'a [u8],
 
@@ -66,7 +66,8 @@ pub struct Config<'a, I> {
     pub proof: I,
 }
 
-/// Find the storage value of the requested key (as designated by [`Config::requested_key`]).
+/// Find the storage value of the requested key (as designated by
+/// [`VerifyProofConfig::requested_key`]).
 ///
 /// Returns an error if the proof couldn't be verified.
 /// If the proof could be verified and the key has an associated storage value, `Ok(Some(_))` is
@@ -77,9 +78,51 @@ pub struct Config<'a, I> {
 /// > **Note**: This does not fully verify the correctness of the node values provided by `proof`.
 /// >           Only the minimum amount of information required is fetched from `proof`, and an
 /// >           error is returned if a problem happens during this process.
-pub fn verify_proof<'a>(
-    config: Config<'a, impl Iterator<Item = &'a [u8]> + Clone>,
-) -> Result<Option<&'a [u8]>, Error> {
+pub fn verify_proof<'a, 'b>(
+    config: VerifyProofConfig<'a, impl Iterator<Item = &'b [u8]> + Clone>,
+) -> Result<Option<&'b [u8]>, Error> {
+    Ok(trie_node_info(TrieNodeInfoConfig {
+        requested_key: nibble::bytes_to_nibbles(config.requested_key.iter().cloned()),
+        trie_root_hash: config.trie_root_hash,
+        proof: config.proof,
+    })?
+    .node_value)
+}
+
+/// Configuration to pass to [`trie_node_info`].
+pub struct TrieNodeInfoConfig<'a, K, I> {
+    /// Key whose storage value needs to be found.
+    pub requested_key: K,
+
+    /// Merkle value (or node value) of the root node of the trie.
+    ///
+    /// > **Note**: The Merkle value and node value are always the same for the root node.
+    pub trie_root_hash: &'a [u8; 32],
+
+    /// List of node values of nodes found in the trie. No specific order is required. All the
+    /// values between the root node and the node closest to the requested key have to be included
+    /// in the list in order for the verification to be able to succeed.
+    pub proof: I,
+}
+
+/// Find information about the node whose key is requested by
+/// [`TrieNodeInfoConfig::requested_key`].
+///
+/// The node in question doesn't necessarily have to exist. Nodes that don't exist still return
+/// `Ok` but have no storage value and no children.
+///
+/// Returns an error if the proof couldn't be verified.
+///
+/// > **Note**: This does not fully verify the correctness of the node values provided by `proof`.
+/// >           Only the minimum amount of information required is fetched from `proof`, and an
+/// >           error is returned if a problem happens during this process.
+pub fn trie_node_info<'a, 'b>(
+    config: TrieNodeInfoConfig<
+        'a,
+        impl Iterator<Item = nibble::Nibble>,
+        impl Iterator<Item = &'b [u8]> + Clone,
+    >,
+) -> Result<TrieNodeInfo<'b>, Error> {
     // The proof contains node values, while Merkle values will be needed. Create a list of
     // Merkle values, one per entry in `config.proof`.
     let merkle_values = config
@@ -110,7 +153,7 @@ pub fn verify_proof<'a>(
     };
 
     // The verification consists in iterating using `expected_nibbles_iter` and `node_value`.
-    let mut expected_nibbles_iter = nibble::bytes_to_nibbles(config.requested_key.iter().copied());
+    let mut expected_nibbles_iter = config.requested_key;
     loop {
         if node_value.is_empty() {
             return Err(Error::InvalidNodeValue);
@@ -160,8 +203,20 @@ pub fn verify_proof<'a>(
 
         // Iterating over this partial key, checking if it matches `expected_nibbles_iter`.
         while let Some(nibble) = partial_key.next() {
-            if expected_nibbles_iter.next() != Some(nibble) {
-                return Ok(None);
+            match expected_nibbles_iter.next() {
+                None => {
+                    return Ok(TrieNodeInfo {
+                        node_value: None,
+                        children: Children::One(nibble),
+                    });
+                }
+                Some(n) if n != nibble => {
+                    return Ok(TrieNodeInfo {
+                        node_value: None,
+                        children: Children::None,
+                    });
+                }
+                Some(_) => {}
             }
         }
 
@@ -184,7 +239,10 @@ pub fn verify_proof<'a>(
 
             // No child with the requested index exists.
             if children_bitmap & (1 << u8::from(expected_nibble)) == 0 {
-                return Ok(None);
+                return Ok(TrieNodeInfo {
+                    node_value: None,
+                    children: Children::None,
+                });
             }
 
             for n in 0.. {
@@ -244,11 +302,56 @@ pub fn verify_proof<'a>(
             if node_value.len() != len {
                 return Err(Error::InvalidNodeValue);
             }
-            return Ok(Some(node_value));
+            return Ok(TrieNodeInfo {
+                node_value: Some(node_value),
+                children: Children::Multiple { children_bitmap },
+            });
         } else {
             // The current node (as per `proof_iter`) exactly matches the requested key, but no
             // storage value exists.
-            return Ok(None);
+            return Ok(TrieNodeInfo {
+                node_value: None,
+                children: Children::Multiple { children_bitmap },
+            });
+        }
+    }
+}
+
+/// Information about a node of the trie.
+pub struct TrieNodeInfo<'a> {
+    /// Storage value of the node, if any.
+    pub node_value: Option<&'a [u8]>,
+    /// Which children the node has.
+    pub children: Children,
+}
+
+/// See [`TrieNodeInfo::children`].
+#[derive(Debug, Copy, Clone)]
+pub enum Children {
+    /// Node doesn't have any child.
+    None,
+    /// Node has one child. The key of that child starts with the key of the parent, followed with
+    /// the nibble contained here, followed with 0 or more extra nibbles unknown here.
+    One(nibble::Nibble),
+    /// Node has zero or more children.
+    Multiple {
+        /// If `(children_bitmap & (1 << n)) == 1` (where `n is in 0..16`), then this node has a
+        /// child whose key starts with the key of the parent, followed with
+        /// `Nibble::try_from(n).unwrap()`, followed with 0 or more extra nibbles unknown here.
+        children_bitmap: u16,
+    },
+}
+
+impl Children {
+    /// Iterates over all the children of the node. For each child, contains the nibble that must
+    /// be appended to the key of the node in order to find the child.
+    pub fn next_nibbles(&self) -> impl Iterator<Item = nibble::Nibble> {
+        match *self {
+            Children::None => either::Left(None.into_iter()),
+            Children::One(nibble) => either::Left(Some(nibble).into_iter()),
+            Children::Multiple { children_bitmap } => either::Right(
+                nibble::all_nibbles().filter(move |n| (children_bitmap & (1 << u8::from(*n)) != 0)),
+            ),
         }
     }
 }
@@ -290,7 +393,7 @@ mod tests {
             <[u8; 32]>::try_from(&bytes[..]).unwrap()
         };
 
-        let obtained = super::verify_proof(super::Config {
+        let obtained = super::verify_proof(super::VerifyProofConfig {
             requested_key: &requested_key[..],
             trie_root_hash: &trie_root,
             proof: proof.iter().map(|p| &p[..]),
@@ -352,7 +455,7 @@ mod tests {
             215, 134, 15, 252, 135, 67, 129, 21, 16, 20, 211, 97, 217,
         ];
 
-        let obtained = super::verify_proof(super::Config {
+        let obtained = super::verify_proof(super::VerifyProofConfig {
             requested_key: &requested_key[..],
             trie_root_hash: &trie_root,
             proof: proof.iter().map(|p| &p[..]),

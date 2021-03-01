@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use core::{convert::TryFrom, fmt};
+use core::{convert::TryFrom, fmt, iter};
 
 /// A single nibble with four bits.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -51,6 +51,26 @@ pub enum NibbleFromU8Error {
     /// The integer value is too large.
     #[display(fmt = "Value is too large")]
     TooLarge,
+}
+
+/// Returns an iterator of all possible nibble values.
+pub fn all_nibbles() -> impl ExactSizeIterator<Item = Nibble> {
+    (0..16).map(Nibble)
+}
+
+/// Turns an iterator of nibbles into an iterator of bytes.
+///
+/// If the number of nibbles is uneven, adds a `0` nibble at the end.
+// TODO: ExactSizeIterator
+pub fn nibbles_to_bytes_extend<I: Iterator<Item = Nibble>>(
+    mut nibbles: I,
+) -> impl Iterator<Item = u8> {
+    iter::from_fn(move || {
+        let n1 = nibbles.next()?;
+        let n2 = nibbles.next().unwrap_or(Nibble(0));
+        let byte = (n1.0 << 4) | n2.0;
+        Some(byte)
+    })
 }
 
 /// Turns an iterator of bytes into an iterator of nibbles corresponding to these bytes.
