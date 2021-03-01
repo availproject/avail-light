@@ -1143,14 +1143,40 @@ impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
                         is_new_best,
                         mut sync,
                         next_request,
+                        requests_replace,
                     } => {
-                        let next_actions = if let Some(request) = next_request {
-                            vec![self
+                        let mut next_actions = Vec::with_capacity(
+                            requests_replace.len() + if next_request.is_some() { 1 } else { 0 },
+                        );
+
+                        for (source, new_request) in requests_replace {
+                            // TODO: O(n)
+                            let outer_request_id = self
                                 .shared
-                                .all_forks_request_to_request(&mut sync, source_id, request)]
-                        } else {
-                            Vec::new()
-                        };
+                                .requests
+                                .iter()
+                                .find(|(_, s)| **s == RequestMapping::AllForks(source))
+                                .map(|(id, _)| RequestId(id))
+                                .unwrap();
+                            self.shared.requests.remove(outer_request_id.0);
+                            next_actions.push(Action::Cancel(outer_request_id));
+
+                            if let Some(new_request) = new_request {
+                                next_actions.push(self.shared.all_forks_request_to_request(
+                                    &mut sync,
+                                    source,
+                                    new_request,
+                                ));
+                            }
+                        }
+
+                        if let Some(request) = next_request {
+                            next_actions.push(
+                                self.shared
+                                    .all_forks_request_to_request(&mut sync, source_id, request),
+                            );
+                        }
+
                         HeaderVerifyOutcome::Success {
                             is_new_best,
                             sync: Idle {
@@ -1164,28 +1190,75 @@ impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
                     all_forks::HeaderVerifyOutcome::SuccessContinue {
                         is_new_best,
                         next_block,
-                    } => HeaderVerifyOutcome::Success {
-                        is_new_best,
-                        sync: HeaderVerify {
-                            inner: HeaderVerifyInner::AllForks(next_block),
-                            shared: self.shared,
+                        requests_replace,
+                    } => {
+                        let mut next_actions = Vec::with_capacity(requests_replace.len());
+                        for (source, new_request) in requests_replace {
+                            // TODO: O(n)
+                            let outer_request_id = self
+                                .shared
+                                .requests
+                                .iter()
+                                .find(|(_, s)| **s == RequestMapping::AllForks(source))
+                                .map(|(id, _)| RequestId(id))
+                                .unwrap();
+                            self.shared.requests.remove(outer_request_id.0);
+                            next_actions.push(Action::Cancel(outer_request_id));
+
+                            if let Some(_new_request) = new_request {
+                                todo!() // Need to call `all_forks_request_to_request`
+                            }
                         }
-                        .into(),
-                        next_actions: Vec::new(),
-                    },
+
+                        HeaderVerifyOutcome::Success {
+                            is_new_best,
+                            sync: HeaderVerify {
+                                inner: HeaderVerifyInner::AllForks(next_block),
+                                shared: self.shared,
+                            }
+                            .into(),
+                            next_actions,
+                        }
+                    }
                     all_forks::HeaderVerifyOutcome::Error {
                         mut sync,
                         error,
                         user_data,
                         next_request,
+                        requests_replace,
                     } => {
-                        let next_actions = if let Some(request) = next_request {
-                            vec![self
+                        let mut next_actions = Vec::with_capacity(
+                            requests_replace.len() + if next_request.is_some() { 1 } else { 0 },
+                        );
+
+                        for (source, new_request) in requests_replace {
+                            // TODO: O(n)
+                            let outer_request_id = self
                                 .shared
-                                .all_forks_request_to_request(&mut sync, source_id, request)]
-                        } else {
-                            Vec::new()
-                        };
+                                .requests
+                                .iter()
+                                .find(|(_, s)| **s == RequestMapping::AllForks(source))
+                                .map(|(id, _)| RequestId(id))
+                                .unwrap();
+                            self.shared.requests.remove(outer_request_id.0);
+                            next_actions.push(Action::Cancel(outer_request_id));
+
+                            if let Some(new_request) = new_request {
+                                next_actions.push(self.shared.all_forks_request_to_request(
+                                    &mut sync,
+                                    source,
+                                    new_request,
+                                ));
+                            }
+                        }
+
+                        if let Some(request) = next_request {
+                            next_actions.push(
+                                self.shared
+                                    .all_forks_request_to_request(&mut sync, source_id, request),
+                            );
+                        }
+
                         HeaderVerifyOutcome::Error {
                             sync: Idle {
                                 inner: IdleInner::AllForks(sync),
@@ -1201,16 +1274,37 @@ impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
                         next_block,
                         error,
                         user_data,
-                    } => HeaderVerifyOutcome::Error {
-                        sync: HeaderVerify {
-                            inner: HeaderVerifyInner::AllForks(next_block),
-                            shared: self.shared,
+                        requests_replace,
+                    } => {
+                        let mut next_actions = Vec::with_capacity(requests_replace.len());
+                        for (source, new_request) in requests_replace {
+                            // TODO: O(n)
+                            let outer_request_id = self
+                                .shared
+                                .requests
+                                .iter()
+                                .find(|(_, s)| **s == RequestMapping::AllForks(source))
+                                .map(|(id, _)| RequestId(id))
+                                .unwrap();
+                            self.shared.requests.remove(outer_request_id.0);
+                            next_actions.push(Action::Cancel(outer_request_id));
+
+                            if let Some(_new_request) = new_request {
+                                todo!() // Need to call `all_forks_request_to_request`
+                            }
                         }
-                        .into(),
-                        next_actions: Vec::new(),
-                        error,
-                        user_data,
-                    },
+
+                        HeaderVerifyOutcome::Error {
+                            sync: HeaderVerify {
+                                inner: HeaderVerifyInner::AllForks(next_block),
+                                shared: self.shared,
+                            }
+                            .into(),
+                            next_actions,
+                            error,
+                            user_data,
+                        }
+                    }
                 }
             }
         }

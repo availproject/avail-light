@@ -173,7 +173,8 @@ struct Inner<TSrc> {
     /// List of blocks whose existence is known but can't be verified yet.
     /// Also contains a list of ongoing requests. The requests are kept up-to-date with the
     /// information in [`Inner::sources`].
-    pending_blocks: pending_blocks::PendingBlocks<(), ()>,
+    /// For each request, contains as user data the source that has emitted it.
+    pending_blocks: pending_blocks::PendingBlocks<(), SourceId>,
 }
 
 struct Block<TBl> {
@@ -475,7 +476,7 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
             )
             .into_occupied()
             .unwrap()
-            .add_descending_request((), query_to_start.num_blocks);
+            .add_descending_request(source_id, query_to_start.num_blocks);
         source_access.user_data().occupation = Some(request_id);
 
         Some(Request::AncestrySearch {
@@ -919,6 +920,11 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
         self.source_id
     }
 
+    /// Grants access to the user data of a source, using its identifier.
+    pub fn source_user_data_mut(&mut self, id: SourceId) -> Option<&mut TSrc> {
+        Some(self.parent.source_mut(id)?.into_user_data())
+    }
+
     /// Perform the verification.
     pub fn perform(
         mut self,
@@ -950,7 +956,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
             | Err(blocks_tree::HeaderVerifyError::InvalidHeader(_)) => unreachable!(),
         };
 
-        if result.is_ok() {
+        let cancelled_requests = if result.is_ok() {
             let outcome = self
                 .parent
                 .inner
@@ -959,9 +965,8 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 .into_occupied()
                 .unwrap()
                 .remove_verify_success();
-            // TODO: properly cancel the requests found in `outcome`
-            assert!(outcome.cancelled_requests.is_empty()); // not implemented
             self.verifiable_blocks.extend(outcome.verify_next);
+            outcome.cancelled_requests
         } else {
             self.parent
                 .inner
@@ -970,7 +975,16 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 .into_occupied()
                 .unwrap()
                 .remove_verify_failed();
-        }
+            Vec::new()
+        };
+
+        let requests_replace = cancelled_requests
+            .into_iter()
+            .map(|(_, replace_source_id)| {
+                let new_request = self.parent.source_next_request(replace_source_id);
+                (replace_source_id, new_request)
+            })
+            .collect();
 
         match (result, self.verifiable_blocks.is_empty()) {
             (Ok(is_new_best), false) => HeaderVerifyOutcome::SuccessContinue {
@@ -980,6 +994,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                     source_id: self.source_id,
                     verifiable_blocks: self.verifiable_blocks,
                 },
+                requests_replace,
             },
             (Ok(is_new_best), true) => {
                 let next_request = self.parent.source_next_request(self.source_id);
@@ -987,6 +1002,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                     is_new_best,
                     sync: self.parent,
                     next_request,
+                    requests_replace,
                 }
             }
             (Err((error, user_data)), false) => HeaderVerifyOutcome::ErrorContinue {
@@ -997,6 +1013,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 },
                 error,
                 user_data,
+                requests_replace,
             },
             (Err((error, user_data)), true) => {
                 let next_request = self.parent.source_next_request(self.source_id);
@@ -1005,6 +1022,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                     error,
                     user_data,
                     next_request,
+                    requests_replace,
                 }
             }
         }
@@ -1024,6 +1042,10 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
         sync: AllForksSync<TSrc, TBl>,
         /// Next request that must be performed on the source.
         next_request: Option<Request>,
+        /// For each element in this list, the request made towards this source should be replaced
+        /// with a new one (if the request is `Some`) or cancelled (if the request is `None`).
+        /// Sources are guaranteed to never be the source that has sent back the header.
+        requests_replace: Vec<(SourceId, Option<Request>)>,
     },
 
     /// Header has been successfully verified. A follow-up header is ready to be verified.
@@ -1032,6 +1054,10 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
         is_new_best: bool,
         /// Next verification.
         next_block: HeaderVerify<TSrc, TBl>,
+        /// For each element in this list, the request made towards this source should be replaced
+        /// with a new one (if the request is `Some`) or cancelled (if the request is `None`).
+        /// Sources are guaranteed to never be the source that has sent back the header.
+        requests_replace: Vec<(SourceId, Option<Request>)>,
     },
 
     /// Header verification failed.
@@ -1044,6 +1070,10 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
         user_data: TBl,
         /// Next request that must be performed on the source.
         next_request: Option<Request>,
+        /// For each element in this list, the request made towards this source should be replaced
+        /// with a new one (if the request is `Some`) or cancelled (if the request is `None`).
+        /// Sources are guaranteed to never be the source that has sent back the header.
+        requests_replace: Vec<(SourceId, Option<Request>)>,
     },
 
     /// Header verification failed. A follow-up header is ready to be verified.
@@ -1054,6 +1084,10 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
         error: verify::header_only::Error,
         /// User data that was passed to [`HeaderVerify::perform`] and is unused.
         user_data: TBl,
+        /// For each element in this list, the request made towards this source should be replaced
+        /// with a new one (if the request is `Some`) or cancelled (if the request is `None`).
+        /// Sources are guaranteed to never be the source that has sent back the header.
+        requests_replace: Vec<(SourceId, Option<Request>)>,
     },
 }
 
