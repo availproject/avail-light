@@ -195,7 +195,10 @@ pub fn verify(
             now_from_unix_epoch,
         } => {
             if config.block_header.digest.has_any_babe() {
-                return Verify::Finished(Err(Error::MultipleConsensusEngines));
+                return Verify::Finished(Err((
+                    Error::MultipleConsensusEngines,
+                    config.parent_runtime,
+                )));
             }
 
             let result = aura::verify_header(aura::VerifyConfig {
@@ -210,7 +213,12 @@ pub fn verify(
                 Ok(s) => SuccessConsensus::Aura {
                     authorities_change: s.authorities_change,
                 },
-                Err(err) => return Verify::Finished(Err(Error::AuraVerification(err))),
+                Err(err) => {
+                    return Verify::Finished(Err((
+                        Error::AuraVerification(err),
+                        config.parent_runtime,
+                    )))
+                }
             }
         }
         ConfigConsensus::Babe {
@@ -220,7 +228,10 @@ pub fn verify(
             now_from_unix_epoch,
         } => {
             if config.block_header.digest.has_any_aura() {
-                return Verify::Finished(Err(Error::MultipleConsensusEngines));
+                return Verify::Finished(Err((
+                    Error::MultipleConsensusEngines,
+                    config.parent_runtime,
+                )));
             }
 
             let result = babe::verify_header(babe::VerifyConfig {
@@ -237,7 +248,12 @@ pub fn verify(
                     epoch_transition_target: s.epoch_transition_target,
                     slot_number: s.slot_number,
                 },
-                Err(err) => return Verify::Finished(Err(Error::BabeVerification(err))),
+                Err(err) => {
+                    return Verify::Finished(Err((
+                        Error::BabeVerification(err),
+                        config.parent_runtime,
+                    )))
+                }
             }
         }
     };
@@ -267,7 +283,10 @@ pub fn verify(
 #[must_use]
 pub enum Verify {
     /// Verification is over.
-    Finished(Result<Success, Error>),
+    ///
+    /// In case of error, also contains the value that was passed through
+    /// [`Config::parent_runtime`].
+    Finished(Result<Success, (Error, host::HostVmPrototype)>),
     /// A new runtime must be compiled.
     ///
     /// This variant doesn't require any specific input from the user, but is provided in order to
@@ -289,8 +308,8 @@ struct VerifyInner {
 impl VerifyInner {
     fn run(self) -> Verify {
         match self.inner {
-            execute_block::Verify::Finished(Err(err)) => {
-                Verify::Finished(Err(Error::Unsealed(err)))
+            execute_block::Verify::Finished(Err((err, prototype))) => {
+                Verify::Finished(Err((Error::Unsealed(err), prototype)))
             }
             execute_block::Verify::Finished(Ok(success)) => {
                 match (
@@ -298,9 +317,17 @@ impl VerifyInner {
                     success.storage_top_trie_changes.get(&b":heappages"[..]),
                 ) {
                     (None, None) => {}
-                    (Some(None), _) => return Verify::Finished(Err(Error::CodeKeyErased)),
+                    (Some(None), _) => {
+                        return Verify::Finished(Err((
+                            Error::CodeKeyErased,
+                            success.parent_runtime,
+                        )))
+                    }
                     (None, Some(_)) => {
-                        return Verify::Finished(Err(Error::HeapPagesOnlyModification))
+                        return Verify::Finished(Err((
+                            Error::HeapPagesOnlyModification,
+                            success.parent_runtime,
+                        )))
                     }
                     (Some(Some(_code)), heap_pages) => {
                         let heap_pages = match heap_pages {
@@ -308,8 +335,9 @@ impl VerifyInner {
                                 match executor::storage_heap_pages_to_value(heap_pages.as_deref()) {
                                     Ok(hp) => hp,
                                     Err(err) => {
-                                        return Verify::Finished(Err(Error::HeapPagesParseError(
-                                            err,
+                                        return Verify::Finished(Err((
+                                            Error::HeapPagesParseError(err),
+                                            success.parent_runtime,
                                         )))
                                     }
                                 }
@@ -464,7 +492,12 @@ impl RuntimeCompilation {
             vm::ExecHint::CompileAheadOfTime,
         ) {
             Ok(vm) => vm,
-            Err(err) => return Verify::Finished(Err(Error::NewRuntimeCompilationError(err))),
+            Err(err) => {
+                return Verify::Finished(Err((
+                    Error::NewRuntimeCompilationError(err),
+                    self.success.parent_runtime,
+                )))
+            }
         };
 
         Verify::Finished(Ok(Success {

@@ -252,13 +252,17 @@ impl InterpreterPrototype {
     }
 
     /// See [`super::VirtualMachinePrototype::start`].
-    pub fn start(self, function_name: &str, params: &[WasmValue]) -> Result<Interpreter, StartErr> {
+    pub fn start(
+        self,
+        function_name: &str,
+        params: &[WasmValue],
+    ) -> Result<Interpreter, (StartErr, Self)> {
         let execution = match self.module.export_by_name(function_name) {
             Some(wasmi::ExternVal::Func(f)) => {
                 // Try to convert the signature of the function to call, in order to make sure
                 // that the type of parameters and return value are supported.
                 if Signature::try_from(f.signature()).is_err() {
-                    return Err(StartErr::SignatureNotSupported);
+                    return Err((StartErr::SignatureNotSupported, self));
                 }
 
                 match wasmi::FuncInstance::invoke_resumable(
@@ -272,8 +276,8 @@ impl InterpreterPrototype {
                     Err(err) => unreachable!("{:?}", err), // TODO:
                 }
             }
-            None => return Err(StartErr::FunctionNotFound),
-            _ => return Err(StartErr::NotAFunction),
+            None => return Err((StartErr::FunctionNotFound, self)),
+            _ => return Err((StartErr::NotAFunction, self)),
         };
 
         Ok(Interpreter {

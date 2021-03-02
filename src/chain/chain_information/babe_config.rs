@@ -66,7 +66,7 @@ impl BabeGenesisConfiguration {
     ) -> Result<(Self, host::HostVmPrototype), FromVmPrototypeError> {
         let mut vm: host::HostVm = vm
             .run_no_param("BabeApi_configuration")
-            .map_err(FromVmPrototypeError::VmStart)?
+            .map_err(|(err, proto)| FromVmPrototypeError::VmStart(err, proto))?
             .into();
 
         let (inner, vm_prototype) = loop {
@@ -146,7 +146,8 @@ impl FromGenesisStorageError {
 #[derive(Debug, derive_more::Display)]
 pub enum FromVmPrototypeError {
     /// Error when starting the virtual machine.
-    VmStart(host::StartErr),
+    #[display(fmt = "{}", _0)]
+    VmStart(host::StartErr, host::HostVmPrototype),
     /// Crash while running the virtual machine.
     Trapped,
     /// Virtual machine tried to call a host function that isn't valid in this context.
@@ -160,11 +161,13 @@ impl FromVmPrototypeError {
     pub fn is_function_not_found(&self) -> bool {
         matches!(
             self,
-            FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
-                vm::StartErr::FunctionNotFound,
-            )) | FromVmPrototypeError::VmStart(host::StartErr::VirtualMachine(
-                vm::StartErr::NotAFunction,
-            ))
+            FromVmPrototypeError::VmStart(
+                host::StartErr::VirtualMachine(vm::StartErr::FunctionNotFound,),
+                _
+            ) | FromVmPrototypeError::VmStart(
+                host::StartErr::VirtualMachine(vm::StartErr::NotAFunction,),
+                _
+            )
         )
     }
 }

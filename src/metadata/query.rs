@@ -72,7 +72,7 @@ pub fn query_metadata(virtual_machine: host::HostVmPrototype) -> Query {
 
     match vm {
         Ok(vm) => Query::from_inner(vm),
-        Err(err) => Query::Finished(Err(Error::VmStart(err))),
+        Err((err, proto)) => Query::Finished(Err(Error::VmStart(err, proto))),
     }
 }
 
@@ -116,7 +116,8 @@ pub enum Error {
     /// Error when initializing the virtual machine.
     VmInitialization(host::NewErr),
     /// Error when starting the virtual machine.
-    VmStart(host::StartErr),
+    #[display(fmt = "{}", _0)]
+    VmStart(host::StartErr, host::HostVmPrototype),
     /// Error while running the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
     WasmRun(read_only_runtime_host::Error),

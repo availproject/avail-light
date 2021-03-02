@@ -270,39 +270,49 @@ impl HostVmPrototype {
     }
 
     /// Starts the VM, calling the function passed as parameter.
-    pub fn run(self, function_to_call: &str, data: &[u8]) -> Result<ReadyToRun, StartErr> {
+    pub fn run(self, function_to_call: &str, data: &[u8]) -> Result<ReadyToRun, (StartErr, Self)> {
         self.run_vectored(function_to_call, iter::once(data))
     }
 
     /// Same as [`HostVmPrototype::run`], except that the function desn't need any parameter.
-    pub fn run_no_param(self, function_to_call: &str) -> Result<ReadyToRun, StartErr> {
+    pub fn run_no_param(self, function_to_call: &str) -> Result<ReadyToRun, (StartErr, Self)> {
         self.run_vectored(function_to_call, iter::empty::<Vec<u8>>())
     }
 
     /// Same as [`HostVmPrototype::run`], except that the function parameter can be passed as
     /// a list of buffers. All the buffers will be concatenated in memory.
     pub fn run_vectored(
-        self,
+        mut self,
         function_to_call: &str,
         data: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    ) -> Result<ReadyToRun, StartErr> {
+    ) -> Result<ReadyToRun, (StartErr, Self)> {
         let mut data_len_u32: u32 = 0;
         for data in data.clone() {
-            let len = u32::try_from(data.as_ref().len()).map_err(|_| StartErr::DataSizeOverflow)?;
-            data_len_u32 = data_len_u32
-                .checked_add(len)
-                .ok_or(StartErr::DataSizeOverflow)?;
+            let len = match u32::try_from(data.as_ref().len()) {
+                Ok(v) => v,
+                Err(_) => return Err((StartErr::DataSizeOverflow, self)),
+            };
+            data_len_u32 = match data_len_u32.checked_add(len) {
+                Some(v) => v,
+                None => return Err((StartErr::DataSizeOverflow, self)),
+            };
         }
 
         // Now create the actual virtual machine. We pass as parameter `heap_base` as the location
         // of the input data.
-        let mut vm = self.vm_proto.start(
+        let mut vm = match self.vm_proto.start(
             function_to_call,
             &[
                 vm::WasmValue::I32(i32::from_ne_bytes(self.heap_base.to_ne_bytes())),
                 vm::WasmValue::I32(i32::from_ne_bytes(data_len_u32.to_ne_bytes())),
             ],
-        )?;
+        ) {
+            Ok(vm) => vm,
+            Err((error, vm_proto)) => {
+                self.vm_proto = vm_proto;
+                return Err((error.into(), self));
+            }
+        };
 
         // Now writing the input data into the VM.
         let mut after_input_data = self.heap_base;
@@ -417,6 +427,29 @@ pub enum HostVm {
     /// Runtime has emitted a log entry.
     #[from]
     LogEmit(LogEmit),
+}
+
+impl HostVm {
+    /// Cancels execution of the virtual machine and returns back the prototype.
+    pub fn into_prototype(self) -> HostVmPrototype {
+        match self {
+            HostVm::ReadyToRun(inner) => inner.inner.into_prototype(),
+            HostVm::Finished(inner) => inner.inner.into_prototype(),
+            HostVm::Error { prototype, .. } => prototype,
+            HostVm::ExternalStorageGet(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageSet(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageAppend(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageClearPrefix(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageRoot(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageChangesRoot(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalStorageNextKey(inner) => inner.inner.into_prototype(),
+            HostVm::ExternalOffchainStorageSet(inner) => inner.inner.into_prototype(),
+            HostVm::CallRuntimeVersion(inner) => inner.inner.into_prototype(),
+            HostVm::StartStorageTransaction(inner) => inner.inner.into_prototype(),
+            HostVm::EndStorageTransaction { resume, .. } => resume.inner.into_prototype(),
+            HostVm::LogEmit(inner) => inner.inner.into_prototype(),
+        }
+    }
 }
 
 /// Virtual machine is ready to run.

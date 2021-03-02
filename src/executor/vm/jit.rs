@@ -304,13 +304,17 @@ impl JitPrototype {
     }
 
     /// See [`super::VirtualMachinePrototype::start`].
-    pub fn start(mut self, function_name: &str, params: &[WasmValue]) -> Result<Jit, StartErr> {
+    pub fn start(
+        mut self,
+        function_name: &str,
+        params: &[WasmValue],
+    ) -> Result<Jit, (StartErr, Self)> {
         match self.coroutine.run(Some(ToCoroutine::Start(
             function_name.to_owned(),
             params.to_owned(),
         ))) {
             corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Err(err))) => {
-                return Err(err)
+                return Err((err, self))
             }
             corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Ok(()))) => {}
             _ => unreachable!(),

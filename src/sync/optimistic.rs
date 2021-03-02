@@ -1060,7 +1060,11 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                 Inner::Step2(blocks_tree::BodyVerifyStep2::Error {
                     chain: old_chain,
                     error,
+                    parent_runtime,
                 }) => {
+                    if shared.inner.finalized_runtime.is_none() {
+                        shared.inner.finalized_runtime = Some(parent_runtime);
+                    }
                     if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
                         source.banned = true;
                     }

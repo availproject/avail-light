@@ -78,7 +78,7 @@ pub struct Config<'a, TParams> {
 /// Start running the WebAssembly virtual machine.
 pub fn run(
     config: Config<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
-) -> Result<RuntimeHostVm, host::StartErr> {
+) -> Result<RuntimeHostVm, (host::StartErr, host::HostVmPrototype)> {
     Ok(Inner {
         vm: config
             .virtual_machine
@@ -133,8 +133,18 @@ impl fmt::Debug for SuccessVirtualMachine {
 }
 
 /// Error that can happen during the execution.
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "{}", detail)]
+pub struct Error {
+    /// Exact error that happened.
+    pub detail: ErrorDetail,
+    /// Prototype of the virtual machine that was passed through [`Config::virtual_machine`].
+    pub prototype: host::HostVmPrototype,
+}
+
+/// See [`Error::detail`].
 #[derive(Debug, Clone, derive_more::Display)]
-pub enum Error {
+pub enum ErrorDetail {
     /// Error while executing the Wasm virtual machine.
     #[display(fmt = "Error while executing Wasm VM: {}\n{:?}", error, logs)]
     WasmVm {
@@ -158,6 +168,19 @@ pub enum RuntimeHostVm {
     PrefixKeys(PrefixKeys),
     /// Fetching the key that follows a given one is required in order to continue.
     NextKey(NextKey),
+}
+
+impl RuntimeHostVm {
+    /// Cancels execution of the virtual machine and returns back the prototype.
+    pub fn into_prototype(self) -> host::HostVmPrototype {
+        match self {
+            RuntimeHostVm::Finished(Ok(inner)) => inner.virtual_machine.into_prototype(),
+            RuntimeHostVm::Finished(Err(inner)) => inner.prototype,
+            RuntimeHostVm::StorageGet(inner) => inner.inner.vm.into_prototype(),
+            RuntimeHostVm::PrefixKeys(inner) => inner.inner.vm.into_prototype(),
+            RuntimeHostVm::NextKey(inner) => inner.inner.vm.into_prototype(),
+        }
+    }
 }
 
 /// Loading a storage value is required in order to continue.
@@ -486,10 +509,13 @@ impl Inner {
             match self.vm {
                 host::HostVm::ReadyToRun(r) => self.vm = r.run(),
 
-                host::HostVm::Error { error, .. } => {
-                    return RuntimeHostVm::Finished(Err(Error::WasmVm {
-                        error,
-                        logs: self.logs,
+                host::HostVm::Error { error, prototype } => {
+                    return RuntimeHostVm::Finished(Err(Error {
+                        detail: ErrorDetail::WasmVm {
+                            error,
+                            logs: self.logs,
+                        },
+                        prototype,
                     }));
                 }
 
@@ -662,7 +688,10 @@ impl Inner {
                     // TODO: optimize somehow? don't create an intermediary String?
                     let message = req.to_string();
                     if self.logs.len().saturating_add(message.len()) >= 1024 * 1024 {
-                        return RuntimeHostVm::Finished(Err(Error::LogsTooLong));
+                        return RuntimeHostVm::Finished(Err(Error {
+                            detail: ErrorDetail::LogsTooLong,
+                            prototype: host::HostVm::LogEmit(req).into_prototype(),
+                        }));
                     }
 
                     self.logs.push_str(&message);

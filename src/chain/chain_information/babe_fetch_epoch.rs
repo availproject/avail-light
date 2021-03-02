@@ -41,11 +41,11 @@ pub struct Config {
 }
 
 /// Problem encountered during a call to [`babe_fetch_epoch`].
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Error while starting the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    WasmStart(host::StartErr),
+    WasmStart(host::StartErr, host::HostVmPrototype),
     /// Error while running the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
     WasmVm(read_only_runtime_host::Error),
@@ -70,7 +70,7 @@ pub fn babe_fetch_epoch(config: Config) -> Query {
 
     match vm {
         Ok(vm) => Query::from_inner(vm),
-        Err(err) => Query::Finished(Err(Error::WasmStart(err))),
+        Err((err, proto)) => Query::Finished(Err(Error::WasmStart(err, proto))),
     }
 }
 

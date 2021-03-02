@@ -119,7 +119,7 @@ pub enum Error {
     WasmVm(runtime_host::Error),
     /// Error while initializing the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    VmInit(host::StartErr),
+    VmInit(host::StartErr, host::HostVmPrototype),
     /// Overflow when incrementing block height.
     BlockHeightOverflow,
     /// `Core_initialize_block` has returned a non-empty output.
@@ -185,7 +185,7 @@ pub fn build_block(config: Config) -> BlockBuild {
 
     let vm = match init_result {
         Ok(vm) => vm,
-        Err(err) => return BlockBuild::Finished(Err(Error::VmInit(err))),
+        Err((err, proto)) => return BlockBuild::Finished(Err(Error::VmInit(err, proto))),
     };
 
     let shared = Shared {
@@ -329,7 +329,9 @@ impl BlockBuild {
 
                     inner = Inner::Runtime(match init_result {
                         Ok(vm) => vm,
-                        Err(err) => return BlockBuild::Finished(Err(Error::VmInit(err))),
+                        Err((err, proto)) => {
+                            return BlockBuild::Finished(Err(Error::VmInit(err, proto)))
+                        }
                     });
                 }
 
@@ -533,7 +535,7 @@ impl InherentExtrinsics {
 
         let vm = match init_result {
             Ok(vm) => vm,
-            Err(err) => return BlockBuild::Finished(Err(Error::VmInit(err))),
+            Err((err, proto)) => return BlockBuild::Finished(Err(Error::VmInit(err, proto))),
         };
 
         BlockBuild::from_inner(vm, self.shared)
@@ -625,7 +627,7 @@ impl ApplyExtrinsic {
 
         let vm = match init_result {
             Ok(vm) => vm,
-            Err(err) => return BlockBuild::Finished(Err(Error::VmInit(err))),
+            Err((err, proto)) => return BlockBuild::Finished(Err(Error::VmInit(err, proto))),
         };
 
         BlockBuild::from_inner(vm, self.shared)
@@ -646,7 +648,7 @@ impl ApplyExtrinsic {
 
         let vm = match init_result {
             Ok(vm) => vm,
-            Err(err) => return BlockBuild::Finished(Err(Error::VmInit(err))),
+            Err((err, proto)) => return BlockBuild::Finished(Err(Error::VmInit(err, proto))),
         };
 
         BlockBuild::from_inner(vm, self.shared)

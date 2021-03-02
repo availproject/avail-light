@@ -412,13 +412,19 @@ impl RuntimeService {
             }
 
             // Perform the actual runtime call locally.
-            let mut runtime_call =
-                executor::read_only_runtime_host::run(executor::read_only_runtime_host::Config {
+            let mut runtime_call = match executor::read_only_runtime_host::run(
+                executor::read_only_runtime_host::Config {
                     virtual_machine: runtime.virtual_machine.take().unwrap(),
                     function_to_call: method,
                     parameter: parameter_vectored,
-                })
-                .map_err(RuntimeCallError::StartError)?; // TODO: must put back virtual machine /!\
+                },
+            ) {
+                Ok(vm) => vm,
+                Err((err, prototype)) => {
+                    runtime.virtual_machine = Some(prototype);
+                    return Err(RuntimeCallError::StartError(err));
+                }
+            };
 
             loop {
                 match runtime_call {
@@ -436,8 +442,8 @@ impl RuntimeService {
                         return Ok((return_value, latest_known_runtime_lock));
                     }
                     executor::read_only_runtime_host::RuntimeHostVm::Finished(Err(error)) => {
-                        // TODO: put back virtual_machine /!\
-                        return Err(RuntimeCallError::CallError(error));
+                        runtime.virtual_machine = Some(error.prototype);
+                        return Err(RuntimeCallError::CallError(error.detail));
                     }
                     executor::read_only_runtime_host::RuntimeHostVm::StorageGet(get) => {
                         let requested_key = get.key_as_vec(); // TODO: optimization: don't use as_vec
@@ -516,7 +522,7 @@ impl RuntimeService {
 pub enum RuntimeCallError {
     /// Error during the runtime call.
     #[display(fmt = "{}", _0)]
-    CallError(executor::read_only_runtime_host::Error),
+    CallError(executor::read_only_runtime_host::ErrorDetail),
     /// Error initializing the runtime call.
     #[display(fmt = "{}", _0)]
     StartError(executor::host::StartErr),

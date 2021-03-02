@@ -190,18 +190,30 @@ impl VirtualMachinePrototype {
     /// Turns this prototype into an actual virtual machine. This requires choosing which function
     /// to execute.
     pub fn start(
-        self,
+        mut self,
         function_name: &str,
         params: &[WasmValue],
-    ) -> Result<VirtualMachine, StartErr> {
+    ) -> Result<VirtualMachine, (StartErr, Self)> {
         Ok(VirtualMachine {
             inner: match self.inner {
                 #[cfg(all(target_arch = "x86_64", feature = "std"))]
                 VirtualMachinePrototypeInner::Jit(inner) => {
-                    VirtualMachineInner::Jit(inner.start(function_name, params)?)
+                    match inner.start(function_name, params) {
+                        Ok(vm) => VirtualMachineInner::Jit(vm),
+                        Err((err, proto)) => {
+                            self.inner = VirtualMachinePrototypeInner::Jit(proto);
+                            return Err((err, self));
+                        }
+                    }
                 }
                 VirtualMachinePrototypeInner::Interpreter(inner) => {
-                    VirtualMachineInner::Interpreter(inner.start(function_name, params)?)
+                    match inner.start(function_name, params) {
+                        Ok(vm) => VirtualMachineInner::Interpreter(vm),
+                        Err((err, proto)) => {
+                            self.inner = VirtualMachinePrototypeInner::Interpreter(proto);
+                            return Err((err, self));
+                        }
+                    }
                 }
             },
         })

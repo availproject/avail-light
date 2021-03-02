@@ -87,14 +87,14 @@ pub struct Success {
 }
 
 /// Error that can happen during the verification.
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, derive_more::Display)]
 pub enum Error {
     /// Error while starting the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
     WasmStart(host::StartErr),
     /// Error while running the Wasm virtual machine.
     #[display(fmt = "{}", _0)]
-    WasmVm(runtime_host::Error),
+    WasmVm(runtime_host::ErrorDetail),
     /// Output of `Core_execute_block` wasn't empty.
     NonEmptyOutput,
 }
@@ -130,7 +130,7 @@ pub fn execute_block(
 
     match vm {
         Ok(vm) => Verify::from_inner(vm),
-        Err(err) => Verify::Finished(Err(Error::WasmStart(err))),
+        Err((error, prototype)) => Verify::Finished(Err((Error::WasmStart(error), prototype))),
     }
 }
 
@@ -138,7 +138,7 @@ pub fn execute_block(
 #[must_use]
 pub enum Verify {
     /// Verification is over.
-    Finished(Result<Success, Error>),
+    Finished(Result<Success, (Error, host::HostVmPrototype)>),
     /// Loading a storage value is required in order to continue.
     StorageGet(StorageGet),
     /// Fetching the list of keys with a given prefix is required in order to continue.
@@ -152,7 +152,10 @@ impl Verify {
         match inner {
             runtime_host::RuntimeHostVm::Finished(Ok(success)) => {
                 if !success.virtual_machine.value().as_ref().is_empty() {
-                    return Verify::Finished(Err(Error::NonEmptyOutput));
+                    return Verify::Finished(Err((
+                        Error::NonEmptyOutput,
+                        success.virtual_machine.into_prototype(),
+                    )));
                 }
 
                 Verify::Finished(Ok(Success {
@@ -164,7 +167,7 @@ impl Verify {
                 }))
             }
             runtime_host::RuntimeHostVm::Finished(Err(err)) => {
-                Verify::Finished(Err(Error::WasmVm(err)))
+                Verify::Finished(Err((Error::WasmVm(err.detail), err.prototype)))
             }
             runtime_host::RuntimeHostVm::StorageGet(inner) => Verify::StorageGet(StorageGet(inner)),
             runtime_host::RuntimeHostVm::PrefixKeys(inner) => Verify::PrefixKeys(PrefixKeys(inner)),
