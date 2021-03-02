@@ -413,6 +413,14 @@ async fn start_sync(
                 for notif in &mut best_notifications {
                     let _ = notif.send(scale_encoded_header.clone());
                 }
+
+                // Since this task is verifying blocks, a heavy CPU-only operation, it is very
+                // much possible for it to take a long time before having to wait for some event.
+                // Since JavaScript/Wasm is single-threaded, this would prevent all the other
+                // tasks in the background from running.
+                // In order to provide a better granularity, we force a yield after each new serie
+                // of verifications.
+                crate::yield_once().await;
             }
 
             // `sync_idle` is now an `Idle` that has been extracted from `sync`.
