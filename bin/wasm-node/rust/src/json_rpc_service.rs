@@ -27,28 +27,21 @@
 // TODO: doc
 // TODO: re-review this once finished
 
-use crate::{ffi, network_service, sync_service, transactions_service};
+use crate::{ffi, network_service, runtime_service, sync_service, transactions_service};
 
-use futures::{
-    channel::oneshot,
-    lock::{Mutex, MutexGuard},
-    prelude::*,
-};
+use futures::{channel::oneshot, lock::Mutex, prelude::*};
 use methods::MethodCall;
 use smoldot::{
     chain_spec, executor, header,
     json_rpc::{self, methods},
-    metadata,
     network::protocol,
-    trie::proof_verify,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     convert::TryFrom as _,
     iter,
     pin::Pin,
     sync::{atomic, Arc},
-    time::Duration,
 };
 
 /// Configuration for a JSON-RPC service.
@@ -65,6 +58,9 @@ pub struct Config {
 
     /// Service responsible for emitting transactions and tracking their state.
     pub transactions_service: Arc<transactions_service::TransactionsService>,
+
+    /// Service that provides a ready-to-be-called runtime for the current best block.
+    pub runtime_service: Arc<runtime_service::RuntimeService>,
 
     /// Specifications of the chain.
     pub chain_spec: chain_spec::ChainSpec,
@@ -88,58 +84,6 @@ pub struct Config {
 
 /// Initializes the JSON-RPC service with the given configuration.
 pub async fn start(config: Config) {
-    let latest_known_runtime = {
-        let code = config
-            .chain_spec
-            .genesis_storage()
-            .find(|(k, _)| k == b":code")
-            .map(|(_, v)| v.to_vec());
-        let heap_pages = config
-            .chain_spec
-            .genesis_storage()
-            .find(|(k, _)| k == b":heappages")
-            .map(|(_, v)| v.to_vec());
-
-        // Note that in the absolute we don't need to panic in case of a problem, and could simply
-        // store an `Err` and continue running.
-        // However, in practice, it seems more sane to detect problems in the genesis block.
-        let mut runtime = SuccessfulRuntime::from_params(&code, &heap_pages)
-            .expect("invalid runtime at genesis block");
-
-        // As documented in the `metadata` field, we must fill it using the genesis storage.
-        let mut query = metadata::query_metadata(runtime.virtual_machine.take().unwrap());
-        loop {
-            match query {
-                metadata::Query::Finished(Ok((metadata, vm))) => {
-                    runtime.virtual_machine = Some(vm);
-                    runtime.metadata = Some(metadata);
-                    break;
-                }
-                metadata::Query::StorageGet(get) => {
-                    let key = get.key_as_vec();
-                    let value = config
-                        .chain_spec
-                        .genesis_storage()
-                        .find(|(k, _)| &**k == key)
-                        .map(|(_, v)| v);
-                    query = get.inject_value(value.map(iter::once));
-                }
-                metadata::Query::Finished(Err(err)) => {
-                    panic!("Unable to generate genesis metadata: {}", err)
-                }
-            }
-        }
-
-        LatestKnownRuntime {
-            runtime: Ok(runtime),
-            runtime_code: code,
-            heap_pages,
-            runtime_block_hash: config.genesis_block_hash,
-            runtime_block_state_root: config.genesis_block_state_root,
-            runtime_version_subscriptions: HashSet::new(),
-        }
-    };
-
     let (_finalized_block_header, finalized_blocks_subscription) =
         config.sync_service.subscribe_best().await;
     let (best_block_header, best_blocks_subscription) = config.sync_service.subscribe_best().await;
@@ -158,6 +102,7 @@ pub async fn start(config: Config) {
         network_service: config.network_service.0,
         network_chain_index: config.network_service.1,
         sync_service: config.sync_service,
+        runtime_service: config.runtime_service,
         transactions_service: config.transactions_service,
         blocks: Mutex::new(Blocks {
             known_blocks,
@@ -165,13 +110,13 @@ pub async fn start(config: Config) {
             finalized_block: best_block_hash,
         }),
         genesis_block: config.genesis_block_hash,
-        latest_known_runtime: Mutex::new(latest_known_runtime),
         next_subscription: atomic::AtomicU64::new(0),
         all_heads: Mutex::new(HashMap::new()),
         new_heads: Mutex::new(HashMap::new()),
         finalized_heads: Mutex::new(HashMap::new()),
         storage: Mutex::new(HashMap::new()),
         transactions: Mutex::new(HashMap::new()),
+        runtime_specs: Mutex::new(HashMap::new()),
     });
 
     // Spawns a task whose role is to update `blocks` with the new best and finalized blocks.
@@ -213,160 +158,7 @@ pub async fn start(config: Config) {
         })
     });
 
-    // Spawns a task that downloads the runtime code at every block to check whether it has
-    // changed.
-    //
-    // This is strictly speaking not necessary as long as there is no active runtime specs
-    // subscription. However, in practice, there is most likely always going to be one. It is
-    // easier to always have a task active rather than create and destroy it.
-    (client.clone().tasks_executor.lock().await)({
-        let client = client.clone();
-        let blocks_stream = {
-            let (best_block_header, best_blocks_subscription) =
-                client.sync_service.subscribe_best().await;
-            stream::once(future::ready(best_block_header)).chain(best_blocks_subscription)
-        };
-
-        // Set to `true` when we expect the runtime in `latest_known_runtime` to match the runtime
-        // of the best block. Initially `false`, as `latest_known_runtime` uses the genesis
-        // runtime.
-        let mut runtime_matches_best_block = false;
-
-        Box::pin(async move {
-            futures::pin_mut!(blocks_stream);
-
-            loop {
-                // While major-syncing a chain, best blocks are updated continously. In that
-                // situation, the delay below is too short to prevent the runtime code from being
-                // continuously downloaded.
-                // To avoid using too much bandwidth, we force another delay between two runtime
-                // code downloads.
-                // This delay is done at the beginning of the loop because the runtime is built
-                // as part of the initialization of the `JsonRpcService`, and in order to make it
-                // possible to use `continue` without accidentally skipping this delay.
-                ffi::Delay::new(Duration::from_secs(3)).await;
-
-                // Wait until a new best block is known.
-                let mut new_best_block = match blocks_stream.next().await {
-                    Some(b) => b,
-                    None => break, // Stream is finished.
-                };
-
-                // While the chain is running, it is often the case that more than one blocks
-                // is generated and announced roughly at the same time.
-                // We would like to avoid a situation where we receive a new best block, start
-                // downloading the runtime code, then a few milliseconds later receive another
-                // block that becomes the new best, and download the runtime code of that new
-                // block as well. This would lead to downloading the runtime code twice (or more,
-                // if more than two blocks are received) in a small time frame, which is usually a
-                // waste of bandwidth.
-                // Instead, whenever a new best block is received, we wait a little bit before
-                // downloading the runtime, in order to see if there isn't any other new best
-                // block already on the way.
-                // This delay needs to be long enough to de-duplicate forks, but it should still
-                // be small, as it adds artifical latency to the detecting runtime upgrades.
-                ffi::Delay::new(Duration::from_millis(500)).await;
-                while let Some(best_update) = blocks_stream.next().now_or_never() {
-                    new_best_block = match best_update {
-                        Some(b) => b,
-                        None => break, // Stream is finished.
-                    };
-                }
-
-                // Download the runtime code of this new best block.
-                let new_best_block_decoded = header::decode(&new_best_block).unwrap();
-                let new_best_block_hash = header::hash_from_scale_encoded_header(&new_best_block);
-                let (new_code, new_heap_pages) = {
-                    let mut results = match client
-                        .network_service
-                        .clone()
-                        .storage_query(
-                            client.network_chain_index,
-                            &new_best_block_hash,
-                            new_best_block_decoded.state_root,
-                            iter::once(&b":code"[..]).chain(iter::once(&b":heappages"[..])),
-                        )
-                        .await
-                    {
-                        Ok(c) => c,
-                        Err(error) => {
-                            log::log!(
-                                target: "json-rpc",
-                                if error.is_network_problem() { log::Level::Debug } else { log::Level::Warn },
-                                "Failed to download :code and :heappages of new best block: {}",
-                                error
-                            );
-                            continue;
-                        }
-                    };
-
-                    let new_heap_pages = results.pop().unwrap();
-                    let new_code = results.pop().unwrap();
-                    (new_code, new_heap_pages)
-                };
-
-                // Only lock `latest_known_runtime` now that everything is synchronous.
-                let mut latest_known_runtime = client.latest_known_runtime.lock().await;
-
-                // `runtime_block_hash` is always updated in order to have the most recent
-                // block possible.
-                latest_known_runtime.runtime_block_hash = new_best_block_hash;
-                latest_known_runtime.runtime_block_state_root = *new_best_block_decoded.state_root;
-
-                // `continue` if there wasn't any change in `:code` and `:heappages`.
-                if new_code == latest_known_runtime.runtime_code
-                    && new_heap_pages == latest_known_runtime.heap_pages
-                {
-                    runtime_matches_best_block = true;
-                    continue;
-                }
-
-                // Don't notify the user of an upgrade if we didn't expect the runtime to match
-                // the best block in the first place.
-                if runtime_matches_best_block {
-                    log::info!(
-                        target: "json-rpc",
-                        "New runtime code detected around block #{} (block number might be wrong)",
-                        new_best_block_decoded.number
-                    );
-                }
-
-                runtime_matches_best_block = true;
-                latest_known_runtime.runtime_code = new_code;
-                latest_known_runtime.heap_pages = new_heap_pages;
-                latest_known_runtime.runtime = SuccessfulRuntime::from_params(
-                    &latest_known_runtime.runtime_code,
-                    &latest_known_runtime.heap_pages,
-                );
-
-                let notification_body = if let Ok(runtime) = &latest_known_runtime.runtime {
-                    let runtime_spec = runtime.runtime_spec.decode();
-                    serde_json::to_string(&methods::RuntimeVersion {
-                        spec_name: runtime_spec.spec_name.into(),
-                        impl_name: runtime_spec.impl_name.into(),
-                        authoring_version: u64::from(runtime_spec.authoring_version),
-                        spec_version: u64::from(runtime_spec.spec_version),
-                        impl_version: u64::from(runtime_spec.impl_version),
-                        transaction_version: runtime_spec.transaction_version.map(u64::from),
-                        apis: runtime_spec.apis,
-                    })
-                    .unwrap()
-                } else {
-                    "null".to_string()
-                };
-
-                for subscription in &latest_known_runtime.runtime_version_subscriptions {
-                    let notification = smoldot::json_rpc::parse::build_subscription_event(
-                        "state_runtimeVersion",
-                        &subscription,
-                        &notification_body,
-                    );
-                    client.send_back(&notification);
-                }
-            }
-        })
-    });
-
+    // Spawn the main requests handling task.
     (client.clone().tasks_executor.lock().await)(Box::pin(async move {
         loop {
             let json_rpc_request = ffi::next_json_rpc().await;
@@ -421,6 +213,8 @@ struct JsonRpcService {
     network_chain_index: usize,
     /// See [`Config::sync_service`].
     sync_service: Arc<sync_service::SyncService>,
+    /// See [`Config::runtime_service`].
+    runtime_service: Arc<runtime_service::RuntimeService>,
     /// See [`Config::transactions_service`].
     transactions_service: Arc<transactions_service::TransactionsService>,
 
@@ -431,13 +225,6 @@ struct JsonRpcService {
     /// Keeping the genesis block is important, as the genesis block hash is included in
     /// transaction signatures, and must therefore be queried by upper-level UIs.
     genesis_block: [u8; 32],
-
-    /// Initially contains the runtime code of the genesis block. Whenever a best block is
-    /// received, updated with the runtime of this new best block.
-    /// If, after a new best block, it isn't possible to determine whether the runtime has changed,
-    /// the content will be left unchanged. However, if an error happens for example when compiling
-    /// the new runtime, then the content will contain an error.
-    latest_known_runtime: Mutex<LatestKnownRuntime>,
 
     next_subscription: atomic::AtomicU64,
 
@@ -457,31 +244,9 @@ struct JsonRpcService {
 
     /// Same principle as [`JsonRpcService::all_heads`], but for transactions.
     transactions: Mutex<HashMap<String, oneshot::Sender<String>>>,
-}
 
-struct LatestKnownRuntime {
-    /// Successfully-compiled runtime and all its information. Can contain an error if an error
-    /// happened, including a problem when obtaining the runtime specs or the metadata. It is
-    /// better to report to the user an error about for example the metadata not being extractable
-    /// compared to returning an obsolete version.
-    runtime: Result<SuccessfulRuntime, ()>,
-
-    /// Undecoded storage value of `:code` corresponding to the [`LatestKnownRuntime::runtime`]
-    /// field.
-    runtime_code: Option<Vec<u8>>,
-    /// Undecoded storage value of `:heappages` corresponding to the
-    /// [`LatestKnownRuntime::runtime`] field.
-    heap_pages: Option<Vec<u8>>,
-    /// Hash of a block known to have the runtime found in the [`LatestKnownRuntime::runtime`]
-    /// field. Always updated to a recent block having this runtime.
-    runtime_block_hash: [u8; 32],
-    /// Storage trie root of the block whose hash is [`LatestKnownRuntime::runtime_block_hash`].
-    runtime_block_state_root: [u8; 32],
-
-    /// List of active subscriptions for runtime version updates.
-    /// Whenever [`LatestKnownRuntime::runtime`] is updated, one should emit a notification
-    /// regarding these subscriptions.
-    runtime_version_subscriptions: HashSet<String>,
+    /// Same principle as [`JsonRpcService::all_heads`], but for runtime specs.
+    runtime_specs: Mutex<HashMap<String, oneshot::Sender<String>>>,
 }
 
 struct SuccessfulRuntime {
@@ -823,71 +588,16 @@ impl JsonRpcService {
                 );
             }
             methods::MethodCall::state_getMetadata {} => {
-                // First, try the cache.
-                {
-                    let latest_known_runtime_lock = self.latest_known_runtime.lock().await;
-                    if let Some(metadata) = latest_known_runtime_lock
-                        .runtime
-                        .as_ref()
-                        .ok()
-                        .and_then(|rt| rt.metadata.as_ref())
-                    {
-                        self.send_back(
-                            &methods::Response::state_getMetadata(methods::HexString(
-                                metadata.clone(),
-                            )) // TODO: clone :-/
-                            .to_json_response(request_id),
-                        );
-
-                        return;
+                let response = match self.runtime_service.clone().metadata().await {
+                    Ok(metadata) => {
+                        methods::Response::state_getMetadata(methods::HexString(metadata))
+                            .to_json_response(request_id)
                     }
-                }
-
-                // TODO: duplicated code compared to smoldot's metadata module
-                let response = match self
-                    .recent_best_block_runtime_call("Metadata_metadata", iter::empty::<Vec<u8>>())
-                    .await
-                {
-                    Ok((return_value, mut latest_known_runtime_lock)) => {
-                        match metadata::remove_metadata_length_prefix(&return_value) {
-                            Ok(metadata) => {
-                                // TODO: lot of cloning
-                                latest_known_runtime_lock.runtime.as_mut().unwrap().metadata =
-                                    Some(metadata.to_vec());
-                                methods::Response::state_getMetadata(methods::HexString(
-                                    metadata.to_vec(),
-                                ))
-                                .to_json_response(request_id)
-                            }
-                            Err(error) => {
-                                log::warn!(
-                                    target: "json-rpc",
-                                    "Failed to call Metadata_metadata on runtime: {}",
-                                    error
-                                );
-                                json_rpc::parse::build_error_response(
-                                    request_id,
-                                    json_rpc::parse::ErrorResponse::ServerError(
-                                        -32000,
-                                        &error.to_string(),
-                                    ),
-                                    None,
-                                )
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        log::warn!(
-                            target: "json-rpc",
-                            "Failed to call Metadata_metadata on runtime: {}",
-                            error
-                        );
-                        json_rpc::parse::build_error_response(
-                            request_id,
-                            json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
-                            None,
-                        )
-                    }
+                    Err(error) => json_rpc::parse::build_error_response(
+                        request_id,
+                        json_rpc::parse::ErrorResponse::ServerError(-32000, &error.to_string()),
+                        None,
+                    ),
                 };
 
                 self.send_back(&response);
@@ -917,15 +627,22 @@ impl JsonRpcService {
                     .fetch_add(1, atomic::Ordering::Relaxed)
                     .to_string();
 
-                let mut latest_known_runtime = self.latest_known_runtime.lock().await;
+                let (current_specs, spec_changes) =
+                    self.runtime_service.subscribe_runtime_version().await;
+
+                let (unsubscribe_tx, mut unsubscribe_rx) = oneshot::channel();
+                self.runtime_specs
+                    .lock()
+                    .await
+                    .insert(subscription.clone(), unsubscribe_tx);
 
                 self.send_back(
                     &methods::Response::state_subscribeRuntimeVersion(&subscription)
                         .to_json_response(request_id),
                 );
 
-                let notification = if let Ok(runtime) = &latest_known_runtime.runtime {
-                    let runtime_spec = runtime.runtime_spec.decode();
+                let notification = if let Ok(runtime_spec) = current_specs {
+                    let runtime_spec = runtime_spec.decode();
                     serde_json::to_string(&methods::RuntimeVersion {
                         spec_name: runtime_spec.spec_name.into(),
                         impl_name: runtime_spec.impl_name.into(),
@@ -946,12 +663,56 @@ impl JsonRpcService {
                     &notification,
                 ));
 
-                // Insert and make sure that `latest_known_runtime` is kept locked until here,
-                // otherwise it is possible for the background task to send a notification to
-                // the subscription before the two messages above have been sent.
-                latest_known_runtime
-                    .runtime_version_subscriptions
-                    .insert(subscription);
+                let client = self.clone();
+                (self.tasks_executor.lock().await)(Box::pin(async move {
+                    futures::pin_mut!(spec_changes);
+
+                    loop {
+                        // Wait for either a new storage update, or for the subscription to be canceled.
+                        let next_change = spec_changes.next();
+                        futures::pin_mut!(next_change);
+                        match future::select(next_change, &mut unsubscribe_rx).await {
+                            future::Either::Left((new_runtime, _)) => {
+                                let notification_body =
+                                    if let Ok(runtime_spec) = new_runtime.unwrap() {
+                                        let runtime_spec = runtime_spec.decode();
+                                        serde_json::to_string(&methods::RuntimeVersion {
+                                            spec_name: runtime_spec.spec_name.into(),
+                                            impl_name: runtime_spec.impl_name.into(),
+                                            authoring_version: u64::from(
+                                                runtime_spec.authoring_version,
+                                            ),
+                                            spec_version: u64::from(runtime_spec.spec_version),
+                                            impl_version: u64::from(runtime_spec.impl_version),
+                                            transaction_version: runtime_spec
+                                                .transaction_version
+                                                .map(u64::from),
+                                            apis: runtime_spec.apis,
+                                        })
+                                        .unwrap()
+                                    } else {
+                                        "null".to_string()
+                                    };
+
+                                client.send_back(
+                                    &smoldot::json_rpc::parse::build_subscription_event(
+                                        "state_runtimeVersion",
+                                        &subscription,
+                                        &notification_body,
+                                    ),
+                                );
+                            }
+                            future::Either::Right((Ok(unsub_request_id), _)) => {
+                                let response =
+                                    methods::Response::state_unsubscribeRuntimeVersion(true)
+                                        .to_json_response(&unsub_request_id);
+                                client.send_back(&response);
+                                break;
+                            }
+                            future::Either::Right((Err(_), _)) => break,
+                        }
+                    }
+                }));
             }
             methods::MethodCall::state_subscribeStorage { list } => {
                 self.subscribe_storage(request_id, list).await;
@@ -969,13 +730,12 @@ impl JsonRpcService {
                         &methods::Response::state_unsubscribeStorage(false)
                             .to_json_response(request_id),
                     );
-                } else {
                 }
             }
             methods::MethodCall::state_getRuntimeVersion {} => {
-                let latest_known_runtime = self.latest_known_runtime.lock().await;
-                self.send_back(&if let Ok(runtime) = &latest_known_runtime.runtime {
-                    let runtime_spec = runtime.runtime_spec.decode();
+                let (current_specs, _) = self.runtime_service.subscribe_runtime_version().await;
+                self.send_back(&if let Ok(runtime_spec) = current_specs {
+                    let runtime_spec = runtime_spec.decode();
                     methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
                         spec_name: runtime_spec.spec_name.into(),
                         impl_name: runtime_spec.impl_name.into(),
@@ -996,13 +756,14 @@ impl JsonRpcService {
             }
             methods::MethodCall::system_accountNextIndex { account } => {
                 self.send_back(&match self
+                    .runtime_service
                     .recent_best_block_runtime_call(
                         "AccountNonceApi_account_nonce",
                         iter::once(&account.0),
                     )
                     .await
                 {
-                    Ok((return_value, _)) => {
+                    Ok(return_value) => {
                         // TODO: we get a u32 when expecting a u64; figure out problem
                         // TODO: don't unwrap
                         let index =
@@ -1564,122 +1325,6 @@ impl JsonRpcService {
             }
         }
     }
-
-    /// Performs a runtime call using the best block, or a recent best block.
-    ///
-    /// The [`JsonRpcService`] maintains the code of the runtime of a recent best block locally,
-    /// but doesn't know anything about the storage, which the runtime might have to access. In
-    /// order to make this work, a "call proof" is performed on the network in order to obtain
-    /// the storage values corresponding to this call.
-    ///
-    /// The latest known runtime might be updated during the execution of this function. If you
-    /// call this function, then re-lock the latest known runtime afterwards, you might not find
-    /// the same runtime as the one that has actually performed the call. To solve that, in
-    /// addition to the value generated by the runtime call, also returns a lock to the latest
-    /// known runtime. This can allow inspecting the runtime that has been used in order to
-    /// perform the call.
-    async fn recent_best_block_runtime_call<'a>(
-        self: &'a Arc<JsonRpcService>,
-        method: &str,
-        parameter_vectored: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
-    ) -> Result<(Vec<u8>, MutexGuard<'a, LatestKnownRuntime>), RuntimeCallError> {
-        // `latest_known_runtime` should be kept locked as little as possible.
-        // In order to handle the possibility a runtime upgrade happening during the operation,
-        // every time `latest_known_runtime` is locked, we compare the runtime version stored in
-        // it with the value previously found. If there is a mismatch, the entire runtime call
-        // is restarted from scratch.
-        loop {
-            // Get `runtime_block_hash` and `runtime_block_state_root`, the hash and state trie
-            // root of a recent best block that uses this runtime.
-            let (spec_version, runtime_block_hash, runtime_block_state_root) = {
-                let lock = self.latest_known_runtime.lock().await;
-                (
-                    lock.runtime
-                        .as_ref()
-                        .map_err(|()| RuntimeCallError::InvalidRuntime)?
-                        .runtime_spec
-                        .decode()
-                        .spec_version,
-                    lock.runtime_block_hash,
-                    lock.runtime_block_state_root,
-                )
-            };
-
-            // Perform the call proof request.
-            // Note that `latest_known_runtime` is not locked.
-            // If the call proof fail, do as if the proof was empty. This will enable the
-            // fallback consisting in performing individual storage proof requests.
-            let call_proof = self
-                .network_service
-                .clone()
-                .call_proof_query(
-                    self.network_chain_index,
-                    protocol::CallProofRequestConfig {
-                        block_hash: runtime_block_hash,
-                        method,
-                        parameter_vectored: parameter_vectored.clone(),
-                    },
-                )
-                .await
-                .unwrap_or(Vec::new());
-
-            // Lock `latest_known_runtime_lock` again. `continue` if the runtime has changed
-            // in-between.
-            let mut latest_known_runtime_lock = self.latest_known_runtime.lock().await;
-            let runtime = latest_known_runtime_lock
-                .runtime
-                .as_mut()
-                .map_err(|()| RuntimeCallError::InvalidRuntime)?;
-            if runtime.runtime_spec.decode().spec_version != spec_version {
-                continue;
-            }
-
-            // Perform the actual runtime call locally.
-            let mut runtime_call =
-                executor::read_only_runtime_host::run(executor::read_only_runtime_host::Config {
-                    virtual_machine: runtime.virtual_machine.take().unwrap(),
-                    function_to_call: method,
-                    parameter: parameter_vectored,
-                })
-                .map_err(RuntimeCallError::StartError)?; // TODO: must put back virtual machine /!\
-
-            loop {
-                match runtime_call {
-                    executor::read_only_runtime_host::RuntimeHostVm::Finished(Ok(success)) => {
-                        if !success.logs.is_empty() {
-                            log::debug!(
-                                target: "json-rpc",
-                                "Runtime logs: {}",
-                                success.logs
-                            );
-                        }
-
-                        let return_value = success.virtual_machine.value().as_ref().to_owned();
-                        runtime.virtual_machine = Some(success.virtual_machine.into_prototype());
-                        return Ok((return_value, latest_known_runtime_lock));
-                    }
-                    executor::read_only_runtime_host::RuntimeHostVm::Finished(Err(error)) => {
-                        // TODO: put back virtual_machine /!\
-                        return Err(RuntimeCallError::CallError(error));
-                    }
-                    executor::read_only_runtime_host::RuntimeHostVm::StorageGet(get) => {
-                        let requested_key = get.key_as_vec(); // TODO: optimization: don't use as_vec
-                        let storage_value =
-                            proof_verify::verify_proof(proof_verify::VerifyProofConfig {
-                                requested_key: &requested_key,
-                                trie_root_hash: &runtime_block_state_root,
-                                proof: call_proof.iter().map(|v| &v[..]),
-                            })
-                            .unwrap(); // TODO: shouldn't unwrap but do storage_proof instead
-                        runtime_call = get.inject_value(storage_value.as_ref().map(iter::once));
-                    }
-                    executor::read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
-                        todo!() // TODO:
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -1701,22 +1346,6 @@ impl StorageQueryError {
             StorageQueryError::StorageRetrieval(error) => error.is_network_problem(),
         }
     }
-}
-
-#[derive(Debug, derive_more::Display)]
-enum RuntimeCallError {
-    /// Error during the runtime call.
-    #[display(fmt = "{}", _0)]
-    CallError(executor::read_only_runtime_host::Error),
-    /// Error initializing the runtime call.
-    #[display(fmt = "{}", _0)]
-    StartError(executor::host::StartErr),
-    /// Runtime of the best block isn't valid.
-    #[display(fmt = "Runtime of the best block isn't valid")]
-    InvalidRuntime,
-    /// Error while retrieving the storage item from other nodes.
-    #[display(fmt = "{}", _0)]
-    StorageRetrieval(network_service::CallProofQueryError),
 }
 
 fn header_conv<'a>(header: impl Into<smoldot::header::HeaderRef<'a>>) -> methods::Header {
