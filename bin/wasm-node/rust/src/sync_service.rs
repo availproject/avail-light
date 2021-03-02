@@ -34,9 +34,7 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{
-    chain, chain::sync::all, informant::HashDisplay, libp2p, network, trie::proof_verify,
-};
+use smoldot::{chain, informant::HashDisplay, libp2p, network, sync::all, trie::proof_verify};
 use std::{
     collections::HashMap, convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin, sync::Arc,
 };

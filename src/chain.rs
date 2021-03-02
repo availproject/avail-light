@@ -51,4 +51,3 @@
 pub mod blocks_tree;
 pub mod chain_information;
 pub mod fork_tree;
-pub mod sync;

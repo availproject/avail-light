@@ -172,7 +172,7 @@
 //! - Connectivity to a peer-to-peer network. See the [`network`] module.
 //! - A persistent storage for the blocks. See the [`database`] module.
 //! - A state machine that holds information about the state of the chain and verifies the
-//! authenticity and/or correctness of blocks received from the network. See the [`chain::sync`]
+//! authenticity and/or correctness of blocks received from the network. See the [`sync`]
 //! module.
 //!
 //! Optionally:
@@ -204,6 +204,7 @@ pub mod json_rpc;
 pub mod libp2p;
 pub mod metadata;
 pub mod network;
+pub mod sync;
 pub mod trie;
 pub mod verify;
 

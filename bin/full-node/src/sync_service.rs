@@ -30,7 +30,7 @@ use futures::{
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{chain::sync::optimistic, database::full_sled, executor, libp2p, network};
+use smoldot::{database::full_sled, executor, libp2p, network, sync::optimistic};
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 use tracing::Instrument as _;
 

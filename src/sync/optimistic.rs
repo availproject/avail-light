@@ -45,8 +45,13 @@
 // TODO: document better
 // TODO: this entire module needs clean up
 
-use super::super::{blocks_tree, chain_information};
-use crate::{executor::host, header, trie::calculate_root, verify};
+use crate::{
+    chain::{blocks_tree, chain_information},
+    executor::host,
+    header,
+    trie::calculate_root,
+    verify,
+};
 
 use alloc::{
     borrow::ToOwned as _,

@@ -20,12 +20,11 @@
 // TODO: this module needs considerable clean-up
 
 use crate::{
-    chain::{
-        chain_information,
-        sync::{all_forks, grandpa_warp_sync, optimistic},
-    },
+    chain::chain_information,
     executor::{host, vm::ExecHint},
-    header, verify,
+    header,
+    sync::{all_forks, grandpa_warp_sync, optimistic},
+    verify,
 };
 
 use alloc::{vec, vec::Vec};
