@@ -46,9 +46,18 @@ impl<'a> BabeConsensusLogRef<'a> {
             Some(2) => BabeConsensusLogRef::OnDisabled(
                 u32::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
             ),
-            Some(3) => BabeConsensusLogRef::NextConfigData(
-                BabeNextConfig::decode_all(&slice[1..]).map_err(Error::DigestItemDecodeError)?,
-            ),
+            Some(3) => {
+                // The Babe configuration info starts with a version number that is always `1`
+                // at the moment.
+                if slice.len() < 2 || slice[1] != 1 {
+                    return Err(Error::BadBabeNextConfigVersion);
+                }
+
+                BabeConsensusLogRef::NextConfigData(
+                    BabeNextConfig::decode_all(&slice[2..])
+                        .map_err(Error::DigestItemDecodeError)?,
+                )
+            }
             Some(_) => return Err(Error::BadBabeConsensusRefType),
             None => return Err(Error::TooShort),
         })
@@ -80,9 +89,11 @@ impl<'a> BabeConsensusLogRef<'a> {
             BabeConsensusLogRef::OnDisabled(digest) => either::Either::Right(iter::once(
                 either::Either::Right(parity_scale_codec::Encode::encode(digest)),
             )),
-            BabeConsensusLogRef::NextConfigData(digest) => either::Either::Right(iter::once(
-                either::Either::Right(parity_scale_codec::Encode::encode(digest)),
-            )),
+            BabeConsensusLogRef::NextConfigData(digest) => {
+                let mut encoded = parity_scale_codec::Encode::encode(digest);
+                encoded.insert(0, 1);
+                either::Either::Right(iter::once(either::Either::Right(encoded)))
+            }
         };
 
         index

@@ -189,6 +189,7 @@ pub enum Error {
     BadBabeSealLength,
     BadBabePreDigestRefType,
     BadBabeConsensusRefType,
+    BadBabeNextConfigVersion,
     /// There are multiple Babe pre-runtime digests in the block header.
     MultipleBabePreRuntimeDigests,
     /// There are multiple Babe epoch descriptor digests in the block header.
