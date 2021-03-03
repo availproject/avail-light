@@ -922,7 +922,6 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         debug_assert!(chain.is_empty());
                         shared.inner.best_to_finalized_storage_diff.clear();
 
-                        debug_assert!(shared.inner.finalized_runtime.is_some());
                         if let Some(runtime) = shared.inner.best_runtime.take() {
                             shared.inner.finalized_runtime = Some(runtime);
                         }
