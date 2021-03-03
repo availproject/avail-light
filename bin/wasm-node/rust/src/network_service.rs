@@ -559,7 +559,6 @@ impl NetworkService {
             }
         }
 
-        debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
         Err(StorageQueryError {
             errors: outcome_errors,
         })
@@ -624,7 +623,6 @@ impl NetworkService {
                 }
             }
 
-            debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
             return Err(StorageQueryError {
                 errors: outcome_errors,
             });
@@ -693,7 +691,6 @@ impl NetworkService {
             }
         }
 
-        debug_assert_eq!(outcome_errors.len(), outcome_errors.capacity());
         Err(CallProofQueryError {
             errors: outcome_errors,
         })
