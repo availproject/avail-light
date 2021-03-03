@@ -91,6 +91,8 @@ pub enum Query {
     StorageGet(StorageGet),
     /// Fetching the key that follows a given one is required in order to continue.
     NextKey(NextKey),
+    /// Fetching the storage trie root is required in order to continue.
+    StorageRoot(StorageRoot),
 }
 
 impl Query {
@@ -126,6 +128,9 @@ impl Query {
             }
             read_only_runtime_host::RuntimeHostVm::StorageGet(inner) => {
                 Query::StorageGet(StorageGet(inner))
+            }
+            read_only_runtime_host::RuntimeHostVm::StorageRoot(inner) => {
+                Query::StorageRoot(StorageRoot(inner))
             }
             read_only_runtime_host::RuntimeHostVm::NextKey(inner) => Query::NextKey(NextKey(inner)),
         }
@@ -173,6 +178,17 @@ impl NextKey {
     ///
     pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> Query {
         Query::from_inner(self.0.inject_key(key))
+    }
+}
+
+/// Fetching the storage trie root is required in order to continue.
+#[must_use]
+pub struct StorageRoot(read_only_runtime_host::StorageRoot);
+
+impl StorageRoot {
+    /// Writes the trie root hash to the Wasm VM and prepares it for resume.
+    pub fn resume(self, hash: &[u8; 32]) -> Query {
+        Query::from_inner(self.0.resume(hash))
     }
 }
 

@@ -120,6 +120,8 @@ pub enum RuntimeHostVm {
     StorageGet(StorageGet),
     /// Fetching the key that follows a given one is required in order to continue.
     NextKey(NextKey),
+    /// Fetching the storage trie root is required in order to continue.
+    StorageRoot(StorageRoot),
 }
 
 impl RuntimeHostVm {
@@ -130,6 +132,7 @@ impl RuntimeHostVm {
             RuntimeHostVm::Finished(Err(inner)) => inner.prototype,
             RuntimeHostVm::StorageGet(inner) => inner.inner.vm.into_prototype(),
             RuntimeHostVm::NextKey(inner) => inner.inner.vm.into_prototype(),
+            RuntimeHostVm::StorageRoot(inner) => inner.inner.vm.into_prototype(),
         }
     }
 }
@@ -217,7 +220,29 @@ impl NextKey {
                 self.inner.vm = req.resume(key.as_ref().map(|v| &v[..]));
             }
 
-            // We only create a `NextKey` if the state is one of the above.
+            // We only create a `NextKey` if the state is the one above.
+            _ => unreachable!(),
+        };
+
+        self.inner.run()
+    }
+}
+
+/// Fetching the storage trie root is required in order to continue.
+#[must_use]
+pub struct StorageRoot {
+    inner: Inner,
+}
+
+impl StorageRoot {
+    /// Writes the trie root hash to the Wasm VM and prepares it for resume.
+    pub fn resume(mut self, hash: &[u8; 32]) -> RuntimeHostVm {
+        match self.inner.vm {
+            host::HostVm::ExternalStorageRoot(req) => {
+                self.inner.vm = req.resume(hash);
+            }
+
+            // We only create a `StorageRoot` if the state is the one above.
             _ => unreachable!(),
         };
 
@@ -297,6 +322,11 @@ impl Inner {
                             self.vm = req.resume(Err(()));
                         }
                     }
+                }
+
+                host::HostVm::ExternalStorageRoot(req) => {
+                    self.vm = req.into();
+                    return RuntimeHostVm::StorageRoot(StorageRoot { inner: self });
                 }
 
                 host::HostVm::LogEmit(req) => {

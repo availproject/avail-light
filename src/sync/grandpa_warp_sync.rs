@@ -114,83 +114,96 @@ pub enum InProgressGrandpaWarpSync<TSrc> {
 
 impl<TSrc> GrandpaWarpSync<TSrc> {
     fn from_babe_fetch_epoch_query(
-        query: babe_fetch_epoch::Query,
-        fetched_current_epoch: Option<PartialBabeEpochInformation>,
+        mut query: babe_fetch_epoch::Query,
+        mut fetched_current_epoch: Option<PartialBabeEpochInformation>,
         mut state: PostVerificationState<TSrc>,
     ) -> Self {
-        match (query, fetched_current_epoch) {
-            (babe_fetch_epoch::Query::Finished(Ok((next_epoch, runtime))), Some(current_epoch)) => {
-                let (slots_per_epoch, babe_config_c, babe_config_allowed_slots) =
-                    match state.start_chain_information.consensus {
-                        ChainInformationConsensus::Babe {
-                            slots_per_epoch,
-                            finalized_next_epoch_transition,
-                            ..
-                        } => (
-                            slots_per_epoch,
-                            // TODO: /!\ /!\ shouldn't take the same configuration as the genesis; this is a hack while waiting for https://github.com/paritytech/substrate/issues/8060
-                            finalized_next_epoch_transition.c,
-                            finalized_next_epoch_transition.allowed_slots,
-                        ),
-                        _ => unreachable!(),
-                    };
+        loop {
+            match (query, fetched_current_epoch) {
+                (
+                    babe_fetch_epoch::Query::Finished(Ok((next_epoch, runtime))),
+                    Some(current_epoch),
+                ) => {
+                    let (slots_per_epoch, babe_config_c, babe_config_allowed_slots) =
+                        match state.start_chain_information.consensus {
+                            ChainInformationConsensus::Babe {
+                                slots_per_epoch,
+                                finalized_next_epoch_transition,
+                                ..
+                            } => (
+                                slots_per_epoch,
+                                // TODO: /!\ /!\ shouldn't take the same configuration as the genesis; this is a hack while waiting for https://github.com/paritytech/substrate/issues/8060
+                                finalized_next_epoch_transition.c,
+                                finalized_next_epoch_transition.allowed_slots,
+                            ),
+                            _ => unreachable!(),
+                        };
 
-                Self::Finished(Ok(Success {
-                    chain_information: ChainInformation {
-                        finalized_block_header: state.header,
-                        finality: state.chain_information_finality,
-                        consensus: ChainInformationConsensus::Babe {
-                            finalized_block_epoch_information: Some(BabeEpochInformation {
-                                epoch_index: current_epoch.epoch_index,
-                                start_slot_number: current_epoch.start_slot_number,
-                                authorities: current_epoch.authorities,
-                                randomness: current_epoch.randomness,
-                                c: babe_config_c,
-                                allowed_slots: babe_config_allowed_slots,
-                            }),
-                            finalized_next_epoch_transition: BabeEpochInformation {
-                                epoch_index: next_epoch.epoch_index,
-                                start_slot_number: next_epoch.start_slot_number,
-                                authorities: next_epoch.authorities,
-                                randomness: next_epoch.randomness,
-                                c: babe_config_c,
-                                allowed_slots: babe_config_allowed_slots,
+                    return Self::Finished(Ok(Success {
+                        chain_information: ChainInformation {
+                            finalized_block_header: state.header,
+                            finality: state.chain_information_finality,
+                            consensus: ChainInformationConsensus::Babe {
+                                finalized_block_epoch_information: Some(BabeEpochInformation {
+                                    epoch_index: current_epoch.epoch_index,
+                                    start_slot_number: current_epoch.start_slot_number,
+                                    authorities: current_epoch.authorities,
+                                    randomness: current_epoch.randomness,
+                                    c: babe_config_c,
+                                    allowed_slots: babe_config_allowed_slots,
+                                }),
+                                finalized_next_epoch_transition: BabeEpochInformation {
+                                    epoch_index: next_epoch.epoch_index,
+                                    start_slot_number: next_epoch.start_slot_number,
+                                    authorities: next_epoch.authorities,
+                                    randomness: next_epoch.randomness,
+                                    c: babe_config_c,
+                                    allowed_slots: babe_config_allowed_slots,
+                                },
+                                slots_per_epoch,
                             },
-                            slots_per_epoch,
                         },
-                    },
-                    runtime,
-                    sources: state
-                        .sources
-                        .drain()
-                        .map(|source| source.user_data)
-                        .collect(),
-                }))
-            }
-            (babe_fetch_epoch::Query::Finished(Ok((current_epoch, runtime))), None) => {
-                let babe_next_epoch_query =
-                    babe_fetch_epoch::babe_fetch_epoch(babe_fetch_epoch::Config {
                         runtime,
-                        epoch_to_fetch: babe_fetch_epoch::BabeEpochToFetch::NextEpoch,
-                    });
-                Self::from_babe_fetch_epoch_query(babe_next_epoch_query, Some(current_epoch), state)
-            }
-            (babe_fetch_epoch::Query::Finished(Err(error)), _) => {
-                Self::Finished(Err(Error::BabeFetchEpoch(error)))
-            }
-            (babe_fetch_epoch::Query::StorageGet(storage_get), fetched_current_epoch) => {
-                Self::InProgress(InProgressGrandpaWarpSync::StorageGet(StorageGet {
-                    inner: storage_get,
-                    fetched_current_epoch,
-                    state,
-                }))
-            }
-            (babe_fetch_epoch::Query::NextKey(next_key), fetched_current_epoch) => {
-                Self::InProgress(InProgressGrandpaWarpSync::NextKey(NextKey {
-                    inner: next_key,
-                    fetched_current_epoch,
-                    state,
-                }))
+                        sources: state
+                            .sources
+                            .drain()
+                            .map(|source| source.user_data)
+                            .collect(),
+                    }));
+                }
+                (babe_fetch_epoch::Query::Finished(Ok((current_epoch, runtime))), None) => {
+                    let babe_next_epoch_query =
+                        babe_fetch_epoch::babe_fetch_epoch(babe_fetch_epoch::Config {
+                            runtime,
+                            epoch_to_fetch: babe_fetch_epoch::BabeEpochToFetch::NextEpoch,
+                        });
+                    return Self::from_babe_fetch_epoch_query(
+                        babe_next_epoch_query,
+                        Some(current_epoch),
+                        state,
+                    );
+                }
+                (babe_fetch_epoch::Query::Finished(Err(error)), _) => {
+                    return Self::Finished(Err(Error::BabeFetchEpoch(error)))
+                }
+                (babe_fetch_epoch::Query::StorageGet(storage_get), fetched_current_epoch) => {
+                    return Self::InProgress(InProgressGrandpaWarpSync::StorageGet(StorageGet {
+                        inner: storage_get,
+                        fetched_current_epoch,
+                        state,
+                    }))
+                }
+                (babe_fetch_epoch::Query::StorageRoot(storage_root), e) => {
+                    fetched_current_epoch = e;
+                    query = storage_root.resume(&state.header.state_root);
+                }
+                (babe_fetch_epoch::Query::NextKey(next_key), fetched_current_epoch) => {
+                    return Self::InProgress(InProgressGrandpaWarpSync::NextKey(NextKey {
+                        inner: next_key,
+                        fetched_current_epoch,
+                        state,
+                    }))
+                }
             }
         }
     }

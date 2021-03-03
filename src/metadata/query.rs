@@ -106,6 +106,9 @@ impl Query {
             read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
                 Query::Finished(Err(Error::HostFunctionNotAllowed))
             }
+            read_only_runtime_host::RuntimeHostVm::StorageRoot(_) => {
+                Query::Finished(Err(Error::HostFunctionNotAllowed))
+            }
         }
     }
 }

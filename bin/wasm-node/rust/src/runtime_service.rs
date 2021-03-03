@@ -344,6 +344,9 @@ impl RuntimeService {
                     executor::read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
                         todo!() // TODO:
                     }
+                    executor::read_only_runtime_host::RuntimeHostVm::StorageRoot(storage_root) => {
+                        runtime_call = storage_root.resume(&runtime_block_state_root);
+                    }
                 }
             }
         }
