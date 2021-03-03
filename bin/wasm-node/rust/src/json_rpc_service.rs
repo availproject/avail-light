@@ -249,68 +249,6 @@ struct JsonRpcService {
     runtime_specs: Mutex<HashMap<String, oneshot::Sender<String>>>,
 }
 
-struct SuccessfulRuntime {
-    /// Cache of the metadata extracted from the runtime. `None` if unknown.
-    ///
-    /// This cache is filled lazily whenever the JSON-RPC client requests it.
-    ///
-    /// Note that building the metadata might require access to the storage, just like obtaining
-    /// the runtime code. if the runtime code gets an update, we can reasonably assume that the
-    /// network is able to serve us the storage of recent blocks, and thus the changes of being
-    /// able to build the metadata are very high.
-    ///
-    /// If the runtime is the one found in the genesis storage, the metadata must have been been
-    /// filled using the genesis storage as well. If we build the metadata of the genesis runtime
-    /// lazily, chances are that the network wouldn't be able to serve the storage of blocks near
-    /// the genesis.
-    ///
-    /// As documented in the smoldot metadata module, the metadata might access the storage, but
-    /// we intentionally don't watch for changes in these storage keys to refresh the metadata.
-    metadata: Option<Vec<u8>>,
-
-    /// Runtime specs extracted from the runtime.
-    runtime_spec: executor::CoreVersion,
-
-    /// Virtual machine itself, to perform additional calls.
-    ///
-    /// Always `Some`, except for temporary extractions. Should always be `Some`, when the
-    /// [`SuccessfulRuntime`] is accessed.
-    virtual_machine: Option<executor::host::HostVmPrototype>,
-}
-
-impl SuccessfulRuntime {
-    fn from_params(code: &Option<Vec<u8>>, heap_pages: &Option<Vec<u8>>) -> Result<Self, ()> {
-        let vm = match executor::host::HostVmPrototype::new(
-            code.as_ref().ok_or(())?,
-            executor::storage_heap_pages_to_value(heap_pages.as_deref()).map_err(|_| ())?,
-            executor::vm::ExecHint::CompileAheadOfTime,
-        ) {
-            Ok(vm) => vm,
-            Err(error) => {
-                log::warn!(target: "json-rpc", "Failed to compile best block runtime: {}", error);
-                return Err(());
-            }
-        };
-
-        let (runtime_spec, vm) = match executor::core_version(vm) {
-            Ok(v) => v,
-            Err(_error) => {
-                log::warn!(
-                    target: "json-rpc",
-                    "Failed to call Core_version on new runtime",  // TODO: print error message as well ; at the moment the type of the error is `()`
-                );
-                return Err(());
-            }
-        };
-
-        Ok(SuccessfulRuntime {
-            metadata: None,
-            runtime_spec,
-            virtual_machine: Some(vm),
-        })
-    }
-}
-
 struct Blocks {
     /// Blocks that are temporarily saved in order to serve JSON-RPC requests.
     ///
