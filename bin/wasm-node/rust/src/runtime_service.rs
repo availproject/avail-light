@@ -31,7 +31,7 @@ use std::{iter, pin::Pin, sync::Arc, time::Duration};
 
 pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 
-/// Configuration for a JSON-RPC service.
+/// Configuration for a runtime service.
 pub struct Config<'a> {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
@@ -305,7 +305,7 @@ impl RuntimeService {
                     executor::read_only_runtime_host::RuntimeHostVm::Finished(Ok(success)) => {
                         if !success.logs.is_empty() {
                             log::debug!(
-                                target: "json-rpc",
+                                target: "runtime",
                                 "Runtime logs: {}",
                                 success.logs
                             );
@@ -385,7 +385,7 @@ impl RuntimeService {
                     }
                     Err(error) => {
                         log::warn!(
-                            target: "json-rpc",
+                            target: "runtime",
                             "Failed to call Metadata_metadata on runtime: {}",
                             error
                         );
@@ -395,7 +395,7 @@ impl RuntimeService {
             }
             Err(error) => {
                 log::warn!(
-                    target: "json-rpc",
+                    target: "runtime",
                     "Failed to call Metadata_metadata on runtime: {}",
                     error
                 );
@@ -470,7 +470,7 @@ struct LatestKnownRuntime {
 struct SuccessfulRuntime {
     /// Cache of the metadata extracted from the runtime. `None` if unknown.
     ///
-    /// This cache is filled lazily whenever the JSON-RPC client requests it.
+    /// This cache is filled lazily whenever it is requested through the public API.
     ///
     /// Note that building the metadata might require access to the storage, just like obtaining
     /// the runtime code. if the runtime code gets an update, we can reasonably assume that the
@@ -505,7 +505,7 @@ impl SuccessfulRuntime {
         ) {
             Ok(vm) => vm,
             Err(error) => {
-                log::warn!(target: "json-rpc", "Failed to compile best block runtime: {}", error);
+                log::warn!(target: "runtime", "Failed to compile best block runtime: {}", error);
                 return Err(());
             }
         };
@@ -514,7 +514,7 @@ impl SuccessfulRuntime {
             Ok(v) => v,
             Err(_error) => {
                 log::warn!(
-                    target: "json-rpc",
+                    target: "runtime",
                     "Failed to call Core_version on new runtime",  // TODO: print error message as well ; at the moment the type of the error is `()`
                 );
                 return Err(());
@@ -554,7 +554,7 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 // To avoid using too much bandwidth, we force another delay between two runtime
                 // code downloads.
                 // This delay is done at the beginning of the loop because the runtime is built
-                // as part of the initialization of the `JsonRpcService`, and in order to make it
+                // as part of the initialization of the `RuntimeService`, and in order to make it
                 // possible to use `continue` without accidentally skipping this delay.
                 ffi::Delay::new(Duration::from_secs(3)).await;
 
@@ -620,7 +620,7 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                         Ok(c) => c,
                         Err(error) => {
                             log::log!(
-                                target: "json-rpc",
+                                target: "runtime",
                                 if error.is_network_problem() { log::Level::Debug } else { log::Level::Warn },
                                 "Failed to download :code and :heappages of new best block: {}",
                                 error
@@ -651,7 +651,7 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 // the best block in the first place.
                 if runtime_matches_best_block {
                     log::info!(
-                        target: "json-rpc",
+                        target: "runtime",
                         "New runtime code detected around block #{} (block number might be wrong)",
                         new_best_block_decoded.number
                     );
