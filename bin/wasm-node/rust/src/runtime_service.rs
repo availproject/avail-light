@@ -299,12 +299,23 @@ impl RuntimeService {
                     executor::read_only_runtime_host::RuntimeHostVm::StorageGet(get) => {
                         let requested_key = get.key_as_vec(); // TODO: optimization: don't use as_vec
                         let storage_value =
-                            proof_verify::verify_proof(proof_verify::VerifyProofConfig {
+                            match proof_verify::verify_proof(proof_verify::VerifyProofConfig {
                                 requested_key: &requested_key,
                                 trie_root_hash: &runtime_block_state_root,
                                 proof: call_proof.iter().map(|v| &v[..]),
-                            })
-                            .unwrap(); // TODO: shouldn't unwrap but do storage_proof instead
+                            }) {
+                                Ok(v) => v,
+                                Err(err) => {
+                                    // TODO: shouldn't return if error but do a storage_proof instead
+                                    runtime.virtual_machine = Some(
+                                    executor::read_only_runtime_host::RuntimeHostVm::StorageGet(
+                                        get,
+                                    )
+                                    .into_prototype(),
+                                );
+                                    return Err(RuntimeCallError::StorageRetrieval(err));
+                                }
+                            };
                         runtime_call = get.inject_value(storage_value.as_ref().map(iter::once));
                     }
                     executor::read_only_runtime_host::RuntimeHostVm::NextKey(_) => {
@@ -381,8 +392,9 @@ pub enum RuntimeCallError {
     #[display(fmt = "Runtime of the best block isn't valid")]
     InvalidRuntime,
     /// Error while retrieving the storage item from other nodes.
+    // TODO: change error type?
     #[display(fmt = "{}", _0)]
-    StorageRetrieval(network_service::CallProofQueryError),
+    StorageRetrieval(proof_verify::Error),
 }
 
 /// Error that can happen when calling [`RuntimeService::metadata`].
