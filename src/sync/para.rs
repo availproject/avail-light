@@ -70,12 +70,14 @@ impl OccupiedCoreAssumption {
     }
 }
 
-/// Attempt to decode the given SCALE-encoded persisted validation data.
-// TODO: shouldn't this method be specific to Grandpa?
-pub fn decode_persisted_validation_data(
+/// Attempt to decode the return value of the  `ParachainHost_persisted_validation_data` runtime
+/// call.
+pub fn decode_persisted_validation_data_return_value(
     scale_encoded: &[u8],
-) -> Result<PersistedValidationDataRef, Error> {
-    match nom::combinator::all_consuming(persisted_validation_data)(scale_encoded) {
+) -> Result<Option<PersistedValidationDataRef>, Error> {
+    match nom::combinator::all_consuming(crate::util::nom_option_decode(persisted_validation_data))(
+        scale_encoded,
+    ) {
         Ok((_, data)) => Ok(data),
         Err(err) => Err(Error(err)),
     }

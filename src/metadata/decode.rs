@@ -257,9 +257,9 @@ fn module_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ModuleMetadataRef, NomEr
         nom::combinator::map(
             nom::sequence::tuple((
                 string_decode,
-                |i| crate::util::nom_option_decode(i, storage_metadata),
-                |i| crate::util::nom_option_decode(i, |i| vec_decode(i, function_metadata)),
-                |i| crate::util::nom_option_decode(i, |i| vec_decode(i, event_metadata)),
+                crate::util::nom_option_decode(storage_metadata),
+                crate::util::nom_option_decode(|i| vec_decode(i, function_metadata)),
+                crate::util::nom_option_decode(|i| vec_decode(i, event_metadata)),
                 |i| vec_decode(i, module_constant_metadata),
                 |i| vec_decode(i, error_metadata),
             )),

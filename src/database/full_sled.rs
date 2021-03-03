@@ -1365,7 +1365,7 @@ fn decode_babe_epoch_information<E: From<AccessError>>(
     let result = nom::combinator::all_consuming(nom::combinator::map(
         nom::sequence::tuple((
             nom::number::complete::le_u64,
-            |b| util::nom_option_decode(b, nom::number::complete::le_u64),
+            util::nom_option_decode(nom::number::complete::le_u64),
             nom::combinator::flat_map(crate::util::nom_scale_compact_usize, |num_elems| {
                 nom::multi::many_m_n(
                     num_elems,
