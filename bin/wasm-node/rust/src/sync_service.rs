@@ -27,7 +27,7 @@
 //! Use [`SyncService::subscribe_best`] and [`SyncService::subscribe_finalized`] to get notified
 //! about updates of the best and finalized blocks.
 
-use crate::{ffi, network_service};
+use crate::{ffi, lossy_channel, network_service};
 
 use futures::{
     channel::{mpsc, oneshot},
@@ -39,9 +39,7 @@ use std::{
     collections::HashMap, convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin, sync::Arc,
 };
 
-mod lossy_channel;
-
-pub use lossy_channel::Receiver as NotificationsReceiver;
+pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 
 /// Configuration for a [`SyncService`].
 pub struct Config {

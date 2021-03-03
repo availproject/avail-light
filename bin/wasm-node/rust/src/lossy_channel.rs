@@ -19,6 +19,8 @@
 //! containing one element. If an item is sent on the channel while the channel is occupied,
 //! the existing value is replaced with the new one.
 
+// TODO: move somewhere else? in an external library maybe?
+
 use futures::prelude::*;
 use std::{
     pin::Pin,
