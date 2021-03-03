@@ -260,7 +260,7 @@ impl<T> Yamux<T> {
     pub fn incoming_data(mut self, mut data: &[u8]) -> Result<IncomingDataOutcome<T>, Error> {
         let mut total_read: usize = 0;
 
-        loop {
+        while !data.is_empty() {
             match self.incoming {
                 Incoming::PendingIncomingSubstream { .. } => panic!(),
 
