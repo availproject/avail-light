@@ -175,7 +175,9 @@ impl NetworkService {
                 known_nodes,
                 listen_addresses: Vec::new(), // TODO:
                 noise_key: connection::NoiseKey::new(&rand::random()),
-                pending_api_events_buffer_size: NonZeroUsize::new(64).unwrap(),
+                // TODO: we use an abnormally large channel in order to by pass https://github.com/paritytech/smoldot/issues/615
+                // once the issue is solved, this should be restored to a smaller value, such as 16
+                pending_api_events_buffer_size: NonZeroUsize::new(2048).unwrap(),
                 randomness_seed: rand::random(),
             }),
             important_nodes,
