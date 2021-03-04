@@ -535,7 +535,7 @@ impl NetworkService {
                 .await
                 .map_err(StorageQueryErrorDetail::Network)
                 .and_then(|outcome| {
-                    let mut result = Vec::with_capacity(outcome.len());
+                    let mut result = Vec::with_capacity(requested_keys.clone().count());
                     for key in requested_keys.clone() {
                         result.push(
                             proof_verify::verify_proof(proof_verify::VerifyProofConfig {
