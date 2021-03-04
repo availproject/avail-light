@@ -1540,15 +1540,15 @@ impl ExternalStorageGet {
     pub fn resume_full_value(self, value: Option<&[u8]>) -> HostVm {
         if let Some(value) = value {
             if usize::try_from(self.offset).unwrap() < value.len() {
-                let value = &value[usize::try_from(self.offset).unwrap()..];
-                if usize::try_from(self.max_size).unwrap() < value.len() {
-                    let value = &value[..usize::try_from(self.max_size).unwrap()];
-                    self.resume(Some(value))
+                let value_slice = &value[usize::try_from(self.offset).unwrap()..];
+                if usize::try_from(self.max_size).unwrap() < value_slice.len() {
+                    let value_slice = &value_slice[..usize::try_from(self.max_size).unwrap()];
+                    self.resume(Some((value_slice, value.len())))
                 } else {
-                    self.resume(Some(value))
+                    self.resume(Some((value_slice, value.len())))
                 }
             } else {
-                self.resume(Some(&[]))
+                self.resume(Some((&[], value.len())))
             }
         } else {
             self.resume(None)
@@ -1562,18 +1562,28 @@ impl ExternalStorageGet {
     /// [`ExternalStorageGet::offset`]. If the offset is out of range, an empty slice must be
     /// passed.
     ///
+    /// If `Some`, the total size of the value, without taking [`ExternalStorageGet::offset`] or
+    /// [`ExternalStorageGet::max_size`] into account, must additionally be provided.
+    ///
     /// The value must not be longer than what [`ExternalStorageGet::max_size`] returns.
     ///
     /// # Panic
     ///
     /// Panics if the value is longer than what [`ExternalStorageGet::max_size`] returns.
     ///
-    pub fn resume(self, value: Option<&[u8]>) -> HostVm {
-        self.resume_vectored(value.as_ref().map(iter::once))
+    pub fn resume(self, value: Option<(&[u8], usize)>) -> HostVm {
+        self.resume_vectored(
+            value
+                .as_ref()
+                .map(|(value, size)| (iter::once(&value[..]), *size)),
+        )
     }
 
     /// Similar to [`ExternalStorageGet::resume`], but allows passing the value as a list of
     /// buffers whose concatenation forms the actual value.
+    ///
+    /// If `Some`, the total size of the value, without taking [`ExternalStorageGet::offset`] or
+    /// [`ExternalStorageGet::max_size`] into account, must additionally be provided.
     ///
     /// # Panic
     ///
@@ -1581,15 +1591,18 @@ impl ExternalStorageGet {
     ///
     pub fn resume_vectored(
         mut self,
-        value: Option<impl Iterator<Item = impl AsRef<[u8]>> + Clone>,
+        value: Option<(impl Iterator<Item = impl AsRef<[u8]>> + Clone, usize)>,
     ) -> HostVm {
         let host_fn = self.inner.registered_functions[self.calling];
         match host_fn {
             HostFunction::ext_storage_get_version_1 => {
-                if let Some(value) = value {
+                if let Some((value, value_total_len)) = value {
                     // Writing `Some(value)`.
-                    let value_len = value.clone().fold(0, |a, b| a + b.as_ref().len());
-                    let value_len_enc = util::encode_scale_compact_usize(value_len);
+                    debug_assert_eq!(
+                        value.clone().fold(0, |a, b| a + b.as_ref().len()),
+                        value_total_len
+                    );
+                    let value_len_enc = util::encode_scale_compact_usize(value_total_len);
                     self.inner.alloc_write_and_return_pointer_size(
                         host_fn.name(),
                         iter::once(&[1][..])
@@ -1604,21 +1617,20 @@ impl ExternalStorageGet {
                 }
             }
             HostFunction::ext_storage_read_version_1 => {
-                let outcome = if let Some(value) = value {
-                    let written =
-                        u32::try_from(value.clone().fold(0, |a, b| a + b.as_ref().len())).unwrap();
-                    assert!(written <= self.max_size);
-                    // TODO: don't unwrap!
+                let outcome = if let Some((value, value_total_len)) = value {
+                    let mut remaining_max_allowed = usize::try_from(self.max_size).unwrap();
                     let mut offset = self.value_out_ptr.unwrap();
                     for value in value {
                         let value = value.as_ref();
+                        assert!(value.len() <= remaining_max_allowed);
+                        remaining_max_allowed -= value.len();
                         self.inner.vm.write_memory(offset, value).unwrap();
                         offset += u32::try_from(value.len()).unwrap();
                     }
-                    // TODO: while the specs mention that `written` should be returned,
-                    // substrate instead returns the total length of the read value;
-                    // see https://github.com/paritytech/substrate/pull/7084
-                    Some(written)
+
+                    // Note: the https://github.com/paritytech/substrate/pull/7084 PR has changed
+                    // the meaning of this return value.
+                    Some(u32::try_from(value_total_len).unwrap() - self.offset)
                 } else {
                     None
                 };
