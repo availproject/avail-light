@@ -423,6 +423,21 @@ pub enum RuntimeCallError {
     StorageRetrieval(proof_verify::Error),
 }
 
+impl RuntimeCallError {
+    /// Returns `true` if this is caused by networking issues, as opposed to a consensus-related
+    /// issue.
+    pub fn is_network_problem(&self) -> bool {
+        match self {
+            RuntimeCallError::CallError(_) => false,
+            RuntimeCallError::StartError(_) => false,
+            RuntimeCallError::InvalidRuntime => false,
+            // TODO: as a temporary hack, we consider `TrieRootNotFound` as the remote not knowing about the requested block; see https://github.com/paritytech/substrate/pull/8046
+            RuntimeCallError::StorageRetrieval(proof_verify::Error::TrieRootNotFound) => true,
+            RuntimeCallError::StorageRetrieval(_) => false,
+        }
+    }
+}
+
 /// Error that can happen when calling [`RuntimeService::metadata`].
 #[derive(Debug, derive_more::Display)]
 pub enum MetadataError {

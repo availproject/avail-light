@@ -27,17 +27,22 @@
 //! Use [`SyncService::subscribe_best`] and [`SyncService::subscribe_finalized`] to get notified
 //! about updates of the best and finalized blocks.
 
-use crate::{ffi, lossy_channel, network_service};
+use crate::{ffi, lossy_channel, network_service, runtime_service};
 
+use blake2_rfc::blake2b::blake2b;
 use futures::{
     channel::{mpsc, oneshot},
     lock::Mutex,
     prelude::*,
 };
-use smoldot::{chain, informant::HashDisplay, libp2p, network, sync::all, trie::proof_verify};
-use std::{
-    collections::HashMap, convert::TryFrom as _, iter, num::NonZeroU32, pin::Pin, sync::Arc,
+use smoldot::{
+    chain, header,
+    informant::HashDisplay,
+    libp2p, network,
+    sync::{all, para},
+    trie::proof_verify,
 };
+use std::{collections::HashMap, convert::TryFrom as _, num::NonZeroU32, pin::Pin, sync::Arc};
 
 pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 
@@ -56,6 +61,29 @@ pub struct Config {
     /// Receiver for events coming from the network, as returned by
     /// [`network_service::NetworkService::new`].
     pub network_events_receiver: mpsc::Receiver<network_service::Event>,
+
+    /// Extra fields used when the chain is a parachain.
+    /// If `None`, this chain is a standalone chain or a relay chain.
+    pub parachain: Option<ConfigParachain>,
+}
+
+/// See [`Config::parachain`].
+pub struct ConfigParachain {
+    /// Runtime service that synchronizes the relay chain of this parachain.
+    pub relay_chain_sync: Arc<runtime_service::RuntimeService>,
+
+    /// Index in the network service of [`Config::network_service`] of the relay chain of this
+    /// parachain.
+    pub relay_network_chain_index: usize,
+
+    /// Id of the parachain within the relay chain.
+    ///
+    /// This is an arbitrary number used to identify the parachain within the storage of the
+    /// relay chain.
+    ///
+    /// > **Note**: This information is normally found in the chain specification of the
+    /// >           parachain.
+    pub parachain_id: u32,
 }
 
 /// Identifier for a blocks request to be performed.
@@ -71,16 +99,24 @@ impl SyncService {
     pub async fn new(mut config: Config) -> Self {
         let (to_background, from_foreground) = mpsc::channel(16);
 
-        (config.tasks_executor)(Box::pin(
-            start_sync(
+        if let Some(config_parachain) = config.parachain {
+            (config.tasks_executor)(Box::pin(start_parachain(
                 config.chain_information,
                 from_foreground,
-                config.network_service.0,
-                config.network_service.1,
-                config.network_events_receiver,
-            )
-            .await,
-        ));
+                config_parachain,
+            )));
+        } else {
+            (config.tasks_executor)(Box::pin(
+                start_relay_chain(
+                    config.chain_information,
+                    from_foreground,
+                    config.network_service.0,
+                    config.network_service.1,
+                    config.network_events_receiver,
+                )
+                .await,
+            ));
+        }
 
         SyncService {
             to_background: Mutex::new(to_background),
@@ -156,7 +192,7 @@ impl SyncService {
     }
 }
 
-async fn start_sync(
+async fn start_relay_chain(
     chain_information: chain::chain_information::ChainInformation,
     mut from_foreground: mpsc::Receiver<ToBackground>,
     network_service: Arc<network_service::NetworkService>,
@@ -640,6 +676,144 @@ async fn start_sync(
                         sync = sync_idle.into();
                     }
                 },
+            }
+        }
+    }
+}
+
+async fn start_parachain(
+    chain_information: chain::chain_information::ChainInformation,
+    mut from_foreground: mpsc::Receiver<ToBackground>,
+    parachain_config: ConfigParachain,
+) {
+    // TODO: handle finality as well; this is semi-complicated because the runtime service needs to provide a way to call a function on the finalized block's runtime
+
+    let relay_best_blocks = {
+        let (relay_best_block_header, relay_best_blocks_subscription) =
+            parachain_config.relay_chain_sync.subscribe_best().await;
+        stream::once(future::ready(relay_best_block_header)).chain(relay_best_blocks_subscription)
+    };
+    futures::pin_mut!(relay_best_blocks);
+
+    let mut current_finalized_block = chain_information.finalized_block_header;
+    let mut current_best_block = current_finalized_block.clone();
+
+    // List of senders that get notified when the best block is modified.
+    let mut best_subscriptions = Vec::<lossy_channel::Sender<_>>::new();
+
+    // Hash of the head data of the best block of the parachain. `None` if no head data obtained
+    // yet. Used to avoid sending out notifications if the head data hasn't changed.
+    let mut previous_best_head_data_hash = None::<[u8; 32]>;
+
+    loop {
+        futures::select! {
+            message = from_foreground.next().fuse() => {
+                // Terminating the parachain sync task if the foreground has closed.
+                let message = match message {
+                    Some(m) => m,
+                    None => return,
+                };
+
+                // Note that the rest of this `select!` statement can block for a long time,
+                // which means that there might be a big delay for processing the messages here.
+                // At the time of writing, the nature of the messages makes this a non-issue,
+                // but care should be taken about this.
+
+                match message {
+                    ToBackground::Serialize { .. } => todo!(),  // TODO: it doesn't make sense to serialize a parachain
+                    ToBackground::IsNearHeadOfChainHeuristic { send_back } => {
+                        // TODO: that doesn't seem totally correct
+                        let _ = send_back.send(previous_best_head_data_hash.is_some());
+                    },
+                    ToBackground::SubscribeFinalized { send_back } => {
+                        let (tx, rx) = lossy_channel::channel();
+                        core::mem::forget(tx); // TODO:
+                        let _ = send_back.send((current_finalized_block.scale_encoding_vec(), rx));
+                    }
+                    ToBackground::SubscribeBest { send_back } => {
+                        let (tx, rx) = lossy_channel::channel();
+                        best_subscriptions.push(tx);
+                        let _ = send_back.send((current_best_block.scale_encoding_vec(), rx));
+                    }
+                }
+            },
+
+            _relay_best_block = relay_best_blocks.next().fuse() => {
+                // For each relay chain block, call `ParachainHost_persisted_validation_data` in
+                // order to know where the parachains are.
+                let pvd_result = parachain_config.relay_chain_sync.recent_best_block_runtime_call(
+                    "ParachainHost_persisted_validation_data",
+                    para::persisted_validation_data_parameters(
+                        parachain_config.parachain_id,
+                        // TODO: we use TimedOut because that's what cumulus does, but it's unclear if that's correct
+                        para::OccupiedCoreAssumption::TimedOut
+                    )
+                ).await;
+
+                // Even if there isn't any bug, the runtime call can likely fail because the relay
+                // chain block has already been pruned from the network. This isn't a severe
+                // error.
+                let encoded_pvd = match pvd_result {
+                    Ok(encoded_pvd) => encoded_pvd,
+                    Err(err) => {
+                        previous_best_head_data_hash = None;
+                        if err.is_network_problem() {
+                            log::debug!(target: "sync-verify", "Failed to get chain heads: {}", err);
+                        } else {
+                            log::warn!(target: "sync-verify", "Failed to get chain heads: {}", err);
+                        }
+                        continue;
+                    }
+                };
+
+                // Try decode the result of the runtime call.
+                // If this fails, it indicates an incompatibility between smoldot and the relay
+                // chain.
+                let head_data =
+                    match para::decode_persisted_validation_data_return_value(&encoded_pvd) {
+                        Ok(Some(pvd)) => pvd.parent_head,
+                        Ok(None) => {
+                            log::warn!(
+                                target: "sync-verify",
+                                "Couldn't find the parachain head from relay chain. \
+                                The parachain likely doesn't occupy a core."
+                            );
+                            continue;
+                        }
+                        Err(error) => {
+                            log::error!(
+                                target: "sync-verify",
+                                "Failed to fetch the parachain head from relay chain: {}",
+                                error
+                            );
+                            continue;
+                        }
+                    };
+
+                // Don't do anything more if the head data matches
+                // `previous_best_head_data_hash`.
+                match (&mut previous_best_head_data_hash, blake2b(32, &[], &head_data)) {
+                    (&mut Some(ref mut h1), h2) if *h1 == h2.as_bytes() => continue,
+                    (h1 @ _, h2) => *h1 = Some(<[u8; 32]>::try_from(h2.as_bytes()).unwrap()),
+                };
+
+                // The meaning of `head_data` depends on the parachain. It can represent
+                // anything. In practice, however, it is most of the time a block header.
+                match header::decode(&head_data) {
+                    Ok(header) => {
+                        current_best_block = header.into();
+                        for sender in &mut best_subscriptions {
+                            // TODO: remove senders if they're closed
+                            let _ = sender.send(head_data.to_vec());
+                        }
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            target: "sync-verify",
+                            "Head data is not a block header. This isn't supported by smoldot."
+                        );
+                    }
+                }
             }
         }
     }

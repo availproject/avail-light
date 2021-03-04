@@ -323,6 +323,7 @@ pub async fn start_client(
                             }),
                             network_service: (network_service.clone(), chain_index),
                             network_events_receiver: network_event_receivers.pop().unwrap(),
+                            parachain: None,
                         })
                         .await,
                     );
