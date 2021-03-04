@@ -24,6 +24,7 @@ use smoldot::{
     chain, chain_spec,
     database::full_sled,
     header,
+    informant::HashDisplay,
     libp2p::{connection, multiaddr, peer_id::PeerId},
 };
 use std::{
@@ -523,10 +524,15 @@ async fn open_database(
             // Database already exists and contains data.
             full_sled::DatabaseOpen::Open(database) => {
                 // TODO: verify that the database matches the chain spec
-                // TODO: print the hash in a nicer way
+                let finalized_block_hash = database.finalized_block_hash().unwrap();
+                let finalized_block = database
+                    .block_scale_encoded_header(&finalized_block_hash)
+                    .unwrap()
+                    .unwrap();
                 eprintln!(
-                    "Loading existing database with finalized hash {:?}",
-                    database.finalized_block_hash().unwrap()
+                    "Loaded existing database (finalized: #{}, {})",
+                    header::decode(&finalized_block).unwrap().number,
+                    HashDisplay(&finalized_block_hash)
                 );
                 database
             }
