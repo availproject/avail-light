@@ -22,11 +22,19 @@ use super::{
     Signature, StartErr, Trap, WasmValue,
 };
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, string::String, vec::Vec};
 use core::{
+    cell::RefCell,
     cmp,
-    convert::{Infallible, TryFrom},
+    convert::TryFrom,
     fmt,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
+
+use futures::{
+    future::{self, Future},
+    task, FutureExt as _,
 };
 
 /// See [`super::Module`].
@@ -52,8 +60,11 @@ impl Module {
 
 /// See [`super::VirtualMachinePrototype`].
 pub struct JitPrototype {
-    /// Coroutine that contains the Wasm execution stack.
-    coroutine: corooteen::Coroutine<Box<dyn FnOnce() -> Infallible>, FromCoroutine, ToCoroutine>,
+    /// Instanciated Wasm VM.
+    instance: wasmtime::Instance,
+
+    /// Shared between the "outside" and the external functions. See [`Shared`].
+    shared: Rc<RefCell<Shared>>,
 
     /// Reference to the memory used by the module, if any.
     memory: Option<wasmtime::Memory>,
@@ -70,11 +81,15 @@ impl JitPrototype {
         heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        let store = wasmtime::Store::new(&module.inner.engine());
-
-        let builder = corooteen::CoroutineBuilder::new();
+        let store = wasmtime::Store::new_async(&module.inner.engine());
 
         let mut imported_memory = None;
+        let shared = Rc::new(RefCell::new(Shared {
+            function_index: 0, // Dummy value.
+            parameters: None,
+            return_value: None,
+            in_interrupted_waker: None,
+        }));
 
         // Building the list of symbols that the Wasm VM is able to use.
         let imports = {
@@ -96,34 +111,55 @@ impl JitPrototype {
                             }
                         };
 
-                        let interrupter = builder.interrupter();
-                        imports.push(wasmtime::Extern::Func(wasmtime::Func::new(
+                        let shared = shared.clone();
+
+                        imports.push(wasmtime::Extern::Func(wasmtime::Func::new_async(
                             &store,
                             f.clone(),
-                            move |_, params, ret_val| {
-                                // This closure is executed whenever the Wasm VM calls a host function.
-                                let returned = interrupter.interrupt(FromCoroutine::Interrupt {
-                                    function_index,
-                                    // Since function signatures are checked at initialization,
-                                    // it is guaranteed that the parameter types are also
-                                    // supported.
-                                    parameters: params
+                            (),
+                            move |_, (), params, ret_val| {
+                                // This closure is executed whenever the Wasm VM calls a
+                                // host function.
+
+                                // Store the information about the function being called in
+                                // `shared`.
+                                let mut shared_lock = shared.borrow_mut();
+                                shared_lock.function_index = function_index;
+                                shared_lock.parameters = Some(
+                                    params
                                         .iter()
                                         .map(TryFrom::try_from)
                                         .collect::<Result<_, _>>()
                                         .unwrap(),
-                                });
-                                let returned = match returned {
-                                    ToCoroutine::Resume(returned) => returned,
-                                    _ => unreachable!(),
-                                };
-                                if let Some(returned) = returned {
-                                    assert_eq!(ret_val.len(), 1);
-                                    ret_val[0] = From::from(returned);
-                                } else {
-                                    assert!(ret_val.is_empty());
-                                }
-                                Ok(())
+                                );
+
+                                // The first ever call to `Jit::run` for this instance sets
+                                // `return_value` to `Some(None)`. This is not a legitimate
+                                // return value, so it must be erased.
+                                debug_assert!(matches!(
+                                    shared_lock.return_value,
+                                    None | Some(None)
+                                ));
+                                shared_lock.return_value = None;
+
+                                // Return a future that is ready whenever `Shared::return_value`
+                                // contains `Some`.
+                                let shared = shared.clone();
+                                Box::new(future::poll_fn(move |cx| {
+                                    let mut shared = shared.borrow_mut();
+                                    if let Some(returned) = shared.return_value.take() {
+                                        if let Some(returned) = returned {
+                                            assert_eq!(ret_val.len(), 1);
+                                            ret_val[0] = From::from(returned);
+                                        } else {
+                                            assert!(ret_val.is_empty());
+                                        }
+                                        Poll::Ready(Ok(()))
+                                    } else {
+                                        shared.in_interrupted_waker = Some(cx.waker().clone());
+                                        Poll::Pending
+                                    }
+                                }))
                             },
                         )));
                     }
@@ -160,8 +196,13 @@ impl JitPrototype {
             imports
         };
 
-        // TODO: don't unwrap
-        let instance = wasmtime::Instance::new(&store, &module.inner, &imports).unwrap();
+        // Note: we assume that `new_async` is instantaneous, which it seems to be. It's actually
+        // unclear why this function is async at all, as all it is supposed to do in synchronous.
+        // Future versions of `wasmtime` might break this assumption.
+        let instance = wasmtime::Instance::new_async(&store, &module.inner, &imports)
+            .now_or_never()
+            .unwrap()
+            .unwrap(); // TODO: don't unwrap
 
         let exported_memory = if let Some(mem) = instance.get_export("memory") {
             if let Some(mem) = mem.into_memory() {
@@ -192,101 +233,9 @@ impl JitPrototype {
             None
         };
 
-        // We now build the coroutine of the main thread.
-        let mut coroutine = {
-            let interrupter = builder.interrupter();
-            builder.build(Box::new(move || -> Infallible {
-                let mut request = interrupter.interrupt(FromCoroutine::Init);
-
-                loop {
-                    let (start_function_name, start_parameters) = loop {
-                        match request {
-                            ToCoroutine::Start(n, p) => break (n, p),
-                            ToCoroutine::GetGlobal(global) => {
-                                let global_val = match instance.get_export(&global) {
-                                    Some(wasmtime::Extern::Global(g)) => match g.get() {
-                                        wasmtime::Val::I32(v) => {
-                                            Ok(u32::from_ne_bytes(v.to_ne_bytes()))
-                                        }
-                                        _ => Err(GlobalValueErr::Invalid),
-                                    },
-                                    _ => Err(GlobalValueErr::NotFound),
-                                };
-
-                                request = interrupter
-                                    .interrupt(FromCoroutine::GetGlobalResponse(global_val));
-                            }
-                            ToCoroutine::Resume(_) => unreachable!(),
-                        }
-                    };
-
-                    // Try to start executing `_start`.
-                    let start_function = if let Some(f) = instance.get_export(&start_function_name)
-                    {
-                        if let Some(f) = f.into_func() {
-                            f.clone()
-                        } else {
-                            let err = StartErr::NotAFunction;
-                            request = interrupter.interrupt(FromCoroutine::StartResult(Err(err)));
-                            continue;
-                        }
-                    } else {
-                        let err = StartErr::FunctionNotFound;
-                        request = interrupter.interrupt(FromCoroutine::StartResult(Err(err)));
-                        continue;
-                    };
-
-                    // Try to convert the signature of the function to call, in order to make sure
-                    // that the type of parameters and return value are supported.
-                    if Signature::try_from(&start_function.ty()).is_err() {
-                        request = interrupter.interrupt(FromCoroutine::StartResult(Err(
-                            StartErr::SignatureNotSupported,
-                        )));
-                        continue;
-                    }
-
-                    // Report back that everything went ok.
-                    let reinjected: ToCoroutine =
-                        interrupter.interrupt(FromCoroutine::StartResult(Ok(())));
-                    assert!(matches!(reinjected, ToCoroutine::Resume(None)));
-
-                    // Now running the `start` function of the Wasm code.
-                    // This will interrupt the coroutine every time a host function is reached.
-                    let result = start_function.call(
-                        &start_parameters
-                            .into_iter()
-                            .map(From::from)
-                            .collect::<Vec<_>>(),
-                    );
-
-                    let result = match result {
-                        Ok(r) => r,
-                        Err(err) => {
-                            request =
-                                interrupter.interrupt(FromCoroutine::Done(Err(err.to_string())));
-                            continue;
-                        }
-                    };
-
-                    // Execution resumes here when the Wasm code has gracefully finished.
-                    // The signature of the function has been chedk earlier, and as such it is
-                    // guaranteed that it has only one return value.
-                    assert!(result.len() == 0 || result.len() == 1);
-                    let result = Ok(result.get(0).map(|v| TryFrom::try_from(v).unwrap()));
-                    request = interrupter.interrupt(FromCoroutine::Done(result));
-                }
-            }) as Box<_>)
-        };
-
-        // Execute the coroutine once, as described above.
-        // The first yield must always be an `FromCoroutine::Init`.
-        match coroutine.run(None) {
-            corooteen::RunOut::Interrupted(FromCoroutine::Init) => {}
-            _ => unreachable!(),
-        }
-
         Ok(JitPrototype {
-            coroutine,
+            instance,
+            shared,
             memory,
             indirect_table,
         })
@@ -294,34 +243,51 @@ impl JitPrototype {
 
     /// See [`super::VirtualMachinePrototype::global_value`].
     pub fn global_value(&mut self, name: &str) -> Result<u32, GlobalValueErr> {
-        match self
-            .coroutine
-            .run(Some(ToCoroutine::GetGlobal(name.to_owned())))
-        {
-            corooteen::RunOut::Interrupted(FromCoroutine::GetGlobalResponse(outcome)) => outcome,
-            _ => unreachable!(),
+        match self.instance.get_export(name) {
+            Some(wasmtime::Extern::Global(g)) => match g.get() {
+                wasmtime::Val::I32(v) => Ok(u32::from_ne_bytes(v.to_ne_bytes())),
+                _ => Err(GlobalValueErr::Invalid),
+            },
+            _ => Err(GlobalValueErr::NotFound),
         }
     }
 
     /// See [`super::VirtualMachinePrototype::start`].
-    pub fn start(
-        mut self,
-        function_name: &str,
-        params: &[WasmValue],
-    ) -> Result<Jit, (StartErr, Self)> {
-        match self.coroutine.run(Some(ToCoroutine::Start(
-            function_name.to_owned(),
-            params.to_owned(),
-        ))) {
-            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Err(err))) => {
-                return Err((err, self))
-            }
-            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(Ok(()))) => {}
-            _ => unreachable!(),
+    pub fn start(self, function_name: &str, params: &[WasmValue]) -> Result<Jit, (StartErr, Self)> {
+        // Try to start executing `_start`.
+        let start_function = match self.instance.get_export(function_name) {
+            Some(export) => match export.into_func() {
+                Some(f) => f,
+                None => return Err((StartErr::NotAFunction, self)),
+            },
+            None => return Err((StartErr::FunctionNotFound, self)),
+        };
+
+        // Try to convert the signature of the function to call, in order to make sure
+        // that the type of parameters and return value are supported.
+        if Signature::try_from(&start_function.ty()).is_err() {
+            return Err((StartErr::SignatureNotSupported, self));
         }
 
+        // Now running the `start` function of the Wasm code.
+        let params = params.iter().map(|v| (*v).into()).collect::<Vec<_>>();
+        let function_call = Box::pin(async move {
+            let result = start_function
+                .call_async(&params)
+                .await
+                .map_err(|err| err.to_string())?; // The type of error is from the `anyhow` library. By using `to_string()` we avoid having to deal with it.
+
+            // Execution resumes here when the Wasm code has gracefully finished.
+            // The signature of the function has been chedk earlier, and as such it is
+            // guaranteed that it has only one return value.
+            assert!(result.len() == 0 || result.len() == 1);
+            Ok(result.get(0).map(|v| TryFrom::try_from(v).unwrap()))
+        });
+
         Ok(Jit {
-            coroutine: self.coroutine,
+            function_call: Some(function_call),
+            instance: self.instance,
+            shared: self.shared,
             memory: self.memory,
             indirect_table: self.indirect_table,
         })
@@ -344,10 +310,51 @@ impl fmt::Debug for JitPrototype {
     }
 }
 
+/// Data shared between the external API and the functions that `wasmtime` directly invokes.
+///
+/// The flow is as follows:
+///
+/// - `wasmtime` calls a function that has access to a `Rc<RefCell<Shared>>`.
+/// - This function stores its information (`function_index` and `parameters`) in the `Shared`
+/// and returns `Poll::Pending`.
+/// - This `Pending` gets propagated to the body of [`Jit::run`], which was calling `wasmtime`.
+/// [`Jit::run`] reads `function_index` and `parameters` to determine what happened.
+/// - Later, the return value is stored in `return_value`, and execution is resumed.
+/// - The function called by `wasmtime` reads `return_value` and returns `Poll::Ready`.
+///
+struct Shared {
+    /// Index of the function currently being called.
+    function_index: usize,
+
+    /// Parameters of the function currently being called. Extracted when necessary.
+    parameters: Option<Vec<WasmValue>>,
+
+    /// `None` is no return value is available yet.
+    /// Otherwise, `Some(value)` where `value` is the value to return to the Wasm code.
+    return_value: Option<Option<WasmValue>>,
+
+    /// Waker that `wasmtime` has passed to the future that is waiting for `return_value`.
+    /// This value is most likely not very useful, because [`Jit::run`] always polls the outer
+    /// future whenever the inner future is known to be ready.
+    /// However, it would be completely legal for `wasmtime` to not poll the inner future if the
+    /// waker that it has passed (the one stored here) wasn't waken up.
+    /// This field therefore exists in order to future-proof against this possible optimization
+    /// that `wasmtime` might perform in the future.
+    in_interrupted_waker: Option<Waker>,
+}
+
 /// See [`super::VirtualMachine`].
 pub struct Jit {
-    /// Coroutine that contains the Wasm execution stack.
-    coroutine: corooteen::Coroutine<Box<dyn FnOnce() -> Infallible>, FromCoroutine, ToCoroutine>,
+    /// Instanciated Wasm VM.
+    instance: wasmtime::Instance,
+
+    /// `Future` that drives the execution. Contains an invocation of
+    /// `wasmtime::Func::call_async`.
+    /// `None` if the execution has finished and future has returned `Poll::Ready` in the past.
+    function_call: Option<Pin<Box<dyn Future<Output = Result<Option<WasmValue>, String>>>>>,
+
+    /// Shared between the "outside" and the external functions. See [`Shared`].
+    shared: Rc<RefCell<Shared>>,
 
     /// See [`JitPrototype::memory`].
     memory: Option<wasmtime::Memory>,
@@ -359,25 +366,29 @@ pub struct Jit {
 impl Jit {
     /// See [`super::VirtualMachine::run`].
     pub fn run(&mut self, value: Option<WasmValue>) -> Result<ExecOutcome, RunErr> {
-        if self.coroutine.is_finished() {
-            return Err(RunErr::Poisoned);
-        }
+        let function_call = match self.function_call.as_mut() {
+            Some(f) => f,
+            None => return Err(RunErr::Poisoned),
+        };
 
         // TODO: check value type
 
-        // Resume the coroutine execution.
-        match self
-            .coroutine
-            .run(Some(ToCoroutine::Resume(value.map(From::from))))
-        {
-            corooteen::RunOut::Finished(_void) => match _void {},
+        let mut shared_lock = self.shared.borrow_mut();
+        shared_lock.return_value = Some(value);
+        if let Some(waker) = shared_lock.in_interrupted_waker.take() {
+            waker.wake();
+        }
+        drop(shared_lock);
 
-            corooteen::RunOut::Interrupted(FromCoroutine::Done(Err(err))) => {
-                Ok(ExecOutcome::Finished {
-                    return_value: Err(Trap(err)),
-                })
-            }
-            corooteen::RunOut::Interrupted(FromCoroutine::Done(Ok(val))) => {
+        // Resume the coroutine execution.
+        // The `Future` is polled with a no-op waker. We are in total control of when the
+        // execution might be able to progress, hence the lack of need for a waker.
+        match Future::poll(
+            function_call.as_mut(),
+            &mut Context::from_waker(task::noop_waker_ref()),
+        ) {
+            Poll::Ready(Ok(val)) => {
+                self.function_call = None;
                 Ok(ExecOutcome::Finished {
                     // Since we verify at initialization that the signature of the function to
                     // call is supported, it is guaranteed that the type of this return value is
@@ -385,20 +396,19 @@ impl Jit {
                     return_value: Ok(val),
                 })
             }
-            corooteen::RunOut::Interrupted(FromCoroutine::Interrupt {
-                function_index,
-                parameters,
-            }) => Ok(ExecOutcome::Interrupted {
-                id: function_index,
-                params: parameters,
-            }),
-
-            // `Init` must only be produced at initialization.
-            corooteen::RunOut::Interrupted(FromCoroutine::Init) => unreachable!(),
-            // `StartResult` only happens in response to a request.
-            corooteen::RunOut::Interrupted(FromCoroutine::StartResult(_)) => unreachable!(),
-            // `GetGlobalResponse` only happens in response to a request.
-            corooteen::RunOut::Interrupted(FromCoroutine::GetGlobalResponse(_)) => unreachable!(),
+            Poll::Ready(Err(err)) => {
+                self.function_call = None;
+                Ok(ExecOutcome::Finished {
+                    return_value: Err(Trap(err)),
+                })
+            }
+            Poll::Pending => {
+                let mut shared = self.shared.borrow_mut();
+                Ok(ExecOutcome::Interrupted {
+                    id: shared.function_index,
+                    params: shared.parameters.take().unwrap(),
+                })
+            }
         }
     }
 
@@ -496,7 +506,8 @@ impl Jit {
         }*/
 
         JitPrototype {
-            coroutine: self.coroutine,
+            instance: self.instance,
+            shared: self.shared,
             memory: self.memory,
             indirect_table: self.indirect_table,
         }
@@ -517,33 +528,4 @@ impl fmt::Debug for Jit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Jit").finish()
     }
-}
-
-/// Type that can be given to the coroutine.
-enum ToCoroutine {
-    /// Start execution of the given function. Answered with [`FromCoroutine::Init`].
-    Start(String, Vec<WasmValue>),
-    /// Resume execution after [`FromCoroutine::Interrupt`].
-    Resume(Option<WasmValue>),
-    /// Return the value of the given global with a [`FromCoroutine::GetGlobalResponse`].
-    GetGlobal(String),
-}
-
-/// Type yielded by the coroutine.
-enum FromCoroutine {
-    /// Reports how well the initialization went. Sent as part of the first interrupt.
-    Init,
-    /// Reponse to [`ToCoroutine::Start`].
-    StartResult(Result<(), StartErr>),
-    /// Execution of the Wasm code has been interrupted by a call.
-    Interrupt {
-        /// Index of the function, to put in [`ExecOutcome::Interrupted::id`].
-        function_index: usize,
-        /// Parameters of the function.
-        parameters: Vec<WasmValue>,
-    },
-    /// Response to a [`ToCoroutine::GetGlobal`].
-    GetGlobalResponse(Result<u32, GlobalValueErr>),
-    /// Executing the function is finished.
-    Done(Result<Option<WasmValue>, String>),
 }

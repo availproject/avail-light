@@ -25,7 +25,6 @@ database-sled = [
 ]
 std = [
     "async-std",
-    "corooteen",
     "futures/thread-pool",
     "soketto",
     "wasmtime",
@@ -88,8 +87,7 @@ parity-scale-codec = { version = "2.0.1", features = ["derive"] } # TODO: a lot 
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 # `std` feature
-corooteen = { git = "https://github.com/tomaka/corooteen", optional = true } # TODO: CRITICAL /!\ this code is veeery unsafe at the moment
-wasmtime = { version = "0.24.0", default-features = false, optional = true }
+wasmtime = { version = "0.24.0", default-features = false, features = ["async"], optional = true }
 
 [build-dependencies]
 prost-build = "0.7.0"
