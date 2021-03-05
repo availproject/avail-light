@@ -48,7 +48,7 @@ use alloc::{
     vec::Vec,
 };
 use core::{fmt, iter, slice};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{hash_map::Entry, HashMap, HashSet};
 
 /// Configuration for [`run`].
 pub struct Config<'a, TParams> {
@@ -85,6 +85,7 @@ pub fn run(
             .run_vectored(config.function_to_call, config.parameter)?
             .into(),
         top_trie_changes: config.storage_top_trie_changes,
+        top_trie_transaction_revert: None,
         offchain_storage_changes: config.offchain_storage_changes,
         top_trie_root_calculation_cache: Some(
             config.top_trie_root_calculation_cache.unwrap_or_default(),
@@ -321,10 +322,23 @@ impl PrefixKeys {
                         .as_mut()
                         .unwrap()
                         .storage_value_update(key.as_ref(), false);
-                    self.inner
+
+                    let previous_value = self
+                        .inner
                         .top_trie_changes
                         .insert(key.as_ref().to_vec(), None);
+
+                    if let Some(top_trie_transaction_revert) =
+                        self.inner.top_trie_transaction_revert.as_mut()
+                    {
+                        if let Entry::Vacant(entry) =
+                            top_trie_transaction_revert.entry(key.as_ref().to_vec())
+                        {
+                            entry.insert(previous_value);
+                        }
+                    }
                 }
+
                 // TODO: O(n) complexity here
                 for (key, value) in self.inner.top_trie_changes.iter_mut() {
                     if !key.starts_with(req.prefix().as_ref()) {
@@ -340,6 +354,7 @@ impl PrefixKeys {
                         .storage_value_update(key, false);
                     *value = None;
                 }
+
                 self.inner.vm = req.resume();
             }
 
@@ -488,6 +503,14 @@ struct Inner {
     /// Pending changes to the top storage trie that this execution performs.
     top_trie_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
+    /// `Some` if and only if we're within a storage transaction. When changes are applied to
+    /// [`Inner::top_trie_changes`], the reverse operation is added here.
+    ///
+    /// When the storage transaction ends, either this hash map is entirely discarded (to commit
+    /// changes), or applied to [`Inner::top_trie_changes`] (to revert).
+    top_trie_transaction_revert:
+        Option<HashMap<Vec<u8>, Option<Option<Vec<u8>>>, fnv::FnvBuildHasher>>,
+
     /// Pending changes to the offchain storage that this execution performs.
     offchain_storage_changes: HashMap<Vec<u8>, Option<Vec<u8>>, fnv::FnvBuildHasher>,
 
@@ -546,10 +569,22 @@ impl Inner {
                         .as_mut()
                         .unwrap()
                         .storage_value_update(req.key().as_ref(), req.value().is_some());
-                    self.top_trie_changes.insert(
+
+                    let previous_value = self.top_trie_changes.insert(
                         req.key().as_ref().to_vec(),
                         req.value().map(|v| v.as_ref().to_vec()),
                     );
+
+                    if let Some(top_trie_transaction_revert) =
+                        self.top_trie_transaction_revert.as_mut()
+                    {
+                        if let Entry::Vacant(entry) =
+                            top_trie_transaction_revert.entry(req.key().as_ref().to_vec())
+                        {
+                            entry.insert(previous_value);
+                        }
+                    }
+
                     self.vm = req.resume();
                 }
 
@@ -563,8 +598,18 @@ impl Inner {
                     if let Some(current_value) = current_value {
                         let mut current_value = current_value.clone().unwrap_or_default();
                         append_to_storage_value(&mut current_value, req.value().as_ref());
-                        self.top_trie_changes
+                        let previous_value = self
+                            .top_trie_changes
                             .insert(req.key().as_ref().to_vec(), Some(current_value));
+                        if let Some(top_trie_transaction_revert) =
+                            self.top_trie_transaction_revert.as_mut()
+                        {
+                            if let Entry::Vacant(entry) =
+                                top_trie_transaction_revert.entry(req.key().as_ref().to_vec())
+                            {
+                                entry.insert(previous_value);
+                            }
+                        }
                         self.vm = req.resume();
                     } else {
                         self.vm = req.into();
@@ -668,14 +713,26 @@ impl Inner {
                 }
 
                 host::HostVm::StartStorageTransaction(tx) => {
+                    self.top_trie_transaction_revert = Some(Default::default());
                     self.vm = tx.resume();
                 }
 
                 host::HostVm::EndStorageTransaction { resume, rollback } => {
+                    // The inner implementation guarantees that a storage transaction can only
+                    // end if it has earlier been started.
+                    debug_assert!(self.top_trie_transaction_revert.is_some());
+
                     if rollback {
-                        todo!() // TODO:
+                        for (key, value) in self.top_trie_transaction_revert.take().unwrap() {
+                            if let Some(value) = value {
+                                let _ = self.top_trie_changes.insert(key, value);
+                            } else {
+                                let _ = self.top_trie_changes.remove(&key);
+                            }
+                        }
                     }
 
+                    self.top_trie_transaction_revert = None;
                     self.vm = resume.resume();
                 }
 
