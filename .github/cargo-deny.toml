@@ -6,9 +6,7 @@ default = "deny"
 
 [bans]
 multiple-versions = "warn"
-wildcards = "warn"  # TODO: should be "deny", but this fails when we have git dependencies
-
-# TODO: deny git dependencies with a `[sources]` section
+wildcards = "deny"
 
 # The `openssl` and `ring` libraries are easy to accidentally pull in, and are too annoying to
 # compile on a wide range of platforms.
@@ -16,3 +14,6 @@ wildcards = "warn"  # TODO: should be "deny", but this fails when we have git de
 name = "openssl"
 [[bans.deny]]
 name = "ring"
+
+[sources]
+unknown-git = "deny"

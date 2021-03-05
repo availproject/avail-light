@@ -71,7 +71,7 @@ smallvec = "1.6.1"
 snow = { version = "0.7.2", default-features = false, features = ["default-resolver"] }
 tiny-keccak = { version = "2.0", features = ["keccak"] }
 twox-hash = "1.6.0"
-wasmi = { git = "https://github.com/paritytech/wasmi", rev = "8871f9d6b235d37b73e946978d8dac535fe3c2fa", default-features = false, features = ["core"] }  # TODO: having to add `core` is sketchy; maybe report this
+wasmi = { version = "0.8.0", default-features = false, features = ["core"] }  # TODO: having to add `core` is sketchy; maybe report this
 
 # `database-sled` feature
 sled = { version = "0.34.6", optional = true, features = ["compression"] }

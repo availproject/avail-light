@@ -2736,8 +2736,9 @@ checksum = "1d649a3145108d7d3fbcde896a468d1bd636791823c9921135218ad89be08307"
 
 [[package]]
 name = "wasmi"
-version = "0.7.0"
-source = "git+https://github.com/paritytech/wasmi?rev=8871f9d6b235d37b73e946978d8dac535fe3c2fa#8871f9d6b235d37b73e946978d8dac535fe3c2fa"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ad7e265153e1010a73e595eef3e2fd2a1fd644ba4e2dd3af4dd6bd7ec692342"
 dependencies = [
  "downcast-rs",
  "libm",
@@ -2751,7 +2752,8 @@ dependencies = [
 [[package]]
 name = "wasmi-validation"
 version = "0.3.0"
-source = "git+https://github.com/paritytech/wasmi?rev=8871f9d6b235d37b73e946978d8dac535fe3c2fa#8871f9d6b235d37b73e946978d8dac535fe3c2fa"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea78c597064ba73596099281e2f4cfc019075122a65cdda3205af94f0b264d93"
 dependencies = [
  "parity-wasm",
 ]
