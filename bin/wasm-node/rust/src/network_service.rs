@@ -935,7 +935,9 @@ async fn connection_task(
             return;
         }
 
-        websocket.send(&write_buffer[..read_write.written_bytes]);
+        if read_write.written_bytes != 0 {
+            websocket.send(&write_buffer[..read_write.written_bytes]);
+        }
 
         websocket.advance_read_cursor(read_write.read_bytes);
 
