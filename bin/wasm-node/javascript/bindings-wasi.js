@@ -104,8 +104,8 @@ export default (config) => {
 
         // Used by Rust in catastrophic situations, such as a double panic.
         proc_exit: (ret_code) => {
-            if (config.has_thrown)
-                config.has_thrown();
+            if (config.onTerminated)
+                config.onTerminated();
             throw new SmoldotError(`proc_exit called: ${ret_code}`);
         },
 
