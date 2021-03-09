@@ -733,25 +733,9 @@ impl HandshakeInProgress {
 
             if payload_expected {
                 // The decoded handshake is a protobuf message.
-                // Because rust-libp2p was erroneously putting a length prefix before the payload,
-                // we try, as a fallback, to skip the first two bytes.
-                // See https://github.com/libp2p/rust-libp2p/blob/9178459cc8abb8379c759c02185175af7cfcea78/protocols/noise/src/io/handshake.rs#L368-L384
-                // TODO: remove this hack after Polkadot 0.8.25 is widely deployed
                 let handshake_payload =
                     match payload_proto::NoiseHandshakePayload::decode(&decoded_payload[..]) {
                         Ok(p) => p,
-                        Err(_) if decoded_payload.len() >= 2 => {
-                            match payload_proto::NoiseHandshakePayload::decode(
-                                &decoded_payload[2..],
-                            ) {
-                                Ok(p) => p,
-                                Err(err) => {
-                                    return Err(HandshakeError::PayloadDecode(PayloadDecodeError(
-                                        err,
-                                    )));
-                                }
-                            }
-                        }
                         Err(err) => {
                             return Err(HandshakeError::PayloadDecode(PayloadDecodeError(err)));
                         }
