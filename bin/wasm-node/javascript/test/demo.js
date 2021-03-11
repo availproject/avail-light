@@ -17,7 +17,7 @@
 
 // This file launches a WebSocket server that exposes JSON-RPC functions.
 
-import * as smoldot from './index.js';
+import * as smoldot from '../src/index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
 // Adjust these chain specs for the chain you want to connect to.
@@ -32,7 +32,7 @@ const database_path = 'smoldot-demo-db.json';
 var database_content = null;
 try {
     database_content = fs.readFileSync(database_path, 'utf8');
-} catch(error) {}
+} catch (error) { }
 
 smoldot.start({
     chain_spec: JSON.stringify(chain_specs()),

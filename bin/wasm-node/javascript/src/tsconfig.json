@@ -7,7 +7,7 @@
         "strictNullChecks": true,
         "strictFunctionTypes": true,
         "noEmit": true,
-        "baseUrl": ".",
-        "paths": { "smoldot": ["."] }
+        "baseUrl": "./",
+        "paths": { "smoldot": ["./"] }
     }
 }

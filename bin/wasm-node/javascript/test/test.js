@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import * as client from "./index.js";
+import * as client from "../src/index.js";
 import { default as process } from 'process';
 import { default as westend_specs } from './westend_specs.js';
 
