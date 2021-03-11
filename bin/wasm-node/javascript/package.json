@@ -23,7 +23,7 @@
     "test": "node prepare.js && dtslint && node test.js"
   },
   "browser": {
-    "./tcp-nodejs.js": "./tcp-browser.js"
+    "./compat-nodejs.js": "./compat-browser.js"
   },
   "dependencies": {
     "buffer": "^6.0.1",

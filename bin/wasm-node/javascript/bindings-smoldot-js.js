@@ -23,7 +23,7 @@
 import { Buffer } from 'buffer';
 import Websocket from 'websocket';
 import { default as now } from 'performance-now';
-import { default as net } from './tcp-nodejs.js';
+import { net } from './compat-nodejs.js';
 
 export default (config) => {
     // Used below to store the list of all connections.

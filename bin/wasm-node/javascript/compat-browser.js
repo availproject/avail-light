@@ -15,10 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// This small dummy module re-exports the `net` module from NodeJS.
-// <https://nodejs.org/api/net.html>
-//
-// A rule in the `package.json` overrides it with `tcp-browser.js` when in a browser.
+// Overrides `compat-nodejs.js` when in a browser.
 
-import { default as net } from 'net';
-export default net;
+export const net = null;
+export const Worker = typeof window != 'undefined' ? window.Worker : null;
+export const workerOnMessage = (worker, callback) => { worker.onmessage = (event) => callback(event.data) };
+export const postMessage = (msg) => self.postMessage(msg);
+export const setOnMessage = (callback) => { self.onmessage = (event) => callback(event.data) };
