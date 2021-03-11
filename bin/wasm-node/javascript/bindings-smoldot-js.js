@@ -60,7 +60,7 @@ export default (config) => {
             if (config.onTerminated)
                 config.onTerminated();
             let message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
-            throw new SmoldotError(message);
+            throw new Error(message);
         },
 
         // Used by the Rust side to emit a JSON-RPC response or subscription notification.
@@ -145,7 +145,7 @@ export default (config) => {
         connection_new: (id, addr_ptr, addr_len) => {
             try {
                 if (!!connections[id]) {
-                    throw new SmoldotError("internal error: connection already allocated");
+                    throw new Error("internal error: connection already allocated");
                 }
 
                 let addr = Buffer.from(config.instance.exports.memory.buffer)
