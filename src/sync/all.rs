@@ -16,6 +16,26 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! All syncing strategies (optimistic, warp sync, all forks) grouped together.
+//!
+//! This state machine combines GrandPa warp syncing, optimistic syncing, and all forks syncing
+//! into one state machine.
+//!
+//! # Overview
+//!
+//! This state machine acts as a container of sources, blocks (verified or not), and requests.
+//! In order to initialize it, you need to pass, amongst other things, a
+//! [`chain_information::ChainInformation`] struct indicating the known state of the finality of
+//! the chain.
+//!
+//! After initialization, the [`AllSync`] can be either in the [`AllSync::Idle`] state, or in
+//! progress of verifying blocks (the other variants).
+//!
+//! The [`AllSync::Idle`] and its content, the [`Idle`] object, are the most common state. When
+//! idle, one can inspect the state of the chain, add and remove sources of blocks, and/or obtain
+//! new requests to perform on these sources.
+//!
+//! A *request* represents a query for information from a source. Once the request has finished,
+//! call one of the methods of the [`Idle`] in order to notify the state machine of the oucome.
 
 // TODO: this module needs considerable clean-up
 
@@ -96,40 +116,8 @@ pub enum AllSync<TRq, TSrc, TBl> {
 impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
     /// Shortcut for [`Idle::new`] then putting the result in [`AllSync::Idle`].
     pub fn new(config: Config) -> Self {
-        AllSync::Idle(Idle::new(config))
+        Idle::new(config).into()
     }
-}
-
-pub struct Idle<TRq, TSrc, TBl> {
-    inner: IdleInner<TRq, TSrc, TBl>,
-    shared: Shared,
-}
-
-enum IdleInner<TRq, TSrc, TBl> {
-    Optimistic(optimistic::OptimisticSync<(), OptimisticSourceExtra<TSrc>, TBl>),
-    /// > **Note**: Must never contain [`grandpa_warp_sync::GrandpaWarpSync::Finished`].
-    GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync<GrandpaWarpSyncSourceExtra<TSrc>>),
-    AllForks(all_forks::AllForksSync<AllForksSourceExtra<TRq, TSrc>, TBl>),
-    Poisoned,
-}
-
-struct OptimisticSourceExtra<TSrc> {
-    user_data: TSrc,
-    best_block_hash: [u8; 32],
-    outer_source_id: SourceId,
-}
-
-struct AllForksSourceExtra<TRq, TSrc> {
-    outer_source_id: SourceId,
-    request_user_data: Option<TRq>,
-    user_data: TSrc,
-}
-
-struct GrandpaWarpSyncSourceExtra<TSrc> {
-    outer_source_id: SourceId,
-    user_data: TSrc,
-    best_block_number: u64,
-    best_block_hash: [u8; 32],
 }
 
 /// Identifier for a source in the [`AllSync`].
@@ -143,6 +131,11 @@ pub struct SourceId(usize);
 // Implementation note: this is an index in `Idle::requests`.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct RequestId(usize);
+
+pub struct Idle<TRq, TSrc, TBl> {
+    inner: IdleInner<TRq, TSrc, TBl>,
+    shared: Shared,
+}
 
 impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
     /// Initializes a new state machine.
@@ -252,15 +245,17 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
 
     /// Adds a new source to the sync state machine.
     ///
-    /// Must be passed the best block number and hash of the source, as usually reported by itself.
+    /// Must be passed the best block number and hash of the source, as usually reported by the
+    /// source itself.
     ///
-    /// Returns an identifier for the source, plus an optional request.
+    /// Returns an identifier for this new source, plus a list of requests to start or cancel.
     pub fn add_source(
         &mut self,
         user_data: TSrc,
         best_block_number: u64,
         best_block_hash: [u8; 32],
     ) -> (SourceId, Vec<Action>) {
+        // TODO: remove
         if best_block_number > self.shared.highest_block_on_network {
             self.shared.highest_block_on_network = best_block_number;
         }
@@ -344,7 +339,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
 
                 outer_source_id_entry.insert(SourceMapping::Optimistic(inner_source_id));
 
-                let mut next_actions = Vec::new();
+                let mut next_actions = Vec::with_capacity(16);
                 while let Some(action) = optimistic.next_request_action() {
                     next_actions.push(self.shared.optimistic_action_to_request(action));
                 }
@@ -395,8 +390,41 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
     ///
     /// Panics if the [`SourceId`] doesn't correspond to a valid source.
     ///
-    pub fn remove_source(&mut self, source_id: SourceId) -> Vec<(RequestId, TRq)> {
-        todo!()
+    pub fn remove_source(&mut self, source_id: SourceId) -> (Vec<(RequestId, TRq)>, TSrc) {
+        debug_assert!(self.shared.sources.contains(source_id.0));
+        match (&mut self.inner, self.shared.sources.remove(source_id.0)) {
+            (IdleInner::Optimistic(sync), SourceMapping::Optimistic(src)) => {
+                let (user_data, requests) = sync.remove_source(src);
+                debug_assert_eq!(user_data.outer_source_id, source_id);
+
+                for (rq_id, _) in requests {
+                    // TODO: O(n)
+                    let outer_request_id = self
+                        .shared
+                        .requests
+                        .iter()
+                        .find(|(_, s)| **s == RequestMapping::Optimistic(rq_id))
+                        .map(|(id, _)| RequestId(id))
+                        .unwrap();
+                    self.shared.requests.remove(outer_request_id.0);
+                }
+
+                todo!()
+            }
+            (IdleInner::AllForks(sync), SourceMapping::AllForks(src)) => {
+                todo!()
+            }
+            (IdleInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
+                todo!()
+            }
+            (IdleInner::Poisoned, _) => unreachable!(),
+            (IdleInner::Optimistic(_), SourceMapping::AllForks(_))
+            | (IdleInner::Optimistic(_), SourceMapping::GrandpaWarpSync(_))
+            | (IdleInner::AllForks(_), SourceMapping::Optimistic(_))
+            | (IdleInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
+            | (IdleInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
+            | (IdleInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
+        }
     }
 
     /// Returns the user data (`TSrc`) corresponding to the given source.
@@ -406,6 +434,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
     /// Panics if the [`SourceId`] is invalid.
     ///
     pub fn source_user_data_mut(&mut self, source_id: SourceId) -> &mut TSrc {
+        debug_assert!(self.shared.sources.contains(source_id.0));
         match (
             &mut self.inner,
             self.shared.sources.get(source_id.0).unwrap(),
@@ -420,7 +449,12 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                 &mut sync.source_user_data_mut(*src).user_data
             }
             (IdleInner::Poisoned, _) => unreachable!(),
-            _ => todo!(), // TODO: !
+            (IdleInner::Optimistic(_), SourceMapping::AllForks(_))
+            | (IdleInner::Optimistic(_), SourceMapping::GrandpaWarpSync(_))
+            | (IdleInner::AllForks(_), SourceMapping::Optimistic(_))
+            | (IdleInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
+            | (IdleInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
+            | (IdleInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
         }
     }
 
@@ -1343,6 +1377,33 @@ pub enum HeaderVerifyOutcome<TRq, TSrc, TBl> {
         /// Next requests that must be started.
         next_actions: Vec<Action>,
     },
+}
+
+enum IdleInner<TRq, TSrc, TBl> {
+    Optimistic(optimistic::OptimisticSync<(), OptimisticSourceExtra<TSrc>, TBl>),
+    /// > **Note**: Must never contain [`grandpa_warp_sync::GrandpaWarpSync::Finished`].
+    GrandpaWarpSync(grandpa_warp_sync::InProgressGrandpaWarpSync<GrandpaWarpSyncSourceExtra<TSrc>>),
+    AllForks(all_forks::AllForksSync<AllForksSourceExtra<TRq, TSrc>, TBl>),
+    Poisoned,
+}
+
+struct OptimisticSourceExtra<TSrc> {
+    user_data: TSrc,
+    best_block_hash: [u8; 32],
+    outer_source_id: SourceId,
+}
+
+struct AllForksSourceExtra<TRq, TSrc> {
+    outer_source_id: SourceId,
+    request_user_data: Option<TRq>,
+    user_data: TSrc,
+}
+
+struct GrandpaWarpSyncSourceExtra<TSrc> {
+    outer_source_id: SourceId,
+    user_data: TSrc,
+    best_block_number: u64,
+    best_block_hash: [u8; 32],
 }
 
 struct Shared {

@@ -488,11 +488,10 @@ async fn start_relay_chain(
                             if chain_index == network_chain_index =>
                         {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
-                            let rq_list = sync_idle.remove_source(id);
-                            // TODO:
-                            /*for (_, rq) in rq_list {
-                                rq.abort();
-                            }*/
+                            let (rq_list, _) = sync_idle.remove_source(id);
+                            for (rq_id, _) in rq_list {
+                                pending_requests.remove(&rq_id).unwrap().abort();
+                            }
                             sync = sync_idle.into();
                         },
                         network_service::Event::BlockAnnounce { chain_index, peer_id, announce }
@@ -528,7 +527,6 @@ async fn start_relay_chain(
                             sync = sync_idle.into();
                         }
                     }
-
                 }
 
                 message = from_foreground.next() => {
