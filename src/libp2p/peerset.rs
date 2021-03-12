@@ -29,9 +29,9 @@
 //!     outbound substream.
 //!     - Each substream can be either "pending" or "established".
 //!
-//! > **Note**: The [`Peerset`] does *do* anything by itself, such as opening new connections. It
-//! >           is purely a data structure that helps organize and maintain information about the
-//! >           network.
+//! > **Note**: The [`Peerset`] does not *do* anything by itself, such as opening new connections.
+//! >           it is purely a data structure that helps organize and maintain information about
+//! >           the network.
 //!
 //! # Usage
 //!
