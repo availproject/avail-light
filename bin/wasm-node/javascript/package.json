@@ -23,7 +23,7 @@
     "test": "node prepare.js && dtslint src/ && node test/test.js"
   },
   "browser": {
-    "./compat-nodejs.js": "./compat-browser.js"
+    "./src/compat-nodejs.js": "./src/compat-browser.js"
   },
   "dependencies": {
     "buffer": "^6.0.1",
