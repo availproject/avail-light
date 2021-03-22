@@ -169,9 +169,15 @@ impl CalculationCache {
         // We invalidate the Merkle value of `node_to_invalidate` and all its ancestors.
         node_to_invalidate.user_data().merkle_value = None;
         let mut parent = node_to_invalidate.into_parent();
-        while let Some(mut p) = parent.take() {
-            p.user_data().merkle_value = None;
-            parent = p.into_parent();
+        while let Some(mut node) = parent.take() {
+            // If the node has already had its Merkle value invalidated, then
+            // we can stop there.
+            if node.user_data().merkle_value.is_none() {
+                break;
+            } else {
+                node.user_data().merkle_value = None;
+                parent = node.into_parent();
+            }
         }
     }
 
