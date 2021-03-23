@@ -48,11 +48,7 @@ use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     header,
     informant::HashDisplay,
-    libp2p::{
-        connection,
-        multiaddr::{Multiaddr, Protocol},
-        peer_id::PeerId,
-    },
+    libp2p::{connection, multiaddr::Multiaddr, peer_id::PeerId},
     network::{protocol, service},
     trie::{self, prefix_proof, proof_verify},
 };
@@ -973,44 +969,5 @@ async fn connection_task(
             poll_after,
         )
         .await;
-    }
-}
-
-/// Returns the URL that corresponds to the given multiaddress. Returns an error if the
-/// multiaddress protocols aren't supported.
-fn multiaddr_to_url(addr: &Multiaddr) -> Result<String, ()> {
-    let mut iter = addr.iter();
-    let proto1 = iter.next().ok_or(())?;
-    let proto2 = iter.next().ok_or(())?;
-    let proto3 = iter.next().ok_or(())?;
-
-    if iter.next().is_some() {
-        return Err(());
-    }
-
-    match (proto1, proto2, proto3) {
-        (Protocol::Ip4(ip), Protocol::Tcp(port), Protocol::Ws(url)) => {
-            Ok(format!("ws://{}:{}{}", ip, port, url))
-        }
-        (Protocol::Ip6(ip), Protocol::Tcp(port), Protocol::Ws(url)) => {
-            Ok(format!("ws://[{}]:{}{}", ip, port, url))
-        }
-        (Protocol::Ip4(ip), Protocol::Tcp(port), Protocol::Wss(url)) => {
-            Ok(format!("wss://{}:{}{}", ip, port, url))
-        }
-        (Protocol::Ip6(ip), Protocol::Tcp(port), Protocol::Wss(url)) => {
-            Ok(format!("wss://[{}]:{}{}", ip, port, url))
-        }
-        (Protocol::Dns(domain), Protocol::Tcp(port), Protocol::Ws(url))
-        | (Protocol::Dns4(domain), Protocol::Tcp(port), Protocol::Ws(url))
-        | (Protocol::Dns6(domain), Protocol::Tcp(port), Protocol::Ws(url)) => {
-            Ok(format!("ws://{}:{}{}", domain, port, url))
-        }
-        (Protocol::Dns(domain), Protocol::Tcp(port), Protocol::Wss(url))
-        | (Protocol::Dns4(domain), Protocol::Tcp(port), Protocol::Wss(url))
-        | (Protocol::Dns6(domain), Protocol::Tcp(port), Protocol::Wss(url)) => {
-            Ok(format!("wss://{}:{}{}", domain, port, url))
-        }
-        _ => Err(()),
     }
 }
