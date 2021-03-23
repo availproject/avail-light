@@ -9,4 +9,6 @@ smoldot.start({
   relay_chain_spec: '',
   json_rpc_callback: (resp) => {},
   database_save_callback: (content) => {},
+}).then(sm => {
+  sm.terminate();
 });

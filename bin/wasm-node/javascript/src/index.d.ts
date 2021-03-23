@@ -21,6 +21,7 @@ declare class SmoldotError extends Error {
 
 export interface SmoldotClient {
   send_json_rpc(rpc: string): void;
+  terminate(): void;
 }
 
 export type SmoldotJsonRpcCallback = (response: string) => void;

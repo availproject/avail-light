@@ -64,6 +64,9 @@ export async function start(config) {
   return {
     send_json_rpc: (request) => {
       worker.postMessage(request);
+    },
+    terminate: () => {
+      worker.terminate();
     }
   }
 }
