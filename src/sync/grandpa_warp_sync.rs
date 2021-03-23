@@ -121,7 +121,10 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
         loop {
             match (query, fetched_current_epoch) {
                 (
-                    babe_fetch_epoch::Query::Finished(Ok((next_epoch, runtime))),
+                    babe_fetch_epoch::Query::Finished {
+                        result: Ok(next_epoch),
+                        virtual_machine,
+                    },
                     Some(current_epoch),
                 ) => {
                     let (slots_per_epoch, babe_config_c, babe_config_allowed_slots) =
@@ -163,7 +166,7 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                                 slots_per_epoch,
                             },
                         },
-                        runtime,
+                        runtime: virtual_machine,
                         sources: state
                             .sources
                             .drain()
@@ -171,10 +174,16 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                             .collect(),
                     }));
                 }
-                (babe_fetch_epoch::Query::Finished(Ok((current_epoch, runtime))), None) => {
+                (
+                    babe_fetch_epoch::Query::Finished {
+                        result: Ok(current_epoch),
+                        virtual_machine,
+                    },
+                    None,
+                ) => {
                     let babe_next_epoch_query =
                         babe_fetch_epoch::babe_fetch_epoch(babe_fetch_epoch::Config {
-                            runtime,
+                            runtime: virtual_machine,
                             epoch_to_fetch: babe_fetch_epoch::BabeEpochToFetch::NextEpoch,
                         });
                     return Self::from_babe_fetch_epoch_query(
@@ -183,9 +192,13 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                         state,
                     );
                 }
-                (babe_fetch_epoch::Query::Finished(Err(error)), _) => {
-                    return Self::Finished(Err(Error::BabeFetchEpoch(error)))
-                }
+                (
+                    babe_fetch_epoch::Query::Finished {
+                        result: Err(error),
+                        virtual_machine: _,
+                    },
+                    _,
+                ) => return Self::Finished(Err(Error::BabeFetchEpoch(error))),
                 (babe_fetch_epoch::Query::StorageGet(storage_get), fetched_current_epoch) => {
                     return Self::InProgress(InProgressGrandpaWarpSync::StorageGet(StorageGet {
                         inner: storage_get,
