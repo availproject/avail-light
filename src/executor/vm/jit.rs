@@ -49,7 +49,9 @@ impl Module {
         let mut config = wasmtime::Config::new();
         config.cranelift_nan_canonicalization(true);
         config.cranelift_opt_level(wasmtime::OptLevel::Speed);
-        let engine = wasmtime::Engine::new(&config);
+        config.async_support(true);
+        let engine = wasmtime::Engine::new(&config)
+            .map_err(|err| NewErr::ModuleError(ModuleError(err.to_string())))?;
 
         let inner = wasmtime::Module::from_binary(&engine, module_bytes.as_ref())
             .map_err(|err| NewErr::ModuleError(ModuleError(err.to_string())))?;
@@ -81,7 +83,7 @@ impl JitPrototype {
         heap_pages: HeapPages,
         mut symbols: impl FnMut(&str, &str, &Signature) -> Result<usize, ()>,
     ) -> Result<Self, NewErr> {
-        let store = wasmtime::Store::new_async(&module.inner.engine());
+        let store = wasmtime::Store::new(&module.inner.engine());
 
         let mut imported_memory = None;
         let shared = Rc::new(RefCell::new(Shared {
