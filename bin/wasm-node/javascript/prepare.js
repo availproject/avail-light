@@ -28,7 +28,7 @@ const build_profile = 'release';
 // is possible for the wasm-js bindings to change between two Rust versions. Feel free to update
 // this version pin whenever you like, provided it continues to build.
 child_process.execSync(
-    "cargo +1.48.0 build --package smoldot-js --target wasm32-wasi --no-default-features"
+    "cargo +1.51.0 build --package smoldot-js --target wasm32-wasi --no-default-features"
     + (build_profile == 'debug' ? '' : ' --' + build_profile),
     { 'stdio': 'inherit' }
 );
