@@ -35,14 +35,43 @@ export async function start(config) {
   // (https://github.com/parcel-bundler/parcel/pull/5846)
   const worker = new Worker(new URL('./worker.js', import.meta.url));
 
+  // Build a promise that will be resolved or rejected after the initalization (that happens in
+  // the worker) has finished.
+  let initPromiseResolve;
+  let initPromiseReject;
+  const initPromise = new Promise((resolve, reject) => {
+    initPromiseResolve = resolve;
+    initPromiseReject = reject;
+  });
+
   // The worker can send us either a database save message, or a JSON-RPC answer.
   workerOnMessage(worker, (message) => {
-    if (message.kind == 'jsonrpc') {
-      if (config.json_rpc_callback)
+    if (message.kind == 'error') {
+      // A problem happened in the worker or the smoldot Wasm VM.
+      // We might still be initializing.
+      if (initPromiseReject) {
+        initPromiseReject(message.error);
+      }
+      initPromiseReject = null;
+      initPromiseResolve = null;
+      worker.terminate();
+
+    } else if (message.kind == 'jsonrpc') {
+      // If `initPromiseResolve` is non-null, then this is the initial dummy JSON-RPC request
+      // that is used to determine when initialization is over. See below. It is intentionally not
+      // reported with the callback.
+      if (initPromiseResolve) {
+        initPromiseResolve();
+        initPromiseReject = null;
+        initPromiseResolve = null;
+      } else if (config.json_rpc_callback) {
         config.json_rpc_callback(message.data);
+      }
+
     } else if (message.kind == 'database') {
       if (config.database_save_callback)
         config.database_save_callback(message.data);
+
     } else {
       console.error('Unknown message type', message);
     }
@@ -60,6 +89,17 @@ export async function start(config) {
 
   // After the initialization message, all further messages expected by the worker are JSON-RPC
   // requests.
+
+  // Initialization happens asynchronous, both because we have a worker, but also asynchronously
+  // within the worker. In order to detect when initialization was successful, we perform a dummy
+  // JSON-RPC request and wait for the response. While this might seem like an unnecessary
+  // overhead, it is the most straight-forward solution. Any alternative with a lower overhead
+  // would have a higher complexity.
+  worker.postMessage('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}')
+
+  // Now blocking until the worker sends back the response.
+  // This will throw if the initialization has failed.
+  await initPromise;
 
   return {
     send_json_rpc: (request) => {

@@ -50,7 +50,10 @@ const startInstance = async (config) => {
 
   // Used to bind with the smoldot-js bindings. See the `bindings-smoldot-js.js` file.
   let smoldot_js_config = {
-    onTerminated: () => has_thrown = true,
+    onTerminated: (error) => {
+      compat.postMessage({ kind: 'error', error });
+      has_thrown = true;
+    },
     json_rpc_callback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'jsonrpc', data });
@@ -66,6 +69,7 @@ const startInstance = async (config) => {
   // Used to bind with the Wasi bindings. See the `bindings-wasi.js` file.
   let wasi_config = {
     onTerminated: () => {
+      compat.postMessage({ kind: 'error', error: 'proc_exit has been called' });
       has_thrown = true;
       terminate();
     },
@@ -132,7 +136,10 @@ compat.setOnMessage((message) => {
   // See the documentation of the `state` variable for information.
   if (state == null) {
     state = [];
-    startInstance(message);
+    startInstance(message)
+      .catch((error) => {
+        compat.postMessage({ kind: 'error', error });
+      });
 
   } else if (Array.isArray(state)) {
     // A JSON-RPC request has been received while the Wasm VM is still initializing. Queue it
@@ -147,6 +154,10 @@ compat.setOnMessage((message) => {
     let len = Buffer.byteLength(message, 'utf8');
     let ptr = state.exports.alloc(len);
     Buffer.from(state.exports.memory.buffer).write(message, ptr);
-    state.exports.json_rpc_send(ptr, len);
+    try {
+      state.exports.json_rpc_send(ptr, len);
+    } catch (error) {
+      compat.postMessage({ kind: 'error', error });
+    }
   }
 });
