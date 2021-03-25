@@ -33,79 +33,74 @@ import { default as wasm_base64 } from './autogen/wasm.js';
 let state = null;
 
 const startInstance = async (config) => {
-  const chain_spec = config.chain_spec;
-  const database_content = config.database_content;
-  const parachain_spec = config.parachain_spec;
-  const max_log_level = config.max_log_level;
-
   // The actual Wasm bytecode is base64-decoded from a constant found in a different file.
   // This is suboptimal compared to using `instantiateStreaming`, but it is the most
   // cross-platform cross-bundler approach.
-  let wasm_bytecode = new Uint8Array(Buffer.from(wasm_base64, 'base64'));
+  const wasmBytecode = new Uint8Array(Buffer.from(wasm_base64, 'base64'));
 
   // Used to bind with the smoldot-js bindings. See the `bindings-smoldot-js.js` file.
-  let smoldot_js_config = {
+  const smoldotJsConfig = {
     logCallback: (level, target, message) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'log', level, target, message });
     },
-    json_rpc_callback: (data) => {
+    jsonRpcCallback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'jsonrpc', data });
     },
-    database_save_callback: (data) => {
+    databaseSaveCallback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'database', data });
     }
   };
 
-  let { bindings: smoldot_js_bindings } = smoldot_js_builder(smoldot_js_config);
+  const { bindings: smoldotJsBindings } = smoldot_js_builder(smoldotJsConfig);
 
   // Used to bind with the Wasi bindings. See the `bindings-wasi.js` file.
-  let wasi_config = {};
+  const wasiConfig = {};
 
   // Start the Wasm virtual machine.
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
   // parameter provides their implementations.
-  let result = await WebAssembly.instantiate(wasm_bytecode, {
+  const result = await WebAssembly.instantiate(wasmBytecode, {
     // The functions with the "smoldot" prefix are specific to smoldot.
-    "smoldot": smoldot_js_bindings,
+    "smoldot": smoldotJsBindings,
     // As the Rust code is compiled for wasi, some more wasi-specific imports exist.
-    "wasi_snapshot_preview1": wasi_builder(wasi_config),
+    "wasi_snapshot_preview1": wasi_builder(wasiConfig),
   });
 
-  smoldot_js_config.instance = result.instance;
-  wasi_config.instance = result.instance;
+  smoldotJsConfig.instance = result.instance;
+  wasiConfig.instance = result.instance;
 
-  let chain_spec_len = Buffer.byteLength(chain_spec, 'utf8');
-  let chain_spec_ptr = result.instance.exports.alloc(chain_spec_len);
+  const chainSpecLen = Buffer.byteLength(config.chainSpec, 'utf8');
+  const chainSpecPtr = result.instance.exports.alloc(chainSpecLen);
   Buffer.from(result.instance.exports.memory.buffer)
-    .write(chain_spec, chain_spec_ptr);
+    .write(config.chainSpec, chainSpecPtr);
 
-  let database_len = database_content ? Buffer.byteLength(database_content, 'utf8') : 0;
-  let database_ptr = (database_len != 0) ? result.instance.exports.alloc(database_len) : 0;
-  if (database_len != 0) {
+  const databaseLen = config.databaseContent ? Buffer.byteLength(config.databaseContent, 'utf8') : 0;
+  const databasePtr = (databaseLen != 0) ? result.instance.exports.alloc(databaseLen) : 0;
+  if (databaseLen != 0) {
     Buffer.from(result.instance.exports.memory.buffer)
-      .write(database_content, database_ptr);
+      .write(config.databaseContent, databasePtr);
   }
 
-  let parachain_spec_len = parachain_spec ? Buffer.byteLength(parachain_spec, 'utf8') : 0;
-  let parachain_spec_ptr = (parachain_spec_len != 0) ? result.instance.exports.alloc(parachain_spec_len) : 0;
-  if (parachain_spec_len != 0) {
+  const parachainSpecLen = config.parachainSpec ? Buffer.byteLength(config.parachainSpec, 'utf8') : 0;
+  const parachainSpecPtr = (parachainSpecLen != 0) ? result.instance.exports.alloc(parachainSpecLen) : 0;
+  if (parachainSpecLen != 0) {
     Buffer.from(result.instance.exports.memory.buffer)
-      .write(parachain_spec, parachain_spec_ptr);
+      .write(config.parachainSpec, parachainSpecPtr);
   }
 
   result.instance.exports.init(
-    chain_spec_ptr, chain_spec_len,
-    database_ptr, database_len,
-    parachain_spec_ptr, parachain_spec_len,
-    max_log_level
+    chainSpecPtr, chainSpecLen,
+    databasePtr, databaseLen,
+    parachainSpecPtr, parachainSpecLen,
+    config.maxLogLevel
   );
 
   state.forEach((json_rpc_request) => {
-    let len = Buffer.byteLength(json_rpc_request, 'utf8');
-    let ptr = result.instance.exports.alloc(len);
+    const len = Buffer.byteLength(json_rpc_request, 'utf8');
+    const ptr = result.instance.exports.alloc(len);
     Buffer.from(result.instance.exports.memory.buffer).write(json_rpc_request, ptr);
     result.instance.exports.json_rpc_send(ptr, len);
   });
@@ -126,8 +121,8 @@ compat.setOnMessage((message) => {
     state.push(message);
 
   } else {
-    let len = Buffer.byteLength(message, 'utf8');
-    let ptr = state.exports.alloc(len);
+    const len = Buffer.byteLength(message, 'utf8');
+    const ptr = state.exports.alloc(len);
     Buffer.from(state.exports.memory.buffer).write(message, ptr);
     state.exports.json_rpc_send(ptr, len);
   }

@@ -41,8 +41,8 @@ export default (config) => {
         // Used by the Rust side to emit a JSON-RPC response or subscription notification.
         json_rpc_respond: (ptr, len) => {
             let message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
-            if (config.json_rpc_callback) {
-                config.json_rpc_callback(message);
+            if (config.jsonRpcCallback) {
+                config.jsonRpcCallback(message);
             }
         },
 
@@ -82,9 +82,9 @@ export default (config) => {
 
         // Must set the content of the database to the given string.
         database_save: (ptr, len) => {
-            if (config.database_save_callback) {
+            if (config.databaseSaveCallback) {
                 let content = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
-                config.database_save_callback(content);
+                config.databaseSaveCallback(content);
             }
         },
 
@@ -96,7 +96,7 @@ export default (config) => {
                     throw new Error("internal error: connection already allocated");
                 }
 
-                let addr = Buffer.from(config.instance.exports.memory.buffer)
+                const addr = Buffer.from(config.instance.exports.memory.buffer)
                     .toString('utf8', addr_ptr, addr_ptr + addr_len);
 
                 let connection;
@@ -104,18 +104,18 @@ export default (config) => {
                 // Attempt to parse the multiaddress.
                 // Note: peers can decide of the content of `addr`, meaning that it shouldn't be
                 // trusted.
-                let ws_parsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)\/(ws|wss)$/);
-                let tcp_parsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)$/);
+                const wsParsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)\/(ws|wss)$/);
+                const tcpParsed = addr.match(/^\/(ip4|ip6|dns4|dns6|dns)\/(.*?)\/tcp\/(.*?)$/);
 
-                if (ws_parsed != null) {
+                if (wsParsed != null) {
                     let proto = 'wss';
-                    if (ws_parsed[4] == 'ws') {
+                    if (wsParsed[4] == 'ws') {
                         proto = 'ws';
                     }
-                    if (ws_parsed[1] == 'ip6') {
-                        connection = new Websocket.w3cwebsocket(proto + "://[" + ws_parsed[2] + "]:" + ws_parsed[3]);
+                    if (wsParsed[1] == 'ip6') {
+                        connection = new Websocket.w3cwebsocket(proto + "://[" + wsParsed[2] + "]:" + wsParsed[3]);
                     } else {
-                        connection = new Websocket.w3cwebsocket(proto + "://" + ws_parsed[2] + ":" + ws_parsed[3]);
+                        connection = new Websocket.w3cwebsocket(proto + "://" + wsParsed[2] + ":" + wsParsed[3]);
                     }
 
                     connection.binaryType = 'arraybuffer';
@@ -127,21 +127,21 @@ export default (config) => {
                         config.instance.exports.connection_closed(id);
                     };
                     connection.onmessage = (msg) => {
-                        let message = Buffer.from(msg.data);
-                        let ptr = config.instance.exports.alloc(message.length);
+                        const message = Buffer.from(msg.data);
+                        const ptr = config.instance.exports.alloc(message.length);
                         message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
                         config.instance.exports.connection_message(id, ptr, message.length);
                     };
 
-                } else if (tcp_parsed != null) {
+                } else if (tcpParsed != null) {
                     if (!net) {
                         // `net` module not available, most likely because we're not in NodeJS.
                         return 1;
                     }
 
                     connection = net.createConnection({
-                        host: tcp_parsed[2],
-                        port: parseInt(tcp_parsed[3], 10),
+                        host: tcpParsed[2],
+                        port: parseInt(tcpParsed[3], 10),
                     });
                     connection.setNoDelay();
 
@@ -156,7 +156,7 @@ export default (config) => {
                     connection.on('error', () => { });
                     connection.on('data', (message) => {
                         if (connection.destroyed) return;
-                        let ptr = config.instance.exports.alloc(message.length);
+                        const ptr = config.instance.exports.alloc(message.length);
                         message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
                         config.instance.exports.connection_message(id, ptr, message.length);
                     });
