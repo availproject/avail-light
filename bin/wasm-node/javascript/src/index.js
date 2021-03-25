@@ -83,7 +83,7 @@ export async function start(config) {
   worker.postMessage({
     chain_spec: config.chain_spec,
     database_content: config.database_content,
-    relay_chain_spec: config.relay_chain_spec,
+    parachain_spec: config.parachain_spec,
     // Maximum level of log entries sent by the client.
     // 0 = Logging disabled, 1 = Error, 2 = Warn, 3 = Info, 4 = Debug, 5 = Trace
     max_log_level: config.max_log_level || 5

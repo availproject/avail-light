@@ -196,15 +196,15 @@ pub extern "C" fn alloc(len: u32) -> u32 {
 /// Initializes the client.
 ///
 /// Use [`alloc`] to allocate either one to three buffers: one for the chain specs, an optional
-/// one for the database content, and an optional one for the chain specs of the relay chain if
-/// the chain is a parachain.
+/// one for the database content, and an optional one for the chain specs of the parachain if
+/// the chain is a relay chain.
 /// The buffers **must** have been allocated with [`alloc`]. They are freed when this function is
 /// called.
 ///
-/// Write the chain specs, the database content, and the relay chain specs in these three buffers.
+/// Write the chain specs, the database content, and the parachain specs in these three buffers.
 /// Then, pass the pointer and length of these buffers to this function.
 /// Pass `0` for `database_content_ptr` and `database_content_len` if the database is empty.
-/// Pass `0` for `relay_chain_specs_ptr` and `relay_chain_specs_len` if the chain is not a
+/// Pass `0` for `parachain_specs_ptr` and `parachain_specs_len` if the chain is not a
 /// parachain.
 ///
 /// The client will emit log messages by calling the [`log()`] function, provided the log level is
@@ -215,8 +215,8 @@ pub extern "C" fn init(
     chain_specs_len: u32,
     database_content_ptr: u32,
     database_content_len: u32,
-    relay_chain_specs_ptr: u32,
-    relay_chain_specs_len: u32,
+    parachain_specs_ptr: u32,
+    parachain_specs_len: u32,
     max_log_level: u32,
 ) {
     super::init(
@@ -224,8 +224,8 @@ pub extern "C" fn init(
         chain_specs_len,
         database_content_ptr,
         database_content_len,
-        relay_chain_specs_ptr,
-        relay_chain_specs_len,
+        parachain_specs_ptr,
+        parachain_specs_len,
         max_log_level,
     )
 }

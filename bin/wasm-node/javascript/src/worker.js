@@ -35,7 +35,7 @@ let state = null;
 const startInstance = async (config) => {
   const chain_spec = config.chain_spec;
   const database_content = config.database_content;
-  const relay_chain_spec = config.relay_chain_spec;
+  const parachain_spec = config.parachain_spec;
   const max_log_level = config.max_log_level;
 
   // The actual Wasm bytecode is base64-decoded from a constant found in a different file.
@@ -85,17 +85,17 @@ const startInstance = async (config) => {
       .write(database_content, database_ptr);
   }
 
-  let relay_chain_spec_len = relay_chain_spec ? Buffer.byteLength(relay_chain_spec, 'utf8') : 0;
-  let relay_chain_spec_ptr = (relay_chain_spec_len != 0) ? result.instance.exports.alloc(relay_chain_spec_len) : 0;
-  if (relay_chain_spec_len != 0) {
+  let parachain_spec_len = parachain_spec ? Buffer.byteLength(parachain_spec, 'utf8') : 0;
+  let parachain_spec_ptr = (parachain_spec_len != 0) ? result.instance.exports.alloc(parachain_spec_len) : 0;
+  if (parachain_spec_len != 0) {
     Buffer.from(result.instance.exports.memory.buffer)
-      .write(relay_chain_spec, relay_chain_spec_ptr);
+      .write(parachain_spec, parachain_spec_ptr);
   }
 
   result.instance.exports.init(
     chain_spec_ptr, chain_spec_len,
     database_ptr, database_len,
-    relay_chain_spec_ptr, relay_chain_spec_len,
+    parachain_spec_ptr, parachain_spec_len,
     max_log_level
   );
 
