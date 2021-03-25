@@ -2257,7 +2257,6 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand 0.8.3",
- "slab",
  "smoldot",
  "structopt",
  "terminal_size",
