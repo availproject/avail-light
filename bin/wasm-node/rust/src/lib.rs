@@ -27,7 +27,7 @@ use smoldot::{
     chain, chain_spec,
     libp2p::{multiaddr, peer_id::PeerId},
 };
-use std::{sync::Arc, time::Duration};
+use std::{pin::Pin, sync::Arc, time::Duration};
 
 pub mod ffi;
 
@@ -168,170 +168,12 @@ pub async fn start_client(
     new_task_tx
         .clone()
         .unbounded_send(
-            async move {
-                // The network service is responsible for connecting to the peer-to-peer network
-                // of the chain.
-                let (network_service, mut network_event_receivers) =
-                    network_service::NetworkService::new(network_service::Config {
-                        tasks_executor: Box::new({
-                            let new_task_tx = new_task_tx.clone();
-                            move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                        }),
-                        num_events_receivers: chain_information.len(), // Configures the length of `network_event_receivers`
-                        chains: chain_information
-                            .iter()
-                            .zip(chain_specs.iter())
-                            .zip(genesis_chain_information.iter())
-                            .map(|((chain_information, chain_spec), genesis_chain_information)| {
-                                network_service::ConfigChain {
-                                    bootstrap_nodes: {
-                                        let mut list =
-                                            Vec::with_capacity(chain_spec.boot_nodes().len());
-                                        for node in chain_spec.boot_nodes() {
-                                            let mut address: multiaddr::Multiaddr =
-                                                node.parse().unwrap(); // TODO: don't unwrap?
-                                            if let Some(multiaddr::Protocol::P2p(peer_id)) =
-                                                address.pop()
-                                            {
-                                                let peer_id =
-                                                    PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
-                                                list.push((peer_id, address));
-                                            } else {
-                                                panic!() // TODO:
-                                            }
-                                        }
-                                        list
-                                    },
-                                    has_grandpa_protocol: matches!(
-                                        genesis_chain_information.finality,
-                                        chain::chain_information::ChainInformationFinality::Grandpa { .. }
-                                    ),
-                                    genesis_block_hash: genesis_chain_information
-                                        .finalized_block_header
-                                        .hash(),
-                                    best_block: (
-                                        chain_information.finalized_block_header.number,
-                                        chain_information.finalized_block_header.hash(),
-                                    ),
-                                    protocol_id: chain_spec.protocol_id().to_string(),
-                                }
-                            })
-                            .collect(),
-                    })
-                    .await;
-
-                // The network service is the only one in common between all chains. Other
-                // services run once per chain.
-                for (chain_index, ((chain_information, chain_spec), genesis_chain_information)) in
-                    chain_information
-                        .iter()
-                        .zip(chain_specs.into_iter())
-                        .zip(genesis_chain_information.iter())
-                        .enumerate()
-                {
-                    // The sync service is leveraging the network service, downloads block headers,
-                    // and verifies them, to determine what are the best and finalized blocks of the
-                    // chain.
-                    let sync_service = Arc::new(
-                        sync_service::SyncService::new(sync_service::Config {
-                            chain_information: chain_information.clone(),
-                            tasks_executor: Box::new({
-                                let new_task_tx = new_task_tx.clone();
-                                move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                            }),
-                            network_service: (network_service.clone(), chain_index),
-                            network_events_receiver: network_event_receivers.pop().unwrap(),
-                            parachain: None,
-                        })
-                        .await,
-                    );
-
-                    // TODO: At the moment the JSON-RPC and database save tasks would conflict
-                    // with each other if run multiple times. For now, we only run them for
-                    // chain 0. Doing this properly requires a bigger refactoring of the FFI
-                    // bindings.
-                    if chain_index != 0 {
-                        continue;
-                    }
-
-                    // The transactions service is responsible for sending out transactions over the
-                    // peer-to-peer network and checking whether they got included in blocks.
-                    let transactions_service = Arc::new(
-                        transactions_service::TransactionsService::new(
-                            transactions_service::Config {
-                                tasks_executor: Box::new({
-                                    let new_task_tx = new_task_tx.clone();
-                                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                                }),
-                                network_service: (network_service.clone(), chain_index),
-                                sync_service: sync_service.clone(),
-                            },
-                        )
-                        .await,
-                    );
-
-                    // The runtime service follows the runtime of the best block of the chain,
-                    // and allows performing runtime calls.
-                    let runtime_service = runtime_service::RuntimeService::new(runtime_service::Config {
-                        tasks_executor: Box::new({
-                            let new_task_tx = new_task_tx.clone();
-                            move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                        }),
-                        network_service: (network_service.clone(), chain_index),
-                        sync_service: sync_service.clone(),
-                        chain_spec: &chain_spec,
-                        genesis_block_hash: genesis_chain_information
-                            .finalized_block_header
-                            .hash(),
-                        genesis_block_state_root: genesis_chain_information
-                            .finalized_block_header
-                            .state_root,
-                    }).await;
-
-                    // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC
-                    // requests and sending back responses.
-                    new_task_tx
-                        .unbounded_send(
-                            json_rpc_service::start(json_rpc_service::Config {
-                                tasks_executor: Box::new({
-                                    let new_task_tx = new_task_tx.clone();
-                                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                                }),
-                                network_service: (network_service.clone(), chain_index),
-                                sync_service: sync_service.clone(),
-                                transactions_service,
-                                runtime_service,
-                                chain_spec,
-                                genesis_block_hash: genesis_chain_information
-                                    .finalized_block_header
-                                    .hash(),
-                                genesis_block_state_root: genesis_chain_information
-                                    .finalized_block_header
-                                    .state_root,
-                            })
-                            .boxed(),
-                        )
-                        .unwrap();
-
-                    // Spawn a task responsible for serializing the chain from the sync service at
-                    // a periodic interval.
-                    new_task_tx
-                        .unbounded_send(
-                            async move {
-                                loop {
-                                    ffi::Delay::new(Duration::from_secs(15)).await;
-                                    log::debug!("Database save start");
-                                    let database_content = sync_service.serialize_chain().await;
-                                    ffi::database_save(&database_content);
-                                }
-                            }
-                            .boxed(),
-                        )
-                        .unwrap();
-
-                    log::info!("Initialization complete");
-                }
-            }
+            start_services(
+                new_task_tx,
+                chain_information,
+                genesis_chain_information,
+                chain_specs,
+            )
             .boxed(),
         )
         .unwrap();
@@ -360,6 +202,167 @@ pub async fn start_client(
         }
     }
     .await
+}
+
+/// Starts all the services of the client.
+async fn start_services(
+    new_task_tx: mpsc::UnboundedSender<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    chain_information: Vec<chain::chain_information::ChainInformation>,
+    genesis_chain_information: Vec<chain::chain_information::ChainInformation>,
+    chain_specs: Vec<chain_spec::ChainSpec>,
+) {
+    // The network service is responsible for connecting to the peer-to-peer network
+    // of the chain.
+    let (network_service, mut network_event_receivers) =
+        network_service::NetworkService::new(network_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            num_events_receivers: chain_information.len(), // Configures the length of `network_event_receivers`
+            chains: chain_information
+                .iter()
+                .zip(chain_specs.iter())
+                .zip(genesis_chain_information.iter())
+                .map(
+                    |((chain_information, chain_spec), genesis_chain_information)| {
+                        network_service::ConfigChain {
+                            bootstrap_nodes: {
+                                let mut list = Vec::with_capacity(chain_spec.boot_nodes().len());
+                                for node in chain_spec.boot_nodes() {
+                                    let mut address: multiaddr::Multiaddr = node.parse().unwrap(); // TODO: don't unwrap?
+                                    if let Some(multiaddr::Protocol::P2p(peer_id)) = address.pop() {
+                                        let peer_id = PeerId::from_multihash(peer_id).unwrap(); // TODO: don't unwrap
+                                        list.push((peer_id, address));
+                                    } else {
+                                        panic!() // TODO:
+                                    }
+                                }
+                                list
+                            },
+                            has_grandpa_protocol: matches!(
+                                genesis_chain_information.finality,
+                                chain::chain_information::ChainInformationFinality::Grandpa { .. }
+                            ),
+                            genesis_block_hash: genesis_chain_information
+                                .finalized_block_header
+                                .hash(),
+                            best_block: (
+                                chain_information.finalized_block_header.number,
+                                chain_information.finalized_block_header.hash(),
+                            ),
+                            protocol_id: chain_spec.protocol_id().to_string(),
+                        }
+                    },
+                )
+                .collect(),
+        })
+        .await;
+
+    // The network service is the only one in common between all chains. Other
+    // services run once per chain.
+    for (chain_index, ((chain_information, chain_spec), genesis_chain_information)) in
+        chain_information
+            .iter()
+            .zip(chain_specs.into_iter())
+            .zip(genesis_chain_information.iter())
+            .enumerate()
+    {
+        // The sync service is leveraging the network service, downloads block headers,
+        // and verifies them, to determine what are the best and finalized blocks of the
+        // chain.
+        let sync_service = Arc::new(
+            sync_service::SyncService::new(sync_service::Config {
+                chain_information: chain_information.clone(),
+                tasks_executor: Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }),
+                network_service: (network_service.clone(), chain_index),
+                network_events_receiver: network_event_receivers.pop().unwrap(),
+                parachain: None,
+            })
+            .await,
+        );
+
+        // TODO: At the moment the JSON-RPC and database save tasks would conflict
+        // with each other if run multiple times. For now, we only run them for
+        // chain 0. Doing this properly requires a bigger refactoring of the FFI
+        // bindings.
+        if chain_index != 0 {
+            continue;
+        }
+
+        // The transactions service is responsible for sending out transactions over the
+        // peer-to-peer network and checking whether they got included in blocks.
+        let transactions_service = Arc::new(
+            transactions_service::TransactionsService::new(transactions_service::Config {
+                tasks_executor: Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }),
+                network_service: (network_service.clone(), chain_index),
+                sync_service: sync_service.clone(),
+            })
+            .await,
+        );
+
+        // The runtime service follows the runtime of the best block of the chain,
+        // and allows performing runtime calls.
+        let runtime_service = runtime_service::RuntimeService::new(runtime_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            network_service: (network_service.clone(), chain_index),
+            sync_service: sync_service.clone(),
+            chain_spec: &chain_spec,
+            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+            genesis_block_state_root: genesis_chain_information.finalized_block_header.state_root,
+        })
+        .await;
+
+        // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC
+        // requests and sending back responses.
+        new_task_tx
+            .unbounded_send(
+                json_rpc_service::start(json_rpc_service::Config {
+                    tasks_executor: Box::new({
+                        let new_task_tx = new_task_tx.clone();
+                        move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                    }),
+                    network_service: (network_service.clone(), chain_index),
+                    sync_service: sync_service.clone(),
+                    transactions_service,
+                    runtime_service,
+                    chain_spec,
+                    genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+                    genesis_block_state_root: genesis_chain_information
+                        .finalized_block_header
+                        .state_root,
+                })
+                .boxed(),
+            )
+            .unwrap();
+
+        // Spawn a task responsible for serializing the chain from the sync service at
+        // a periodic interval.
+        new_task_tx
+            .unbounded_send(
+                async move {
+                    loop {
+                        ffi::Delay::new(Duration::from_secs(15)).await;
+                        log::debug!("Database save start");
+                        let database_content = sync_service.serialize_chain().await;
+                        ffi::database_save(&database_content);
+                    }
+                }
+                .boxed(),
+            )
+            .unwrap();
+
+        log::info!("Initialization complete");
+    }
 }
 
 /// Use in an asynchronous context to interrupt the current task execution and schedule it back.
