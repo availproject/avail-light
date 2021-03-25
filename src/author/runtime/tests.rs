@@ -41,7 +41,7 @@ fn block_building_works() {
         .unwrap()
     };
 
-    let parent_hash = crate::calculate_genesis_block_header(chain_specs.genesis_storage()).hash();
+    let parent_hash = crate::calculate_genesis_block_header(&chain_specs).hash();
 
     let mut builder = super::build_block(super::Config {
         parent_runtime,

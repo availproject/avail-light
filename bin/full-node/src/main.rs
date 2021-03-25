@@ -93,11 +93,9 @@ async fn async_main() {
             .expect("Failed to decode chain specs")
     };
 
+    // TODO: don't unwrap?
     let genesis_chain_information =
-        chain::chain_information::ChainInformation::from_genesis_storage(
-            chain_spec.genesis_storage(),
-        )
-        .unwrap(); // TODO: don't unwrap?
+        chain::chain_information::ChainInformation::from_chain_spec(&chain_spec).unwrap();
 
     // If `chain_spec` define a parachain, also load the specs of the relay chain.
     let (relay_chain_spec, _parachain_id) =
@@ -129,12 +127,8 @@ async fn async_main() {
         };
 
     let relay_genesis_chain_information = if let Some(relay_chain_spec) = &relay_chain_spec {
-        Some(
-            chain::chain_information::ChainInformation::from_genesis_storage(
-                relay_chain_spec.genesis_storage(),
-            )
-            .unwrap(),
-        ) // TODO: don't unwrap?
+        // TODO: don't unwrap?
+        Some(chain::chain_information::ChainInformation::from_chain_spec(relay_chain_spec).unwrap())
     } else {
         None
     };

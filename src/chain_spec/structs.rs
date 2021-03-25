@@ -22,9 +22,9 @@
 
 use super::light_sync_state::LightSyncState;
 
-use alloc::{boxed::Box, format, string::String, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, format, string::String, vec::Vec};
 use fnv::FnvBuildHasher;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -84,12 +84,18 @@ pub(super) enum Genesis {
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawGenesis {
-    pub(super) top: HashMap<HexString, HexString, FnvBuildHasher>,
-    pub(super) children_default: HashMap<HexString, ChildRawStorage, FnvBuildHasher>,
+    pub(super) top: BTreeMap<HexString, HexString>,
+    pub(super) children_default: BTreeMap<HexString, ChildRawStorage>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct HexString(pub(super) Vec<u8>);
+
+impl core::borrow::Borrow<[u8]> for HexString {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 impl serde::Serialize for HexString {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

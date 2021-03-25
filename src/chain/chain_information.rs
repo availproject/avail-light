@@ -38,7 +38,7 @@
 //! They also do not contain the past history of the chain. It is, however, similarly possible to
 //! for instance download the history from other nodes.
 
-use crate::{finality::grandpa, header};
+use crate::{chain_spec::ChainSpec, finality::grandpa, header};
 
 use alloc::{borrow::ToOwned as _, vec::Vec};
 use core::num::NonZeroU64;
@@ -63,28 +63,17 @@ pub struct ChainInformation {
 }
 
 impl ChainInformation {
-    /// Builds the [`ChainInformation`] corresponding to the genesis block.
-    ///
-    /// Must be passed a closure that returns the storage value corresponding to the given key in
-    /// the genesis block storage.
-    pub fn from_genesis_storage<'a>(
-        genesis_storage: impl Iterator<Item = (&'a [u8], &'a [u8])> + Clone,
-    ) -> Result<Self, FromGenesisStorageError> {
+    /// Builds the [`ChainInformation`] corresponding to the genesis block contained in the chain spec.
+    pub fn from_chain_spec(chain_spec: &ChainSpec) -> Result<Self, FromGenesisStorageError> {
         let consensus = {
             let aura_genesis_config =
                 aura_config::AuraGenesisConfiguration::from_genesis_storage(|k| {
-                    genesis_storage
-                        .clone()
-                        .find(|(k2, _)| *k2 == k)
-                        .map(|(_, v)| v.to_owned())
+                    chain_spec.genesis_storage_value(k).map(|v| v.to_owned())
                 });
 
             let babe_genesis_config =
                 babe_config::BabeGenesisConfiguration::from_genesis_storage(|k| {
-                    genesis_storage
-                        .clone()
-                        .find(|(k2, _)| *k2 == k)
-                        .map(|(_, v)| v.to_owned())
+                    chain_spec.genesis_storage_value(k).map(|v| v.to_owned())
                 });
 
             match (aura_genesis_config, babe_genesis_config) {
@@ -131,11 +120,8 @@ impl ChainInformation {
 
         let finality = {
             let grandpa_genesis_config =
-                grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|key| {
-                    genesis_storage
-                        .clone()
-                        .find(|(k, _)| *k == key)
-                        .map(|(_, v)| v.to_owned())
+                grandpa::chain_config::GrandpaGenesisConfiguration::from_genesis_storage(|k| {
+                    chain_spec.genesis_storage_value(k).map(|v| v.to_owned())
                 });
 
             match grandpa_genesis_config {
@@ -150,7 +136,7 @@ impl ChainInformation {
         };
 
         Ok(ChainInformation {
-            finalized_block_header: crate::calculate_genesis_block_header(genesis_storage),
+            finalized_block_header: crate::calculate_genesis_block_header(chain_spec),
             consensus,
             finality,
         })

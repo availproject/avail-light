@@ -220,6 +220,12 @@ impl ChainSpec {
         genesis.top.iter().map(|(k, v)| (&k.0[..], &v.0[..]))
     }
 
+    /// Returns the genesis storage value for a key
+    pub fn genesis_storage_value(&self, key: &[u8]) -> Option<&[u8]> {
+        let structs::Genesis::Raw(genesis) = &self.client_spec.genesis;
+        genesis.top.get(key).map(|value| &value.0[..])
+    }
+
     /// Returns a list of arbitrary properties contained in the chain specs, such as the name of
     /// the token or the number of decimals.
     ///

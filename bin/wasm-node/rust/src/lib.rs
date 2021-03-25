@@ -188,10 +188,7 @@ pub async fn start_client(
     let genesis_chain_information = chain_specs
         .iter()
         .map(|chain_spec| {
-            chain::chain_information::ChainInformation::from_genesis_storage(
-                chain_spec.genesis_storage(),
-            )
-            .unwrap()
+            chain::chain_information::ChainInformation::from_chain_spec(&chain_spec).unwrap()
         })
         .collect::<Vec<_>>();
     let chain_information = chain_specs
