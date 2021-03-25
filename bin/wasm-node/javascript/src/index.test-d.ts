@@ -9,6 +9,7 @@ smoldot.start({
   parachain_spec: '',
   json_rpc_callback: (resp) => {},
   database_save_callback: (content) => {},
+  log_callback: (level, target, message) => {},
 }).then(sm => {
   sm.terminate();
 });

@@ -45,6 +45,10 @@ const startInstance = async (config) => {
 
   // Used to bind with the smoldot-js bindings. See the `bindings-smoldot-js.js` file.
   let smoldot_js_config = {
+    logCallback: (level, target, message) => {
+      // `compat.postMessage` is the same as `postMessage`, but works across environments.
+      compat.postMessage({ kind: 'log', level, target, message });
+    },
     json_rpc_callback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'jsonrpc', data });

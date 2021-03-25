@@ -49,21 +49,12 @@ export default (config) => {
         // Used by the Rust side to emit a log entry.
         // See also the `max_log_level` parameter in the configuration.
         log: (level, target_ptr, target_len, message_ptr, message_len) => {
-            let target = Buffer.from(config.instance.exports.memory.buffer)
-                .toString('utf8', target_ptr, target_ptr + target_len);
-            let message = Buffer.from(config.instance.exports.memory.buffer)
-                .toString('utf8', message_ptr, message_ptr + message_len);
-
-            if (level <= 1) {
-                console.error("[" + target + "]", message);
-            } else if (level == 2) {
-                console.warn("[" + target + "]", message);
-            } else if (level == 3) {
-                console.info("[" + target + "]", message);
-            } else if (level == 4) {
-                console.debug("[" + target + "]", message);
-            } else {
-                console.trace("[" + target + "]", message);
+            if (config.logCallback) {
+                let target = Buffer.from(config.instance.exports.memory.buffer)
+                    .toString('utf8', target_ptr, target_ptr + target_len);
+                let message = Buffer.from(config.instance.exports.memory.buffer)
+                    .toString('utf8', message_ptr, message_ptr + message_len);
+                config.logCallback(level, target, message);
             }
         },
 

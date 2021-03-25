@@ -27,6 +27,20 @@ export async function start(config) {
   if (Object.prototype.toString.call(config.chain_spec) !== '[object String]')
     throw new SmoldotError('config must include a string chain_spec');
 
+  const logCallback = config.log_callback || ((level, target, message) => {
+    if (level <= 1) {
+      console.error("[" + target + "]", message);
+    } else if (level == 2) {
+      console.warn("[" + target + "]", message);
+    } else if (level == 3) {
+      console.info("[" + target + "]", message);
+    } else if (level == 4) {
+      console.debug("[" + target + "]", message);
+    } else {
+      console.trace("[" + target + "]", message);
+    }
+  });
+
   // The actual execution of Smoldot is performed in a worker thread.
   //
   // The line of code below (`new Worker(...)`) is designed to hopefully work across all
@@ -44,7 +58,7 @@ export async function start(config) {
     initPromiseReject = reject;
   });
 
-  // The worker can send us either a database save message, or a JSON-RPC answer.
+  // The worker can send us messages whose type is identified through a `kind` field.
   workerOnMessage(worker, (message) => {
     if (message.kind == 'jsonrpc') {
       // If `initPromiseResolve` is non-null, then this is the initial dummy JSON-RPC request
@@ -61,6 +75,9 @@ export async function start(config) {
     } else if (message.kind == 'database') {
       if (config.database_save_callback)
         config.database_save_callback(message.data);
+
+    } else if (message.kind == 'log') {
+      logCallback(message.level, message.target, message.message);
 
     } else {
       console.error('Unknown message type', message);
