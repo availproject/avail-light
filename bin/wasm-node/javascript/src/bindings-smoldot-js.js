@@ -30,35 +30,10 @@ export default (config) => {
     // The indices within this array are chosen by the Rust code.
     let connections = {};
 
-    // Set to `true` once `throw` has been called.
-    // As documented, after the `throw` function has been called, it is forbidden to call any
-    // further function of the Wasm virtual machine. This flag is used to enforce this.
-    let terminated = false;
-
-    const terminate = () => {
-        terminated = true;
-        Object.values(connections).forEach(connection => {
-            if (connection.close) {
-                // WebSocket
-                connection.onopen = null;
-                connection.onclose = null;
-                connection.onmessage = null;
-                connection.onerror = null;
-                connection.close();
-            } else {
-                // TCP
-                connection.destroy();
-            }
-        });
-    };
-
     const bindings = {
         // Must throw an error. A human-readable message can be found in the WebAssembly memory in
         // the given buffer.
         throw: (ptr, len) => {
-            terminate();
-            if (config.onTerminated)
-                config.onTerminated();
             let message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
             throw new Error(message);
         },
@@ -105,29 +80,11 @@ export default (config) => {
             // with `1`) and wants you to use `setImmediate` instead.
             if (ms == 0 && typeof setImmediate === "function") {
                 setImmediate(() => {
-                    if (!terminated) {
-                        try {
-                            config.instance.exports.timer_finished(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
-                    }
+                    config.instance.exports.timer_finished(id);
                 })
             } else {
                 setTimeout(() => {
-                    if (!terminated) {
-                        try {
-                            config.instance.exports.timer_finished(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
-                    }
+                    config.instance.exports.timer_finished(id);
                 }, ms)
             }
         },
@@ -173,37 +130,16 @@ export default (config) => {
                     connection.binaryType = 'arraybuffer';
 
                     connection.onopen = () => {
-                        try {
-                            config.instance.exports.connection_open(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        config.instance.exports.connection_open(id);
                     };
                     connection.onclose = () => {
-                        try {
-                            config.instance.exports.connection_closed(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        config.instance.exports.connection_closed(id);
                     };
                     connection.onmessage = (msg) => {
-                        try {
-                            let message = Buffer.from(msg.data);
-                            let ptr = config.instance.exports.alloc(message.length);
-                            message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
-                            config.instance.exports.connection_message(id, ptr, message.length);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        let message = Buffer.from(msg.data);
+                        let ptr = config.instance.exports.alloc(message.length);
+                        message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
+                        config.instance.exports.connection_message(id, ptr, message.length);
                     };
 
                 } else if (tcp_parsed != null) {
@@ -219,40 +155,19 @@ export default (config) => {
                     connection.setNoDelay();
 
                     connection.on('connect', () => {
-                        try {
-                            if (connection.destroyed) return;
-                            config.instance.exports.connection_open(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        if (connection.destroyed) return;
+                        config.instance.exports.connection_open(id);
                     });
                     connection.on('close', () => {
-                        try {
-                            if (connection.destroyed) return;
-                            config.instance.exports.connection_closed(id);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        if (connection.destroyed) return;
+                        config.instance.exports.connection_closed(id);
                     });
                     connection.on('error', () => { });
                     connection.on('data', (message) => {
-                        try {
-                            if (connection.destroyed) return;
-                            let ptr = config.instance.exports.alloc(message.length);
-                            message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
-                            config.instance.exports.connection_message(id, ptr, message.length);
-                        } catch (error) {
-                            terminate();
-                            if (config.onTerminated)
-                                config.onTerminated();
-                            throw error;
-                        }
+                        if (connection.destroyed) return;
+                        let ptr = config.instance.exports.alloc(message.length);
+                        message.copy(Buffer.from(config.instance.exports.memory.buffer), ptr);
+                        config.instance.exports.connection_message(id, ptr, message.length);
                     });
 
                 } else {
@@ -300,7 +215,6 @@ export default (config) => {
     };
 
     return {
-        bindings: bindings,
-        terminate: terminate,
+        bindings,
     }
 }

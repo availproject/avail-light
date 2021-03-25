@@ -20,5 +20,6 @@
 export const net = null;
 export const Worker = typeof window != 'undefined' ? window.Worker : null;
 export const workerOnMessage = (worker, callback) => { worker.onmessage = (event) => callback(event.data) };
+export const workerOnError = (worker, callback) => { worker.onerror = callback; };  // TODO: unclear if the parameter of the callback is same as with NodeJS
 export const postMessage = (msg) => self.postMessage(msg);
 export const setOnMessage = (callback) => { self.onmessage = (event) => callback(event.data) };

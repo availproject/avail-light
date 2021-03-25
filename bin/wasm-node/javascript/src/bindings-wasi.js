@@ -104,9 +104,7 @@ export default (config) => {
 
         // Used by Rust in catastrophic situations, such as a double panic.
         proc_exit: (ret_code) => {
-            if (config.onTerminated)
-                config.onTerminated();
-            throw new SmoldotError(`proc_exit called: ${ret_code}`);
+            throw new Error(`proc_exit called: ${ret_code}`);
         },
 
         // Return the number of environment variables and the total size of all environment

@@ -32,11 +32,6 @@ import { default as wasm_base64 } from './autogen/wasm.js';
 //
 let state = null;
 
-// Set to `true` once `throw` has been called.
-// As documented, after the `throw` function has been called, it is forbidden to call any
-// further function of the Wasm virtual machine. This flag is used to enforce this.
-let has_thrown = false;
-
 const startInstance = async (config) => {
   const chain_spec = config.chain_spec;
   const database_content = config.database_content;
@@ -50,10 +45,6 @@ const startInstance = async (config) => {
 
   // Used to bind with the smoldot-js bindings. See the `bindings-smoldot-js.js` file.
   let smoldot_js_config = {
-    onTerminated: (error) => {
-      compat.postMessage({ kind: 'error', error });
-      has_thrown = true;
-    },
     json_rpc_callback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'jsonrpc', data });
@@ -64,16 +55,10 @@ const startInstance = async (config) => {
     }
   };
 
-  let { bindings: smoldot_js_bindings, terminate } = smoldot_js_builder(smoldot_js_config);
+  let { bindings: smoldot_js_bindings } = smoldot_js_builder(smoldot_js_config);
 
   // Used to bind with the Wasi bindings. See the `bindings-wasi.js` file.
-  let wasi_config = {
-    onTerminated: () => {
-      compat.postMessage({ kind: 'error', error: 'proc_exit has been called' });
-      has_thrown = true;
-      terminate();
-    },
-  };
+  let wasi_config = {};
 
   // Start the Wasm virtual machine.
   // The Rust code defines a list of imports that must be fulfilled by the environment. The second
@@ -107,28 +92,21 @@ const startInstance = async (config) => {
       .write(relay_chain_spec, relay_chain_spec_ptr);
   }
 
-  try {
-    result.instance.exports.init(
-      chain_spec_ptr, chain_spec_len,
-      database_ptr, database_len,
-      relay_chain_spec_ptr, relay_chain_spec_len,
-      max_log_level
-    );
+  result.instance.exports.init(
+    chain_spec_ptr, chain_spec_len,
+    database_ptr, database_len,
+    relay_chain_spec_ptr, relay_chain_spec_len,
+    max_log_level
+  );
 
-    state.forEach((json_rpc_request) => {
-      let len = Buffer.byteLength(json_rpc_request, 'utf8');
-      let ptr = result.instance.exports.alloc(len);
-      Buffer.from(result.instance.exports.memory.buffer).write(json_rpc_request, ptr);
-      result.instance.exports.json_rpc_send(ptr, len);
-    });
+  state.forEach((json_rpc_request) => {
+    let len = Buffer.byteLength(json_rpc_request, 'utf8');
+    let ptr = result.instance.exports.alloc(len);
+    Buffer.from(result.instance.exports.memory.buffer).write(json_rpc_request, ptr);
+    result.instance.exports.json_rpc_send(ptr, len);
+  });
 
-    state = result.instance;
-
-  } catch (error) {
-    has_thrown = true;
-    terminate();
-    throw error;
-  }
+  state = result.instance;
 };
 
 // `compat.setOnMessage` is the same as `onmessage = ...`, but works across environments.
@@ -137,9 +115,6 @@ compat.setOnMessage((message) => {
   if (state == null) {
     state = [];
     startInstance(message)
-      .catch((error) => {
-        compat.postMessage({ kind: 'error', error });
-      });
 
   } else if (Array.isArray(state)) {
     // A JSON-RPC request has been received while the Wasm VM is still initializing. Queue it
@@ -147,17 +122,9 @@ compat.setOnMessage((message) => {
     state.push(message);
 
   } else {
-    if (has_thrown) {
-      return;
-    }
-
     let len = Buffer.byteLength(message, 'utf8');
     let ptr = state.exports.alloc(len);
     Buffer.from(state.exports.memory.buffer).write(message, ptr);
-    try {
-      state.exports.json_rpc_send(ptr, len);
-    } catch (error) {
-      compat.postMessage({ kind: 'error', error });
-    }
+    state.exports.json_rpc_send(ptr, len);
   }
 });
