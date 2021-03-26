@@ -743,7 +743,6 @@ async fn start_parachain(
                     "ParachainHost_persisted_validation_data",
                     para::persisted_validation_data_parameters(
                         parachain_config.parachain_id,
-                        // TODO: we use TimedOut because that's what cumulus does, but it's unclear if that's correct
                         para::OccupiedCoreAssumption::TimedOut
                     )
                 ).await;
