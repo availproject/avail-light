@@ -212,7 +212,7 @@ async fn start_services(
     chain_specs: Vec<chain_spec::ChainSpec>,
 ) {
     // The network service is responsible for connecting to the peer-to-peer network
-    // of the chain.
+    // of all chains.
     let (network_service, mut network_event_receivers) =
         network_service::NetworkService::new(network_service::Config {
             tasks_executor: Box::new({
@@ -259,14 +259,28 @@ async fn start_services(
         })
         .await;
 
-    // The network service is the only one in common between all chains. Other
-    // services run once per chain.
-    for (chain_index, ((chain_information, chain_spec), genesis_chain_information)) in
-        chain_information
-            .iter()
-            .zip(chain_specs.into_iter())
-            .zip(genesis_chain_information.iter())
-            .enumerate()
+    // The network service is the only one in common between all chains. Other services run once
+    // per chain.
+
+    // The `Vec` below is filled when we start the services of a chain.
+    let mut per_chain: Vec<
+        Option<(
+            Arc<sync_service::SyncService>,
+            Arc<runtime_service::RuntimeService>,
+        )>,
+    > = (0..chain_specs.len()).map(|_| None).collect();
+
+    // Start the services of the chains that aren't parachains.
+    for (
+        relay_chain_index,
+        (chain_index, ((chain_information, chain_spec), genesis_chain_information)),
+    ) in chain_information
+        .iter()
+        .zip(chain_specs.iter())
+        .zip(genesis_chain_information.iter())
+        .enumerate()
+        .filter(|(_, ((_, chain_spec), _))| chain_spec.relay_chain().is_none())
+        .enumerate()
     {
         // The sync service is leveraging the network service, downloads block headers,
         // and verifies them, to determine what are the best and finalized blocks of the
@@ -281,28 +295,6 @@ async fn start_services(
                 network_service: (network_service.clone(), chain_index),
                 network_events_receiver: network_event_receivers.pop().unwrap(),
                 parachain: None,
-            })
-            .await,
-        );
-
-        // TODO: At the moment the JSON-RPC and database save tasks would conflict
-        // with each other if run multiple times. For now, we only run them for
-        // chain 0. Doing this properly requires a bigger refactoring of the FFI
-        // bindings.
-        if chain_index != 0 {
-            continue;
-        }
-
-        // The transactions service is responsible for sending out transactions over the
-        // peer-to-peer network and checking whether they got included in blocks.
-        let transactions_service = Arc::new(
-            transactions_service::TransactionsService::new(transactions_service::Config {
-                tasks_executor: Box::new({
-                    let new_task_tx = new_task_tx.clone();
-                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                }),
-                network_service: (network_service.clone(), chain_index),
-                sync_service: sync_service.clone(),
             })
             .await,
         );
@@ -322,47 +314,146 @@ async fn start_services(
         })
         .await;
 
-        // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC
-        // requests and sending back responses.
-        new_task_tx
-            .unbounded_send(
-                json_rpc_service::start(json_rpc_service::Config {
-                    tasks_executor: Box::new({
-                        let new_task_tx = new_task_tx.clone();
-                        move |fut| new_task_tx.unbounded_send(fut).unwrap()
-                    }),
-                    network_service: (network_service.clone(), chain_index),
-                    sync_service: sync_service.clone(),
-                    transactions_service,
-                    runtime_service,
-                    chain_spec,
-                    genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-                    genesis_block_state_root: genesis_chain_information
-                        .finalized_block_header
-                        .state_root,
-                })
-                .boxed(),
-            )
-            .unwrap();
+        debug_assert!(per_chain[chain_index].is_none());
+        per_chain[chain_index] = Some((sync_service.clone(), runtime_service));
 
         // Spawn a task responsible for serializing the chain from the sync service at
         // a periodic interval.
-        new_task_tx
-            .unbounded_send(
-                async move {
-                    loop {
-                        ffi::Delay::new(Duration::from_secs(15)).await;
-                        log::debug!("Database save start");
-                        let database_content = sync_service.serialize_chain().await;
-                        ffi::database_save(&database_content);
+        // This is only done for relay chains. Since multiple database services would conflict
+        // with each other, this is done for the first relay chain in the list. This will change
+        // in the future.
+        if relay_chain_index == 0 {
+            new_task_tx
+                .unbounded_send(
+                    async move {
+                        loop {
+                            ffi::Delay::new(Duration::from_secs(15)).await;
+                            log::debug!("Database save start");
+                            let database_content = sync_service.serialize_chain().await;
+                            ffi::database_save(&database_content);
+                        }
                     }
-                }
-                .boxed(),
-            )
-            .unwrap();
-
-        log::info!("Initialization complete");
+                    .boxed(),
+                )
+                .unwrap();
+        }
     }
+
+    // Start the services of the parachains.
+    for (chain_index, ((chain_information, chain_spec), genesis_chain_information)) in
+        chain_information
+            .iter()
+            .zip(chain_specs.iter())
+            .zip(genesis_chain_information.iter())
+            .enumerate()
+    {
+        // Skip non-parachains.
+        let (relay_chain_id, parachain_id) = match chain_spec.relay_chain() {
+            Some(v) => v,
+            None => continue,
+        };
+
+        // Find the index of the relay chain in the list of chains.
+        let relay_chain_index = match chain_specs.iter().position(|s| s.id() == relay_chain_id) {
+            Some(idx) => idx,
+            None => panic!("Couldn't find relay chain `{}`", relay_chain_id),
+        };
+
+        // Note that at the time of writing, due to the structure of this code, relay chains that
+        // are themselves parachains would only work if the relay chain is before the parachain
+        // in the list. No existing live chain is in this situation at the time of writing of this
+        // comment.
+        let relay_chain_services = match per_chain[relay_chain_index].as_ref() {
+            Some(s) => s,
+            None => panic!(
+                "Relay chain `{}` is itself a parachain. This isn't supported by smoldot yet.",
+                relay_chain_id
+            ),
+        };
+
+        // The sync service is leveraging the network service, downloads block headers,
+        // and verifies them, to determine what are the best and finalized blocks of the
+        // chain.
+        let sync_service = Arc::new(
+            sync_service::SyncService::new(sync_service::Config {
+                chain_information: chain_information.clone(),
+                tasks_executor: Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }),
+                network_service: (network_service.clone(), chain_index),
+                network_events_receiver: network_event_receivers.pop().unwrap(),
+                parachain: Some(sync_service::ConfigParachain {
+                    parachain_id,
+                    relay_chain_sync: relay_chain_services.1.clone(),
+                    relay_network_chain_index: relay_chain_index,
+                }),
+            })
+            .await,
+        );
+
+        // The runtime service follows the runtime of the best block of the chain,
+        // and allows performing runtime calls.
+        let runtime_service = runtime_service::RuntimeService::new(runtime_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            network_service: (network_service.clone(), chain_index),
+            sync_service: sync_service.clone(),
+            chain_spec,
+            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
+            genesis_block_state_root: genesis_chain_information.finalized_block_header.state_root,
+        })
+        .await;
+
+        debug_assert!(per_chain[chain_index].is_none());
+        per_chain[chain_index] = Some((sync_service.clone(), runtime_service));
+    }
+
+    debug_assert!(per_chain.iter().all(Option::is_some));
+
+    // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC requests and
+    // sending back responses.
+    // Since multiple JSON-RPC services would conflict with each other, we start one for the first
+    // chain in the list.
+    let first_chain_services = per_chain.into_iter().next().unwrap().unwrap();
+    let first_chain_finalized_header = genesis_chain_information
+        .into_iter()
+        .next()
+        .unwrap()
+        .finalized_block_header;
+    let transactions_service = Arc::new(
+        transactions_service::TransactionsService::new(transactions_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            network_service: (network_service.clone(), 0),
+            sync_service: first_chain_services.0.clone(),
+        })
+        .await,
+    );
+    new_task_tx
+        .unbounded_send(
+            json_rpc_service::start(json_rpc_service::Config {
+                tasks_executor: Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }),
+                network_service: (network_service.clone(), 0),
+                sync_service: first_chain_services.0,
+                transactions_service,
+                runtime_service: first_chain_services.1,
+                chain_spec: chain_specs.into_iter().next().unwrap(),
+                genesis_block_hash: first_chain_finalized_header.hash(),
+                genesis_block_state_root: first_chain_finalized_header.state_root,
+            })
+            .boxed(),
+        )
+        .unwrap();
+
+    log::info!("Initialization complete");
 }
 
 /// Use in an asynchronous context to interrupt the current task execution and schedule it back.
