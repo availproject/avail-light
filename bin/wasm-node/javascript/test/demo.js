@@ -21,7 +21,6 @@ import * as smoldot from '../src/index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
 // Adjust these chain specs for the chain you want to connect to.
-import { default as chain_specs } from './westend_specs.js';
 import * as fs from 'fs';
 
 let client = null;
@@ -35,7 +34,7 @@ try {
 } catch (error) { }
 
 smoldot.start({
-    chain_spec: JSON.stringify(chain_specs()),
+    chain_spec: fs.readFileSync('../../westend.json', 'utf8'),
     database_content: database_content,
     max_log_level: 3,  // Can be increased for more verbosity
     json_rpc_callback: (resp) => {

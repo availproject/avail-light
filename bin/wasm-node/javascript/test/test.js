@@ -15,15 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import * as fs from 'fs';
 import * as client from "../src/index.js";
 import { default as process } from 'process';
-import { default as westend_specs } from './westend_specs.js';
 
 // The test will fail by default unless `process.exit(0)` is explicitly used later.
 process.exitCode = 1;
 
 // Note that the flow control below is a bit complicated and would need to be refactored if we
 // add more tests.
+
+const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
 
 (async () => {
   // Test that invalid chain specs errors are properly caught.
@@ -40,7 +42,7 @@ process.exitCode = 1;
   // Basic `system_name` test.
   client
     .start({
-      chain_spec: JSON.stringify(westend_specs()),
+      chain_spec: westendSpecs,
       json_rpc_callback: (resp) => {
         if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot-js"}') {
           // Test successful
