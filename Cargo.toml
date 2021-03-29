@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = ["blockchain", "peer-to-peer"]
 
 [workspace]
+resolver = "2"
 default-members = [".", "bin/full-node"]
 members = [
     ".",
