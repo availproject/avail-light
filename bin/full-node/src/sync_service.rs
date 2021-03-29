@@ -28,7 +28,7 @@ use crate::network_service;
 
 use core::{num::NonZeroU32, pin::Pin};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
-use smoldot::{database::full_sled, executor, libp2p, network, sync::optimistic};
+use smoldot::{database::full_sled, executor, header, libp2p, network, sync::optimistic};
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 use tracing::Instrument as _;
 
@@ -75,12 +75,29 @@ impl SyncService {
         let (to_database, messages_rx) = mpsc::channel(4);
 
         let finalized_block_hash = config.database.finalized_block_hash().unwrap();
+        let best_block_hash = config.database.best_block_hash().unwrap();
 
         let sync_state = Arc::new(Mutex::new(SyncState {
-            best_block_hash: [0; 32],      // TODO:
-            best_block_number: 0,          // TODO:
-            finalized_block_hash: [0; 32], // TODO:
-            finalized_block_number: 0,     // TODO:
+            best_block_hash,
+            best_block_number: header::decode(
+                &config
+                    .database
+                    .block_scale_encoded_header(&best_block_hash)
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap()
+            .number,
+            finalized_block_hash,
+            finalized_block_number: header::decode(
+                &config
+                    .database
+                    .block_scale_encoded_header(&finalized_block_hash)
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap()
+            .number,
         }));
 
         (config.tasks_executor)(Box::pin(start_sync(
