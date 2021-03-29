@@ -22,7 +22,7 @@
 use futures::{channel::oneshot, prelude::*};
 use smoldot::{
     chain, chain_spec,
-    database::full_sled,
+    database::full_sqlite,
     header,
     informant::HashDisplay,
     libp2p::{connection, multiaddr, peer_id::PeerId},
@@ -445,7 +445,7 @@ async fn open_database(
     chain_spec: &chain_spec::ChainSpec,
     genesis_chain_information: &chain::chain_information::ChainInformation,
     tmp: bool,
-) -> Arc<full_sled::SledFullDatabase> {
+) -> Arc<full_sqlite::SqliteFullDatabase> {
     Arc::new({
         // Directory supposed to contain the database.
         let db_path = if !tmp {
@@ -460,7 +460,7 @@ async fn open_database(
         // The `unwrap()` here can panic for example in case of access denied.
         match background_open_database(db_path.clone()).await.unwrap() {
             // Database already exists and contains data.
-            full_sled::DatabaseOpen::Open(database) => {
+            full_sqlite::DatabaseOpen::Open(database) => {
                 // TODO: verify that the database matches the chain spec
                 let finalized_block_hash = database.finalized_block_hash().unwrap();
                 let finalized_block = database
@@ -476,7 +476,7 @@ async fn open_database(
             }
 
             // The database doesn't exist or is empty.
-            full_sled::DatabaseOpen::Empty(empty) => {
+            full_sqlite::DatabaseOpen::Empty(empty) => {
                 // The finalized block is the genesis block. As such, it has an empty body and
                 // no justification.
                 empty
@@ -499,18 +499,18 @@ async fn open_database(
 #[tracing::instrument]
 async fn background_open_database(
     path: Option<PathBuf>,
-) -> Result<full_sled::DatabaseOpen, full_sled::SledError> {
+) -> Result<full_sqlite::DatabaseOpen, full_sqlite::InternalError> {
     let (tx, rx) = oneshot::channel();
     let mut rx = rx.fuse();
 
     let thread_spawn_result = thread::Builder::new().name("database-open".into()).spawn({
         let path = path.clone();
         move || {
-            let result = full_sled::open(full_sled::Config {
+            let result = full_sqlite::open(full_sqlite::Config {
                 ty: if let Some(path) = &path {
-                    full_sled::ConfigTy::Disk(path)
+                    full_sqlite::ConfigTy::Disk(path)
                 } else {
-                    full_sled::ConfigTy::Memory
+                    full_sqlite::ConfigTy::Memory
                 },
             });
             let _ = tx.send(result);
@@ -519,11 +519,11 @@ async fn background_open_database(
 
     // Fall back to opening the database on the same thread if the thread spawn failed.
     if thread_spawn_result.is_err() {
-        return full_sled::open(full_sled::Config {
+        return full_sqlite::open(full_sqlite::Config {
             ty: if let Some(path) = &path {
-                full_sled::ConfigTy::Disk(path)
+                full_sqlite::ConfigTy::Disk(path)
             } else {
-                full_sled::ConfigTy::Memory
+                full_sqlite::ConfigTy::Memory
             },
         });
     }
