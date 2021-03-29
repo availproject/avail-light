@@ -48,6 +48,7 @@ export async function start(config) {
   // (https://webpack.js.org/guides/web-workers/), and parcel
   // (https://github.com/parcel-bundler/parcel/pull/5846)
   const worker = new Worker(new URL('./worker.js', import.meta.url));
+  let workerError = null;
 
   // Build a promise that will be resolved or rejected after the initalization (that happens in
   // the worker) has finished.
@@ -91,9 +92,13 @@ export async function start(config) {
       initPromiseReject(error);
       initPromiseReject = null;
       initPromiseResolve = null;
+    } else {
+      // This situation should only happen in case of a critical error as the result of a bug
+      // somewhere. Consequently, nothing is in place to cleanly report the error if we are no
+      // longer initializing.
+      console.error(error);
+      workerError = error;
     }
-
-    // Nothing is in place if we are no longer initializing.
   });
 
   // The first message expected by the worker contains the configuration.
@@ -122,10 +127,16 @@ export async function start(config) {
 
   return {
     send_json_rpc: (request) => {
-      worker.postMessage(request);
+      if (!workerError) {
+        worker.postMessage(request);
+      } else {
+        throw workerError;
+      }
     },
     terminate: () => {
       worker.terminate();
+      if (!workerError)
+        workerError = new Error("terminate() has been called");
     }
   }
 }
