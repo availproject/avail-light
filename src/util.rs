@@ -85,11 +85,54 @@ pub(crate) fn nom_scale_compact_usize<'a, E: nom::error::ParseError<&'a [u8]>>(
             let value = (byte3 << 22) | (byte2 << 14) | (byte1 << 6) | byte0;
             let value = match usize::try_from(value) {
                 Ok(v) => v,
-                Err(_) => todo!(), // TODO:
+                Err(_) => {
+                    return Err(nom::Err::Error(nom::error::make_error(
+                        bytes,
+                        nom::error::ErrorKind::Satisfy,
+                    )))
+                }
             };
             Ok((&bytes[4..], value))
         }
-        0b11 => todo!(), // TODO:
+        0b11 => {
+            let num_bytes = usize::from(bytes[0] >> 2) + 4;
+
+            if bytes.len() < num_bytes + 1 {
+                return Err(nom::Err::Error(nom::error::make_error(
+                    bytes,
+                    nom::error::ErrorKind::Eof,
+                )));
+            }
+
+            // Value is invalid if highest byte is 0.
+            if bytes[num_bytes] == 0 {
+                return Err(nom::Err::Error(nom::error::make_error(
+                    bytes,
+                    nom::error::ErrorKind::Satisfy,
+                )));
+            }
+
+            let mut out_value = 0;
+            let mut shift = 0u32;
+            for byte_index in 1..=num_bytes {
+                out_value |= match usize::from(bytes[byte_index]).checked_mul(1 << shift) {
+                    Some(v) => v,
+                    None => {
+                        // Overflow. The SCALE-encoded value is too large to fit a `usize`.
+                        return Err(nom::Err::Error(nom::error::make_error(
+                            bytes,
+                            nom::error::ErrorKind::Satisfy,
+                        )));
+                    }
+                };
+
+                // Overflows aren't properly handled because `out_value` is expected to overflow
+                // way sooner than `shift`.
+                shift += 8;
+            }
+
+            Ok((&bytes[num_bytes + 1..], out_value))
+        }
         _ => unreachable!(),
     }
 }
