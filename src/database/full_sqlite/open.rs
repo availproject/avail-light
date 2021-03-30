@@ -70,22 +70,21 @@ Keys in that table:
 
  - `finalized` (number): Height of the finalized block, as a 64bits big endian number.
 
- - `grandpa_authorities_set_id` (number): A 64bits big endian number representing the id of the
- authorities set that must finalize the block right after the finalized block. The value is
- 0 at the genesis block, and increased by 1 at every authorities change. Missing if and only
- if the chain doesn't use Grandpa.
+ - `grandpa_authorities_set_id` (number): Id of the authorities set that must finalize the block
+ right after the finalized block. The value is 0 at the genesis block, and increased by 1 at every
+ authorities change. Missing if and only if the chain doesn't use Grandpa.
 
- - `grandpa_scheduled_target` (number): A 64bits big endian number representing the block where the
- authorities found in `grandpa_scheduled_authorities` will be triggered. Blocks whose height
- is strictly higher than this value must be finalized using the new set of authorities. This
- authority change must have been scheduled in or before the finalized block. Missing if no
- change is scheduled or if the chain doesn't use Grandpa.
+ - `grandpa_scheduled_target` (number): Height of the block where the authorities found in
+ `grandpa_scheduled_authorities` will be triggered. Blocks whose height is strictly higher than
+ this value must be finalized using the new set of authorities. This authority change must have
+ been scheduled in or before the finalized block. Missing if no change is scheduled or if the
+ chain doesn't use Grandpa.
 
- - `aura_slot_duration` (number): A 64bits big endian number indicating the duration of an Aura
- slot. Missing if and only if the chain doesn't use Aura.
+ - `aura_slot_duration` (number): Duration of an Aura slot in milliseconds. Missing if and only if
+ the chain doesn't use Aura.
 
- - `babe_slots_per_epoch` (number): A 64bits big endian number indicating the number of slots per
- Babe epoch. Missing if and only if the chain doesn't use Babe.
+ - `babe_slots_per_epoch` (number): Number of slots per Babe epoch. Missing if and only if the
+ chain doesn't use Babe.
 
  - `babe_finalized_epoch` (blob): SCALE encoding of a structure that contains the information
  about the Babe epoch used for the finalized block. Missing if and only if the finalized
