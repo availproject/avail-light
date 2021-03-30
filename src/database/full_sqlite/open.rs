@@ -157,8 +157,8 @@ CREATE TABLE IF NOT EXISTS non_finalized_changes(
 );
 
 /*
-List of public keys and weights of the GrandPa authorities that will be triggered at the block
-found in `grandpa_scheduled_target` (see `meta`). Empty if the chain doesn't use Grandpa.
+List of public keys and weights of the GrandPa authorities that must finalize the children of the
+finalized block. Empty if the chain doesn't use Grandpa.
 */
 CREATE TABLE IF NOT EXISTS grandpa_triggered_authorities(
     idx INTEGER NOT NULL PRIMARY KEY,
@@ -168,9 +168,9 @@ CREATE TABLE IF NOT EXISTS grandpa_triggered_authorities(
 );
 
 /*
-List of public keys and weights of the GrandPa authorities that must finalize the children of the
-finalized block. Empty if the chain doesn't use Grandpa.
- */
+List of public keys and weights of the GrandPa authorities that will be triggered at the block
+found in `grandpa_scheduled_target` (see `meta`). Empty if the chain doesn't use Grandpa.
+*/
 CREATE TABLE IF NOT EXISTS grandpa_scheduled_authorities(
     idx INTEGER NOT NULL PRIMARY KEY,
     public_key BLOB NOT NULL,
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS grandpa_scheduled_authorities(
 
 /*
 List of public keys of the Aura authorities that must author the children of the finalized block.
- */
+*/
 CREATE TABLE IF NOT EXISTS aura_finalized_authorities(
     idx INTEGER NOT NULL PRIMARY KEY,
     public_key BLOB NOT NULL,
