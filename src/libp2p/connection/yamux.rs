@@ -73,7 +73,7 @@ pub struct Yamux<T> {
 
     /// Header currently being written out. Finishing to write this header is the first and
     /// foremost priority of [`Yamux::extract_out`].
-    pending_out_header: arrayvec::ArrayVec<[u8; 12]>,
+    pending_out_header: arrayvec::ArrayVec<u8, 12>,
 
     /// If `Some`, contains a substream ID and a number of bytes. A data frame header has been
     /// written to the socket, and the number of bytes stored in there is the number of bytes
@@ -111,7 +111,7 @@ struct Substream<T> {
 
 enum Incoming {
     /// Expect a header. The field might contain some already-read bytes.
-    Header(arrayvec::ArrayVec<[u8; 12]>),
+    Header(arrayvec::ArrayVec<u8, 12>),
     /// Expect the data of a previously-received data frame header.
     DataFrame {
         /// Identifier of the substream the data belongs to.
@@ -964,7 +964,7 @@ impl<'a, T> SubstreamMut<'a, T> {
 
 pub struct ExtractOut<'a, T> {
     connection: &'a mut Yamux<T>,
-    buffers: Option<Vec<either::Either<arrayvec::ArrayVec<[u8; 12]>, VecWithOffset>>>,
+    buffers: Option<Vec<either::Either<arrayvec::ArrayVec<u8, 12>, VecWithOffset>>>,
 }
 
 impl<'a, T> ExtractOut<'a, T> {

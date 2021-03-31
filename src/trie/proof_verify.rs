@@ -128,7 +128,7 @@ pub fn trie_node_info<'a, 'b>(
     let merkle_values = config
         .proof
         .clone()
-        .map(|proof_entry| -> arrayvec::ArrayVec<[u8; 32]> {
+        .map(|proof_entry| -> arrayvec::ArrayVec<u8, 32> {
             if proof_entry.len() >= 32 {
                 blake2_rfc::blake2b::blake2b(32, &[], proof_entry)
                     .as_bytes()

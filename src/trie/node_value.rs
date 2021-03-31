@@ -258,9 +258,9 @@ pub struct Output {
 
 #[derive(Clone)]
 enum OutputInner {
-    Inline(ArrayVec<[u8; 31]>),
+    Inline(ArrayVec<u8, 31>),
     Hasher(blake2_rfc::blake2b::Blake2bResult),
-    Bytes(ArrayVec<[u8; 32]>),
+    Bytes(ArrayVec<u8, 32>),
 }
 
 impl Output {
@@ -313,7 +313,7 @@ impl fmt::Debug for Output {
 /// values in buffers then hashing the node value as a whole, we push the elements of the node
 /// value to this struct which automatically switches to hashing if the value exceeds 32 bytes.
 enum HashOrInline {
-    Inline(ArrayVec<[u8; 31]>),
+    Inline(ArrayVec<u8, 31>),
     Hasher(blake2_rfc::blake2b::Blake2b),
 }
 

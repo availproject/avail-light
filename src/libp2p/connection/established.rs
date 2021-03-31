@@ -199,7 +199,7 @@ enum Substream<TNow, TRqUd, TNotifUd> {
     RequestInSend,
 
     /// Inbound ping substream. Waiting for the ping payload to be received.
-    PingIn(arrayvec::ArrayVec<[u8; 32]>),
+    PingIn(arrayvec::ArrayVec<u8, 32>),
 }
 
 impl<TNow, TRqUd, TNotifUd> Established<TNow, TRqUd, TNotifUd>
