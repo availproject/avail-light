@@ -174,10 +174,15 @@ struct Inner<TSrc> {
     /// Also contains a list of ongoing requests. The requests are kept up-to-date with the
     /// information in [`Inner::sources`].
     /// For each request, contains as user data the source that has emitted it.
-    pending_blocks: pending_blocks::PendingBlocks<(), SourceId>,
+    pending_blocks: pending_blocks::PendingBlocks<PendingBlock, SourceId>,
+}
+
+struct PendingBlock {
+    justification: Option<Vec<u8>>,
 }
 
 struct Block<TBl> {
+    header: header::Header,
     user_data: TBl,
 }
 
@@ -280,7 +285,9 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
             self.inner
                 .pending_blocks
                 .block_mut(best_block_number, best_block_hash)
-                .or_insert(());
+                .or_insert(PendingBlock {
+                    justification: None,
+                });
         }
 
         let source_id = new_source.id();
@@ -324,7 +331,10 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
     pub fn ancestry_search_response(
         mut self,
         source_id: SourceId,
-        scale_encoded_headers: Result<impl Iterator<Item = impl AsRef<[u8]>>, ()>,
+        received_blocks: Result<
+            impl Iterator<Item = RequestSuccessBlock<impl AsRef<[u8]>, impl AsRef<[u8]>>>,
+            (),
+        >,
     ) -> AncestrySearchResponseOutcome<TSrc, TBl> {
         // Sets the `occupation` of `source_id` back to `Idle`.
         let (_, requested_block_height, requested_block_hash) = match mem::take(
@@ -348,10 +358,9 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
 
         // Iterate through the headers. If the request has failed, treat it the same way as if
         // no blocks were returned.
-        for (index_in_response, scale_encoded_header) in
-            scale_encoded_headers.into_iter().flatten().enumerate()
+        for (index_in_response, received_block) in received_blocks.into_iter().flatten().enumerate()
         {
-            let scale_encoded_header = scale_encoded_header.as_ref();
+            let scale_encoded_header = received_block.scale_encoded_header.as_ref();
 
             // Compare expected with actual hash.
             // This ensure that each header being processed is the parent of the previous one.
@@ -370,6 +379,10 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
                 source_id,
                 &expected_next_hash,
                 decoded_header.clone(),
+                received_block
+                    .scale_encoded_justification
+                    .as_ref()
+                    .map(|j| j.as_ref()),
                 false,
             ) {
                 HeaderFromSourceOutcome::HeaderVerify(this) => {
@@ -452,6 +465,8 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
             return None;
         }
 
+        // TODO: need to periodically query for justifications of non-finalized blocks that change GrandPa authorities
+
         // Find a query that is appropriate for this source.
         let query_to_start = self
             .inner
@@ -507,8 +522,13 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
 
         let announced_header_hash = announced_header.hash();
 
-        match self.header_from_source(source_id, &announced_header_hash, announced_header, is_best)
-        {
+        match self.header_from_source(
+            source_id,
+            &announced_header_hash,
+            announced_header,
+            None,
+            is_best,
+        ) {
             HeaderFromSourceOutcome::HeaderVerify(verify) => {
                 BlockAnnounceOutcome::HeaderVerify(verify)
             }
@@ -541,6 +561,7 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
         source_id: SourceId,
         header_hash: &[u8; 32],
         header: header::HeaderRef,
+        justification: Option<&[u8]>,
         known_to_be_source_best: bool,
     ) -> HeaderFromSourceOutcome<TSrc, TBl> {
         debug_assert_eq!(header.hash(), *header_hash);
@@ -582,7 +603,13 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
             .inner
             .pending_blocks
             .block_mut(header.number, *header_hash)
-            .or_insert(()); // TODO: don't always invert
+            .or_insert(PendingBlock {
+                justification: justification.map(|j| j.to_vec()),
+            }); // TODO: don't always invert
+
+        // TODO: what if the pending block already contains a justification and it is not the
+        //       same as here? since justifications aren't immediately verified, it is possible
+        //       for a malicious peer to send us bad justifications
 
         if *header.parent_hash == self.chain.finalized_block_hash()
             || self
@@ -617,7 +644,9 @@ impl<TSrc, TBl> AllForksSync<TSrc, TBl> {
             self.inner
                 .pending_blocks
                 .block_mut(header.number - 1, *header.parent_hash)
-                .or_insert(());
+                .or_insert(PendingBlock {
+                    justification: None,
+                });
 
             HeaderFromSourceOutcome::Disjoint(self)
         }
@@ -725,6 +754,15 @@ pub enum Request {
         /// Hash of the block whose body to obtain.
         hash: [u8; 32],
     },
+}
+
+/// Struct to pass back when a block request has succeeded.
+#[derive(Debug)]
+pub struct RequestSuccessBlock<THdr, TJs> {
+    /// SCALE-encoded header returned by the remote.
+    pub scale_encoded_header: THdr,
+    /// SCALE-encoded justification returned by the remote.
+    pub scale_encoded_justification: Option<TJs>,
 }
 
 /// Access to a source in a [`AllForksSync`]. Obtained through [`AllForksSync::source_mut`].
@@ -945,7 +983,12 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 is_new_best,
                 ..
             }) => {
-                insert.insert(Block { user_data });
+                // TODO: cloning the header :-/
+                let block = Block {
+                    header: insert.header().into(),
+                    user_data,
+                };
+                insert.insert(block);
                 Ok(is_new_best)
             }
             Err(blocks_tree::HeaderVerifyError::VerificationFailed(error)) => {
@@ -956,7 +999,8 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
             | Err(blocks_tree::HeaderVerifyError::InvalidHeader(_)) => unreachable!(),
         };
 
-        let cancelled_requests = if result.is_ok() {
+        // Remove the verified block from `pending_blocks`.
+        let (justification, cancelled_requests) = if result.is_ok() {
             let outcome = self
                 .parent
                 .inner
@@ -966,7 +1010,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 .unwrap()
                 .remove_verify_success();
             self.verifiable_blocks.extend(outcome.verify_next);
-            outcome.cancelled_requests
+            (outcome.user_data.justification, outcome.cancelled_requests)
         } else {
             self.parent
                 .inner
@@ -975,7 +1019,18 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 .into_occupied()
                 .unwrap()
                 .remove_verify_failed();
-            Vec::new()
+            (None, Vec::new())
+        };
+
+        let justification_verification = if let Some(justification) = justification {
+            match self.parent.chain.verify_justification(&justification) {
+                Ok(success) => JustificationVerification::NewFinalized(
+                    success.apply().map(|b| (b.header, b.user_data)).collect(),
+                ),
+                Err(err) => JustificationVerification::JustificationVerificationError(err),
+            }
+        } else {
+            JustificationVerification::NoJustification
         };
 
         let requests_replace = cancelled_requests
@@ -989,6 +1044,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
         match (result, self.verifiable_blocks.is_empty()) {
             (Ok(is_new_best), false) => HeaderVerifyOutcome::SuccessContinue {
                 is_new_best,
+                justification_verification,
                 next_block: HeaderVerify {
                     parent: self.parent,
                     source_id: self.source_id,
@@ -1000,6 +1056,7 @@ impl<TSrc, TBl> HeaderVerify<TSrc, TBl> {
                 let next_request = self.parent.source_next_request(self.source_id);
                 HeaderVerifyOutcome::Success {
                     is_new_best,
+                    justification_verification,
                     sync: self.parent,
                     next_request,
                     requests_replace,
@@ -1038,6 +1095,9 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
     Success {
         /// True if the newly-verified block is considered the new best block.
         is_new_best: bool,
+        /// If a justification was attached to this block, it has also been verified. Contains the
+        /// outcome.
+        justification_verification: JustificationVerification<TBl>,
         /// State machine yielded back. Use to continue the processing.
         sync: AllForksSync<TSrc, TBl>,
         /// Next request that must be performed on the source.
@@ -1052,6 +1112,9 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
     SuccessContinue {
         /// True if the newly-verified block is considered the new best block.
         is_new_best: bool,
+        /// If a justification was attached to this block, it has also been verified. Contains the
+        /// outcome.
+        justification_verification: JustificationVerification<TBl>,
         /// Next verification.
         next_block: HeaderVerify<TSrc, TBl>,
         /// For each element in this list, the request made towards this source should be replaced
@@ -1089,6 +1152,24 @@ pub enum HeaderVerifyOutcome<TSrc, TBl> {
         /// Sources are guaranteed to never be the source that has sent back the header.
         requests_replace: Vec<(SourceId, Option<Request>)>,
     },
+}
+
+/// Information about the verification of a justification that was stored for this block.
+#[derive(Debug)]
+pub enum JustificationVerification<TBl> {
+    /// No information about finality
+    NoJustification,
+    /// A justification was available for the newly-verified block, but it failed to verify.
+    JustificationVerificationError(blocks_tree::JustificationVerifyError),
+    /// Justification verification successful. The block and all its ancestors is now finalized.
+    NewFinalized(Vec<(header::Header, TBl)>),
+}
+
+impl<TBl> JustificationVerification<TBl> {
+    /// Returns `true` for [`JustificationVerification::NewFinalized`].
+    pub fn is_success(&self) -> bool {
+        matches!(self, JustificationVerification::NewFinalized(_))
+    }
 }
 
 /// State of the processing of blocks.
