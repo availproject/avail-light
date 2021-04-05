@@ -22,7 +22,7 @@
 use super::{encode_babe_epoch_information, AccessError, SqliteFullDatabase};
 use crate::chain::chain_information;
 
-use std::{convert::TryFrom as _, path::Path};
+use std::{convert::TryFrom as _, fs, path::Path};
 
 /// Opens the database using the given [`Config`].
 ///
@@ -42,8 +42,12 @@ pub fn open(config: Config) -> Result<DatabaseOpen, super::InternalError> {
     let database = match config.ty {
         ConfigTy::Disk(path) => {
             // We put a `/v1/` behind the path in case we change the schema.
-            let path = path.join("v1").join("database.sqlite");
-            sqlite::Connection::open_with_flags(path, flags)
+            let path = path.join("v1");
+            // Ignoring errors in `create_dir_all`, in order to avoid making the API of this
+            // function more complex. If `create_dir_all` fails, opening the database will most
+            // likely fail too.
+            let _ = fs::create_dir_all(&path);
+            sqlite::Connection::open_with_flags(path.join("database.sqlite"), flags)
         }
         ConfigTy::Memory => sqlite::Connection::open_with_flags(":memory:", flags),
     }
