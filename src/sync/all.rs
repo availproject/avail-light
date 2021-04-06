@@ -141,8 +141,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
     /// Initializes a new state machine.
     pub fn new(config: Config) -> Self {
         Idle {
-            inner: if true || config.full.is_some() {
-                // TODO: remove the `true ||` once GP warp sync is ready
+            inner: if config.full.is_some() {
                 IdleInner::Optimistic(optimistic::OptimisticSync::new(optimistic::Config {
                     chain_information: config.chain_information,
                     sources_capacity: config.sources_capacity,
