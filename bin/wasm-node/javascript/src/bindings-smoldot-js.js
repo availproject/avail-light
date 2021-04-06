@@ -22,7 +22,7 @@
 
 import { Buffer } from 'buffer';
 import Websocket from 'websocket';
-import { default as now } from 'performance-now';
+import now from 'performance-now';
 import { net } from './compat-nodejs.js';
 
 export default (config) => {

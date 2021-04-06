@@ -24,7 +24,7 @@
 //! of that object with the Wasm instance.
 
 import { Buffer } from 'buffer';
-import { default as randombytes } from 'randombytes';
+import randombytes from 'randombytes';
 
 export default (config) => {
     // List of environment variables to feed to the Rust program. An array of strings.
