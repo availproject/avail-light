@@ -611,11 +611,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
 
         match response {
             Some(response) => {
-                // TODO: remove this `unwrap_or` when a polkadot version that
-                // serves `is_finished` is released.
-                let final_set_of_fragments = response
-                    .is_finished
-                    .unwrap_or(response.fragments.len() == 1);
+                let final_set_of_fragments = response.is_finished;
 
                 let verifier = match &self.previous_verifier_values {
                     Some((_, chain_information_finality)) => warp_sync::Verifier::new(

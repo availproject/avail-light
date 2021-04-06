@@ -20,10 +20,7 @@ use alloc::vec::Vec;
 #[derive(Debug)]
 pub struct GrandpaWarpSyncResponse {
     pub fragments: Vec<GrandpaWarpSyncResponseFragment>,
-    // TODO: remove this `Option` when a polkadot version that serves
-    // `is_finished` is released. The `Option` is only here to allow for
-    // backwards compatibility.
-    pub is_finished: Option<bool>,
+    pub is_finished: bool,
 }
 
 #[derive(Debug)]
@@ -43,15 +40,10 @@ pub fn decode_grandpa_warp_sync_response(
     bytes: &[u8],
 ) -> Result<GrandpaWarpSyncResponse, DecodeGrandpaWarpSyncResponseError> {
     nom::combinator::map(
-        nom::sequence::tuple((
-            decode_fragments,
-            // TODO: remove this `opt` when a polkadot version that serves
-            // `is_finished` is released.
-            nom::combinator::opt(nom::number::complete::le_u8),
-        )),
+        nom::sequence::tuple((decode_fragments, nom::number::complete::le_u8)),
         |(fragments, is_finished)| GrandpaWarpSyncResponse {
             fragments,
-            is_finished: is_finished.map(|byte| byte != 0),
+            is_finished: is_finished != 0,
         },
     )(bytes)
     .map(|(_, parse_result)| parse_result)
