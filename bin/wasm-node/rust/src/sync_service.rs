@@ -252,6 +252,7 @@ async fn start_relay_chain(
 
         // TODO: crappy way to handle that
         let mut has_new_best = false;
+        let mut has_new_finalized = false;
 
         // Main loop of the syncing logic.
         loop {
@@ -409,12 +410,16 @@ async fn start_relay_chain(
                         sync: sync_idle,
                         next_actions,
                         is_new_best,
+                        is_new_finalized,
                         ..
                     } => {
                         requests_to_start.extend(next_actions);
 
                         if is_new_best {
                             has_new_best = true;
+                        }
+                        if is_new_finalized {
+                            has_new_finalized = true;
                         }
 
                         sync = sync_idle.into();
@@ -440,9 +445,30 @@ async fn start_relay_chain(
 
             // TODO: handle this differently
             if has_new_best {
+                has_new_best = false;
+
                 let scale_encoded_header = sync_idle.best_block_header().scale_encoding_vec();
                 // TODO: remove expired senders
                 for notif in &mut best_notifications {
+                    let _ = notif.send(scale_encoded_header.clone());
+                }
+
+                // Since this task is verifying blocks, a heavy CPU-only operation, it is very
+                // much possible for it to take a long time before having to wait for some event.
+                // Since JavaScript/Wasm is single-threaded, this would prevent all the other
+                // tasks in the background from running.
+                // In order to provide a better granularity, we force a yield after each new serie
+                // of verifications.
+                crate::yield_once().await;
+            }
+
+            // TODO: handle this differently
+            if has_new_finalized {
+                has_new_finalized = false;
+
+                let scale_encoded_header = sync_idle.finalized_block_header().scale_encoding_vec();
+                // TODO: remove expired senders
+                for notif in &mut finalized_notifications {
                     let _ = notif.send(scale_encoded_header.clone());
                 }
 
@@ -631,6 +657,15 @@ async fn start_relay_chain(
                         );
 
                         match outcome {
+                            all::GrandpaWarpSyncResponseOutcome::WarpSyncFinished {
+                                sync: sync_idle, next_actions
+                            } => {
+                                let finalized_num = sync_idle.finalized_block_header().number;
+                                log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
+                                has_new_finalized = true;
+                                sync = sync_idle.into();
+                                requests_to_start.extend(next_actions);
+                            }
                             all::GrandpaWarpSyncResponseOutcome::Queued {
                                 sync: sync_idle, next_actions
                             } => {
@@ -660,6 +695,15 @@ async fn start_relay_chain(
                         );
 
                         match outcome {
+                            all::StorageGetResponseOutcome::WarpSyncFinished {
+                                sync: sync_idle, next_actions
+                            } => {
+                                let finalized_num = sync_idle.finalized_block_header().number;
+                                log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
+                                has_new_finalized = true;
+                                sync = sync_idle.into();
+                                requests_to_start.extend(next_actions);
+                            }
                             all::StorageGetResponseOutcome::Queued {
                                 sync: sync_idle, next_actions
                             } => {

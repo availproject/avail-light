@@ -738,6 +738,9 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         };
 
         match from_grandpa_outcome {
+            FromGrandpaOutcome::WarpSyncFinished { sync, next_actions } => {
+                GrandpaWarpSyncResponseOutcome::WarpSyncFinished { sync, next_actions }
+            }
             FromGrandpaOutcome::Queued { sync, next_actions } => {
                 GrandpaWarpSyncResponseOutcome::Queued { sync, next_actions }
             }
@@ -806,6 +809,9 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         };
 
         match from_grandpa_outcome {
+            FromGrandpaOutcome::WarpSyncFinished { sync, next_actions } => {
+                StorageGetResponseOutcome::WarpSyncFinished { sync, next_actions }
+            }
             FromGrandpaOutcome::Queued { sync, next_actions } => {
                 StorageGetResponseOutcome::Queued { sync, next_actions }
             }
@@ -823,8 +829,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
             grandpa_warp_sync::GrandpaWarpSync::Finished(success) => {
                 let (all_forks, next_actions) =
                     shared.transition_grandpa_warp_sync_all_forks(success);
-                // TODO: wrong enum being used variant
-                return FromGrandpaOutcome::Queued {
+                return FromGrandpaOutcome::WarpSyncFinished {
                     sync: Idle {
                         inner: IdleInner::AllForks(all_forks),
                         shared,
@@ -1074,6 +1079,14 @@ pub enum BlocksRequestResponseOutcome<TRq, TSrc, TBl> {
 
 /// Outcome of calling [`Idle::grandpa_warp_sync_response`].
 pub enum GrandpaWarpSyncResponseOutcome<TRq, TSrc, TBl> {
+    /// GrandPa warp sync response has made it possible to finish warp syncing.
+    WarpSyncFinished {
+        sync: Idle<TRq, TSrc, TBl>,
+
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
+
     /// GrandPa warp sync response has been processed and might be used later.
     Queued {
         sync: Idle<TRq, TSrc, TBl>,
@@ -1085,6 +1098,14 @@ pub enum GrandpaWarpSyncResponseOutcome<TRq, TSrc, TBl> {
 
 /// Outcome of calling [`Idle::storage_get_response`].
 pub enum StorageGetResponseOutcome<TRq, TSrc, TBl> {
+    /// Storage proof response has made it possible to finish warp syncing.
+    WarpSyncFinished {
+        sync: Idle<TRq, TSrc, TBl>,
+
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
+
     /// Storage proof response has been processed and might be used later.
     Queued {
         sync: Idle<TRq, TSrc, TBl>,
@@ -1097,7 +1118,12 @@ pub enum StorageGetResponseOutcome<TRq, TSrc, TBl> {
 /// Outcome of calling [`Idle::from_grandpa`].
 // TODO: this hasn't received any brainstorming and is just laid out in a way to match the other two similar enums
 enum FromGrandpaOutcome<TRq, TSrc, TBl> {
-    /// Storage proof response has been processed and might be used later.
+    WarpSyncFinished {
+        sync: Idle<TRq, TSrc, TBl>,
+
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
     Queued {
         sync: Idle<TRq, TSrc, TBl>,
 
