@@ -482,12 +482,22 @@ impl NetworkService {
             .grandpa_warp_sync_request(ffi::Instant::now(), target.clone(), chain_index, begin_hash)
             .await;
 
-        log::debug!(
-            target: "network",
-            "Connection({}) => GrandpaWarpSyncRequest({:?})",
-            target,
-            result.as_ref().map(|response| response.fragments.len()),
-        );
+        if let Ok(response) = result.as_ref() {
+            log::debug!(
+                target: "network",
+                "Connection({}) => GrandpaWarpSyncRequest(num_fragments: {:?}, finished: {:?})",
+                target,
+                response.fragments.len(),
+                response.is_finished,
+            );
+        } else {
+            log::debug!(
+                target: "network",
+                "Connection({}) => GrandpaWarpSyncRequest({:?})",
+                target,
+                result,
+            );
+        }
 
         result
     }

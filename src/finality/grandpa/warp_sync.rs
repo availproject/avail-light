@@ -19,7 +19,7 @@ use crate::chain::chain_information::{ChainInformationFinality, ChainInformation
 use crate::finality::justification::verify::{
     verify, Config as VerifyConfig, Error as VerifyError,
 };
-use crate::header::{DigestItemRef, GrandpaConsensusLogRef, Header};
+use crate::header::{DigestItemRef, GrandpaAuthority, GrandpaConsensusLogRef, Header};
 use crate::network::protocol::GrandpaWarpSyncResponseFragment;
 
 use alloc::vec::Vec;
@@ -38,7 +38,7 @@ pub enum Error {
 pub struct Verifier {
     index: usize,
     authorities_set_id: u64,
-    authorities_list: Vec<[u8; 32]>,
+    authorities_list: Vec<GrandpaAuthority>,
     fragments: Vec<GrandpaWarpSyncResponseFragment>,
     is_proof_complete: bool,
 }
@@ -55,11 +55,7 @@ impl Verifier {
                 after_finalized_block_authorities_set_id,
                 ..
             } => {
-                let authorities_list = finalized_triggered_authorities
-                    .iter()
-                    .map(|auth| auth.public_key)
-                    .collect();
-
+                let authorities_list = finalized_triggered_authorities.iter().cloned().collect();
                 (authorities_list, after_finalized_block_authorities_set_id)
             }
             // TODO:
@@ -84,7 +80,7 @@ impl Verifier {
 
         verify(VerifyConfig {
             justification: (&fragment.justification).into(),
-            authorities_list: self.authorities_list.iter(),
+            authorities_list: self.authorities_list.iter().map(|a| &a.public_key),
             authorities_set_id: self.authorities_set_id,
         })
         .map_err(Error::Verify)?;
@@ -104,11 +100,7 @@ impl Verifier {
                 _ => None,
             })
             .next()
-            .map(|next_authorities| {
-                next_authorities
-                    .map(|authority| *authority.public_key)
-                    .collect()
-            });
+            .map(|next_authorities| next_authorities.map(GrandpaAuthority::from).collect());
 
         self.index += 1;
 
@@ -124,27 +116,7 @@ impl Verifier {
                 header: fragment.header.clone(),
                 chain_information_finality: ChainInformationFinality::Grandpa {
                     after_finalized_block_authorities_set_id: self.authorities_set_id,
-                    finalized_triggered_authorities: {
-                        fragment
-                            .header
-                            .digest
-                            .logs()
-                            .filter_map(|log_item| match log_item {
-                                DigestItemRef::GrandpaConsensus(grandpa_log_item) => {
-                                    match grandpa_log_item {
-                                        GrandpaConsensusLogRef::ScheduledChange(change)
-                                        | GrandpaConsensusLogRef::ForcedChange { change, .. } => {
-                                            Some(change.next_authorities)
-                                        }
-                                        _ => None,
-                                    }
-                                }
-                                _ => None,
-                            })
-                            .flat_map(|next_authorities| next_authorities)
-                            .map(|authority_ref| authority_ref.into())
-                            .collect()
-                    },
+                    finalized_triggered_authorities: self.authorities_list,
                     finalized_scheduled_change: None,
                 },
             })

@@ -39,13 +39,13 @@ pub enum DecodeGrandpaWarpSyncResponseError {
 pub fn decode_grandpa_warp_sync_response(
     bytes: &[u8],
 ) -> Result<GrandpaWarpSyncResponse, DecodeGrandpaWarpSyncResponseError> {
-    nom::combinator::map(
+    nom::combinator::all_consuming(nom::combinator::map(
         nom::sequence::tuple((decode_fragments, nom::number::complete::le_u8)),
         |(fragments, is_finished)| GrandpaWarpSyncResponse {
             fragments,
             is_finished: is_finished != 0,
         },
-    )(bytes)
+    ))(bytes)
     .map(|(_, parse_result)| parse_result)
     .map_err(|_| DecodeGrandpaWarpSyncResponseError::BadResponse)
 }
