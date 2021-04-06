@@ -895,7 +895,30 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     if let Some(justification) = shared.pending_encoded_justification.take() {
                         let mut apply = match chain.verify_justification(&justification) {
                             Ok(a) => a,
-                            Err(_) => todo!(), // TODO:
+                            Err(error) => {
+                                if let Some(source) =
+                                    shared.inner.sources.get_mut(&shared.source_id)
+                                {
+                                    source.banned = true;
+                                }
+
+                                break ProcessOne::Reset {
+                                    previous_best_height: chain.best_block_header().number,
+                                    sync: OptimisticSync {
+                                        chain: blocks_tree::NonFinalizedTree::new(
+                                            shared.inner.finalized_chain_information.clone(),
+                                        ),
+                                        inner: OptimisticSyncInner {
+                                            best_to_finalized_storage_diff: Default::default(),
+                                            best_runtime: None,
+                                            top_trie_root_calculation_cache: None,
+                                            cancelling_requests: true,
+                                            ..shared.inner
+                                        },
+                                    },
+                                    reason: ResetCause::JustificationError(error),
+                                };
+                            }
                         };
 
                         assert!(apply.is_current_best_block()); // TODO: can legitimately fail in case of malicious node

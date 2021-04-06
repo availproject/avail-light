@@ -1186,7 +1186,34 @@ impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
                     }
                 }
             }
-            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Reset { .. }) => todo!(),
+            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Reset { mut sync, .. }) => {
+                let mut next_actions = Vec::new();
+                while let Some(action) = sync.next_request_action() {
+                    next_actions.push(self.shared.optimistic_action_to_request(action));
+                }
+
+                match sync.process_one(now_from_unix_epoch) {
+                    optimistic::ProcessOne::Idle { sync } => HeaderVerifyOutcome::Error {
+                        sync: Idle {
+                            inner: IdleInner::Optimistic(sync),
+                            shared: self.shared,
+                        }
+                        .into(),
+                        next_actions,
+                        error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
+                        user_data,
+                    },
+                    other => {
+                        self.inner = HeaderVerifyInner::Optimistic(other);
+                        HeaderVerifyOutcome::Error {
+                            sync: self.into(),
+                            next_actions,
+                            error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
+                            user_data,
+                        }
+                    }
+                }
+            }
             HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStorageGet(_))
             | HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStorageNextKey(_))
             | HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStoragePrefixKeys(
