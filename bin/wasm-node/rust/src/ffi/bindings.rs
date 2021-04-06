@@ -121,16 +121,6 @@ extern "C" {
     /// If `milliseconds` is 0, [`timer_finished`] should be called as soon as possible.
     pub fn start_timer(id: u32, milliseconds: f64);
 
-    /// Client wants to set the content of the database to a UTF-8 string found at offset `ptr`
-    /// and with length `len`.
-    ///
-    /// The entire content of the database should be replaced with that string.
-    ///
-    /// This value is meant to later be passed to [`init`] when restarting the client.
-    ///
-    /// Saving the database is entirely optional, and it is legal to simply do nothing.
-    pub fn database_save(ptr: u32, len: u32);
-
     /// Must initialize a new connection that tries to connect to the given multiaddress.
     ///
     /// The multiaddress is a UTF-8 string found in the WebAssembly memory at offset `addr_ptr`
@@ -195,15 +185,13 @@ pub extern "C" fn alloc(len: u32) -> u32 {
 
 /// Initializes the client.
 ///
-/// Use [`alloc`] to allocate either one to three buffers: one for the chain specs, an optional
-/// one for the database content, and an optional one for the chain specs of the parachain if
-/// the chain is a relay chain.
+/// Use [`alloc`] to allocate either one to three buffers: one for the chain specs, and an
+/// optional one for the chain specs of the parachain if the chain is a relay chain.
 /// The buffers **must** have been allocated with [`alloc`]. They are freed when this function is
 /// called.
 ///
-/// Write the chain specs, the database content, and the parachain specs in these three buffers.
+/// Write the chain specs and the parachain specs in these buffers.
 /// Then, pass the pointer and length of these buffers to this function.
-/// Pass `0` for `database_content_ptr` and `database_content_len` if the database is empty.
 /// Pass `0` for `parachain_specs_ptr` and `parachain_specs_len` if the chain is not a
 /// parachain.
 ///
@@ -213,8 +201,6 @@ pub extern "C" fn alloc(len: u32) -> u32 {
 pub extern "C" fn init(
     chain_specs_ptr: u32,
     chain_specs_len: u32,
-    database_content_ptr: u32,
-    database_content_len: u32,
     parachain_specs_ptr: u32,
     parachain_specs_len: u32,
     max_log_level: u32,
@@ -222,8 +208,6 @@ pub extern "C" fn init(
     super::init(
         chain_specs_ptr,
         chain_specs_len,
-        database_content_ptr,
-        database_content_len,
         parachain_specs_ptr,
         parachain_specs_len,
         max_log_level,

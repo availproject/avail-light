@@ -26,24 +26,14 @@ import * as fs from 'fs';
 let client = null;
 var unsent_queue = [];
 let ws_connection = null;
-const database_path = 'smoldot-demo-db.json';
-
-var database_content = null;
-try {
-    database_content = fs.readFileSync(database_path, 'utf8');
-} catch (error) { }
 
 smoldot.start({
     chain_spec: fs.readFileSync('../../westend.json', 'utf8'),
-    database_content: database_content,
     max_log_level: 3,  // Can be increased for more verbosity
     json_rpc_callback: (resp) => {
         if (ws_connection) {
             ws_connection.sendUTF(resp);
         }
-    },
-    database_save_callback: (db_content) => {
-        fs.writeFileSync(database_path, db_content);
     }
 })
     .then((c) => {

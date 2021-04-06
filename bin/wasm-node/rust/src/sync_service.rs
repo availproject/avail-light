@@ -123,21 +123,6 @@ impl SyncService {
         }
     }
 
-    /// Returns a string representing the state of the chain using the
-    /// [`smoldot::database::finalized_serialize`] module.
-    pub async fn serialize_chain(&self) -> String {
-        let (send_back, rx) = oneshot::channel();
-
-        self.to_background
-            .lock()
-            .await
-            .send(ToBackground::Serialize { send_back })
-            .await
-            .unwrap();
-
-        rx.await.unwrap()
-    }
-
     /// Returns the SCALE-encoded header of the current finalized block, alongside with a stream
     /// producing updates of the finalized block.
     ///
@@ -567,11 +552,6 @@ async fn start_relay_chain(
                     };
 
                     match message {
-                        ToBackground::Serialize { send_back } => {
-                            let chain = sync_idle.as_chain_information();
-                            let serialized = smoldot::database::finalized_serialize::encode_chain(chain);
-                            let _ = send_back.send(serialized);
-                        }
                         ToBackground::IsNearHeadOfChainHeuristic { send_back } => {
                             let _ = send_back.send(sync_idle.is_near_head_of_chain_heuristic());
                         }
@@ -762,7 +742,6 @@ async fn start_parachain(
                 // but care should be taken about this.
 
                 match message {
-                    ToBackground::Serialize { .. } => todo!(),  // TODO: it doesn't make sense to serialize a parachain
                     ToBackground::IsNearHeadOfChainHeuristic { send_back } => {
                         // TODO: that doesn't seem totally correct
                         let _ = send_back.send(previous_best_head_data_hash.is_some());
@@ -861,8 +840,6 @@ async fn start_parachain(
 }
 
 enum ToBackground {
-    /// See [`SyncService::serialize_chain`].
-    Serialize { send_back: oneshot::Sender<String> },
     /// See [`SyncService::is_near_head_of_chain_heuristic`].
     IsNearHeadOfChainHeuristic { send_back: oneshot::Sender<bool> },
     /// See [`SyncService::subscribe_finalized`].

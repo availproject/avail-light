@@ -47,10 +47,6 @@ const startInstance = async (config) => {
     jsonRpcCallback: (data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'jsonrpc', data });
-    },
-    databaseSaveCallback: (data) => {
-      // `compat.postMessage` is the same as `postMessage`, but works across environments.
-      compat.postMessage({ kind: 'database', data });
     }
   };
 
@@ -77,13 +73,6 @@ const startInstance = async (config) => {
   Buffer.from(result.instance.exports.memory.buffer)
     .write(config.chainSpec, chainSpecPtr);
 
-  const databaseLen = config.databaseContent ? Buffer.byteLength(config.databaseContent, 'utf8') : 0;
-  const databasePtr = (databaseLen != 0) ? result.instance.exports.alloc(databaseLen) : 0;
-  if (databaseLen != 0) {
-    Buffer.from(result.instance.exports.memory.buffer)
-      .write(config.databaseContent, databasePtr);
-  }
-
   const parachainSpecLen = config.parachainSpec ? Buffer.byteLength(config.parachainSpec, 'utf8') : 0;
   const parachainSpecPtr = (parachainSpecLen != 0) ? result.instance.exports.alloc(parachainSpecLen) : 0;
   if (parachainSpecLen != 0) {
@@ -93,7 +82,6 @@ const startInstance = async (config) => {
 
   result.instance.exports.init(
     chainSpecPtr, chainSpecLen,
-    databasePtr, databaseLen,
     parachainSpecPtr, parachainSpecLen,
     config.maxLogLevel
   );

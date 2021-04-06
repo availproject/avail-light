@@ -73,10 +73,6 @@ export async function start(config) {
         config.json_rpc_callback(message.data);
       }
 
-    } else if (message.kind == 'database') {
-      if (config.database_save_callback)
-        config.database_save_callback(message.data);
-
     } else if (message.kind == 'log') {
       logCallback(message.level, message.target, message.message);
 
@@ -104,7 +100,6 @@ export async function start(config) {
   // The first message expected by the worker contains the configuration.
   worker.postMessage({
     chainSpec: config.chain_spec,
-    databaseContent: config.database_content,
     parachainSpec: config.parachain_spec,
     // Maximum level of log entries sent by the client.
     // 0 = Logging disabled, 1 = Error, 2 = Warn, 3 = Info, 4 = Debug, 5 = Trace

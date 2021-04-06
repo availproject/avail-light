@@ -80,14 +80,6 @@ export default (config) => {
             }
         },
 
-        // Must set the content of the database to the given string.
-        database_save: (ptr, len) => {
-            if (config.databaseSaveCallback) {
-                let content = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
-                config.databaseSaveCallback(content);
-            }
-        },
-
         // Must create a new connection object. This implementation stores the created object in
         // `connections`.
         connection_new: (id, addr_ptr, addr_len) => {

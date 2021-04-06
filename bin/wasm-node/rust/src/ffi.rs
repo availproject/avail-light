@@ -216,16 +216,6 @@ impl Sub<Instant> for Instant {
     }
 }
 
-/// Sets the content of the database to the given string.
-pub(crate) fn database_save(content: &str) {
-    unsafe {
-        bindings::database_save(
-            u32::try_from(content.as_bytes().as_ptr() as usize).unwrap(),
-            u32::try_from(content.as_bytes().len()).unwrap(),
-        );
-    }
-}
-
 /// Implementation of [`log::Log`] that sends out logs to the FFI.
 pub(crate) struct Logger;
 
@@ -440,16 +430,12 @@ fn alloc(len: u32) -> u32 {
 fn init(
     chain_specs_ptr: u32,
     chain_specs_len: u32,
-    database_content_ptr: u32,
-    database_content_len: u32,
     parachain_specs_ptr: u32,
     parachain_specs_len: u32,
     max_log_level: u32,
 ) {
     let chain_specs_ptr = usize::try_from(chain_specs_ptr).unwrap();
     let chain_specs_len = usize::try_from(chain_specs_len).unwrap();
-    let database_content_ptr = usize::try_from(database_content_ptr).unwrap();
-    let database_content_len = usize::try_from(database_content_len).unwrap();
     let parachain_specs_ptr = usize::try_from(parachain_specs_ptr).unwrap();
     let parachain_specs_len = usize::try_from(parachain_specs_len).unwrap();
 
@@ -461,18 +447,6 @@ fn init(
     };
 
     let chain_specs = String::from_utf8(Vec::from(chain_specs)).expect("non-utf8 chain specs");
-
-    let database_content = if database_content_ptr != 0 {
-        let data: Box<[u8]> = unsafe {
-            Box::from_raw(slice::from_raw_parts_mut(
-                database_content_ptr as *mut u8,
-                database_content_len,
-            ))
-        };
-        String::from_utf8(Vec::from(data)).ok()
-    } else {
-        None
-    };
 
     let parachain_specs = if parachain_specs_ptr != 0 {
         let data: Box<[u8]> = unsafe {
@@ -498,15 +472,11 @@ fn init(
     spawn_task(super::start_client(
         iter::once(super::ChainConfig {
             specification: chain_specs,
-            database_content,
         })
         .chain(
             parachain_specs
                 .into_iter()
-                .map(|specification| super::ChainConfig {
-                    specification,
-                    database_content: None,
-                }),
+                .map(|specification| super::ChainConfig { specification }),
         ),
         max_log_level,
     ));
