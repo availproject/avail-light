@@ -617,10 +617,12 @@ impl<TSrc> WarpSyncRequest<TSrc> {
                     Some((_, chain_information_finality)) => warp_sync::Verifier::new(
                         chain_information_finality.into(),
                         response.fragments,
+                        final_set_of_fragments,
                     ),
                     None => warp_sync::Verifier::new(
                         (&self.state.start_chain_information.finality).into(),
                         response.fragments,
+                        final_set_of_fragments,
                     ),
                 };
 
