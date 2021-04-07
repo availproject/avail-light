@@ -734,8 +734,16 @@ where
                         // TODO: transaction announce
                     } else if overlay_network_index % NOTIFICATIONS_PROTOCOLS_PER_CHAIN == 2 {
                         // TODO: don't unwrap
-                        let _notif = protocol::decode_grandpa_notification(&notification).unwrap();
-                    // TODO: do something with these notifs
+                        let decoded_notif =
+                            protocol::decode_grandpa_notification(&notification).unwrap();
+                        // Commit messages are the only type of message that is important for
+                        // light clients. Anything else is presently ignored.
+                        if let protocol::GrandpaNotificationRef::Commit(_) = decoded_notif {
+                            return Event::GrandpaCommitMessage {
+                                chain_index,
+                                message: EncodedGrandpaCommitMessage(notification),
+                            };
+                        }
                     } else {
                         unreachable!()
                     }
@@ -896,6 +904,12 @@ pub enum Event<'a, TNow, TPeer, TConn> {
         announce: EncodedBlockAnnounce,
     },
 
+    /// Received a GrandPa commit message from the network.
+    GrandpaCommitMessage {
+        chain_index: usize,
+        message: EncodedGrandpaCommitMessage,
+    },
+
     /// A remote has sent a request for identification information.
     ///
     /// You are strongly encouraged to call [`IdentifyRequestIn::respond`].
@@ -939,6 +953,26 @@ impl EncodedBlockAnnounce {
 }
 
 impl fmt::Debug for EncodedBlockAnnounce {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.decode(), f)
+    }
+}
+
+/// Undecoded but valid GrandPa commit message.
+#[derive(Clone)]
+pub struct EncodedGrandpaCommitMessage(Vec<u8>);
+
+impl EncodedGrandpaCommitMessage {
+    /// Returns the decoded version of the commit message.
+    pub fn decode(&self) -> protocol::CommitMessageRef {
+        match protocol::decode_grandpa_notification(&self.0) {
+            Ok(protocol::GrandpaNotificationRef::Commit(msg)) => msg,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Debug for EncodedGrandpaCommitMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.decode(), f)
     }

@@ -30,6 +30,7 @@
 use core::{cmp, pin::Pin, time::Duration};
 use futures::{channel::mpsc, prelude::*};
 use smoldot::{
+    informant::HashDisplay,
     libp2p::{
         connection,
         multiaddr::{Multiaddr, Protocol},
@@ -306,6 +307,16 @@ impl NetworkService {
                             service::Event::IdentifyRequestIn { peer_id, request } => {
                                 tracing::debug!(%peer_id, "identify-request");
                                 request.respond("smoldot").await;
+                            }
+                            service::Event::GrandpaCommitMessage {
+                                chain_index,
+                                message,
+                            } => {
+                                tracing::debug!(
+                                    %chain_index,
+                                    target_hash = %HashDisplay(message.decode().message.target_hash),
+                                    "grandpa-commit-message"
+                                );
                             }
                         }
                     };

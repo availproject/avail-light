@@ -278,6 +278,21 @@ impl NetworkService {
                                 );
                                 request.respond("smoldot").await;
                             }
+                            service::Event::GrandpaCommitMessage {
+                                chain_index,
+                                message,
+                            } => {
+                                log::debug!(
+                                    target: "network",
+                                    "Connection(?) => GrandpaCommitMessage({}, {})",
+                                    chain_index,
+                                    HashDisplay(message.decode().message.target_hash),
+                                );
+                                break Event::GrandpaCommitMessage {
+                                    chain_index,
+                                    message,
+                                };
+                            }
                         }
                     };
 
@@ -813,6 +828,11 @@ pub enum Event {
         peer_id: PeerId,
         chain_index: usize,
         announce: service::EncodedBlockAnnounce,
+    },
+    /// Received a GrandPa commit message from the network.
+    GrandpaCommitMessage {
+        chain_index: usize,
+        message: service::EncodedGrandpaCommitMessage,
     },
 }
 
