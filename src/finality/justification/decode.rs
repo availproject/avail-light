@@ -175,7 +175,7 @@ impl<'a> Iterator for PrecommitsRefIter<'a> {
 
 impl<'a> ExactSizeIterator for PrecommitsRefIter<'a> {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrecommitRef<'a> {
     /// Hash of the block concerned by the pre-commit.
     pub target_hash: &'a [u8; 32],
@@ -204,6 +204,7 @@ impl<'a> PrecommitRef<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Precommit {
     /// Hash of the block concerned by the pre-commit.
     pub target_hash: [u8; 32],
@@ -238,17 +239,6 @@ impl<'a> From<PrecommitRef<'a>> for Precommit {
             signature: *pc.signature,
             authority_public_key: *pc.authority_public_key,
         }
-    }
-}
-
-impl fmt::Debug for Precommit {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Precommit")
-            .field("target_hash", &self.target_hash)
-            .field("target_number", &self.target_number)
-            .field("signature", &&self.signature[..])
-            .field("authority_public_key", &self.authority_public_key)
-            .finish()
     }
 }
 
