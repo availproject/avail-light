@@ -524,8 +524,8 @@ pub(crate) async fn next_json_rpc() -> JsonRpcRequest {
 pub(crate) fn emit_json_rpc_response(rpc: &str, chain_index: usize) {
     unsafe {
         bindings::json_rpc_respond(
-            u32::try_from(rpc.as_ptr() as usize).unwrap(),
-            u32::try_from(rpc.len()).unwrap(),
+            u32::try_from(rpc.as_bytes().as_ptr() as usize).unwrap(),
+            u32::try_from(rpc.as_bytes().len()).unwrap(),
             u32::try_from(chain_index).unwrap(),
         );
     }

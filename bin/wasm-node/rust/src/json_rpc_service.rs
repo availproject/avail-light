@@ -423,7 +423,7 @@ impl JsonRpcService {
                     })
                     .to_json_response(request_id)
                 } else {
-                    "null".to_owned()
+                    json_rpc::parse::build_success_response(request_id, "null")
                 });
             }
             methods::MethodCall::chain_getBlockHash { height } => {
