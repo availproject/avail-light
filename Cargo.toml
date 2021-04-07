@@ -85,7 +85,7 @@ soketto = { version = "0.4.2", optional = true }
 
 # BELOW: DEPENDENCIES TO REMOVE
 # TODO:
-parity-scale-codec = { version = "2.0.1", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
+parity-scale-codec = { version = "2.1.0", features = ["derive"] } # TODO: a lot of unnecessary overhead in terms of memory allocations
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 # `std` feature
