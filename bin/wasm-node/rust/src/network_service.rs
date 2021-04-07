@@ -502,6 +502,26 @@ impl NetworkService {
         result
     }
 
+    pub async fn set_local_grandpa_state(
+        &self,
+        chain_index: usize,
+        grandpa_state: service::GrandpaState,
+    ) {
+        log::debug!(
+            target: "network",
+            "Chain({}) <= SetLocalGrandpaState(set_id: {}, commit_finalized_height: {})",
+            chain_index,
+            grandpa_state.set_id,
+            grandpa_state.commit_finalized_height,
+        );
+
+        // TODO: log the list of peers we sent the packet to
+
+        self.network
+            .set_local_grandpa_state(chain_index, grandpa_state)
+            .await
+    }
+
     /// Performs one or more storage proof requests in order to find the value of the given
     /// `requested_keys`.
     ///

@@ -451,6 +451,35 @@ async fn start_relay_chain(
             if has_new_finalized {
                 has_new_finalized = false;
 
+                // If the chain uses GrandPa, the networking has to be kept up-to-date with the
+                // state of finalization for other peers to send back relevant gossip messages.
+                // (code style) `grandpa_set_id` is extracted first in order to avoid borrowing
+                // checker issues.
+                let grandpa_set_id =
+                    if let chain::chain_information::ChainInformationFinalityRef::Grandpa {
+                        after_finalized_block_authorities_set_id,
+                        ..
+                    } = sync_idle.as_chain_information().finality
+                    {
+                        Some(after_finalized_block_authorities_set_id)
+                    } else {
+                        None
+                    };
+                if let Some(set_id) = grandpa_set_id {
+                    let commit_finalized_height =
+                        u32::try_from(sync_idle.finalized_block_header().number).unwrap(); // TODO: unwrap :-/
+                    network_service
+                        .set_local_grandpa_state(
+                            network_chain_index,
+                            network::service::GrandpaState {
+                                set_id,
+                                round_number: 1, // TODO:
+                                commit_finalized_height,
+                            },
+                        )
+                        .await;
+                }
+
                 let scale_encoded_header = sync_idle.finalized_block_header().scale_encoding_vec();
                 // TODO: remove expired senders
                 for notif in &mut finalized_notifications {

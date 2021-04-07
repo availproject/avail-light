@@ -113,7 +113,10 @@ pub struct ChainConfig {
 // TODO: link to some doc about how GrandPa works: what is a round, what is the set id, etc.
 pub struct GrandpaState {
     pub round_number: u64,
+    /// Set of authorities that will be used by the node to try finalize the children of the block
+    /// of [`GrandpaState::commit_finalized_height`].
     pub set_id: u64,
+    /// Height of the highest block considered final by the node.
     pub commit_finalized_height: u32,
 }
 
