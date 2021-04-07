@@ -5,7 +5,7 @@ const sp = smoldot.start({
   max_log_level: 3,
   chain_spec: '',
   parachain_spec: '',
-  json_rpc_callback: (resp) => {},
+  json_rpc_callback: (resp, chain_index) => {},
   log_callback: (level, target, message) => {},
 });
 

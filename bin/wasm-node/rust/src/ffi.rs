@@ -472,46 +472,61 @@ fn init(
     spawn_task(super::start_client(
         iter::once(super::ChainConfig {
             specification: chain_specs,
+            json_rpc_running: true,
         })
         .chain(
             parachain_specs
                 .into_iter()
-                .map(|specification| super::ChainConfig { specification }),
+                .map(|specification| super::ChainConfig {
+                    specification,
+                    json_rpc_running: false,
+                }),
         ),
         max_log_level,
     ));
 }
 
+pub(crate) struct JsonRpcRequest {
+    pub(crate) json_rpc_request: Box<[u8]>,
+    pub(crate) chain_index: usize,
+}
+
 lazy_static::lazy_static! {
-    static ref JSON_RPC_CHANNEL: (mpsc::UnboundedSender<Box<[u8]>>, futures::lock::Mutex<mpsc::UnboundedReceiver<Box<[u8]>>>) = {
+    static ref JSON_RPC_CHANNEL: (mpsc::UnboundedSender<JsonRpcRequest>, futures::lock::Mutex<mpsc::UnboundedReceiver<JsonRpcRequest>>) = {
         let (tx, rx) = mpsc::unbounded();
         (tx, futures::lock::Mutex::new(rx))
     };
 }
 
-fn json_rpc_send(ptr: u32, len: u32) {
+fn json_rpc_send(ptr: u32, len: u32, chain_index: u32) {
     let ptr = usize::try_from(ptr).unwrap();
     let len = usize::try_from(len).unwrap();
+    let chain_index = usize::try_from(chain_index).unwrap();
 
-    let request: Box<[u8]> =
+    let json_rpc_request: Box<[u8]> =
         unsafe { Box::from_raw(slice::from_raw_parts_mut(ptr as *mut u8, len)) };
+    let request = JsonRpcRequest {
+        json_rpc_request,
+        chain_index,
+    };
     JSON_RPC_CHANNEL.0.unbounded_send(request).unwrap();
 }
 
 /// Waits for the next JSON-RPC request coming from the JavaScript side.
 // TODO: maybe tie the JSON-RPC system to a certain "client", instead of being global?
-pub(crate) async fn next_json_rpc() -> Box<[u8]> {
+pub(crate) async fn next_json_rpc() -> JsonRpcRequest {
     let mut lock = JSON_RPC_CHANNEL.1.lock().await;
     lock.next().await.unwrap()
 }
 
 /// Emit a JSON-RPC response or subscription notification in destination to the JavaScript side.
 // TODO: maybe tie the JSON-RPC system to a certain "client", instead of being global?
-pub(crate) fn emit_json_rpc_response(rpc: &str) {
+pub(crate) fn emit_json_rpc_response(rpc: &str, chain_index: usize) {
     unsafe {
         bindings::json_rpc_respond(
             u32::try_from(rpc.as_ptr() as usize).unwrap(),
             u32::try_from(rpc.len()).unwrap(),
+            u32::try_from(chain_index).unwrap(),
         );
     }
 }

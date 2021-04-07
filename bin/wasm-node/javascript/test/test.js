@@ -43,7 +43,7 @@ const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
   client
     .start({
       chain_spec: westendSpecs,
-      json_rpc_callback: (resp) => {
+      json_rpc_callback: (resp, chain_index) => {
         if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot-js"}') {
           // Test successful
           process.exit(0)

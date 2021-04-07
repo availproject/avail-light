@@ -70,7 +70,7 @@ export async function start(config) {
         initPromiseReject = null;
         initPromiseResolve = null;
       } else if (config.json_rpc_callback) {
-        config.json_rpc_callback(message.data);
+        config.json_rpc_callback(message.data, message.chain_index);
       }
 
     } else if (message.kind == 'log') {
@@ -114,7 +114,10 @@ export async function start(config) {
   // JSON-RPC request and wait for the response. While this might seem like an unnecessary
   // overhead, it is the most straight-forward solution. Any alternative with a lower overhead
   // would have a higher complexity.
-  worker.postMessage('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}')
+  worker.postMessage({
+    request: '{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}',
+    chain_index: 0
+  });
 
   // Now blocking until the worker sends back the response.
   // This will throw if the initialization has failed.
@@ -123,7 +126,7 @@ export async function start(config) {
   return {
     send_json_rpc: (request) => {
       if (!workerError) {
-        worker.postMessage(request);
+        worker.postMessage({ request, chain_index: 0 });
       } else {
         throw workerError;
       }

@@ -22,12 +22,12 @@
 #![deny(broken_intra_doc_links)]
 #![deny(unused_crate_dependencies)]
 
-use futures::{channel::mpsc, prelude::*};
+use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     chain, chain_spec,
     libp2p::{multiaddr, peer_id::PeerId},
 };
-use std::{pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
 
 pub mod ffi;
 
@@ -49,6 +49,7 @@ static ALLOC: std::alloc::System = std::alloc::System;
 
 pub struct ChainConfig {
     pub specification: String,
+    pub json_rpc_running: bool,
 }
 
 /// Starts a client running the given chain specifications.
@@ -69,9 +70,11 @@ pub async fn start_client(
     assert_ne!(rand::random::<u64>(), 0);
     assert_ne!(rand::random::<u64>(), rand::random::<u64>());
 
-    // Decode the chain specifications.
-    let chain_specs = {
+    // Decode the chain specifications, and whether the chain should be running a JSON-RPC service.
+    let (chain_specs, json_rpc_running) = {
         let mut chain_specs = Vec::new();
+        let mut json_rpc_running = Vec::new();
+
         for chain in chains {
             chain_specs.push(
                 match chain_spec::ChainSpec::from_json_bytes(&chain.specification) {
@@ -82,8 +85,11 @@ pub async fn start_client(
                     Err(err) => ffi::throw(format!("Error while opening chain specs: {}", err)),
                 },
             );
+
+            json_rpc_running.push(chain.json_rpc_running);
         }
-        chain_specs
+
+        (chain_specs, json_rpc_running)
     };
 
     // Load the information about the chains from the chain specs. If a light sync state is
@@ -139,6 +145,7 @@ pub async fn start_client(
                 chain_information,
                 genesis_chain_information,
                 chain_specs,
+                json_rpc_running,
             )
             .boxed(),
         )
@@ -176,6 +183,7 @@ async fn start_services(
     chain_information: Vec<chain::chain_information::ChainInformation>,
     genesis_chain_information: Vec<chain::chain_information::ChainInformation>,
     chain_specs: Vec<chain_spec::ChainSpec>,
+    json_rpc_running: Vec<bool>,
 ) {
     // The network service is responsible for connecting to the peer-to-peer network
     // of all chains.
@@ -358,42 +366,63 @@ async fn start_services(
 
     debug_assert!(per_chain.iter().all(Option::is_some));
 
-    // Spawn the JSON-RPC service. It is responsible for answer incoming JSON-RPC requests and
-    // sending back responses.
-    // Since multiple JSON-RPC services would conflict with each other, we start one for the first
-    // chain in the list.
-    let first_chain_services = per_chain.into_iter().next().unwrap().unwrap();
-    let first_chain_finalized_header = genesis_chain_information
-        .into_iter()
-        .next()
-        .unwrap()
-        .finalized_block_header;
-    let transactions_service = Arc::new(
-        transactions_service::TransactionsService::new(transactions_service::Config {
-            tasks_executor: Box::new({
-                let new_task_tx = new_task_tx.clone();
-                move |fut| new_task_tx.unbounded_send(fut).unwrap()
-            }),
-            network_service: (network_service.clone(), 0),
-            sync_service: first_chain_services.0.clone(),
-        })
-        .await,
-    );
-    new_task_tx
-        .unbounded_send(
-            json_rpc_service::start(json_rpc_service::Config {
+    // Spawn the JSON-RPC services. They are responsible for answering incoming JSON-RPC requests.
+    let mut json_rpc_services = HashMap::new();
+    for (chain_index, (((services, json_rpc_running), genesis_chain_information), chain_spec)) in
+        per_chain
+            .into_iter()
+            .zip(json_rpc_running)
+            .zip(genesis_chain_information)
+            .zip(chain_specs)
+            .enumerate()
+    {
+        if !json_rpc_running {
+            continue;
+        }
+
+        let (sync_service, runtime_service) = services.unwrap();
+
+        let finalized_header = genesis_chain_information.finalized_block_header;
+        let transactions_service = Arc::new(
+            transactions_service::TransactionsService::new(transactions_service::Config {
                 tasks_executor: Box::new({
                     let new_task_tx = new_task_tx.clone();
                     move |fut| new_task_tx.unbounded_send(fut).unwrap()
                 }),
                 network_service: (network_service.clone(), 0),
-                sync_service: first_chain_services.0,
-                transactions_service,
-                runtime_service: first_chain_services.1,
-                chain_spec: chain_specs.into_iter().next().unwrap(),
-                genesis_block_hash: first_chain_finalized_header.hash(),
-                genesis_block_state_root: first_chain_finalized_header.state_root,
+                sync_service: sync_service.clone(),
             })
+            .await,
+        );
+
+        let json_rpc_service = json_rpc_service::start(json_rpc_service::Config {
+            tasks_executor: Box::new({
+                let new_task_tx = new_task_tx.clone();
+                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+            }),
+            network_service: (network_service.clone(), 0),
+            sync_service,
+            transactions_service,
+            runtime_service,
+            chain_spec,
+            genesis_block_hash: finalized_header.hash(),
+            genesis_block_state_root: finalized_header.state_root,
+            chain_index,
+        })
+        .await;
+
+        json_rpc_services.insert(chain_index, json_rpc_service);
+    }
+
+    new_task_tx
+        .unbounded_send(
+            json_rpc_service::request_handling_task(
+                Arc::new(Mutex::new(Box::new({
+                    let new_task_tx = new_task_tx.clone();
+                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                }))),
+                json_rpc_services,
+            )
             .boxed(),
         )
         .unwrap();

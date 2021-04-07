@@ -44,10 +44,10 @@ const startInstance = async (config) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'log', level, target, message });
     },
-    jsonRpcCallback: (data) => {
+    jsonRpcCallback: (data, chain_index) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
-      compat.postMessage({ kind: 'jsonrpc', data });
-    }
+      compat.postMessage({ kind: 'jsonrpc', data, chain_index });
+    },
   };
 
   const { bindings: smoldotJsBindings } = smoldot_js_builder(smoldotJsConfig);
@@ -86,11 +86,11 @@ const startInstance = async (config) => {
     config.maxLogLevel
   );
 
-  state.forEach((json_rpc_request) => {
-    const len = Buffer.byteLength(json_rpc_request, 'utf8');
+  state.forEach((message) => {
+    const len = Buffer.byteLength(message.request, 'utf8');
     const ptr = result.instance.exports.alloc(len);
-    Buffer.from(result.instance.exports.memory.buffer).write(json_rpc_request, ptr);
-    result.instance.exports.json_rpc_send(ptr, len);
+    Buffer.from(result.instance.exports.memory.buffer).write(message.request, ptr);
+    result.instance.exports.json_rpc_send(ptr, len, message.chain_index);
   });
 
   state = result.instance;
@@ -109,9 +109,9 @@ compat.setOnMessage((message) => {
     state.push(message);
 
   } else {
-    const len = Buffer.byteLength(message, 'utf8');
+    const len = Buffer.byteLength(message.request, 'utf8');
     const ptr = state.exports.alloc(len);
-    Buffer.from(state.exports.memory.buffer).write(message, ptr);
-    state.exports.json_rpc_send(ptr, len);
+    Buffer.from(state.exports.memory.buffer).write(message.request, ptr);
+    state.exports.json_rpc_send(ptr, len, message.chain_index);
   }
 });

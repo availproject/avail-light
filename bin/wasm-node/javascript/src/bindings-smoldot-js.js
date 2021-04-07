@@ -39,10 +39,10 @@ export default (config) => {
         },
 
         // Used by the Rust side to emit a JSON-RPC response or subscription notification.
-        json_rpc_respond: (ptr, len) => {
+        json_rpc_respond: (ptr, len, chain_index) => {
             let message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
             if (config.jsonRpcCallback) {
-                config.jsonRpcCallback(message);
+                config.jsonRpcCallback(message, chain_index);
             }
         },
 
