@@ -136,7 +136,7 @@ pub struct Config<TPeer> {
     /// Addresses to listen for incoming connections.
     pub listen_addresses: Vec<Multiaddr>,
 
-    pub overlay_networks: Vec<OverlayNetwork>,
+    pub overlay_networks: Vec<OverlayNetworkConfig>,
 
     pub request_response_protocols: Vec<ConfigRequestResponse>,
 
@@ -169,7 +169,7 @@ pub struct Config<TPeer> {
 /// Configuration for a specific overlay network.
 ///
 /// See [`Config::overlay_networks`].
-pub struct OverlayNetwork {
+pub struct OverlayNetworkConfig {
     /// Name of the protocol negotiated on the wire.
     pub protocol_name: String,
 
@@ -210,8 +210,8 @@ pub struct Network<TNow, TPeer, TConn> {
     /// See [`Config::noise_key`].
     noise_key: connection::NoiseKey,
 
-    /// See [`Config::overlay_networks`].
-    overlay_networks: Vec<OverlayNetwork>,
+    /// See [`OverlayNetwork`].
+    overlay_networks: Arc<[OverlayNetwork]>,
 
     /// See [`Config::request_response_protocols`].
     request_response_protocols: Vec<ConfigRequestResponse>,
@@ -224,6 +224,17 @@ pub struct Network<TNow, TPeer, TConn> {
 
     /// Receiver connected to [`Guarded::events_tx`].
     events_rx: Mutex<mpsc::Receiver<Event<TConn>>>,
+}
+
+/// State of a specific overlay network.
+///
+/// This struct is a slight variation to [`OverlayNetworkConfig`].
+struct OverlayNetwork {
+    /// See [`OverlayNetworkConfig`].
+    config: OverlayNetworkConfig,
+
+    /// Identifier of this overlay network according to the peerset.
+    peerset_id: peerset::OverlayNetworkId,
 }
 
 /// Fields of [`Network`] behind a mutex.
@@ -253,8 +264,17 @@ where
         let mut peerset = peerset::Peerset::new(peerset::Config {
             randomness_seed: config.randomness_seed,
             peers_capacity: 50, // TODO: ?
-            num_overlay_networks: config.overlay_networks.len(),
+            overlay_networks_capacity: config.overlay_networks.len(),
         });
+
+        let overlay_networks = config
+            .overlay_networks
+            .into_iter()
+            .map(|config| OverlayNetwork {
+                config,
+                peerset_id: peerset.add_overlay_network(),
+            })
+            .collect::<Arc<[_]>>();
 
         let mut ids = Vec::with_capacity(config.known_nodes.len());
         for (user_data, peer_id, multiaddr) in config.known_nodes {
@@ -263,20 +283,20 @@ where
             node.add_known_address(multiaddr);
         }
 
-        for (overlay_network_index, overlay_network) in config.overlay_networks.iter().enumerate() {
-            for bootstrap_node in &overlay_network.bootstrap_nodes {
+        for overlay_network in &*overlay_networks {
+            for bootstrap_node in &overlay_network.config.bootstrap_nodes {
                 // TODO: cloning :(
                 peerset
                     .node_mut(ids[*bootstrap_node].clone())
                     .into_known()
                     .unwrap()
-                    .add_to_overlay(overlay_network_index);
+                    .add_to_overlay(overlay_network.peerset_id);
             }
         }
 
         Network {
             noise_key: config.noise_key,
-            overlay_networks: config.overlay_networks,
+            overlay_networks,
             request_response_protocols: config.request_response_protocols,
             ping_protocol: config.ping_protocol,
             events_rx: Mutex::new(events_rx),
@@ -300,8 +320,8 @@ where
     }
 
     /// Returns the list the overlay networks originally passed as [`Config::overlay_networks`].
-    pub fn overlay_networks(&self) -> impl ExactSizeIterator<Item = &OverlayNetwork> {
-        self.overlay_networks.iter()
+    pub fn overlay_networks(&self) -> impl ExactSizeIterator<Item = &OverlayNetworkConfig> {
+        self.overlay_networks.iter().map(|v| &v.config)
     }
 
     /// Returns the list the request-response protocols originally passed as
@@ -339,7 +359,7 @@ where
         for addr in addrs {
             node.add_known_address(addr);
         }
-        node.add_to_overlay(overlay_network_index);
+        node.add_to_overlay(self.overlay_networks[overlay_network_index].peerset_id);
     }
 
     pub fn add_incoming_connection(
@@ -477,6 +497,8 @@ where
         protocol_index: usize,
         notification: impl Into<Vec<u8>>,
     ) -> Result<(), QueueNotificationError> {
+        let peerset_id = self.overlay_networks[protocol_index].peerset_id;
+
         // Find which connection and substream to use to send the notification.
         // Only existing, established, substreams will be used.
         let (connection_arc, substream_id) = {
@@ -499,7 +521,7 @@ where
                 .unwrap()
                 .open_substreams_mut()
                 .find(|(protocol, dir, _)| {
-                    *protocol == protocol_index && *dir == peerset::SubstreamDirection::Out
+                    *protocol == peerset_id && *dir == peerset::SubstreamDirection::Out
                 })
                 .ok_or(QueueNotificationError::NoSubstream)?
                 .2;
@@ -606,7 +628,7 @@ where
             };
 
             let substream_id = match connection.pending_substream_user_data_mut(
-                overlay_network_index,
+                self.overlay_networks[overlay_network_index].peerset_id,
                 peerset::SubstreamDirection::In,
             ) {
                 Some(id) => *id,
@@ -654,7 +676,7 @@ where
         let mut peerset_entry = guarded.peerset.connection_mut(connection_lock.id).unwrap();
         peerset_entry
             .confirm_substream(
-                overlay_network_index,
+                self.overlay_networks[overlay_network_index].peerset_id,
                 peerset::SubstreamDirection::In,
                 |id| id,
             )
@@ -837,6 +859,7 @@ where
                                     let established = connection.into_connection(config);
                                     Arc::new(Mutex::new(Connection {
                                         connection: ConnectionInner::Alive(established),
+                                        overlay_networks: self.overlay_networks.clone(),
                                         id: connection_id.0,
                                         user_data: Some(user_data),
                                         pending_event: None,
@@ -904,10 +927,10 @@ where
                 .overlay_networks
                 .iter()
                 .flat_map(|net| {
-                    let max_handshake_size = net.max_handshake_size;
-                    let max_notification_size = net.max_notification_size;
-                    iter::once(&net.protocol_name)
-                        .chain(net.fallback_protocol_names.iter())
+                    let max_handshake_size = net.config.max_handshake_size;
+                    let max_notification_size = net.config.max_notification_size;
+                    iter::once(&net.config.protocol_name)
+                        .chain(net.config.fallback_protocol_names.iter())
                         .map(move |name| {
                             established::ConfigNotifications {
                                 name: name.clone(), // TODO: cloning :-/
@@ -927,18 +950,18 @@ where
         let mut guarded = self.guarded.lock().await;
 
         for overlay_network_index in 0..guarded.peerset.num_overlay_networks() {
+            let peerset_id = self.overlay_networks[overlay_network_index].peerset_id;
+
             // Grab node for which we have an established outgoing connections but haven't yet
             // opened a substream to.
-            if let Some(node) = guarded
-                .peerset
-                .random_connected_closed_node(overlay_network_index)
-            {
+            if let Some(node) = guarded.peerset.random_connected_closed_node(peerset_id) {
                 let connection_id = node.connections().next().unwrap();
                 let mut peerset_entry = guarded.peerset.connection_mut(connection_id).unwrap();
                 return Some(SubstreamOpen {
                     network: self,
                     connection: peerset_entry.user_data_mut().clone(),
                     overlay_network_index,
+                    peerset_id,
                 });
             }
         }
@@ -957,7 +980,10 @@ where
         // TODO: limit number of slots
 
         // TODO: very wip
-        while let Some(mut node) = guarded.peerset.random_not_connected(overlay_network_index) {
+        while let Some(mut node) = guarded
+            .peerset
+            .random_not_connected(self.overlay_networks[overlay_network_index].peerset_id)
+        {
             let first_addr = node.known_addresses().cloned().next();
             if let Some(multiaddr) = first_addr {
                 let id = node.add_outbound_attempt(multiaddr.clone(), Arc::new(Mutex::new(None)));
@@ -980,6 +1006,9 @@ where
 struct Connection<TNow, TConn> {
     /// State machine of the underlying connection.
     connection: ConnectionInner<TNow>,
+
+    /// Copy of [`Network::overlay_networks`].
+    overlay_networks: Arc<[OverlayNetwork]>,
 
     /// Copy of the id of the connection.
     id: peerset::ConnectionId,
@@ -1146,7 +1175,7 @@ where
                     .connection_mut(self.id)
                     .unwrap()
                     .add_pending_substream(
-                        overlay_network_index,
+                        self.overlay_networks[overlay_network_index].peerset_id,
                         peerset::SubstreamDirection::In,
                         id,
                     )
@@ -1169,7 +1198,10 @@ where
                     .peerset
                     .connection_mut(self.id)
                     .unwrap()
-                    .remove_pending_substream(protocol_index, peerset::SubstreamDirection::In)
+                    .remove_pending_substream(
+                        self.overlay_networks[protocol_index].peerset_id,
+                        peerset::SubstreamDirection::In,
+                    )
                     .unwrap();
             }
             PendingEvent::Inner(established::Event::NotificationIn { id, notification }) => {
@@ -1182,8 +1214,10 @@ where
 
                 let mut connection = guarded.peerset.connection_mut(self.id).unwrap();
                 let peer_id = connection.peer_id().clone();
-                let has_symmetric_substream = connection
-                    .has_open_substream(overlay_network_index, peerset::SubstreamDirection::Out);
+                let has_symmetric_substream = connection.has_open_substream(
+                    self.overlay_networks[overlay_network_index].peerset_id,
+                    peerset::SubstreamDirection::Out,
+                );
 
                 guarded
                     .events_tx
@@ -1211,7 +1245,7 @@ where
                 let peer_id = connection.peer_id().clone();
                 connection
                     .confirm_substream(
-                        overlay_network_index,
+                        self.overlay_networks[overlay_network_index].peerset_id,
                         peerset::SubstreamDirection::Out,
                         |id| id,
                     )
@@ -1235,7 +1269,7 @@ where
                 let peer_id = connection.peer_id().clone();
                 let _expected_id = connection
                     .remove_pending_substream(
-                        overlay_network_index,
+                        self.overlay_networks[overlay_network_index].peerset_id,
                         peerset::SubstreamDirection::Out,
                     )
                     .unwrap();
@@ -1260,7 +1294,10 @@ where
                 let mut connection = guarded.peerset.connection_mut(self.id).unwrap();
                 let peer_id = connection.peer_id().clone();
                 let _expected_id = connection
-                    .remove_substream(overlay_network_index, peerset::SubstreamDirection::Out)
+                    .remove_substream(
+                        self.overlay_networks[overlay_network_index].peerset_id,
+                        peerset::SubstreamDirection::Out,
+                    )
                     .unwrap();
                 debug_assert_eq!(id, _expected_id);
 
@@ -1280,7 +1317,14 @@ where
                     Vec::with_capacity(guarded.peerset.num_overlay_networks());
                 let peer_id = {
                     let mut c = guarded.peerset.connection_mut(self.id).unwrap();
-                    for (overlay_network_index, direction, _) in c.open_substreams_mut() {
+                    for (peerset_id, direction, _) in c.open_substreams_mut() {
+                        // TODO: O(n)
+                        let overlay_network_index = self
+                            .overlay_networks
+                            .iter()
+                            .position(|n| n.peerset_id == peerset_id)
+                            .unwrap();
+
                         match direction {
                             peerset::SubstreamDirection::In => {
                                 in_overlay_network_indices.push(overlay_network_index)
@@ -1462,6 +1506,9 @@ pub struct SubstreamOpen<'a, TNow, TPeer, TConn> {
 
     /// Index of the overlay network whose notifications substream to open.
     overlay_network_index: usize,
+
+    /// Id of this overlay network according to the peerset.
+    peerset_id: peerset::OverlayNetworkId,
 }
 
 impl<'a, TNow, TPeer, TConn> SubstreamOpen<'a, TNow, TPeer, TConn>
@@ -1514,7 +1561,7 @@ where
         let mut peerset_entry = guarded.peerset.connection_mut(connection.id).unwrap();
         peerset_entry
             .add_pending_substream(
-                self.overlay_network_index,
+                self.peerset_id,
                 peerset::SubstreamDirection::Out,
                 substream_id,
             )

@@ -52,7 +52,7 @@ use alloc::{
     vec::Vec,
 };
 use core::mem;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use parity_multiaddr::Multiaddr;
 use rand::{seq::IteratorRandom as _, RngCore as _, SeedableRng as _};
 
@@ -62,9 +62,8 @@ pub struct Config {
     /// Capacity to reserve for containers having a number of peers.
     pub peers_capacity: usize,
 
-    /// Number of overlay networks managed by the [`Peerset`]. The overlay networks are numbered
-    /// from 0 to this value excluded.
-    pub num_overlay_networks: usize,
+    /// Capacity to reserve for the number of overlay networks managed by the [`Peerset`].
+    pub overlay_networks_capacity: usize,
 
     /// Seed for the randomness used to decide how peers are chosen.
     pub randomness_seed: [u8; 32],
@@ -72,8 +71,11 @@ pub struct Config {
 
 /// See the [module-level documentation](self).
 pub struct Peerset<TPeer, TConn, TPending, TSub, TPendingSub> {
-    /// Same as [`Config::num_overlay_networks`].
-    num_overlay_networks: usize,
+    /// List of allocated overlay networks.
+    overlay_networks: HashSet<OverlayNetworkId, RandomState>,
+
+    /// Identifier to assign to the network overlay network.
+    next_overlay_network_id: OverlayNetworkId,
 
     /// For every known [`PeerId`], its index in [`Peerset::peers`].
     peer_ids: HashMap<PeerId, usize, RandomState>,
@@ -95,17 +97,17 @@ pub struct Peerset<TPeer, TConn, TPending, TSub, TPendingSub> {
     /// of connections associated to a certain peer.
     peer_connections: BTreeSet<(usize, usize)>,
 
-    /// Container that holds tuples of `(overlay_index, peer_index)`.
+    /// Container that holds tuples of `(overlay_id, peer_index)`.
     /// Contains combinations where the peer belongs to the overlay network.
-    overlay_peers: BTreeSet<(usize, usize)>,
+    overlay_peers: BTreeSet<(OverlayNetworkId, usize)>,
 
-    /// Container that holds tuples of `(peer_index, overlay_index)`.
+    /// Container that holds tuples of `(peer_index, overlay_id)`.
     /// Contains combinations where the peer belongs to the overlay network.
-    peers_overlays: BTreeSet<(usize, usize)>,
+    peers_overlays: BTreeSet<(usize, OverlayNetworkId)>,
 
-    /// Container that holds tuples of `(connection_index, overlay_index, direction)`.
+    /// Container that holds tuples of `(connection_index, overlay_id, direction)`.
     connection_overlays:
-        BTreeMap<(usize, usize, SubstreamDirection), SubstreamState<TSub, TPendingSub>>,
+        BTreeMap<(usize, OverlayNetworkId, SubstreamDirection), SubstreamState<TSub, TPendingSub>>,
 }
 
 struct Peer<TPeer> {
@@ -130,6 +132,10 @@ enum ConnectionTy<TConn, TPending> {
         target: Multiaddr,
     },
 }
+
+/// Identifier for an overlay network.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct OverlayNetworkId(u64);
 
 /// Direction of a substream.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -166,7 +172,11 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
         };
 
         Peerset {
-            num_overlay_networks: config.num_overlay_networks,
+            overlay_networks: HashSet::with_capacity_and_hasher(
+                config.overlay_networks_capacity,
+                Default::default(),
+            ),
+            next_overlay_network_id: OverlayNetworkId(0),
             rng,
             peer_ids,
             peers: slab::Slab::with_capacity(config.peers_capacity),
@@ -203,24 +213,32 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
             .map(move |(id, c)| (ConnectionId(id), &self.peers[c.peer_index].peer_id))
     }
 
-    /// Returns the number of overlay networks registered towards the peerset.
+    /// Creates a new overlay network in the peerset. Returns its newly-assigned identifier.
+    pub fn add_overlay_network(&mut self) -> OverlayNetworkId {
+        let new_id = self.next_overlay_network_id;
+        self.next_overlay_network_id.0 = self.next_overlay_network_id.0.checked_add(1).unwrap();
+        self.overlay_networks.insert(new_id);
+        new_id
+    }
+
+    /// Returns the number of overlay networks created from this peerset.
     pub fn num_overlay_networks(&self) -> usize {
-        self.num_overlay_networks
+        self.overlay_networks.len()
     }
 
     /// Returns the list of nodes that belong to the given overlay network.
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
     pub fn overlay_network_nodes(
         &self,
-        overlay_network_index: usize,
+        overlay_network_id: OverlayNetworkId,
     ) -> impl Iterator<Item = &PeerId> {
-        assert!(overlay_network_index < self.num_overlay_networks);
+        assert!(self.overlay_networks.contains(&overlay_network_id));
         self.overlay_peers
-            .range((overlay_network_index, 0)..=(overlay_network_index, usize::max_value()))
+            .range((overlay_network_id, 0)..=(overlay_network_id, usize::max_value()))
             .map(move |(_, id)| &self.peers[*id].peer_id)
     }
 
@@ -232,7 +250,7 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
     ///
     pub fn random_connected_closed_node(
         &mut self,
-        overlay_network_index: usize,
+        overlay_network_id: OverlayNetworkId,
     ) -> Option<NodeMutKnown<TPeer, TConn, TPending, TSub, TPendingSub>> {
         let peer_connections = &self.peer_connections;
         let connection_overlays = &self.connection_overlays;
@@ -240,7 +258,7 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
 
         let peer_index = self
             .overlay_peers
-            .range((overlay_network_index, 0)..=(overlay_network_index, usize::max_value()))
+            .range((overlay_network_id, 0)..=(overlay_network_id, usize::max_value()))
             .map(|(_, index)| *index)
             .filter(move |peer_index| {
                 let mut iter = peer_connections
@@ -261,7 +279,7 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
                 !iter.any(|connec_id| {
                     connection_overlays.contains_key(&(
                         connec_id,
-                        overlay_network_index,
+                        overlay_network_id,
                         SubstreamDirection::Out,
                     ))
                 })
@@ -283,14 +301,14 @@ impl<TPeer, TConn, TPending, TSub, TPendingSub> Peerset<TPeer, TConn, TPending, 
     /// Returns `None` if no such node is available.
     pub fn random_not_connected(
         &mut self,
-        overlay_network_index: usize,
+        overlay_network_id: OverlayNetworkId,
     ) -> Option<NodeMutKnown<TPeer, TConn, TPending, TSub, TPendingSub>> {
         let peers = &self.peers;
         let peer_connections = &self.peer_connections;
 
         let peer_index = self
             .overlay_peers
-            .range((overlay_network_index, 0)..=(overlay_network_index, usize::max_value()))
+            .range((overlay_network_id, 0)..=(overlay_network_id, usize::max_value()))
             .map(|(_, index)| *index)
             .filter(move |peer_index| {
                 if peer_connections
@@ -439,15 +457,15 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
     pub fn add_pending_substream(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
         user_data: TPendingSub,
     ) -> Result<(), TPendingSub> {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
 
         match self
             .peerset
@@ -469,15 +487,15 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
     pub fn confirm_substream(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
         user_data: impl FnOnce(TPendingSub) -> TSub,
     ) -> Result<(), ()> {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
 
         let entry = self
             .peerset
@@ -497,14 +515,14 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
     pub fn pending_substream_user_data_mut(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
     ) -> Option<&mut TPendingSub> {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
         match self
             .peerset
             .connection_overlays
@@ -521,10 +539,10 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     /// combination.
     pub fn remove_pending_substream(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
     ) -> Result<TPendingSub, ()> {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
 
         if let btree_map::Entry::Occupied(mut entry) =
             self.peerset
@@ -550,10 +568,10 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     /// direction combination.
     pub fn remove_substream(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
     ) -> Result<TSub, ()> {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
 
         if let btree_map::Entry::Occupied(mut entry) =
             self.peerset
@@ -581,14 +599,14 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
     pub fn has_open_substream(
         &mut self,
-        overlay_network: usize,
+        overlay_network: OverlayNetworkId,
         direction: SubstreamDirection,
     ) -> bool {
-        assert!(overlay_network < self.peerset.num_overlay_networks);
+        assert!(self.peerset.overlay_networks.contains(&overlay_network));
         match self
             .peerset
             .connection_overlays
@@ -604,20 +622,23 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     /// > **Note**: *Pending* substreams aren't returned.
     pub fn open_substreams_mut(
         &mut self,
-    ) -> impl Iterator<Item = (usize, SubstreamDirection, &mut TSub)> {
+    ) -> impl Iterator<Item = (OverlayNetworkId, SubstreamDirection, &mut TSub)> {
         self.peerset
             .connection_overlays
             .range_mut(
-                (self.id.0, 0, SubstreamDirection::In)
-                    ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+                (self.id.0, OverlayNetworkId(0), SubstreamDirection::In)
+                    ..=(
+                        self.id.0,
+                        OverlayNetworkId(u64::max_value()),
+                        SubstreamDirection::Out,
+                    ),
             )
             .filter_map(
-                move |(&(_, ref overlay_network_index, ref direction), &mut ref mut state)| {
-                    match state {
-                        SubstreamState::Open(ud) => Some((*overlay_network_index, *direction, ud)),
-                        SubstreamState::Pending(_) => None,
-                        SubstreamState::Poisoned => unreachable!(),
-                    }
+                move |(&(_, ref overlay_network_id, ref direction), &mut ref mut state)| match state
+                {
+                    SubstreamState::Open(ud) => Some((*overlay_network_id, *direction, ud)),
+                    SubstreamState::Pending(_) => None,
+                    SubstreamState::Poisoned => unreachable!(),
                 },
             )
     }
@@ -650,8 +671,12 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             .peerset
             .connection_overlays
             .range_mut(
-                (self.id.0, 0, SubstreamDirection::In)
-                    ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+                (self.id.0, OverlayNetworkId(0), SubstreamDirection::In)
+                    ..=(
+                        self.id.0,
+                        OverlayNetworkId(u64::max_value()),
+                        SubstreamDirection::Out,
+                    ),
             )
             .map(|(k, _)| k.clone())
             .collect::<Vec<_>>();
@@ -755,8 +780,12 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             self.peerset
                 .connection_overlays
                 .range_mut(
-                    (self.id.0, 0, SubstreamDirection::In)
-                        ..=(self.id.0, usize::max_value(), SubstreamDirection::Out),
+                    (self.id.0, OverlayNetworkId(0), SubstreamDirection::In)
+                        ..=(
+                            self.id.0,
+                            OverlayNetworkId(u64::max_value()),
+                            SubstreamDirection::Out
+                        ),
                 )
                 .count(),
             0
@@ -846,8 +875,12 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             self.peerset
                 .connection_overlays
                 .range_mut(
-                    (index, 0, SubstreamDirection::In)
-                        ..=(index, usize::max_value(), SubstreamDirection::Out),
+                    (index, OverlayNetworkId(0), SubstreamDirection::In)
+                        ..=(
+                            index,
+                            OverlayNetworkId(u64::max_value()),
+                            SubstreamDirection::Out
+                        ),
                 )
                 .count(),
             0
@@ -880,8 +913,12 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
             self.peerset
                 .connection_overlays
                 .range_mut(
-                    (index, 0, SubstreamDirection::In)
-                        ..=(index, usize::max_value(), SubstreamDirection::Out),
+                    (index, OverlayNetworkId(0), SubstreamDirection::In)
+                        ..=(
+                            index,
+                            OverlayNetworkId(u64::max_value()),
+                            SubstreamDirection::Out
+                        ),
                 )
                 .count(),
             0
@@ -978,16 +1015,16 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
-    pub fn add_to_overlay(&mut self, overlay_network_index: usize) {
-        assert!(overlay_network_index < self.peerset.num_overlay_networks);
+    pub fn add_to_overlay(&mut self, overlay_network_id: OverlayNetworkId) {
+        assert!(self.peerset.overlay_networks.contains(&overlay_network_id));
         self.peerset
             .peers_overlays
-            .insert((self.peer_index, overlay_network_index));
+            .insert((self.peer_index, overlay_network_id));
         self.peerset
             .overlay_peers
-            .insert((overlay_network_index, self.peer_index));
+            .insert((overlay_network_id, self.peer_index));
     }
 
     /// Removes the node from an overlay network.
@@ -996,18 +1033,18 @@ impl<'a, TPeer, TConn, TPending, TSub, TPendingSub>
     ///
     /// # Panic
     ///
-    /// Panics if `overlay_network_index` is out of range.
+    /// Panics if `overlay_network_id` is out of range.
     ///
-    pub fn remove_from_overlay(&mut self, overlay_network_index: usize) -> bool {
-        assert!(overlay_network_index < self.peerset.num_overlay_networks);
+    pub fn remove_from_overlay(&mut self, overlay_network_id: OverlayNetworkId) -> bool {
+        assert!(self.peerset.overlay_networks.contains(&overlay_network_id));
         let was_in1 = self
             .peerset
             .peers_overlays
-            .remove(&(self.peer_index, overlay_network_index));
+            .remove(&(self.peer_index, overlay_network_id));
         let was_in2 = self
             .peerset
             .overlay_peers
-            .remove(&(overlay_network_index, self.peer_index));
+            .remove(&(overlay_network_id, self.peer_index));
         debug_assert_eq!(was_in1, was_in2);
         was_in1
     }

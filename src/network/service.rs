@@ -166,7 +166,7 @@ where
             .chains
             .iter()
             .flat_map(|chain| {
-                iter::once(libp2p::OverlayNetwork {
+                iter::once(libp2p::OverlayNetworkConfig {
                     protocol_name: format!("/{}/block-announces/1", chain.protocol_id),
                     fallback_protocol_names: Vec::new(),
                     max_handshake_size: 256,      // TODO: arbitrary
@@ -175,7 +175,7 @@ where
                     in_slots: chain.in_slots,
                     out_slots: chain.out_slots,
                 })
-                .chain(iter::once(libp2p::OverlayNetwork {
+                .chain(iter::once(libp2p::OverlayNetworkConfig {
                     protocol_name: format!("/{}/transactions/1", chain.protocol_id),
                     fallback_protocol_names: Vec::new(),
                     max_handshake_size: 256,      // TODO: arbitrary
@@ -189,7 +189,7 @@ where
                     // Note, however, that GrandPa is technically left enabled (but unused) on all
                     // chains, in order to make the rest of the code of this module more
                     // comprehensible.
-                    iter::once(libp2p::OverlayNetwork {
+                    iter::once(libp2p::OverlayNetworkConfig {
                         protocol_name: "/paritytech/grandpa/1".to_string(),
                         fallback_protocol_names: Vec::new(),
                         max_handshake_size: 256,      // TODO: arbitrary
