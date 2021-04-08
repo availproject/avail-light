@@ -79,6 +79,7 @@ use core::{convert::TryFrom, fmt, iter, slice};
 mod aura;
 mod babe;
 mod grandpa;
+mod tests;
 
 pub use aura::*;
 pub use babe::*;
@@ -611,7 +612,7 @@ impl<'a> DigestRef<'a> {
                     babe_seal_index = Some(item_num);
                 }
                 DigestItem::BabeSeal(_) => return Err(Error::SealIsntLastItem),
-                DigestItem::ChangesTrieSignal(_) => {}
+                DigestItem::ChangesTrieSignal(_) | DigestItem::Beefy { .. } => {}
             }
         }
 
@@ -699,7 +700,7 @@ impl<'a> DigestRef<'a> {
                     babe_seal_index = Some(item_num);
                 }
                 DigestItemRef::BabeSeal(_) => return Err(Error::SealIsntLastItem),
-                DigestItemRef::ChangesTrieSignal(_) => {}
+                DigestItemRef::ChangesTrieSignal(_) | DigestItemRef::Beefy { .. } => {}
             }
         }
 
@@ -917,6 +918,13 @@ pub enum DigestItemRef<'a> {
 
     ChangesTrieRoot(&'a [u8; 32]),
     ChangesTrieSignal(ChangesTrieSignal),
+
+    /// Item related to the BEEFY algorithm (Mountain Merkle Ranges). Allows proving that a block
+    /// is a child of another.
+    Beefy {
+        /// Smoldot doesn't interpret the content of the log item at the moment.
+        opaque: &'a [u8],
+    },
 }
 
 impl<'a> DigestItemRef<'a> {
@@ -1043,6 +1051,13 @@ impl<'a> DigestItemRef<'a> {
                 ret.extend_from_slice(data);
                 iter::once(ret)
             }
+            DigestItemRef::Beefy { opaque } => {
+                let mut ret = vec![4];
+                ret.extend_from_slice(b"BEEF");
+                ret.extend_from_slice(util::encode_scale_compact_usize(opaque.len()).as_ref());
+                ret.extend_from_slice(opaque);
+                iter::once(ret)
+            }
         }
     }
 }
@@ -1059,6 +1074,7 @@ impl<'a> From<&'a DigestItem> for DigestItemRef<'a> {
             DigestItem::GrandpaConsensus(v) => DigestItemRef::GrandpaConsensus(v.into()),
             DigestItem::ChangesTrieRoot(v) => DigestItemRef::ChangesTrieRoot(v),
             DigestItem::ChangesTrieSignal(v) => DigestItemRef::ChangesTrieSignal(v.clone()),
+            DigestItem::Beefy { opaque } => DigestItemRef::Beefy { opaque: &*opaque },
         }
     }
 }
@@ -1080,6 +1096,12 @@ pub enum DigestItem {
 
     ChangesTrieRoot([u8; 32]),
     ChangesTrieSignal(ChangesTrieSignal),
+
+    /// See [`DigestItemRef::Beefy`].
+    Beefy {
+        /// Smoldot doesn't interpret the content of the log item at the moment.
+        opaque: Vec<u8>,
+    },
 }
 
 impl<'a> From<DigestItemRef<'a>> for DigestItem {
@@ -1102,6 +1124,9 @@ impl<'a> From<DigestItemRef<'a>> for DigestItem {
             DigestItemRef::GrandpaConsensus(v) => DigestItem::GrandpaConsensus(v.into()),
             DigestItemRef::ChangesTrieRoot(v) => DigestItem::ChangesTrieRoot(*v),
             DigestItemRef::ChangesTrieSignal(v) => DigestItem::ChangesTrieSignal(v),
+            DigestItemRef::Beefy { opaque } => DigestItem::Beefy {
+                opaque: opaque.to_vec(),
+            },
         }
     }
 }
@@ -1205,6 +1230,7 @@ fn decode_item_from_parts<'a>(
         (4, b"FRNK") => {
             DigestItemRef::GrandpaConsensus(GrandpaConsensusLogRef::from_slice(content)?)
         }
+        (4, b"BEEF") => DigestItemRef::Beefy { opaque: content },
         (4, e) => return Err(Error::UnknownConsensusEngine(*e)),
         (5, b"aura") => DigestItemRef::AuraSeal({
             TryFrom::try_from(content).map_err(|_| Error::BadAuraSealLength)?
