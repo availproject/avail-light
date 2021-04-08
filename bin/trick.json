@@ -15,7 +15,7 @@
     "tokenDecimals": 12,
     "tokenSymbol": "ROC"
   },
-  "relay_chain": "rococo",
+  "relay_chain": "rococo_v1_4",
   "para_id": 110,
   "consensusEngine": null,
   "lightSyncState": null,
