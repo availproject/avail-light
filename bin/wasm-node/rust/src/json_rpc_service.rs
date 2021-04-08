@@ -110,7 +110,7 @@ pub async fn request_handling_task(
                             &json_rpc::parse::build_error_response(
                                 request_id,
                                 json_rpc::parse::ErrorResponse::ApplicationDefined(
-                                    -32000,
+                                    -33000,
                                     &format!(
                                     "A JSON-RPC service has not been started for chain index {}",
                                     chain_index

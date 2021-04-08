@@ -191,12 +191,12 @@ pub enum ErrorResponse<'a> {
 
     /// Other internal server error.
     /// Contains a more precise error code and a custom message.
-    /// Error code be in the range -32000 to -32099 included.
+    /// Error code must be in the range -32000 to -32099 included.
     ServerError(i64, &'a str),
 
     /// Method-specific error.
     /// Contains a more precise error code and a custom message.
-    /// Error code be outside of the range -32000 to -32700.
+    /// Error code must be outside of the range -32000 to -32700.
     ApplicationDefined(i64, &'a str),
 }
 
