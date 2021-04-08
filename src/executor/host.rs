@@ -597,6 +597,7 @@ impl ReadyToRun {
                 HostFunction::ext_crypto_sr25519_sign_version_1 => todo!(),
                 HostFunction::ext_crypto_sr25519_verify_version_1 => 3,
                 HostFunction::ext_crypto_sr25519_verify_version_2 => 3,
+                HostFunction::ext_crypto_ecdsa_generate_version_1 => todo!(),
                 HostFunction::ext_crypto_secp256k1_ecdsa_recover_version_1 => 2,
                 HostFunction::ext_crypto_secp256k1_ecdsa_recover_compressed_version_1 => 2,
                 HostFunction::ext_crypto_start_batch_verify_version_1 => 0,
@@ -635,6 +636,7 @@ impl ReadyToRun {
                 HostFunction::ext_sandbox_get_global_val_version_1 => todo!(),
                 HostFunction::ext_trie_blake2_256_root_version_1 => 1,
                 HostFunction::ext_trie_blake2_256_ordered_root_version_1 => 1,
+                HostFunction::ext_trie_keccak_256_ordered_root_version_1 => todo!(),
                 HostFunction::ext_misc_chain_id_version_1 => 0,
                 HostFunction::ext_misc_print_num_version_1 => 1,
                 HostFunction::ext_misc_print_utf8_version_1 => 1,
@@ -1006,6 +1008,7 @@ impl ReadyToRun {
                         inner: self.inner,
                     };
                 }
+                HostFunction::ext_crypto_ecdsa_generate_version_1 => todo!(),
                 HostFunction::ext_crypto_secp256k1_ecdsa_recover_version_1 => {
                     // TODO: clean up
                     #[derive(parity_scale_codec::Encode)]
@@ -1313,6 +1316,7 @@ impl ReadyToRun {
                         other => return other,
                     }
                 }
+                HostFunction::ext_trie_keccak_256_ordered_root_version_1 => todo!(),
                 HostFunction::ext_misc_chain_id_version_1 => {
                     // TODO: this parachain-related function always returns 42 at the moment
                     self = ReadyToRun {
@@ -2436,6 +2440,7 @@ externalities! {
     ext_crypto_sr25519_sign_version_1,
     ext_crypto_sr25519_verify_version_1,
     ext_crypto_sr25519_verify_version_2,
+    ext_crypto_ecdsa_generate_version_1,
     ext_crypto_secp256k1_ecdsa_recover_version_1,
     ext_crypto_secp256k1_ecdsa_recover_compressed_version_1,
     ext_crypto_start_batch_verify_version_1,
@@ -2474,6 +2479,7 @@ externalities! {
     ext_sandbox_get_global_val_version_1,
     ext_trie_blake2_256_root_version_1,
     ext_trie_blake2_256_ordered_root_version_1,
+    ext_trie_keccak_256_ordered_root_version_1,
     ext_misc_chain_id_version_1,
     ext_misc_print_num_version_1,
     ext_misc_print_utf8_version_1,
