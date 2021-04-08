@@ -21,7 +21,6 @@ use super::parse;
 use crate::util;
 
 use alloc::{
-    borrow::ToOwned as _,
     boxed::Box,
     format,
     string::{String, ToString as _},
@@ -36,34 +35,112 @@ use core::convert::TryFrom as _;
 pub fn parse_json_call(message: &str) -> Result<(&str, MethodCall), ParseError> {
     let call_def = parse::parse_call(message).map_err(ParseError::JsonRpcParse)?;
 
-    // No notifications are supported by this server.
-    let id = match call_def.id_json {
+    // No notification is supported by this server. If the `id` field is missing in the request,
+    // assuming that this is a notification and return an appropriate error.
+    let request_id = match call_def.id_json {
         Some(id) => id,
-        None => return Err(ParseError::UnknownNotification(call_def.method.to_owned())),
+        None => return Err(ParseError::UnknownNotification(call_def.method)),
     };
 
     let call = match MethodCall::from_defs(&call_def.method, call_def.params_json) {
-        Some(call) => call,
-        None => return Err(ParseError::UnknownMethod(call_def.method.to_owned())),
+        Ok(c) => c,
+        Err(error) => return Err(ParseError::Method { request_id, error }),
     };
 
-    Ok((id, call))
+    Ok((request_id, call))
 }
 
 /// Error produced by [`parse_json_call`].
 #[derive(Debug, derive_more::Display)]
-pub enum ParseError {
+pub enum ParseError<'a> {
     /// Could not parse the body of the message as a valid JSON-RPC message.
     JsonRpcParse(parse::ParseError),
-    /// Call concerns a method that isn't recognized.
-    UnknownMethod(String),
     /// Call concerns a notification that isn't recognized.
-    UnknownNotification(String),
+    UnknownNotification(&'a str),
+    /// JSON-RPC request is valid, but there is a problem related to the method being called.
+    #[display(fmt = "{}", error)]
+    Method {
+        /// Identifier of the request sent by the user.
+        request_id: &'a str,
+        /// Problem that happens.
+        error: MethodError<'a>,
+    },
+}
+
+/// See [`ParseError::Method`].
+#[derive(Debug, derive_more::Display)]
+pub enum MethodError<'a> {
+    /// Call concerns a method that isn't recognized.
+    UnknownMethod(&'a str),
+    /// Format the parameters is plain invalid.
+    #[display(fmt = "Invalid parameters format when calling {}", rpc_method)]
+    InvalidParametersFormat {
+        /// Name of the JSON-RPC method that was attempted to be called.
+        rpc_method: &'static str,
+    },
+    /// Too many parameters have been passed to the function.
+    #[display(
+        fmt = "{} expects {} parameters, but got {}",
+        rpc_method,
+        expected,
+        actual
+    )]
+    TooManyParameters {
+        /// Name of the JSON-RPC method that was attempted to be called.
+        rpc_method: &'static str,
+        /// Number of parameters that are expected to be received.
+        expected: usize,
+        /// Number of parameters actually received.
+        actual: usize,
+    },
+    /// One of the parameters of the function call is invalid.
+    #[display(
+        fmt = "Parameter #{} is invalid when calling {}: {}",
+        parameter_index,
+        rpc_method,
+        error
+    )]
+    InvalidParameter {
+        /// Name of the JSON-RPC method that was attempted to be called.
+        rpc_method: &'static str,
+        /// 0-based index of the parameter whose format is invalid.
+        parameter_index: usize,
+        /// Reason why it failed.
+        error: InvalidParameterError,
+    },
+}
+
+impl<'a> MethodError<'a> {
+    /// Turns the error into a JSON string representing the error response to send back.
+    ///
+    /// `id_json` must be a valid JSON-formatted request identifier, the same the user
+    /// passed in the request.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `id_json` isn't valid JSON.
+    ///
+    pub fn to_json_error(&self, id_json: &str) -> String {
+        parse::build_error_response(
+            id_json,
+            match self {
+                MethodError::UnknownMethod(_) => parse::ErrorResponse::MethodNotFound,
+                MethodError::InvalidParametersFormat { .. }
+                | MethodError::TooManyParameters { .. }
+                | MethodError::InvalidParameter { .. } => parse::ErrorResponse::InvalidParams,
+            },
+            None,
+        )
+    }
 }
 
 /// Could not parse the body of the message as a valid JSON-RPC message.
 #[derive(Debug, derive_more::Display)]
 pub struct JsonRpcParseError(serde_json::Error);
+
+/// The parameter of a function call is invalid.
+#[derive(Debug, derive_more::Display)]
+pub struct InvalidParameterError(serde_json::Error);
 
 /// Generates the [`MethodCall`] and [`Response`] enums based on the list of supported requests.
 macro_rules! define_methods {
@@ -84,42 +161,67 @@ macro_rules! define_methods {
                 [$(stringify!($name)),*].iter().copied()
             }
 
-            fn from_defs(name: &str, params: &str) -> Option<Self> {
+            fn from_defs<'a>(name: &'a str, params: &'a str) -> Result<Self, MethodError<'a>> {
                 #![allow(unused, unused_mut)]
 
                 $(
                     if name == stringify!($name) $($(|| name == stringify!($alias))*)* {
+                        // First, try parse parameters as if they were passed by name in a map.
+                        // For example, a method `my_method(foo: i32, bar: &str)` accepts
+                        // parameters formatted as `{"foo":5, "bar":"hello"}`.
                         #[derive(serde::Deserialize)]
                         struct Params {
                             $(
                                 $p_name: $p_ty,
                             )*
                         }
-
                         if let Ok(params) = serde_json::from_str(params) {
                             let Params { $($p_name),* } = params;
-                            return Some(MethodCall::$name {
+                            return Ok(MethodCall::$name {
                                 $($p_name,)*
                             })
                         }
 
-                        // TODO: code below is messy
+                        // Otherwise, try parse parameters as if they were passed by array.
+                        // For example, a method `my_method(foo: i32, bar: &str)` also accepts
+                        // parameters formatted as `[5, "hello"]`.
+                        // To make things more complex, optional parameters can be omitted.
+                        // TODO: code below is far from being zero-cost
                         if let Ok(params) = serde_json::from_str::<Vec<serde_json::Value>>(params) {
                             let mut n = 0;
                             $(
-                                let $p_name = serde_json::from_value(params.get(n).cloned().unwrap_or(serde_json::Value::Null)).unwrap(); // TODO: don't panic
+                                // Missing parameters are implicitly equal to null.
+                                let val = params.get(n).cloned()
+                                    .unwrap_or(serde_json::Value::Null);
+                                let $p_name = match serde_json::from_value(val) {
+                                    Ok(v) => v,
+                                    Err(err) => return Err(MethodError::InvalidParameter {
+                                        rpc_method: stringify!($name),
+                                        parameter_index: n,
+                                        error: InvalidParameterError(err),
+                                    })
+                                };
                                 n += 1;
                             )*
-                            return Some(MethodCall::$name {
+                            if params.get(n).is_some() {
+                                return Err(MethodError::TooManyParameters {
+                                    rpc_method: stringify!($name),
+                                    expected: n,
+                                    actual: params.len(),
+                                })
+                            }
+                            return Ok(MethodCall::$name {
                                 $($p_name,)*
                             })
                         }
 
-                        todo!("bad params for {} => {}", name, params) // TODO: ?
+                        return Err(MethodError::InvalidParametersFormat {
+                            rpc_method: stringify!($name),
+                        });
                     }
                 )*
 
-                None
+                Err(MethodError::UnknownMethod(name))
             }
         }
 
