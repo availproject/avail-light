@@ -102,7 +102,7 @@ impl FramedInProgress {
     pub fn new(max_len: usize) -> Self {
         FramedInProgress {
             max_len,
-            buffer: Vec::with_capacity(max_len),
+            buffer: Vec::with_capacity(32), // Reserve enough for the length prefix.
             inner: FramedInner::Length,
         }
     }
@@ -151,6 +151,7 @@ impl FramedInProgress {
                             });
                         }
                         self.buffer.clear();
+                        self.buffer.reserve(expected_len);
                         self.inner = FramedInner::Body { expected_len };
                     }
                 }
