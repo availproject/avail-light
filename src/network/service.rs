@@ -246,7 +246,7 @@ where
             .chain(iter::once(libp2p::ConfigRequestResponse {
                 name: format!("/{}/sync/warp", chain.protocol_id),
                 inbound_config: libp2p::ConfigRequestResponseIn::Payload { max_size: 32 },
-                max_response_size: 16 * 1024 * 1024,
+                max_response_size: 128 * 1024 * 1024, // TODO: this is way too large at the moment ; see https://github.com/paritytech/substrate/pull/8578
                 // We don't support inbound warp sync requests (yet).
                 inbound_allowed: false,
                 timeout: Duration::from_secs(20),

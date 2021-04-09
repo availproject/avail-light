@@ -1099,7 +1099,7 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                             *substream.user_data() = Substream::RequestOut {
                                 timeout,
                                 user_data,
-                                response: leb128::FramedInProgress::new(10 * 1024 * 1024), // TODO: proper max size
+                                response: leb128::FramedInProgress::new(128 * 1024 * 1024), // TODO: proper max size
                             };
                             let substream_id = substream.id();
                             let _already_closed = substream.close();
