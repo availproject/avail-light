@@ -103,10 +103,19 @@ impl<'a> GrandpaConsensusLogRef<'a> {
         }));
 
         let body = match self {
-            GrandpaConsensusLogRef::ScheduledChange(change) => {
-                either::Either::Left(change.scale_encoding().map(either::Either::Left))
+            GrandpaConsensusLogRef::ScheduledChange(change) => either::Left(either::Left(
+                change.scale_encoding().map(either::Left).map(either::Left),
+            )),
+            GrandpaConsensusLogRef::ForcedChange {
+                reset_block_height,
+                change,
+            } => {
+                let reset_block_height = reset_block_height.to_le_bytes().to_vec(); // TODO: to_vec() :-/
+                either::Left(either::Right(
+                    iter::once(either::Right(reset_block_height))
+                        .chain(change.scale_encoding().map(either::Right).map(either::Left)),
+                ))
             }
-            GrandpaConsensusLogRef::ForcedChange { .. } => todo!(), // TODO:
             GrandpaConsensusLogRef::OnDisabled(n) => either::Either::Right(iter::once(
                 either::Either::Right(parity_scale_codec::Encode::encode(n)),
             )),

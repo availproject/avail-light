@@ -339,12 +339,6 @@ pub enum FromGenesisStorageError {
     MultipleConsensusAlgorithms,
 }
 
-#[derive(Debug, Clone)]
-pub struct FinalizedScheduledChange {
-    pub trigger_block_height: u64,
-    pub new_authorities_list: Vec<header::GrandpaAuthority>,
-}
-
 /// Equivalent to a [`ChainInformation`] but referencing an existing structure. Cheap to copy.
 #[derive(Debug, Clone)]
 pub struct ChainInformationRef<'a> {
