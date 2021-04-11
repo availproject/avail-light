@@ -580,7 +580,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         request_id: RequestId,
         blocks: Result<impl Iterator<Item = BlockRequestSuccessBlock<TBl>>, ()>,
         now_from_unix_epoch: Duration, // TODO: remove
-    ) -> BlocksRequestResponseOutcome<TRq, TSrc, TBl> {
+    ) -> ResponseOutcome<TRq, TSrc, TBl> {
         debug_assert!(self.shared.requests.contains(request_id.0));
         let request = self.shared.requests.remove(request_id.0);
 
@@ -608,7 +608,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             next_actions.push(self.shared.optimistic_action_to_request(action));
                         }
 
-                        BlocksRequestResponseOutcome::Queued {
+                        ResponseOutcome::Queued {
                             sync: Idle {
                                 inner: IdleInner::Optimistic(sync),
                                 shared: self.shared,
@@ -616,7 +616,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             next_actions,
                         }
                     }
-                    other => BlocksRequestResponseOutcome::VerifyHeader(HeaderVerify {
+                    other => ResponseOutcome::VerifyHeader(HeaderVerify {
                         inner: HeaderVerifyInner::Optimistic(other),
                         shared: self.shared,
                     }),
@@ -633,7 +633,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                     }),
                 ) {
                     all_forks::AncestrySearchResponseOutcome::Verify(verify) => {
-                        BlocksRequestResponseOutcome::VerifyHeader(HeaderVerify {
+                        ResponseOutcome::VerifyHeader(HeaderVerify {
                             inner: HeaderVerifyInner::AllForks(verify),
                             shared: self.shared,
                         })
@@ -651,7 +651,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             }
                             None => Vec::new(),
                         };
-                        BlocksRequestResponseOutcome::NotFinalizedChain {
+                        ResponseOutcome::NotFinalizedChain {
                             sync: Idle {
                                 inner: IdleInner::AllForks(sync),
                                 ..self
@@ -672,7 +672,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             }
                             None => Vec::new(),
                         };
-                        BlocksRequestResponseOutcome::Inconclusive {
+                        ResponseOutcome::Queued {
                             sync: Idle {
                                 inner: IdleInner::AllForks(sync),
                                 ..self
@@ -692,7 +692,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             }
                             None => Vec::new(),
                         };
-                        BlocksRequestResponseOutcome::AllAlreadyInChain {
+                        ResponseOutcome::AllAlreadyInChain {
                             sync: Idle {
                                 inner: IdleInner::AllForks(sync),
                                 ..self
@@ -720,12 +720,12 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         // TODO: don't use crate::network::protocol
         // TODO: Result instead of Option?
         response: Option<crate::network::protocol::GrandpaWarpSyncResponse>,
-    ) -> GrandpaWarpSyncResponseOutcome<TRq, TSrc, TBl> {
+    ) -> ResponseOutcome<TRq, TSrc, TBl> {
         debug_assert!(self.shared.requests.contains(request_id.0));
         let request = self.shared.requests.remove(request_id.0);
         assert!(matches!(request, RequestMapping::GrandpaWarpSync));
 
-        let from_grandpa_outcome = match self.inner {
+        match self.inner {
             IdleInner::GrandpaWarpSync(
                 grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(grandpa),
             ) => {
@@ -735,15 +735,6 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
 
             // Only the GrandPa warp syncing ever starts GrandPa warp sync requests.
             _ => unreachable!(),
-        };
-
-        match from_grandpa_outcome {
-            FromGrandpaOutcome::WarpSyncFinished { sync, next_actions } => {
-                GrandpaWarpSyncResponseOutcome::WarpSyncFinished { sync, next_actions }
-            }
-            FromGrandpaOutcome::Queued { sync, next_actions } => {
-                GrandpaWarpSyncResponseOutcome::Queued { sync, next_actions }
-            }
         }
     }
 
@@ -761,14 +752,14 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
         mut self,
         request_id: RequestId,
         response: Result<impl Iterator<Item = Option<impl AsRef<[u8]>>>, ()>,
-    ) -> StorageGetResponseOutcome<TRq, TSrc, TBl> {
+    ) -> ResponseOutcome<TRq, TSrc, TBl> {
         debug_assert!(self.shared.requests.contains(request_id.0));
         let request = self.shared.requests.remove(request_id.0);
         assert!(matches!(request, RequestMapping::GrandpaWarpSync));
 
         let mut response = response.unwrap(); // TODO: handle this properly; requires changes in the grandpa warp sync machine
 
-        let from_grandpa_outcome = match self.inner {
+        match self.inner {
             IdleInner::GrandpaWarpSync(
                 grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync),
             ) => {
@@ -806,22 +797,13 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
             }
             // Only the GrandPa warp syncing ever starts GrandPa warp sync requests.
             _ => panic!(),
-        };
-
-        match from_grandpa_outcome {
-            FromGrandpaOutcome::WarpSyncFinished { sync, next_actions } => {
-                StorageGetResponseOutcome::WarpSyncFinished { sync, next_actions }
-            }
-            FromGrandpaOutcome::Queued { sync, next_actions } => {
-                StorageGetResponseOutcome::Queued { sync, next_actions }
-            }
         }
     }
 
     fn from_grandpa(
         grandpa_warp_sync: grandpa_warp_sync::GrandpaWarpSync<GrandpaWarpSyncSourceExtra<TSrc>>,
         mut shared: Shared,
-    ) -> FromGrandpaOutcome<TRq, TSrc, TBl> {
+    ) -> ResponseOutcome<TRq, TSrc, TBl> {
         match grandpa_warp_sync {
             grandpa_warp_sync::GrandpaWarpSync::InProgress(in_progress) => {
                 Self::from_in_progress_grandpa(in_progress, shared)
@@ -829,7 +811,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
             grandpa_warp_sync::GrandpaWarpSync::Finished(success) => {
                 let (all_forks, next_actions) =
                     shared.transition_grandpa_warp_sync_all_forks(success);
-                return FromGrandpaOutcome::WarpSyncFinished {
+                return ResponseOutcome::WarpSyncFinished {
                     sync: Idle {
                         inner: IdleInner::AllForks(all_forks),
                         shared,
@@ -845,7 +827,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
             GrandpaWarpSyncSourceExtra<TSrc>,
         >,
         mut shared: Shared,
-    ) -> FromGrandpaOutcome<TRq, TSrc, TBl> {
+    ) -> ResponseOutcome<TRq, TSrc, TBl> {
         loop {
             match grandpa_warp_sync {
                 grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(get) => {
@@ -863,7 +845,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                         },
                     };
 
-                    return FromGrandpaOutcome::Queued {
+                    return ResponseOutcome::Queued {
                         sync: Idle {
                             inner: IdleInner::GrandpaWarpSync(get.into()),
                             shared,
@@ -880,7 +862,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                 }
                 grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(rq) => {
                     let action = shared.grandpa_warp_sync_request_to_request(&rq);
-                    return FromGrandpaOutcome::Queued {
+                    return ResponseOutcome::Queued {
                         sync: Idle {
                             inner: IdleInner::GrandpaWarpSync(rq.into()),
                             shared,
@@ -903,7 +885,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                         },
                     };
 
-                    return FromGrandpaOutcome::Queued {
+                    return ResponseOutcome::Queued {
                         sync: Idle {
                             inner: IdleInner::GrandpaWarpSync(rq.into()),
                             shared,
@@ -912,7 +894,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                     };
                 }
                 gp @ grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(_) => {
-                    return FromGrandpaOutcome::Queued {
+                    return ResponseOutcome::Queued {
                         sync: Idle {
                             inner: IdleInner::GrandpaWarpSync(gp),
                             shared,
@@ -1027,13 +1009,21 @@ pub enum BlockAnnounceOutcome<TRq, TSrc, TBl> {
     },
 }
 
-/// Outcome of calling [`Idle::blocks_request_response`].
-pub enum BlocksRequestResponseOutcome<TRq, TSrc, TBl> {
+/// Outcome of injecting a response in the [`Idle`].
+pub enum ResponseOutcome<TRq, TSrc, TBl> {
     /// Ready to start verifying one or more headers returned in the ancestry search.
     VerifyHeader(HeaderVerify<TRq, TSrc, TBl>),
 
-    /// Blocks have been queued and will be processed later.
+    /// Content of the response has been queued and will be processed later.
     Queued {
+        sync: Idle<TRq, TSrc, TBl>,
+
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
+
+    /// Response has made it possible to finish warp syncing.
+    WarpSyncFinished {
         sync: Idle<TRq, TSrc, TBl>,
 
         /// Next requests that must be started.
@@ -1056,75 +1046,11 @@ pub enum BlocksRequestResponseOutcome<TRq, TSrc, TBl> {
         discarded_unverified_block_headers: Vec<Vec<u8>>,
     },
 
-    /// Couldn't verify any of the blocks of the ancestry search. Some or all of these blocks
-    /// have been stored in the local machine for later.
-    Inconclusive {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-
     /// All blocks in the ancestry search response were already in the list of verified blocks.
     ///
     /// This can happen if a block announce or different ancestry search response has been
     /// processed in between the request and response.
     AllAlreadyInChain {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-}
-
-/// Outcome of calling [`Idle::grandpa_warp_sync_response`].
-pub enum GrandpaWarpSyncResponseOutcome<TRq, TSrc, TBl> {
-    /// GrandPa warp sync response has made it possible to finish warp syncing.
-    WarpSyncFinished {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-
-    /// GrandPa warp sync response has been processed and might be used later.
-    Queued {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-}
-
-/// Outcome of calling [`Idle::storage_get_response`].
-pub enum StorageGetResponseOutcome<TRq, TSrc, TBl> {
-    /// Storage proof response has made it possible to finish warp syncing.
-    WarpSyncFinished {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-
-    /// Storage proof response has been processed and might be used later.
-    Queued {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-}
-
-/// Outcome of calling [`Idle::from_grandpa`].
-// TODO: this hasn't received any brainstorming and is just laid out in a way to match the other two similar enums
-enum FromGrandpaOutcome<TRq, TSrc, TBl> {
-    WarpSyncFinished {
-        sync: Idle<TRq, TSrc, TBl>,
-
-        /// Next requests that must be started.
-        next_actions: Vec<Action>,
-    },
-    Queued {
         sync: Idle<TRq, TSrc, TBl>,
 
         /// Next requests that must be started.

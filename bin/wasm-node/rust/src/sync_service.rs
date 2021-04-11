@@ -502,7 +502,7 @@ async fn start_relay_chain(
             // The sync state machine is idle, and all requests have been started.
             // Now waiting for some event to happen: a network event, a request from the frontend
             // of the sync service, or a request being finished.
-            futures::select! {
+            let response_outcome = futures::select! {
                 network_event = from_network_service.next() => {
                     // Something happened on the network.
 
@@ -574,6 +574,8 @@ async fn start_relay_chain(
                             sync = sync_idle.into();
                         }
                     }
+
+                    continue;
                 }
 
                 message = from_foreground.next() => {
@@ -606,6 +608,7 @@ async fn start_relay_chain(
                     };
 
                     sync = sync_idle.into();
+                    continue;
                 },
 
                 (request_id, result) = pending_block_requests.select_next_some() => {
@@ -616,7 +619,7 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        let outcome = sync_idle.blocks_request_response(
+                        sync_idle.blocks_request_response(
                             request_id,
                             result.map_err(|_| ()).map(|v| {
                                 v.into_iter().filter_map(|block| {
@@ -629,33 +632,13 @@ async fn start_relay_chain(
                                 })
                             }),
                             ffi::unix_time(),
-                        );
+                        )
 
-                        match outcome {
-                            all::BlocksRequestResponseOutcome::VerifyHeader(verify) => {
-                                sync = verify.into();
-                            },
-                            all::BlocksRequestResponseOutcome::Queued { sync: sync_idle, next_actions } => {
-                                requests_to_start.extend(next_actions);
-                                sync = sync_idle.into();
-                            },
-                            all::BlocksRequestResponseOutcome::NotFinalizedChain { sync: sync_idle, next_actions, .. } => {
-                                requests_to_start.extend(next_actions);
-                                sync = sync_idle.into();
-                            },
-                            all::BlocksRequestResponseOutcome::Inconclusive { sync: sync_idle, next_actions, .. } => {
-                                requests_to_start.extend(next_actions);
-                                sync = sync_idle.into();
-                            },
-                            all::BlocksRequestResponseOutcome::AllAlreadyInChain { sync: sync_idle, next_actions, .. } => {
-                                requests_to_start.extend(next_actions);
-                                sync = sync_idle.into();
-                            },
-                        }
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
                         sync = sync_idle.into();
+                        continue;
                     }
                 },
 
@@ -667,33 +650,16 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        let outcome = sync_idle.grandpa_warp_sync_response(
+                        sync_idle.grandpa_warp_sync_response(
                             request_id,
                             result.ok(),
-                        );
-
-                        match outcome {
-                            all::GrandpaWarpSyncResponseOutcome::WarpSyncFinished {
-                                sync: sync_idle, next_actions
-                            } => {
-                                let finalized_num = sync_idle.finalized_block_header().number;
-                                log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
-                                has_new_finalized = true;
-                                sync = sync_idle.into();
-                                requests_to_start.extend(next_actions);
-                            }
-                            all::GrandpaWarpSyncResponseOutcome::Queued {
-                                sync: sync_idle, next_actions
-                            } => {
-                                sync = sync_idle.into();
-                                requests_to_start.extend(next_actions);
-                            }
-                        }
+                        )
 
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
                         sync = sync_idle.into();
+                        continue;
                     }
                 },
 
@@ -705,35 +671,53 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        let outcome = sync_idle.storage_get_response(
+                        sync_idle.storage_get_response(
                             request_id,
                             result.map(|list| list.into_iter()),
-                        );
-
-                        match outcome {
-                            all::StorageGetResponseOutcome::WarpSyncFinished {
-                                sync: sync_idle, next_actions
-                            } => {
-                                let finalized_num = sync_idle.finalized_block_header().number;
-                                log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
-                                has_new_finalized = true;
-                                sync = sync_idle.into();
-                                requests_to_start.extend(next_actions);
-                            }
-                            all::StorageGetResponseOutcome::Queued {
-                                sync: sync_idle, next_actions
-                            } => {
-                                sync = sync_idle.into();
-                                requests_to_start.extend(next_actions);
-                            }
-                        }
+                        )
 
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
                         sync = sync_idle.into();
+                        continue;
                     }
                 },
+            };
+
+            // `response_outcome` represents the way the state machine has changed as a
+            // consequence of the response to a request.
+            match response_outcome {
+                all::ResponseOutcome::VerifyHeader(verify) => {
+                    sync = verify.into();
+                }
+                all::ResponseOutcome::Queued {
+                    sync: sync_idle,
+                    next_actions,
+                }
+                | all::ResponseOutcome::NotFinalizedChain {
+                    sync: sync_idle,
+                    next_actions,
+                    ..
+                }
+                | all::ResponseOutcome::AllAlreadyInChain {
+                    sync: sync_idle,
+                    next_actions,
+                    ..
+                } => {
+                    requests_to_start.extend(next_actions);
+                    sync = sync_idle.into();
+                }
+                all::ResponseOutcome::WarpSyncFinished {
+                    sync: sync_idle,
+                    next_actions,
+                } => {
+                    let finalized_num = sync_idle.finalized_block_header().number;
+                    log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
+                    has_new_finalized = true;
+                    sync = sync_idle.into();
+                    requests_to_start.extend(next_actions);
+                }
             }
         }
     }
