@@ -65,7 +65,7 @@ pub struct GrandpaWarpSyncResponseFragment {
     pub header: header::Header,
 
     /// Justification that proofs the finality of [`GrandpaWarpSyncResponseFragment::header`].
-    pub justification: finality::justification::decode::Justification,
+    pub justification: finality::justification::decode::GrandpaJustification,
 }
 
 /// Error potentially returned by [`decode_grandpa_warp_sync_response`].
@@ -104,7 +104,7 @@ fn decode_fragments(bytes: &[u8]) -> nom::IResult<&[u8], Vec<GrandpaWarpSyncResp
                         })
                     },
                     |s| {
-                        finality::justification::decode::decode_partial(s)
+                        finality::justification::decode::decode_partial_grandpa(s)
                             .map(|(a, b)| (b, a))
                             .map_err(|_| {
                                 nom::Err::Failure(nom::error::make_error(

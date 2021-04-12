@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 #[derive(Debug)]
 pub struct Config<'a, I> {
     /// Justification to verify.
-    pub justification: decode::JustificationRef<'a>,
+    pub justification: decode::GrandpaJustificationRef<'a>,
 
     // TODO: document
     pub authorities_set_id: u64,

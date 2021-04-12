@@ -82,7 +82,7 @@ impl<T> NonFinalizedTreeInner<T> {
                 finalized_triggered_authorities,
             } => {
                 // Turn justification into a strongly-typed struct.
-                let decoded = justification::decode::decode(&scale_encoded_justification)
+                let decoded = justification::decode::decode_grandpa(&scale_encoded_justification)
                     .map_err(JustificationVerifyError::InvalidJustification)?;
 
                 // Find in the list of non-finalized blocks the one targeted by the justification.

@@ -21,9 +21,8 @@ use alloc::vec::Vec;
 use core::{convert::TryFrom, fmt};
 
 /// Attempt to decode the given SCALE-encoded justification.
-// TODO: shouldn't this method be specific to Grandpa?
-pub fn decode(scale_encoded: &[u8]) -> Result<JustificationRef, Error> {
-    match nom::combinator::all_consuming(justification)(scale_encoded) {
+pub fn decode_grandpa(scale_encoded: &[u8]) -> Result<GrandpaJustificationRef, Error> {
+    match nom::combinator::all_consuming(grandpa_justification)(scale_encoded) {
         Ok((_, justification)) => Ok(justification),
         Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(Error(err.code)),
         Err(_) => unreachable!(),
@@ -32,10 +31,12 @@ pub fn decode(scale_encoded: &[u8]) -> Result<JustificationRef, Error> {
 
 /// Attempt to decode the given SCALE-encoded justification.
 ///
-/// Contrary to [`decode`], doesn't return an error if the slice is too long but returns the
-/// remainder.
-pub fn decode_partial(scale_encoded: &[u8]) -> Result<(JustificationRef, &[u8]), Error> {
-    match justification(scale_encoded) {
+/// Contrary to [`decode_grandpa`], doesn't return an error if the slice is too long but returns
+/// the remainder.
+pub fn decode_partial_grandpa(
+    scale_encoded: &[u8],
+) -> Result<(GrandpaJustificationRef, &[u8]), Error> {
+    match grandpa_justification(scale_encoded) {
         Ok((remainder, justification)) => Ok((justification, remainder)),
         Err(nom::Err::Error(err)) | Err(nom::Err::Failure(err)) => Err(Error(err.code)),
         Err(_) => unreachable!(),
@@ -47,7 +48,7 @@ const PRECOMMIT_ENCODED_LEN: usize = 32 + 4 + 64 + 32;
 /// Decoded justification.
 // TODO: document and explain
 #[derive(Debug)]
-pub struct JustificationRef<'a> {
+pub struct GrandpaJustificationRef<'a> {
     pub round: u64,
     pub target_hash: &'a [u8; 32],
     pub target_number: u32,
@@ -58,7 +59,7 @@ pub struct JustificationRef<'a> {
 /// Decoded justification.
 // TODO: document and explain
 #[derive(Debug)]
-pub struct Justification {
+pub struct GrandpaJustification {
     pub round: u64,
     pub target_hash: [u8; 32],
     pub target_number: u32,
@@ -66,9 +67,9 @@ pub struct Justification {
     // TODO: pub votes_ancestries: Vec<Header>,
 }
 
-impl<'a> From<&'a Justification> for JustificationRef<'a> {
-    fn from(j: &'a Justification) -> JustificationRef<'a> {
-        JustificationRef {
+impl<'a> From<&'a GrandpaJustification> for GrandpaJustificationRef<'a> {
+    fn from(j: &'a GrandpaJustification) -> GrandpaJustificationRef<'a> {
+        GrandpaJustificationRef {
             round: j.round,
             target_hash: &j.target_hash,
             target_number: j.target_number,
@@ -81,9 +82,9 @@ impl<'a> From<&'a Justification> for JustificationRef<'a> {
     }
 }
 
-impl<'a> From<JustificationRef<'a>> for Justification {
-    fn from(j: JustificationRef<'a>) -> Justification {
-        Justification {
+impl<'a> From<GrandpaJustificationRef<'a>> for GrandpaJustification {
+    fn from(j: GrandpaJustificationRef<'a>) -> GrandpaJustification {
+        GrandpaJustification {
             round: j.round,
             target_hash: *j.target_hash,
             target_number: j.target_number,
@@ -280,9 +281,9 @@ impl<'a> ExactSizeIterator for VotesAncestriesIter<'a> {}
 pub struct Error(nom::error::ErrorKind);
 
 /// Nom combinator that parses a justification.
-fn justification(bytes: &[u8]) -> nom::IResult<&[u8], JustificationRef> {
+fn grandpa_justification(bytes: &[u8]) -> nom::IResult<&[u8], GrandpaJustificationRef> {
     nom::error::context(
-        "justification",
+        "grandpa_justification",
         nom::combinator::map(
             nom::sequence::tuple((
                 nom::number::complete::le_u64,
@@ -291,12 +292,14 @@ fn justification(bytes: &[u8]) -> nom::IResult<&[u8], JustificationRef> {
                 precommits,
                 votes_ancestries,
             )),
-            |(round, target_hash, target_number, precommits, votes_ancestries)| JustificationRef {
-                round,
-                target_hash: TryFrom::try_from(target_hash).unwrap(),
-                target_number,
-                precommits,
-                votes_ancestries,
+            |(round, target_hash, target_number, precommits, votes_ancestries)| {
+                GrandpaJustificationRef {
+                    round,
+                    target_hash: TryFrom::try_from(target_hash).unwrap(),
+                    target_number,
+                    precommits,
+                    votes_ancestries,
+                }
             },
         ),
     )(bytes)
@@ -374,7 +377,7 @@ fn votes_ancestries(bytes: &[u8]) -> nom::IResult<&[u8], VotesAncestriesIter> {
 mod tests {
     #[test]
     fn decode() {
-        super::decode(&[
+        super::decode_grandpa(&[
             7, 181, 6, 0, 0, 0, 0, 0, 41, 241, 171, 236, 144, 172, 25, 157, 240, 109, 238, 59, 160,
             115, 76, 8, 195, 253, 109, 240, 108, 170, 63, 120, 149, 47, 143, 149, 22, 64, 88, 210,
             0, 158, 4, 0, 20, 41, 241, 171, 236, 144, 172, 25, 157, 240, 109, 238, 59, 160, 115,
