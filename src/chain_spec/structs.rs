@@ -45,7 +45,6 @@ pub(super) struct ClientSpec {
     pub(super) bad_blocks: Option<HashSet<HashHexString, FnvBuildHasher>>,
     // Unused but for some reason still part of the chain specs.
     pub(super) consensus_engine: (),
-    // TODO: looks deprecated?
     pub(super) genesis: Genesis,
     pub(super) light_sync_state: Option<LightSyncState>,
     #[serde(flatten)]
