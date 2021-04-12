@@ -580,35 +580,6 @@ impl<TSrc> WarpSyncRequest<TSrc> {
 
         self.sources[self.source_id.0].already_tried = true;
 
-        // If the response is empty, then we've warp synced to the head of the
-        // chain.
-        if response
-            .as_ref()
-            .map(|response| response.fragments.is_empty())
-            .unwrap_or(false)
-        {
-            let (header, chain_information_finality) = match self.previous_verifier_values {
-                Some((header, chain_information_finality)) => (header, chain_information_finality),
-                None => (
-                    self.state
-                        .start_chain_information
-                        .finalized_block_header
-                        .clone(),
-                    self.state.start_chain_information.finality.clone(),
-                ),
-            };
-
-            return InProgressGrandpaWarpSync::VirtualMachineParamsGet(VirtualMachineParamsGet {
-                state: PostVerificationState {
-                    header,
-                    chain_information_finality,
-                    start_chain_information: self.state.start_chain_information,
-                    sources: self.sources,
-                    warp_sync_source_id: self.source_id,
-                },
-            });
-        }
-
         match response {
             Some(response) => {
                 let final_set_of_fragments = response.is_finished;
