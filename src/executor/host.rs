@@ -124,7 +124,7 @@
 //! ## Example
 //!
 //! ```
-//! use smoldot::executor::{host::{HostVm, HostVmPrototype}, vm::HeapPages};
+//! use smoldot::executor::host::{HeapPages, HostVm, HostVmPrototype};
 //!
 //! # let wasm_binary_code: &[u8] = return;
 //!
@@ -180,6 +180,8 @@ use parity_scale_codec::DecodeAll as _;
 use sha2::Digest as _;
 use tiny_keccak::Hasher as _;
 
+pub use vm::HeapPages;
+
 /// Prototype for an [`HostVm`].
 ///
 /// > **Note**: This struct implements `Clone`. Cloning a [`HostVmPrototype`] allocates memory
@@ -206,7 +208,7 @@ pub struct HostVmPrototype {
     registered_functions: Vec<HostFunction>,
 
     /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
-    heap_pages: vm::HeapPages,
+    heap_pages: HeapPages,
 }
 
 impl HostVmPrototype {
@@ -214,14 +216,14 @@ impl HostVmPrototype {
     // TODO: document `heap_pages`; I know it comes from storage, but it's unclear what it means exactly
     pub fn new(
         module: impl AsRef<[u8]>,
-        heap_pages: vm::HeapPages,
+        heap_pages: HeapPages,
         exec_hint: vm::ExecHint,
     ) -> Result<Self, NewErr> {
         let module = vm::Module::new(module, exec_hint)?;
         Self::from_module(module, heap_pages)
     }
 
-    fn from_module(module: vm::Module, heap_pages: vm::HeapPages) -> Result<Self, NewErr> {
+    fn from_module(module: vm::Module, heap_pages: HeapPages) -> Result<Self, NewErr> {
         // Initialize the virtual machine.
         // Each symbol requested by the Wasm runtime will be put in `registered_functions`. Later,
         // when a function is invoked, the Wasm virtual machine will pass indices within that
@@ -265,7 +267,7 @@ impl HostVmPrototype {
     }
 
     /// Returns the number of heap pages that were passed to [`HostVmPrototype::new`].
-    pub fn heap_pages(&self) -> vm::HeapPages {
+    pub fn heap_pages(&self) -> HeapPages {
         self.heap_pages
     }
 
@@ -2077,7 +2079,7 @@ struct Inner {
     heap_base: u32,
 
     /// Value of `heap_pages` passed to [`HostVmPrototype::new`].
-    heap_pages: vm::HeapPages,
+    heap_pages: HeapPages,
 
     /// If true, a transaction has been started using `ext_storage_start_transaction_version_1`.
     /// No further transaction start is allowed before the current one ends.

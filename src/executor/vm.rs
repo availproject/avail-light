@@ -339,7 +339,6 @@ pub enum ExecHint {
 }
 
 /// Number of heap pages available to the Wasm code.
-// TODO: shouldn't that be in `host` module?
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HeapPages(u32);
 
