@@ -18,7 +18,7 @@
 //! Internal module. Contains functions that aren't Substrate/Polkadot-specific and should ideally
 //! be found in third party libraries, but that aren't worth a third-party library.
 
-use core::convert::TryFrom as _;
+use core::{convert::TryFrom as _, str};
 
 pub(crate) mod leb128;
 
@@ -36,6 +36,26 @@ pub(crate) fn nom_option_decode<'a, O, E: nom::error::ParseError<&'a [u8]>>(
             Some,
         ),
     ))
+}
+
+/// Decodes a SCALE-encoded vec of bytes.
+pub(crate) fn nom_bytes_decode<'a, E: nom::error::ParseError<&'a [u8]>>(
+    bytes: &'a [u8],
+) -> nom::IResult<&'a [u8], &'a [u8], E> {
+    nom::multi::length_data(crate::util::nom_scale_compact_usize)(bytes)
+}
+
+/// Decodes a SCALE-encoded string.
+pub(crate) fn nom_string_decode<
+    'a,
+    E: nom::error::ParseError<&'a [u8]> + nom::error::FromExternalError<&'a [u8], str::Utf8Error>,
+>(
+    bytes: &'a [u8],
+) -> nom::IResult<&'a [u8], &'a str, E> {
+    nom::combinator::map_res(
+        nom::multi::length_data(crate::util::nom_scale_compact_usize),
+        str::from_utf8,
+    )(bytes)
 }
 
 /// Decodes a SCALE-compact-encoded usize.

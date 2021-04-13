@@ -84,10 +84,7 @@ pub fn decode_call_proof_response(
             nom::multi::many_m_n(
                 num_elems,
                 num_elems,
-                nom::combinator::map(
-                    nom::multi::length_data(crate::util::nom_scale_compact_usize),
-                    |b| b.to_vec(),
-                ),
+                nom::combinator::map(crate::util::nom_bytes_decode, |b| b.to_vec()),
             )
         },
     ))(&proof)

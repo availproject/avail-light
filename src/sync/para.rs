@@ -107,7 +107,7 @@ fn persisted_validation_data<'a, E: nom::error::ParseError<&'a [u8]>>(
 ) -> nom::IResult<&'a [u8], PersistedValidationDataRef, E> {
     nom::combinator::map(
         nom::sequence::tuple((
-            nom::multi::length_data(crate::util::nom_scale_compact_usize),
+            crate::util::nom_bytes_decode,
             nom::number::complete::le_u32,
             nom::bytes::complete::take(32u32),
             nom::number::complete::le_u32,

@@ -96,7 +96,7 @@ pub fn decode_block_announce(bytes: &[u8]) -> Result<BlockAnnounceRef, DecodeBlo
                 nom::combinator::map(nom::bytes::complete::tag(&[0]), |_| false),
                 nom::combinator::map(nom::bytes::complete::tag(&[1]), |_| true),
             )),
-            nom::multi::length_data(crate::util::nom_scale_compact_usize),
+            crate::util::nom_bytes_decode,
         )),
         |(header, is_best, _)| BlockAnnounceRef { header, is_best },
     ))(&bytes)

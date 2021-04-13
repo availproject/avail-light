@@ -256,7 +256,7 @@ fn module_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ModuleMetadataRef, NomEr
         "module",
         nom::combinator::map(
             nom::sequence::tuple((
-                string_decode,
+                crate::util::nom_string_decode,
                 crate::util::nom_option_decode(storage_metadata),
                 crate::util::nom_option_decode(|i| vec_decode(i, function_metadata)),
                 crate::util::nom_option_decode(|i| vec_decode(i, event_metadata)),
@@ -279,7 +279,9 @@ fn storage_metadata(bytes: &[u8]) -> nom::IResult<&[u8], StorageMetadataRef, Nom
     nom::error::context(
         "storage",
         nom::combinator::map(
-            nom::sequence::tuple((string_decode, |i| vec_decode(i, storage_entry_metadata))),
+            nom::sequence::tuple((crate::util::nom_string_decode, |i| {
+                vec_decode(i, storage_entry_metadata)
+            })),
             |(prefix, entries)| StorageMetadataRef { prefix, entries },
         ),
     )(bytes)
@@ -290,11 +292,11 @@ fn storage_entry_metadata(bytes: &[u8]) -> nom::IResult<&[u8], StorageEntryMetad
         "storage entry",
         nom::combinator::map(
             nom::sequence::tuple((
-                string_decode,
+                crate::util::nom_string_decode,
                 storage_entry_modifier,
                 storage_entry_type,
-                bytes_decode,
-                |i| vec_decode(i, string_decode),
+                crate::util::nom_bytes_decode,
+                |i| vec_decode(i, crate::util::nom_string_decode),
             )),
             |(name, modifier, ty, default, documentation)| StorageEntryMetadataRef {
                 name,
@@ -326,7 +328,10 @@ fn storage_entry_type(bytes: &[u8]) -> nom::IResult<&[u8], StorageEntryTypeRef, 
         "storage entry type",
         nom::branch::alt((
             nom::combinator::map(
-                nom::sequence::preceded(nom::bytes::complete::tag(&[0]), string_decode),
+                nom::sequence::preceded(
+                    nom::bytes::complete::tag(&[0]),
+                    crate::util::nom_string_decode,
+                ),
                 StorageEntryTypeRef::Plain,
             ),
             nom::combinator::map(
@@ -334,8 +339,8 @@ fn storage_entry_type(bytes: &[u8]) -> nom::IResult<&[u8], StorageEntryTypeRef, 
                     nom::bytes::complete::tag(&[1]),
                     nom::sequence::tuple((
                         storage_hasher,
-                        string_decode,
-                        string_decode,
+                        crate::util::nom_string_decode,
+                        crate::util::nom_string_decode,
                         nom::bytes::complete::take(1u32),
                     )),
                 ),
@@ -346,9 +351,9 @@ fn storage_entry_type(bytes: &[u8]) -> nom::IResult<&[u8], StorageEntryTypeRef, 
                     nom::bytes::complete::tag(&[2]),
                     nom::sequence::tuple((
                         storage_hasher,
-                        string_decode,
-                        string_decode,
-                        string_decode,
+                        crate::util::nom_string_decode,
+                        crate::util::nom_string_decode,
+                        crate::util::nom_string_decode,
                         storage_hasher,
                     )),
                 ),
@@ -392,9 +397,9 @@ fn function_metadata(bytes: &[u8]) -> nom::IResult<&[u8], FunctionMetadataRef, N
         "function",
         nom::combinator::map(
             nom::sequence::tuple((
-                string_decode,
+                crate::util::nom_string_decode,
                 |i| vec_decode(i, function_argument_metadata),
-                |i| vec_decode(i, string_decode),
+                |i| vec_decode(i, crate::util::nom_string_decode),
             )),
             |(name, arguments, documentation)| FunctionMetadataRef {
                 name,
@@ -411,7 +416,10 @@ fn function_argument_metadata(
     nom::error::context(
         "function argument",
         nom::combinator::map(
-            nom::sequence::tuple((string_decode, string_decode)),
+            nom::sequence::tuple((
+                crate::util::nom_string_decode,
+                crate::util::nom_string_decode,
+            )),
             |(name, ty)| FunctionArgumentMetadataRef { name, ty },
         ),
     )(bytes)
@@ -422,9 +430,9 @@ fn event_metadata(bytes: &[u8]) -> nom::IResult<&[u8], EventMetadataRef, NomErro
         "event",
         nom::combinator::map(
             nom::sequence::tuple((
-                string_decode,
-                |i| vec_decode(i, string_decode),
-                |i| vec_decode(i, string_decode),
+                crate::util::nom_string_decode,
+                |i| vec_decode(i, crate::util::nom_string_decode),
+                |i| vec_decode(i, crate::util::nom_string_decode),
             )),
             |(name, arguments, documentation)| EventMetadataRef {
                 name,
@@ -441,9 +449,12 @@ fn module_constant_metadata(
     nom::error::context(
         "constant",
         nom::combinator::map(
-            nom::sequence::tuple((string_decode, string_decode, bytes_decode, |i| {
-                vec_decode(i, string_decode)
-            })),
+            nom::sequence::tuple((
+                crate::util::nom_string_decode,
+                crate::util::nom_string_decode,
+                crate::util::nom_bytes_decode,
+                |i| vec_decode(i, crate::util::nom_string_decode),
+            )),
             |(name, ty, value, documentation)| ModuleConstantMetadataRef {
                 name,
                 ty,
@@ -458,7 +469,9 @@ fn error_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ErrorMetadataRef, NomErro
     nom::error::context(
         "error",
         nom::combinator::map(
-            nom::sequence::pair(string_decode, |i| vec_decode(i, string_decode)),
+            nom::sequence::pair(crate::util::nom_string_decode, |i| {
+                vec_decode(i, crate::util::nom_string_decode)
+            }),
             |(name, documentation)| ErrorMetadataRef {
                 name,
                 documentation,
@@ -472,7 +485,7 @@ fn extrinsic_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ExtrinsicMetadataRef,
         "extrinsic",
         nom::combinator::map(
             nom::sequence::pair(nom::bytes::complete::take(1u32), |i| {
-                vec_decode(i, string_decode)
+                vec_decode(i, crate::util::nom_string_decode)
             }),
             |(version, signed_extensions)| ExtrinsicMetadataRef {
                 version: version[0],
@@ -482,20 +495,7 @@ fn extrinsic_metadata(bytes: &[u8]) -> nom::IResult<&[u8], ExtrinsicMetadataRef,
     )(bytes)
 }
 
-// TODO: functions below are generic and could be moved somewhere else?
-
-/// Decodes a SCALE-encoded vec of bytes.
-fn bytes_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a [u8], NomError<'a>> {
-    nom::multi::length_data(crate::util::nom_scale_compact_usize)(bytes)
-}
-
-/// Decodes a SCALE-encoded string.
-fn string_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a str, NomError<'a>> {
-    nom::combinator::map_res(
-        nom::multi::length_data(crate::util::nom_scale_compact_usize),
-        str::from_utf8,
-    )(bytes)
-}
+// TODO: function below is generic and could be moved somewhere else?
 
 /// Decodes a SCALE-encoded `Vec`.
 fn vec_decode<'a, O>(

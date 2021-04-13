@@ -137,10 +137,10 @@ pub struct CoreVersionRef<'a> {
 }
 
 fn decode(scale_encoded: &[u8]) -> Result<CoreVersionRef, ()> {
-    let result = nom::combinator::all_consuming(nom::combinator::map(
+    let result: nom::IResult<_, _> = nom::combinator::all_consuming(nom::combinator::map(
         nom::sequence::tuple((
-            string_decode,
-            string_decode,
+            crate::util::nom_string_decode,
+            crate::util::nom_string_decode,
             nom::number::complete::le_u32,
             nom::number::complete::le_u32,
             nom::number::complete::le_u32,
@@ -186,11 +186,4 @@ fn decode(scale_encoded: &[u8]) -> Result<CoreVersionRef, ()> {
         Err(nom::Err::Error(_)) | Err(nom::Err::Failure(_)) => Err(()),
         Err(_) => unreachable!(),
     }
-}
-
-fn string_decode<'a>(bytes: &'a [u8]) -> nom::IResult<&'a [u8], &'a str> {
-    nom::combinator::map_res(
-        nom::multi::length_data(crate::util::nom_scale_compact_usize),
-        str::from_utf8,
-    )(bytes)
 }
