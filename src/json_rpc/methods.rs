@@ -147,7 +147,7 @@ macro_rules! define_methods {
     ($($name:ident($($p_name:ident: $p_ty:ty),*) -> $ret_ty:ty $([$($alias:ident),*])*,)*) => {
         #[allow(non_camel_case_types)]
         #[derive(Debug, Clone)]
-        pub enum MethodCall {
+        pub enum MethodCall<'a> {
             $(
                 $name {
                     $($p_name: $p_ty),*
@@ -155,13 +155,13 @@ macro_rules! define_methods {
             )*
         }
 
-        impl MethodCall {
+        impl<'a> MethodCall<'a> {
             /// Returns a list of RPC method names of all the methods in the [`MethodCall`] enum.
             pub fn method_names() -> impl ExactSizeIterator<Item = &'static str> {
                 [$(stringify!($name)),*].iter().copied()
             }
 
-            fn from_defs<'a>(name: &'a str, params: &'a str) -> Result<Self, MethodError<'a>> {
+            fn from_defs(name: &'a str, params: &'a str) -> Result<Self, MethodError<'a>> {
                 #![allow(unused, unused_mut)]
 
                 $(
@@ -170,13 +170,18 @@ macro_rules! define_methods {
                         // For example, a method `my_method(foo: i32, bar: &str)` accepts
                         // parameters formatted as `{"foo":5, "bar":"hello"}`.
                         #[derive(serde::Deserialize)]
-                        struct Params {
+                        struct Params<'a> {
                             $(
                                 $p_name: $p_ty,
                             )*
+
+                            // This `_dummy` field is necessary to not have an "unused lifetime"
+                            // error if the parameters don't have a lifetime.
+                            #[serde(skip)]
+                            _dummy: core::marker::PhantomData<&'a ()>,
                         }
                         if let Ok(params) = serde_json::from_str(params) {
-                            let Params { $($p_name),* } = params;
+                            let Params { _dummy: _, $($p_name),* } = params;
                             return Ok(MethodCall::$name {
                                 $($p_name,)*
                             })
@@ -186,14 +191,17 @@ macro_rules! define_methods {
                         // For example, a method `my_method(foo: i32, bar: &str)` also accepts
                         // parameters formatted as `[5, "hello"]`.
                         // To make things more complex, optional parameters can be omitted.
-                        // TODO: code below is far from being zero-cost
-                        if let Ok(params) = serde_json::from_str::<Vec<serde_json::Value>>(params) {
+                        //
+                        // The code below allocates a `Vec`, but at the time of writing there is
+                        // no way to ask `serde_json` to parse an array without doing so.
+                        if let Ok(params) = serde_json::from_str::<Vec<&'a serde_json::value::RawValue>>(params) {
                             let mut n = 0;
                             $(
                                 // Missing parameters are implicitly equal to null.
-                                let val = params.get(n).cloned()
-                                    .unwrap_or(serde_json::Value::Null);
-                                let $p_name = match serde_json::from_value(val) {
+                                let $p_name = match params.get(n)
+                                    .map(|val| serde_json::from_str(val.get()))
+                                    .unwrap_or_else(|| serde_json::from_str("null"))
+                                {
                                     Ok(v) => v,
                                     Err(err) => return Err(MethodError::InvalidParameter {
                                         rpc_method: stringify!($name),
@@ -269,7 +277,7 @@ define_methods! {
     author_rotateKeys() -> HexString,
     author_submitAndWatchExtrinsic(transaction: HexString) -> &'a str,
     author_submitExtrinsic(transaction: HexString) -> HashHexString,
-    author_unwatchExtrinsic(subscription: String) -> bool,
+    author_unwatchExtrinsic(subscription: &'a str) -> bool,
     babe_epochAuthorship() -> (), // TODO:
     chain_getBlock(hash: Option<HashHexString>) -> Block,
     chain_getBlockHash(height: Option<u64>) -> HashHexString [chain_getHead],
@@ -305,7 +313,7 @@ define_methods! {
     state_subscribeRuntimeVersion() -> &'a str [chain_subscribeRuntimeVersion],
     state_subscribeStorage(list: Vec<HexString>) -> &'a str,
     state_unsubscribeRuntimeVersion() -> bool [chain_unsubscribeRuntimeVersion],
-    state_unsubscribeStorage(subscription: String) -> bool,
+    state_unsubscribeStorage(subscription: &'a str) -> bool,
     system_accountNextIndex(account: AccountId) -> u64,
     system_addReservedPeer() -> (), // TODO:
     system_chain() -> &'a str,

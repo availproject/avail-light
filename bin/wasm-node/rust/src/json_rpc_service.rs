@@ -337,7 +337,11 @@ impl JsonRpcService {
     ///
     /// Depending on the request, either calls [`JsonRpcService::send_back`] immediately or
     /// spawns a background task for further processing.
-    pub async fn handle_rpc(self: Arc<JsonRpcService>, request_id: &str, call: MethodCall) {
+    pub async fn handle_rpc<'a>(
+        self: Arc<JsonRpcService>,
+        request_id: &'a str,
+        call: MethodCall<'a>,
+    ) {
         // Most calls are handled directly in this method's body. The most voluminous (in terms
         // of lines of code) have their dedicated methods.
         match call {
@@ -378,7 +382,7 @@ impl JsonRpcService {
             }
             methods::MethodCall::author_unwatchExtrinsic { subscription } => {
                 let invalid =
-                    if let Some(cancel_tx) = self.transactions.lock().await.remove(&subscription) {
+                    if let Some(cancel_tx) = self.transactions.lock().await.remove(subscription) {
                         // `cancel_tx` might have been closed if the channel from the transactions
                         // service has been closed too. This is not an error.
                         let _ = cancel_tx.send(request_id.to_owned());
@@ -712,7 +716,7 @@ impl JsonRpcService {
             }
             methods::MethodCall::state_unsubscribeStorage { subscription } => {
                 let invalid =
-                    if let Some(cancel_tx) = self.storage.lock().await.remove(&subscription) {
+                    if let Some(cancel_tx) = self.storage.lock().await.remove(subscription) {
                         cancel_tx.send(request_id.to_owned()).is_err()
                     } else {
                         true
