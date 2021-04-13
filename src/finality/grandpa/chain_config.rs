@@ -21,8 +21,7 @@ use crate::{
 };
 
 use alloc::{borrow::ToOwned as _, vec::Vec};
-use core::num::NonZeroU64;
-use parity_scale_codec::DecodeAll as _;
+use core::{convert::TryFrom as _, num::NonZeroU64};
 
 /// Grandpa configuration of a chain, as extracted from the genesis block.
 ///
@@ -71,19 +70,10 @@ impl GrandpaGenesisConfiguration {
                 .map_err(FromGenesisStorageError::VmError)?
         };
 
-        let decoded = match ConfigScaleEncoding::decode_all(&encoded_list) {
-            Ok(cfg) => cfg,
-            Err(err) => return Err(FromGenesisStorageError::OutputDecode(err)),
-        };
-
-        let initial_authorities = decoded
-            .into_iter()
-            .map(|(public_key, weight)| header::GrandpaAuthority { public_key, weight })
-            .collect();
-
-        Ok(GrandpaGenesisConfiguration {
-            initial_authorities,
-        })
+        match decode_config(&encoded_list) {
+            Ok(cfg) => Ok(cfg),
+            Err(()) => return Err(FromGenesisStorageError::OutputDecode),
+        }
     }
 
     fn from_virtual_machine_prototype(
@@ -127,7 +117,7 @@ pub enum FromGenesisStorageError {
     /// Version number of the encoded authorities list isn't recognized.
     UnknownEncodingVersionNumber,
     /// Error while decoding the SCALE-encoded list.
-    OutputDecode(parity_scale_codec::Error),
+    OutputDecode,
     /// Error when initializing the virtual machine.
     VmInitialization(host::NewErr),
     /// Error while executing the runtime.
@@ -172,4 +162,34 @@ impl FromVmPrototypeError {
     }
 }
 
-type ConfigScaleEncoding = Vec<([u8; 32], NonZeroU64)>;
+fn decode_config(scale_encoded: &[u8]) -> Result<GrandpaGenesisConfiguration, ()> {
+    let result: nom::IResult<_, _> = nom::combinator::all_consuming(nom::combinator::flat_map(
+        crate::util::nom_scale_compact_usize,
+        |num_elems| {
+            nom::multi::fold_many_m_n(
+                num_elems,
+                num_elems,
+                nom::sequence::tuple((
+                    nom::bytes::complete::take(32u32),
+                    nom::combinator::map_opt(nom::number::complete::le_u64, NonZeroU64::new),
+                )),
+                GrandpaGenesisConfiguration {
+                    initial_authorities: Vec::with_capacity(num_elems),
+                },
+                |mut acc, (public_key, weight)| {
+                    acc.initial_authorities.push(header::GrandpaAuthority {
+                        public_key: <[u8; 32]>::try_from(public_key).unwrap(),
+                        weight,
+                    });
+                    acc
+                },
+            )
+        },
+    ))(scale_encoded);
+
+    match result {
+        Ok((_, out)) => Ok(out),
+        Err(nom::Err::Error(_)) | Err(nom::Err::Failure(_)) => Err(()),
+        Err(_) => unreachable!(),
+    }
+}

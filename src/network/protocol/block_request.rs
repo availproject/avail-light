@@ -129,15 +129,16 @@ pub fn decode_block_response(
         let mut body = Vec::with_capacity(block.body.len());
         for extrinsic in block.body {
             // TODO: this encoding really is a bit stupid
-            let ext =
-                match <Vec<u8> as parity_scale_codec::DecodeAll>::decode_all(extrinsic.as_ref()) {
-                    Ok(e) => e,
-                    Err(_) => {
-                        return Err(DecodeBlockResponseError::BodyDecodeError);
-                    }
-                };
+            let parsing: nom::IResult<_, _> = nom::combinator::all_consuming(
+                nom::multi::length_data(crate::util::nom_scale_compact_usize),
+            )(extrinsic.as_ref());
 
-            body.push(ext);
+            match parsing {
+                Ok((_, e)) => body.push(e.to_vec()),
+                Err(_) => {
+                    return Err(DecodeBlockResponseError::BodyDecodeError);
+                }
+            }
         }
 
         blocks.push(BlockData {
