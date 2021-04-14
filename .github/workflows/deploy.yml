@@ -60,9 +60,8 @@ jobs:
       - run: apt-get update && apt install -y binaryen # For `wasm-opt`
       - uses: actions-rs/toolchain@v1
         with:
-          # The Rust version used for compiling the Wasm node is pinned.
-          toolchain: 1.51.0
-          target: wasm32-wasi
+          # Ideally we don't want to install any toolchain, but the GH action doesn't support this.
+          toolchain: stable
           profile: minimal
       - uses: Swatinem/rust-cache@v1
       - run: npm install

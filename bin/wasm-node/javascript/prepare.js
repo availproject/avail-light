@@ -21,14 +21,26 @@ import * as fs from 'fs';
 // Which Cargo profile to use to compile the Rust. Should be either `debug` or `release`.
 const build_profile = 'release';
 
+// The Rust version to use.
+// The Rust version is pinned because the wasi target is still unstable. Without pinning, it is
+// possible for the wasm-js bindings to change between two Rust versions. Feel free to update
+// this version pin whenever you like, provided it continues to build.
+const rust_version = '1.51.0';
+
+// Assume that the user has `rustup` installed and make sure that `rust_version` is available.
+child_process.execSync(
+    "rustup install --no-self-update --profile=minimal " + rust_version,
+    { 'stdio': 'inherit' }
+);
+child_process.execSync(
+    "rustup target add --toolchain=" + rust_version + " wasm32-wasi",
+    { 'stdio': 'inherit' }
+);
+
 // The important step in this script is running `cargo build --target wasm32-wasi` on the Rust
 // code. This generates a `wasm` file in `target/wasm32-wasi`.
-//
-// Note: the Rust version is pinned because the wasi target is still unstable. Without pinning, it
-// is possible for the wasm-js bindings to change between two Rust versions. Feel free to update
-// this version pin whenever you like, provided it continues to build.
 child_process.execSync(
-    "cargo +1.51.0 build --package smoldot-js --target wasm32-wasi --no-default-features"
+    "cargo +" + rust_version + " build --package smoldot-js --target wasm32-wasi --no-default-features"
     + (build_profile == 'debug' ? '' : ' --' + build_profile),
     { 'stdio': 'inherit' }
 );

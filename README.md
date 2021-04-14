@@ -20,7 +20,15 @@ The full client is a binary similar to the official Polkadot client, and can be 
 
 > Note: The `Cargo.toml` contains a section `[profile.dev] opt-level = 2`, and as such `cargo run` alone should give performances close to the ones in release mode.
 
+The following list is a best-effort list of packages that must be available on the system in order to compile the full node:
+
+- `clang` or `gcc`
+- `pkg-config`
+- `sqlite`
+
 ### Wasm light node
+
+Pre-requisite: in order to run the wasm light node, you must have installed [rustup](https://rustup.rs/).
 
 The wasm light node can be tested with `cd bin/wasm-node/javascript` and `npm start`. This will start a WebSocket server capable of answering JSON-RPC requests. You can then navigate to <https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944> in order to interact with the Westend chain.
 

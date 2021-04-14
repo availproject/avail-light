@@ -44,9 +44,6 @@ jobs:
       with:
         node-version: '12'
     - run: apt-get update && apt install -y binaryen # For `wasm-opt`
-      # The Rust version used for compiling the Wasm node is pinned.
-    - run: rustup install --profile=minimal 1.51.0
-    - run: rustup target add --toolchain=1.51.0 wasm32-wasi
     - run: cd bin/wasm-node/javascript && npm install && npm test
 
   check-features:
