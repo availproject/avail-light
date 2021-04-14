@@ -311,6 +311,55 @@ impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
             })
         }
     }
+
+    /// Remove a source from the list of sources.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the source wasn't added to the list earlier.
+    ///
+    pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
+        match self {
+            Self::WaitingForSources(waiting_for_sources) => {
+                waiting_for_sources.remove_source(to_remove)
+            }
+            Self::WarpSyncRequest(warp_sync_request) => warp_sync_request.remove_source(to_remove),
+            Self::Verifier(verifier) => verifier.remove_source(to_remove),
+            Self::VirtualMachineParamsGet(mut virtual_machine_params_get) => {
+                let (removed, result) = virtual_machine_params_get.state.remove_source(to_remove);
+                match result {
+                    StateRemoveSourceResult::RemovedOther(state) => {
+                        virtual_machine_params_get.state = state;
+                        (
+                            removed,
+                            Self::VirtualMachineParamsGet(virtual_machine_params_get),
+                        )
+                    }
+                    StateRemoveSourceResult::RemovedCurrent(warp_sync) => (removed, warp_sync),
+                }
+            }
+            Self::StorageGet(mut storage_get) => {
+                let (removed, result) = storage_get.state.remove_source(to_remove);
+                match result {
+                    StateRemoveSourceResult::RemovedOther(state) => {
+                        storage_get.state = state;
+                        (removed, Self::StorageGet(storage_get))
+                    }
+                    StateRemoveSourceResult::RemovedCurrent(warp_sync) => (removed, warp_sync),
+                }
+            }
+            Self::NextKey(mut next_key) => {
+                let (removed, result) = next_key.state.remove_source(to_remove);
+                match result {
+                    StateRemoveSourceResult::RemovedOther(state) => {
+                        next_key.state = state;
+                        (removed, Self::NextKey(next_key))
+                    }
+                    StateRemoveSourceResult::RemovedCurrent(warp_sync) => (removed, warp_sync),
+                }
+            }
+        }
+    }
 }
 
 /// Loading a storage value is required in order to continue.
@@ -442,6 +491,29 @@ impl<TSrc> Verifier<TSrc> {
         }))
     }
 
+    /// Remove a source from the list of sources.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the source wasn't added to the list earlier.
+    ///
+    pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
+        debug_assert!(self.sources.contains(to_remove.0));
+        let removed = self.sources.remove(to_remove.0).user_data;
+
+        if to_remove == self.warp_sync_source_id {
+            let next_state = InProgressGrandpaWarpSync::warp_sync_request_from_next_source(
+                self.sources,
+                self.state,
+                self.previous_verifier_values,
+            );
+
+            (removed, next_state)
+        } else {
+            (removed, InProgressGrandpaWarpSync::Verifier(self))
+        }
+    }
+
     pub fn next(self) -> (InProgressGrandpaWarpSync<TSrc>, Option<warp_sync::Error>) {
         match self.verifier.next() {
             Ok(warp_sync::Next::NotFinished(next_verifier)) => (
@@ -510,6 +582,35 @@ struct PostVerificationState<TSrc> {
     warp_sync_source_id: SourceId,
 }
 
+impl<TSrc> PostVerificationState<TSrc> {
+    fn remove_source(mut self, to_remove: SourceId) -> (TSrc, StateRemoveSourceResult<TSrc>) {
+        debug_assert!(self.sources.contains(to_remove.0));
+        let removed = self.sources.remove(to_remove.0).user_data;
+
+        if to_remove == self.warp_sync_source_id {
+            (
+                removed,
+                StateRemoveSourceResult::RemovedCurrent(
+                    InProgressGrandpaWarpSync::warp_sync_request_from_next_source(
+                        self.sources,
+                        PreVerificationState {
+                            start_chain_information: self.start_chain_information,
+                        },
+                        None,
+                    ),
+                ),
+            )
+        } else {
+            (removed, StateRemoveSourceResult::RemovedOther(self))
+        }
+    }
+}
+
+enum StateRemoveSourceResult<TSrc> {
+    RemovedCurrent(InProgressGrandpaWarpSync<TSrc>),
+    RemovedOther(PostVerificationState<TSrc>),
+}
+
 /// Requesting GrandPa warp sync data from a source is required to continue.
 pub struct WarpSyncRequest<TSrc> {
     source_id: SourceId,
@@ -552,11 +653,10 @@ impl<TSrc> WarpSyncRequest<TSrc> {
     /// Panics if the source wasn't added to the list earlier.
     ///
     pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
+        debug_assert!(self.sources.contains(to_remove.0));
+        let removed = self.sources.remove(to_remove.0).user_data;
+
         if to_remove == self.source_id {
-            debug_assert!(self.sources.contains(to_remove.0));
-
-            let removed = self.sources.remove(to_remove.0).user_data;
-
             let next_state = InProgressGrandpaWarpSync::warp_sync_request_from_next_source(
                 self.sources,
                 self.state,
@@ -565,8 +665,6 @@ impl<TSrc> WarpSyncRequest<TSrc> {
 
             (removed, next_state)
         } else {
-            debug_assert!(self.sources.contains(to_remove.0));
-            let removed = self.sources.remove(to_remove.0).user_data;
             (removed, InProgressGrandpaWarpSync::WarpSyncRequest(self))
         }
     }
@@ -742,6 +840,18 @@ impl<TSrc> WaitingForSources<TSrc> {
             state: self.state,
             previous_verifier_values: self.previous_verifier_values,
         }
+    }
+
+    /// Remove a source from the list of sources.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the source wasn't added to the list earlier.
+    ///
+    pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
+        debug_assert!(self.sources.contains(to_remove.0));
+        let removed = self.sources.remove(to_remove.0).user_data;
+        (removed, InProgressGrandpaWarpSync::WaitingForSources(self))
     }
 }
 
