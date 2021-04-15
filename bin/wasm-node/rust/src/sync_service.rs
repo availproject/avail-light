@@ -358,10 +358,7 @@ async fn start_relay_chain(
                                                     trie_root_hash: &state_trie_root,
                                                 },
                                             )
-                                            .map_err(|_err| {
-                                                panic!("{:?}", _err); // TODO: remove panic, it's just for debugging
-                                                ()
-                                            })
+                                            .map_err(|_| ())
                                             .map(|v| v.map(|v| v.to_vec()))
                                         })
                                         .collect::<Result<Vec<_>, ()>>()
