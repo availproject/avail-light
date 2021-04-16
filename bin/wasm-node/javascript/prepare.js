@@ -28,10 +28,17 @@ const build_profile = 'release';
 const rust_version = '1.51.0';
 
 // Assume that the user has `rustup` installed and make sure that `rust_version` is available.
-child_process.execSync(
-    "rustup install --no-self-update --profile=minimal " + rust_version,
-    { 'stdio': 'inherit' }
-);
+// Because `rustup install` requires an Internet connection, check whether the toolchain is
+// already installed before attempting it.
+try {
+    child_process.execSync("rustup which --toolchain " + rust_version + " cargo");
+} catch (error) {
+    child_process.execSync(
+        "rustup install --no-self-update --profile=minimal " + rust_version,
+        { 'stdio': 'inherit' }
+    );
+}
+// `rustup target add` doesn't require an Internet connection if the target is already installed.
 child_process.execSync(
     "rustup target add --toolchain=" + rust_version + " wasm32-wasi",
     { 'stdio': 'inherit' }
