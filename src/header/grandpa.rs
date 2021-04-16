@@ -117,13 +117,13 @@ impl<'a> GrandpaConsensusLogRef<'a> {
                 ))
             }
             GrandpaConsensusLogRef::OnDisabled(n) => either::Either::Right(iter::once(
-                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+                either::Either::Right(n.to_le_bytes().to_vec()), // TODO: to_vec()
             )),
             GrandpaConsensusLogRef::Pause(n) => either::Either::Right(iter::once(
-                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+                either::Either::Right(n.to_le_bytes().to_vec()), // TODO: to_vec()
             )),
             GrandpaConsensusLogRef::Resume(n) => either::Either::Right(iter::once(
-                either::Either::Right(parity_scale_codec::Encode::encode(n)),
+                either::Either::Right(n.to_le_bytes().to_vec()), // TODO: to_vec()
             )),
         };
 
