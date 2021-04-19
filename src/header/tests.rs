@@ -40,3 +40,10 @@ fn decode_rococo() {
     ])
     .unwrap();
 }
+
+#[test]
+fn decode_polkadot() {
+    // Polkadot block #512271.
+    // Has a GrandPa scheduled change.
+    super::decode(include_bytes!("./tests-header-polkadot-512271")).unwrap();
+}

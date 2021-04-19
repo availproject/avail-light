@@ -192,6 +192,10 @@
 
 extern crate alloc;
 
+// Necessary because of `#![deny(unused_crate_dependencies)]`.
+#[cfg(test)]
+use criterion as _;
+
 pub mod author;
 pub mod chain;
 pub mod chain_spec;
