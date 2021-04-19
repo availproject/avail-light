@@ -26,7 +26,7 @@ futures-timer = "3.0"
 hashbrown = { version = "0.11.2", default-features = false }
 hex = { version = "0.4.3", default-features = false }
 parking_lot = { version = "0.11.1" }
-pin-project = "1.0.6"
+pin-project = "1.0.7"
 rand = "0.8.3"
 smoldot = { version = "0.1.0", path = "../..", default-features = false, features = ["database-sqlite", "std"] }
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
