@@ -24,7 +24,7 @@ export interface SmoldotClient {
   terminate(): void;
 }
 
-export type SmoldotJsonRpcCallback = (response: string, chain_index: number) => void;
+export type SmoldotJsonRpcCallback = (response: string, chain_index?: number) => void;
 export type SmoldotLogCallback = (level: number, target: string, message: string) => void;
 
 export interface SmoldotOptions {
