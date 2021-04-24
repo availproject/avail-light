@@ -67,7 +67,7 @@ schnorrkel = { version = "0.10.1", default-features = false, features = ["preaud
 serde = { version = "1.0.125", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0.64", default-features = false, features = ["alloc", "raw_value"] }
 sha2 = { version = "0.9.3", default-features = false }
-slab = "0.4.3"  # TODO: doesn't support no_std and is unmaintained :-/
+slab = { version = "0.4.3", default-features = false }
 smallvec = "1.6.1"
 snow = { version = "0.7.2", default-features = false, features = ["default-resolver"] }
 tiny-keccak = { version = "2.0", features = ["keccak"] }
