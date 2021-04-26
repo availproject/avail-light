@@ -938,43 +938,40 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                         data = &data[num_read..];
                         if protocol == self.ping_protocol {
                             *substream.user_data() = Substream::PingIn(Default::default());
-                        } else {
-                            if let Some(protocol_index) = self
-                                .request_protocols
-                                .iter()
-                                .position(|p| p.name == protocol)
+                        } else if let Some(protocol_index) = self
+                            .request_protocols
+                            .iter()
+                            .position(|p| p.name == protocol)
+                        {
+                            if let ConfigRequestResponseIn::Payload { max_size } =
+                                self.request_protocols[protocol_index].inbound_config
                             {
-                                if let ConfigRequestResponseIn::Payload { max_size } =
-                                    self.request_protocols[protocol_index].inbound_config
-                                {
-                                    *substream.user_data() = Substream::RequestInRecv {
-                                        protocol_index,
-                                        request: leb128::FramedInProgress::new(max_size),
-                                    };
-                                } else {
-                                    // TODO: make sure that data is empty?
-                                    *substream.user_data() = Substream::RequestInSend;
-                                    return Some(Event::RequestIn {
-                                        id: substream_id,
-                                        protocol_index,
-                                        request: Vec::new(),
-                                    });
-                                }
-                            } else if let Some(protocol_index) = self
-                                .notifications_protocols
-                                .iter()
-                                .position(|p| p.name == protocol)
-                            {
-                                *substream.user_data() = Substream::NotificationsInHandshake {
+                                *substream.user_data() = Substream::RequestInRecv {
                                     protocol_index,
-                                    handshake: leb128::FramedInProgress::new(
-                                        self.notifications_protocols[protocol_index]
-                                            .max_handshake_size,
-                                    ),
+                                    request: leb128::FramedInProgress::new(max_size),
                                 };
                             } else {
-                                unreachable!()
+                                // TODO: make sure that data is empty?
+                                *substream.user_data() = Substream::RequestInSend;
+                                return Some(Event::RequestIn {
+                                    id: substream_id,
+                                    protocol_index,
+                                    request: Vec::new(),
+                                });
                             }
+                        } else if let Some(protocol_index) = self
+                            .notifications_protocols
+                            .iter()
+                            .position(|p| p.name == protocol)
+                        {
+                            *substream.user_data() = Substream::NotificationsInHandshake {
+                                protocol_index,
+                                handshake: leb128::FramedInProgress::new(
+                                    self.notifications_protocols[protocol_index].max_handshake_size,
+                                ),
+                            };
+                        } else {
+                            unreachable!()
                         }
                     }
                     Ok((multistream_select::Negotiation::NotAvailable, num_read, out_buffer)) => {

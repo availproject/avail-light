@@ -70,18 +70,18 @@ impl Handshake {
 
 /// Connection handshake in progress.
 pub struct HealthyHandshake {
-    state: HandshakeState,
+    state: NegotiationState,
 }
 
-enum HandshakeState {
-    NegotiatingEncryptionProtocol {
+enum NegotiationState {
+    EncryptionProtocol {
         negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
         is_initiator: bool,
     },
-    NegotiatingEncryption {
+    Encryption {
         handshake: Box<noise::HandshakeInProgress>,
     },
-    NegotiatingMultiplexing {
+    Multiplexing {
         peer_id: PeerId,
         encryption: noise::Noise,
         negotiation: multistream_select::InProgress<iter::Once<&'static str>, &'static str>,
@@ -105,7 +105,7 @@ impl HealthyHandshake {
         });
 
         HealthyHandshake {
-            state: HandshakeState::NegotiatingEncryptionProtocol {
+            state: NegotiationState::EncryptionProtocol {
                 negotiation,
                 is_initiator,
             },
@@ -134,7 +134,7 @@ impl HealthyHandshake {
 
         loop {
             match self.state {
-                HandshakeState::NegotiatingEncryptionProtocol {
+                NegotiationState::EncryptionProtocol {
                     negotiation,
                     is_initiator,
                 } => {
@@ -152,7 +152,7 @@ impl HealthyHandshake {
                                 && !outgoing_buffer.1.is_empty()
                             {
                                 outgoing_buffer = (outgoing_buffer.1, &mut []);
-                                self.state = HandshakeState::NegotiatingEncryptionProtocol {
+                                self.state = NegotiationState::EncryptionProtocol {
                                     negotiation: updated,
                                     is_initiator,
                                 };
@@ -161,7 +161,7 @@ impl HealthyHandshake {
 
                             Ok((
                                 Handshake::Healthy(HealthyHandshake {
-                                    state: HandshakeState::NegotiatingEncryptionProtocol {
+                                    state: NegotiationState::EncryptionProtocol {
                                         negotiation: updated,
                                         is_initiator,
                                     },
@@ -185,7 +185,7 @@ impl HealthyHandshake {
                     };
                 }
 
-                HandshakeState::NegotiatingEncryption { handshake } => {
+                NegotiationState::Encryption { handshake } => {
                     // Delegating read/write to the Noise handshake state machine.
                     let (updated, num_read, num_written) = handshake
                         .read_write(incoming_buffer, outgoing_buffer.0)
@@ -217,7 +217,7 @@ impl HealthyHandshake {
                                     }
                                 });
 
-                            self.state = HandshakeState::NegotiatingMultiplexing {
+                            self.state = NegotiationState::Multiplexing {
                                 peer_id: remote_peer_id,
                                 encryption: cipher,
                                 negotiation,
@@ -228,7 +228,7 @@ impl HealthyHandshake {
                         noise::NoiseHandshake::InProgress(updated) => {
                             return Ok((
                                 Handshake::Healthy(HealthyHandshake {
-                                    state: HandshakeState::NegotiatingEncryption {
+                                    state: NegotiationState::Encryption {
                                         handshake: Box::new(updated),
                                     },
                                 }),
@@ -239,7 +239,7 @@ impl HealthyHandshake {
                     };
                 }
 
-                HandshakeState::NegotiatingMultiplexing {
+                NegotiationState::Multiplexing {
                     negotiation,
                     mut encryption,
                     peer_id,
@@ -286,7 +286,7 @@ impl HealthyHandshake {
                     return match updated {
                         multistream_select::Negotiation::InProgress(updated) => Ok((
                             Handshake::Healthy(HealthyHandshake {
-                                state: HandshakeState::NegotiatingMultiplexing {
+                                state: NegotiationState::Multiplexing {
                                     negotiation: updated,
                                     encryption,
                                     peer_id,
@@ -329,7 +329,7 @@ impl NoiseKeyRequired {
     /// Turn this [`NoiseKeyRequired`] back into a [`HealthyHandshake`] by indicating the noise key.
     pub fn resume(self, noise_key: &NoiseKey) -> HealthyHandshake {
         HealthyHandshake {
-            state: HandshakeState::NegotiatingEncryption {
+            state: NegotiationState::Encryption {
                 handshake: Box::new(noise::HandshakeInProgress::new(
                     noise_key,
                     self.is_initiator,

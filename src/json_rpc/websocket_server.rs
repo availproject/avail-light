@@ -118,7 +118,7 @@
 mod tests;
 
 use async_std::net::{TcpListener, TcpStream};
-use core::{fmt, pin::Pin, str};
+use core::{fmt, str};
 use futures::{channel::mpsc, prelude::*};
 use soketto::handshake::{server::Response, Server};
 use std::{io, net::SocketAddr};

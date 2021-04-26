@@ -300,7 +300,7 @@ impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
             Self::WarpSyncRequest(WarpSyncRequest {
                 source_id: next_id,
                 sources,
-                state: state,
+                state,
                 previous_verifier_values,
             })
         } else {
