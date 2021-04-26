@@ -44,9 +44,9 @@ const startInstance = async (config) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'log', level, target, message });
     },
-    jsonRpcCallback: (data, chain_index) => {
+    jsonRpcCallback: (data, chain_index, user_data) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
-      compat.postMessage({ kind: 'jsonrpc', data, chain_index });
+      compat.postMessage({ kind: 'jsonrpc', data, chain_index, user_data });
     },
   };
 
@@ -90,7 +90,7 @@ const startInstance = async (config) => {
     const len = Buffer.byteLength(message.request, 'utf8');
     const ptr = result.instance.exports.alloc(len);
     Buffer.from(result.instance.exports.memory.buffer).write(message.request, ptr);
-    result.instance.exports.json_rpc_send(ptr, len, message.chain_index);
+    result.instance.exports.json_rpc_send(ptr, len, message.chain_index, message.user_data);
   });
 
   state = result.instance;
@@ -112,6 +112,6 @@ compat.setOnMessage((message) => {
     const len = Buffer.byteLength(message.request, 'utf8');
     const ptr = state.exports.alloc(len);
     Buffer.from(state.exports.memory.buffer).write(message.request, ptr);
-    state.exports.json_rpc_send(ptr, len, message.chain_index);
+    state.exports.json_rpc_send(ptr, len, message.chain_index, message.user_data);
   }
 });

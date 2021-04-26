@@ -67,10 +67,11 @@ export async function start(config) {
       // reported with the callback.
       if (initPromiseResolve) {
         initPromiseResolve();
+        // TODO: unsubscribe_all with `user_data` 0
         initPromiseReject = null;
         initPromiseResolve = null;
       } else if (config.json_rpc_callback) {
-        config.json_rpc_callback(message.data, message.chain_index);
+        config.json_rpc_callback(message.data, message.chain_index, message.user_data);
       }
 
     } else if (message.kind == 'log') {
@@ -116,7 +117,8 @@ export async function start(config) {
   // would have a higher complexity.
   worker.postMessage({
     request: '{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}',
-    chain_index: 0
+    chain_index: 0,
+    user_data: 0,
   });
 
   // Now blocking until the worker sends back the response.
@@ -126,7 +128,7 @@ export async function start(config) {
   return {
     send_json_rpc: (request) => {
       if (!workerError) {
-        worker.postMessage({ request, chain_index: 0 });
+        worker.postMessage({ request, chain_index: 0, user_data: 0 });
       } else {
         throw workerError;
       }

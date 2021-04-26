@@ -73,8 +73,8 @@ extern "C" {
     ///
     /// The response or notification is a UTF-8 string found in the memory of the WebAssembly
     /// virtual machine at offset `ptr` and with length `len`. `chain_index` is the chain
-    /// that the request was made to.
-    pub fn json_rpc_respond(ptr: u32, len: u32, chain_index: u32);
+    /// that the request was made to. `user_data` is the value that was passed to [`json_rpc_send`].
+    pub fn json_rpc_respond(ptr: u32, len: u32, chain_index: u32, user_data: u32);
 
     /// Client is emitting a log entry.
     ///
@@ -226,10 +226,20 @@ pub extern "C" fn init(
 /// The buffer passed as parameter **must** have been allocated with [`alloc`]. It is freed when
 /// this function is called.
 ///
+/// Additionally, an arbitrary value is also passed as a parameter. This value will later be
+/// provided back in [`json_rpc_respond`]. It can also be passed to [`json_rpc_unsubscribe_all`].
+///
 /// Responses and subscriptions notifications are sent back using [`json_rpc_respond`].
 #[no_mangle]
-pub extern "C" fn json_rpc_send(text_ptr: u32, text_len: u32, chain_index: u32) {
-    super::json_rpc_send(text_ptr, text_len, chain_index)
+pub extern "C" fn json_rpc_send(text_ptr: u32, text_len: u32, chain_index: u32, user_data: u32) {
+    super::json_rpc_send(text_ptr, text_len, chain_index, user_data)
+}
+
+/// Unsubscribe all the JSON-RPC subscriptions for a source. Should be called when disconnecting from
+/// a source that's connected to smoldot.
+#[no_mangle]
+pub extern "C" fn json_rpc_unsubscribe_all(user_data: u32) {
+    super::json_rpc_unsubscribe_all(user_data)
 }
 
 /// Must be called in response to [`start_timer`] after the given duration has passed.
