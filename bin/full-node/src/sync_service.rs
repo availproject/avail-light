@@ -206,93 +206,105 @@ fn start_sync(
                 .unwrap();
 
             // Verify blocks that have been fetched from queries.
-            let mut process = sync.process_one(unix_time);
+            let mut process = sync.process_one();
             loop {
                 match process {
                     optimistic::ProcessOne::Idle { sync: s } => {
                         sync = s;
                         break;
                     }
-                    optimistic::ProcessOne::Reset {
-                        sync: s,
-                        previous_best_height,
-                        reason,
-                    } => {
-                        tracing::warn!(%reason, %previous_best_height, "failed-block-verification");
-                        process = s.process_one(unix_time);
-                    }
-                    optimistic::ProcessOne::Finalized {
-                        sync: s,
-                        finalized_blocks,
-                    } => {
-                        process = s.process_one(unix_time);
+                    optimistic::ProcessOne::Verify(verify) => {
+                        let mut verify = verify.start(unix_time);
+                        loop {
+                            match verify {
+                                optimistic::BlockVerification::Reset {
+                                    sync: s,
+                                    previous_best_height,
+                                    reason,
+                                } => {
+                                    tracing::warn!(%reason, %previous_best_height, "failed-block-verification");
+                                    process = s.process_one();
+                                    break;
+                                }
+                                optimistic::BlockVerification::Finalized {
+                                    sync: s,
+                                    finalized_blocks,
+                                } => {
+                                    process = s.process_one();
 
-                        if let Some(last_finalized) = finalized_blocks.last() {
-                            let mut lock = sync_state.lock().await;
-                            lock.finalized_block_hash = last_finalized.header.hash();
-                            lock.finalized_block_number = last_finalized.header.number;
-                        }
+                                    if let Some(last_finalized) = finalized_blocks.last() {
+                                        let mut lock = sync_state.lock().await;
+                                        lock.finalized_block_hash = last_finalized.header.hash();
+                                        lock.finalized_block_number = last_finalized.header.number;
+                                    }
 
-                        // TODO: maybe write in a separate task? but then we can't access the finalized storage immediately after?
-                        for block in &finalized_blocks {
-                            for (key, value) in &block.storage_top_trie_changes {
-                                if let Some(value) = value {
-                                    finalized_block_storage.insert(key.clone(), value.clone());
-                                } else {
-                                    let _was_there = finalized_block_storage.remove(key);
-                                    // TODO: if a block inserts a new value, then removes it in the next block, the key will remain in `finalized_block_storage`; either solve this or document this
-                                    // assert!(_was_there.is_some());
+                                    // TODO: maybe write in a separate task? but then we can't access the finalized storage immediately after?
+                                    for block in &finalized_blocks {
+                                        for (key, value) in &block.storage_top_trie_changes {
+                                            if let Some(value) = value {
+                                                finalized_block_storage
+                                                    .insert(key.clone(), value.clone());
+                                            } else {
+                                                let _was_there =
+                                                    finalized_block_storage.remove(key);
+                                                // TODO: if a block inserts a new value, then removes it in the next block, the key will remain in `finalized_block_storage`; either solve this or document this
+                                                // assert!(_was_there.is_some());
+                                            }
+                                        }
+                                    }
+
+                                    to_database
+                                        .send(ToDatabase::FinalizedBlocks(finalized_blocks))
+                                        .await
+                                        .unwrap();
+                                    break;
+                                }
+
+                                optimistic::BlockVerification::NewBest {
+                                    sync: s,
+                                    new_best_hash,
+                                    new_best_number,
+                                } => {
+                                    // Processing has made a step forward.
+                                    // There is nothing to do, but this is used to update to best block
+                                    // shown on the informant.
+                                    let mut lock = sync_state.lock().await;
+                                    lock.best_block_hash = new_best_hash;
+                                    lock.best_block_number = new_best_number;
+                                    drop(lock);
+
+                                    process = s.process_one();
+                                    break;
+                                }
+
+                                optimistic::BlockVerification::FinalizedStorageGet(req) => {
+                                    let value = finalized_block_storage
+                                        .get(&req.key_as_vec())
+                                        .map(|v| &v[..]);
+                                    verify = req.inject_value(value);
+                                }
+                                optimistic::BlockVerification::FinalizedStorageNextKey(req) => {
+                                    // TODO: to_vec() :-/
+                                    let req_key = req.key().as_ref().to_vec();
+                                    // TODO: to_vec() :-/
+                                    let next_key = finalized_block_storage
+                                        .range(req.key().as_ref().to_vec()..)
+                                        .find(move |(k, _)| k[..] > req_key[..])
+                                        .map(|(k, _)| k);
+                                    verify = req.inject_key(next_key);
+                                }
+                                optimistic::BlockVerification::FinalizedStoragePrefixKeys(req) => {
+                                    // TODO: to_vec() :-/
+                                    let prefix = req.prefix().as_ref().to_vec();
+                                    // TODO: to_vec() :-/
+                                    let keys = finalized_block_storage
+                                        .range(req.prefix().as_ref().to_vec()..)
+                                        .take_while(|(k, _)| k.starts_with(&prefix))
+                                        .map(|(k, _)| k);
+                                    verify = req.inject_keys(keys);
                                 }
                             }
                         }
-
-                        to_database
-                            .send(ToDatabase::FinalizedBlocks(finalized_blocks))
-                            .await
-                            .unwrap();
-                    }
-
-                    optimistic::ProcessOne::NewBest {
-                        sync: s,
-                        new_best_hash,
-                        new_best_number,
-                    } => {
-                        // Processing has made a step forward.
-                        // There is nothing to do, but this is used to update to best block
-                        // shown on the informant.
-                        let mut lock = sync_state.lock().await;
-                        lock.best_block_hash = new_best_hash;
-                        lock.best_block_number = new_best_number;
-                        drop(lock);
-
-                        process = s.process_one(unix_time);
-                    }
-
-                    optimistic::ProcessOne::FinalizedStorageGet(req) => {
-                        let value = finalized_block_storage
-                            .get(&req.key_as_vec())
-                            .map(|v| &v[..]);
-                        process = req.inject_value(value);
-                    }
-                    optimistic::ProcessOne::FinalizedStorageNextKey(req) => {
-                        // TODO: to_vec() :-/
-                        let req_key = req.key().as_ref().to_vec();
-                        // TODO: to_vec() :-/
-                        let next_key = finalized_block_storage
-                            .range(req.key().as_ref().to_vec()..)
-                            .find(move |(k, _)| k[..] > req_key[..])
-                            .map(|(k, _)| k);
-                        process = req.inject_key(next_key);
-                    }
-                    optimistic::ProcessOne::FinalizedStoragePrefixKeys(req) => {
-                        // TODO: to_vec() :-/
-                        let prefix = req.prefix().as_ref().to_vec();
-                        // TODO: to_vec() :-/
-                        let keys = finalized_block_storage
-                            .range(req.prefix().as_ref().to_vec()..)
-                            .take_while(|(k, _)| k.starts_with(&prefix))
-                            .map(|(k, _)| k);
-                        process = req.inject_keys(keys);
                     }
                 }
             }

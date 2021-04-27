@@ -603,7 +603,7 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                         .map_err(|()| optimistic::RequestFail::BlocksUnavailable),
                 );
 
-                match sync.process_one(now_from_unix_epoch) {
+                match sync.process_one() {
                     optimistic::ProcessOne::Idle { mut sync } => {
                         let mut next_actions = Vec::new();
                         while let Some(action) = sync.next_request_action() {
@@ -618,10 +618,12 @@ impl<TRq, TSrc, TBl> Idle<TRq, TSrc, TBl> {
                             next_actions,
                         }
                     }
-                    other => ResponseOutcome::VerifyHeader(HeaderVerify {
-                        inner: HeaderVerifyInner::Optimistic(other),
-                        shared: self.shared,
-                    }),
+                    optimistic::ProcessOne::Verify(verify) => {
+                        ResponseOutcome::VerifyHeader(HeaderVerify {
+                            inner: HeaderVerifyInner::Optimistic(verify),
+                            shared: self.shared,
+                        })
+                    }
                 }
             }
             (IdleInner::AllForks(mut sync), RequestMapping::AllForks(request_id)) => {
@@ -1050,7 +1052,7 @@ pub struct HeaderVerify<TRq, TSrc, TBl> {
 
 enum HeaderVerifyInner<TRq, TSrc, TBl> {
     AllForks(all_forks::HeaderVerify<TBl, AllForksRequestExtra<TRq>, AllForksSourceExtra<TSrc>>),
-    Optimistic(optimistic::ProcessOne<(), OptimisticSourceExtra<TSrc>, TBl>),
+    Optimistic(optimistic::Verify<(), OptimisticSourceExtra<TSrc>, TBl>),
 }
 
 impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
@@ -1061,102 +1063,102 @@ impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
         user_data: TBl,
     ) -> HeaderVerifyOutcome<TRq, TSrc, TBl> {
         match self.inner {
-            // TODO: the verification in the optimistic is immediate ; change that
-            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Idle { .. }) => unreachable!(),
-            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::NewBest { .. })
-            | HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Finalized { .. }) => {
-                let (mut sync, new_best_number, is_new_finalized) = match self.inner {
-                    HeaderVerifyInner::Optimistic(optimistic::ProcessOne::NewBest {
-                        sync,
-                        new_best_number,
-                        ..
-                    }) => (sync, new_best_number, false),
-                    HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Finalized {
-                        sync,
-                        finalized_blocks,
-                        ..
-                    }) => (sync, finalized_blocks.last().unwrap().header.number, true),
-                    _ => unreachable!(),
-                };
-
-                if new_best_number >= self.shared.highest_block_on_network - 1024 {
-                    // TODO: do this better ^
-                    let (all_forks, next_actions) =
-                        self.shared.transition_optimistic_all_forks(sync);
-                    return HeaderVerifyOutcome::Success {
-                        is_new_best: true,
-                        is_new_finalized,
-                        sync: Idle {
-                            inner: IdleInner::AllForks(all_forks),
-                            shared: self.shared,
-                        }
-                        .into(),
-                        next_actions,
+            HeaderVerifyInner::Optimistic(verify) => match verify.start(now_from_unix_epoch) {
+                outcome @ optimistic::BlockVerification::NewBest { .. }
+                | outcome @ optimistic::BlockVerification::Finalized { .. } => {
+                    let (mut sync, new_best_number, is_new_finalized) = match outcome {
+                        optimistic::BlockVerification::NewBest {
+                            sync,
+                            new_best_number,
+                            ..
+                        } => (sync, new_best_number, false),
+                        optimistic::BlockVerification::Finalized {
+                            sync,
+                            finalized_blocks,
+                            ..
+                        } => (sync, finalized_blocks.last().unwrap().header.number, true),
+                        _ => unreachable!(),
                     };
-                }
 
-                let mut next_actions = Vec::new();
-                while let Some(action) = sync.next_request_action() {
-                    next_actions.push(self.shared.optimistic_action_to_request(action));
-                }
-
-                match sync.process_one(now_from_unix_epoch) {
-                    optimistic::ProcessOne::Idle { sync } => HeaderVerifyOutcome::Success {
-                        is_new_best: true,
-                        is_new_finalized,
-                        sync: Idle {
-                            inner: IdleInner::Optimistic(sync),
-                            shared: self.shared,
-                        }
-                        .into(),
-                        next_actions,
-                    },
-                    other => {
-                        self.inner = HeaderVerifyInner::Optimistic(other);
-                        HeaderVerifyOutcome::Success {
-                            is_new_finalized,
+                    if new_best_number >= self.shared.highest_block_on_network - 1024 {
+                        // TODO: do this better ^
+                        let (all_forks, next_actions) =
+                            self.shared.transition_optimistic_all_forks(sync);
+                        return HeaderVerifyOutcome::Success {
                             is_new_best: true,
-                            sync: self.into(),
+                            is_new_finalized,
+                            sync: Idle {
+                                inner: IdleInner::AllForks(all_forks),
+                                shared: self.shared,
+                            }
+                            .into(),
                             next_actions,
-                        }
+                        };
                     }
-                }
-            }
-            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::Reset { mut sync, .. }) => {
-                let mut next_actions = Vec::new();
-                while let Some(action) = sync.next_request_action() {
-                    next_actions.push(self.shared.optimistic_action_to_request(action));
-                }
 
-                match sync.process_one(now_from_unix_epoch) {
-                    optimistic::ProcessOne::Idle { sync } => HeaderVerifyOutcome::Error {
-                        sync: Idle {
-                            inner: IdleInner::Optimistic(sync),
-                            shared: self.shared,
-                        }
-                        .into(),
-                        next_actions,
-                        error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
-                        user_data,
-                    },
-                    other => {
-                        self.inner = HeaderVerifyInner::Optimistic(other);
-                        HeaderVerifyOutcome::Error {
-                            sync: self.into(),
+                    let mut next_actions = Vec::new();
+                    while let Some(action) = sync.next_request_action() {
+                        next_actions.push(self.shared.optimistic_action_to_request(action));
+                    }
+
+                    match sync.process_one() {
+                        optimistic::ProcessOne::Idle { sync } => HeaderVerifyOutcome::Success {
+                            is_new_best: true,
+                            is_new_finalized,
+                            sync: Idle {
+                                inner: IdleInner::Optimistic(sync),
+                                shared: self.shared,
+                            }
+                            .into(),
                             next_actions,
-                            error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
-                            user_data,
+                        },
+                        optimistic::ProcessOne::Verify(verify) => {
+                            self.inner = HeaderVerifyInner::Optimistic(verify);
+                            HeaderVerifyOutcome::Success {
+                                is_new_finalized,
+                                is_new_best: true,
+                                sync: self.into(),
+                                next_actions,
+                            }
                         }
                     }
                 }
-            }
-            HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStorageGet(_))
-            | HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStorageNextKey(_))
-            | HeaderVerifyInner::Optimistic(optimistic::ProcessOne::FinalizedStoragePrefixKeys(
-                _,
-            )) => {
-                unreachable!()
-            }
+                optimistic::BlockVerification::Reset { mut sync, .. } => {
+                    let mut next_actions = Vec::new();
+                    while let Some(action) = sync.next_request_action() {
+                        next_actions.push(self.shared.optimistic_action_to_request(action));
+                    }
+
+                    match sync.process_one() {
+                        optimistic::ProcessOne::Idle { sync } => {
+                            HeaderVerifyOutcome::Error {
+                                sync: Idle {
+                                    inner: IdleInner::Optimistic(sync),
+                                    shared: self.shared,
+                                }
+                                .into(),
+                                next_actions,
+                                error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
+                                user_data,
+                            }
+                        }
+                        optimistic::ProcessOne::Verify(verify) => {
+                            self.inner = HeaderVerifyInner::Optimistic(verify);
+                            HeaderVerifyOutcome::Error {
+                                sync: self.into(),
+                                next_actions,
+                                error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
+                                user_data,
+                            }
+                        }
+                    }
+                }
+                optimistic::BlockVerification::FinalizedStorageGet(_)
+                | optimistic::BlockVerification::FinalizedStorageNextKey(_)
+                | optimistic::BlockVerification::FinalizedStoragePrefixKeys(_) => {
+                    unreachable!()
+                }
+            },
             HeaderVerifyInner::AllForks(verify) => {
                 match verify.perform(now_from_unix_epoch, user_data) {
                     all_forks::HeaderVerifyOutcome::Success {

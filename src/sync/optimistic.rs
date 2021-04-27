@@ -346,11 +346,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                 .verification_queue
                 .into_iter()
                 .filter_map(|queue_elem| {
-                    if let VerificationQueueEntryTy::Requested {
-                        id,
-                        source,
-                        user_data,
-                    } = queue_elem.ty
+                    if let VerificationQueueEntryTy::Requested { id, user_data, .. } = queue_elem.ty
                     {
                         Some((id, user_data))
                     } else {
@@ -604,43 +600,107 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
     /// Process the next block in the queue of verification.
     ///
-    /// This method takes ownership of the [`OptimisticSync`] and starts a verification
-    /// process. The [`OptimisticSync`] is yielded back at the end of this process.
-    ///
-    /// Must be passed the current UNIX time in order to verify that the block doesn't pretend to
-    /// come from the future.
-    pub fn process_one(mut self, now_from_unix_epoch: Duration) -> ProcessOne<TRq, TSrc, TBl> {
+    /// This method takes ownership of the [`OptimisticSync`]. The [`OptimisticSync`] is yielded
+    /// back in the returned value.
+    pub fn process_one(mut self) -> ProcessOne<TRq, TSrc, TBl> {
         if self.inner.cancelling_requests {
             return ProcessOne::Idle { sync: self };
         }
 
-        // Extract the block to process next.
-        // Be aware that `source_id` might refer to an obsolete source.
-        let (block, source_id) = loop {
+        // Find out if there is a block ready to be processed.
+        // The block isn't immediately extracted. A `Verify` struct is built, whose existence
+        // confirms that a block is ready. If the `Verify` is dropped without `start` being called,
+        // the block stays in the list.
+        loop {
             match &mut self.inner.verification_queue.get_mut(0).map(|b| &mut b.ty) {
-                Some(VerificationQueueEntryTy::Queued { blocks, source }) => {
-                    match blocks.pop_front() {
-                        Some(b) => break (b, *source),
-                        None => {
-                            self.inner.verification_queue.pop_front().unwrap();
-                        }
+                Some(VerificationQueueEntryTy::Queued { blocks, .. }) => match blocks.front() {
+                    Some(_) => break,
+                    None => {
+                        self.inner.verification_queue.pop_front().unwrap();
                     }
-                }
+                },
                 _ => return ProcessOne::Idle { sync: self },
             }
-        };
+        }
 
-        let expected_block_height = self.inner.verification_queue[0].block_height.get();
+        ProcessOne::Verify(Verify {
+            inner: self.inner,
+            chain: self.chain,
+        })
+    }
+}
+
+pub struct RequestSuccessBlock<TBl> {
+    pub scale_encoded_header: Vec<u8>,
+    pub scale_encoded_justification: Option<Vec<u8>>,
+    pub scale_encoded_extrinsics: Vec<Vec<u8>>,
+    pub user_data: TBl,
+}
+
+/// State of the processing of blocks.
+pub enum ProcessOne<TRq, TSrc, TBl> {
+    /// No processing is necessary.
+    ///
+    /// Calling [`OptimisticSync::process_one`] again is unnecessary.
+    Idle {
+        /// The state machine.
+        /// The [`OptimisticSync::process_one`] method takes ownership of the
+        /// [`OptimisticSync`]. This field yields it back.
+        sync: OptimisticSync<TRq, TSrc, TBl>,
+    },
+
+    Verify(Verify<TRq, TSrc, TBl>),
+}
+
+/// Start the processing of a block verification.
+pub struct Verify<TRq, TSrc, TBl> {
+    inner: OptimisticSyncInner<TRq, TSrc, TBl>,
+    chain: blocks_tree::NonFinalizedTree<Block<TBl>>,
+}
+
+impl<TRq, TSrc, TBl> Verify<TRq, TSrc, TBl> {
+    /// Returns the hash of the block about to be verified.
+    pub fn block_hash(&self) -> [u8; 32] {
+        let block = self
+            .inner
+            .verification_queue
+            .get(0)
+            .map(|b| match &b.ty {
+                VerificationQueueEntryTy::Queued { blocks, .. } => blocks.front().unwrap(),
+                _ => unreachable!(),
+            })
+            .unwrap();
+
+        header::hash_from_scale_encoded_header(&block.scale_encoded_header)
+    }
+
+    /// Start the verification of the block.
+    ///
+    /// Must be passed the current UNIX time in order to verify that the block doesn't pretend to
+    /// come from the future.
+    pub fn start(mut self, now_from_unix_epoch: Duration) -> BlockVerification<TRq, TSrc, TBl> {
+        // Extract the block to process.
+        // Be aware that `source_id` might refer to an obsolete source.
+        let (block, source_id) = self
+            .inner
+            .verification_queue
+            .get_mut(0)
+            .map(|b| match &mut b.ty {
+                VerificationQueueEntryTy::Queued { blocks, source } => {
+                    (blocks.pop_front().unwrap(), *source)
+                }
+                _ => unreachable!(),
+            })
+            .unwrap();
 
         if self.inner.finalized_runtime.is_some() {
-            ProcessOne::from(
+            BlockVerification::from(
                 Inner::Step1(
                     self.chain
                         .verify_body(block.scale_encoded_header, now_from_unix_epoch),
                 ),
-                ProcessOneShared {
+                BlockVerificationShared {
                     pending_encoded_justification: block.scale_encoded_justification,
-                    expected_block_height,
                     inner: self.inner,
                     block_body: block.scale_encoded_extrinsics,
                     block_user_data: Some(block.user_data),
@@ -648,7 +708,6 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                 },
             )
         } else {
-            // TODO: return an object instead of verifying immediately
             let error = match self
                 .chain
                 .verify_header(block.scale_encoded_header, now_from_unix_epoch)
@@ -684,17 +743,19 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
             if let Some(error) = error {
                 let previous_best_height = self.chain.best_block_header().number;
-                ProcessOne::Reset {
-                    sync: self,
+                BlockVerification::Reset {
+                    sync: OptimisticSync {
+                        inner: self.inner,
+                        chain: self.chain,
+                    },
                     previous_best_height,
                     reason: ResetCause::HeaderError(error),
                 }
             } else {
-                ProcessOne::from(
+                BlockVerification::from(
                     Inner::JustificationVerif(self.chain),
-                    ProcessOneShared {
+                    BlockVerificationShared {
                         pending_encoded_justification: block.scale_encoded_justification,
-                        expected_block_height,
                         inner: self.inner,
                         block_body: Vec::new(),
                         block_user_data: None,
@@ -706,25 +767,8 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     }
 }
 
-pub struct RequestSuccessBlock<TBl> {
-    pub scale_encoded_header: Vec<u8>,
-    pub scale_encoded_justification: Option<Vec<u8>>,
-    pub scale_encoded_extrinsics: Vec<Vec<u8>>,
-    pub user_data: TBl,
-}
-
 /// State of the processing of blocks.
-pub enum ProcessOne<TRq, TSrc, TBl> {
-    /// No processing is necessary.
-    ///
-    /// Calling [`OptimisticSync::process_one`] again is unnecessary.
-    Idle {
-        /// The state machine.
-        /// The [`OptimisticSync::process_one`] method takes ownership of the
-        /// [`OptimisticSync`]. This field yields it back.
-        sync: OptimisticSync<TRq, TSrc, TBl>,
-    },
-
+pub enum BlockVerification<TRq, TSrc, TBl> {
     /// An issue happened when verifying the block or its justification, resulting in resetting
     /// the chain to the latest finalized block.
     ///
@@ -787,9 +831,8 @@ enum Inner<TBl> {
     JustificationVerif(blocks_tree::NonFinalizedTree<Block<TBl>>),
 }
 
-struct ProcessOneShared<TRq, TSrc, TBl> {
+struct BlockVerificationShared<TRq, TSrc, TBl> {
     pending_encoded_justification: Option<Vec<u8>>,
-    expected_block_height: u64,
     /// See [`OptimisticSync::inner`].
     inner: OptimisticSyncInner<TRq, TSrc, TBl>,
     /// Body of the block being verified.
@@ -800,8 +843,8 @@ struct ProcessOneShared<TRq, TSrc, TBl> {
     source_id: SourceId,
 }
 
-impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
-    fn from(mut inner: Inner<TBl>, mut shared: ProcessOneShared<TRq, TSrc, TBl>) -> Self {
+impl<TRq, TSrc, TBl> BlockVerification<TRq, TSrc, TBl> {
+    fn from(mut inner: Inner<TBl>, mut shared: BlockVerificationShared<TRq, TSrc, TBl>) -> Self {
         // This loop drives the process of the verification.
         // `inner` is updated at each iteration until a state that cannot be resolved internally
         // is found.
@@ -902,7 +945,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                                     source.banned = true;
                                 }
 
-                                break ProcessOne::Reset {
+                                break BlockVerification::Reset {
                                     previous_best_height: chain.best_block_header().number,
                                     sync: OptimisticSync {
                                         chain: blocks_tree::NonFinalizedTree::new(
@@ -952,7 +995,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                         shared.inner.finalized_chain_information.chain_information =
                             chain.as_chain_information().into();
 
-                        break ProcessOne::Finalized {
+                        break BlockVerification::Finalized {
                             sync: OptimisticSync {
                                 chain,
                                 inner: shared.inner,
@@ -962,7 +1005,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     } else {
                         let new_best_hash = chain.best_block_hash();
                         let new_best_number = chain.best_block_header().number;
-                        break ProcessOne::NewBest {
+                        break BlockVerification::NewBest {
                             sync: OptimisticSync {
                                 chain,
                                 inner: shared.inner,
@@ -996,13 +1039,16 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     // The value hasn't been found in any of the diffs, meaning that the storage
                     // value of the parent is the same as the one of the finalized block. The
                     // user needs to be queried.
-                    break ProcessOne::FinalizedStorageGet(StorageGet { inner: req, shared });
+                    break BlockVerification::FinalizedStorageGet(StorageGet {
+                        inner: req,
+                        shared,
+                    });
                 }
 
                 Inner::Step2(blocks_tree::BodyVerifyStep2::StorageNextKey(req)) => {
                     // The underlying verification process is asking for the key that follows
                     // the requested one.
-                    break ProcessOne::FinalizedStorageNextKey(StorageNextKey {
+                    break BlockVerification::FinalizedStorageNextKey(StorageNextKey {
                         inner: req,
                         shared,
                         key_overwrite: None,
@@ -1014,7 +1060,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     // with a certain prefix.
                     // The first step is to ask the user for that information when it comes to
                     // the finalized block.
-                    break ProcessOne::FinalizedStoragePrefixKeys(StoragePrefixKeys {
+                    break BlockVerification::FinalizedStoragePrefixKeys(StoragePrefixKeys {
                         inner: req,
                         shared,
                     });
@@ -1030,7 +1076,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                 //
                 // When that happens:
                 //
-                // - A `ProcessOne::Reset` event is emitted.
+                // - A `BlockVerification::Reset` event is emitted.
                 // - `cancelling_requests` is set to true in order to cancel all ongoing requests.
                 // - `chain` is recreated using `finalized_chain_information`.
                 //
@@ -1038,7 +1084,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
                         source.banned = true;
                     }
-                    break ProcessOne::Reset {
+                    break BlockVerification::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
                             chain: blocks_tree::NonFinalizedTree::new(
@@ -1062,7 +1108,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
                         source.banned = true;
                     }
-                    break ProcessOne::Reset {
+                    break BlockVerification::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
                             chain: blocks_tree::NonFinalizedTree::new(
@@ -1090,7 +1136,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
                     if let Some(source) = shared.inner.sources.get_mut(&shared.source_id) {
                         source.banned = true;
                     }
-                    break ProcessOne::Reset {
+                    break BlockVerification::Reset {
                         previous_best_height: old_chain.best_block_header().number,
                         sync: OptimisticSync {
                             chain: blocks_tree::NonFinalizedTree::new(
@@ -1116,7 +1162,7 @@ impl<TRq, TSrc, TBl> ProcessOne<TRq, TSrc, TBl> {
 #[must_use]
 pub struct StorageGet<TRq, TSrc, TBl> {
     inner: blocks_tree::StorageGet<Block<TBl>>,
-    shared: ProcessOneShared<TRq, TSrc, TBl>,
+    shared: BlockVerificationShared<TRq, TSrc, TBl>,
 }
 
 impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
@@ -1133,9 +1179,9 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
     }
 
     /// Injects the corresponding storage value.
-    pub fn inject_value(self, value: Option<&[u8]>) -> ProcessOne<TRq, TSrc, TBl> {
+    pub fn inject_value(self, value: Option<&[u8]>) -> BlockVerification<TRq, TSrc, TBl> {
         let inner = self.inner.inject_value(value.map(iter::once));
-        ProcessOne::from(Inner::Step2(inner), self.shared)
+        BlockVerification::from(Inner::Step2(inner), self.shared)
     }
 }
 
@@ -1143,7 +1189,7 @@ impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
 #[must_use]
 pub struct StoragePrefixKeys<TRq, TSrc, TBl> {
     inner: blocks_tree::StoragePrefixKeys<Block<TBl>>,
-    shared: ProcessOneShared<TRq, TSrc, TBl>,
+    shared: BlockVerificationShared<TRq, TSrc, TBl>,
 }
 
 impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
@@ -1156,7 +1202,7 @@ impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
     pub fn inject_keys(
         self,
         keys: impl Iterator<Item = impl AsRef<[u8]>>,
-    ) -> ProcessOne<TRq, TSrc, TBl> {
+    ) -> BlockVerification<TRq, TSrc, TBl> {
         let mut keys = keys
             .map(|k| k.as_ref().to_owned())
             .collect::<HashSet<_, fnv::FnvBuildHasher>>();
@@ -1179,7 +1225,7 @@ impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
         }
 
         let inner = self.inner.inject_keys(keys.iter());
-        ProcessOne::from(Inner::Step2(inner), self.shared)
+        BlockVerification::from(Inner::Step2(inner), self.shared)
     }
 }
 
@@ -1187,7 +1233,7 @@ impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
 #[must_use]
 pub struct StorageNextKey<TRq, TSrc, TBl> {
     inner: blocks_tree::StorageNextKey<Block<TBl>>,
-    shared: ProcessOneShared<TRq, TSrc, TBl>,
+    shared: BlockVerificationShared<TRq, TSrc, TBl>,
 
     /// If `Some`, ask for the key inside of this field rather than the one of `inner`. Used in
     /// corner-case situations where the key provided by the user has been erased from storage.
@@ -1209,7 +1255,7 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
     ///
     /// Panics if the key passed as parameter isn't strictly superior to the requested key.
     ///
-    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> ProcessOne<TRq, TSrc, TBl> {
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BlockVerification<TRq, TSrc, TBl> {
         let key = key.as_ref().map(|k| k.as_ref());
 
         // The key provided by the user as parameter is the next key in the storage of the
@@ -1250,7 +1296,7 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
                 // `self.shared.best_to_finalized_storage_diff`.
                 let key_overwrite = Some(b.clone());
                 drop(inner_key); // Solves borrowing errors.
-                return ProcessOne::FinalizedStorageNextKey(StorageNextKey {
+                return BlockVerification::FinalizedStorageNextKey(StorageNextKey {
                     inner: self.inner,
                     shared: self.shared,
                     key_overwrite,
@@ -1278,7 +1324,7 @@ impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
 
         drop(inner_key); // Solves borrowing errors.
         let inner = self.inner.inject_key(outcome);
-        ProcessOne::from(Inner::Step2(inner), self.shared)
+        BlockVerification::from(Inner::Step2(inner), self.shared)
     }
 }
 
