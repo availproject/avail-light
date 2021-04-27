@@ -526,7 +526,7 @@ async fn start_relay_chain(
                         {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
                             let (rq_list, _) = sync_idle.remove_source(id);
-                            for (rq_id, _) in rq_list {
+                            for rq_id in rq_list {
                                 pending_requests.remove(&rq_id).unwrap().abort();
                             }
                             sync = sync_idle.into();

@@ -293,6 +293,16 @@ impl<T> NonFinalizedTree<T> {
         }
     }
 
+    /// Returns true if the block with the given hash is in the [`NonFinalizedTree`].
+    pub fn contains_non_finalized_block(&self, hash: &[u8; 32]) -> bool {
+        self.inner
+            .as_ref()
+            .unwrap()
+            .blocks
+            .find(|b| b.hash == *hash)
+            .is_some()
+    }
+
     /// Gives access to a block stored by the [`NonFinalizedTree`], identified by its hash.
     pub fn non_finalized_block_by_hash(&mut self, hash: &[u8; 32]) -> Option<BlockAccess<T>> {
         let inner = self.inner.as_mut().unwrap();
