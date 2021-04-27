@@ -449,10 +449,16 @@ async fn open_database(
     Arc::new({
         // Directory supposed to contain the database.
         let db_path = if !tmp {
-            let base_path =
-                app_dirs::app_dir(app_dirs::AppDataType::UserData, &cli::APP_INFO, "database")
-                    .unwrap();
-            Some(base_path.join(chain_spec.id()))
+            if let Some(base) = directories::ProjectDirs::from("io", "paritytech", "smoldot") {
+                Some(base.data_dir().join(chain_spec.id()).join("database"))
+            } else {
+                tracing::warn!(
+                    "Failed to fetch $HOME directory. Falling back to a temporary database. \
+                    If this is intended, please make this explicit by passing the `--tmp` flag \
+                    instead."
+                );
+                None
+            }
         } else {
             None
         };
