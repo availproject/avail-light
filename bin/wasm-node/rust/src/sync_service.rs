@@ -248,134 +248,131 @@ async fn start_relay_chain(
             // still exist. This is only guaranteed to be case because we process
             // `requests_to_start` as soon as an entry is added and before disconnect events can
             // remove sources from the state machine.
-            if let all::AllSync::Idle(ref mut sync_idle) = &mut sync {
-                for request in requests_to_start.drain(..) {
-                    match request {
-                        all::Action::Start {
-                            source_id,
-                            request_id,
-                            detail:
-                                all::RequestDetail::BlocksRequest {
-                                    first_block,
-                                    ascending,
-                                    num_blocks,
-                                    request_headers,
-                                    request_bodies,
-                                    request_justification,
+            for request in requests_to_start.drain(..) {
+                match request {
+                    all::Action::Start {
+                        source_id,
+                        request_id,
+                        detail:
+                            all::RequestDetail::BlocksRequest {
+                                first_block,
+                                ascending,
+                                num_blocks,
+                                request_headers,
+                                request_bodies,
+                                request_justification,
+                            },
+                    } => {
+                        let peer_id = sync.source_user_data_mut(source_id).clone();
+
+                        let block_request = network_service.clone().blocks_request(
+                            peer_id.clone(),
+                            network_chain_index,
+                            network::protocol::BlocksRequestConfig {
+                                start: match first_block {
+                                    all::BlocksRequestFirstBlock::Hash(h) => {
+                                        network::protocol::BlocksRequestConfigStart::Hash(h)
+                                    }
+                                    all::BlocksRequestFirstBlock::Number(n) => {
+                                        network::protocol::BlocksRequestConfigStart::Number(n)
+                                    }
                                 },
-                        } => {
-                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
-
-                            let block_request = network_service.clone().blocks_request(
-                                peer_id.clone(),
-                                network_chain_index,
-                                network::protocol::BlocksRequestConfig {
-                                    start: match first_block {
-                                        all::BlocksRequestFirstBlock::Hash(h) => {
-                                            network::protocol::BlocksRequestConfigStart::Hash(h)
-                                        }
-                                        all::BlocksRequestFirstBlock::Number(n) => {
-                                            network::protocol::BlocksRequestConfigStart::Number(n)
-                                        }
-                                    },
-                                    desired_count: NonZeroU32::new(
-                                        u32::try_from(num_blocks.get()).unwrap_or(u32::max_value()),
-                                    )
-                                    .unwrap(),
-                                    direction: if ascending {
-                                        network::protocol::BlocksRequestDirection::Ascending
-                                    } else {
-                                        network::protocol::BlocksRequestDirection::Descending
-                                    },
-                                    fields: network::protocol::BlocksRequestFields {
-                                        header: request_headers,
-                                        body: request_bodies,
-                                        justification: request_justification,
-                                    },
-                                },
-                            );
-
-                            let (block_request, abort) = future::abortable(block_request);
-                            pending_requests.insert(request_id, abort);
-
-                            pending_block_requests
-                                .push(async move { (request_id, block_request.await) });
-                        }
-                        all::Action::Start {
-                            source_id,
-                            request_id,
-                            detail:
-                                all::RequestDetail::GrandpaWarpSync {
-                                    sync_start_block_hash,
-                                },
-                        } => {
-                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
-
-                            let grandpa_request =
-                                network_service.clone().grandpa_warp_sync_request(
-                                    peer_id.clone(),
-                                    network_chain_index,
-                                    sync_start_block_hash,
-                                );
-
-                            let (grandpa_request, abort) = future::abortable(grandpa_request);
-                            pending_requests.insert(request_id, abort);
-
-                            pending_grandpa_requests
-                                .push(async move { (request_id, grandpa_request.await) });
-                        }
-                        all::Action::Start {
-                            source_id,
-                            request_id,
-                            detail:
-                                all::RequestDetail::StorageGet {
-                                    block_hash,
-                                    state_trie_root,
-                                    keys,
-                                },
-                        } => {
-                            let peer_id = sync_idle.source_user_data_mut(source_id).clone();
-
-                            let storage_request = network_service.clone().storage_proof_request(
-                                network_chain_index,
-                                peer_id.clone(),
-                                network::protocol::StorageProofRequestConfig {
-                                    block_hash,
-                                    keys: keys.clone().into_iter(),
-                                },
-                            );
-
-                            let storage_request = async move {
-                                if let Ok(outcome) = storage_request.await {
-                                    // TODO: lots of copying around
-                                    // TODO: log what happens
-                                    keys.into_iter()
-                                        .map(|key| {
-                                            proof_verify::verify_proof(
-                                                proof_verify::VerifyProofConfig {
-                                                    proof: outcome.iter().map(|nv| &nv[..]),
-                                                    requested_key: key.as_ref(),
-                                                    trie_root_hash: &state_trie_root,
-                                                },
-                                            )
-                                            .map_err(|_| ())
-                                            .map(|v| v.map(|v| v.to_vec()))
-                                        })
-                                        .collect::<Result<Vec<_>, ()>>()
+                                desired_count: NonZeroU32::new(
+                                    u32::try_from(num_blocks.get()).unwrap_or(u32::max_value()),
+                                )
+                                .unwrap(),
+                                direction: if ascending {
+                                    network::protocol::BlocksRequestDirection::Ascending
                                 } else {
-                                    Err(())
-                                }
-                            };
+                                    network::protocol::BlocksRequestDirection::Descending
+                                },
+                                fields: network::protocol::BlocksRequestFields {
+                                    header: request_headers,
+                                    body: request_bodies,
+                                    justification: request_justification,
+                                },
+                            },
+                        );
 
-                            let (storage_request, abort) = future::abortable(storage_request);
-                            pending_requests.insert(request_id, abort);
+                        let (block_request, abort) = future::abortable(block_request);
+                        pending_requests.insert(request_id, abort);
 
-                            pending_storage_requests
-                                .push(async move { (request_id, storage_request.await) });
-                        }
-                        all::Action::Cancel(request_id) => {
-                            pending_requests.remove(&request_id).unwrap().abort();
-                        }
+                        pending_block_requests
+                            .push(async move { (request_id, block_request.await) });
+                    }
+                    all::Action::Start {
+                        source_id,
+                        request_id,
+                        detail:
+                            all::RequestDetail::GrandpaWarpSync {
+                                sync_start_block_hash,
+                            },
+                    } => {
+                        let peer_id = sync.source_user_data_mut(source_id).clone();
+
+                        let grandpa_request = network_service.clone().grandpa_warp_sync_request(
+                            peer_id.clone(),
+                            network_chain_index,
+                            sync_start_block_hash,
+                        );
+
+                        let (grandpa_request, abort) = future::abortable(grandpa_request);
+                        pending_requests.insert(request_id, abort);
+
+                        pending_grandpa_requests
+                            .push(async move { (request_id, grandpa_request.await) });
+                    }
+                    all::Action::Start {
+                        source_id,
+                        request_id,
+                        detail:
+                            all::RequestDetail::StorageGet {
+                                block_hash,
+                                state_trie_root,
+                                keys,
+                            },
+                    } => {
+                        let peer_id = sync.source_user_data_mut(source_id).clone();
+
+                        let storage_request = network_service.clone().storage_proof_request(
+                            network_chain_index,
+                            peer_id.clone(),
+                            network::protocol::StorageProofRequestConfig {
+                                block_hash,
+                                keys: keys.clone().into_iter(),
+                            },
+                        );
+
+                        let storage_request = async move {
+                            if let Ok(outcome) = storage_request.await {
+                                // TODO: lots of copying around
+                                // TODO: log what happens
+                                keys.into_iter()
+                                    .map(|key| {
+                                        proof_verify::verify_proof(
+                                            proof_verify::VerifyProofConfig {
+                                                proof: outcome.iter().map(|nv| &nv[..]),
+                                                requested_key: key.as_ref(),
+                                                trie_root_hash: &state_trie_root,
+                                            },
+                                        )
+                                        .map_err(|_| ())
+                                        .map(|v| v.map(|v| v.to_vec()))
+                                    })
+                                    .collect::<Result<Vec<_>, ()>>()
+                            } else {
+                                Err(())
+                            }
+                        };
+
+                        let (storage_request, abort) = future::abortable(storage_request);
+                        pending_requests.insert(request_id, abort);
+
+                        pending_storage_requests
+                            .push(async move { (request_id, storage_request.await) });
+                    }
+                    all::Action::Cancel(request_id) => {
+                        pending_requests.remove(&request_id).unwrap().abort();
                     }
                 }
             }
@@ -385,51 +382,58 @@ async fn start_relay_chain(
             // verifying storage proof.
             // If the state is one of the "verifying" states, perform the actual verification and
             // loop again until the sync is in an idle state.
-            let mut sync_idle: all::Idle<_, _, _> = match sync {
-                all::AllSync::Idle(idle) => idle,
-                all::AllSync::HeaderVerify(verify) => match verify.perform(ffi::unix_time(), ()) {
-                    all::HeaderVerifyOutcome::Success {
-                        sync: sync_idle,
-                        next_actions,
-                        is_new_best,
-                        is_new_finalized,
-                        ..
-                    } => {
-                        requests_to_start.extend(next_actions);
-
-                        if is_new_best {
-                            has_new_best = true;
-                        }
-                        if is_new_finalized {
-                            has_new_finalized = true;
-                        }
-
-                        sync = sync_idle.into();
-                        continue;
+            loop {
+                match sync.process_one() {
+                    all::ProcessOne::AllSync(idle) => {
+                        sync = idle;
+                        break;
                     }
-                    all::HeaderVerifyOutcome::Error {
-                        sync: sync_idle,
-                        next_actions,
-                        error,
-                        ..
-                    } => {
-                        log::warn!(
-                            target: "sync-verify",
-                            "Error while verifying header: {}",
-                            error
-                        );
-                        requests_to_start.extend(next_actions);
-                        sync = sync_idle.into();
-                        continue;
+                    all::ProcessOne::VerifyHeader(verify) => {
+                        match verify.perform(ffi::unix_time(), ()) {
+                            all::HeaderVerifyOutcome::Success {
+                                sync: sync_out,
+                                next_actions,
+                                is_new_best,
+                                is_new_finalized,
+                                ..
+                            } => {
+                                requests_to_start.extend(next_actions);
+
+                                if is_new_best {
+                                    has_new_best = true;
+                                }
+                                if is_new_finalized {
+                                    has_new_finalized = true;
+                                }
+
+                                sync = sync_out;
+                                continue;
+                            }
+                            all::HeaderVerifyOutcome::Error {
+                                sync: sync_out,
+                                next_actions,
+                                error,
+                                ..
+                            } => {
+                                log::warn!(
+                                    target: "sync-verify",
+                                    "Error while verifying header: {}",
+                                    error
+                                );
+                                requests_to_start.extend(next_actions);
+                                sync = sync_out;
+                                continue;
+                            }
+                        }
                     }
-                },
-            };
+                }
+            }
 
             // TODO: handle this differently
             if has_new_best {
                 has_new_best = false;
 
-                let scale_encoded_header = sync_idle.best_block_header().scale_encoding_vec();
+                let scale_encoded_header = sync.best_block_header().scale_encoding_vec();
                 // TODO: remove expired senders
                 for notif in &mut best_notifications {
                     let _ = notif.send(scale_encoded_header.clone());
@@ -456,7 +460,7 @@ async fn start_relay_chain(
                     if let chain::chain_information::ChainInformationFinalityRef::Grandpa {
                         after_finalized_block_authorities_set_id,
                         ..
-                    } = sync_idle.as_chain_information().finality
+                    } = sync.as_chain_information().finality
                     {
                         Some(after_finalized_block_authorities_set_id)
                     } else {
@@ -464,7 +468,7 @@ async fn start_relay_chain(
                     };
                 if let Some(set_id) = grandpa_set_id {
                     let commit_finalized_height =
-                        u32::try_from(sync_idle.finalized_block_header().number).unwrap(); // TODO: unwrap :-/
+                        u32::try_from(sync.finalized_block_header().number).unwrap(); // TODO: unwrap :-/
                     network_service
                         .set_local_grandpa_state(
                             network_chain_index,
@@ -477,7 +481,7 @@ async fn start_relay_chain(
                         .await;
                 }
 
-                let scale_encoded_header = sync_idle.finalized_block_header().scale_encoding_vec();
+                let scale_encoded_header = sync.finalized_block_header().scale_encoding_vec();
                 // TODO: remove expired senders
                 for notif in &mut finalized_notifications {
                     let _ = notif.send(scale_encoded_header.clone());
@@ -492,11 +496,7 @@ async fn start_relay_chain(
                 crate::yield_once().await;
             }
 
-            // `sync_idle` is now an `Idle` that has been extracted from `sync`.
-            // All the code paths below will need to put back `sync_idle` into `sync` before
-            // looping again.
-
-            // The sync state machine is idle, and all requests have been started.
+            // All requests have been started.
             // Now waiting for some event to happen: a network event, a request from the frontend
             // of the sync service, or a request being finished.
             let response_outcome = futures::select! {
@@ -516,46 +516,34 @@ async fn start_relay_chain(
                         network_service::Event::Connected { peer_id, chain_index, best_block_number, best_block_hash }
                             if chain_index == network_chain_index =>
                         {
-                            let (id, requests) = sync_idle.add_source(peer_id.clone(), best_block_number, best_block_hash);
+                            let (id, requests) = sync.add_source(peer_id.clone(), best_block_number, best_block_hash);
                             peers_source_id_map.insert(peer_id, id);
                             requests_to_start.extend(requests);
-                            sync = sync_idle.into();
                         },
                         network_service::Event::Disconnected { peer_id, chain_index }
                             if chain_index == network_chain_index =>
                         {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
-                            let (rq_list, _) = sync_idle.remove_source(id);
+                            let (rq_list, _) = sync.remove_source(id);
                             for rq_id in rq_list {
                                 pending_requests.remove(&rq_id).unwrap().abort();
                             }
-                            sync = sync_idle.into();
                         },
                         network_service::Event::BlockAnnounce { chain_index, peer_id, announce }
                             if chain_index == network_chain_index =>
                         {
                             let id = *peers_source_id_map.get(&peer_id).unwrap();
                             let decoded = announce.decode();
-                            // TODO: stupid to re-encode
-                            match sync_idle.block_announce(id, decoded.header.scale_encoding_vec(), decoded.is_best) {
-                                all::BlockAnnounceOutcome::HeaderVerify(verify) => {
-                                    sync = verify.into();
-                                },
-                                all::BlockAnnounceOutcome::TooOld(idle) => {
-                                    sync = idle.into();
-                                },
-                                all::BlockAnnounceOutcome::AlreadyInChain(idle) => {
-                                    sync = idle.into();
-                                },
-                                all::BlockAnnounceOutcome::NotFinalizedChain(idle) => {
-                                    sync = idle.into();
-                                },
-                                all::BlockAnnounceOutcome::Disjoint { sync: sync_idle, next_actions, .. } => {
+                            // TODO: stupid to re-encode header
+                            // TODO: log the outcome
+                            match sync.block_announce(id, decoded.header.scale_encoding_vec(), decoded.is_best) {
+                                all::BlockAnnounceOutcome::HeaderVerify => {},
+                                all::BlockAnnounceOutcome::TooOld => {},
+                                all::BlockAnnounceOutcome::AlreadyInChain => {},
+                                all::BlockAnnounceOutcome::NotFinalizedChain => {},
+                                all::BlockAnnounceOutcome::InvalidHeader(_) => {},
+                                all::BlockAnnounceOutcome::Disjoint { next_actions } => {
                                     requests_to_start.extend(next_actions);
-                                    sync = sync_idle.into();
-                                },
-                                all::BlockAnnounceOutcome::InvalidHeader { sync: sync_idle, .. } => {
-                                    sync = sync_idle.into();
                                 },
                             }
                         },
@@ -564,11 +552,9 @@ async fn start_relay_chain(
                         {
                             // TODO: verify the message and call `sync.set_finalized` or something
                             // TODO: has_new_finalized = true;
-                            sync = sync_idle.into();
                         },
                         _ => {
                             // Different chain index.
-                            sync = sync_idle.into();
                         }
                     }
 
@@ -588,23 +574,22 @@ async fn start_relay_chain(
 
                     match message {
                         ToBackground::IsNearHeadOfChainHeuristic { send_back } => {
-                            let _ = send_back.send(sync_idle.is_near_head_of_chain_heuristic());
+                            let _ = send_back.send(sync.is_near_head_of_chain_heuristic());
                         }
                         ToBackground::SubscribeFinalized { send_back } => {
                             let (tx, rx) = lossy_channel::channel();
                             finalized_notifications.push(tx);
-                            let current = sync_idle.finalized_block_header().scale_encoding_vec();
+                            let current = sync.finalized_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
                         ToBackground::SubscribeBest { send_back } => {
                             let (tx, rx) = lossy_channel::channel();
                             best_notifications.push(tx);
-                            let current = sync_idle.best_block_header().scale_encoding_vec();
+                            let current = sync.best_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
                     };
 
-                    sync = sync_idle.into();
                     continue;
                 },
 
@@ -616,7 +601,7 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        sync_idle.blocks_request_response(
+                        sync.blocks_request_response(
                             request_id,
                             result.map_err(|_| ()).map(|v| {
                                 v.into_iter().filter_map(|block| {
@@ -627,14 +612,12 @@ async fn start_relay_chain(
                                         user_data: (),
                                     })
                                 })
-                            }),
-                            ffi::unix_time(),
+                            })
                         )
 
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
-                        sync = sync_idle.into();
                         continue;
                     }
                 },
@@ -647,7 +630,7 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        sync_idle.grandpa_warp_sync_response(
+                        sync.grandpa_warp_sync_response(
                             request_id,
                             result.ok(),
                         )
@@ -655,7 +638,6 @@ async fn start_relay_chain(
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
-                        sync = sync_idle.into();
                         continue;
                     }
                 },
@@ -668,7 +650,7 @@ async fn start_relay_chain(
                     // machine.
                     if let Ok(result) = result {
                         // Inject the result of the request into the sync state machine.
-                        sync_idle.storage_get_response(
+                        sync.storage_get_response(
                             request_id,
                             result.map(|list| list.into_iter()),
                         )
@@ -676,7 +658,6 @@ async fn start_relay_chain(
                     } else {
                         // The sync state machine has emitted a `Action::Cancel` earlier, and is
                         // thus no longer interested in the response.
-                        sync = sync_idle.into();
                         continue;
                     }
                 },
@@ -685,34 +666,15 @@ async fn start_relay_chain(
             // `response_outcome` represents the way the state machine has changed as a
             // consequence of the response to a request.
             match response_outcome {
-                all::ResponseOutcome::VerifyHeader(verify) => {
-                    sync = verify.into();
-                }
-                all::ResponseOutcome::Queued {
-                    sync: sync_idle,
-                    next_actions,
-                }
-                | all::ResponseOutcome::NotFinalizedChain {
-                    sync: sync_idle,
-                    next_actions,
-                    ..
-                }
-                | all::ResponseOutcome::AllAlreadyInChain {
-                    sync: sync_idle,
-                    next_actions,
-                    ..
-                } => {
+                all::ResponseOutcome::Queued { next_actions }
+                | all::ResponseOutcome::NotFinalizedChain { next_actions, .. }
+                | all::ResponseOutcome::AllAlreadyInChain { next_actions, .. } => {
                     requests_to_start.extend(next_actions);
-                    sync = sync_idle.into();
                 }
-                all::ResponseOutcome::WarpSyncFinished {
-                    sync: sync_idle,
-                    next_actions,
-                } => {
-                    let finalized_num = sync_idle.finalized_block_header().number;
+                all::ResponseOutcome::WarpSyncFinished { next_actions } => {
+                    let finalized_num = sync.finalized_block_header().number;
                     log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
                     has_new_finalized = true;
-                    sync = sync_idle.into();
                     requests_to_start.extend(next_actions);
                 }
             }

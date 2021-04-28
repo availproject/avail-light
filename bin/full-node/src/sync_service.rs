@@ -209,7 +209,7 @@ fn start_sync(
             let mut process = sync.process_one();
             loop {
                 match process {
-                    optimistic::ProcessOne::Idle { sync: s } => {
+                    optimistic::ProcessOne::AllSync { sync: s } => {
                         sync = s;
                         break;
                     }

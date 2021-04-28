@@ -417,7 +417,7 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
             (),
         >,
     ) -> AncestrySearchResponseOutcome {
-        // Sets the `occupation` of `source_id` back to `Idle`.
+        // Sets the `occupation` of `source_id` back to `AllSync`.
         let (
             pending_blocks::RequestParams {
                 first_block_hash: requested_block_hash,
@@ -582,7 +582,7 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
                 block_to_verify: block,
             })
         } else {
-            ProcessOne::Idle { sync: self }
+            ProcessOne::AllSync { sync: self }
         }
     }
 
@@ -834,7 +834,7 @@ pub enum BlockAnnounceOutcome {
 /// Outcome of calling [`AllForksSync::finish_ancestry_search`].
 pub enum AncestrySearchResponseOutcome {
     /// Ready to start verifying one or more headers returned in the ancestry search.
-    // TODO: might not actually mean that ProcessOne isn't Idle; confusing
+    // TODO: might not actually mean that ProcessOne isn't AllSync; confusing
     Verify,
 
     /// Source has given blocks that aren't part of the finalized chain.
@@ -983,7 +983,7 @@ pub enum ProcessOne<TBl, TRq, TSrc> {
     /// No processing is necessary.
     ///
     /// Calling [`AllForksSync::process_one`] again is unnecessary.
-    Idle {
+    AllSync {
         /// The state machine.
         /// The [`AllForksSync::process_one`] method takes ownership of the [`AllForksSync`]. This
         /// field yields it back.

@@ -604,7 +604,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
     /// back in the returned value.
     pub fn process_one(mut self) -> ProcessOne<TRq, TSrc, TBl> {
         if self.inner.cancelling_requests {
-            return ProcessOne::Idle { sync: self };
+            return ProcessOne::AllSync { sync: self };
         }
 
         // Find out if there is a block ready to be processed.
@@ -619,7 +619,7 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
                         self.inner.verification_queue.pop_front().unwrap();
                     }
                 },
-                _ => return ProcessOne::Idle { sync: self },
+                _ => return ProcessOne::AllSync { sync: self },
             }
         }
 
@@ -642,7 +642,7 @@ pub enum ProcessOne<TRq, TSrc, TBl> {
     /// No processing is necessary.
     ///
     /// Calling [`OptimisticSync::process_one`] again is unnecessary.
-    Idle {
+    AllSync {
         /// The state machine.
         /// The [`OptimisticSync::process_one`] method takes ownership of the
         /// [`OptimisticSync`]. This field yields it back.

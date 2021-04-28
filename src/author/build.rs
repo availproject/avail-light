@@ -61,7 +61,7 @@ pub enum ConfigConsensus<'a, TLocAuth> {
 #[must_use]
 pub enum Builder {
     /// None of the authorities available locally are allowed to produce a block.
-    Idle,
+    AllSync,
 
     /// Block production is idle, waiting for a slot.
     WaitSlot(WaitSlot),
@@ -94,7 +94,7 @@ impl Builder {
                     slot_duration,
                 }) {
                     Some(c) => c,
-                    None => return Builder::Idle,
+                    None => return Builder::AllSync,
                 };
 
                 debug_assert!(now_from_unix_epoch < consensus.slot_end_from_unix_epoch);
