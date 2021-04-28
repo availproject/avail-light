@@ -43,7 +43,7 @@ const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
   client
     .start({
       chain_spec: westendSpecs,
-      json_rpc_callback: (resp, chain_index) => {
+      json_rpc_callback: (resp, chainIndex, userData) => {
         if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot-js"}') {
           // Test successful
           process.exit(0)
@@ -54,7 +54,7 @@ const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
       }
     })
     .then((client) => {
-      client.send_json_rpc('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}');
+      client.send_json_rpc('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}', 0, 0);
     })
     .catch((err) => process.exit(1));
 })();

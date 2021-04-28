@@ -50,6 +50,15 @@ export async function start(config) {
   const worker = new Worker(new URL('./worker.js', import.meta.url));
   let workerError = null;
 
+  // Whenever an `unsubscribeAll` is sent to the worker, the corresponding user data is pushed on
+  // this array. The worker needs to send back a confirmation, which pops the first element of
+  // this array. JSON-RPC responses whose user data is found in this array are silently discarded.
+  // This avoids a race condition where the worker emits a JSON-RPC response while we have already
+  // sent to it an `unsubscribeAll`. It is also what makes it possible for `cancel_all` to cancel
+  // requests that are not subscription notifications, even while the worker only supports
+  // cancelling subscriptions.
+  let pendingCancelConfirmations = [];
+
   // Build a promise that will be resolved or rejected after the initalization (that happens in
   // the worker) has finished.
   let initPromiseResolve;
@@ -67,12 +76,17 @@ export async function start(config) {
       // reported with the callback.
       if (initPromiseResolve) {
         initPromiseResolve();
-        // TODO: unsubscribe_all with `user_data` 0
         initPromiseReject = null;
         initPromiseResolve = null;
       } else if (config.json_rpc_callback) {
-        config.json_rpc_callback(message.data, message.chain_index, message.user_data);
+        if (pendingCancelConfirmations.findIndex(elem => elem == message.userData) === -1)
+          config.json_rpc_callback(message.data, message.chainIndex, message.userData);
       }
+
+    } else if (message.kind == 'unsubscribeAllConfirmation') {
+      const expected = pendingCancelConfirmations.pop();
+      if (expected != message.userData)
+        throw 'Unexpected unsubscribeAllConfirmation';
 
     } else if (message.kind == 'log') {
       logCallback(message.level, message.target, message.message);
@@ -107,28 +121,36 @@ export async function start(config) {
     maxLogLevel: config.max_log_level || 5
   });
 
-  // After the initialization message, all further messages expected by the worker are JSON-RPC
-  // requests.
-
   // Initialization happens asynchronous, both because we have a worker, but also asynchronously
   // within the worker. In order to detect when initialization was successful, we perform a dummy
   // JSON-RPC request and wait for the response. While this might seem like an unnecessary
   // overhead, it is the most straight-forward solution. Any alternative with a lower overhead
   // would have a higher complexity.
   worker.postMessage({
+    ty: 'request',
     request: '{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}',
-    chain_index: 0,
-    user_data: 0,
+    chainIndex: 0,
+    userData: 0,
   });
+  pendingCancelConfirmations.push(0);
+  worker.postMessage({ ty: 'unsubscribeAll', userData: 0 });
 
   // Now blocking until the worker sends back the response.
   // This will throw if the initialization has failed.
   await initPromise;
 
   return {
-    send_json_rpc: (request) => {
+    send_json_rpc: (request, chainIndex, userData) => {
       if (!workerError) {
-        worker.postMessage({ request, chain_index: 0, user_data: 0 });
+        worker.postMessage({ ty: 'request', request, chainIndex, userData: userData || 0 });
+      } else {
+        throw workerError;
+      }
+    },
+    cancel_all: (userData) => {
+      if (!workerError) {
+        pendingCancelConfirmations.push(userData);
+        worker.postMessage({ ty: 'unsubscribeAll', userData });
       } else {
         throw workerError;
       }

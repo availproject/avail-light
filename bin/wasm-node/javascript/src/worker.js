@@ -44,9 +44,9 @@ const startInstance = async (config) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
       compat.postMessage({ kind: 'log', level, target, message });
     },
-    jsonRpcCallback: (data, chain_index, user_data) => {
+    jsonRpcCallback: (data, chainIndex, userData) => {
       // `compat.postMessage` is the same as `postMessage`, but works across environments.
-      compat.postMessage({ kind: 'jsonrpc', data, chain_index, user_data });
+      compat.postMessage({ kind: 'jsonrpc', data, chainIndex, userData });
     },
   };
 
@@ -87,10 +87,17 @@ const startInstance = async (config) => {
   );
 
   state.forEach((message) => {
-    const len = Buffer.byteLength(message.request, 'utf8');
-    const ptr = result.instance.exports.alloc(len);
-    Buffer.from(result.instance.exports.memory.buffer).write(message.request, ptr);
-    result.instance.exports.json_rpc_send(ptr, len, message.chain_index, message.user_data);
+    if (message.ty == 'request') {
+      const len = Buffer.byteLength(message.request, 'utf8');
+      const ptr = result.instance.exports.alloc(len);
+      Buffer.from(result.instance.exports.memory.buffer).write(message.request, ptr);
+      result.instance.exports.json_rpc_send(ptr, len, message.chainIndex, message.userData);
+    } else if (message.ty == 'unsubscribeAll') {
+      result.instance.exports.json_rpc_unsubscribe_all(message.userData);
+      // `compat.postMessage` is the same as `postMessage`, but works across environments.
+      compat.postMessage({ kind: 'unsubscribeAllConfirmation', userData: message.userData });
+    } else
+      throw new Error('unrecognized message type');
   });
 
   state = result.instance;
@@ -109,9 +116,16 @@ compat.setOnMessage((message) => {
     state.push(message);
 
   } else {
-    const len = Buffer.byteLength(message.request, 'utf8');
-    const ptr = state.exports.alloc(len);
-    Buffer.from(state.exports.memory.buffer).write(message.request, ptr);
-    state.exports.json_rpc_send(ptr, len, message.chain_index, message.user_data);
+    if (message.ty == 'request') {
+      const len = Buffer.byteLength(message.request, 'utf8');
+      const ptr = state.exports.alloc(len);
+      Buffer.from(state.exports.memory.buffer).write(message.request, ptr);
+      state.exports.json_rpc_send(ptr, len, message.chainIndex, message.userData);
+    } else if (message.ty == 'unsubscribeAll') {
+      state.exports.json_rpc_unsubscribe_all(message.userData);
+      // `compat.postMessage` is the same as `postMessage`, but works across environments.
+      compat.postMessage({ kind: 'unsubscribeAllConfirmation', userData: message.userData });
+    } else
+      throw new Error('unrecognized message type');
   }
 });

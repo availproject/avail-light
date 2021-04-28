@@ -24,22 +24,21 @@ import * as http from 'http';
 import * as fs from 'fs';
 
 let client = null;
-var unsent_queue = [];
-let ws_connection = null;
+var unsentQueue = [];
+let wsConnections = {};
+let nextWsConnectionId = 0xaaa;
 
 smoldot.start({
     chain_spec: fs.readFileSync('../../westend.json', 'utf8'),
     max_log_level: 3,  // Can be increased for more verbosity
-    json_rpc_callback: (resp, chain_index) => {
-        if (ws_connection) {
-            ws_connection.sendUTF(resp);
-        }
+    json_rpc_callback: (resp, chainIndex, connectionId) => {
+        wsConnections[connectionId].sendUTF(resp);
     }
 })
     .then((c) => {
         client = c;
-        unsent_queue.forEach((m) => client.send_json_rpc(m));
-        unsent_queue = [];
+        unsentQueue.forEach((m) => client.send_json_rpc(m.message, 0, m.connectionId));
+        unsentQueue = [];
     })
 
 let server = http.createServer(function (request, response) {
@@ -58,16 +57,19 @@ let wsServer = new websocket.server({
 });
 
 wsServer.on('request', function (request) {
-    var connection = request.accept(request.requestedProtocols[0], request.origin);
+    const connection = request.accept(request.requestedProtocols[0], request.origin);
+    const connectionId = nextWsConnectionId;
+    nextWsConnectionId += 1;
+
     console.log((new Date()) + ' Connection accepted.');
-    ws_connection = connection;
+    wsConnections[connectionId] = connection;
 
     connection.on('message', function (message) {
         if (message.type === 'utf8') {
             if (client) {
-                client.send_json_rpc(message.utf8Data);
+                client.send_json_rpc(message.utf8Data, 0, connectionId);
             } else {
-                unsent_queue.push(message.utf8Data);
+                unsentQueue.push({ message: message.utf8Data, connectionId });
             }
         } else {
             throw "Unsupported type: " + message.type;
@@ -76,6 +78,7 @@ wsServer.on('request', function (request) {
 
     connection.on('close', function (reasonCode, description) {
         console.log((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
-        ws_connection = null;
+        client.cancel_all(connectionId);
+        wsConnections[connectionId] = undefined;
     });
 });
