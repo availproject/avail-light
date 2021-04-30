@@ -28,14 +28,12 @@ mod keys_proto {
 
 /// Public key of a node's identity.
 ///
-/// > **Note**: This enum isn't fully compatible with the libp2p specifications, as support for
-/// >           RSA is mandatory.
-// TODO: add support for RSA ^
+/// Libp2p specifies multiple different possible algorithms, but only ed25519 support is
+/// mandatory.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PublicKey {
     /// An ed25519 public key.
     Ed25519([u8; 32]),
-    // TODO: Rsa(??)
 }
 
 impl PublicKey {
