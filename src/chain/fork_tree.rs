@@ -263,8 +263,8 @@ impl<T> ForkTree<T> {
             .node_to_root_path(node1)
             .take_while(move |v| Some(*v) != common_ancestor);
         let iter2 = self
-            .node_to_root_path(node2)
-            .take_while(move |v| Some(*v) != common_ancestor);
+            .root_to_node_path(node2)
+            .skip_while(move |v| Some(*v) != common_ancestor);
 
         (iter1, iter2)
     }

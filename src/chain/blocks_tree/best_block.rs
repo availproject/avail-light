@@ -18,11 +18,15 @@
 //! Extension module containing the best block determination.
 
 use super::*;
+use core::iter;
 
 /// Accepts as parameter a container of blocks and indices within this container.
 ///
 /// Returns true if `maybe_new_best` on top of `maybe_new_best_parent` is a better block compared
 /// to `old_best`.
+///
+/// `maybe_new_best_parent` is to be `None` if the parent is the finalized block that is the
+/// parent of all the leaves of the tree.
 pub(super) fn is_better_block<T>(
     blocks: &fork_tree::ForkTree<Block<T>>,
     old_best: fork_tree::NodeIndex,
@@ -49,7 +53,15 @@ pub(super) fn is_better_block<T>(
         // - If the number for the new block is strictly superior, then the new block is
         //   out new best.
         //
-        let (ascend, descend) = blocks.ascend_and_descend(old_best, maybe_new_best_parent.unwrap());
+        let (ascend, descend) = if let Some(maybe_new_best_parent) = maybe_new_best_parent {
+            let (asc, desc) = blocks.ascend_and_descend(old_best, maybe_new_best_parent);
+            (either::Left(asc), either::Left(desc))
+        } else {
+            (
+                either::Right(blocks.node_to_root_path(old_best)),
+                either::Right(iter::empty()),
+            )
+        };
 
         // TODO: update for Aura?
         // TODO: what if there's a mix of Babe and non-Babe blocks here?

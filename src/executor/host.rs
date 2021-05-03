@@ -647,6 +647,7 @@ impl ReadyToRun {
                 HostFunction::ext_allocator_malloc_version_1 => 1,
                 HostFunction::ext_allocator_free_version_1 => 1,
                 HostFunction::ext_logging_log_version_1 => 3,
+                HostFunction::ext_logging_max_level_version_1 => 0,
             };
             if params.len() != expected_params_num {
                 return HostVm::Error {
@@ -1454,6 +1455,14 @@ impl ReadyToRun {
                         inner: self.inner,
                         log_entry,
                     });
+                }
+                HostFunction::ext_logging_max_level_version_1 => {
+                    // TODO: always returns `0` at the moment (which means "Off"); make this configurable?
+                    // see https://github.com/paritytech/substrate/blob/bb22414e9729fa6ffc3b3126c57d3a9f2b85a2ff/primitives/core/src/lib.rs#L341
+                    self = ReadyToRun {
+                        resume_value: Some(vm::WasmValue::I32(0)),
+                        inner: self.inner,
+                    };
                 }
             }
         }
@@ -2490,6 +2499,7 @@ externalities! {
     ext_allocator_malloc_version_1,
     ext_allocator_free_version_1,
     ext_logging_log_version_1,
+    ext_logging_max_level_version_1,
 }
 
 // Glue between the `allocator` module and the `vm` module.
