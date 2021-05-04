@@ -262,11 +262,15 @@ impl<T> NonFinalizedTreeInner<T> {
                 block_header: (&context.header).into(), // TODO: inefficiency ; in case of header only verify we do an extra allocation to build the context above
                 parent_block_header: parent_block_header.into(),
             })
-            .map_err(HeaderVerifyError::VerificationFailed)
-            .unwrap(); // TODO: no unwrap
+            .map_err(HeaderVerifyError::VerificationFailed);
 
-            let (is_new_best, consensus) = context.apply_success_header(result);
-            VerifyOut::HeaderOk(context, is_new_best, consensus)
+            match result {
+                Ok(success) => {
+                    let (is_new_best, consensus) = context.apply_success_header(success);
+                    VerifyOut::HeaderOk(context, is_new_best, consensus)
+                }
+                Err(err) => VerifyOut::HeaderErr(context.chain, err),
+            }
         }
     }
 }
