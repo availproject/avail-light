@@ -535,7 +535,7 @@ impl SqliteFullDatabase {
             if let Some((new_epoch, next_config)) = block_header.digest.babe_epoch_information() {
                 let epoch = meta_get_blob(&connection, "babe_finalized_next_epoch")?.unwrap(); // TODO: don't unwrap
                 let decoded_epoch = decode_babe_epoch_information(&epoch)?;
-                connection.execute(r#"UPDATE meta SET value_blob = (SELECT value_blob FROM meta WHERE key = "babe_finalized_next_epoch") WHERE key = "babe_finalized_epoch""#).unwrap();
+                connection.execute(r#"INSERT OR REPLACE INTO meta(key, value_blob) SELECT "babe_finalized_epoch", value_blob FROM meta WHERE key = "babe_finalized_next_epoch""#).unwrap();
 
                 let slot_number = block_header
                     .digest
