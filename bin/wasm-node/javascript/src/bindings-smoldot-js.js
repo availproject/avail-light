@@ -34,7 +34,7 @@ export default (config) => {
         // Must throw an error. A human-readable message can be found in the WebAssembly memory in
         // the given buffer.
         throw: (ptr, len) => {
-            let message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
+            const message = Buffer.from(config.instance.exports.memory.buffer).toString('utf8', ptr, ptr + len);
             throw new Error(message);
         },
 
