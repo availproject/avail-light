@@ -659,9 +659,20 @@ pub struct Verify<TRq, TSrc, TBl> {
 }
 
 impl<TRq, TSrc, TBl> Verify<TRq, TSrc, TBl> {
+    /// Returns the height of the block about to be verified.
+    pub fn height(&self) -> u64 {
+        // TODO: unwrap?
+        header::decode(self.header()).unwrap().number
+    }
+
     /// Returns the hash of the block about to be verified.
-    pub fn block_hash(&self) -> [u8; 32] {
-        let block = self
+    pub fn hash(&self) -> [u8; 32] {
+        header::hash_from_scale_encoded_header(self.header())
+    }
+
+    /// Returns the SCALE-encoded header of the block about to be verified.
+    fn header(&self) -> &[u8] {
+        &self
             .inner
             .verification_queue
             .get(0)
@@ -669,9 +680,8 @@ impl<TRq, TSrc, TBl> Verify<TRq, TSrc, TBl> {
                 VerificationQueueEntryTy::Queued { blocks, .. } => blocks.front().unwrap(),
                 _ => unreachable!(),
             })
-            .unwrap();
-
-        header::hash_from_scale_encoded_header(&block.scale_encoded_header)
+            .unwrap()
+            .scale_encoded_header
     }
 
     /// Start the verification of the block.

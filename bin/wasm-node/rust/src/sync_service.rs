@@ -389,6 +389,8 @@ async fn start_relay_chain(
                         break;
                     }
                     all::ProcessOne::VerifyHeader(verify) => {
+                        let verified_hash = verify.hash();
+
                         match verify.perform(ffi::unix_time(), ()) {
                             all::HeaderVerifyOutcome::Success {
                                 sync: sync_out,
@@ -397,6 +399,13 @@ async fn start_relay_chain(
                                 is_new_finalized,
                                 ..
                             } => {
+                                log::debug!(
+                                    target: "sync-verify",
+                                    "Successfully verified header {} (new best: {})",
+                                    HashDisplay(&verified_hash),
+                                    if is_new_best { "yes" } else { "no" }
+                                );
+
                                 requests_to_start.extend(next_actions);
 
                                 if is_new_best {
@@ -417,9 +426,11 @@ async fn start_relay_chain(
                             } => {
                                 log::warn!(
                                     target: "sync-verify",
-                                    "Error while verifying header: {}",
+                                    "Error while verifying header {}: {}",
+                                    HashDisplay(&verified_hash),
                                     error
                                 );
+
                                 requests_to_start.extend(next_actions);
                                 sync = sync_out;
                                 continue;

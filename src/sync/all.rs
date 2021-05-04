@@ -986,6 +986,22 @@ enum HeaderVerifyInner<TRq, TSrc, TBl> {
 }
 
 impl<TRq, TSrc, TBl> HeaderVerify<TRq, TSrc, TBl> {
+    /// Returns the height of the block to be verified.
+    pub fn height(&self) -> u64 {
+        match &self.inner {
+            HeaderVerifyInner::Optimistic(verify) => verify.height(),
+            HeaderVerifyInner::AllForks(verify) => verify.height(),
+        }
+    }
+
+    /// Returns the hash of the block to be verified.
+    pub fn hash(&self) -> [u8; 32] {
+        match &self.inner {
+            HeaderVerifyInner::Optimistic(verify) => verify.hash(),
+            HeaderVerifyInner::AllForks(verify) => *verify.hash(),
+        }
+    }
+
     /// Perform the verification.
     pub fn perform(
         mut self,
