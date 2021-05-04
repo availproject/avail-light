@@ -686,6 +686,7 @@ async fn start_relay_chain(
                     let finalized_num = sync.finalized_block_header().number;
                     log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
                     has_new_finalized = true;
+                    has_new_best = true;
                     requests_to_start.extend(next_actions);
                 }
             }
