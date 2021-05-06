@@ -490,7 +490,10 @@ impl NetworkService {
         chain_index: usize,
         begin_hash: [u8; 32],
     ) -> Result<protocol::GrandpaWarpSyncResponse, service::GrandpaWarpSyncRequestError> {
-        log::debug!(target: "network", "Connection({}) <= GrandpaWarpSyncRequest({:?})", target, begin_hash);
+        log::debug!(
+            target: "network", "Connection({}) <= GrandpaWarpSyncRequest({})",
+            target, HashDisplay(&begin_hash)
+        );
 
         let result = self
             .network
