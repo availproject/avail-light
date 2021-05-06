@@ -68,17 +68,20 @@ export default (config) => {
             const flushBuffer = (string) => {
                 // As documented in the documentation of `println!`, lines are always split by a
                 // single `\n` in Rust.
-                const index = string.indexOf('\n');
-                if (index != -1) {
-                    // Note that it is questionnable to use `console.log` from within a library.
-                    // However this simply reflects the usage of `println!` in the Rust code. In
-                    // other words, it is `println!` that shouldn't be used in the first place.
-                    // The harm of not showing text printed with `println!` at all is greater than
-                    // the harm possibly caused by accidentally leaving a `println!` in the code.
-                    console.log(string.substring(0, index));
-                    return string.substring(index + 1);
-                } else {
-                    return string;
+                while (true) {
+                    const index = string.indexOf('\n');
+                    if (index != -1) {
+                        // Note that it is questionnable to use `console.log` from within a
+                        // library. However this simply reflects the usage of `println!` in the
+                        // Rust code. In other words, it is `println!` that shouldn't be used in
+                        // the first place. The harm of not showing text printed with `println!`
+                        // at all is greater than the harm possibly caused by accidentally leaving
+                        // a `println!` in the code.
+                        console.log(string.substring(0, index));
+                        string = string.substring(index + 1);
+                    } else {
+                        return string;
+                    }
                 }
             };
 
