@@ -187,10 +187,6 @@ pub struct OverlayNetworkConfig {
     /// List of node identities that are known to belong to this overlay network. The node
     /// identities are indices in [`Config::known_nodes`].
     pub bootstrap_nodes: Vec<usize>,
-
-    pub in_slots: u32,
-
-    pub out_slots: u32,
 }
 
 /// Identifier of a pending connection requested by the network through a [`StartConnect`].

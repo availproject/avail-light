@@ -172,8 +172,6 @@ where
                     max_handshake_size: 256,      // TODO: arbitrary
                     max_notification_size: 32768, // TODO: arbitrary
                     bootstrap_nodes: chain.bootstrap_nodes.clone(),
-                    in_slots: chain.in_slots,
-                    out_slots: chain.out_slots,
                 })
                 .chain(iter::once(libp2p::OverlayNetworkConfig {
                     protocol_name: format!("/{}/transactions/1", chain.protocol_id),
@@ -181,8 +179,6 @@ where
                     max_handshake_size: 256,      // TODO: arbitrary
                     max_notification_size: 32768, // TODO: arbitrary
                     bootstrap_nodes: chain.bootstrap_nodes.clone(),
-                    in_slots: chain.in_slots,
-                    out_slots: chain.out_slots,
                 }))
                 .chain({
                     // The `has_grandpa_protocol` flag controls whether the chain uses GrandPa.
@@ -199,8 +195,6 @@ where
                         } else {
                             Vec::new()
                         },
-                        in_slots: chain.in_slots,
-                        out_slots: chain.out_slots,
                     })
                 })
             })
