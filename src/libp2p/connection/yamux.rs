@@ -144,10 +144,16 @@ impl<T> Yamux<T> {
             substreams: hashbrown::HashMap::with_capacity_and_hasher(
                 config.capacity,
                 ahash::RandomState::with_seeds(
-                    config.randomness_seed.0,
-                    config.randomness_seed.1,
-                    config.randomness_seed.2,
-                    config.randomness_seed.3,
+                    u64::from_ne_bytes(<[u8; 8]>::try_from(&config.randomness_seed[0..8]).unwrap()),
+                    u64::from_ne_bytes(
+                        <[u8; 8]>::try_from(&config.randomness_seed[8..16]).unwrap(),
+                    ),
+                    u64::from_ne_bytes(
+                        <[u8; 8]>::try_from(&config.randomness_seed[16..24]).unwrap(),
+                    ),
+                    u64::from_ne_bytes(
+                        <[u8; 8]>::try_from(&config.randomness_seed[24..32]).unwrap(),
+                    ),
                 ),
             ),
             incoming: Incoming::Header(arrayvec::ArrayVec::new()),
@@ -877,7 +883,7 @@ pub struct Config {
     pub capacity: usize,
     /// Seed used for the randomness. Used to avoid HashDos attack and determines the order in
     /// which the data on substreams is sent out.
-    pub randomness_seed: (u64, u64, u64, u64),
+    pub randomness_seed: [u8; 32],
 }
 
 /// Reference to a substream within the [`Yamux`].

@@ -1548,8 +1548,8 @@ pub struct Config {
     pub notifications_protocols: Vec<ConfigNotifications>,
     /// Name of the ping protocol on the network.
     pub ping_protocol: String,
-    /// Seed used for the randomness specific to this connection.
-    pub randomness_seed: (u64, u64, u64, u64),
+    /// Entropy used for the randomness specific to this connection.
+    pub randomness_seed: [u8; 32],
 }
 
 /// Configuration for a request-response protocol.
