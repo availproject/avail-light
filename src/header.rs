@@ -203,6 +203,8 @@ pub enum Error {
     /// Unknown consensus engine specified in a digest log.
     #[display(fmt = "Unknown consensus engine specified in a digest log: {:?}", _0)]
     UnknownConsensusEngine([u8; 4]),
+    /// Proof-of-work consensus algorithm is intentionally not supported for ideological reasons.
+    PowIdeologicallyNotSupported,
 }
 
 /// Header of a block, after decoding.
@@ -1225,6 +1227,7 @@ fn decode_item_from_parts<'a>(
     content: &'a [u8],
 ) -> Result<DigestItemRef<'a>, Error> {
     Ok(match (index, engine_id) {
+        (_, b"pow_") => return Err(Error::PowIdeologicallyNotSupported),
         (4, b"aura") => DigestItemRef::AuraConsensus(AuraConsensusLogRef::from_slice(content)?),
         (4, b"BABE") => DigestItemRef::BabeConsensus(BabeConsensusLogRef::from_slice(content)?),
         (4, b"FRNK") => {
