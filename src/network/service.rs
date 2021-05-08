@@ -33,6 +33,7 @@ use core::{
     time::Duration,
 };
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
+use rand::{Rng as _, SeedableRng as _};
 
 /// Configuration for a [`ChainNetwork`].
 pub struct Config<TPeer> {
@@ -145,6 +146,9 @@ pub struct ChainNetwork<TNow, TPeer, TConn> {
 
     substreams_open_tx: Mutex<mpsc::Sender<()>>,
     substreams_open_rx: Mutex<mpsc::Receiver<()>>,
+
+    /// Generator for randomness.
+    randomness: Mutex<rand_chacha::ChaCha20Rng>,
 }
 
 // Update this when a new request response protocol is added.
@@ -256,13 +260,16 @@ where
             .map(|chain| chain.grandpa_protocol_config.clone().map(Mutex::new))
             .collect();
 
+        let mut randomness = rand_chacha::ChaCha20Rng::from_seed(config.randomness_seed);
+        let inner_randomness_seed = randomness.sample(rand::distributions::Standard);
+
         ChainNetwork {
             libp2p: libp2p::Network::new(libp2p::Config {
                 known_nodes: config.known_nodes,
                 listen_addresses: config.listen_addresses,
                 request_response_protocols,
                 noise_key: config.noise_key,
-                randomness_seed: config.randomness_seed,
+                randomness_seed: inner_randomness_seed,
                 pending_api_events_buffer_size: config.pending_api_events_buffer_size,
                 overlay_networks,
                 ping_protocol: "/ipfs/ping/1.0.0".into(),
@@ -272,6 +279,7 @@ where
             pending_in_accept: Mutex::new(None),
             substreams_open_tx: Mutex::new(substreams_open_tx),
             substreams_open_rx: Mutex::new(substreams_open_rx),
+            randomness: Mutex::new(randomness),
         }
     }
 
@@ -756,8 +764,8 @@ where
         chain_index: usize,
     ) -> Result<DiscoveryInsert<'_, TNow, TPeer, TConn>, DiscoveryError> {
         let random_peer_id = {
-            // FIXME: don't use rand::random()! use randomness seed
-            let pub_key = rand::random::<[u8; 32]>();
+            let mut randomness = self.randomness.lock().await;
+            let pub_key = randomness.sample(rand::distributions::Standard);
             peer_id::PeerId::from_public_key(&peer_id::PublicKey::Ed25519(pub_key))
         };
 
