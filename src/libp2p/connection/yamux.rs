@@ -90,6 +90,9 @@ struct Substream<T> {
     first_message_queued: bool,
     /// Amount of data the remote is allowed to transmit to the local node.
     remote_allowed_window: u64,
+    /// If non-zero, a window update frame must be sent to the remote to grant this number of
+    /// bytes.
+    remote_window_pending_increase: u64,
     /// Amount of data the local node is allowed to transmit to the remote.
     allowed_window: u64,
     /// True if the writing side of the local node is closed for this substream.
@@ -224,6 +227,7 @@ impl<T> Yamux<T> {
         entry.insert(Substream {
             first_message_queued: false,
             remote_allowed_window: DEFAULT_FRAME_SIZE,
+            remote_window_pending_increase: 0,
             allowed_window: DEFAULT_FRAME_SIZE,
             local_write_closed: false,
             remote_write_closed: false,
@@ -525,12 +529,7 @@ impl<T> Yamux<T> {
                             // TODO: temporary hack
                             let syn_ack_flag = !substream.first_message_queued;
                             substream.first_message_queued = true;
-                            substream.remote_allowed_window += 256 * 1024;
-                            self.queue_window_size_frame_header(
-                                syn_ack_flag,
-                                substream_id.0,
-                                256 * 1024,
-                            );
+                            substream.remote_window_pending_increase += 256 * 1024;
                         }
 
                         self.incoming = Incoming::DataFrame {
@@ -660,6 +659,24 @@ impl<T> Yamux<T> {
             debug_assert!(self.pending_out_header.is_empty());
             debug_assert!(self.writing_out_substream.is_none());
 
+            // Send window update frames.
+            if let Some((id, sub)) = self
+                .substreams
+                .iter_mut()
+                .find(|(_, s)| s.remote_window_pending_increase != 0)
+                .map(|(id, sub)| (*id, sub))
+            {
+                let syn_ack_flag = !sub.first_message_queued;
+                sub.first_message_queued = true;
+
+                let update =
+                    u32::try_from(sub.remote_window_pending_increase).unwrap_or(u32::max_value());
+                sub.remote_window_pending_increase -= u64::from(update);
+                sub.remote_allowed_window += u64::from(update);
+                self.queue_window_size_frame_header(syn_ack_flag, id, update);
+                continue;
+            }
+
             // Start writing more data from another substream.
             // TODO: choose substreams in some sort of round-robin way
             if let Some((id, sub)) = self
@@ -711,6 +728,7 @@ impl<T> Yamux<T> {
                     Substream {
                         first_message_queued: false,
                         remote_allowed_window: DEFAULT_FRAME_SIZE,
+                        remote_window_pending_increase: 0,
                         allowed_window: DEFAULT_FRAME_SIZE + u64::from(extra_window),
                         local_write_closed: false,
                         remote_write_closed: data_frame_size == 0 && fin,
@@ -921,6 +939,28 @@ impl<'a, T> SubstreamMut<'a, T> {
             !substream.write_buffers.is_empty() || substream.first_write_buffer_offset == 0
         );
         substream.write_buffers.push(data);
+    }
+
+    /// Allow the remote to send up to `bytes` bytes at once in the next packet.
+    ///
+    /// This method sets the number of allowed bytes to at least this value. In other words,
+    /// if this method was to be twice with the same parameter, the second call would have no
+    /// effect.
+    ///
+    /// # Context
+    ///
+    /// In order to properly handle back-pressure, the yamux protocol only allows the remote to
+    /// send a certain number of bytes before the local node grants the authorization to send more
+    /// data.
+    /// This method grants the authorization to the remote to send up to `bytes` bytes.
+    ///
+    /// Call this when you expect a large payload with the maximum size this payload is allowed
+    /// to be.
+    ///
+    pub fn reserve_window(&mut self, bytes: u64) {
+        let substream = self.substream.get_mut();
+        substream.remote_window_pending_increase =
+            cmp::max(substream.remote_window_pending_increase, bytes);
     }
 
     /// Returns the number of bytes queued for writing on this substream.

@@ -681,6 +681,7 @@ where
                 user_data,
             });
 
+        substream.reserve_window(128 * 1024 * 1024 + 128); // TODO: proper max size
         substream.write(out_buffer);
 
         SubstreamId(substream.id())
