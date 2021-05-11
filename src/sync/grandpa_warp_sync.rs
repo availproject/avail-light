@@ -17,8 +17,7 @@
 
 use crate::{
     chain::chain_information::{
-        babe_fetch_epoch::{self, PartialBabeEpochInformation},
-        BabeEpochInformation, ChainInformation, ChainInformationConsensus,
+        babe_fetch_epoch, BabeEpochInformation, ChainInformation, ChainInformationConsensus,
         ChainInformationFinality, ChainInformationRef,
     },
     executor::{
@@ -115,7 +114,7 @@ pub enum InProgressGrandpaWarpSync<TSrc> {
 impl<TSrc> GrandpaWarpSync<TSrc> {
     fn from_babe_fetch_epoch_query(
         mut query: babe_fetch_epoch::Query,
-        mut fetched_current_epoch: Option<PartialBabeEpochInformation>,
+        mut fetched_current_epoch: Option<BabeEpochInformation>,
         mut state: PostVerificationState<TSrc>,
     ) -> (Self, Option<Error>) {
         loop {
@@ -148,22 +147,8 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                                 finalized_block_header: state.header,
                                 finality: state.chain_information_finality,
                                 consensus: ChainInformationConsensus::Babe {
-                                    finalized_block_epoch_information: Some(BabeEpochInformation {
-                                        epoch_index: current_epoch.epoch_index,
-                                        start_slot_number: current_epoch.start_slot_number,
-                                        authorities: current_epoch.authorities,
-                                        randomness: current_epoch.randomness,
-                                        c: babe_config_c,
-                                        allowed_slots: babe_config_allowed_slots,
-                                    }),
-                                    finalized_next_epoch_transition: BabeEpochInformation {
-                                        epoch_index: next_epoch.epoch_index,
-                                        start_slot_number: next_epoch.start_slot_number,
-                                        authorities: next_epoch.authorities,
-                                        randomness: next_epoch.randomness,
-                                        c: babe_config_c,
-                                        allowed_slots: babe_config_allowed_slots,
-                                    },
+                                    finalized_block_epoch_information: Some(current_epoch),
+                                    finalized_next_epoch_transition: next_epoch,
                                     slots_per_epoch,
                                 },
                             },
@@ -366,7 +351,7 @@ impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
 #[must_use]
 pub struct StorageGet<TSrc> {
     inner: babe_fetch_epoch::StorageGet,
-    fetched_current_epoch: Option<PartialBabeEpochInformation>,
+    fetched_current_epoch: Option<BabeEpochInformation>,
     state: PostVerificationState<TSrc>,
 }
 
@@ -422,7 +407,7 @@ impl<TSrc> StorageGet<TSrc> {
 #[must_use]
 pub struct NextKey<TSrc> {
     inner: babe_fetch_epoch::NextKey,
-    fetched_current_epoch: Option<PartialBabeEpochInformation>,
+    fetched_current_epoch: Option<BabeEpochInformation>,
     state: PostVerificationState<TSrc>,
 }
 
