@@ -417,7 +417,23 @@ where
                             todo!()
                         }
                         Substream::PingIn(_) => {}
-                        _ => todo!("other substream kind"),
+                        Substream::NotificationsOutClosed => {}
+                        Substream::NotificationsOut { user_data, .. }
+                        | Substream::NotificationsOutHandshakeRecv { user_data, .. }
+                        | Substream::NotificationsOutNegotiating { user_data, .. } => {
+                            let wake_up_after = self.inner.next_timeout.clone();
+                            return Ok(ReadWrite {
+                                connection: self,
+                                read_bytes: total_read,
+                                written_bytes: total_written,
+                                write_close: false,
+                                wake_up_after,
+                                event: Some(Event::NotificationsOutReject {
+                                    id: SubstreamId(substream_id),
+                                    user_data,
+                                }),
+                            });
+                        }
                     }
                 }
 
