@@ -32,6 +32,8 @@ pub enum Error {
     TargetHashMismatch,
     #[display(fmt = "Warp sync proof fragment doesn't contain an authorities list change.")]
     NonMinimalProof,
+    #[display(fmt = "Warp sync proof is empty.")]
+    EmptyProof,
 }
 
 #[derive(Debug)]
@@ -72,6 +74,11 @@ impl Verifier {
     }
 
     pub fn next(mut self) -> Result<Next, Error> {
+        if self.fragments.is_empty() {
+            return Err(Error::EmptyProof);
+        }
+
+        debug_assert!(self.fragments.len() > self.index);
         let fragment = &self.fragments[self.index];
 
         if fragment.justification.target_hash != fragment.header.hash() {
