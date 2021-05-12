@@ -36,10 +36,6 @@ pub struct Config<'a> {
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
-    /// Service responsible for the networking of the chain, and index of the chain within the
-    /// network service to handle.
-    pub network_service: (Arc<network_service::NetworkService>, usize),
-
     /// Service responsible for synchronizing the chain.
     pub sync_service: Arc<sync_service::SyncService>,
 
@@ -69,10 +65,6 @@ pub struct RuntimeService {
     /// See [`Config::tasks_executor`].
     tasks_executor: Mutex<Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
 
-    /// See [`Config::network_service`].
-    network_service: Arc<network_service::NetworkService>,
-    /// See [`Config::network_service`].
-    network_chain_index: usize,
     /// See [`Config::sync_service`].
     sync_service: Arc<sync_service::SyncService>,
 
@@ -138,6 +130,7 @@ impl RuntimeService {
                 runtime_code: code,
                 heap_pages,
                 runtime_block_hash: config.genesis_block_hash,
+                runtime_block_height: 0,
                 runtime_block_state_root: config.genesis_block_state_root,
                 runtime_version_subscriptions: Vec::new(),
                 best_blocks_subscriptions: Vec::new(),
@@ -146,8 +139,6 @@ impl RuntimeService {
 
         let runtime_service = Arc::new(RuntimeService {
             tasks_executor: Mutex::new(config.tasks_executor),
-            network_service: config.network_service.0,
-            network_chain_index: config.network_service.1,
             sync_service: config.sync_service,
             latest_known_runtime: Mutex::new(latest_known_runtime),
         });
@@ -240,9 +231,9 @@ impl RuntimeService {
         // it with the value previously found. If there is a mismatch, the entire runtime call
         // is restarted from scratch.
         loop {
-            // Get `runtime_block_hash` and `runtime_block_state_root`, the hash and state trie
-            // root of a recent best block that uses this runtime.
-            let (spec_version, runtime_block_hash, runtime_block_state_root) = {
+            // Get `runtime_block_hash`, `runtime_block_height` and `runtime_block_state_root`,
+            // the hash, height, and state trie root of a recent best block that uses this runtime.
+            let (spec_version, runtime_block_hash, runtime_block_height, runtime_block_state_root) = {
                 let lock = self.latest_known_runtime.lock().await;
                 (
                     lock.runtime
@@ -252,6 +243,7 @@ impl RuntimeService {
                         .decode()
                         .spec_version,
                     lock.runtime_block_hash,
+                    lock.runtime_block_height,
                     lock.runtime_block_state_root,
                 )
             };
@@ -261,10 +253,10 @@ impl RuntimeService {
             // If the call proof fail, do as if the proof was empty. This will enable the
             // fallback consisting in performing individual storage proof requests.
             let call_proof = self
-                .network_service
+                .sync_service
                 .clone()
                 .call_proof_query(
-                    self.network_chain_index,
+                    runtime_block_height,
                     protocol::CallProofRequestConfig {
                         block_hash: runtime_block_hash,
                         method,
@@ -468,6 +460,8 @@ struct LatestKnownRuntime {
     /// Hash of a block known to have the runtime found in the [`LatestKnownRuntime::runtime`]
     /// field. Always updated to a recent block having this runtime.
     runtime_block_hash: [u8; 32],
+    /// Height of the block whose hash is [`LatestKnownRuntime::runtime_block_hash`].
+    runtime_block_height: u64,
     /// Storage trie root of the block whose hash is [`LatestKnownRuntime::runtime_block_hash`].
     runtime_block_state_root: [u8; 32],
 
@@ -604,10 +598,9 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 let new_best_block_decoded = header::decode(&new_best_block).unwrap();
                 let new_best_block_hash = header::hash_from_scale_encoded_header(&new_best_block);
                 let code_query_result = runtime_service
-                    .network_service
+                    .sync_service
                     .clone()
                     .storage_query(
-                        runtime_service.network_chain_index,
                         &new_best_block_hash,
                         new_best_block_decoded.state_root,
                         iter::once(&b":code"[..]).chain(iter::once(&b":heappages"[..])),
@@ -652,6 +645,7 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 // `runtime_block_hash` is always updated in order to have the most recent
                 // block possible.
                 latest_known_runtime.runtime_block_hash = new_best_block_hash;
+                latest_known_runtime.runtime_block_height = new_best_block_decoded.number;
                 latest_known_runtime.runtime_block_state_root = *new_best_block_decoded.state_root;
 
                 // `continue` if there wasn't any change in `:code` and `:heappages`.

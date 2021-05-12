@@ -319,6 +319,11 @@ impl<TBl, TRq, TSrc> PendingBlocks<TBl, TRq, TSrc> {
         (user_data.user_data, pending_requests.into_iter())
     }
 
+    /// Returns the list of sources in this state machine.
+    pub fn sources(&'_ self) -> impl ExactSizeIterator<Item = SourceId> + '_ {
+        self.sources.keys()
+    }
+
     /// Registers a new block that the source is aware of.
     ///
     /// Has no effect if `height` is inferior or equal to the finalized block height.
@@ -343,6 +348,36 @@ impl<TBl, TRq, TSrc> PendingBlocks<TBl, TRq, TSrc> {
     ///
     pub fn set_best_block(&mut self, source_id: SourceId, height: u64, hash: [u8; 32]) {
         self.sources.set_best_block(source_id, height, hash);
+    }
+
+    /// Returns the current best block of the given source.
+    ///
+    /// This corresponds either the latest call to [`PendingBlocks::set_best_block`],
+    /// or to the parameter passed to [`PendingBlocks::add_source`].
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_best_block(&self, source_id: SourceId) -> (u64, &[u8; 32]) {
+        self.sources.best_block(source_id)
+    }
+
+    /// Returns the list of sources for which [`PendingBlocks::source_knows_non_finalized_block`]
+    /// would return `true`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `height` is inferior or equal to the finalized block height. Finalized blocks
+    /// are intentionally not tracked by this data structure, and panicking when asking for a
+    /// potentially-finalized block prevents potentially confusing or erroneous situations.
+    ///
+    pub fn knows_non_finalized_block<'a>(
+        &'a self,
+        height: u64,
+        hash: &[u8; 32],
+    ) -> impl Iterator<Item = SourceId> + 'a {
+        self.sources.knows_non_finalized_block(height, hash)
     }
 
     /// Returns true if [`PendingBlocks::add_known_block`] or [`PendingBlocks::set_best_block`]

@@ -38,11 +38,12 @@ use futures::{
 use smoldot::{
     chain, header,
     informant::HashDisplay,
-    libp2p, network,
+    libp2p::{self, PeerId},
+    network::{self, protocol, service},
     sync::{all, para},
-    trie::proof_verify,
+    trie::{self, prefix_proof, proof_verify},
 };
-use std::{collections::HashMap, convert::TryFrom as _, num::NonZeroU32, pin::Pin, sync::Arc};
+use std::{collections::HashMap, convert::TryFrom as _, fmt, num::NonZeroU32, pin::Pin, sync::Arc};
 
 pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 
@@ -93,6 +94,11 @@ pub struct BlocksRequestId(usize);
 pub struct SyncService {
     /// Sender of messages towards the background task.
     to_background: Mutex<mpsc::Sender<ToBackground>>,
+
+    /// See [`Config::network_service`].
+    network_service: Arc<network_service::NetworkService>,
+    /// See [`Config::network_service`].
+    network_chain_index: usize,
 }
 
 impl SyncService {
@@ -110,7 +116,7 @@ impl SyncService {
                 start_relay_chain(
                     config.chain_information,
                     from_foreground,
-                    config.network_service.0,
+                    config.network_service.0.clone(),
                     config.network_service.1,
                     config.network_events_receiver,
                 )
@@ -120,6 +126,8 @@ impl SyncService {
 
         SyncService {
             to_background: Mutex::new(to_background),
+            network_service: config.network_service.0,
+            network_chain_index: config.network_service.1,
         }
     }
 
@@ -174,6 +182,354 @@ impl SyncService {
             .unwrap();
 
         rx.await.unwrap()
+    }
+
+    /// Returns the list of peers from the [`network_service::NetworkService`] that are expected to
+    /// be aware of the given block.
+    ///
+    /// A peer is returned by this method either if it has directly sent a block announce in the
+    /// past, or if the requested block height is below the finalized block height and the best
+    /// block of the peer is above the requested block. In other words, it is assumed that all
+    /// peers are always on the same finalized chain as the local node.
+    pub async fn peers_assumed_know_blocks(
+        &self,
+        block_number: u64,
+        block_hash: &[u8; 32],
+    ) -> impl Iterator<Item = PeerId> {
+        let (send_back, rx) = oneshot::channel();
+
+        self.to_background
+            .lock()
+            .await
+            .send(ToBackground::PeersAssumedKnowBlock {
+                send_back,
+                block_number,
+                block_hash: *block_hash,
+            })
+            .await
+            .unwrap();
+
+        rx.await.unwrap().into_iter()
+    }
+
+    // TODO: doc; explain the guarantees
+    pub async fn block_query(
+        self: Arc<Self>,
+        hash: [u8; 32],
+        fields: protocol::BlocksRequestFields,
+    ) -> Result<protocol::BlockData, ()> {
+        // TODO: better error?
+        const NUM_ATTEMPTS: usize = 3;
+
+        let request_config = protocol::BlocksRequestConfig {
+            start: protocol::BlocksRequestConfigStart::Hash(hash),
+            desired_count: NonZeroU32::new(1).unwrap(),
+            direction: protocol::BlocksRequestDirection::Ascending,
+            fields: fields.clone(),
+        };
+
+        // TODO: better peers selection ; don't just take the first 3
+        // TODO: must only ask the peers that know about this block
+        for target in self.network_service.peers_list().await.take(NUM_ATTEMPTS) {
+            let mut result = match self
+                .network_service
+                .clone()
+                .blocks_request(target, self.network_chain_index, request_config.clone())
+                .await
+            {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            if result.len() != 1 {
+                continue;
+            }
+
+            let result = result.remove(0);
+
+            if result.header.is_none() && fields.header {
+                continue;
+            }
+            if result
+                .header
+                .as_ref()
+                .map_or(false, |h| header::decode(h).is_err())
+            {
+                continue;
+            }
+            if result.body.is_none() && fields.body {
+                continue;
+            }
+            // Note: the presence of a justification isn't checked and can't be checked, as not
+            // all blocks have a justification in the first place.
+            if result.hash != hash {
+                continue;
+            }
+            if result.header.as_ref().map_or(false, |h| {
+                header::hash_from_scale_encoded_header(&h) != result.hash
+            }) {
+                continue;
+            }
+            match (&result.header, &result.body) {
+                (Some(_), Some(_)) => {
+                    // TODO: verify correctness of body
+                }
+                _ => {}
+            }
+
+            return Ok(result);
+        }
+
+        Err(())
+    }
+
+    /// Performs one or more storage proof requests in order to find the value of the given
+    /// `requested_keys`.
+    ///
+    /// Must be passed a block hash and the Merkle value of the root node of the storage trie of
+    /// this same block. The value of `storage_trie_root` corresponds to the value in the
+    /// [`smoldot::header::HeaderRef::state_root`] field.
+    ///
+    /// Returns the storage values of `requested_keys` in the storage of the block, or an error if
+    /// it couldn't be determined. If `Ok`, the `Vec` is guaranteed to have the same number of
+    /// elements as `requested_keys`.
+    ///
+    /// This function is equivalent to calling
+    /// [`network_service::NetworkService::storage_proof_request`] and verifying the proof,
+    /// potentially multiple times until it succeeds. The number of attempts and the selection of
+    /// peers is done through reasonable heuristics.
+    pub async fn storage_query(
+        self: Arc<Self>,
+        block_hash: &[u8; 32],
+        storage_trie_root: &[u8; 32],
+        requested_keys: impl Iterator<Item = impl AsRef<[u8]>> + Clone,
+    ) -> Result<Vec<Option<Vec<u8>>>, StorageQueryError> {
+        const NUM_ATTEMPTS: usize = 3;
+
+        let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
+
+        // TODO: better peers selection ; don't just take the first 3
+        // TODO: must only ask the peers that know about this block
+        for target in self.network_service.peers_list().await.take(NUM_ATTEMPTS) {
+            let result = self
+                .network_service
+                .clone()
+                .storage_proof_request(
+                    self.network_chain_index,
+                    target,
+                    protocol::StorageProofRequestConfig {
+                        block_hash: *block_hash,
+                        keys: requested_keys.clone(),
+                    },
+                )
+                .await
+                .map_err(StorageQueryErrorDetail::Network)
+                .and_then(|outcome| {
+                    let mut result = Vec::with_capacity(requested_keys.clone().count());
+                    for key in requested_keys.clone() {
+                        result.push(
+                            proof_verify::verify_proof(proof_verify::VerifyProofConfig {
+                                proof: outcome.iter().map(|nv| &nv[..]),
+                                requested_key: key.as_ref(),
+                                trie_root_hash: &storage_trie_root,
+                            })
+                            .map_err(StorageQueryErrorDetail::ProofVerification)?
+                            .map(|v| v.to_owned()),
+                        );
+                    }
+                    debug_assert_eq!(result.len(), result.capacity());
+                    Ok(result)
+                });
+
+            match result {
+                Ok(values) => return Ok(values),
+                Err(err) => {
+                    outcome_errors.push(err);
+                }
+            }
+        }
+
+        Err(StorageQueryError {
+            errors: outcome_errors,
+        })
+    }
+
+    pub async fn storage_prefix_keys_query(
+        self: Arc<Self>,
+        block_number: u64,
+        block_hash: &[u8; 32],
+        prefix: &[u8],
+        storage_trie_root: &[u8; 32],
+    ) -> Result<Vec<Vec<u8>>, StorageQueryError> {
+        let mut prefix_scan = prefix_proof::prefix_scan(prefix_proof::Config {
+            prefix,
+            trie_root_hash: *storage_trie_root,
+        });
+
+        'main_scan: loop {
+            const NUM_ATTEMPTS: usize = 3;
+
+            let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
+
+            // TODO: better peers selection ; don't just take the first 3
+            for target in self
+                .peers_assumed_know_blocks(block_number, block_hash)
+                .await
+                .take(NUM_ATTEMPTS)
+            {
+                let result = self
+                    .network_service
+                    .clone()
+                    .storage_proof_request(
+                        self.network_chain_index,
+                        target,
+                        protocol::StorageProofRequestConfig {
+                            block_hash: *block_hash,
+                            keys: prefix_scan.requested_keys().map(|nibbles| {
+                                trie::nibbles_to_bytes_extend(nibbles).collect::<Vec<_>>()
+                            }),
+                        },
+                    )
+                    .await
+                    .map_err(StorageQueryErrorDetail::Network);
+
+                match result {
+                    Ok(proof) => {
+                        match prefix_scan.resume(proof.iter().map(|v| &v[..])) {
+                            Ok(prefix_proof::ResumeOutcome::InProgress(scan)) => {
+                                // Continue next step of the proof.
+                                prefix_scan = scan;
+                                continue 'main_scan;
+                            }
+                            Ok(prefix_proof::ResumeOutcome::Success { keys }) => {
+                                return Ok(keys);
+                            }
+                            Err((scan, err)) => {
+                                prefix_scan = scan;
+                                outcome_errors
+                                    .push(StorageQueryErrorDetail::ProofVerification(err));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        outcome_errors.push(err);
+                    }
+                }
+            }
+
+            return Err(StorageQueryError {
+                errors: outcome_errors,
+            });
+        }
+    }
+
+    // TODO: documentation
+    pub async fn call_proof_query<'a>(
+        self: Arc<Self>,
+        block_number: u64,
+        config: protocol::CallProofRequestConfig<
+            'a,
+            impl Iterator<Item = impl AsRef<[u8]>> + Clone,
+        >,
+    ) -> Result<Vec<Vec<u8>>, CallProofQueryError> {
+        const NUM_ATTEMPTS: usize = 3;
+
+        let mut outcome_errors = Vec::with_capacity(NUM_ATTEMPTS);
+
+        // TODO: better peers selection ; don't just take the first 3
+        for target in self
+            .peers_assumed_know_blocks(block_number, &config.block_hash)
+            .await
+            .take(NUM_ATTEMPTS)
+        {
+            let result = self
+                .network_service
+                .clone()
+                .call_proof_request(self.network_chain_index, target, config.clone())
+                .await;
+
+            match result {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    outcome_errors.push(err);
+                }
+            }
+        }
+
+        Err(CallProofQueryError {
+            errors: outcome_errors,
+        })
+    }
+}
+
+/// Error that can happen when calling [`SyncService::storage_query`].
+#[derive(Debug)]
+pub struct StorageQueryError {
+    /// Contains one error per peer that has been contacted. If this list is empty, then we
+    /// aren't connected to any node.
+    pub errors: Vec<StorageQueryErrorDetail>,
+}
+
+impl StorageQueryError {
+    /// Returns `true` if this is caused by networking issues, as opposed to a consensus-related
+    /// issue.
+    pub fn is_network_problem(&self) -> bool {
+        self.errors.iter().all(|err| match err {
+            StorageQueryErrorDetail::Network(service::StorageProofRequestError::Request(_)) => true,
+            StorageQueryErrorDetail::Network(service::StorageProofRequestError::Decode(_)) => false,
+            // TODO: as a temporary hack, we consider `TrieRootNotFound` as the remote not knowing about the requested block; see https://github.com/paritytech/substrate/pull/8046
+            StorageQueryErrorDetail::ProofVerification(proof_verify::Error::TrieRootNotFound) => {
+                true
+            }
+            StorageQueryErrorDetail::ProofVerification(_) => false,
+        })
+    }
+}
+
+impl fmt::Display for StorageQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.errors.is_empty() {
+            write!(f, "No node available for storage query")
+        } else {
+            write!(f, "Storage query errors:")?;
+            for err in &self.errors {
+                write!(f, "\n- {}", err)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// See [`StorageQueryError`].
+#[derive(Debug, derive_more::Display)]
+pub enum StorageQueryErrorDetail {
+    /// Error during the network request.
+    #[display(fmt = "{}", _0)]
+    Network(service::StorageProofRequestError),
+    /// Error verifying the proof.
+    #[display(fmt = "{}", _0)]
+    ProofVerification(proof_verify::Error),
+}
+
+/// Error that can happen when calling [`SyncService::call_proof_query`].
+#[derive(Debug)]
+pub struct CallProofQueryError {
+    /// Contains one error per peer that has been contacted. If this list is empty, then we
+    /// aren't connected to any node.
+    pub errors: Vec<service::CallProofRequestError>,
+}
+
+impl fmt::Display for CallProofQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.errors.is_empty() {
+            write!(f, "No node available for call proof query")
+        } else {
+            write!(f, "Call proof query errors:")?;
+            for err in &self.errors {
+                write!(f, "\n- {}", err)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -597,6 +953,26 @@ async fn start_relay_chain(
                             let current = sync.best_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
+                        ToBackground::PeersAssumedKnowBlock { send_back, block_number, block_hash } => {
+                            let finalized_num = sync.finalized_block_header().number;
+                            let outcome = if block_number <= finalized_num {
+                                sync.sources()
+                                    .filter(|source_id| {
+                                        let source_best = sync.source_best_block(*source_id);
+                                        source_best.0 > block_number ||
+                                            (source_best.0 == block_number && *source_best.1 == block_hash)
+                                    })
+                                    .map(|id| sync.source_user_data(id).clone())
+                                    .collect()
+                            } else {
+                                // As documented, `knows_non_finalized_block` would panic if the
+                                // block height was below the one of the known finalized block.
+                                sync.knows_non_finalized_block(block_number, &block_hash)
+                                    .map(|id| sync.source_user_data(id).clone())
+                                    .collect()
+                            };
+                            let _ = send_back.send(outcome);
+                        }
                     };
 
                     continue;
@@ -745,6 +1121,9 @@ async fn start_parachain(
                         best_subscriptions.push(tx);
                         let _ = send_back.send((current_best_block.scale_encoding_vec(), rx));
                     }
+                    ToBackground::PeersAssumedKnowBlock { send_back, block_number, block_hash } => {
+                        let _ = send_back.send(Vec::new()); // TODO: implement this somehow /!\
+                    }
                 }
             },
 
@@ -838,5 +1217,11 @@ enum ToBackground {
     /// See [`SyncService::subscribe_best`].
     SubscribeBest {
         send_back: oneshot::Sender<(Vec<u8>, lossy_channel::Receiver<Vec<u8>>)>,
+    },
+    /// See [`SyncService::peers_assumed_know_blocks`].
+    PeersAssumedKnowBlock {
+        send_back: oneshot::Sender<Vec<PeerId>>,
+        block_number: u64,
+        block_hash: [u8; 32],
     },
 }

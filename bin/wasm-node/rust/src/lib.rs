@@ -280,7 +280,6 @@ async fn start_services(
                 let new_task_tx = new_task_tx.clone();
                 move |fut| new_task_tx.unbounded_send(fut).unwrap()
             }),
-            network_service: (network_service.clone(), chain_index),
             sync_service: sync_service.clone(),
             chain_spec: &chain_spec,
             genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
@@ -352,7 +351,6 @@ async fn start_services(
                 let new_task_tx = new_task_tx.clone();
                 move |fut| new_task_tx.unbounded_send(fut).unwrap()
             }),
-            network_service: (network_service.clone(), chain_index),
             sync_service: sync_service.clone(),
             chain_spec,
             genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),

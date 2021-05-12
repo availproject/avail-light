@@ -437,10 +437,9 @@ impl JsonRpcService {
 
                 // Block bodies and justifications aren't stored locally. Ask the network.
                 let result = self
-                    .network_service
+                    .sync_service
                     .clone()
                     .block_query(
-                        self.network_chain_index,
                         hash,
                         protocol::BlocksRequestFields {
                             header: true,
@@ -574,14 +573,17 @@ impl JsonRpcService {
                 let mut lock = self.blocks.lock().await;
 
                 let block_hash = lock.best_block;
-                let state_root = lock.known_blocks.get(&block_hash).unwrap().state_root;
+                let (state_root, block_number) = {
+                    let block = lock.known_blocks.get(&block_hash).unwrap();
+                    (block.state_root, block.number)
+                };
                 drop(lock);
 
                 let outcome = self
-                    .network_service
+                    .sync_service
                     .clone()
                     .storage_prefix_keys_query(
-                        self.network_chain_index,
+                        block_number,
                         &block_hash,
                         &prefix.unwrap().0, // TODO: don't unwrap! what is this Option?
                         &state_root,
@@ -1405,14 +1407,9 @@ impl JsonRpcService {
                             for (key_index, key) in list.iter().enumerate() {
                                 // TODO: parallelism?
                                 match client
-                                    .network_service
+                                    .sync_service
                                     .clone()
-                                    .storage_query(
-                                        client.network_chain_index,
-                                        &block_hash,
-                                        state_trie_root,
-                                        iter::once(&key.0),
-                                    )
+                                    .storage_query(&block_hash, state_trie_root, iter::once(&key.0))
                                     .await
                                 {
                                     Ok(mut values) => {
@@ -1510,14 +1507,9 @@ impl JsonRpcService {
         let trie_root_hash = header::decode(&header).unwrap().state_root;
 
         let mut result = self
-            .network_service
+            .sync_service
             .clone()
-            .storage_query(
-                self.network_chain_index,
-                hash,
-                &trie_root_hash,
-                iter::once(key),
-            )
+            .storage_query(hash, &trie_root_hash, iter::once(key))
             .await
             .map_err(StorageQueryError::StorageRetrieval)?;
         Ok(result.pop().unwrap())
@@ -1533,10 +1525,9 @@ impl JsonRpcService {
         } else {
             // Header isn't known locally. Ask the network.
             let result = self
-                .network_service
+                .sync_service
                 .clone()
                 .block_query(
-                    self.network_chain_index,
                     *hash,
                     protocol::BlocksRequestFields {
                         header: true,
@@ -1564,7 +1555,7 @@ enum StorageQueryError {
     FindStorageRootHashError,
     /// Error while retrieving the storage item from other nodes.
     #[display(fmt = "{}", _0)]
-    StorageRetrieval(network_service::StorageQueryError),
+    StorageRetrieval(sync_service::StorageQueryError),
 }
 
 impl StorageQueryError {

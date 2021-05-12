@@ -302,24 +302,64 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
         self.inner.blocks.remove_source(source_id)
     }
 
+    /// Returns the list of sources in this state machine.
+    pub fn sources(&'_ self) -> impl ExactSizeIterator<Item = SourceId> + '_ {
+        self.inner.blocks.sources()
+    }
+
     /// Returns true if the source has earlier announced the block passed as parameter or one of
     /// its descendants.
+    ///
+    /// Also returns true if the requested block is inferior or equal to the known finalized block
+    /// and the source has announced a block higher or equal to the known finalized block.
     ///
     /// # Panic
     ///
     /// Panics if the [`SourceId`] is out of range.
     ///
-    // TODO: document precisely what it means
-    // TODO: shouldn't take &mut self but just &self
-    pub fn source_knows_block(
-        &mut self,
+    /// Panics if `height` is inferior or equal to the finalized block height. Finalized blocks
+    /// are intentionally not tracked by this data structure, and panicking when asking for a
+    /// potentially-finalized block prevents potentially confusing or erroneous situations.
+    ///
+    pub fn source_knows_non_finalized_block(
+        &self,
         source_id: SourceId,
         height: u64,
         hash: &[u8; 32],
     ) -> bool {
         self.inner
             .blocks
-            .source_knows_non_finalized_block(source_id, height, hash) // TODO: doesn't match the outer API
+            .source_knows_non_finalized_block(source_id, height, hash)
+    }
+
+    /// Returns the list of sources for which [`AllForksSync::source_knows_non_finalized_block`]
+    /// would return `true`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `height` is inferior or equal to the finalized block height. Finalized blocks
+    /// are intentionally not tracked by this data structure, and panicking when asking for a
+    /// potentially-finalized block prevents potentially confusing or erroneous situations.
+    ///
+    pub fn knows_non_finalized_block<'a>(
+        &'a self,
+        height: u64,
+        hash: &[u8; 32],
+    ) -> impl Iterator<Item = SourceId> + 'a {
+        self.inner.blocks.knows_non_finalized_block(height, hash)
+    }
+
+    /// Returns the current best block of the given source.
+    ///
+    /// This corresponds either the latest call to [`AllForksSync::block_announce`] where
+    /// `is_best` was `true`, or to the parameter passed to [`AllForksSync::add_source`].
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_best_block(&self, source_id: SourceId) -> (u64, &[u8; 32]) {
+        self.inner.blocks.source_best_block(source_id)
     }
 
     /// Returns the user data associated to the source. This is the value originally passed

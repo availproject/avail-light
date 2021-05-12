@@ -377,6 +377,23 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
         new_id
     }
 
+    /// Returns the current best block of the given source.
+    ///
+    /// This corresponds either the latest call to [`OptimisticSync::raise_source_best_block`],
+    /// or to the parameter passed to [`OptimisticSync::add_source`].
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_best_block(&self, source_id: SourceId) -> u64 {
+        self.inner
+            .sources
+            .get(&source_id)
+            .unwrap()
+            .best_block_number
+    }
+
     /// Updates the best known block of the source.
     ///
     /// Has no effect if the previously-known best block is lower than the new one.
@@ -411,6 +428,15 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
             source_id,
         };
         (src_user_data, drain)
+    }
+
+    /// Returns the list of sources in this state machine.
+    pub fn sources(&'_ self) -> impl ExactSizeIterator<Item = SourceId> + '_ {
+        self.inner.sources.keys().map(|id| *id)
+    }
+
+    pub fn source_user_data(&self, source_id: SourceId) -> &TSrc {
+        &self.inner.sources.get(&source_id).unwrap().user_data
     }
 
     pub fn source_user_data_mut(&mut self, source_id: SourceId) -> &mut TSrc {

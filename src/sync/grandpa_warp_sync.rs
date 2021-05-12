@@ -249,7 +249,45 @@ impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
         .into()
     }
 
-    // Returns the user data (`TSrc`) corresponding to the given source.
+    /// Returns a list of all known sources stored in the state machine.
+    pub fn sources(&'_ self) -> impl Iterator<Item = SourceId> + '_ {
+        let sources = match self {
+            Self::StorageGet(storage_get) => &storage_get.state.sources,
+            Self::NextKey(next_key) => &next_key.state.sources,
+            Self::Verifier(verifier) => &verifier.sources,
+            Self::WarpSyncRequest(warp_sync_request) => &warp_sync_request.sources,
+            Self::VirtualMachineParamsGet(virtual_machine_params_get) => {
+                &virtual_machine_params_get.state.sources
+            }
+            Self::WaitingForSources(waiting_for_sources) => &waiting_for_sources.sources,
+        };
+
+        sources.iter().map(|(id, _)| SourceId(id))
+    }
+
+    /// Returns the user data (`TSrc`) corresponding to the given source.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_user_data(&self, source_id: SourceId) -> &TSrc {
+        let sources = match self {
+            Self::StorageGet(storage_get) => &storage_get.state.sources,
+            Self::NextKey(next_key) => &next_key.state.sources,
+            Self::Verifier(verifier) => &verifier.sources,
+            Self::WarpSyncRequest(warp_sync_request) => &warp_sync_request.sources,
+            Self::VirtualMachineParamsGet(virtual_machine_params_get) => {
+                &virtual_machine_params_get.state.sources
+            }
+            Self::WaitingForSources(waiting_for_sources) => &waiting_for_sources.sources,
+        };
+
+        debug_assert!(sources.contains(source_id.0));
+        &sources[source_id.0].user_data
+    }
+
+    /// Returns the user data (`TSrc`) corresponding to the given source.
     ///
     /// # Panic
     ///

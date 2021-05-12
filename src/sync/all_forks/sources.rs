@@ -294,6 +294,20 @@ impl<TSrc> AllForksSources<TSrc> {
         source.best_block_hash = hash;
     }
 
+    /// Returns the current best block of the given source.
+    ///
+    /// This corresponds either the latest call to [`AllForksSources::set_best_block`],
+    /// or to the parameter passed to [`AllForksSources::add_source`].
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn best_block(&self, source_id: SourceId) -> (u64, &[u8; 32]) {
+        let source = self.sources.get(&source_id).unwrap();
+        (source.best_block_number, &source.best_block_hash)
+    }
+
     /// Returns the list of sources for which [`AllForksSources::knows_non_finalized_block`]
     /// would return `true`.
     ///

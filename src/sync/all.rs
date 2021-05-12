@@ -281,7 +281,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(_) => {
                         unreachable!()
                     }
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(sync) => {
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(_) => {
                         unreachable!()
                     }
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync) => {
@@ -453,6 +453,59 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
         }
     }
 
+    /// Returns the list of sources in this state machine.
+    pub fn sources(&'_ self) -> impl Iterator<Item = SourceId> + '_ {
+        match &self.inner {
+            AllSyncInner::GrandpaWarpSync(sync) => {
+                let iter = sync
+                    .sources()
+                    .map(move |id| sync.source_user_data(id).outer_source_id);
+                either::Left(either::Right(iter))
+            }
+            AllSyncInner::Optimistic(sync) => {
+                let iter = sync
+                    .sources()
+                    .map(move |id| sync.source_user_data(id).outer_source_id);
+                either::Left(either::Left(iter))
+            }
+            AllSyncInner::AllForks(sync) => {
+                let iter = sync
+                    .sources()
+                    .map(move |id| sync.source_user_data(id).outer_source_id);
+                either::Right(iter)
+            }
+            AllSyncInner::Poisoned => unreachable!(),
+        }
+    }
+
+    /// Returns the user data (`TSrc`) corresponding to the given source.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_user_data(&self, source_id: SourceId) -> &TSrc {
+        debug_assert!(self.shared.sources.contains(source_id.0));
+        match (&self.inner, self.shared.sources.get(source_id.0).unwrap()) {
+            (AllSyncInner::Optimistic(sync), SourceMapping::Optimistic(src)) => {
+                &sync.source_user_data(*src).user_data
+            }
+            (AllSyncInner::AllForks(sync), SourceMapping::AllForks(src)) => {
+                &sync.source_user_data(*src).user_data
+            }
+            (AllSyncInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
+                &sync.source_user_data(*src).user_data
+            }
+            (AllSyncInner::Poisoned, _) => unreachable!(),
+            (AllSyncInner::Optimistic(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::Optimistic(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::Optimistic(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
+        }
+    }
+
     /// Returns the user data (`TSrc`) corresponding to the given source.
     ///
     /// # Panic
@@ -481,6 +534,120 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
             | (AllSyncInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
             | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
             | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
+        }
+    }
+
+    /// Returns the current best block of the given source.
+    ///
+    /// This corresponds either the latest call to [`AllSync::block_announce`] where `is_best` was
+    /// `true`, or to the parameter passed to [`AllSync::add_source`].
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is invalid.
+    ///
+    pub fn source_best_block(&self, source_id: SourceId) -> (u64, &[u8; 32]) {
+        debug_assert!(self.shared.sources.contains(source_id.0));
+        match (&self.inner, self.shared.sources.get(source_id.0).unwrap()) {
+            (AllSyncInner::Optimistic(sync), SourceMapping::Optimistic(src)) => {
+                let ud = sync.source_user_data(*src);
+                (sync.source_best_block(*src), &ud.best_block_hash)
+            }
+            (AllSyncInner::AllForks(sync), SourceMapping::AllForks(src)) => {
+                sync.source_best_block(*src)
+            }
+            (AllSyncInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
+                let ud = sync.source_user_data(*src);
+                (ud.best_block_number, &ud.best_block_hash)
+            }
+            (AllSyncInner::Poisoned, _) => unreachable!(),
+            (AllSyncInner::Optimistic(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::Optimistic(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::Optimistic(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
+        }
+    }
+
+    /// Returns true if the source has earlier announced the block passed as parameter or one of
+    /// its descendants.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`SourceId`] is out of range.
+    ///
+    /// Panics if `height` is inferior or equal to the finalized block height. Finalized blocks
+    /// are intentionally not tracked by this data structure, and panicking when asking for a
+    /// potentially-finalized block prevents potentially confusing or erroneous situations.
+    ///
+    pub fn source_knows_non_finalized_block(
+        &self,
+        source_id: SourceId,
+        height: u64,
+        hash: &[u8; 32],
+    ) -> bool {
+        debug_assert!(self.shared.sources.contains(source_id.0));
+        match (&self.inner, self.shared.sources.get(source_id.0).unwrap()) {
+            (AllSyncInner::Optimistic(_), SourceMapping::Optimistic(_)) => {
+                todo!()
+            }
+            (AllSyncInner::AllForks(sync), SourceMapping::AllForks(src)) => {
+                sync.source_knows_non_finalized_block(*src, height, hash)
+            }
+            (AllSyncInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
+                assert!(height > sync.as_chain_information().finalized_block_header.number);
+
+                let user_data = sync.source_user_data(*src);
+                user_data.best_block_hash == *hash && user_data.best_block_number == height
+            }
+            (AllSyncInner::Poisoned, _) => unreachable!(),
+            (AllSyncInner::Optimistic(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::Optimistic(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::Optimistic(_))
+            | (AllSyncInner::AllForks(_), SourceMapping::GrandpaWarpSync(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::AllForks(_))
+            | (AllSyncInner::GrandpaWarpSync(_), SourceMapping::Optimistic(_)) => unreachable!(),
+        }
+    }
+
+    /// Returns the list of sources for which [`AllSync::source_knows_non_finalized_block`] would
+    /// return `true`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `height` is inferior or equal to the finalized block height. Finalized blocks
+    /// are intentionally not tracked by this data structure, and panicking when asking for a
+    /// potentially-finalized block prevents potentially confusing or erroneous situations.
+    ///
+    pub fn knows_non_finalized_block(
+        &'_ self,
+        height: u64,
+        hash: &[u8; 32],
+    ) -> impl Iterator<Item = SourceId> + '_ {
+        match &self.inner {
+            AllSyncInner::GrandpaWarpSync(sync) => {
+                assert!(height > sync.as_chain_information().finalized_block_header.number);
+
+                let hash = *hash;
+                let iter = sync
+                    .sources()
+                    .filter(move |source_id| {
+                        let user_data = sync.source_user_data(*source_id);
+                        user_data.best_block_hash == hash && user_data.best_block_number == height
+                    })
+                    .map(move |id| sync.source_user_data(id).outer_source_id);
+
+                either::Left(iter)
+            }
+            AllSyncInner::Optimistic(_) => todo!(),
+            AllSyncInner::AllForks(sync) => {
+                let iter = sync
+                    .knows_non_finalized_block(height, hash)
+                    .map(move |id| sync.source_user_data(id).outer_source_id);
+                either::Right(iter)
+            }
+            AllSyncInner::Poisoned => unreachable!(),
         }
     }
 
