@@ -281,13 +281,13 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(_) => {
                         unreachable!()
                     }
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(sync) => {
+                        unreachable!()
+                    }
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync) => {
                         sync.add_source(source_extra)
                     }
                     grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync) => {
-                        sync.add_source(source_extra)
-                    }
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(sync) => {
                         sync.add_source(source_extra)
                     }
                     grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(sync) => {
@@ -352,15 +352,13 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
     /// Removes a source from the state machine. Returns the user data of this source, and all
     /// the requests that this source were expected to perform.
     ///
-    /// All the [`RequestId`]s returned are immediately considered invalid.
-    ///
     /// # Panic
     ///
     /// Panics if the [`SourceId`] doesn't correspond to a valid source.
     ///
     // TODO: return requests as iterator
     // TODO: return the `TRq`s as well
-    pub fn remove_source(&mut self, source_id: SourceId) -> (Vec<RequestId>, TSrc) {
+    pub fn remove_source(&mut self, source_id: SourceId) -> (Vec<Action>, TSrc) {
         debug_assert!(self.shared.sources.contains(source_id.0));
         match (&mut self.inner, self.shared.sources.remove(source_id.0)) {
             (AllSyncInner::Optimistic(sync), SourceMapping::Optimistic(src)) => {
@@ -397,13 +395,53 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                             _removed,
                             RequestMapping::AllForks(_inner_request_id)
                         ));
-                        request_inner_user_data.outer_request_id
+                        Action::Cancel(request_inner_user_data.outer_request_id)
                     })
                     .collect();
                 (requests, user_data.user_data)
             }
-            (AllSyncInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
-                todo!()
+            (AllSyncInner::GrandpaWarpSync(_), SourceMapping::GrandpaWarpSync(source_id)) => {
+                let sync = match mem::replace(&mut self.inner, AllSyncInner::Poisoned) {
+                    AllSyncInner::GrandpaWarpSync(sync) => sync,
+                    _ => unreachable!(),
+                };
+
+                let ongoing_query = match &sync {
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(_) => false,
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(_) => false,
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync) => {
+                        sync.current_source().0 == source_id
+                    }
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::VirtualMachineParamsGet(sync) => {
+                        sync.warp_sync_source().0 == source_id
+                    }
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::StorageGet(sync) => {
+                        sync.warp_sync_source().0 == source_id
+                    }
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::NextKey(sync) => {
+                        sync.warp_sync_source().0 == source_id
+                    }
+                };
+
+                let (user_data, grandpa_warp_sync) = sync.remove_source(source_id);
+
+                let mut actions = Vec::with_capacity(2);
+
+                if ongoing_query {
+                    debug_assert_eq!(self.shared.requests.len(), 1);
+                    let request_id = self.shared.requests.iter().next().unwrap().0;
+                    self.shared.requests.remove(request_id);
+                    actions.push(Action::Cancel(RequestId(request_id)));
+                }
+
+                match self.inject_in_progress_grandpa(grandpa_warp_sync) {
+                    ResponseOutcome::Queued { next_actions } => {
+                        actions.extend(next_actions.into_iter());
+                    }
+                    _ => unreachable!(),
+                }
+
+                (actions, user_data.user_data)
             }
             (AllSyncInner::Poisoned, _) => unreachable!(),
             (AllSyncInner::Optimistic(_), SourceMapping::AllForks(_))
@@ -758,7 +796,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     debug_assert!(self.shared.requests.is_empty());
                     let request_id =
                         RequestId(self.shared.requests.insert(RequestMapping::GrandpaWarpSync));
-                    let outer_source_id = get.warp_sync_source().outer_source_id;
+                    let outer_source_id = get.warp_sync_source().1.outer_source_id;
                     let action = Action::Start {
                         request_id,
                         source_id: outer_source_id,
@@ -800,7 +838,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     debug_assert!(self.shared.requests.is_empty());
                     let request_id =
                         RequestId(self.shared.requests.insert(RequestMapping::GrandpaWarpSync));
-                    let outer_source_id = rq.warp_sync_source().outer_source_id;
+                    let outer_source_id = rq.warp_sync_source().1.outer_source_id;
                     let action = Action::Start {
                         request_id,
                         source_id: outer_source_id,

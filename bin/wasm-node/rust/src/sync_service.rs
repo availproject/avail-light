@@ -535,10 +535,8 @@ async fn start_relay_chain(
                             if chain_index == network_chain_index =>
                         {
                             let id = peers_source_id_map.remove(&peer_id).unwrap();
-                            let (rq_list, _) = sync.remove_source(id);
-                            for rq_id in rq_list {
-                                pending_requests.remove(&rq_id).unwrap().abort();
-                            }
+                            let (requests, _) = sync.remove_source(id);
+                            requests_to_start.extend(requests);
                         },
                         network_service::Event::BlockAnnounce { chain_index, peer_id, announce }
                             if chain_index == network_chain_index =>

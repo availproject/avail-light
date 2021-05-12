@@ -303,7 +303,7 @@ impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
     ///
     /// Panics if the source wasn't added to the list earlier.
     ///
-    pub fn remove_source(mut self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
+    pub fn remove_source(self, to_remove: SourceId) -> (TSrc, InProgressGrandpaWarpSync<TSrc>) {
         match self {
             Self::WaitingForSources(waiting_for_sources) => {
                 waiting_for_sources.remove_source(to_remove)
@@ -362,12 +362,16 @@ impl<TSrc> StorageGet<TSrc> {
     }
 
     /// Returns the source that we received the warp sync data from.
-    pub fn warp_sync_source(&self) -> &TSrc {
+    pub fn warp_sync_source(&self) -> (SourceId, &TSrc) {
         debug_assert!(self
             .state
             .sources
             .contains(self.state.warp_sync_source_id.0));
-        &self.state.sources[self.state.warp_sync_source_id.0].user_data
+
+        (
+            self.state.warp_sync_source_id,
+            &self.state.sources[self.state.warp_sync_source_id.0].user_data,
+        )
     }
 
     /// Returns the header that we're warp syncing up to.
@@ -418,12 +422,15 @@ impl<TSrc> NextKey<TSrc> {
     }
 
     /// Returns the source that we received the warp sync data from.
-    pub fn warp_sync_source(&self) -> &TSrc {
+    pub fn warp_sync_source(&self) -> (SourceId, &TSrc) {
         debug_assert!(self
             .state
             .sources
             .contains(self.state.warp_sync_source_id.0));
-        &self.state.sources[self.state.warp_sync_source_id.0].user_data
+        (
+            self.state.warp_sync_source_id,
+            &self.state.sources[self.state.warp_sync_source_id.0].user_data,
+        )
     }
 
     /// Returns the header that we're warp syncing up to.
@@ -705,12 +712,16 @@ pub struct VirtualMachineParamsGet<TSrc> {
 
 impl<TSrc> VirtualMachineParamsGet<TSrc> {
     /// Returns the source that we received the warp sync data from.
-    pub fn warp_sync_source(&self) -> &TSrc {
+    pub fn warp_sync_source(&self) -> (SourceId, &TSrc) {
         debug_assert!(self
             .state
             .sources
             .contains(self.state.warp_sync_source_id.0));
-        &self.state.sources[self.state.warp_sync_source_id.0].user_data
+
+        (
+            self.state.warp_sync_source_id,
+            &self.state.sources[self.state.warp_sync_source_id.0].user_data,
+        )
     }
 
     /// Returns the header that we're warp syncing up to.
