@@ -23,7 +23,7 @@
 
 // TODO: doc
 
-use crate::{ffi, lossy_channel, network_service, sync_service};
+use crate::{ffi, lossy_channel, sync_service};
 
 use futures::{lock::Mutex, prelude::*};
 use smoldot::{chain_spec, executor, header, metadata, network::protocol, trie::proof_verify};
@@ -614,14 +614,24 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 // Whatever the result of `code_query_result` is, notify the best block
                 // subscriptions. After this, we shouldn't unlock `latest_known_runtime` ever
                 // again to avoid giving the possibility to inspect the runtime in response
-                // to the notifications.
+                // to the notification.
+
+                // Elements in `best_blocks_subscriptions` are removed one by one and inserted
+                // back if the channel is still open.
+                for index in (0..latest_known_runtime.best_blocks_subscriptions.len()).rev() {
+                    let mut subscription = latest_known_runtime
+                        .best_blocks_subscriptions
+                        .swap_remove(index);
+                    if subscription.send(new_best_block.clone()).is_ok() {
+                        latest_known_runtime
+                            .best_blocks_subscriptions
+                            .push(subscription);
+                    }
+                }
+
                 latest_known_runtime
                     .best_blocks_subscriptions
                     .shrink_to_fit();
-                for subscription in &mut latest_known_runtime.best_blocks_subscriptions {
-                    // TODO: remove channel if it's closed (i.e. error returned)
-                    let _ = subscription.send(new_best_block.clone());
-                }
 
                 let (new_code, new_heap_pages) = {
                     let mut results = match code_query_result {
@@ -674,19 +684,27 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                     &latest_known_runtime.heap_pages,
                 );
 
-                latest_known_runtime
-                    .runtime_version_subscriptions
-                    .shrink_to_fit();
-
-                for subscription in &mut latest_known_runtime.runtime_version_subscriptions {
+                // Elements in `runtime_version_subscriptions` are removed one by one and inserted
+                // back if the channel is still open.
+                for index in (0..latest_known_runtime.runtime_version_subscriptions.len()).rev() {
+                    let mut subscription = latest_known_runtime
+                        .runtime_version_subscriptions
+                        .swap_remove(index);
                     let to_send = latest_known_runtime
                         .runtime
                         .as_ref()
                         .map(|r| r.runtime_spec.clone())
                         .map_err(|&()| ());
-                    // TODO: remove channel if it's closed (i.e. error returned)
-                    let _ = subscription.send(to_send);
+                    if subscription.send(to_send).is_ok() {
+                        latest_known_runtime
+                            .runtime_version_subscriptions
+                            .push(subscription);
+                    }
                 }
+
+                latest_known_runtime
+                    .runtime_version_subscriptions
+                    .shrink_to_fit();
             }
         })
     });
