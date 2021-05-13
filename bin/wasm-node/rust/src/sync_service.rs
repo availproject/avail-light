@@ -744,6 +744,19 @@ async fn start_relay_chain(
                         sync = idle;
                         break;
                     }
+                    all::ProcessOne::VerifyWarpSyncFragment(verify) => {
+                        let (sync_out, next_actions, result) = verify.perform();
+                        sync = sync_out;
+                        requests_to_start.extend(next_actions);
+
+                        if let Err(err) = result {
+                            // TODO: indicate peer who sent it?
+                            log::warn!(
+                                target: "sync-verify",
+                                "Failed to verify warp sync fragment: {}", err
+                            );
+                        }
+                    }
                     all::ProcessOne::VerifyHeader(verify) => {
                         let verified_hash = verify.hash();
 

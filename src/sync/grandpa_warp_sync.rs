@@ -32,6 +32,8 @@ use crate::{
 
 use alloc::vec::Vec;
 
+pub use warp_sync::Error as FragmentError;
+
 /// Problem encountered during a call to [`grandpa_warp_sync`].
 #[derive(Debug, derive_more::Display)]
 pub enum Error {
@@ -544,7 +546,7 @@ impl<TSrc> Verifier<TSrc> {
         }
     }
 
-    pub fn next(self) -> (InProgressGrandpaWarpSync<TSrc>, Option<warp_sync::Error>) {
+    pub fn next(self) -> (InProgressGrandpaWarpSync<TSrc>, Option<FragmentError>) {
         match self.verifier.next() {
             Ok(warp_sync::Next::NotFinished(next_verifier)) => (
                 InProgressGrandpaWarpSync::Verifier(Self {

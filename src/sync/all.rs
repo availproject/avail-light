@@ -281,8 +281,8 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WaitingForSources(_) => {
                         unreachable!()
                     }
-                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(_) => {
-                        unreachable!()
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(sync) => {
+                        sync.add_source(source_extra)
                     }
                     grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(sync) => {
                         sync.add_source(source_extra)
@@ -657,6 +657,9 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
     /// [`AllSync`] is yielded back at the end of this process.
     pub fn process_one(mut self) -> ProcessOne<TRq, TSrc, TBl> {
         match self.inner {
+            AllSyncInner::GrandpaWarpSync(
+                grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(_),
+            ) => ProcessOne::VerifyWarpSyncFragment(WarpSyncFragmentVerify { inner: self }),
             AllSyncInner::GrandpaWarpSync(_) => ProcessOne::AllSync(self),
             AllSyncInner::Optimistic(sync) => match sync.process_one() {
                 optimistic::ProcessOne::AllSync { sync } => {
@@ -989,8 +992,12 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     todo!()
                 }
                 grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(verifier) => {
-                    let (next_grandpa_warp_sync, _error) = verifier.next();
-                    grandpa_warp_sync = next_grandpa_warp_sync;
+                    self.inner = AllSyncInner::GrandpaWarpSync(
+                        grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(verifier),
+                    );
+                    return ResponseOutcome::Queued {
+                        next_actions: vec![],
+                    };
                 }
                 grandpa_warp_sync::InProgressGrandpaWarpSync::WarpSyncRequest(rq) => {
                     let action = self.shared.grandpa_warp_sync_request_to_request(&rq);
@@ -1137,9 +1144,11 @@ pub enum ProcessOne<TRq, TSrc, TBl> {
     /// No block ready to be processed.
     AllSync(AllSync<TRq, TSrc, TBl>),
 
-    /// Ready to start verifying one or more headers.
+    /// Ready to start verifying a header.
     VerifyHeader(HeaderVerify<TRq, TSrc, TBl>),
-    // TODO: verify grandpa warp sync fragment
+
+    /// Ready to start verifying a warp sync fragment.
+    VerifyWarpSyncFragment(WarpSyncFragmentVerify<TRq, TSrc, TBl>),
 }
 
 /// Outcome of injecting a response in the [`AllSync`].
@@ -1349,6 +1358,39 @@ pub enum HeaderVerifyOutcome<TRq, TSrc, TBl> {
         /// Next requests that must be started.
         next_actions: Vec<Action>,
     },
+}
+
+pub struct WarpSyncFragmentVerify<TRq, TSrc, TBl> {
+    inner: AllSync<TRq, TSrc, TBl>,
+}
+
+impl<TRq, TSrc, TBl> WarpSyncFragmentVerify<TRq, TSrc, TBl> {
+    /// Perform the verification.
+    pub fn perform(
+        mut self,
+    ) -> (
+        AllSync<TRq, TSrc, TBl>,
+        Vec<Action>,
+        Result<(), grandpa_warp_sync::FragmentError>,
+    ) {
+        let (next_grandpa_warp_sync, error) =
+            match mem::replace(&mut self.inner.inner, AllSyncInner::Poisoned) {
+                AllSyncInner::GrandpaWarpSync(
+                    grandpa_warp_sync::InProgressGrandpaWarpSync::Verifier(verifier),
+                ) => verifier.next(),
+                _ => unreachable!(),
+            };
+
+        let next_actions = match self
+            .inner
+            .inject_in_progress_grandpa(next_grandpa_warp_sync)
+        {
+            ResponseOutcome::Queued { next_actions } => next_actions,
+            _ => unreachable!(), // TODO: change API of inject_in_progress_grandpa instead
+        };
+
+        (self.inner, next_actions, error.map(Err).unwrap_or(Ok(())))
+    }
 }
 
 enum AllSyncInner<TRq, TSrc, TBl> {
