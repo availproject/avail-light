@@ -103,16 +103,15 @@ impl ChainInformation {
                     // TODO: seems a bit risky to automatically fall back to this?
                     ChainInformationConsensus::AllAuthorized
                 }
-                (Err(error), Err(other_err)) if other_err.is_function_not_found() => {
+                (Err(error), _) => {
+                    // Note that Babe might have produced an error as well, which is intentionally
+                    // ignored here in order to not make the API too complicated.
                     return Err(FromGenesisStorageError::AuraConfigLoad(error));
                 }
-                (Err(other_err), Err(error)) if other_err.is_function_not_found() => {
+                (_, Err(error)) => {
                     return Err(FromGenesisStorageError::BabeConfigLoad(error));
                 }
-                _ => {
-                    // This variant is also reached for example if reading the Aura config
-                    // succeeded but reading the Babe config failed for a reason other than
-                    // `is_function_not_found()`.
+                (Ok(_), Ok(_)) => {
                     return Err(FromGenesisStorageError::MultipleConsensusAlgorithms);
                 }
             }
