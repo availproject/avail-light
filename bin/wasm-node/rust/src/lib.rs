@@ -98,7 +98,14 @@ pub async fn start_client(
     let genesis_chain_information = chain_specs
         .iter()
         .map(|chain_spec| {
-            chain::chain_information::ChainInformation::from_chain_spec(&chain_spec).unwrap()
+            match chain::chain_information::ChainInformation::from_chain_spec(&chain_spec) {
+                Ok(ci) => ci,
+                Err(err) => panic!(
+                    "Failed to load information about chain `{}`: {}",
+                    chain_spec.name(),
+                    err
+                ),
+            }
         })
         .collect::<Vec<_>>();
     let chain_information = chain_specs
