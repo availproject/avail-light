@@ -68,21 +68,28 @@ const startInstance = async (config) => {
   smoldotJsConfig.instance = result.instance;
   wasiConfig.instance = result.instance;
 
-  const chainSpecLen = Buffer.byteLength(config.chainSpec, 'utf8');
-  const chainSpecPtr = result.instance.exports.alloc(chainSpecLen);
-  Buffer.from(result.instance.exports.memory.buffer)
-    .write(config.chainSpec, chainSpecPtr);
+  // Write the chain specifications into memory and call `init`.
+  // The logic below is a bit complicated due to the necessity to pass a list of strings through
+  // the FFI layer. See the documentation of `init` in the Rust code.
+  let chainSpecsPointersContent = [];
+  for (let chainSpec of config.chainSpecs) {
+    if (Object.prototype.toString.call(chainSpec) !== '[object String]')
+      throw new SmoldotError('chain spec must be a string');
 
-  const parachainSpecLen = config.parachainSpec ? Buffer.byteLength(config.parachainSpec, 'utf8') : 0;
-  const parachainSpecPtr = (parachainSpecLen != 0) ? result.instance.exports.alloc(parachainSpecLen) : 0;
-  if (parachainSpecLen != 0) {
+    const chainSpecLen = Buffer.byteLength(chainSpec, 'utf8');
+    const chainSpecPtr = result.instance.exports.alloc(chainSpecLen);
     Buffer.from(result.instance.exports.memory.buffer)
-      .write(config.parachainSpec, parachainSpecPtr);
+      .write(chainSpec, chainSpecPtr);
+    chainSpecsPointersContent.push(chainSpecPtr);
+    chainSpecsPointersContent.push(chainSpecLen);
   }
-
+  const chainSpecsPointersPtr = result.instance.exports.alloc(chainSpecsPointersContent.length * 4);
+  for (let idx in chainSpecsPointersContent) {
+    Buffer.from(result.instance.exports.memory.buffer)
+      .writeUInt32LE(chainSpecsPointersContent[idx], chainSpecsPointersPtr + idx * 4);
+  }
   result.instance.exports.init(
-    chainSpecPtr, chainSpecLen,
-    parachainSpecPtr, parachainSpecLen,
+    chainSpecsPointersPtr, chainSpecsPointersContent.length * 4,
     config.maxLogLevel
   );
 

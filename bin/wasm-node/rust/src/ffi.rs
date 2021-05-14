@@ -25,7 +25,7 @@ use core::{
     iter, marker,
     ops::{Add, Sub},
     pin::Pin,
-    slice,
+    ptr, slice,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -427,38 +427,49 @@ fn alloc(len: u32) -> u32 {
     u32::try_from(ptr as *mut u8 as usize).unwrap()
 }
 
-fn init(
-    chain_specs_ptr: u32,
-    chain_specs_len: u32,
-    parachain_specs_ptr: u32,
-    parachain_specs_len: u32,
-    max_log_level: u32,
-) {
-    let chain_specs_ptr = usize::try_from(chain_specs_ptr).unwrap();
-    let chain_specs_len = usize::try_from(chain_specs_len).unwrap();
-    let parachain_specs_ptr = usize::try_from(parachain_specs_ptr).unwrap();
-    let parachain_specs_len = usize::try_from(parachain_specs_len).unwrap();
+fn init(chain_specs_pointers_ptr: u32, chain_specs_pointers_len: u32, max_log_level: u32) {
+    let chain_specs_pointers_ptr = usize::try_from(chain_specs_pointers_ptr).unwrap();
+    let chain_specs_pointers_len = usize::try_from(chain_specs_pointers_len).unwrap();
 
-    let chain_specs: Box<[u8]> = unsafe {
+    let chain_specs_pointers: Box<[u8]> = unsafe {
         Box::from_raw(slice::from_raw_parts_mut(
-            chain_specs_ptr as *mut u8,
-            chain_specs_len,
+            chain_specs_pointers_ptr as *mut u8,
+            chain_specs_pointers_len,
         ))
     };
 
-    let chain_specs = String::from_utf8(Vec::from(chain_specs)).expect("non-utf8 chain specs");
+    assert_eq!(chain_specs_pointers.len() % 8, 0);
+    let mut chain_specs = Vec::with_capacity(chain_specs_pointers.len() / 8);
 
-    let parachain_specs = if parachain_specs_ptr != 0 {
-        let data: Box<[u8]> = unsafe {
-            Box::from_raw(slice::from_raw_parts_mut(
-                parachain_specs_ptr as *mut u8,
-                parachain_specs_len,
-            ))
+    for chain_spec_index in 0..(chain_specs.capacity()) {
+        let spec_pointer = {
+            let val = <[u8; 4]>::try_from(
+                &chain_specs_pointers[(chain_spec_index * 8)..(chain_spec_index * 8 + 4)],
+            )
+            .unwrap();
+            usize::try_from(u32::from_le_bytes(val)).unwrap()
         };
-        Some(String::from_utf8(Vec::from(data)).expect("non-utf8 relay chain specs"))
-    } else {
-        None
-    };
+
+        let spec_len = {
+            let val = <[u8; 4]>::try_from(
+                &chain_specs_pointers[(chain_spec_index * 8 + 4)..(chain_spec_index * 8 + 8)],
+            )
+            .unwrap();
+            usize::try_from(u32::from_le_bytes(val)).unwrap()
+        };
+
+        let chain_spec: Box<[u8]> =
+            unsafe { Box::from_raw(slice::from_raw_parts_mut(spec_pointer as *mut u8, spec_len)) };
+
+        let chain_spec = String::from_utf8(Vec::from(chain_spec)).expect("non-utf8 chain spec");
+
+        chain_specs.push(super::ChainConfig {
+            specification: chain_spec,
+            json_rpc_running: true,
+        });
+    }
+
+    debug_assert_eq!(chain_specs.len(), chain_specs.capacity());
 
     let max_log_level = match max_log_level {
         0 => log::LevelFilter::Off,
@@ -469,21 +480,7 @@ fn init(
         _ => log::LevelFilter::Trace,
     };
 
-    spawn_task(super::start_client(
-        iter::once(super::ChainConfig {
-            specification: chain_specs,
-            json_rpc_running: true,
-        })
-        .chain(
-            parachain_specs
-                .into_iter()
-                .map(|specification| super::ChainConfig {
-                    specification,
-                    json_rpc_running: false,
-                }),
-        ),
-        max_log_level,
-    ));
+    spawn_task(super::start_client(chain_specs.into_iter(), max_log_level));
 }
 
 pub(crate) enum JsonRpcMessage {

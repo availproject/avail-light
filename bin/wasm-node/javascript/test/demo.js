@@ -29,15 +29,15 @@ let wsConnections = {};
 let nextWsConnectionId = 0xaaa;
 
 smoldot.start({
-    chain_spec: fs.readFileSync('../../westend.json', 'utf8'),
-    max_log_level: 3,  // Can be increased for more verbosity
-    json_rpc_callback: (resp, chainIndex, connectionId) => {
+    chainSpecs: [fs.readFileSync('../../westend.json', 'utf8')],
+    maxLogLevel: 3,  // Can be increased for more verbosity
+    jsonRpcCallback: (resp, chainIndex, connectionId) => {
         wsConnections[connectionId].sendUTF(resp);
     }
 })
     .then((c) => {
         client = c;
-        unsentQueue.forEach((m) => client.send_json_rpc(m.message, 0, m.connectionId));
+        unsentQueue.forEach((m) => client.sendJsonRpc(m.message, 0, m.connectionId));
         unsentQueue = [];
     })
 
@@ -67,7 +67,7 @@ wsServer.on('request', function (request) {
     connection.on('message', function (message) {
         if (message.type === 'utf8') {
             if (client) {
-                client.send_json_rpc(message.utf8Data, 0, connectionId);
+                client.sendJsonRpc(message.utf8Data, 0, connectionId);
             } else {
                 unsentQueue.push({ message: message.utf8Data, connectionId });
             }
@@ -78,7 +78,7 @@ wsServer.on('request', function (request) {
 
     connection.on('close', function (reasonCode, description) {
         console.log((new Date()) + ' Peer ' + connection.remoteAddress + ' disconnected.');
-        client.cancel_all(connectionId);
+        client.cancelAll(connectionId);
         wsConnections[connectionId] = undefined;
     });
 });

@@ -25,13 +25,13 @@ process.exitCode = 1;
 // Note that the flow control below is a bit complicated and would need to be refactored if we
 // add more tests.
 
-const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
+const westendSpec = fs.readFileSync('../../westend.json', 'utf8');
 
 (async () => {
   // Test that invalid chain specs errors are properly caught.
   await client
     .start({
-      chain_spec: "invalid chain spec",
+      chainSpecs: ["invalid chain spec"],
     })
     .then(() => {
       console.error("Client loaded successfully despite invalid chain spec");
@@ -42,8 +42,8 @@ const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
   // Basic `system_name` test.
   client
     .start({
-      chain_spec: westendSpecs,
-      json_rpc_callback: (resp, chainIndex, userData) => {
+      chainSpecs: [westendSpec],
+      jsonRpcCallback: (resp, chainIndex, userData) => {
         if (resp == '{"jsonrpc":"2.0","id":1,"result":"smoldot-js"}') {
           // Test successful
           process.exit(0)
@@ -54,7 +54,7 @@ const westendSpecs = fs.readFileSync('../../westend.json', 'utf8');
       }
     })
     .then((client) => {
-      client.send_json_rpc('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}', 0, 0);
+      client.sendJsonRpc('{"jsonrpc":"2.0","id":1,"method":"system_name","params":[]}', 0, 0);
     })
     .catch((err) => process.exit(1));
 })();

@@ -186,31 +186,30 @@ pub extern "C" fn alloc(len: u32) -> u32 {
 
 /// Initializes the client.
 ///
-/// Use [`alloc`] to allocate either one to three buffers: one for the chain specs, and an
-/// optional one for the chain specs of the parachain if the chain is a relay chain.
+/// Use [`alloc`] to allocate one buffer for each spec of each chain that needs to be started.
 /// The buffers **must** have been allocated with [`alloc`]. They are freed when this function is
 /// called.
+/// Write the chain specs in these buffers.
 ///
-/// Write the chain specs and the parachain specs in these buffers.
-/// Then, pass the pointer and length of these buffers to this function.
-/// Pass `0` for `parachain_specs_ptr` and `parachain_specs_len` if the chain is not a
-/// parachain.
+/// Then, use [`alloc`] to allocate one additional buffer containing a list of pairs of
+/// little-endian u32s. Each pair must be a pointer and a length to the buffers allocated in the
+/// previous step.
+///
+/// Then, pass the pointer and length (in bytes) of this last buffer to this function.
+///
+/// > **Note**: This API is similar to the one of `writev(2)`, which you might be familiar with.
 ///
 /// The client will emit log messages by calling the [`log()`] function, provided the log level is
 /// inferior or equal to the value of `max_log_level` passed here.
 #[no_mangle]
 pub extern "C" fn init(
-    chain_specs_ptr: u32,
-    chain_specs_len: u32,
-    parachain_specs_ptr: u32,
-    parachain_specs_len: u32,
+    chain_specs_pointers_ptr: u32,
+    chain_specs_pointers_len: u32,
     max_log_level: u32,
 ) {
     super::init(
-        chain_specs_ptr,
-        chain_specs_len,
-        parachain_specs_ptr,
-        parachain_specs_len,
+        chain_specs_pointers_ptr,
+        chain_specs_pointers_len,
         max_log_level,
     )
 }
