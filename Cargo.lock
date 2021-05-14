@@ -2240,6 +2240,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruzstd"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d425143485a37727c7a46e689bbe3b883a00f42b4a52c4ac0f44855c1009b00"
+dependencies = [
+ "byteorder",
+ "twox-hash",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2449,6 +2459,7 @@ dependencies = [
  "rand 0.7.3",
  "rand 0.8.3",
  "rand_chacha 0.3.0",
+ "ruzstd",
  "schnorrkel",
  "serde",
  "serde_json",

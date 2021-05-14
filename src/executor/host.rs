@@ -42,8 +42,17 @@
 //! See the [documentation of the `vm` module](super::vm) for details about the requirements a
 //! runtime must adhere to.
 //!
-//! In addition to the requirements described there, WebAssembly runtime codes must also export
-//! a global symbol named `__heap_base`. More details in the next section.
+//! In addition to the requirements described there, the WebAssembly runtime code can also be
+//! zstandard-compressed and must also export a global symbol named `__heap_base`.
+//! More details below.
+//!
+//! ## Zstandard compression
+//!
+//! The runtime code passed as parameter to [`HostVmPrototype::new`] can be compressed using the
+//! [zstd](https://en.wikipedia.org/wiki/Zstandard) algorithm.
+//!
+//! If the code starts with the magic bytes `[82, 188, 83, 118, 70, 219, 142, 5]`, then it is
+//! assumed that the rest of the data is a zstandard-compressed WebAssembly module.
 //!
 //! ## Memory allocations
 //!
@@ -181,6 +190,9 @@ use sha2::Digest as _;
 use tiny_keccak::Hasher as _;
 
 pub use vm::HeapPages;
+pub use zstd::Error as ModuleFormatError;
+
+mod zstd;
 
 /// Prototype for an [`HostVm`].
 ///
@@ -213,12 +225,17 @@ pub struct HostVmPrototype {
 
 impl HostVmPrototype {
     /// Creates a new [`HostVmPrototype`]. Parses and potentially JITs the module.
+    ///
+    /// The module can be either directly Wasm bytecode, or zstandard-compressed.
     // TODO: document `heap_pages`; I know it comes from storage, but it's unclear what it means exactly
     pub fn new(
         module: impl AsRef<[u8]>,
         heap_pages: HeapPages,
         exec_hint: vm::ExecHint,
     ) -> Result<Self, NewErr> {
+        // TODO: configurable maximum allowed size? a uniform value is important for consensus
+        let module = zstd::zstd_decode_if_necessary(module.as_ref(), 50 * 1024 * 1024)
+            .map_err(NewErr::BadFormat)?;
         let module = vm::Module::new(module, exec_hint)?;
         Self::from_module(module, heap_pages)
     }
@@ -2230,6 +2247,9 @@ pub enum NewErr {
     /// Error while initializing the virtual machine.
     #[display(fmt = "Error while initializing the virtual machine: {}", _0)]
     VirtualMachine(vm::NewErr),
+    /// Error in the format of the runtime code.
+    #[display(fmt = "{}", _0)]
+    BadFormat(ModuleFormatError),
     /// Couldn't find the `__heap_base` symbol in the Wasm code.
     HeapBaseNotFound,
 }
