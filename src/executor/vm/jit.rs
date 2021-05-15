@@ -50,6 +50,7 @@ impl Module {
         config.cranelift_nan_canonicalization(true);
         config.cranelift_opt_level(wasmtime::OptLevel::Speed);
         config.async_support(true);
+        config.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
         let engine = wasmtime::Engine::new(&config)
             .map_err(|err| NewErr::ModuleError(ModuleError(err.to_string())))?;
 
