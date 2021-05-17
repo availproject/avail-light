@@ -30,6 +30,6 @@ pin-project = "1.0.7"
 rand = "0.8.3"
 smoldot = { version = "0.1.0", path = "../..", default-features = false, features = ["database-sqlite", "std"] }
 structopt = { version = "0.3.21", default-features = false, features = ["color", "suggestions", "wrap_help"] }
-terminal_size = "0.1.16"
+terminal_size = "0.1.17"
 tracing = { version = "0.1.26", features = ["attributes"] }
 tracing-subscriber = { version = "0.2.18", default-features = false, features = ["ansi", "chrono", "json", "fmt", "parking_lot", "smallvec"] }
