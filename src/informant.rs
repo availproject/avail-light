@@ -98,27 +98,27 @@ impl<'a> fmt::Display for InformantLine<'a> {
 
         let (header, header_len) = if let Some(relay_chain) = &self.relay_chain {
             let header = format!(
-                "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} {light_gray}({relay_chain_name} #{relay_best}){reset} [",
+                "    {cyan}{chain_name}{reset}   {white_bold}{local_best:<8}{reset} {light_gray}({relay_chain_name} {relay_best}){reset} [",
                 cyan = cyan,
                 reset = reset,
                 white_bold = white_bold,
                 light_gray = light_gray,
                 chain_name = self.chain_name,
                 relay_chain_name = relay_chain.chain_name,
-                local_best = self.best_number,
-                relay_best = relay_chain.best_number,
+                local_best = BlockNumberDisplay(self.best_number),
+                relay_best = BlockNumberDisplay(relay_chain.best_number),
             );
 
             let header_len = self.chain_name.chars().count() + relay_chain.chain_name.len() + 27; // TODO: ? it's easier to do that than deal with unicode
             (header, header_len)
         } else {
             let header = format!(
-                "    {cyan}{chain_name}{reset}   {white_bold}#{local_best:<7}{reset} [",
+                "    {cyan}{chain_name}{reset}   {white_bold}{local_best:<8}{reset} [",
                 cyan = cyan,
                 reset = reset,
                 white_bold = white_bold,
                 chain_name = self.chain_name,
-                local_best = self.best_number,
+                local_best = BlockNumberDisplay(self.best_number),
             );
 
             let header_len = self.chain_name.chars().count() + 17; // TODO: ? it's easier to do that than deal with unicode
@@ -127,15 +127,23 @@ impl<'a> fmt::Display for InformantLine<'a> {
 
         // TODO: it's a bit of a clusterfuck to properly align because the emoji eats a whitespace
         let trailer = format!(
-            "] {white_bold}#{network_best}{reset} (🌐{white_bold}{connec:>4}{reset})   ",
-            network_best = self.network_known_best.unwrap_or(0),
+            "] {white_bold}{network_best}{reset} (🌐{white_bold}{connec:>4}{reset})   ",
+            network_best = self
+                .network_known_best
+                .map(BlockNumberDisplay)
+                .map(either::Left)
+                .unwrap_or(either::Right("?")),
             connec = self.num_network_connections,
             white_bold = white_bold,
             reset = reset,
         );
         let trailer_len = format!(
-            "] #{network_best} (  {connec:>4})   ",
-            network_best = self.network_known_best.unwrap_or(0),
+            "] {network_best} (  {connec:>4})   ",
+            network_best = self
+                .network_known_best
+                .map(BlockNumberDisplay)
+                .map(either::Left)
+                .unwrap_or(either::Right("?")),
             connec = self.num_network_connections,
         )
         .len();
@@ -207,6 +215,16 @@ impl<'a> fmt::Display for HashDisplay<'a> {
             let val = u16::from_be_bytes(<[u8; 2]>::try_from(&self.0[len - 2..]).unwrap());
             write!(f, "{:04x}", val)?;
         }
+        Ok(())
+    }
+}
+
+/// Implements `fmt::Display` and displays a block number with a `#` in front.
+struct BlockNumberDisplay(u64);
+
+impl fmt::Display for BlockNumberDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)?;
         Ok(())
     }
 }
