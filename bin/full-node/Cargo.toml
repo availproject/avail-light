@@ -17,7 +17,7 @@ path = "src/main.rs"
 async-std = "1.9.0"
 atty = "0.2.14"
 ctrlc = "3.1.9"
-derive_more = "0.99.13"
+derive_more = "0.99.14"
 directories = "3.0.2"
 ed25519-zebra = { version = "2.2.0", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
