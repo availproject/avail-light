@@ -15,6 +15,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod chain_config;
-pub mod commit;
-pub mod warp_sync;
+//! GrandPa commits contain a proof of the finality of a block.
+//!
+//! In order to finalize a block, GrandPa authorities must emit votes, also called pre-commits.
+//! We consider a block finalized when more than two thirds of the authorities have voted for that
+//! block (or one of its descendants) to be finalized.
+//!
+//! A commit contains all the votes that have been used to prove that a certain block has been
+//! finalized.
+//!
+//! Contrary to justifications, commits don't include the block headers of the forks that have
+//! been voted on. It is expected for the node to be aware of these headers through a separate
+//! mechanism.
+//!
+//! When a commit is received from a third party, it must first be verified. See the [`verify`]
+//! module.
+
+pub mod decode;
+pub mod verify;

@@ -18,6 +18,7 @@
 //! Extension module containing the API and implementation of everything related to finality.
 
 use super::*;
+use crate::finality::{grandpa, justification};
 
 impl<T> NonFinalizedTree<T> {
     /// Verifies the given justification.
@@ -25,17 +26,35 @@ impl<T> NonFinalizedTree<T> {
     /// The verification is performed in the context of the chain. In particular, the
     /// verification will fail if the target block isn't already in the chain.
     ///
-    /// If the verification succeeds, a [`JustificationApply`] object will be returned which can
+    /// If the verification succeeds, a [`FinalityApply`] object will be returned which can
     /// be used to apply the finalization.
     // TODO: expand the documentation about how blocks with authorities changes have to be finalized before any further block can be finalized
     pub fn verify_justification(
         &mut self,
         scale_encoded_justification: &[u8],
-    ) -> Result<JustificationApply<T>, JustificationVerifyError> {
+    ) -> Result<FinalityApply<T>, JustificationVerifyError> {
         self.inner
             .as_mut()
             .unwrap()
             .verify_justification(scale_encoded_justification)
+    }
+
+    /// Verifies the given Grandpa commit message.
+    ///
+    /// The verification is performed in the context of the chain. In particular, the
+    /// verification will fail if the target block isn't already in the chain or if one of the
+    /// voted blocks is unknown locally.
+    ///
+    /// If the verification succeeds, a [`FinalityApply`] object will be returned which can
+    /// be used to apply the finalization.
+    pub fn verify_grandpa_commit_message(
+        &mut self,
+        scale_encoded_message: &[u8],
+    ) -> Result<FinalityApply<T>, CommitVerifyError> {
+        self.inner
+            .as_mut()
+            .unwrap()
+            .verify_grandpa_commit_message(scale_encoded_message)
     }
 
     /// Sets the latest known finalized block. Trying to verify a block that isn't a descendant of
@@ -69,29 +88,41 @@ impl<T> NonFinalizedTree<T> {
 }
 
 impl<T> NonFinalizedTreeInner<T> {
-    /// See [`NonFinalizedTree::verify_justification`].
-    fn verify_justification(
-        &mut self,
-        scale_encoded_justification: &[u8],
-    ) -> Result<JustificationApply<T>, JustificationVerifyError> {
+    /// Common function for verifying GrandPa-finality-related messages.
+    ///
+    /// Returns the index of the possibly finalized block, the expected authorities set id, and
+    /// an iterator to the list of authorities.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the finality algorithm of the chain isn't Grandpa.
+    ///
+    fn verify_grandpa_finality(
+        &'_ self,
+        target_hash: &[u8; 32],
+        target_number: u64,
+    ) -> Result<
+        (
+            fork_tree::NodeIndex,
+            u64,
+            impl Iterator<Item = impl AsRef<[u8]> + '_> + Clone + '_,
+        ),
+        FinalityVerifyError,
+    > {
         match &self.finality {
-            Finality::Outsourced => Err(JustificationVerifyError::AlgorithmHasNoJustification),
+            Finality::Outsourced => panic!(),
             Finality::Grandpa {
                 after_finalized_block_authorities_set_id,
                 finalized_scheduled_change,
                 finalized_triggered_authorities,
             } => {
-                // Turn justification into a strongly-typed struct.
-                let decoded = justification::decode::decode_grandpa(&scale_encoded_justification)
-                    .map_err(JustificationVerifyError::InvalidJustification)?;
-
                 // Find in the list of non-finalized blocks the one targeted by the justification.
-                let block_index = match self.blocks.find(|b| b.hash == *decoded.target_hash) {
+                let block_index = match self.blocks.find(|b| b.hash == *target_hash) {
                     Some(idx) => idx,
                     None => {
-                        return Err(JustificationVerifyError::UnknownTargetBlock {
-                            block_number: From::from(decoded.target_number),
-                            block_hash: *decoded.target_hash,
+                        return Err(FinalityVerifyError::UnknownTargetBlock {
+                            block_number: From::from(target_number),
+                            block_hash: *target_hash,
                         });
                     }
                 };
@@ -148,7 +179,7 @@ impl<T> NonFinalizedTreeInner<T> {
                 // As explained above, `target_number` must be <= `earliest_trigger`, otherwise the
                 // finalization is unsecure.
                 if let Some(earliest_trigger) = earliest_trigger {
-                    if u64::from(decoded.target_number) > earliest_trigger {
+                    if u64::from(target_number) > earliest_trigger {
                         let block_to_finalize_hash = self
                             .blocks
                             .node_to_root_path(block_index)
@@ -162,9 +193,9 @@ impl<T> NonFinalizedTreeInner<T> {
                             })
                             .next()
                             .unwrap();
-                        return Err(JustificationVerifyError::TooFarAhead {
-                            justification_block_number: u64::from(decoded.target_number),
-                            justification_block_hash: *decoded.target_hash,
+                        return Err(FinalityVerifyError::TooFarAhead {
+                            justification_block_number: target_number,
+                            justification_block_hash: *target_hash,
                             block_to_finalize_number: earliest_trigger,
                             block_to_finalize_hash,
                         });
@@ -174,27 +205,116 @@ impl<T> NonFinalizedTreeInner<T> {
                 // Find which authorities are supposed to finalize the target block.
                 let authorities_list = finalized_scheduled_change
                     .as_ref()
-                    .filter(|(trigger_height, _)| {
-                        *trigger_height < u64::from(decoded.target_number)
-                    })
+                    .filter(|(trigger_height, _)| *trigger_height < u64::from(target_number))
                     .map(|(_, list)| list)
                     .unwrap_or(finalized_triggered_authorities);
 
-                // As per above check, we know that the authorities of the target block are either the
-                // same as the ones of the latest finalized block, or the ones contained in the header of
-                // the latest finalized block.
+                // As per above check, we know that the authorities of the target block are either
+                // the same as the ones of the latest finalized block, or the ones contained in
+                // the header of the latest finalized block.
+
+                // First verification step complete.
+                Ok((
+                    block_index,
+                    *after_finalized_block_authorities_set_id,
+                    authorities_list.iter().map(|a| a.public_key),
+                ))
+            }
+        }
+    }
+
+    /// See [`NonFinalizedTree::verify_justification`].
+    fn verify_justification(
+        &mut self,
+        scale_encoded_justification: &[u8],
+    ) -> Result<FinalityApply<T>, JustificationVerifyError> {
+        match &self.finality {
+            Finality::Outsourced => Err(JustificationVerifyError::AlgorithmHasNoJustification),
+            Finality::Grandpa { .. } => {
+                // Turn justification into a strongly-typed struct.
+                let decoded = justification::decode::decode_grandpa(&scale_encoded_justification)
+                    .map_err(JustificationVerifyError::InvalidJustification)?;
+
+                // Delegate the first step to the other function.
+                let (block_index, authorities_set_id, authorities_list) = self
+                    .verify_grandpa_finality(decoded.target_hash, u64::from(decoded.target_number))
+                    .map_err(JustificationVerifyError::FinalityVerify)?;
+
                 justification::verify::verify(justification::verify::Config {
                     justification: decoded,
-                    authorities_set_id: *after_finalized_block_authorities_set_id,
-                    authorities_list: authorities_list.iter().map(|a| a.public_key),
+                    authorities_set_id,
+                    authorities_list,
                 })
                 .map_err(JustificationVerifyError::VerificationFailed)?;
 
                 // Justification has been successfully verified!
-                Ok(JustificationApply {
+                Ok(FinalityApply {
                     chain: self,
                     to_finalize: block_index,
                 })
+            }
+        }
+    }
+
+    /// See [`NonFinalizedTree::verify_grandpa_commit_message`].
+    fn verify_grandpa_commit_message(
+        &mut self,
+        scale_encoded_message: &[u8],
+    ) -> Result<FinalityApply<T>, CommitVerifyError> {
+        // The code below would panic if the chain doesn't use Grandpa.
+        if !matches!(self.finality, Finality::Grandpa { .. }) {
+            return Err(CommitVerifyError::NotGrandpa);
+        }
+
+        let decoded_commit = grandpa::commit::decode::decode_grandpa_commit(scale_encoded_message)
+            .map_err(|_| CommitVerifyError::InvalidCommit)?;
+
+        // Delegate the first step to the other function.
+        let (block_index, expected_authorities_set_id, authorities_list) = self
+            .verify_grandpa_finality(
+                decoded_commit.message.target_hash,
+                u64::from(decoded_commit.message.target_number),
+            )
+            .map_err(CommitVerifyError::FinalityVerify)?;
+
+        let mut verification = grandpa::commit::verify::verify(grandpa::commit::verify::Config {
+            commit: scale_encoded_message,
+            expected_authorities_set_id,
+            num_authorities: u32::try_from(authorities_list.clone().count()).unwrap(),
+        });
+
+        loop {
+            match verification {
+                grandpa::commit::verify::InProgress::Finished(Ok(())) => {
+                    drop(authorities_list);
+                    return Ok(FinalityApply {
+                        chain: self,
+                        to_finalize: block_index,
+                    });
+                }
+                grandpa::commit::verify::InProgress::FinishedUnknown => {
+                    return Err(CommitVerifyError::NotEnoughKnownBlocks)
+                }
+                grandpa::commit::verify::InProgress::Finished(Err(error)) => {
+                    return Err(CommitVerifyError::VerificationFailed(error))
+                }
+                grandpa::commit::verify::InProgress::IsAuthority(is_authority) => {
+                    let to_find = is_authority.authority_public_key();
+                    let result = authorities_list.clone().any(|a| a.as_ref() == to_find);
+                    verification = is_authority.resume(result);
+                }
+                grandpa::commit::verify::InProgress::IsParent(is_parent) => {
+                    // Find in the list of non-finalized blocks the target of the check.
+                    match self.blocks.find(|b| b.hash == *is_parent.block_hash()) {
+                        Some(idx) => {
+                            let result = self.blocks.is_ancestor(block_index, idx);
+                            verification = is_parent.resume(Some(result));
+                        }
+                        None => {
+                            verification = is_parent.resume(None);
+                        }
+                    };
+                }
             }
         }
     }
@@ -296,17 +416,18 @@ impl<T> NonFinalizedTreeInner<T> {
     }
 }
 
-/// Returned by [`NonFinalizedTree::verify_justification`] on success.
+/// Returned by [`NonFinalizedTree::verify_justification`] and
+/// [`NonFinalizedTree::verify_grandpa_commit_message`] on success.
 ///
-/// As long as [`JustificationApply::apply`] isn't called, the underlying [`NonFinalizedTree`]
+/// As long as [`FinalityApply::apply`] isn't called, the underlying [`NonFinalizedTree`]
 /// isn't modified.
 #[must_use]
-pub struct JustificationApply<'c, T> {
+pub struct FinalityApply<'c, T> {
     chain: &'c mut NonFinalizedTreeInner<T>,
     to_finalize: fork_tree::NodeIndex,
 }
 
-impl<'c, T> JustificationApply<'c, T> {
+impl<'c, T> FinalityApply<'c, T> {
     /// Applies the justification, finalizing the given block.
     ///
     /// This function, including its return type, behaves in the same way as
@@ -331,9 +452,9 @@ impl<'c, T> JustificationApply<'c, T> {
     }
 }
 
-impl<'c, T> fmt::Debug for JustificationApply<'c, T> {
+impl<'c, T> fmt::Debug for FinalityApply<'c, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("JustificationApply").finish()
+        f.debug_tuple("FinalityApply").finish()
     }
 }
 
@@ -344,8 +465,39 @@ pub enum JustificationVerifyError {
     AlgorithmHasNoJustification,
     /// Error while decoding the justification.
     InvalidJustification(justification::decode::Error),
-    /// Justification targets a block that isn't in the chain.
-    #[display(fmt = "Justification targets a block that isn't in the chain.")]
+    /// The justification verification has failed. The justification is invalid and should be
+    /// thrown away.
+    VerificationFailed(justification::verify::Error),
+    /// Error while verifying the finality.
+    FinalityVerify(FinalityVerifyError),
+}
+
+/// Error that can happen when verifying a Grandpa commit.
+#[derive(Debug, derive_more::Display)]
+pub enum CommitVerifyError {
+    /// Chain doesn't use the GrandPa algorithm.
+    NotGrandpa,
+    /// Error while decoding the commit.
+    InvalidCommit,
+    /// Error while verifying the finality.
+    FinalityVerify(FinalityVerifyError),
+    /// Not enough blocks are known by the tree to verify this commit.
+    ///
+    /// This doesn't mean that the commit is bad, but that it can't be verified without adding
+    /// more blocks to the tree.
+    NotEnoughKnownBlocks,
+    /// The commit verification has failed. The commit is invalid and should be thrown away.
+    VerificationFailed(grandpa::commit::verify::Error),
+}
+
+/// Error that can happen when verifying a proof of finality.
+#[derive(Debug, derive_more::Display)]
+pub enum FinalityVerifyError {
+    /// Finality proof targets a block that isn't in the chain.
+    #[display(
+        fmt = "Justification targets a block (#{}) that isn't in the chain.",
+        block_number
+    )]
     UnknownTargetBlock {
         /// Number of the block that isn't in the chain.
         block_number: u64,
@@ -368,9 +520,6 @@ pub enum JustificationVerifyError {
         /// Hash of the block to finalize first.
         block_to_finalize_hash: [u8; 32],
     },
-    /// The justification verification has failed. The justification is invalid and should be
-    /// thrown away.
-    VerificationFailed(justification::verify::Error),
 }
 
 /// Iterator producing the newly-finalized blocks removed from the state when the finalized block

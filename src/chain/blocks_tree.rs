@@ -63,7 +63,6 @@
 
 use crate::{
     chain::{chain_information, fork_tree},
-    finality::justification,
     header,
 };
 

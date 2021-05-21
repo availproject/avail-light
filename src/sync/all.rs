@@ -31,7 +31,7 @@
 //! call one of the methods of the [`AllSync`] in order to notify the state machine of the oucome.
 
 use crate::{
-    chain::chain_information,
+    chain::{blocks_tree, chain_information},
     executor::{host, vm::ExecHint},
     header,
     sync::{all_forks, grandpa_warp_sync, optimistic},
@@ -767,6 +767,23 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
         }
     }
 
+    /// Update the state machine with a Grandpa commit message received from the network.
+    ///
+    /// On success, the finalized block might have been updated.
+    // TODO: return which blocks are removed as finalized
+    pub fn grandpa_commit_message(
+        &mut self,
+        scale_encoded_message: &[u8],
+    ) -> Result<(), blocks_tree::CommitVerifyError> {
+        // TODO: clearly indicate if message has been ignored
+        match &mut self.inner {
+            AllSyncInner::Optimistic(_) => Ok(()),
+            AllSyncInner::AllForks(sync) => sync.grandpa_commit_message(scale_encoded_message),
+            AllSyncInner::GrandpaWarpSync(_) => Ok(()),
+            AllSyncInner::Poisoned => unreachable!(),
+        }
+    }
+
     /// Inject a response to a previously-emitted blocks request.
     ///
     /// # Panic
@@ -956,7 +973,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
 
     fn inject_in_progress_grandpa(
         &mut self,
-        mut grandpa_warp_sync: grandpa_warp_sync::InProgressGrandpaWarpSync<
+        grandpa_warp_sync: grandpa_warp_sync::InProgressGrandpaWarpSync<
             GrandpaWarpSyncSourceExtra<TSrc>,
         >,
     ) -> ResponseOutcome {

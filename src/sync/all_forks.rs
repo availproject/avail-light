@@ -599,6 +599,21 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
         }
     }
 
+    /// Update the state machine with a Grandpa commit message received from the network.
+    ///
+    /// On success, the finalized block has been updated.
+    // TODO: return which blocks are removed as finalized
+    pub fn grandpa_commit_message(
+        &mut self,
+        scale_encoded_message: &[u8],
+    ) -> Result<(), blocks_tree::CommitVerifyError> {
+        // TODO: must handle the `NotEnoughBlocks` error separately
+        self.chain
+            .verify_grandpa_commit_message(scale_encoded_message)?
+            .apply();
+        Ok(())
+    }
+
     /// Process the next block in the queue of verification.
     ///
     /// This method takes ownership of the [`AllForksSync`] and starts a verification
