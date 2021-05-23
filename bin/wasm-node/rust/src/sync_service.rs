@@ -167,6 +167,29 @@ impl SyncService {
         rx.await.unwrap()
     }
 
+    /// Subscribes to the state of the chain: the current state and the new blocks.
+    ///
+    /// Contrary to [`SyncService::subscribe_best`], *all* new blocks are reported. Only up to
+    /// `buffer_size` block notifications are buffered in the channel. If the channel is full
+    /// when a new notification is attempted to be pushed, the channel gets closed.
+    ///
+    /// See [`SubscribeAll`] for information about the return value.
+    pub async fn subscribe_all(&self, buffer_size: usize) -> SubscribeAll {
+        let (send_back, rx) = oneshot::channel();
+
+        self.to_background
+            .lock()
+            .await
+            .send(ToBackground::SubscribeAll {
+                send_back,
+                buffer_size,
+            })
+            .await
+            .unwrap();
+
+        rx.await.unwrap()
+    }
+
     /// Returns true if it is believed that we are near the head of the chain.
     ///
     /// The way this method is implemented is opaque and cannot be relied on. The return value
@@ -533,6 +556,44 @@ impl fmt::Display for CallProofQueryError {
     }
 }
 
+/// Return value of [`SyncService::subscribe_all`].
+pub struct SubscribeAll {
+    /// SCALE-encoded header of the finalized block at the time of the subscription.
+    pub finalized_block_scale_encoded_header: Vec<u8>,
+    /// List of all known non-finalized blocks at the time of subscription.
+    ///
+    /// Only one element in this list has [`BlockNotification::is_new_best`] equal to true.
+    pub non_finalized_blocks: Vec<BlockNotification>,
+    /// Channel onto which new blocks are sent. The channel gets closed if it is full when a new
+    /// block needs to be reported.
+    pub new_blocks: mpsc::Receiver<BlockNotification>,
+}
+
+/// Notification about a new block.
+///
+/// See [`SyncService::subscribe_all`].
+#[derive(Debug)]
+pub struct BlockNotification {
+    /// True if this block is considered as the best block of the chain.
+    pub is_new_best: bool,
+
+    /// SCALE-encoded header of the block.
+    pub scale_encoded_header: Vec<u8>,
+
+    /// Hash of the header of the parent of this block.
+    ///
+    /// > **Note**: The header of a block contains the hash of its parent. When it comes to
+    /// >           consensus algorithms such as Babe or Aura, the syncing code verifies that this
+    /// >           hash, stored in the header, actually corresponds to a valid block. However,
+    /// >           when it comes to parachain consensus, no such verification is performed.
+    /// >           Contrary to the hash stored in the header, the value of this field is
+    /// >           guaranteed to refer to a block that is known by the syncing service. This
+    /// >           allows a subscriber of the state of the chain to precisely track the hierarchy
+    /// >           of blocks, without risking to run into a problem in case of a block with an
+    /// >           invalid header.
+    pub parent_hash: [u8; 32],
+}
+
 async fn start_relay_chain(
     chain_information: chain::chain_information::ChainInformation,
     mut from_foreground: mpsc::Receiver<ToBackground>,
@@ -583,15 +644,14 @@ async fn start_relay_chain(
         // TODO: remove; should store the aborthandle in the TRq user data instead
         let mut pending_requests = HashMap::new();
 
-        // TODO: finalized isn't notified
         let mut finalized_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
         let mut best_notifications = Vec::<lossy_channel::Sender<Vec<u8>>>::new();
+        let mut all_notifications = Vec::<mpsc::Sender<BlockNotification>>::new();
 
         // Queue of requests that the sync state machine wants to start and that haven't been
         // sent out yet.
         let mut requests_to_start = Vec::<all::Action>::with_capacity(16);
 
-        // TODO: crappy way to handle that
         let mut has_new_best = false;
         let mut has_new_finalized = false;
 
@@ -784,6 +844,26 @@ async fn start_relay_chain(
                                     has_new_finalized = true;
                                 }
 
+                                // Elements in `all_notifications` are removed one by one and
+                                // inserted back if the channel is still open.
+                                for index in (0..all_notifications.len()).rev() {
+                                    let mut subscription = all_notifications.swap_remove(index);
+                                    // TODO: the code below is `O(n)` complexity
+                                    let header = sync_out
+                                        .non_finalized_blocks()
+                                        .find(|h| h.hash() == verified_hash)
+                                        .unwrap();
+                                    let notification = BlockNotification {
+                                        is_new_best,
+                                        scale_encoded_header: header.scale_encoding_vec(),
+                                        parent_hash: *header.parent_hash,
+                                    };
+
+                                    if subscription.try_send(notification).is_ok() {
+                                        all_notifications.push(subscription);
+                                    }
+                                }
+
                                 sync = sync_out;
                                 continue;
                             }
@@ -973,6 +1053,25 @@ async fn start_relay_chain(
                             let current = sync.best_block_header().scale_encoding_vec();
                             let _ = send_back.send((current, rx));
                         }
+                        ToBackground::SubscribeAll { send_back, buffer_size } => {
+                            let (tx, new_blocks) = mpsc::channel(buffer_size.saturating_sub(1));
+                            all_notifications.push(tx);
+                            let _ = send_back.send(SubscribeAll {
+                                finalized_block_scale_encoded_header: sync.finalized_block_header().scale_encoding_vec(),
+                                non_finalized_blocks: {
+                                    let best_hash = sync.best_block_hash();
+                                    sync.non_finalized_blocks().map(|h| {
+                                        let scale_encoding = h.scale_encoding_vec();
+                                        BlockNotification {
+                                            is_new_best: header::hash_from_scale_encoded_header(&scale_encoding) == best_hash,
+                                            scale_encoded_header: scale_encoding,
+                                            parent_hash: *h.parent_hash,
+                                        }
+                                    }).collect()
+                                },
+                                new_blocks,
+                            });
+                        }
                         ToBackground::PeersAssumedKnowBlock { send_back, block_number, block_hash } => {
                             let finalized_num = sync.finalized_block_header().number;
                             let outcome = if block_number <= finalized_num {
@@ -1141,6 +1240,16 @@ async fn start_parachain(
                         best_subscriptions.push(tx);
                         let _ = send_back.send((current_best_block.scale_encoding_vec(), rx));
                     }
+                    ToBackground::SubscribeAll { send_back, buffer_size } => {
+                        let (tx, new_blocks) = mpsc::channel(buffer_size.saturating_sub(1));
+                        let _ = send_back.send(SubscribeAll {
+                            finalized_block_scale_encoded_header: current_finalized_block.scale_encoding_vec(),
+                            non_finalized_blocks: Vec::new(),  // TODO: wrong /!\
+                            new_blocks,
+                        });
+
+                        // TODO: `tx` is immediately discarded; the feature isn't actually fully implemented
+                    }
                     ToBackground::PeersAssumedKnowBlock { send_back, block_number, block_hash } => {
                         let _ = send_back.send(Vec::new()); // TODO: implement this somehow /!\
                     }
@@ -1237,6 +1346,11 @@ enum ToBackground {
     /// See [`SyncService::subscribe_best`].
     SubscribeBest {
         send_back: oneshot::Sender<(Vec<u8>, lossy_channel::Receiver<Vec<u8>>)>,
+    },
+    /// See [`SyncService::subscribe_all`].
+    SubscribeAll {
+        send_back: oneshot::Sender<SubscribeAll>,
+        buffer_size: usize,
     },
     /// See [`SyncService::peers_assumed_know_blocks`].
     PeersAssumedKnowBlock {

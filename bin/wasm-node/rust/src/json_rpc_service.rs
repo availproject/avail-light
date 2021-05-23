@@ -1146,9 +1146,11 @@ impl JsonRpcService {
             .insert(subscription.clone(), unsubscribe_tx);
 
         let mut blocks_list = {
-            // TODO: best blocks != all heads
-            let (block_header, blocks_subscription) = self.sync_service.subscribe_best().await;
-            stream::once(future::ready(block_header)).chain(blocks_subscription)
+            let subscribe_all = self.sync_service.subscribe_all(16).await;
+            // TODO: is it correct to return all non-finalized blocks first? have to compare with PolkadotJS
+            stream::iter(subscribe_all.non_finalized_blocks)
+                .chain(subscribe_all.new_blocks)
+                .map(|notif| notif.scale_encoded_header)
         };
 
         let confirmation =
@@ -1167,6 +1169,7 @@ impl JsonRpcService {
                 futures::pin_mut!(next_block);
                 match future::select(next_block, &mut unsubscribe_rx).await {
                     future::Either::Left((block, _)) => {
+                        // TODO: don't unwrap `block`! channel can be legitimately closed if full
                         let header = header_conv(header::decode(&block.unwrap()).unwrap());
 
                         let per_source_subscriptions =

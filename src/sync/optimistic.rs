@@ -327,6 +327,13 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
         self.chain.best_block_hash()
     }
 
+    /// Returns the header of all known non-finalized blocks in the chain.
+    ///
+    /// The order of the blocks is unspecified.
+    pub fn non_finalized_blocks(&'_ self) -> impl Iterator<Item = header::HeaderRef<'_>> + '_ {
+        self.chain.iter()
+    }
+
     /// Disassembles the state machine into its raw components.
     pub fn disassemble(self) -> Disassemble<TRq, TSrc> {
         Disassemble {

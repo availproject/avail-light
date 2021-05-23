@@ -234,6 +234,13 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
         self.chain.best_block_hash()
     }
 
+    /// Returns the header of all known non-finalized blocks in the chain.
+    ///
+    /// The order of the blocks is unspecified.
+    pub fn non_finalized_blocks(&'_ self) -> impl Iterator<Item = header::HeaderRef<'_>> + '_ {
+        self.chain.iter()
+    }
+
     /// Inform the [`AllForksSync`] of a new potential source of blocks.
     ///
     /// The `user_data` parameter is opaque and decided entirely by the user. It can later be

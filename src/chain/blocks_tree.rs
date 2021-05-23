@@ -203,6 +203,18 @@ impl<T> NonFinalizedTree<T> {
         self.inner.as_ref().unwrap().blocks.len()
     }
 
+    /// Returns the header of all known non-finalized blocks in the chain.
+    ///
+    /// The order of the blocks is unspecified.
+    pub fn iter(&'_ self) -> impl Iterator<Item = header::HeaderRef<'_>> + '_ {
+        self.inner
+            .as_ref()
+            .unwrap()
+            .blocks
+            .iter()
+            .map(|b| (&b.header).into())
+    }
+
     /// Reserves additional capacity for at least `additional` new blocks without allocating.
     pub fn reserve(&mut self, additional: usize) {
         self.inner.as_mut().unwrap().blocks.reserve(additional)

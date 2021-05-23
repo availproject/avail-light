@@ -209,6 +209,24 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
         }
     }
 
+    /// Returns the header of all known non-finalized blocks in the chain.
+    ///
+    /// The order of the blocks is unspecified.
+    pub fn non_finalized_blocks(&self) -> impl Iterator<Item = header::HeaderRef> {
+        match &self.inner {
+            AllSyncInner::Optimistic(sync) => {
+                let iter = sync.non_finalized_blocks();
+                either::Left(either::Left(iter))
+            }
+            AllSyncInner::AllForks(sync) => {
+                let iter = sync.non_finalized_blocks();
+                either::Left(either::Right(iter))
+            }
+            AllSyncInner::GrandpaWarpSync(_) => either::Right(iter::empty()),
+            AllSyncInner::Poisoned => unreachable!(),
+        }
+    }
+
     /// Returns true if it is believed that we are near the head of the chain.
     ///
     /// The way this method is implemented is opaque and cannot be relied on. The return value
