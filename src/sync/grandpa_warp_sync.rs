@@ -128,20 +128,14 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                     },
                     Some(current_epoch),
                 ) => {
-                    let (slots_per_epoch, babe_config_c, babe_config_allowed_slots) =
-                        match state.start_chain_information.consensus {
-                            ChainInformationConsensus::Babe {
-                                slots_per_epoch,
-                                finalized_next_epoch_transition,
-                                ..
-                            } => (
-                                slots_per_epoch,
-                                // TODO: /!\ /!\ shouldn't take the same configuration as the genesis; this is a hack while waiting for https://github.com/paritytech/substrate/issues/8060
-                                finalized_next_epoch_transition.c,
-                                finalized_next_epoch_transition.allowed_slots,
-                            ),
-                            _ => unreachable!(),
-                        };
+                    // The number of slots per epoch is never modified once the chain is running,
+                    // and as such is copied from the original chain information.
+                    let slots_per_epoch = match state.start_chain_information.consensus {
+                        ChainInformationConsensus::Babe {
+                            slots_per_epoch, ..
+                        } => slots_per_epoch,
+                        _ => unreachable!(),
+                    };
 
                     return (
                         Self::Finished(Success {
