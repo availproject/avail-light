@@ -186,10 +186,10 @@ impl JitPrototype {
                         // TODO: check name and all?
                         // TODO: proper error instead of asserting?
                         assert!(imported_memory.is_none());
-                        imported_memory = Some(wasmtime::Memory::new(
-                            &store,
-                            wasmtime::MemoryType::new(limits),
-                        ));
+                        imported_memory = Some(
+                            wasmtime::Memory::new(&store, wasmtime::MemoryType::new(limits))
+                                .map_err(|_| NewErr::CouldntAllocateMemory)?,
+                        );
                         imports.push(wasmtime::Extern::Memory(
                             imported_memory.as_ref().unwrap().clone(),
                         ));

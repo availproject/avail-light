@@ -630,6 +630,8 @@ pub enum NewErr {
     /// If a "__indirect_function_table" symbol is provided, it must be a table.
     #[display(fmt = "If a \"__indirect_function_table\" symbol is provided, it must be a table.")]
     IndirectTableIsntTable,
+    /// Failed to allocate memory for the virtual machine.
+    CouldntAllocateMemory,
 }
 
 /// Error that can happen when calling [`VirtualMachinePrototype::start`].
