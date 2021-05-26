@@ -136,6 +136,10 @@ impl SyncService {
     ///
     /// Not all updates are necessarily reported. In particular, updates that weren't pulled from
     /// the `Stream` yet might get overwritten by newest updates.
+    ///
+    /// If you have subscribed to new blocks, the finalized blocks reported in this channel are
+    /// guaranteed to have earlier been reported as new blocks.
+    // TODO: is this last paragraph true for parachains?
     pub async fn subscribe_finalized(&self) -> (Vec<u8>, NotificationsReceiver<Vec<u8>>) {
         let (send_back, rx) = oneshot::channel();
 
@@ -1180,6 +1184,9 @@ async fn start_relay_chain(
                     log::info!(target: "sync-verify", "GrandPa warp sync finished to #{}", finalized_num);
                     has_new_finalized = true;
                     has_new_best = true;
+                    // Since there is a gap in the blocks, all active notifications to all blocks
+                    // must be cleared.
+                    all_notifications.clear();
                     requests_to_start.extend(next_actions);
                 }
             }

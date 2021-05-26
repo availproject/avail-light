@@ -127,9 +127,13 @@ pub struct Delay {
 impl Delay {
     pub fn new(when: Duration) -> Self {
         let (tx, rx) = oneshot::channel();
-        start_timer_wrap(when, move || {
+        if when == Duration::new(0, 0) {
             let _ = tx.send(());
-        });
+        } else {
+            start_timer_wrap(when, move || {
+                let _ = tx.send(());
+            });
+        }
         Delay { rx }
     }
 }
