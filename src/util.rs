@@ -58,6 +58,16 @@ pub(crate) fn nom_string_decode<
     )(bytes)
 }
 
+/// Decodes a SCALE-encoded boolean.
+pub(crate) fn nom_bool_decode<'a, E: nom::error::ParseError<&'a [u8]>>(
+    bytes: &'a [u8],
+) -> nom::IResult<&'a [u8], bool, E> {
+    nom::branch::alt((
+        nom::combinator::map(nom::bytes::complete::tag(&[0]), |_| false),
+        nom::combinator::map(nom::bytes::complete::tag(&[1]), |_| true),
+    ))(bytes)
+}
+
 /// Decodes a SCALE-compact-encoded usize.
 ///
 /// > **Note**: When using this function outside of a `nom` "context", you might have to explicit

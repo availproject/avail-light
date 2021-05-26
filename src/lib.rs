@@ -209,6 +209,7 @@ pub mod libp2p;
 pub mod metadata;
 pub mod network;
 pub mod sync;
+pub mod transactions;
 pub mod trie;
 pub mod verify;
 
