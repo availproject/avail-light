@@ -39,7 +39,7 @@ jobs:
         registry: docker.pkg.github.com
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - uses: docker/build-push-action@v2.4.0
+    - uses: docker/build-push-action@v2.5.0
       with:
         context: .
         file: ./bin/full-node/Dockerfile
