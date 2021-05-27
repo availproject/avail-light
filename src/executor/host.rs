@@ -141,7 +141,7 @@
 //! let mut vm: HostVm = {
 //!     let prototype = HostVmPrototype::new(
 //!         &wasm_binary_code,
-//!         HeapPages::from(1024),
+//!         HeapPages::from(2048),
 //!         smoldot::executor::vm::ExecHint::Oneshot
 //!     ).unwrap();
 //!     prototype.run_no_param("Core_version").unwrap().into()

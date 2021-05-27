@@ -46,7 +46,7 @@ pub mod vm;
 ///
 /// This number is normally found in the storage, at the key `:heappages`. But if it is not
 /// specified, then the value of this constant must be used.
-pub const DEFAULT_HEAP_PAGES: vm::HeapPages = vm::HeapPages::new(1024);
+pub const DEFAULT_HEAP_PAGES: vm::HeapPages = vm::HeapPages::new(2048);
 
 /// Converts a value of the key `:heappages` found in the storage to an actual number of heap
 /// pages.
