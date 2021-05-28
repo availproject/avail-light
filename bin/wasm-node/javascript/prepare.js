@@ -31,7 +31,10 @@ const rust_version = '1.51.0';
 // Because `rustup install` requires an Internet connection, check whether the toolchain is
 // already installed before attempting it.
 try {
-    child_process.execSync("rustup which --toolchain " + rust_version + " cargo");
+    child_process.execSync(
+        "rustup which --toolchain " + rust_version + " cargo",
+        { 'stdio': 'inherit' }
+    );
 } catch (error) {
     child_process.execSync(
         "rustup install --no-self-update --profile=minimal " + rust_version,
