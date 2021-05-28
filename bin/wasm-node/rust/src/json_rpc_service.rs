@@ -888,7 +888,10 @@ impl JsonRpcService {
             methods::MethodCall::system_health {} => {
                 self.send_back(
                     &methods::Response::system_health(methods::SystemHealth {
-                        is_syncing: !self.sync_service.is_near_head_of_chain_heuristic().await,
+                        // In smoldot, `is_syncing` equal to `false` means that GrandPa warp sync
+                        // is finished and that the block notifications report blocks that are
+                        // believed to be near the head of the chain.
+                        is_syncing: !self.runtime_service.is_near_head_of_chain_heuristic().await,
                         peers: u64::try_from(self.network_service.peers_list().await.count())
                             .unwrap_or(u64::max_value()),
                         should_have_peers: self.chain_spec.has_live_network(),

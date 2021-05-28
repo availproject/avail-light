@@ -134,6 +134,10 @@ impl RuntimeService {
                 runtime_block_state_root: config.genesis_block_state_root,
                 runtime_version_subscriptions: Vec::new(),
                 best_blocks_subscriptions: Vec::new(),
+                best_near_head_of_chain: config
+                    .sync_service
+                    .is_near_head_of_chain_heuristic()
+                    .await,
             }
         };
 
@@ -395,6 +399,32 @@ impl RuntimeService {
             }
         }
     }
+
+    /// Returns true if it is believed that we are near the head of the chain.
+    ///
+    /// The way this method is implemented is opaque and cannot be relied on. The return value
+    /// should only ever be shown to the user and not used for any meaningful logic.
+    pub async fn is_near_head_of_chain_heuristic(&self) -> bool {
+        // The runtime service adds a delay between the moment a best block is reported by the
+        // sync service and the moment it is reported by the runtime service.
+        // Because of this, any "far from head of chain" to "near head of chain" transition
+        // must take that delay into account. The other way around ("near" to "far") is
+        // unaffected.
+
+        // If the sync service is far from the head, the runtime service is also far.
+        if !self.sync_service.is_near_head_of_chain_heuristic().await {
+            return false;
+        }
+
+        // If the sync service is near, report the result of `is_near_head_of_chain_heuristic()`
+        // when called at the latest best block that the runtime service reported through its API,
+        // to make sure that we don't report "near" while having reported only blocks that were
+        // far.
+        self.latest_known_runtime
+            .lock()
+            .await
+            .best_near_head_of_chain
+    }
 }
 
 /// Error that can happen when calling a runtime function.
@@ -474,6 +504,10 @@ struct LatestKnownRuntime {
     /// List of senders that get notified when the best block is updated.
     /// See [`RuntimeService::subscribe_best`].
     best_blocks_subscriptions: Vec<lossy_channel::Sender<Vec<u8>>>,
+
+    /// Return value of calling [`sync_service::SyncService::is_near_head_of_chain_heuristic`]
+    /// after the latest best block update.
+    best_near_head_of_chain: bool,
 }
 
 struct SuccessfulRuntime {
@@ -607,6 +641,11 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                     )
                     .await;
 
+                let best_near_head_of_chain = runtime_service
+                    .sync_service
+                    .is_near_head_of_chain_heuristic()
+                    .await;
+
                 // Only lock `latest_known_runtime` now that everything is synchronous.
                 let mut latest_known_runtime = runtime_service.latest_known_runtime.lock().await;
                 let latest_known_runtime = &mut *latest_known_runtime;
@@ -632,6 +671,8 @@ async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
                 latest_known_runtime
                     .best_blocks_subscriptions
                     .shrink_to_fit();
+
+                latest_known_runtime.best_near_head_of_chain = best_near_head_of_chain;
 
                 let (new_code, new_heap_pages) = {
                     let mut results = match code_query_result {
