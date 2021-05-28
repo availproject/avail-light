@@ -304,7 +304,7 @@ define_methods! {
     state_getMetadata() -> HexString,
     state_getPairs() -> (), // TODO:
     state_getReadProof() -> (), // TODO:
-    state_getRuntimeVersion() -> RuntimeVersion [chain_getRuntimeVersion],
+    state_getRuntimeVersion(at: Option<HashHexString>) -> RuntimeVersion [chain_getRuntimeVersion],
     state_getStorage(key: HexString, hash: Option<HashHexString>) -> HexString [state_getStorageAt],
     state_getStorageHash() -> () [state_getStorageHashAt], // TODO:
     state_getStorageSize() -> () [state_getStorageSizeAt], // TODO:

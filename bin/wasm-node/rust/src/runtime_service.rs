@@ -179,6 +179,88 @@ impl RuntimeService {
         (current_version, rx)
     }
 
+    /// Returns the runtime version of the block with the given hash.
+    // TODO: better error type
+    pub async fn runtime_version_of_block(
+        self: &Arc<RuntimeService>,
+        block_hash: &[u8; 32],
+    ) -> Result<executor::CoreVersion, ()> {
+        // If the requested block is the best known block, optimize by
+        // immediately returning the cached spec.
+        {
+            let latest_known_runtime = self.latest_known_runtime.lock().await;
+            if latest_known_runtime.runtime_block_hash == *block_hash {
+                return latest_known_runtime
+                    .runtime
+                    .as_ref()
+                    .map(|r| r.runtime_spec.clone())
+                    .map_err(|&()| ());
+            }
+        }
+
+        // Ask the network for the header of this block, as we need to know the state root.
+        let state_root = {
+            let result = self
+                .sync_service
+                .clone()
+                .block_query(
+                    *block_hash,
+                    protocol::BlocksRequestFields {
+                        header: true,
+                        body: false,
+                        justification: false,
+                    },
+                )
+                .await;
+
+            // Note that the `block_query` method guarantees that the header is present
+            // and valid.
+            let header = if let Ok(block) = result {
+                block.header.unwrap()
+            } else {
+                return Err(());
+            };
+
+            *header::decode(&header).map_err(|_| ())?.state_root
+        };
+
+        // Download the runtime code of this block.
+        let code_query_result = self
+            .sync_service
+            .clone()
+            .storage_query(
+                block_hash,
+                &state_root,
+                iter::once(&b":code"[..]).chain(iter::once(&b":heappages"[..])),
+            )
+            .await;
+
+        let (code, heap_pages) = {
+            let mut results = match code_query_result {
+                Ok(c) => c,
+                Err(_) => return Err(()),
+            };
+
+            let heap_pages = results.pop().unwrap();
+            let code = results.pop().unwrap();
+            (code, heap_pages)
+        };
+
+        SuccessfulRuntime::from_params(&code, &heap_pages).map(|r| r.runtime_spec)
+    }
+
+    /// Returns the runtime version of the current best block.
+    pub async fn best_block_runtime(
+        self: &Arc<RuntimeService>,
+    ) -> Result<executor::CoreVersion, ()> {
+        let latest_known_runtime = self.latest_known_runtime.lock().await;
+        latest_known_runtime
+            .runtime
+            .as_ref()
+            .map(|r| r.runtime_spec.clone())
+            .map_err(|&()| ())
+    }
+
     /// Returns the SCALE-encoded header of the current best block, plus an unlimited stream that
     /// produces one item every time the best block is changed.
     ///

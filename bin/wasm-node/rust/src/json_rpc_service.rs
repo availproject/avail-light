@@ -819,10 +819,15 @@ impl JsonRpcService {
                     );
                 }
             }
-            methods::MethodCall::state_getRuntimeVersion {} => {
-                let (current_specs, _) = self.runtime_service.subscribe_runtime_version().await;
+            methods::MethodCall::state_getRuntimeVersion { at } => {
+                let runtime_spec = if let Some(at) = at {
+                    self.runtime_service.runtime_version_of_block(&at.0).await
+                } else {
+                    self.runtime_service.best_block_runtime().await
+                };
+
                 self.send_back(
-                    &if let Ok(runtime_spec) = current_specs {
+                    &if let Ok(runtime_spec) = runtime_spec {
                         let runtime_spec = runtime_spec.decode();
                         methods::Response::state_getRuntimeVersion(methods::RuntimeVersion {
                             spec_name: runtime_spec.spec_name.into(),
@@ -835,6 +840,7 @@ impl JsonRpcService {
                         })
                         .to_json_response(request_id)
                     } else {
+                        // TODO: error can also be because we failed the storage query; should be more precise
                         json_rpc::parse::build_error_response(
                             request_id,
                             json_rpc::parse::ErrorResponse::ServerError(-32000, "Invalid runtime"),
