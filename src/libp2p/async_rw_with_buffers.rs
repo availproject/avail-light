@@ -15,6 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#![cfg(feature = "std")]
+#![cfg_attr(docsrs, doc(cfg(feature = "std")))]
+
 //! Augments an implementation of `AsyncRead` and `AsyncWrite` with a read buffer and a write
 //! buffer.
 //!

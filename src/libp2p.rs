@@ -112,6 +112,7 @@ use futures::{
 use rand::Rng as _;
 use rand_chacha::{rand_core::SeedableRng as _, ChaCha20Rng};
 
+pub mod async_rw_with_buffers;
 pub mod connection;
 pub mod discovery;
 pub mod peer_id;

@@ -32,7 +32,7 @@ use futures::{channel::mpsc, prelude::*};
 use smoldot::{
     informant::HashDisplay,
     libp2p::{
-        connection,
+        async_rw_with_buffers, connection,
         multiaddr::{Multiaddr, Protocol},
         peer_id::PeerId,
     },
@@ -40,8 +40,6 @@ use smoldot::{
 };
 use std::{io, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Instant};
 use tracing::Instrument as _;
-
-mod with_buffers;
 
 /// Configuration for a [`NetworkService`].
 pub struct Config {
@@ -504,7 +502,7 @@ async fn connection_task(
     // The socket is wrapped around a `WithBuffers` object containing a read buffer and a write
     // buffer. These are the buffers whose pointer is passed to `read(2)` and `write(2)` when
     // reading/writing the socket.
-    let tcp_socket = with_buffers::WithBuffers::new(tcp_socket);
+    let tcp_socket = async_rw_with_buffers::WithBuffers::new(tcp_socket);
     futures::pin_mut!(tcp_socket);
 
     loop {
