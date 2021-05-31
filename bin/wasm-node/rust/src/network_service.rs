@@ -38,17 +38,16 @@
 
 use crate::ffi;
 
-use core::{
-    fmt,
-    num::{NonZeroU32, NonZeroUsize},
-    pin::Pin,
-    time::Duration,
-};
+use core::{num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
-    header,
     informant::HashDisplay,
-    libp2p::{connection, multiaddr::Multiaddr, peer_id::PeerId},
+    libp2p::{
+        connection::{self, handshake::HandshakeError},
+        multiaddr::Multiaddr,
+        peer_id::PeerId,
+        ConnectionError,
+    },
     network::{protocol, service},
 };
 use std::{collections::HashSet, sync::Arc};
@@ -352,6 +351,7 @@ impl NetworkService {
                                 network_service2,
                                 start_connect.id,
                                 start_connect.expected_peer_id,
+                                start_connect.multiaddr,
                                 is_important_peer,
                             )
                         }));
@@ -604,6 +604,7 @@ async fn connection_task(
     network_service: Arc<NetworkService>,
     pending_id: service::PendingId,
     expected_peer_id: PeerId,
+    attemped_multiaddr: Multiaddr,
     is_important_peer: bool,
 ) {
     // Finishing the ongoing connection process.
@@ -612,8 +613,8 @@ async fn connection_task(
         Err(()) => {
             log::debug!(
                 target: "connections",
-                "Pending({:?}, {}) => Failed to reach",
-                pending_id, expected_peer_id,
+                "Pending({:?}, {}) => Failed to reach ({})",
+                pending_id, expected_peer_id, attemped_multiaddr
             );
 
             network_service
@@ -632,10 +633,11 @@ async fn connection_task(
 
     log::debug!(
         target: "connections",
-        "Pending({:?}, {}) => Connection({:?})",
+        "Pending({:?}, {}) => Connection({:?}) through {}",
         pending_id,
         expected_peer_id,
-        id
+        id,
+        attemped_multiaddr
     );
 
     let mut write_buffer = vec![0; 4096];
@@ -653,7 +655,26 @@ async fn connection_task(
             Ok(rw) => rw,
             Err(_err) => {
                 if is_important_peer {
-                    log::warn!(target: "connections", "Error in connection with {}: {}", expected_peer_id, _err);
+                    log::warn!(
+                        target: "connections", "Error in connection with {}: {}",
+                        expected_peer_id, _err
+                    );
+
+                    // For any handshake error other than "no protocol in common has been found",
+                    // it is likely that the cause is connecting to a port that isn't serving the
+                    // libp2p protocol.
+                    match _err {
+                        ConnectionError::Handshake(HandshakeError::NoEncryptionProtocol)
+                        | ConnectionError::Handshake(HandshakeError::NoMultiplexingProtocol) => {}
+                        ConnectionError::Handshake(_) => {
+                            log::warn!(
+                                target: "connections",
+                                "Is {} the address of a libp2p port?",
+                                attemped_multiaddr
+                            );
+                        }
+                        _ => {}
+                    }
                 } else {
                     log::debug!(target: "connections", "Connection({:?}, {}) => Closed: {}", id, expected_peer_id, _err);
                 }

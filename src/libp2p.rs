@@ -846,7 +846,9 @@ where
                             let pending = guarded.peerset.pending_mut(connection_id.0).unwrap();
                             if *pending.peer_id() != remote_peer_id {
                                 pending.remove_and_purge_address();
-                                return Err(ConnectionError::PeerIdMismatch);
+                                return Err(ConnectionError::PeerIdMismatch {
+                                    actual: remote_peer_id,
+                                });
                             }
 
                             pending.into_established({
@@ -1492,8 +1494,14 @@ pub enum ConnectionError {
     #[display(fmt = "{}", _0)]
     Handshake(connection::handshake::HandshakeError),
     /// Mismatch between the actual [`PeerId`] and the [`PeerId`] expected by the local node.
-    #[display(fmt = "Mismatch between the actual PeerId and PeerId expected by the local node")]
-    PeerIdMismatch,
+    #[display(
+        fmt = "Mismatch between the actual PeerId ({}) and PeerId expected by the local node",
+        actual
+    )]
+    PeerIdMismatch {
+        /// Actual [`PeerId`] that the remote reports.
+        actual: PeerId,
+    },
 }
 
 pub struct SubstreamOpen<'a, TNow, TPeer, TConn> {
