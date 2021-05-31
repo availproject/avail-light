@@ -44,7 +44,7 @@ jobs:
       with:
         node-version: '12'
     - run: apt-get update && apt install -y binaryen # For `wasm-opt`
-    - run: cd bin/wasm-node/javascript && npm install && npm test
+    - run: cd bin/wasm-node/javascript && npm install-ci-test
 
   check-features:
     name: Check that combination of features compiles
