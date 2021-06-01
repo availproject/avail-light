@@ -1169,7 +1169,7 @@ where
                 protocol_index: overlay_network_index,
                 handshake,
             }) => {
-                guarded
+                if let Ok(()) = guarded
                     .peerset
                     .connection_mut(self.id)
                     .unwrap()
@@ -1178,16 +1178,24 @@ where
                         peerset::SubstreamDirection::In,
                         id,
                     )
-                    .unwrap();
-
-                guarded
-                    .events_tx
-                    .try_send(Event::NotificationsInOpen {
-                        id: ConnectionId(self.id),
-                        overlay_network_index,
-                        remote_handshake: handshake,
-                    })
-                    .unwrap();
+                {
+                    // No substream of that protocol was opened yet.
+                    guarded
+                        .events_tx
+                        .try_send(Event::NotificationsInOpen {
+                            id: ConnectionId(self.id),
+                            overlay_network_index,
+                            remote_handshake: handshake,
+                        })
+                        .unwrap();
+                } else {
+                    // There was already a substream with that protocol. Immediately refuse the
+                    // new one.
+                    self.connection
+                        .as_alive()
+                        .unwrap() // TODO: is unwrapping correct?
+                        .reject_in_notifications_substream(id);
+                }
             }
             PendingEvent::Inner(established::Event::NotificationsInOpenCancel {
                 protocol_index,

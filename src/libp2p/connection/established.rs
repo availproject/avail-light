@@ -151,6 +151,11 @@ enum Substream<TNow, TRqUd, TNotifUd> {
         /// Protocol that was negotiated.
         protocol_index: usize,
     },
+    /// API user has refused an incoming substream. Waiting for a close from the remote.
+    /// In order to save a round-trip time, the remote might assume that the protocol negotiation
+    /// has succeeded. As such, it might send additional data on this substream that should be
+    /// ignored.
+    NotificationsInRefused,
     /// A notifications protocol has been negotiated on a substream. Remote can now send
     /// notifications.
     NotificationsIn {
@@ -416,6 +421,7 @@ where
                             // TODO: report to user
                             todo!()
                         }
+                        Substream::NotificationsInRefused => {}
                         Substream::PingIn(_) => {}
                         Substream::NotificationsOutClosed => {}
                         Substream::NotificationsOut { user_data, .. }
@@ -543,6 +549,7 @@ where
                 // TODO: report to user
                 None
             }
+            Substream::NotificationsInRefused => None,
             Substream::NotificationsOutNegotiating { user_data, .. }
             | Substream::NotificationsOutHandshakeRecv { user_data, .. } => {
                 Some(Event::NotificationsOutReject {
@@ -816,8 +823,22 @@ where
 
     /// Rejects an inbound notifications protocol. Must be called in response to a
     /// [`Event::NotificationsInOpen`].
-    pub fn reject_in_notifications_substream(&mut self, _substream_id: SubstreamId) {
-        todo!() // TODO:
+    pub fn reject_in_notifications_substream(&mut self, substream_id: SubstreamId) {
+        let mut substream = self.inner.yamux.substream_by_id(substream_id.0).unwrap();
+
+        match substream.user_data() {
+            Substream::NotificationsInWait { .. } => {
+                if substream.close().is_none() {
+                    *self
+                        .inner
+                        .yamux
+                        .substream_by_id(substream_id.0)
+                        .unwrap()
+                        .user_data() = Substream::NotificationsInRefused;
+                }
+            }
+            _ => panic!(),
+        }
     }
 
     /// Queues a notification to be written out on the given substream.
@@ -1328,6 +1349,7 @@ where
                 todo!() // TODO:
             }
             Substream::NotificationsIn { .. } => f.debug_tuple("notifications-in").finish(),
+            Substream::NotificationsInRefused => f.debug_tuple("notifications-in-refused").finish(),
             Substream::RequestOutNegotiating { user_data, .. }
             | Substream::RequestOut { user_data, .. } => {
                 f.debug_tuple("request-out").field(&user_data).finish()
