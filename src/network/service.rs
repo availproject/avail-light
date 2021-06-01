@@ -1000,6 +1000,11 @@ impl<'a, TNow, TPeer, TConn> DiscoveryInsert<'a, TNow, TPeer, TConn>
 where
     TNow: Clone + Add<Duration, Output = TNow> + Sub<TNow, Output = Duration> + Ord,
 {
+    /// Returns the list of [`peer_id::PeerId`]s that will be inserted.
+    pub fn peer_ids(&self) -> impl Iterator<Item = &peer_id::PeerId> {
+        self.outcome.iter().map(|(peer_id, _)| peer_id)
+    }
+
     /// Insert the results in the [`ChainNetwork`].
     // TODO: futures cancellation concerns T_T
     pub async fn insert(self, mut or_insert: impl FnMut(&peer_id::PeerId) -> TPeer) {
