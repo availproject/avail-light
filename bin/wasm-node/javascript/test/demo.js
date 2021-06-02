@@ -20,6 +20,7 @@
 import * as smoldot from '../src/index.js';
 import { default as websocket } from 'websocket';
 import * as http from 'http';
+import * as process from 'process';
 // Adjust these chain specs for the chain you want to connect to.
 import * as fs from 'fs';
 
@@ -40,6 +41,10 @@ smoldot.start({
         unsentQueue.forEach((m) => client.sendJsonRpc(m.message, 0, m.connectionId));
         unsentQueue = [];
     })
+    .catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
 
 let server = http.createServer(function (request, response) {
     response.writeHead(404);
