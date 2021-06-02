@@ -117,10 +117,30 @@ jobs:
         command: check --config .github/cargo-deny.toml ${{ matrix.checks }}
         arguments: --workspace --all-features
 
+  wasm-node-versions-match:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2.3.4
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      # Compares whether the version in `package.json` matches the version in `Cargo.toml`.
+      - id: js-version
+        run: echo "::set-output name=version::`jq .version ./bin/wasm-node/javascript/package.json`"
+      - id: rust-version
+        run: echo "::set-output name=version::`cargo read-manifest --manifest-path=./bin/wasm-node/rust/Cargo.toml | jq .version`"
+      - run: exit 1
+        if: ${{ steps.js-version.outputs.version == '' }}   # Defensive test against mistakes in the CI script
+      - run: exit 1
+        if: ${{ steps.js-version.outputs.version != steps.rust-version.outputs.version }}
+
   all-ci:
     # This dummy job depends on all the mandatory checks. It succeeds if and only if CI is
     # considered successful.
-    needs: [test, wasm-node-check, check-features, check-rustdoc-links, fmt, clippy, cargo-deny]
+    needs: [test, wasm-node-check, check-features, check-rustdoc-links, fmt, clippy, cargo-deny, wasm-node-versions-match]
     runs-on: ubuntu-latest
     steps:
      - run: echo Success
