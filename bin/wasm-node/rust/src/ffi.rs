@@ -25,7 +25,7 @@ use core::{
     iter, marker,
     ops::{Add, Sub},
     pin::Pin,
-    ptr, slice,
+    ptr, slice, str,
     task::{Context, Poll, Waker},
     time::Duration,
 };
@@ -253,8 +253,8 @@ pub struct Connection {
     id: Option<u32>,
     /// True if [`bindings::connection_open`] has been called.
     open: bool,
-    /// True if [`bindings::connection_closed`] has been called.
-    closed: bool,
+    /// `Some` if [`bindings::connection_closed`] has been called.
+    closed_message: Option<String>,
     /// List of messages received through [`bindings::connection_message`]. Must never contain
     /// empty messages.
     messages_queue: VecDeque<Box<[u8]>>,
@@ -268,11 +268,11 @@ pub struct Connection {
 
 impl Connection {
     /// Connects to the given URL. Returns a [`Connection`] on success.
-    pub fn connect(url: &str) -> impl Future<Output = Result<Pin<Box<Self>>, ()>> {
+    pub fn connect(url: &str) -> impl Future<Output = Result<Pin<Box<Self>>, String>> {
         let mut pointer = Box::pin(Connection {
             id: None,
             open: false,
-            closed: false,
+            closed_message: None,
             messages_queue: VecDeque::with_capacity(32),
             messages_queue_first_offset: 0,
             waker: None,
@@ -281,17 +281,28 @@ impl Connection {
 
         let id = u32::try_from(&*pointer as *const Connection as usize).unwrap();
 
+        let mut error_ptr = [0u8; 8];
+
         let ret_code = unsafe {
             bindings::connection_new(
                 id,
                 u32::try_from(url.as_bytes().as_ptr() as usize).unwrap(),
                 u32::try_from(url.as_bytes().len()).unwrap(),
+                u32::try_from(&mut error_ptr as *mut [u8; 8] as usize).unwrap(),
             )
         };
 
         async move {
             if ret_code != 0 {
-                return Err(());
+                let ptr = u32::from_le_bytes(<[u8; 4]>::try_from(&error_ptr[0..4]).unwrap());
+                let len = u32::from_le_bytes(<[u8; 4]>::try_from(&error_ptr[4..8]).unwrap());
+                let error_message: Box<[u8]> = unsafe {
+                    Box::from_raw(slice::from_raw_parts_mut(
+                        usize::try_from(ptr).unwrap() as *mut u8,
+                        usize::try_from(len).unwrap(),
+                    ))
+                };
+                return Err(str::from_utf8(&error_message).unwrap().to_owned());
             }
 
             unsafe {
@@ -299,7 +310,7 @@ impl Connection {
             }
 
             future::poll_fn(|cx| {
-                if pointer.closed || pointer.open {
+                if pointer.closed_message.is_some() || pointer.open {
                     return Poll::Ready(());
                 }
                 if pointer
@@ -318,8 +329,8 @@ impl Connection {
             if pointer.open {
                 Ok(pointer)
             } else {
-                debug_assert!(pointer.closed);
-                Err(())
+                debug_assert!(pointer.closed_message.is_some());
+                Err(pointer.closed_message.as_ref().unwrap().clone())
             }
         }
     }
@@ -332,7 +343,7 @@ impl Connection {
     /// Returns `None` if the connection has been closed.
     pub async fn read_buffer<'a>(self: &'a mut Pin<Box<Self>>) -> Option<&'a [u8]> {
         future::poll_fn(|cx| {
-            if !self.messages_queue.is_empty() || self.closed {
+            if !self.messages_queue.is_empty() || self.closed_message.is_some() {
                 return Poll::Ready(());
             }
 
@@ -353,7 +364,7 @@ impl Connection {
             debug_assert!(!buffer.is_empty());
             debug_assert!(self.messages_queue_first_offset < buffer.len());
             Some(&buffer[self.messages_queue_first_offset..])
-        } else if self.closed {
+        } else if self.closed_message.is_some() {
             None
         } else {
             unreachable!()
@@ -390,7 +401,7 @@ impl Connection {
             let this = Pin::get_unchecked_mut(self.as_mut());
 
             // Connection might have been closed, but API user hasn't detected it yet.
-            if this.closed {
+            if this.closed_message.is_some() {
                 return;
             }
 
@@ -591,9 +602,17 @@ fn connection_message(id: u32, ptr: u32, len: u32) {
     }
 }
 
-fn connection_closed(id: u32) {
+fn connection_closed(id: u32, ptr: u32, len: u32) {
     let connection = unsafe { &mut *(usize::try_from(id).unwrap() as *mut Connection) };
-    connection.closed = true;
+
+    connection.closed_message = Some({
+        let ptr = usize::try_from(ptr).unwrap();
+        let len = usize::try_from(len).unwrap();
+        let message: Box<[u8]> =
+            unsafe { Box::from_raw(slice::from_raw_parts_mut(ptr as *mut u8, len)) };
+        str::from_utf8(&message).unwrap().to_owned()
+    });
+
     if let Some(waker) = connection.waker.take() {
         waker.wake();
     }

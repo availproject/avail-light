@@ -82,7 +82,7 @@ export default (config) => {
 
         // Must create a new connection object. This implementation stores the created object in
         // `connections`.
-        connection_new: (id, addr_ptr, addr_len) => {
+        connection_new: (id, addr_ptr, addr_len, error_ptr_ptr) => {
             try {
                 if (!!connections[id]) {
                     throw new Error("internal error: connection already allocated");
@@ -115,8 +115,12 @@ export default (config) => {
                     connection.onopen = () => {
                         config.instance.exports.connection_open(id);
                     };
-                    connection.onclose = () => {
-                        config.instance.exports.connection_closed(id);
+                    connection.onclose = (event) => {
+                        const message = event.code + " " + event.reason;
+                        const len = Buffer.byteLength(message, 'utf8');
+                        const ptr = config.instance.exports.alloc(len);
+                        Buffer.from(config.instance.exports.memory.buffer).write(message, ptr);
+                        config.instance.exports.connection_closed(id, ptr, len);
                     };
                     connection.onmessage = (msg) => {
                         const message = Buffer.from(msg.data);
@@ -141,9 +145,15 @@ export default (config) => {
                         if (connection.destroyed) return;
                         config.instance.exports.connection_open(id);
                     });
-                    connection.on('close', () => {
+                    connection.on('close', (hasError) => {
                         if (connection.destroyed) return;
-                        config.instance.exports.connection_closed(id);
+                        // NodeJS doesn't provide a reason why the closing happened, but only
+                        // whether it was caused by an error.
+                        const message = hasError ? "Error" : "Closed gracefully";
+                        const len = Buffer.byteLength(message, 'utf8');
+                        const ptr = config.instance.exports.alloc(len);
+                        Buffer.from(config.instance.exports.memory.buffer).write(message, ptr);
+                        config.instance.exports.connection_closed(id, ptr, len);
                     });
                     connection.on('error', () => { });
                     connection.on('data', (message) => {
@@ -161,6 +171,13 @@ export default (config) => {
                 return 0;
 
             } catch (error) {
+                const errorStr = error.toString();
+                const mem = Buffer.from(state.exports.memory.buffer);
+                const len = Buffer.byteLength(errorStr, 'utf8');
+                const ptr = state.exports.alloc(len);
+                mem.write(errorStr, ptr);
+                mem.writeUInt32LE(ptr, error_ptr_ptr);
+                mem.writeUInt32LE(len, error_ptr_ptr + 4);
                 return 1;
             }
         },

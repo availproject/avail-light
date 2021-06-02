@@ -38,7 +38,7 @@
 
 use crate::ffi;
 
-use core::{cmp, num::NonZeroUsize, pin::Pin, time::Duration};
+use core::{cmp, fmt, num::NonZeroUsize, pin::Pin, time::Duration};
 use futures::{channel::mpsc, lock::Mutex, prelude::*};
 use smoldot::{
     informant::HashDisplay,
@@ -661,7 +661,7 @@ pub enum Event {
 ///
 /// `is_important_peer` controls the log level used for problems that happen on this connection.
 async fn connection_task(
-    websocket: impl Future<Output = Result<Pin<Box<ffi::Connection>>, ()>>,
+    websocket: impl Future<Output = Result<Pin<Box<ffi::Connection>>, impl fmt::Display>>,
     network_service: Arc<NetworkService>,
     pending_id: service::PendingId,
     expected_peer_id: PeerId,
@@ -671,12 +671,20 @@ async fn connection_task(
     // Finishing the ongoing connection process.
     let mut websocket = match websocket.await {
         Ok(s) => s,
-        Err(()) => {
-            log::debug!(
-                target: "connections",
-                "Pending({:?}, {}) => Failed to reach ({})",
-                pending_id, expected_peer_id, attemped_multiaddr
-            );
+        Err(err) => {
+            if is_important_peer {
+                log::warn!(
+                    target: "connections",
+                    "Failed to reach {} through {}: {}",
+                    expected_peer_id, attemped_multiaddr, err
+                );
+            } else {
+                log::debug!(
+                    target: "connections",
+                    "Pending({:?}, {}) => Failed to reach ({}): {}",
+                    pending_id, expected_peer_id, attemped_multiaddr, err
+                );
+            }
 
             network_service
                 .network

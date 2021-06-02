@@ -136,6 +136,13 @@ extern "C" {
     /// > **Note**: If you implement this function using for example `new WebSocket()`, please
     /// >           keep in mind that exceptions should be caught and turned into an error code.
     ///
+    /// The `error_ptr_ptr` parameter should be treated as a pointer to two consecutive
+    /// little-endian 32-bits unsigned numbers. If an error happened, call [`alloc`] to allocate
+    /// memory, write a UTF-8 error message in that given location, then write that location at
+    /// the location indicated by `error_ptr_ptr` and the length of that string at the location
+    /// `error_ptr_ptr + 4`. The buffer is then de-allocated by the client. If no error happens,
+    /// nothing should be written to `error_ptr_ptr`.
+    ///
     /// At any time, a connection can be in one of the three following states:
     ///
     /// - `Opening` (initial state)
@@ -153,7 +160,7 @@ extern "C" {
     /// When in the `Open` state, the connection can receive messages. When a message is received,
     /// [`alloc`] must be called in order to allocate memory for this message, then
     /// [`connection_message`] must be called with the pointer returned by [`alloc`].
-    pub fn connection_new(id: u32, addr_ptr: u32, addr_len: u32) -> u32;
+    pub fn connection_new(id: u32, addr_ptr: u32, addr_len: u32, error_ptr_ptr: u32) -> u32;
 
     /// Close a connection previously initialized with [`connection_new`].
     ///
@@ -275,8 +282,11 @@ pub extern "C" fn connection_message(id: u32, ptr: u32, len: u32) {
 ///
 /// Must only be called once per connection object.
 ///
+/// Must be passed a UTF-8 string indicating the reason for closing. The buffer **must** have
+/// been allocated with [`alloc`]. It is freed when this function is called.
+///
 /// See also [`connection_open`].
 #[no_mangle]
-pub extern "C" fn connection_closed(id: u32) {
-    super::connection_closed(id)
+pub extern "C" fn connection_closed(id: u32, ptr: u32, len: u32) {
+    super::connection_closed(id, ptr, len)
 }
