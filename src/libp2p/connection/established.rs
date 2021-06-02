@@ -245,7 +245,7 @@ where
         // `incoming_buffer`. This is intentional, as from the perspective of `read_write` the
         // response arrived after the timeout. It is the responsibility of the user to call
         // `read_write` in an appropriate way for this to not happen.
-        if let Some(event) = self.update_now(now) {
+        if let Some(event) = self.update_now(now.clone()) {
             let wake_up_after = self.inner.next_timeout.clone();
             return Ok(ReadWrite {
                 connection: self,
@@ -256,6 +256,7 @@ where
                 event: Some(event),
             });
         }
+        debug_assert!(self.inner.next_timeout.as_ref().map_or(true, |t| *t > now));
 
         // Decoding the incoming data.
         loop {
@@ -583,7 +584,8 @@ where
             .yamux
             .user_datas()
             .find(|(_, substream)| match &substream {
-                Substream::RequestOutNegotiating { timeout, .. }
+                Substream::NotificationsOutNegotiating { timeout, .. }
+                | Substream::RequestOutNegotiating { timeout, .. }
                 | Substream::RequestOut { timeout, .. }
                     if *timeout <= now =>
                 {
@@ -604,6 +606,13 @@ where
                 .reset();
 
             Some(match substream {
+                Substream::NotificationsOutNegotiating { user_data, .. } => {
+                    // TODO: report that it's a timeout and not a rejection
+                    Event::NotificationsOutReject {
+                        id: SubstreamId(timed_out_substream),
+                        user_data,
+                    }
+                }
                 Substream::RequestOutNegotiating { user_data, .. }
                 | Substream::RequestOut { user_data, .. } => Event::Response {
                     id: SubstreamId(timed_out_substream),
