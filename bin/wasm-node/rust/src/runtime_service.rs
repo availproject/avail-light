@@ -34,7 +34,7 @@ pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 /// Configuration for a runtime service.
 pub struct Config<'a> {
     /// Closure that spawns background tasks.
-    pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    pub tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     /// Service responsible for synchronizing the chain.
     pub sync_service: Arc<sync_service::SyncService>,
@@ -63,7 +63,7 @@ pub struct Config<'a> {
 /// See [the module-level documentation](..).
 pub struct RuntimeService {
     /// See [`Config::tasks_executor`].
-    tasks_executor: Mutex<Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
+    tasks_executor: Mutex<Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>>,
 
     /// See [`Config::sync_service`].
     sync_service: Arc<sync_service::SyncService>,
@@ -656,7 +656,7 @@ impl SuccessfulRuntime {
 
 /// Starts the background task that updates the [`LatestKnownRuntime`].
 async fn start_background_task(runtime_service: &Arc<RuntimeService>) {
-    (runtime_service.tasks_executor.lock().await)({
+    (runtime_service.tasks_executor.lock().await)("runtime-download".into(), {
         let runtime_service = runtime_service.clone();
         let blocks_stream = {
             let (best_block_header, best_blocks_subscription) =

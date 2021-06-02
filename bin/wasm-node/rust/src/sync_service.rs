@@ -53,7 +53,7 @@ pub struct Config {
     pub chain_information: chain::chain_information::ChainInformation,
 
     /// Closure that spawns background tasks.
-    pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    pub tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     /// Access to the network, and index of the chain to sync from the point of view of the
     /// network service.
@@ -106,22 +106,28 @@ impl SyncService {
         let (to_background, from_foreground) = mpsc::channel(16);
 
         if let Some(config_parachain) = config.parachain {
-            (config.tasks_executor)(Box::pin(start_parachain(
-                config.chain_information,
-                from_foreground,
-                config_parachain,
-            )));
-        } else {
-            (config.tasks_executor)(Box::pin(
-                start_relay_chain(
+            (config.tasks_executor)(
+                "sync-relay".into(),
+                Box::pin(start_parachain(
                     config.chain_information,
                     from_foreground,
-                    config.network_service.0.clone(),
-                    config.network_service.1,
-                    config.network_events_receiver,
-                )
-                .await,
-            ));
+                    config_parachain,
+                )),
+            );
+        } else {
+            (config.tasks_executor)(
+                "sync-para".into(),
+                Box::pin(
+                    start_relay_chain(
+                        config.chain_information,
+                        from_foreground,
+                        config.network_service.0.clone(),
+                        config.network_service.1,
+                        config.network_events_receiver,
+                    )
+                    .await,
+                ),
+            );
         }
 
         SyncService {

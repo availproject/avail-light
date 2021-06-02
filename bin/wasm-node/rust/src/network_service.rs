@@ -55,7 +55,7 @@ use std::{collections::HashSet, sync::Arc};
 /// Configuration for a [`NetworkService`].
 pub struct Config {
     /// Closure that spawns background tasks.
-    pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    pub tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     /// Number of event receivers returned by [`NetworkService::new`].
     pub num_events_receivers: usize,
@@ -102,7 +102,7 @@ pub struct NetworkService {
 /// Fields of [`NetworkService`] behind a mutex.
 struct Guarded {
     /// See [`Config::tasks_executor`].
-    tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 }
 
 impl NetworkService {
@@ -178,139 +178,246 @@ impl NetworkService {
         });
 
         // Spawn a task pulling events from the network and transmitting them to the event senders.
-        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            // TODO: keeping a Weak here doesn't really work to shut down tasks
-            let network_service = Arc::downgrade(&network_service);
-            async move {
-                loop {
-                    let event = loop {
-                        let network_service = match network_service.upgrade() {
-                            Some(ns) => ns,
-                            None => {
-                                return;
-                            }
-                        };
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(
+            "network-events".into(),
+            Box::pin({
+                // TODO: keeping a Weak here doesn't really work to shut down tasks
+                let network_service = Arc::downgrade(&network_service);
+                async move {
+                    loop {
+                        let event = loop {
+                            let network_service = match network_service.upgrade() {
+                                Some(ns) => ns,
+                                None => {
+                                    return;
+                                }
+                            };
 
-                        match network_service.network.next_event().await {
-                            service::Event::Connected(peer_id) => {
-                                log::info!(target: "network", "Connected to {}", peer_id);
-                            }
-                            service::Event::Disconnected {
-                                peer_id,
-                                chain_indices,
-                            } => {
-                                log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
-                                if !chain_indices.is_empty() {
-                                    // TODO: properly implement when multiple chains
-                                    if chain_indices.len() == 1 {
-                                        break Event::Disconnected {
-                                            peer_id,
-                                            chain_index: chain_indices[0],
-                                        };
-                                    } else {
-                                        todo!()
+                            match network_service.network.next_event().await {
+                                service::Event::Connected(peer_id) => {
+                                    log::info!(target: "network", "Connected to {}", peer_id);
+                                }
+                                service::Event::Disconnected {
+                                    peer_id,
+                                    chain_indices,
+                                } => {
+                                    log::info!(target: "network", "Disconnected from {} (chains: {:?})", peer_id, chain_indices);
+                                    if !chain_indices.is_empty() {
+                                        // TODO: properly implement when multiple chains
+                                        if chain_indices.len() == 1 {
+                                            break Event::Disconnected {
+                                                peer_id,
+                                                chain_index: chain_indices[0],
+                                            };
+                                        } else {
+                                            todo!()
+                                        }
                                     }
                                 }
-                            }
-                            service::Event::BlockAnnounce {
-                                chain_index,
-                                peer_id,
-                                announce,
-                            } => {
-                                log::debug!(
-                                    target: "network",
-                                    "Connection({}) => BlockAnnounce({}, {}, is_best={})",
-                                    peer_id,
-                                    chain_index,
-                                    HashDisplay(&announce.decode().header.hash()),
-                                    announce.decode().is_best
-                                );
-                                break Event::BlockAnnounce {
+                                service::Event::BlockAnnounce {
                                     chain_index,
                                     peer_id,
                                     announce,
-                                };
-                            }
-                            service::Event::ChainConnected {
-                                peer_id,
-                                chain_index,
-                                best_number,
-                                best_hash,
-                                ..
-                            } => {
-                                log::debug!(
-                                    target: "network",
-                                    "Connection({}) => ChainConnected({}, {}, {})",
+                                } => {
+                                    log::debug!(
+                                        target: "network",
+                                        "Connection({}) => BlockAnnounce({}, {}, is_best={})",
+                                        peer_id,
+                                        chain_index,
+                                        HashDisplay(&announce.decode().header.hash()),
+                                        announce.decode().is_best
+                                    );
+                                    break Event::BlockAnnounce {
+                                        chain_index,
+                                        peer_id,
+                                        announce,
+                                    };
+                                }
+                                service::Event::ChainConnected {
                                     peer_id,
                                     chain_index,
                                     best_number,
-                                    HashDisplay(&best_hash)
-                                );
-                                break Event::Connected {
+                                    best_hash,
+                                    ..
+                                } => {
+                                    log::debug!(
+                                        target: "network",
+                                        "Connection({}) => ChainConnected({}, {}, {})",
+                                        peer_id,
+                                        chain_index,
+                                        best_number,
+                                        HashDisplay(&best_hash)
+                                    );
+                                    break Event::Connected {
+                                        peer_id,
+                                        chain_index,
+                                        best_block_number: best_number,
+                                        best_block_hash: best_hash,
+                                    };
+                                }
+                                service::Event::ChainDisconnected {
                                     peer_id,
                                     chain_index,
-                                    best_block_number: best_number,
-                                    best_block_hash: best_hash,
-                                };
-                            }
-                            service::Event::ChainDisconnected {
-                                peer_id,
-                                chain_index,
-                            } => {
-                                log::debug!(
-                                    target: "network",
-                                    "Connection({}) => ChainDisconnected({})",
-                                    peer_id,
-                                    chain_index,
-                                );
-                                break Event::Disconnected {
-                                    peer_id,
-                                    chain_index,
-                                };
-                            }
-                            service::Event::IdentifyRequestIn { peer_id, request } => {
-                                log::debug!(
-                                    target: "network",
-                                    "Connection({}) => IdentifyRequest",
-                                    peer_id,
-                                );
-                                request.respond("smoldot").await;
-                            }
-                            service::Event::GrandpaCommitMessage {
-                                chain_index,
-                                message,
-                            } => {
-                                log::debug!(
-                                    target: "network",
-                                    "Connection(?) => GrandpaCommitMessage({}, {})",
-                                    chain_index,
-                                    HashDisplay(message.decode().message.target_hash),
-                                );
-                                break Event::GrandpaCommitMessage {
+                                } => {
+                                    log::debug!(
+                                        target: "network",
+                                        "Connection({}) => ChainDisconnected({})",
+                                        peer_id,
+                                        chain_index,
+                                    );
+                                    break Event::Disconnected {
+                                        peer_id,
+                                        chain_index,
+                                    };
+                                }
+                                service::Event::IdentifyRequestIn { peer_id, request } => {
+                                    log::debug!(
+                                        target: "network",
+                                        "Connection({}) => IdentifyRequest",
+                                        peer_id,
+                                    );
+                                    request.respond("smoldot").await;
+                                }
+                                service::Event::GrandpaCommitMessage {
                                     chain_index,
                                     message,
-                                };
+                                } => {
+                                    log::debug!(
+                                        target: "network",
+                                        "Connection(?) => GrandpaCommitMessage({}, {})",
+                                        chain_index,
+                                        HashDisplay(message.decode().message.target_hash),
+                                    );
+                                    break Event::GrandpaCommitMessage {
+                                        chain_index,
+                                        message,
+                                    };
+                                }
                             }
-                        }
-                    };
+                        };
 
-                    // Dispatch the event to the various senders.
-                    // This little `if` avoids having to do `event.clone()` if we don't have to.
-                    if senders.len() == 1 {
-                        let _ = senders[0].send(event).await;
-                    } else {
-                        for sender in &mut senders {
-                            let _ = sender.send(event.clone()).await;
+                        // Dispatch the event to the various senders.
+                        // This little `if` avoids having to do `event.clone()` if we don't have to.
+                        if senders.len() == 1 {
+                            let _ = senders[0].send(event).await;
+                        } else {
+                            for sender in &mut senders {
+                                let _ = sender.send(event.clone()).await;
+                            }
                         }
                     }
                 }
-            }
-        }));
+            }),
+        );
 
         // Spawn tasks dedicated to opening connections.
         // TODO: spawn several, or do things asynchronously, so that we try open multiple connections simultaneously
         for chain_index in 0..num_chains {
-            (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
+            (network_service.guarded.try_lock().unwrap().tasks_executor)(
+                "connections-open".into(),
+                Box::pin({
+                    // TODO: keeping a Weak here doesn't really work to shut down tasks
+                    let network_service = Arc::downgrade(&network_service);
+                    async move {
+                        loop {
+                            // TODO: very crappy way of not spamming the network service ; instead we should wake this task up when a disconnect or a discovery happens
+                            ffi::Delay::new(Duration::from_secs(1)).await;
+
+                            let network_service = match network_service.upgrade() {
+                                Some(ns) => ns,
+                                None => {
+                                    return;
+                                }
+                            };
+
+                            // TODO: should have a more robust way of limiting the number of connections
+                            if network_service.peers_list().await.count() >= 10 {
+                                continue;
+                            }
+
+                            let start_connect =
+                                match network_service.network.fill_out_slots(chain_index).await {
+                                    Some(sc) => sc,
+                                    None => continue,
+                                };
+
+                            let is_important_peer = network_service
+                                .important_nodes
+                                .contains(&start_connect.expected_peer_id);
+
+                            // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
+                            // into a `Future<dyn Output = Result<TcpStream, ...>>`.
+                            let socket = {
+                                log::debug!(target: "connections", "Pending({:?}) started: {}", start_connect.id, start_connect.multiaddr);
+                                ffi::Connection::connect(&start_connect.multiaddr.to_string())
+                            };
+
+                            // TODO: handle dialing timeout here
+
+                            let network_service2 = network_service.clone();
+                            (network_service.guarded.lock().await.tasks_executor)(
+                                format!("connection-{}", start_connect.expected_peer_id),
+                                Box::pin({
+                                    connection_task(
+                                        socket,
+                                        network_service2,
+                                        start_connect.id,
+                                        start_connect.expected_peer_id,
+                                        start_connect.multiaddr,
+                                        is_important_peer,
+                                    )
+                                }),
+                            );
+                        }
+                    }
+                }),
+            );
+        }
+
+        // Spawn tasks dedicated to the Kademlia discovery.
+        for chain_index in 0..num_chains {
+            (network_service.guarded.try_lock().unwrap().tasks_executor)(
+                "discovery".into(),
+                Box::pin({
+                    // TODO: keeping a Weak here doesn't really work to shut down tasks
+                    let network_service = Arc::downgrade(&network_service);
+                    async move {
+                        let mut next_discovery = Duration::from_secs(5);
+
+                        loop {
+                            ffi::Delay::new(next_discovery).await;
+                            next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
+
+                            let network_service = match network_service.upgrade() {
+                                Some(ns) => ns,
+                                None => return,
+                            };
+
+                            match network_service
+                                .network
+                                .kademlia_discovery_round(ffi::Instant::now(), chain_index)
+                                .await
+                            {
+                                Ok(insert) => {
+                                    for peer_id in insert.peer_ids() {
+                                        log::trace!(target: "connections", "Discovered {}", peer_id);
+                                    }
+
+                                    insert.insert(|_| ()).await;
+                                }
+                                Err(error) => {
+                                    log::warn!(target: "connections", "Problem during discovery: {}", error);
+                                }
+                            }
+                        }
+                    }
+                }),
+            );
+        }
+
+        (network_service.guarded.try_lock().unwrap().tasks_executor)(
+            "substreams-open".into(),
+            Box::pin({
                 // TODO: keeping a Weak here doesn't really work to shut down tasks
                 let network_service = Arc::downgrade(&network_service);
                 async move {
@@ -325,108 +432,16 @@ impl NetworkService {
                             }
                         };
 
-                        // TODO: should have a more robust way of limiting the number of connections
-                        if network_service.peers_list().await.count() >= 10 {
-                            continue;
-                        }
-
-                        let start_connect =
-                            match network_service.network.fill_out_slots(chain_index).await {
-                                Some(sc) => sc,
-                                None => continue,
-                            };
-
-                        let is_important_peer = network_service
-                            .important_nodes
-                            .contains(&start_connect.expected_peer_id);
-
-                        // Convert the `multiaddr` (typically of the form `/ip4/a.b.c.d/tcp/d/ws`)
-                        // into a `Future<dyn Output = Result<TcpStream, ...>>`.
-                        let socket = {
-                            log::debug!(target: "connections", "Pending({:?}) started: {}", start_connect.id, start_connect.multiaddr);
-                            ffi::Connection::connect(&start_connect.multiaddr.to_string())
-                        };
-
-                        // TODO: handle dialing timeout here
-
-                        let network_service2 = network_service.clone();
-                        (network_service.guarded.lock().await.tasks_executor)(Box::pin({
-                            connection_task(
-                                socket,
-                                network_service2,
-                                start_connect.id,
-                                start_connect.expected_peer_id,
-                                start_connect.multiaddr,
-                                is_important_peer,
-                            )
-                        }));
-                    }
-                }
-            }));
-        }
-
-        // Spawn tasks dedicated to the Kademlia discovery.
-        for chain_index in 0..num_chains {
-            (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-                // TODO: keeping a Weak here doesn't really work to shut down tasks
-                let network_service = Arc::downgrade(&network_service);
-                async move {
-                    let mut next_discovery = Duration::from_secs(5);
-
-                    loop {
-                        ffi::Delay::new(next_discovery).await;
-                        next_discovery = cmp::min(next_discovery * 2, Duration::from_secs(120));
-
-                        let network_service = match network_service.upgrade() {
-                            Some(ns) => ns,
-                            None => return,
-                        };
-
-                        match network_service
+                        network_service
                             .network
-                            .kademlia_discovery_round(ffi::Instant::now(), chain_index)
+                            .next_substream()
                             .await
-                        {
-                            Ok(insert) => {
-                                for peer_id in insert.peer_ids() {
-                                    log::trace!(target: "connections", "Discovered {}", peer_id);
-                                }
-
-                                insert.insert(|_| ()).await;
-                            }
-                            Err(error) => {
-                                log::warn!(target: "connections", "Problem during discovery: {}", error);
-                            }
-                        }
+                            .open(ffi::Instant::now())
+                            .await;
                     }
                 }
-            }));
-        }
-
-        (network_service.guarded.try_lock().unwrap().tasks_executor)(Box::pin({
-            // TODO: keeping a Weak here doesn't really work to shut down tasks
-            let network_service = Arc::downgrade(&network_service);
-            async move {
-                loop {
-                    // TODO: very crappy way of not spamming the network service ; instead we should wake this task up when a disconnect or a discovery happens
-                    ffi::Delay::new(Duration::from_secs(1)).await;
-
-                    let network_service = match network_service.upgrade() {
-                        Some(ns) => ns,
-                        None => {
-                            return;
-                        }
-                    };
-
-                    network_service
-                        .network
-                        .next_substream()
-                        .await
-                        .open(ffi::Instant::now())
-                        .await;
-                }
-            }
-        }));
+            }),
+        );
 
         (network_service, receivers)
     }

@@ -34,7 +34,7 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 /// Configuration for a [`TransactionsService`].
 pub struct Config {
     /// Closure that spawns background tasks.
-    pub tasks_executor: Box<dyn FnMut(Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
+    pub tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
 
     /// Access to the network, and index of the chain to sync from the point of view of the
     /// network service.
@@ -55,12 +55,15 @@ impl TransactionsService {
     pub async fn new(mut config: Config) -> Self {
         let (to_background, from_foreground) = mpsc::channel(8);
 
-        (config.tasks_executor)(Box::pin(background_task(
-            config.network_service.0,
-            config.network_service.1,
-            config.sync_service,
-            from_foreground,
-        )));
+        (config.tasks_executor)(
+            "transactions-service".into(),
+            Box::pin(background_task(
+                config.network_service.0,
+                config.network_service.1,
+                config.sync_service,
+                from_foreground,
+            )),
+        );
 
         TransactionsService {
             to_background: Mutex::new(to_background),

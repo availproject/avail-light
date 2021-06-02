@@ -19,6 +19,7 @@ futures = "0.3.15"
 lazy_static = "1.4.0"
 log = { version = "0.4.14", features = ["std"] }
 lru = "0.6.5"
+pin-project = "1.0.7"
 rand = "0.8.3"
 serde_json = "1.0.64"
 smoldot = { version = "0.1.0", path = "../../..", default-features = false }

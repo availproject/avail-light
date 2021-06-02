@@ -27,7 +27,7 @@ use smoldot::{
     chain, chain_spec,
     libp2p::{multiaddr, peer_id::PeerId},
 };
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::HashMap, pin::Pin, sync::Arc, task, time::Duration};
 
 pub mod ffi;
 
@@ -146,7 +146,8 @@ pub async fn start_client(
     // using `await`.
     new_task_tx
         .clone()
-        .unbounded_send(
+        .unbounded_send((
+            "services-initialization".into(),
             start_services(
                 new_task_tx,
                 chain_information,
@@ -155,23 +156,47 @@ pub async fn start_client(
                 json_rpc_running,
             )
             .boxed(),
-        )
+        ))
         .unwrap();
 
     // This is the main future that executes the entire client.
     let mut all_tasks = stream::FuturesUnordered::new();
     async move {
+        // The code below processes tasks that have names.
+        #[pin_project::pin_project]
+        struct FutureAdapter<F> {
+            name: String,
+            #[pin]
+            future: F,
+        }
+        impl<F: Future> Future for FutureAdapter<F> {
+            type Output = F::Output;
+            fn poll(self: Pin<&mut Self>, cx: &mut task::Context) -> task::Poll<Self::Output> {
+                let this = self.project();
+                log::trace!("enter: {}", &this.name);
+                let out = this.future.poll(cx);
+                log::trace!("leave");
+                out
+            }
+        }
+
         // Since `all_tasks` is initially empty, polling it would produce `None` and immediately
         // interrupt the processing.
         // As such, we start by filling it with the initial content of the `new_task` channel.
-        while let Some(Some(task)) = new_task_rx.next().now_or_never() {
-            all_tasks.push(task);
+        while let Some(Some((task_name, task))) = new_task_rx.next().now_or_never() {
+            all_tasks.push(FutureAdapter {
+                name: task_name,
+                future: task,
+            });
         }
 
         loop {
             match future::select(new_task_rx.select_next_some(), all_tasks.next()).await {
-                future::Either::Left((new_task, _)) => {
-                    all_tasks.push(new_task);
+                future::Either::Left(((new_task_name, new_task), _)) => {
+                    all_tasks.push(FutureAdapter {
+                        name: new_task_name,
+                        future: new_task,
+                    });
                 }
                 future::Either::Right((Some(()), _)) => {}
                 future::Either::Right((None, _)) => {
@@ -186,7 +211,10 @@ pub async fn start_client(
 
 /// Starts all the services of the client.
 async fn start_services(
-    new_task_tx: mpsc::UnboundedSender<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    new_task_tx: mpsc::UnboundedSender<(
+        String,
+        Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+    )>,
     chain_information: Vec<chain::chain_information::ChainInformation>,
     genesis_chain_information: Vec<chain::chain_information::ChainInformation>,
     chain_specs: Vec<chain_spec::ChainSpec>,
@@ -198,7 +226,7 @@ async fn start_services(
         network_service::NetworkService::new(network_service::Config {
             tasks_executor: Box::new({
                 let new_task_tx = new_task_tx.clone();
-                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
             }),
             num_events_receivers: chain_information.len(), // Configures the length of `network_event_receivers`
             chains: chain_information
@@ -271,7 +299,7 @@ async fn start_services(
                 chain_information: chain_information.clone(),
                 tasks_executor: Box::new({
                     let new_task_tx = new_task_tx.clone();
-                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                    move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
                 }),
                 network_service: (network_service.clone(), chain_index),
                 network_events_receiver: network_event_receivers.pop().unwrap(),
@@ -285,7 +313,7 @@ async fn start_services(
         let runtime_service = runtime_service::RuntimeService::new(runtime_service::Config {
             tasks_executor: Box::new({
                 let new_task_tx = new_task_tx.clone();
-                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
             }),
             sync_service: sync_service.clone(),
             chain_spec: &chain_spec,
@@ -338,7 +366,7 @@ async fn start_services(
                 chain_information: chain_information.clone(),
                 tasks_executor: Box::new({
                     let new_task_tx = new_task_tx.clone();
-                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                    move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
                 }),
                 network_service: (network_service.clone(), chain_index),
                 network_events_receiver: network_event_receivers.pop().unwrap(),
@@ -356,7 +384,7 @@ async fn start_services(
         let runtime_service = runtime_service::RuntimeService::new(runtime_service::Config {
             tasks_executor: Box::new({
                 let new_task_tx = new_task_tx.clone();
-                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
             }),
             sync_service: sync_service.clone(),
             chain_spec,
@@ -392,7 +420,7 @@ async fn start_services(
             transactions_service::TransactionsService::new(transactions_service::Config {
                 tasks_executor: Box::new({
                     let new_task_tx = new_task_tx.clone();
-                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                    move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
                 }),
                 network_service: (network_service.clone(), 0),
                 sync_service: sync_service.clone(),
@@ -403,7 +431,7 @@ async fn start_services(
         let json_rpc_service = json_rpc_service::start(json_rpc_service::Config {
             tasks_executor: Box::new({
                 let new_task_tx = new_task_tx.clone();
-                move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
             }),
             network_service: (network_service.clone(), 0),
             sync_service,
@@ -420,16 +448,17 @@ async fn start_services(
     }
 
     new_task_tx
-        .unbounded_send(
-            json_rpc_service::request_handling_task(
+        .unbounded_send((
+            "jsonrpc-initialization".into(),
+            json_rpc_service::spawn_request_handling_task(
                 Arc::new(Mutex::new(Box::new({
                     let new_task_tx = new_task_tx.clone();
-                    move |fut| new_task_tx.unbounded_send(fut).unwrap()
+                    move |name, fut| new_task_tx.unbounded_send((name, fut)).unwrap()
                 }))),
                 json_rpc_services,
             )
             .boxed(),
-        )
+        ))
         .unwrap();
 
     log::info!("Initialization complete");
