@@ -482,8 +482,9 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
         // Set to true below if any block is inserted in `disjoint_headers`.
         let mut any_progress = false;
 
-        // The next block in the list of headers should have a hash equal to this one.
+        // The next block in the list of headers should have a hash and height equal to this one.
         let mut expected_next_hash = requested_block_hash;
+        let mut expected_next_height = requested_block_height;
 
         // Iterate through the headers. If the request has failed, treat it the same way as if
         // no blocks were returned.
@@ -503,6 +504,15 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
                 Ok(h) => h,
                 Err(_) => continue,
             };
+
+            // Also compare the block numbers.
+            // The utility of checking the height (even though we've already checked the hash) is
+            // questionable, but considering that blocks are identified with their combination of
+            // hash and number, checking both the hash and number might prevent malicious sources
+            // from introducing state inconsistenties.
+            if expected_next_height != decoded_header.number {
+                break;
+            }
 
             match self.block_from_source(
                 source_id,
@@ -548,6 +558,8 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
                     // Block of unknown ancestry. Continue looping.
                     any_progress = true;
                     expected_next_hash = *decoded_header.parent_hash;
+                    debug_assert_ne!(expected_next_height, 0);
+                    expected_next_height -= 1;
                 }
             }
         }
