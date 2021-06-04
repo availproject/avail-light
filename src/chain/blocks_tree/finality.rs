@@ -20,7 +20,72 @@
 use super::*;
 use crate::finality::{grandpa, justification};
 
+use core::iter;
+
 impl<T> NonFinalizedTree<T> {
+    /// Returns a list of blocks (by their height and hash) that need to be finalized before any
+    /// of their descendants can be finalized.
+    ///
+    /// In other words, blocks in the [`NonFinalizedTree`] can be immediately finalized by call
+    /// to [`NonFinalizedTree::verify_justification`] or
+    /// [`NonFinalizedTree::verify_grandpa_commit_message`], unless they descend from any of the
+    /// blocks returned by this function, in which case that block must be finalized beforehand.
+    pub fn finality_checkpoints(&self) -> impl Iterator<Item = (u64, &[u8; 32])> {
+        let inner = self.inner.as_ref().unwrap();
+        match &inner.finality {
+            Finality::Outsourced => {
+                // No checkpoint means all blocks allowed.
+                either::Left(iter::empty())
+            }
+            Finality::Grandpa {
+                finalized_scheduled_change,
+                ..
+            } => {
+                // Scheduled change that is already finalized.
+                let scheduled = finalized_scheduled_change.as_ref().map(|(n, _)| *n);
+
+                // TODO: this is ~O(n²), but there's no real alternative here
+                let iter = inner
+                    .blocks
+                    .iter_unordered()
+                    .filter(move |(node_index, block)| {
+                        if scheduled == Some(block.header.number) {
+                            return true;
+                        }
+
+                        for ancestor in inner.blocks.root_to_node_path(*node_index) {
+                            let header = &inner.blocks.get(ancestor).unwrap().header;
+                            for grandpa_digest_item in
+                                header.digest.logs().filter_map(|d| match d {
+                                    header::DigestItemRef::GrandpaConsensus(gp) => Some(gp),
+                                    _ => None,
+                                })
+                            {
+                                match grandpa_digest_item {
+                                    header::GrandpaConsensusLogRef::ScheduledChange(change) => {
+                                        let trigger_block_height = header
+                                            .number
+                                            .checked_add(u64::from(change.delay))
+                                            .unwrap();
+
+                                        if trigger_block_height == block.header.number {
+                                            return true;
+                                        }
+                                    }
+                                    _ => {} // TODO: unimplemented
+                                }
+                            }
+                        }
+
+                        false
+                    })
+                    .map(|(_, block)| (block.header.number, &block.hash));
+
+                either::Right(iter)
+            }
+        }
+    }
+
     /// Verifies the given justification.
     ///
     /// The verification is performed in the context of the chain. In particular, the

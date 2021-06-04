@@ -211,8 +211,8 @@ impl<T> NonFinalizedTree<T> {
             .as_ref()
             .unwrap()
             .blocks
-            .iter()
-            .map(|b| (&b.header).into())
+            .iter_unordered()
+            .map(|(_, b)| (&b.header).into())
     }
 
     /// Reserves additional capacity for at least `additional` new blocks without allocating.
@@ -332,7 +332,12 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let inner = self.inner.as_ref().unwrap();
         f.debug_map()
-            .entries(inner.blocks.iter().map(|v| (&v.hash, &v.user_data)))
+            .entries(
+                inner
+                    .blocks
+                    .iter_unordered()
+                    .map(|(_, v)| (&v.hash, &v.user_data)),
+            )
             .finish()
     }
 }

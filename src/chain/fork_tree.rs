@@ -122,8 +122,8 @@ impl<T> ForkTree<T> {
     }
 
     /// Returns an iterator to all the node values without any specific order.
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.nodes.iter().map(|n| &n.1.data)
+    pub fn iter_unordered(&self) -> impl Iterator<Item = (NodeIndex, &T)> {
+        self.nodes.iter().map(|n| (NodeIndex(n.0), &n.1.data))
     }
 
     /// Returns the value of the node with the given index.
