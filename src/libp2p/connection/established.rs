@@ -1300,10 +1300,12 @@ impl<TNow, TRqUd, TNotifUd> Inner<TNow, TRqUd, TNotifUd> {
                         user_data,
                     };
 
-                    return Some(Event::NotificationIn {
-                        id: substream_id,
-                        notification: notification.unwrap(),
-                    });
+                    if let Some(notification) = notification {
+                        return Some(Event::NotificationIn {
+                            id: substream_id,
+                            notification,
+                        });
+                    }
                 }
                 Substream::PingIn(mut payload) => {
                     // Inbound ping substream.
