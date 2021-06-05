@@ -50,7 +50,6 @@ use crate::{
     executor::host,
     header,
     trie::calculate_root,
-    verify,
 };
 
 use alloc::{
@@ -1509,7 +1508,7 @@ pub enum ResetCause {
     /// Error while verifying a header.
     HeaderError(blocks_tree::HeaderVerifyError),
     /// Error while verifying a header and body.
-    HeaderBodyError(verify::header_body::Error), // TODO: change error type?
+    HeaderBodyError(blocks_tree::BodyVerifyError),
     /// Received block isn't a child of the current best block.
     NonCanonical,
     /// Received block number doesn't match expected number.

@@ -991,7 +991,10 @@ impl<TBl, TRq, TSrc> HeaderVerify<TBl, TRq, TSrc> {
                 Ok(is_new_best)
             }
             Err(blocks_tree::HeaderVerifyError::VerificationFailed(error)) => {
-                Err((error, user_data))
+                Err((HeaderVerifyError::VerificationFailed(error), user_data))
+            }
+            Err(blocks_tree::HeaderVerifyError::ConsensusMismatch) => {
+                Err((HeaderVerifyError::ConsensusMismatch, user_data))
             }
             Ok(blocks_tree::HeaderVerifySuccess::Duplicate)
             | Err(blocks_tree::HeaderVerifyError::BadParent { .. })
@@ -1086,10 +1089,19 @@ pub enum HeaderVerifyOutcome<TBl, TRq, TSrc> {
         /// State machine yielded back. Use to continue the processing.
         sync: AllForksSync<TBl, TRq, TSrc>,
         /// Error that happened.
-        error: verify::header_only::Error,
+        error: HeaderVerifyError,
         /// User data that was passed to [`HeaderVerify::perform`] and is unused.
         user_data: TBl,
     },
+}
+
+/// Error that can happen when verifying a block header.
+#[derive(Debug, derive_more::Display)]
+pub enum HeaderVerifyError {
+    /// Block uses a different consensus than the rest of the chain.
+    ConsensusMismatch,
+    /// The block verification has failed. The block is invalid and should be thrown away.
+    VerificationFailed(verify::header_only::Error),
 }
 
 /// Information about the verification of a justification that was stored for this block.

@@ -256,8 +256,12 @@ impl<T> NonFinalizedTreeInner<T> {
                     (FinalizedConsensus::AllAuthorized, VerifyConsensusSpecific::AllAuthorized) => {
                         verify::header_only::ConfigConsensus::AllAuthorized
                     }
-                    // TODO: don't panic! this is before any verification
-                    _ => unreachable!(),
+                    _ => {
+                        return VerifyOut::HeaderErr(
+                            context.chain,
+                            HeaderVerifyError::ConsensusMismatch,
+                        )
+                    }
                 },
                 block_header: (&context.header).into(), // TODO: inefficiency ; in case of header only verify we do an extra allocation to build the context above
                 parent_block_header: parent_block_header.into(),
@@ -458,7 +462,7 @@ impl<T> VerifyContext<T> {
                     chain: NonFinalizedTree {
                         inner: Some(self.chain),
                     },
-                    error,
+                    error: BodyVerifyError::Consensus(error),
                     parent_runtime,
                 }
             }
@@ -609,43 +613,52 @@ impl<T> BodyVerifyRuntimeRequired<T> {
             &self.context.chain.finalized_block_header
         };
 
+        let config_consensus = match (
+            &self.context.chain.finalized_consensus,
+            &self.context.consensus,
+        ) {
+            (FinalizedConsensus::AllAuthorized, VerifyConsensusSpecific::AllAuthorized) => {
+                verify::header_body::ConfigConsensus::AllAuthorized
+            }
+            (
+                FinalizedConsensus::Aura { slot_duration, .. },
+                VerifyConsensusSpecific::Aura { authorities_list },
+            ) => {
+                verify::header_body::ConfigConsensus::Aura {
+                    // TODO: meh for allocation
+                    current_authorities: authorities_list.iter().map(|a| a.into()).collect(),
+                    now_from_unix_epoch: self.now_from_unix_epoch,
+                    slot_duration: *slot_duration,
+                }
+            }
+            (
+                FinalizedConsensus::Babe {
+                    slots_per_epoch, ..
+                },
+                VerifyConsensusSpecific::Babe {
+                    current_epoch,
+                    next_epoch,
+                },
+            ) => verify::header_body::ConfigConsensus::Babe {
+                parent_block_epoch: current_epoch.as_ref().map(|v| (&**v).into()),
+                parent_block_next_epoch: (&**next_epoch).into(),
+                slots_per_epoch: *slots_per_epoch,
+                now_from_unix_epoch: self.now_from_unix_epoch,
+            },
+            _ => {
+                return BodyVerifyStep2::Error {
+                    chain: NonFinalizedTree {
+                        inner: Some(self.context.chain),
+                    },
+                    error: BodyVerifyError::ConsensusMismatch,
+                    parent_runtime,
+                }
+            }
+        };
+
         let process = verify::header_body::verify(verify::header_body::Config {
             parent_runtime,
-            consensus: match (
-                &self.context.chain.finalized_consensus,
-                &self.context.consensus,
-            ) {
-                (FinalizedConsensus::AllAuthorized, VerifyConsensusSpecific::AllAuthorized) => {
-                    verify::header_body::ConfigConsensus::AllAuthorized
-                }
-                (
-                    FinalizedConsensus::Aura { slot_duration, .. },
-                    VerifyConsensusSpecific::Aura { authorities_list },
-                ) => {
-                    verify::header_body::ConfigConsensus::Aura {
-                        // TODO: meh for allocation
-                        current_authorities: authorities_list.iter().map(|a| a.into()).collect(),
-                        now_from_unix_epoch: self.now_from_unix_epoch,
-                        slot_duration: *slot_duration,
-                    }
-                }
-                (
-                    FinalizedConsensus::Babe {
-                        slots_per_epoch, ..
-                    },
-                    VerifyConsensusSpecific::Babe {
-                        current_epoch,
-                        next_epoch,
-                    },
-                ) => verify::header_body::ConfigConsensus::Babe {
-                    parent_block_epoch: current_epoch.as_ref().map(|v| (&**v).into()),
-                    parent_block_next_epoch: (&**next_epoch).into(),
-                    slots_per_epoch: *slots_per_epoch,
-                    now_from_unix_epoch: self.now_from_unix_epoch,
-                },
-                // TODO: don't panic /!\ this is before the verification
-                _ => unreachable!(),
-            },
+            consensus: config_consensus,
             block_header: (&self.context.header).into(),
             parent_block_header: parent_block_header.into(),
             block_body,
@@ -700,7 +713,7 @@ pub enum BodyVerifyStep2<T> {
         /// Chain yielded back.
         chain: NonFinalizedTree<T>,
         /// Error that happened during the verification.
-        error: verify::header_body::Error, // TODO: BodyVerifyError, or rename the error to be common
+        error: BodyVerifyError,
         /// Value that was passed to [`BodyVerifyRuntimeRequired::resume`].
         parent_runtime: host::HostVmPrototype,
     },
@@ -715,6 +728,15 @@ pub enum BodyVerifyStep2<T> {
     /// This variant doesn't require any specific input from the user, but is provided in order to
     /// make it possible to benchmark the time it takes to compile runtimes.
     RuntimeCompilation(RuntimeCompilation<T>),
+}
+
+/// Error while verifying a block body.
+#[derive(Debug, derive_more::Display)]
+pub enum BodyVerifyError {
+    /// Error during the consensus-related check.
+    Consensus(verify::header_body::Error),
+    /// Block uses a different consensus than the rest of the chain.
+    ConsensusMismatch,
 }
 
 /// Loading a storage value is required in order to continue.
@@ -1003,6 +1025,8 @@ impl<'c, T> Drop for HeaderInsert<'c, T> {
 pub enum HeaderVerifyError {
     /// Error while decoding the header.
     InvalidHeader(header::Error),
+    /// Block uses a different consensus than the rest of the chain.
+    ConsensusMismatch,
     /// The parent of the block isn't known.
     #[display(fmt = "The parent of the block isn't known.")]
     BadParent {
