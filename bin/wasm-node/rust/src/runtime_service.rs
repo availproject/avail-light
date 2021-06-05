@@ -19,9 +19,30 @@
 //!
 //! This service plugs on top of a [`sync_service`], listens for new best blocks and checks
 //! whether the runtime has changed in any way. Its objective is to always provide an up-to-date
-//! [`executor::host::HostVmPrototype`] ready to be called to other services.
+//! [`executor::host::HostVmPrototype`] ready to be called by other services.
+//!
+//! # Usage
+//!
+//! The runtime service lets user subscribe to best and finalized block updates, similar to
+//! the [`sync_service`]. These subscriptions are implemented by subscribing to the underlying
+//! [`sync_service`] and, for each notification, downloading the runtime code of the best or
+//! finalized block. Therefore, these notifications always come with a delay compared to directly
+//! using the [`sync_service`].
+//!
+//! Furthermore, if it isn't possible to download the runtime code of a block (for example because
+//! peers refuse to answer or have already pruned the block) or if the runtime service already has
+//! too many pending downloads, this block is simply skipped and not reported on the
+//! subscriptions.
+//!
+//! Consequently, you are strongly encouraged to not use both the [`sync_service`] *and* the
+//! [`RuntimeService`] of the same chain. They each provide a consistent view of the chain, but
+//! this view isn't necessarily the same on both services.
+//!
+//! The main service offered by the runtime service is
+//! [`RuntimeService::recent_best_block_runtime_call`], that performs a runtime call on the latest
+//! reported best block or more recent.
 
-// TODO: doc
+// TODO: the doc above mentions that you can subscribe to the finalized block, but this is isn't implemented yet ^
 
 use crate::{ffi, lossy_channel, sync_service};
 
