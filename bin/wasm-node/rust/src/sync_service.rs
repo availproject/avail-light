@@ -1270,6 +1270,17 @@ async fn start_parachain(
             },
 
             _relay_best_block = relay_best_blocks.next().fuse() => {
+                // This block is triggered on a new best block, but it is only used to detect when
+                // to refresh the local state, and the content of the block itself isn't important.
+                // Purging any other pending block from the best block subscription so as to not
+                // accidentally call this block multiple times.
+                while let Some(_) = relay_best_blocks.next().now_or_never() {}
+
+                // Determine if the call to `recent_best_block_runtime_call` below applies to a
+                // block that is near the head of the chain.
+                let relay_sync_near_head_of_chain =
+                    parachain_config.relay_chain_sync.is_near_head_of_chain_heuristic().await;
+
                 // For each relay chain block, call `ParachainHost_persisted_validation_data` in
                 // order to know where the parachains are.
                 let pvd_result = parachain_config.relay_chain_sync.recent_best_block_runtime_call(
@@ -1303,8 +1314,13 @@ async fn start_parachain(
                     match para::decode_persisted_validation_data_return_value(&encoded_pvd) {
                         Ok(Some(pvd)) => pvd.parent_head,
                         Ok(None) => {
-                            log::warn!(
+                            // `Ok(None)` indicates that the parachain doesn't occupy any core
+                            // on the relay chain at the latest block that the relay chain syncing
+                            // has synced. It might have occupied a core before, or might occupy
+                            // a core in the future, and as such this is not a fatal error.
+                            log::log!(
                                 target: "sync-verify",
+                                if relay_sync_near_head_of_chain { log::Level::Warn } else { log::Level::Debug },
                                 "Couldn't find the parachain head from relay chain. \
                                 The parachain likely doesn't occupy a core."
                             );
