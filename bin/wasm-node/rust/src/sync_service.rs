@@ -1348,9 +1348,14 @@ async fn start_parachain(
                 match header::decode(&head_data) {
                     Ok(header) => {
                         current_best_block = header.into();
-                        for sender in &mut best_subscriptions {
-                            // TODO: remove senders if they're closed
-                            let _ = sender.send(head_data.to_vec());
+
+                        // Elements in `best_subscriptions` are removed one by one and inserted
+                        // back if the channel is still open.
+                        for index in (0..best_subscriptions.len()).rev() {
+                            let mut sender = best_subscriptions.swap_remove(index);
+                            if sender.send(head_data.to_vec()).is_ok() {
+                                best_subscriptions.push(sender);
+                            }
                         }
                     }
                     Err(_) => {
