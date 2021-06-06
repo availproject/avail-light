@@ -827,6 +827,7 @@ async fn start_relay_chain(
                             );
                         }
                     }
+                    all::ProcessOne::VerifyHeaderBody(_) => unreachable!(),
                     all::ProcessOne::VerifyHeader(verify) => {
                         let verified_hash = verify.hash();
 

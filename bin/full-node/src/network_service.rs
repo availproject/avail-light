@@ -91,6 +91,7 @@ pub enum Event {
         chain_index: usize,
         peer_id: PeerId,
         best_block_number: u64,
+        best_block_hash: [u8; 32],
     },
     Disconnected {
         chain_index: usize,
@@ -285,12 +286,14 @@ impl NetworkService {
                                 peer_id,
                                 chain_index,
                                 best_number,
+                                best_hash,
                                 ..
                             } => {
                                 break Event::Connected {
                                     peer_id,
                                     chain_index,
                                     best_block_number: best_number,
+                                    best_block_hash: best_hash,
                                 };
                             }
                             service::Event::ChainDisconnected {

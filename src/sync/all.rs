@@ -684,10 +684,20 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                     self.inner = AllSyncInner::Optimistic(sync);
                     ProcessOne::AllSync(self)
                 }
-                optimistic::ProcessOne::Verify(verify) => ProcessOne::VerifyHeader(HeaderVerify {
-                    inner: HeaderVerifyInner::Optimistic(verify),
-                    shared: self.shared,
-                }),
+                optimistic::ProcessOne::Verify(verify) => {
+                    if verify.is_full_verification() {
+                        ProcessOne::VerifyHeaderBody(HeaderBodyVerify {
+                            inner: HeaderBodyVerifyInner::Optimistic(verify),
+                            shared: self.shared,
+                            marker: core::marker::PhantomData,
+                        })
+                    } else {
+                        ProcessOne::VerifyHeader(HeaderVerify {
+                            inner: HeaderVerifyInner::Optimistic(verify),
+                            shared: self.shared,
+                        })
+                    }
+                }
             },
             AllSyncInner::AllForks(sync) => match sync.process_one() {
                 all_forks::ProcessOne::AllSync { sync } => {
@@ -1182,6 +1192,9 @@ pub enum ProcessOne<TRq, TSrc, TBl> {
     /// Ready to start verifying a header.
     VerifyHeader(HeaderVerify<TRq, TSrc, TBl>),
 
+    /// Ready to start verifying a header and body.
+    VerifyHeaderBody(HeaderBodyVerify<TRq, TSrc, TBl>),
+
     /// Ready to start verifying a warp sync fragment.
     VerifyWarpSyncFragment(WarpSyncFragmentVerify<TRq, TSrc, TBl>),
 }
@@ -1411,6 +1424,265 @@ pub enum HeaderVerifyError {
     ConsensusMismatch,
     /// The block verification has failed. The block is invalid and should be thrown away.
     VerificationFailed(verify::header_only::Error),
+}
+
+pub struct HeaderBodyVerify<TRq, TSrc, TBl> {
+    inner: HeaderBodyVerifyInner<TSrc, TBl>,
+    shared: Shared,
+    marker: core::marker::PhantomData<TRq>,
+}
+
+enum HeaderBodyVerifyInner<TSrc, TBl> {
+    Optimistic(optimistic::Verify<(), OptimisticSourceExtra<TSrc>, TBl>),
+}
+
+impl<TRq, TSrc, TBl> HeaderBodyVerify<TRq, TSrc, TBl> {
+    /// Returns the height of the block to be verified.
+    pub fn height(&self) -> u64 {
+        match &self.inner {
+            HeaderBodyVerifyInner::Optimistic(verify) => verify.height(),
+        }
+    }
+
+    /// Returns the hash of the block to be verified.
+    pub fn hash(&self) -> [u8; 32] {
+        match &self.inner {
+            HeaderBodyVerifyInner::Optimistic(verify) => verify.hash(),
+        }
+    }
+
+    /// Start the verification process.
+    pub fn start(
+        self,
+        now_from_unix_epoch: Duration,
+        user_data: TBl,
+    ) -> BlockVerification<TRq, TSrc, TBl> {
+        match self.inner {
+            HeaderBodyVerifyInner::Optimistic(verify) => BlockVerification::from_inner(
+                verify.start(now_from_unix_epoch),
+                self.shared,
+                user_data,
+            ),
+        }
+    }
+}
+
+/// State of the processing of blocks.
+pub enum BlockVerification<TRq, TSrc, TBl> {
+    /// Block has been successfully verified.
+    Success {
+        /// True if the newly-verified block is considered the new best block.
+        is_new_best: bool,
+        /// State machine yielded back. Use to continue the processing.
+        sync: AllSync<TRq, TSrc, TBl>,
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
+
+    /// Block has been successfully verified and finalized.
+    // TODO: should refactor that so that `ProcessOne` verifies justifications separately from blocks; the present API doesn't make sense for the all_forks strategy
+    Finalized {
+        /// State machine yielded back. Use to continue the processing.
+        sync: AllSync<TRq, TSrc, TBl>,
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+        /// List of blocks that have been finalized. Includes the block that has just been
+        /// verified itself.
+        // TODO leaky type
+        finalized_blocks: Vec<optimistic::Block<TBl>>,
+    },
+
+    /// Block verification failed.
+    Error {
+        /// State machine yielded back. Use to continue the processing.
+        sync: AllSync<TRq, TSrc, TBl>,
+        /// Error that happened.
+        error: verify::header_only::Error,
+        /// User data that was passed to [`HeaderVerify::perform`] and is unused.
+        user_data: TBl,
+        /// Next requests that must be started.
+        next_actions: Vec<Action>,
+    },
+
+    /// Loading a storage value of the finalized block is required in order to continue.
+    FinalizedStorageGet(StorageGet<TRq, TSrc, TBl>),
+
+    /// Fetching the list of keys of the finalized block with a given prefix is required in order
+    /// to continue.
+    FinalizedStoragePrefixKeys(StoragePrefixKeys<TRq, TSrc, TBl>),
+
+    /// Fetching the key of the finalized block storage that follows a given one is required in
+    /// order to continue.
+    FinalizedStorageNextKey(StorageNextKey<TRq, TSrc, TBl>),
+}
+
+impl<TRq, TSrc, TBl> BlockVerification<TRq, TSrc, TBl> {
+    fn from_inner(
+        inner: optimistic::BlockVerification<(), OptimisticSourceExtra<TSrc>, TBl>,
+        mut shared: Shared,
+        user_data: TBl,
+    ) -> Self {
+        match inner {
+            optimistic::BlockVerification::NewBest { mut sync, .. } => {
+                // TODO: transition to all_forks
+
+                let mut next_actions = Vec::new();
+                while let Some(action) = sync.next_request_action() {
+                    next_actions.push(shared.optimistic_action_to_request(action));
+                }
+
+                BlockVerification::Success {
+                    is_new_best: true,
+                    sync: AllSync {
+                        inner: AllSyncInner::Optimistic(sync),
+                        shared,
+                    },
+                    next_actions,
+                }
+            }
+            optimistic::BlockVerification::Finalized {
+                mut sync,
+                finalized_blocks,
+                ..
+            } => {
+                // TODO: transition to all_forks
+
+                let mut next_actions = Vec::new();
+                while let Some(action) = sync.next_request_action() {
+                    next_actions.push(shared.optimistic_action_to_request(action));
+                }
+
+                BlockVerification::Finalized {
+                    sync: AllSync {
+                        inner: AllSyncInner::Optimistic(sync),
+                        shared,
+                    },
+                    next_actions,
+                    finalized_blocks,
+                }
+            }
+            optimistic::BlockVerification::Reset { mut sync, .. } => {
+                let mut next_actions = Vec::new();
+                while let Some(action) = sync.next_request_action() {
+                    next_actions.push(shared.optimistic_action_to_request(action));
+                }
+
+                BlockVerification::Error {
+                    sync: AllSync {
+                        inner: AllSyncInner::Optimistic(sync),
+                        shared,
+                    },
+                    next_actions,
+                    error: verify::header_only::Error::BadBlockNumber, // TODO: this is the completely wrong error; needs some deeper API changes
+                    user_data,
+                }
+            }
+            optimistic::BlockVerification::FinalizedStorageGet(inner) => {
+                BlockVerification::FinalizedStorageGet(StorageGet {
+                    inner,
+                    shared,
+                    marker: core::marker::PhantomData,
+                    user_data,
+                })
+            }
+            optimistic::BlockVerification::FinalizedStoragePrefixKeys(inner) => {
+                BlockVerification::FinalizedStoragePrefixKeys(StoragePrefixKeys {
+                    inner,
+                    shared,
+                    marker: core::marker::PhantomData,
+                    user_data,
+                })
+            }
+            optimistic::BlockVerification::FinalizedStorageNextKey(inner) => {
+                BlockVerification::FinalizedStorageNextKey(StorageNextKey {
+                    inner,
+                    shared,
+                    marker: core::marker::PhantomData,
+                    user_data,
+                })
+            }
+        }
+    }
+}
+
+/// Loading a storage value is required in order to continue.
+#[must_use]
+pub struct StorageGet<TRq, TSrc, TBl> {
+    inner: optimistic::StorageGet<(), OptimisticSourceExtra<TSrc>, TBl>,
+    shared: Shared,
+    marker: core::marker::PhantomData<TRq>,
+    user_data: TBl,
+}
+
+impl<TRq, TSrc, TBl> StorageGet<TRq, TSrc, TBl> {
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    pub fn key(&'_ self) -> impl Iterator<Item = impl AsRef<[u8]> + '_> + '_ {
+        self.inner.key()
+    }
+
+    /// Returns the key whose value must be passed to [`StorageGet::inject_value`].
+    ///
+    /// This method is a shortcut for calling `key` and concatenating the returned slices.
+    pub fn key_as_vec(&self) -> Vec<u8> {
+        self.inner.key_as_vec()
+    }
+
+    /// Injects the corresponding storage value.
+    pub fn inject_value(self, value: Option<&[u8]>) -> BlockVerification<TRq, TSrc, TBl> {
+        let inner = self.inner.inject_value(value);
+        BlockVerification::from_inner(inner, self.shared, self.user_data)
+    }
+}
+
+/// Fetching the list of keys with a given prefix is required in order to continue.
+#[must_use]
+pub struct StoragePrefixKeys<TRq, TSrc, TBl> {
+    inner: optimistic::StoragePrefixKeys<(), OptimisticSourceExtra<TSrc>, TBl>,
+    shared: Shared,
+    marker: core::marker::PhantomData<TRq>,
+    user_data: TBl,
+}
+
+impl<TRq, TSrc, TBl> StoragePrefixKeys<TRq, TSrc, TBl> {
+    /// Returns the prefix whose keys to load.
+    pub fn prefix(&'_ self) -> impl AsRef<[u8]> + '_ {
+        self.inner.prefix()
+    }
+
+    /// Injects the list of keys.
+    pub fn inject_keys(
+        self,
+        keys: impl Iterator<Item = impl AsRef<[u8]>>,
+    ) -> BlockVerification<TRq, TSrc, TBl> {
+        let inner = self.inner.inject_keys(keys);
+        BlockVerification::from_inner(inner, self.shared, self.user_data)
+    }
+}
+
+/// Fetching the key that follows a given one is required in order to continue.
+#[must_use]
+pub struct StorageNextKey<TRq, TSrc, TBl> {
+    inner: optimistic::StorageNextKey<(), OptimisticSourceExtra<TSrc>, TBl>,
+    shared: Shared,
+    marker: core::marker::PhantomData<TRq>,
+    user_data: TBl,
+}
+
+impl<TRq, TSrc, TBl> StorageNextKey<TRq, TSrc, TBl> {
+    pub fn key(&'_ self) -> impl AsRef<[u8]> + '_ {
+        self.inner.key()
+    }
+
+    /// Injects the key.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the key passed as parameter isn't strictly superior to the requested key.
+    ///
+    pub fn inject_key(self, key: Option<impl AsRef<[u8]>>) -> BlockVerification<TRq, TSrc, TBl> {
+        let inner = self.inner.inject_key(key);
+        BlockVerification::from_inner(inner, self.shared, self.user_data)
+    }
 }
 
 pub struct WarpSyncFragmentVerify<TRq, TSrc, TBl> {
