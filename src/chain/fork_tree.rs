@@ -136,6 +136,16 @@ impl<T> ForkTree<T> {
         self.nodes.get_mut(index.0).map(|n| &mut n.data)
     }
 
+    /// Returns the parent of the given node. Returns `None` if the node doesn't have any parent.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the [`NodeIndex`] is invalid.
+    ///
+    pub fn parent(&self, node: NodeIndex) -> Option<NodeIndex> {
+        self.nodes[node.0].parent.map(NodeIndex)
+    }
+
     /// Removes from the tree:
     ///
     /// - The node passed as parameter.

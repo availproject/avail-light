@@ -852,6 +852,10 @@ async fn start_relay_chain(
                                     has_new_best = true;
                                 }
                                 if is_new_finalized {
+                                    // It is possible that finalizing this new block has modified
+                                    // the best block as well.
+                                    // TODO: ^ this is really a footgun; make it clearer in the syncing API
+                                    has_new_best = true;
                                     has_new_finalized = true;
                                 }
 
@@ -1020,7 +1024,10 @@ async fn start_relay_chain(
                             if chain_index == network_chain_index =>
                         {
                             match sync.grandpa_commit_message(&message.as_encoded()) {
-                                Ok(()) => has_new_finalized = true,
+                                Ok(()) => {
+                                    has_new_finalized = true;
+                                    has_new_best = true;  // TODO: done in case finality changes the best block; make this clearer in the sync layer
+                                },
                                 Err(err) => {
                                     log::warn!(
                                         target: "sync-verify",
