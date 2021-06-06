@@ -467,7 +467,14 @@ async fn open_database(
         match background_open_database(db_path.clone()).await.unwrap() {
             // Database already exists and contains data.
             full_sqlite::DatabaseOpen::Open(database) => {
-                // TODO: verify that the database matches the chain spec
+                if database.block_hash_by_number(0).unwrap().next().unwrap()
+                    != genesis_chain_information.finalized_block_header.hash()
+                {
+                    panic!(
+                        "Mismatch between database and chain specification. Shutting down node."
+                    );
+                }
+
                 let finalized_block_hash = database.finalized_block_hash().unwrap();
                 let finalized_block = database
                     .block_scale_encoded_header(&finalized_block_hash)
