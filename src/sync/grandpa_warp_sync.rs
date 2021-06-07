@@ -17,8 +17,9 @@
 
 use crate::{
     chain::chain_information::{
-        babe_fetch_epoch, BabeEpochInformation, ChainInformation, ChainInformationConsensus,
-        ChainInformationFinality, ChainInformationRef,
+        self, babe_fetch_epoch, BabeEpochInformation, ChainInformation, ChainInformationConsensus,
+        ChainInformationConsensusRef, ChainInformationFinality, ValidChainInformation,
+        ValidChainInformationRef,
     },
     executor::{
         self,
@@ -31,6 +32,7 @@ use crate::{
 };
 
 use alloc::vec::Vec;
+use core::convert::TryFrom as _;
 
 pub use warp_sync::Error as FragmentError;
 
@@ -45,12 +47,15 @@ pub enum Error {
     BabeFetchEpoch(babe_fetch_epoch::Error),
     #[display(fmt = "{}", _0)]
     NewRuntime(NewErr),
+    /// Parameters produced by the runtime are incoherent.
+    #[display(fmt = "{}", _0)]
+    InvalidChain(chain_information::ValidityError),
 }
 
 /// The configuration for [`grandpa_warp_sync`].
 pub struct Config {
     /// The chain information of the starting point of the warp syncing.
-    pub start_chain_information: ChainInformation,
+    pub start_chain_information: ValidChainInformation,
     /// The initial capacity of the list of sources.
     pub sources_capacity: usize,
 }
@@ -75,7 +80,7 @@ pub struct SourceId(usize);
 /// The result of a successful warp sync.
 pub struct Success<TSrc> {
     /// The synced chain information.
-    pub chain_information: ChainInformation,
+    pub chain_information: ValidChainInformation,
     /// The runtime constructed in `VirtualMachineParamsGet`.
     pub runtime: HostVmPrototype,
     /// The list of sources that were added to the state machine.
@@ -130,24 +135,45 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
                 ) => {
                     // The number of slots per epoch is never modified once the chain is running,
                     // and as such is copied from the original chain information.
-                    let slots_per_epoch = match state.start_chain_information.consensus {
-                        ChainInformationConsensus::Babe {
+                    let slots_per_epoch = match state.start_chain_information.as_ref().consensus {
+                        ChainInformationConsensusRef::Babe {
                             slots_per_epoch, ..
                         } => slots_per_epoch,
                         _ => unreachable!(),
                     };
 
+                    // Build a `ChainInformation` using the parameters found in the runtime.
+                    // It is possible, however, that the runtime produces parameters that aren't
+                    // coherent. For example the runtime could give "current" and "next" Babe
+                    // epochs that don't follow each other.
+                    let chain_information =
+                        match ValidChainInformation::try_from(ChainInformation {
+                            finalized_block_header: state.header,
+                            finality: state.chain_information_finality,
+                            consensus: ChainInformationConsensus::Babe {
+                                finalized_block_epoch_information: Some(current_epoch),
+                                finalized_next_epoch_transition: next_epoch,
+                                slots_per_epoch,
+                            },
+                        }) {
+                            Ok(ci) => ci,
+                            Err(err) => return (
+                                Self::InProgress(
+                                    InProgressGrandpaWarpSync::warp_sync_request_from_next_source(
+                                        state.sources,
+                                        PreVerificationState {
+                                            start_chain_information: state.start_chain_information,
+                                        },
+                                        None,
+                                    ),
+                                ),
+                                Some(Error::InvalidChain(err)),
+                            ),
+                        };
+
                     return (
                         Self::Finished(Success {
-                            chain_information: ChainInformation {
-                                finalized_block_header: state.header,
-                                finality: state.chain_information_finality,
-                                consensus: ChainInformationConsensus::Babe {
-                                    finalized_block_epoch_information: Some(current_epoch),
-                                    finalized_next_epoch_transition: next_epoch,
-                                    slots_per_epoch,
-                                },
-                            },
+                            chain_information,
                             runtime: virtual_machine,
                             sources: state
                                 .sources
@@ -227,7 +253,7 @@ impl<TSrc> GrandpaWarpSync<TSrc> {
 
 impl<TSrc> InProgressGrandpaWarpSync<TSrc> {
     /// Returns the chain information that is considered verified.
-    pub fn as_chain_information(&self) -> ChainInformationRef {
+    pub fn as_chain_information(&self) -> ValidChainInformationRef {
         match self {
             Self::StorageGet(storage_get) => &storage_get.state.start_chain_information,
             Self::NextKey(next_key) => &next_key.state.start_chain_information,
@@ -597,13 +623,13 @@ impl<TSrc> Verifier<TSrc> {
 }
 
 struct PreVerificationState {
-    start_chain_information: ChainInformation,
+    start_chain_information: ValidChainInformation,
 }
 
 struct PostVerificationState<TSrc> {
     header: Header,
     chain_information_finality: ChainInformationFinality,
-    start_chain_information: ChainInformation,
+    start_chain_information: ValidChainInformation,
     sources: slab::Slab<Source<TSrc>>,
     warp_sync_source_id: SourceId,
 }
@@ -659,6 +685,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
             None => self
                 .state
                 .start_chain_information
+                .as_ref()
                 .finalized_block_header
                 .hash(),
         }
@@ -715,7 +742,7 @@ impl<TSrc> WarpSyncRequest<TSrc> {
                         final_set_of_fragments,
                     ),
                     None => warp_sync::Verifier::new(
-                        (&self.state.start_chain_information.finality).into(),
+                        self.state.start_chain_information.as_ref().finality,
                         response.fragments,
                         final_set_of_fragments,
                     ),

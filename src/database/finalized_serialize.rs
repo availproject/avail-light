@@ -32,7 +32,7 @@
 use crate::chain::chain_information;
 
 use alloc::{string::String, vec::Vec};
-use core::iter;
+use core::{convert::TryFrom, iter};
 use hashbrown::HashMap;
 
 mod defs;
@@ -40,17 +40,17 @@ mod defs;
 /// Serializes the given chain information as a string.
 ///
 /// This is a shortcut for [`encode_chain_storage`] with no `finalized_storage`.
-pub fn encode_chain(information: chain_information::ChainInformationRef<'_>) -> String {
+pub fn encode_chain(information: chain_information::ValidChainInformationRef<'_>) -> String {
     encode_chain_storage(information, None::<iter::Empty<(Vec<u8>, Vec<u8>)>>)
 }
 
 /// Serializes the given chain information and finalized block storage as a string.
 pub fn encode_chain_storage(
-    information: chain_information::ChainInformationRef<'_>,
+    information: chain_information::ValidChainInformationRef<'_>,
     finalized_storage: Option<impl Iterator<Item = (impl AsRef<[u8]>, impl AsRef<[u8]>)>>,
 ) -> String {
     let decoded = defs::SerializedChainInformation::V1(defs::SerializedChainInformationV1::new(
-        information,
+        information.as_ref(),
         finalized_storage,
     ));
 
@@ -64,7 +64,7 @@ pub fn decode_chain(
     encoded: &str,
 ) -> Result<
     (
-        chain_information::ChainInformation,
+        chain_information::ValidChainInformation,
         Option<HashMap<Vec<u8>, Vec<u8>, fnv::FnvBuildHasher>>,
     ),
     CorruptedError,
@@ -72,9 +72,15 @@ pub fn decode_chain(
     let encoded: defs::SerializedChainInformation = serde_json::from_str(&encoded)
         .map_err(|e| CorruptedError(CorruptedErrorInner::Serde(e)))?;
 
-    Ok(encoded
+    let (chain_info, storage) = encoded
         .decode()
-        .map_err(|err| CorruptedError(CorruptedErrorInner::Deserialize(err)))?)
+        .map_err(|err| CorruptedError(CorruptedErrorInner::Deserialize(err)))?;
+
+    let chain_info = chain_information::ValidChainInformation::try_from(chain_info)
+        .map_err(CorruptedErrorInner::InvalidChain)
+        .map_err(CorruptedError)?;
+
+    Ok((chain_info, storage))
 }
 
 /// Opaque error indicating a corruption in the data stored in the local storage.
@@ -88,4 +94,5 @@ enum CorruptedErrorInner {
     Serde(serde_json::Error),
     #[display(fmt = "{}", _0)]
     Deserialize(defs::DeserializeError),
+    InvalidChain(chain_information::ValidityError),
 }

@@ -100,7 +100,7 @@ pub use pending_blocks::{RequestId, RequestParams, SourceId};
 #[derive(Debug)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
+    pub chain_information: chain_information::ValidChainInformation,
 
     /// Pre-allocated capacity for the number of block sources.
     pub sources_capacity: usize,
@@ -177,7 +177,11 @@ struct Block<TBl> {
 impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
     /// Initializes a new [`AllForksSync`].
     pub fn new(config: Config) -> Self {
-        let finalized_block_height = config.chain_information.finalized_block_header.number;
+        let finalized_block_height = config
+            .chain_information
+            .as_ref()
+            .finalized_block_header
+            .number;
 
         let chain = blocks_tree::NonFinalizedTree::new(blocks_tree::Config {
             chain_information: config.chain_information,
@@ -201,13 +205,16 @@ impl<TBl, TRq, TSrc> AllForksSync<TBl, TRq, TSrc> {
 
     /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
     /// latest finalized block. Can later be used to reconstruct a chain.
-    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+    pub fn as_chain_information(&self) -> chain_information::ValidChainInformationRef {
         self.chain.as_chain_information()
     }
 
     /// Returns the header of the finalized block.
     pub fn finalized_block_header(&self) -> header::HeaderRef {
-        self.chain.as_chain_information().finalized_block_header
+        self.chain
+            .as_chain_information()
+            .as_ref()
+            .finalized_block_header
     }
 
     /// Returns the header of the best block.

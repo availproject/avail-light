@@ -41,13 +41,90 @@
 use crate::{chain_spec::ChainSpec, finality::grandpa, header};
 
 use alloc::{borrow::ToOwned as _, vec::Vec};
-use core::num::NonZeroU64;
+use core::{convert::TryFrom, num::NonZeroU64};
 
 pub mod aura_config;
 pub mod babe_config;
 pub mod babe_fetch_epoch;
 
-// TODO: is it possible to build an inconsistent `ChainInformation` ; maybe use strong typing to provide a proof of the consistency ; see checks done at head of `blocks_tree.rs`
+/// Information about the latest finalized block and state found in its ancestors.
+///
+/// Similar to [`ChainInformation`], but guaranteed to be coherent.
+#[derive(Debug, Clone)]
+pub struct ValidChainInformation {
+    inner: ChainInformation,
+}
+
+impl From<ValidChainInformation> for ChainInformation {
+    fn from(i: ValidChainInformation) -> Self {
+        i.inner
+    }
+}
+
+impl ValidChainInformation {
+    /// Builds the [`ChainInformation`] corresponding to the genesis block contained in the chain
+    /// spec.
+    pub fn from_chain_spec(chain_spec: &ChainSpec) -> Result<Self, FromGenesisStorageError> {
+        let inner = ChainInformation::from_chain_spec(chain_spec)?;
+        #[cfg(debug_assertions)]
+        ChainInformationRef::from(&inner).validate().unwrap();
+        Ok(ValidChainInformation { inner })
+    }
+
+    /// Gives access to the information.
+    pub fn as_ref(&self) -> ChainInformationRef {
+        From::from(&self.inner)
+    }
+}
+
+impl<'a> From<ValidChainInformationRef<'a>> for ValidChainInformation {
+    fn from(info: ValidChainInformationRef<'a>) -> ValidChainInformation {
+        ValidChainInformation {
+            inner: info.inner.into(),
+        }
+    }
+}
+
+impl TryFrom<ChainInformation> for ValidChainInformation {
+    type Error = ValidityError;
+
+    fn try_from(info: ChainInformation) -> Result<Self, Self::Error> {
+        ChainInformationRef::from(&info).validate()?;
+        Ok(ValidChainInformation { inner: info })
+    }
+}
+
+/// Information about the latest finalized block and state found in its ancestors.
+///
+/// Similar to [`ChainInformationRef`], but guaranteed to be coherent.
+#[derive(Debug, Clone)]
+pub struct ValidChainInformationRef<'a> {
+    inner: ChainInformationRef<'a>,
+}
+
+impl<'a> From<&'a ValidChainInformation> for ValidChainInformationRef<'a> {
+    fn from(info: &'a ValidChainInformation) -> ValidChainInformationRef<'a> {
+        ValidChainInformationRef {
+            inner: From::from(&info.inner),
+        }
+    }
+}
+
+impl<'a> TryFrom<ChainInformationRef<'a>> for ValidChainInformationRef<'a> {
+    type Error = ValidityError;
+
+    fn try_from(info: ChainInformationRef<'a>) -> Result<Self, Self::Error> {
+        info.validate()?;
+        Ok(ValidChainInformationRef { inner: info })
+    }
+}
+
+impl<'a> ValidChainInformationRef<'a> {
+    /// Gives access to the information.
+    pub fn as_ref(&self) -> ChainInformationRef<'a> {
+        self.inner.clone()
+    }
+}
 
 /// Information about the latest finalized block and state found in its ancestors.
 #[derive(Debug, Clone)]
@@ -351,6 +428,69 @@ pub struct ChainInformationRef<'a> {
     pub finality: ChainInformationFinalityRef<'a>,
 }
 
+impl<'a> ChainInformationRef<'a> {
+    /// Checks whether the information is coherent.
+    pub fn validate(&self) -> Result<(), ValidityError> {
+        if let ChainInformationConsensusRef::Babe {
+            finalized_next_epoch_transition,
+            finalized_block_epoch_information,
+            ..
+        } = &self.consensus
+        {
+            if let Some(finalized_block_epoch_information) = &finalized_block_epoch_information {
+                if self.finalized_block_header.number == 0 {
+                    return Err(ValidityError::UnexpectedBabeFinalizedEpoch);
+                }
+                if finalized_block_epoch_information
+                    .start_slot_number
+                    .is_some()
+                    && (finalized_block_epoch_information.epoch_index == 0)
+                {
+                    return Err(ValidityError::UnexpectedBabeSlotStartNumber);
+                }
+                if finalized_block_epoch_information
+                    .start_slot_number
+                    .is_none()
+                    && (finalized_block_epoch_information.epoch_index != 0)
+                {
+                    return Err(ValidityError::MissingBabeSlotStartNumber);
+                }
+                if finalized_block_epoch_information.epoch_index + 1
+                    != finalized_next_epoch_transition.epoch_index
+                {
+                    return Err(ValidityError::NonLinearBabeEpochs);
+                }
+            } else {
+                if self.finalized_block_header.number != 0 {
+                    return Err(ValidityError::NoBabeFinalizedEpoch);
+                }
+            }
+        }
+
+        if let ChainInformationFinalityRef::Grandpa {
+            after_finalized_block_authorities_set_id,
+            finalized_scheduled_change,
+            ..
+        } = &self.finality
+        {
+            if let Some(change) = finalized_scheduled_change.as_ref() {
+                if change.0 <= self.finalized_block_header.number {
+                    return Err(ValidityError::ScheduledGrandPaChangeBeforeFinalized);
+                }
+            }
+            if self.finalized_block_header.number == 0 {
+                if *after_finalized_block_authorities_set_id != 0 {
+                    return Err(ValidityError::FinalizedZeroButNonZeroAuthoritiesSetId);
+                }
+            }
+        }
+
+        // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
+
+        Ok(())
+    }
+}
+
 impl<'a> From<&'a ChainInformation> for ChainInformationRef<'a> {
     fn from(info: &'a ChainInformation) -> ChainInformationRef<'a> {
         ChainInformationRef {
@@ -484,4 +624,25 @@ impl<'a> From<&'a ChainInformationFinality> for ChainInformationFinalityRef<'a> 
             },
         }
     }
+}
+
+/// Error when turning a [`ChainInformation`] into a [`ValidChainInformation`].
+#[derive(Debug, derive_more::Display)]
+pub enum ValidityError {
+    /// Found a Babe slot start number for Babe epoch number 0. Babe epoch 0 never has a starting
+    /// slot.
+    UnexpectedBabeSlotStartNumber,
+    /// Missing Babe slot start number for Babe epoch number other than 0.
+    MissingBabeSlotStartNumber,
+    /// Finalized block is block number 0, and a Babe epoch information has been provided. This
+    /// would imply the existence of a block -1 and below.
+    UnexpectedBabeFinalizedEpoch,
+    /// Next Babe epoch number does not immediately follow current Babe epoch number.
+    NonLinearBabeEpochs,
+    /// Finalized block is not number 0, but no Babe epoch information has been provided.
+    NoBabeFinalizedEpoch,
+    /// Scheduled GrandPa authorities change is before finalized block.
+    ScheduledGrandPaChangeBeforeFinalized,
+    /// The finalized block is block number 0, but the GrandPa authorities set id is not 0.
+    FinalizedZeroButNonZeroAuthoritiesSetId,
 }

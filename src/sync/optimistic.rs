@@ -73,7 +73,7 @@ use rand::{seq::IteratorRandom as _, SeedableRng as _};
 #[derive(Debug)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
+    pub chain_information: chain_information::ValidChainInformation,
 
     /// Pre-allocated capacity for the number of block sources.
     pub sources_capacity: usize,
@@ -288,18 +288,17 @@ impl<TRq, TSrc, TBl> OptimisticSync<TRq, TSrc, TBl> {
 
     /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
     /// latest finalized block. Can later be used to reconstruct a chain.
-    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+    pub fn as_chain_information(&self) -> chain_information::ValidChainInformationRef {
         self.chain.as_chain_information()
     }
 
     /// Returns the header of the finalized block.
     pub fn finalized_block_header(&self) -> header::HeaderRef {
-        (&self
-            .inner
+        self.inner
             .finalized_chain_information
             .chain_information
-            .finalized_block_header)
-            .into()
+            .as_ref()
+            .finalized_block_header
     }
 
     /// Returns the header of the best block.
@@ -1531,7 +1530,7 @@ pub enum ResetCause {
 #[derive(Debug)]
 pub struct Disassemble<TRq, TSrc> {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
+    pub chain_information: chain_information::ValidChainInformation,
 
     /// List of sources that were within the state machine.
     pub sources: Vec<DisassembleSource<TSrc>>,

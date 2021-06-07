@@ -98,7 +98,7 @@ pub async fn start_client(
     let genesis_chain_information = chain_specs
         .iter()
         .map(|chain_spec| {
-            match chain::chain_information::ChainInformation::from_chain_spec(&chain_spec) {
+            match chain::chain_information::ValidChainInformation::from_chain_spec(&chain_spec) {
                 Ok(ci) => ci,
                 Err(err) => panic!(
                     "Failed to load information about chain `{}`: {}",
@@ -117,6 +117,7 @@ pub async fn start_client(
                     "Using light checkpoint starting at #{}",
                     light_sync_state
                         .as_chain_information()
+                        .as_ref()
                         .finalized_block_header
                         .number
                 );
@@ -215,8 +216,8 @@ async fn start_services(
         String,
         Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
     )>,
-    chain_information: Vec<chain::chain_information::ChainInformation>,
-    genesis_chain_information: Vec<chain::chain_information::ChainInformation>,
+    chain_information: Vec<chain::chain_information::ValidChainInformation>,
+    genesis_chain_information: Vec<chain::chain_information::ValidChainInformation>,
     chain_specs: Vec<chain_spec::ChainSpec>,
     json_rpc_running: Vec<bool>,
 ) {
@@ -250,15 +251,15 @@ async fn start_services(
                                 list
                             },
                             has_grandpa_protocol: matches!(
-                                genesis_chain_information.finality,
-                                chain::chain_information::ChainInformationFinality::Grandpa { .. }
+                                genesis_chain_information.as_ref().finality,
+                                chain::chain_information::ChainInformationFinalityRef::Grandpa { .. }
                             ),
-                            genesis_block_hash: genesis_chain_information
+                            genesis_block_hash: genesis_chain_information.as_ref()
                                 .finalized_block_header
                                 .hash(),
                             best_block: (
-                                chain_information.finalized_block_header.number,
-                                chain_information.finalized_block_header.hash(),
+                                chain_information.as_ref().finalized_block_header.number,
+                                chain_information.as_ref().finalized_block_header.hash(),
                             ),
                             protocol_id: chain_spec.protocol_id().to_string(),
                         }
@@ -317,8 +318,14 @@ async fn start_services(
             }),
             sync_service: sync_service.clone(),
             chain_spec: &chain_spec,
-            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-            genesis_block_state_root: genesis_chain_information.finalized_block_header.state_root,
+            genesis_block_hash: genesis_chain_information
+                .as_ref()
+                .finalized_block_header
+                .hash(),
+            genesis_block_state_root: *genesis_chain_information
+                .as_ref()
+                .finalized_block_header
+                .state_root,
         })
         .await;
 
@@ -388,8 +395,14 @@ async fn start_services(
             }),
             sync_service: sync_service.clone(),
             chain_spec,
-            genesis_block_hash: genesis_chain_information.finalized_block_header.hash(),
-            genesis_block_state_root: genesis_chain_information.finalized_block_header.state_root,
+            genesis_block_hash: genesis_chain_information
+                .as_ref()
+                .finalized_block_header
+                .hash(),
+            genesis_block_state_root: *genesis_chain_information
+                .as_ref()
+                .finalized_block_header
+                .state_root,
         })
         .await;
 
@@ -415,7 +428,7 @@ async fn start_services(
 
         let (sync_service, runtime_service) = services.unwrap();
 
-        let finalized_header = genesis_chain_information.finalized_block_header;
+        let finalized_header = genesis_chain_information.as_ref().finalized_block_header;
         let transactions_service = Arc::new(
             transactions_service::TransactionsService::new(transactions_service::Config {
                 tasks_executor: Box::new({
@@ -439,7 +452,7 @@ async fn start_services(
             runtime_service,
             chain_spec,
             genesis_block_hash: finalized_header.hash(),
-            genesis_block_state_root: finalized_header.state_root,
+            genesis_block_state_root: *finalized_header.state_root,
             chain_index,
         })
         .await;

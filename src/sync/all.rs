@@ -51,7 +51,7 @@ use core::{
 #[derive(Debug)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
+    pub chain_information: chain_information::ValidChainInformation,
 
     /// Pre-allocated capacity for the number of block sources.
     pub sources_capacity: usize,
@@ -134,7 +134,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
             } else {
                 AllSyncInner::GrandpaWarpSync(grandpa_warp_sync::grandpa_warp_sync(
                     grandpa_warp_sync::Config {
-                        start_chain_information: config.chain_information,
+                        start_chain_information: config.chain_information.into(),
                         sources_capacity: config.sources_capacity,
                     },
                 ))
@@ -149,7 +149,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
 
     /// Builds a [`chain_information::ChainInformationRef`] struct corresponding to the current
     /// latest finalized block. Can later be used to reconstruct a chain.
-    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+    pub fn as_chain_information(&self) -> chain_information::ValidChainInformationRef {
         match &self.inner {
             AllSyncInner::Optimistic(sync) => sync.as_chain_information(),
             AllSyncInner::AllForks(sync) => sync.as_chain_information(),
@@ -164,7 +164,7 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
             AllSyncInner::Optimistic(sync) => sync.finalized_block_header(),
             AllSyncInner::AllForks(sync) => sync.finalized_block_header(),
             AllSyncInner::GrandpaWarpSync(sync) => {
-                sync.as_chain_information().finalized_block_header
+                sync.as_chain_information().as_ref().finalized_block_header
             }
             AllSyncInner::Poisoned => unreachable!(),
         }
@@ -614,7 +614,14 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
                 sync.source_knows_non_finalized_block(*src, height, hash)
             }
             (AllSyncInner::GrandpaWarpSync(sync), SourceMapping::GrandpaWarpSync(src)) => {
-                assert!(height > sync.as_chain_information().finalized_block_header.number);
+                assert!(
+                    height
+                        > sync
+                            .as_chain_information()
+                            .as_ref()
+                            .finalized_block_header
+                            .number
+                );
 
                 let user_data = sync.source_user_data(*src);
                 user_data.best_block_hash == *hash && user_data.best_block_number == height
@@ -645,7 +652,14 @@ impl<TRq, TSrc, TBl> AllSync<TRq, TSrc, TBl> {
     ) -> impl Iterator<Item = SourceId> + '_ {
         match &self.inner {
             AllSyncInner::GrandpaWarpSync(sync) => {
-                assert!(height > sync.as_chain_information().finalized_block_header.number);
+                assert!(
+                    height
+                        > sync
+                            .as_chain_information()
+                            .as_ref()
+                            .finalized_block_header
+                            .number
+                );
 
                 let hash = *hash;
                 let iter = sync

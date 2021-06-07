@@ -210,7 +210,7 @@ impl SqliteFullDatabase {
     pub fn to_chain_information(
         &self,
         finalized_block_hash: &[u8; 32],
-    ) -> Result<chain_information::ChainInformation, FinalizedAccessError> {
+    ) -> Result<chain_information::ValidChainInformation, FinalizedAccessError> {
         let connection = self.database.lock();
         if finalized_hash(&connection)? != *finalized_block_hash {
             return Err(FinalizedAccessError::Obsolete);
@@ -278,11 +278,20 @@ impl SqliteFullDatabase {
             }
         };
 
-        Ok(chain_information::ChainInformation {
-            finalized_block_header,
-            consensus,
-            finality,
-        })
+        match chain_information::ValidChainInformation::try_from(
+            chain_information::ChainInformation {
+                finalized_block_header,
+                consensus,
+                finality,
+            },
+        ) {
+            Ok(ci) => Ok(ci),
+            Err(err) => {
+                return Err(FinalizedAccessError::Access(AccessError::Corrupted(
+                    CorruptedError::InvalidChainInformation(err),
+                )))
+            }
+        }
     }
 
     /// Insert a new block in the database.
@@ -870,6 +879,8 @@ pub enum CorruptedError {
     InvalidFinalizedNum,
     /// A block hash is expected to be 32 bytes. This isn't the case.
     InvalidBlockHashLen,
+    /// Values in the database are all well-formatted, but are incoherent.
+    InvalidChainInformation(chain_information::ValidityError),
     /// The parent of a block in the database couldn't be found in that same database.
     BrokenChain,
     /// Missing a key in the `meta` table.

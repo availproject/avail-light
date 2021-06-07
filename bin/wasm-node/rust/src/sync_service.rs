@@ -50,7 +50,7 @@ pub use crate::lossy_channel::Receiver as NotificationsReceiver;
 /// Configuration for a [`SyncService`].
 pub struct Config {
     /// State of the finalized chain.
-    pub chain_information: chain::chain_information::ChainInformation,
+    pub chain_information: chain::chain_information::ValidChainInformation,
 
     /// Closure that spawns background tasks.
     pub tasks_executor: Box<dyn FnMut(String, Pin<Box<dyn Future<Output = ()> + Send>>) + Send>,
@@ -605,7 +605,7 @@ pub struct BlockNotification {
 }
 
 async fn start_relay_chain(
-    chain_information: chain::chain_information::ChainInformation,
+    chain_information: chain::chain_information::ValidChainInformation,
     mut from_foreground: mpsc::Receiver<ToBackground>,
     network_service: Arc<network_service::NetworkService>,
     network_chain_index: usize,
@@ -935,7 +935,7 @@ async fn start_relay_chain(
                     if let chain::chain_information::ChainInformationFinalityRef::Grandpa {
                         after_finalized_block_authorities_set_id,
                         ..
-                    } = sync.as_chain_information().finality
+                    } = sync.as_chain_information().as_ref().finality
                     {
                         Some(after_finalized_block_authorities_set_id)
                     } else {
@@ -1209,7 +1209,7 @@ async fn start_relay_chain(
 }
 
 async fn start_parachain(
-    chain_information: chain::chain_information::ChainInformation,
+    chain_information: chain::chain_information::ValidChainInformation,
     mut from_foreground: mpsc::Receiver<ToBackground>,
     parachain_config: ConfigParachain,
 ) {
@@ -1222,7 +1222,8 @@ async fn start_parachain(
     };
     futures::pin_mut!(relay_best_blocks);
 
-    let mut current_finalized_block = chain_information.finalized_block_header;
+    let mut current_finalized_block: header::Header =
+        chain_information.as_ref().finalized_block_header.into();
     let mut current_best_block = current_finalized_block.clone();
 
     // List of senders that get notified when the best block is modified.

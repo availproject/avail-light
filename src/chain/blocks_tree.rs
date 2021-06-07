@@ -81,7 +81,7 @@ pub use self::verify::*;
 #[derive(Debug, Clone)]
 pub struct Config {
     /// Information about the latest finalized block and its ancestors.
-    pub chain_information: chain_information::ChainInformation,
+    pub chain_information: chain_information::ValidChainInformation,
 
     /// Pre-allocated size of the chain, in number of non-finalized blocks.
     pub blocks_capacity: usize,
@@ -102,52 +102,16 @@ impl<T> NonFinalizedTree<T> {
     /// Panics if the chain information is incorrect.
     ///
     pub fn new(config: Config) -> Self {
-        if let chain_information::ChainInformationConsensus::Babe {
-            finalized_next_epoch_transition,
-            finalized_block_epoch_information,
-            ..
-        } = &config.chain_information.consensus
-        {
-            if let Some(finalized_block_epoch_information) = &finalized_block_epoch_information {
-                assert!(config.chain_information.finalized_block_header.number >= 1);
-                assert_eq!(
-                    finalized_block_epoch_information
-                        .start_slot_number
-                        .is_some(),
-                    finalized_block_epoch_information.epoch_index != 0
-                );
-                assert_eq!(
-                    finalized_block_epoch_information.epoch_index + 1,
-                    finalized_next_epoch_transition.epoch_index
-                );
-            } else {
-                assert_eq!(config.chain_information.finalized_block_header.number, 0);
-            }
-        }
+        let chain_information: chain_information::ChainInformation =
+            config.chain_information.into();
 
-        if let chain_information::ChainInformationFinality::Grandpa {
-            after_finalized_block_authorities_set_id,
-            finalized_scheduled_change,
-            ..
-        } = &config.chain_information.finality
-        {
-            if let Some(change) = finalized_scheduled_change.as_ref() {
-                assert!(change.0 > config.chain_information.finalized_block_header.number);
-            }
-            if config.chain_information.finalized_block_header.number == 0 {
-                assert_eq!(*after_finalized_block_authorities_set_id, 0);
-            }
-        }
-
-        // TODO: also check that babe_finalized_block_epoch_information is None if and only if block is in epoch #0
-
-        let finalized_block_hash = config.chain_information.finalized_block_header.hash();
+        let finalized_block_hash = chain_information.finalized_block_header.hash();
 
         NonFinalizedTree {
             inner: Some(NonFinalizedTreeInner {
-                finalized_block_header: config.chain_information.finalized_block_header,
+                finalized_block_header: chain_information.finalized_block_header,
                 finalized_block_hash,
-                finality: match config.chain_information.finality {
+                finality: match chain_information.finality {
                     chain_information::ChainInformationFinality::Outsourced => Finality::Outsourced,
                     chain_information::ChainInformationFinality::Grandpa {
                         after_finalized_block_authorities_set_id,
@@ -159,7 +123,7 @@ impl<T> NonFinalizedTree<T> {
                         finalized_triggered_authorities,
                     },
                 },
-                finalized_consensus: match config.chain_information.consensus {
+                finalized_consensus: match chain_information.consensus {
                     chain_information::ChainInformationConsensus::AllAuthorized => {
                         FinalizedConsensus::AllAuthorized
                     }
@@ -227,9 +191,9 @@ impl<T> NonFinalizedTree<T> {
 
     /// Builds a [`chain_information::ChainInformationRef`] struct that might later be used to
     /// build a new [`NonFinalizedTree`].
-    pub fn as_chain_information(&self) -> chain_information::ChainInformationRef {
+    pub fn as_chain_information(&self) -> chain_information::ValidChainInformationRef {
         let inner = self.inner.as_ref().unwrap();
-        chain_information::ChainInformationRef {
+        let attempt = chain_information::ChainInformationRef {
             finalized_block_header: (&inner.finalized_block_header).into(),
             consensus: match &inner.finalized_consensus {
                 FinalizedConsensus::AllAuthorized => {
@@ -271,7 +235,9 @@ impl<T> NonFinalizedTree<T> {
                     finalized_triggered_authorities,
                 },
             },
-        }
+        };
+
+        chain_information::ValidChainInformationRef::try_from(attempt).unwrap()
     }
 
     /// Returns the header of the latest finalized block.

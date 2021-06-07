@@ -36,9 +36,10 @@
 
 use crate::chain::chain_information::{
     BabeEpochInformation, ChainInformation, ChainInformationConsensus, ChainInformationFinality,
+    ValidChainInformation,
 };
 use alloc::{string::String, vec::Vec};
-use core::num::NonZeroU64;
+use core::{convert::TryInto as _, num::NonZeroU64};
 
 mod light_sync_state;
 mod structs;
@@ -68,7 +69,7 @@ fn convert_epoch(epoch: &light_sync_state::BabeEpoch) -> BabeEpochInformation {
 }
 
 impl LightSyncState {
-    pub fn as_chain_information(&self) -> ChainInformation {
+    pub fn as_chain_information(&self) -> ValidChainInformation {
         // Create a sorted list of all regular epochs that haven't been pruned from the sync state.
         let mut epochs: Vec<_> = self
             .inner
@@ -116,6 +117,8 @@ impl LightSyncState {
                 finalized_scheduled_change: None, // TODO: unimplemented
             },
         }
+        .try_into()
+        .unwrap() // TODO: don't unwrap /!\ should fail when parsing the chain spec instead
     }
 }
 
