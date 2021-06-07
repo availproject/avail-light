@@ -72,44 +72,24 @@ pub(super) fn is_better_block<T>(
     };
 
     let curr_best_chain_score: usize = ascend
-        .map(|i| {
-            if let Some(pr) = blocks.get(i).unwrap().header.digest.babe_pre_runtime() {
-                if pr.is_primary() {
-                    1
-                } else {
-                    0
-                }
-            } else {
-                1
-            }
-        })
+        .map(|i| block_score(&blocks.get(i).unwrap().header))
         .sum();
-
-    let candidate_score = {
-        if let Some(pr) = maybe_new_best.digest.babe_pre_runtime() {
-            if pr.is_primary() {
-                1
-            } else {
-                0
-            }
-        } else {
-            1
-        }
-    };
-
+    let candidate_score = block_score(maybe_new_best);
     let candidate_chain_score: usize = descend
-        .map(|i| {
-            if let Some(pr) = blocks.get(i).unwrap().header.digest.babe_pre_runtime() {
-                if pr.is_primary() {
-                    1
-                } else {
-                    0
-                }
-            } else {
-                1
-            }
-        })
+        .map(|i| block_score(&blocks.get(i).unwrap().header))
         .sum();
-
     (candidate_chain_score + candidate_score).cmp(&curr_best_chain_score)
+}
+
+fn block_score<'a>(header: impl Into<header::HeaderRef<'a>>) -> usize {
+    let header = header.into();
+    if let Some(pr) = header.digest.babe_pre_runtime() {
+        if pr.is_primary() {
+            1
+        } else {
+            0
+        }
+    } else {
+        1
+    }
 }
