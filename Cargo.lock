@@ -123,9 +123,9 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrayvec"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a2f58b0bb10c380af2b26e57212856b8c9a59e0925b4c20f4a174a49734eaf7"
+checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
 
 [[package]]
 name = "async-channel"
@@ -1692,7 +1692,7 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0f518afaa5a47d0d6386229b0a6e01e86427291d643aa4cabb4992219f504f8"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec 0.7.1",
  "bitvec 0.20.1",
  "byte-slice-cast",
  "parity-scale-codec-derive",
@@ -2438,7 +2438,7 @@ name = "smoldot"
 version = "0.1.0"
 dependencies = [
  "ahash 0.6.2",
- "arrayvec 0.7.0",
+ "arrayvec 0.7.1",
  "async-std",
  "blake2-rfc",
  "bs58",
