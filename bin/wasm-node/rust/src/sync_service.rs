@@ -217,6 +217,27 @@ impl SyncService {
         rx.await.unwrap()
     }
 
+    /// Returns the list of peers from the [`network_service::NetworkService`] that are used to
+    /// synchronize blocks.
+    ///
+    /// Returns, for each peer, their identity and best block number and hash.
+    ///
+    /// This function is subject to race condition. The list returned by this function can change
+    /// at any moment. The return value should only ever be shown to the user and not used for any
+    /// meaningful logic
+    pub async fn syncing_peers(&self) -> impl ExactSizeIterator<Item = (PeerId, u64, [u8; 32])> {
+        let (send_back, rx) = oneshot::channel();
+
+        self.to_background
+            .lock()
+            .await
+            .send(ToBackground::SyncingPeers { send_back })
+            .await
+            .unwrap();
+
+        rx.await.unwrap().into_iter()
+    }
+
     /// Returns the list of peers from the [`network_service::NetworkService`] that are expected to
     /// be aware of the given block.
     ///
@@ -224,6 +245,10 @@ impl SyncService {
     /// past, or if the requested block height is below the finalized block height and the best
     /// block of the peer is above the requested block. In other words, it is assumed that all
     /// peers are always on the same finalized chain as the local node.
+    ///
+    /// This function is subject to race condition. The list returned by this function is not
+    /// necessarily exact, as a peer might have known about a block in the past but no longer
+    /// does.
     pub async fn peers_assumed_know_blocks(
         &self,
         block_number: u64,
@@ -1110,6 +1135,16 @@ async fn start_relay_chain(
                             };
                             let _ = send_back.send(outcome);
                         }
+                        ToBackground::SyncingPeers { send_back } => {
+                            let out = sync.sources()
+                                .map(|src| {
+                                    let peer_id = sync.source_user_data(src).clone();
+                                    let (height, hash) = sync.source_best_block(src);
+                                    (peer_id, height, *hash)
+                                })
+                                .collect::<Vec<_>>();
+                            let _ = send_back.send(out);
+                        }
                     };
 
                     continue;
@@ -1275,6 +1310,9 @@ async fn start_parachain(
                     ToBackground::PeersAssumedKnowBlock { send_back, block_number, block_hash } => {
                         let _ = send_back.send(Vec::new()); // TODO: implement this somehow /!\
                     }
+                    ToBackground::SyncingPeers { send_back } => {
+                        let _ = send_back.send(Vec::new()); // TODO: implement this somehow /!\
+                    }
                 }
             },
 
@@ -1400,5 +1438,9 @@ enum ToBackground {
         send_back: oneshot::Sender<Vec<PeerId>>,
         block_number: u64,
         block_hash: [u8; 32],
+    },
+    /// See [`SyncService::syncing_peers`].
+    SyncingPeers {
+        send_back: oneshot::Sender<Vec<(PeerId, u64, [u8; 32])>>,
     },
 }

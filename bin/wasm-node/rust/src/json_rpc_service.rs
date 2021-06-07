@@ -932,17 +932,16 @@ impl JsonRpcService {
                 );
             }
             methods::MethodCall::system_peers {} => {
-                // TODO: return proper response
                 self.send_back(
                     &methods::Response::system_peers(
-                        self.network_service
-                            .peers_list()
+                        self.sync_service
+                            .syncing_peers()
                             .await
-                            .map(|peer_id| methods::SystemPeer {
+                            .map(|(peer_id, best_number, best_hash)| methods::SystemPeer {
                                 peer_id: peer_id.to_string(),
-                                roles: "unknown".to_string(),
-                                best_hash: methods::HashHexString([0x0; 32]),
-                                best_number: 0,
+                                roles: "unknown".to_string(), // TODO: do properly
+                                best_hash: methods::HashHexString(best_hash),
+                                best_number,
                             })
                             .collect(),
                     )
