@@ -924,6 +924,14 @@ impl JsonRpcService {
                     user_data,
                 );
             }
+            methods::MethodCall::system_localListenAddresses {} => {
+                // Wasm node never listens on any address.
+                self.send_back(
+                    &methods::Response::system_localListenAddresses(Vec::new())
+                        .to_json_response(request_id),
+                    user_data,
+                );
+            }
             methods::MethodCall::system_name {} => {
                 self.send_back(
                     &methods::Response::system_name(env!("CARGO_PKG_NAME"))
