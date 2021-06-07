@@ -471,8 +471,8 @@ impl<T> NonFinalizedTreeInner<T> {
         {
             let mut new_best_block = None;
             for (idx, block) in self.blocks.iter_unordered() {
-                if idx == self.current_best.unwrap()
-                    || !self.blocks.is_ancestor(idx, self.current_best.unwrap())
+                if idx == block_index_to_finalize
+                    || !self.blocks.is_ancestor(block_index_to_finalize, idx)
                 {
                     continue;
                 }
