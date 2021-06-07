@@ -30,6 +30,8 @@ use crate::{
 
 use super::*;
 
+use core::cmp::Ordering;
+
 impl<T> NonFinalizedTree<T> {
     /// Verifies the given block.
     ///
@@ -327,7 +329,7 @@ impl<T> VerifyContext<T> {
                 current_best,
                 self.parent_tree_index,
                 (&self.header).into(),
-            )
+            ) == Ordering::Greater
         } else {
             true
         };

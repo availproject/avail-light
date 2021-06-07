@@ -20,7 +20,7 @@
 use super::*;
 use crate::finality::{grandpa, justification};
 
-use core::iter;
+use core::{cmp::Ordering, iter};
 
 impl<T> NonFinalizedTree<T> {
     /// Returns a list of blocks (by their height and hash) that need to be finalized before any
@@ -483,7 +483,7 @@ impl<T> NonFinalizedTreeInner<T> {
                         new_best_block,
                         self.blocks.parent(idx),
                         From::from(&block.header),
-                    )
+                    ) == Ordering::Greater
                 } else {
                     true
                 };
