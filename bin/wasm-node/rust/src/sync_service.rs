@@ -1367,15 +1367,21 @@ async fn start_parachain(
                             // a core in the future, and as such this is not a fatal error.
                             log::log!(
                                 target: "sync-verify",
-                                if relay_sync_near_head_of_chain { log::Level::Warn } else { log::Level::Debug },
+                                if relay_sync_near_head_of_chain { log::Level::Warn }
+                                    else { log::Level::Debug },
                                 "Couldn't find the parachain head from relay chain. \
                                 The parachain likely doesn't occupy a core."
                             );
                             continue;
                         }
                         Err(error) => {
-                            log::error!(
+                            // Only a debug line is printed if not near the head of the chain,
+                            // to handle chains that have been upgraded later on to support
+                            // parachains later.
+                            log::log!(
                                 target: "sync-verify",
+                                if relay_sync_near_head_of_chain { log::Level::Error }
+                                    else { log::Level::Debug },
                                 "Failed to fetch the parachain head from relay chain: {}",
                                 error
                             );
