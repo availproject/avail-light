@@ -36,6 +36,7 @@ use tracing::Instrument as _;
 use serde::{Deserialize, Serialize};
 use tide::{Body, Request};
 use std::collections::HashMap;
+use hyper::{Method};
 
 mod cli;
 mod network_service;
@@ -47,6 +48,27 @@ type Store = Arc<Mutex<HashMap<usize, usize>>>;
 struct Confidence {
     block: usize,
     factor: usize,
+}
+
+#[derive(Deserialize, Debug)]
+struct BlockHashResponse {
+    jsonrpc: String,
+    id: u32,
+    result: String,
+}
+
+async fn get_blockhash(block: usize) -> Result<String, String> {
+    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#, block);
+    let req = hyper::Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost:9999")
+        .header("Content-Type", "application/json")
+        .body(hyper::Body::from(payload)).unwrap();
+    let client = hyper::Client::new();
+    let resp = client.request(req).await.unwrap();
+    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let r: BlockHashResponse = serde_json::from_slice(&body).unwrap();
+    Ok(r.result)
 }
 
 fn main() {
