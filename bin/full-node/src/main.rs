@@ -71,6 +71,19 @@ async fn get_blockhash(block: usize) -> Result<String, String> {
     Ok(r.result)
 }
 
+async fn get_block_by_hash(hash: String) {
+    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#, hash);
+    let req = hyper::Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost:9999")
+        .header("Content-Type", "application/json")
+        .body(hyper::Body::from(payload)).unwrap();
+    let client = hyper::Client::new();
+    let resp = client.request(req).await.unwrap();
+    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    println!("{:?}", body);
+}
+
 fn main() {
     ::futures::executor::block_on(async_main())
 }
