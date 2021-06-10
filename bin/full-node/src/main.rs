@@ -19,7 +19,7 @@
 #![deny(broken_intra_doc_links)]
 #![deny(unused_crate_dependencies)]
 
-use futures::{channel::oneshot, prelude::*};
+use ::futures::{channel::oneshot, prelude::*};
 use smoldot::{
     chain, chain_spec,
     database::full_sqlite,
@@ -28,18 +28,29 @@ use smoldot::{
     libp2p::{connection, multiaddr, peer_id::PeerId},
 };
 use std::{
-    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::Arc, thread,
+    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::{Arc, Mutex}, thread,
     time::Duration,
 };
 use structopt::StructOpt as _;
 use tracing::Instrument as _;
+use serde::{Deserialize, Serialize};
+use tide::{Body, Request};
+use std::collections::HashMap;
 
 mod cli;
 mod network_service;
 mod sync_service;
 
+type Store = Arc<Mutex<HashMap<usize, usize>>>;
+
+#[derive(Deserialize, Serialize)]
+struct Confidence {
+    block: usize,
+    factor: usize,
+}
+
 fn main() {
-    futures::executor::block_on(async_main())
+    ::futures::executor::block_on(async_main())
 }
 
 async fn async_main() {
@@ -133,7 +144,7 @@ async fn async_main() {
         None
     };
 
-    let threads_pool = futures::executor::ThreadPool::builder()
+    let threads_pool = ::futures::executor::ThreadPool::builder()
         .name_prefix("tasks-pool-")
         .create()
         .unwrap();
@@ -286,6 +297,27 @@ async fn async_main() {
         None
     };
 
+    let http_server = async {
+        let store: Store = Arc::new(Mutex::new(HashMap::new()));
+        let mut app = tide::with_state(store);
+        app.at("/v1/confidence/:block").get(|req: Request<Store>| async move {
+            let block: usize = req.param("block")?.parse().unwrap_or(0);
+            let mut factor = 0;
+            let handle = req.state().lock().unwrap();
+            if let Some(v) = handle.get(&block) {
+                factor = *v;
+            }
+
+            let conf = Confidence{block: block, factor: factor};
+            Body::from_json(&conf)
+        });
+
+        if let Err(e) = app.listen("127.0.0.1:7000").await {
+            println!("{}", e);
+        }
+    };
+    threads_pool.spawn_ok(http_server);
+
     /*let mut telemetry = {
         let endpoints = chain_spec
             .telemetry_endpoints()
@@ -339,7 +371,7 @@ async fn async_main() {
     debug_assert!(network_events_receivers.next().is_none());
 
     loop {
-        futures::select! {
+        ::futures::select! {
             _ = informant_timer.next() => {
                 if matches!(cli_options.output, cli::Output::Informant) {
                     // We end the informant line with a `\r` so that it overwrites itself every time.

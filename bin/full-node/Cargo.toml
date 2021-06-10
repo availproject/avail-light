@@ -32,3 +32,5 @@ structopt = { version = "0.3.21", default-features = false, features = ["color",
 terminal_size = "0.1.17"
 tracing = { version = "0.1.26", features = ["attributes"] }
 tracing-subscriber = { version = "0.2.18", default-features = false, features = ["ansi", "chrono", "json", "fmt", "parking_lot", "smallvec"] }
+tide = "0.16.0"
+serde = { version = "1.0", features = ["derive"] }
