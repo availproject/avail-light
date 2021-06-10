@@ -57,6 +57,43 @@ struct BlockHashResponse {
     result: String,
 }
 
+#[derive(Deserialize, Debug)]
+struct BlockResponse {
+    jsonrpc: String,
+    id: u32,
+    result: RPCResult,
+}
+
+#[derive(Deserialize, Debug)]
+struct RPCResult {
+    block: Block,
+    #[serde(skip_deserializing)]
+    justification: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct Block {
+    extrinsics: Vec<String>,
+    header: Header,
+}
+
+#[derive(Deserialize, Debug)]
+struct Header {
+    number: String,
+    #[serde(rename = "extrinsicsRoot")]
+    extrinsics_root: String,
+    #[serde(rename = "parentHash")]
+    parent_hash: String,
+    #[serde(rename = "stateRoot")]
+    state_root: String,
+    digest: Digest,
+}
+
+#[derive(Deserialize, Debug)]
+struct Digest {
+    logs: Vec<String>,
+}
+
 async fn get_blockhash(block: usize) -> Result<String, String> {
     let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#, block);
     let req = hyper::Request::builder()
@@ -71,7 +108,7 @@ async fn get_blockhash(block: usize) -> Result<String, String> {
     Ok(r.result)
 }
 
-async fn get_block_by_hash(hash: String) {
+async fn get_block_by_hash(hash: String) -> Result<(), String> {
     let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#, hash);
     let req = hyper::Request::builder()
         .method(Method::POST)
@@ -81,7 +118,9 @@ async fn get_block_by_hash(hash: String) {
     let client = hyper::Client::new();
     let resp = client.request(req).await.unwrap();
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-    println!("{:?}", body);
+    let b: BlockResponse = serde_json::from_slice(&body).unwrap();
+    println!("{:?}", b);
+    Ok(())
 }
 
 fn main() {
