@@ -20,6 +20,8 @@
 #![deny(unused_crate_dependencies)]
 
 use ::futures::{channel::oneshot, prelude::*};
+use hyper::Method;
+use serde::{Deserialize, Serialize};
 use smoldot::{
     chain, chain_spec,
     database::full_sqlite,
@@ -27,16 +29,19 @@ use smoldot::{
     informant::HashDisplay,
     libp2p::{connection, multiaddr, peer_id::PeerId},
 };
+use std::collections::HashMap;
 use std::{
-    borrow::Cow, convert::TryFrom as _, fs, io, iter, path::PathBuf, sync::{Arc, Mutex}, thread,
+    borrow::Cow,
+    convert::TryFrom as _,
+    fs, io, iter,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
     time::Duration,
 };
 use structopt::StructOpt as _;
-use tracing::Instrument as _;
-use serde::{Deserialize, Serialize};
 use tide::{Body, Request};
-use std::collections::HashMap;
-use hyper::{Method};
+use tracing::Instrument as _;
 
 mod cli;
 mod network_service;
@@ -95,12 +100,16 @@ struct Digest {
 }
 
 async fn get_blockhash(block: usize) -> Result<String, String> {
-    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#, block);
+    let payload = format!(
+        r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
+        block
+    );
     let req = hyper::Request::builder()
         .method(Method::POST)
         .uri("http://localhost:9999")
         .header("Content-Type", "application/json")
-        .body(hyper::Body::from(payload)).unwrap();
+        .body(hyper::Body::from(payload))
+        .unwrap();
     let client = hyper::Client::new();
     let resp = client.request(req).await.unwrap();
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
@@ -109,18 +118,37 @@ async fn get_blockhash(block: usize) -> Result<String, String> {
 }
 
 async fn get_block_by_hash(hash: String) -> Result<(), String> {
-    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#, hash);
+    let payload = format!(
+        r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#,
+        hash
+    );
     let req = hyper::Request::builder()
         .method(Method::POST)
         .uri("http://localhost:9999")
         .header("Content-Type", "application/json")
-        .body(hyper::Body::from(payload)).unwrap();
+        .body(hyper::Body::from(payload))
+        .unwrap();
     let client = hyper::Client::new();
     let resp = client.request(req).await.unwrap();
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let b: BlockResponse = serde_json::from_slice(&body).unwrap();
     println!("{:?}", b);
     Ok(())
+}
+
+async fn get_block_by_number(block: usize) -> Result<(), String> {
+    let hash = get_blockhash(block).await.unwrap();
+    let _ = get_block_by_hash(hash).await.unwrap();
+    Ok(())
+}
+
+fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result<usize, String> {
+    let handle = req.state().lock().unwrap();
+    if let Some(v) = handle.get(&block) {
+        Ok(*v)
+    } else {
+        Err("not available".to_owned())
+    }
 }
 
 fn main() {
@@ -374,17 +402,25 @@ async fn async_main() {
     let http_server = async {
         let store: Store = Arc::new(Mutex::new(HashMap::new()));
         let mut app = tide::with_state(store);
-        app.at("/v1/confidence/:block").get(|req: Request<Store>| async move {
-            let block: usize = req.param("block")?.parse().unwrap_or(0);
-            let mut factor = 0;
-            let handle = req.state().lock().unwrap();
-            if let Some(v) = handle.get(&block) {
-                factor = *v;
-            }
-
-            let conf = Confidence{block: block, factor: factor};
-            Body::from_json(&conf)
-        });
+        app.at("/v1/confidence/:block")
+            .get(|req: Request<Store>| async move {
+                let block: usize = req.param("block")?.parse().unwrap_or(0);
+                let mut factor = 0;
+                match get_if_confidence_available(&req, block) {
+                    Ok(v) => {
+                        factor = v;
+                    }
+                    Err(e) => {
+                        println!("Error in lookup : {}", e);
+                    }
+                }
+                let _ = get_block_by_number(block).await.unwrap();
+                let conf = Confidence {
+                    block: block,
+                    factor: factor,
+                };
+                Body::from_json(&conf)
+            });
 
         if let Err(e) = app.listen("127.0.0.1:7000").await {
             println!("{}", e);
