@@ -42,6 +42,7 @@ use std::{
 use structopt::StructOpt as _;
 use tide::{Body, Request};
 use tracing::Instrument as _;
+use rand::{thread_rng, Rng};
 
 mod cli;
 mod network_service;
@@ -106,6 +107,14 @@ struct BlockProofResponse {
     result: Vec<u8>,
 }
 
+#[derive(Default, Debug)]
+struct Cell {
+    block: usize,
+    row: u8,
+    col: u8,
+    proof: Vec<u8>,
+}
+
 async fn get_blockhash(block: usize) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
@@ -158,11 +167,28 @@ fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result<usi
     }
 }
 
+fn generate_random_cells(max_rows: u8, max_cols: u8, block: usize, count: u8) -> Vec<Cell> {
+    let mut rng = thread_rng();
+    let mut buf = Vec::new();
+    for _ in 0..count {
+        let row = rng.gen::<u8>() % max_rows;
+        let col = rng.gen::<u8>() % max_cols;
+        buf.push(Cell{block: block, row: row, col: col, ..Default::default()});
+    }
+    buf
+}
+
+fn generate_kate_query_payload(block: usize, cells: &Vec<Cell>) -> String {
+    let mut query = Vec::new();
+    for cell in cells {
+        query.push(format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col));
+    }
+    format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#, block, query.join(", "))
+}
+
 async fn get_kate_proof(block: usize) -> Result<(), String> {
-    let payload = format!(
-        r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{{"row": {}, "col": {}}}]]}}"#,
-        block, 0, 1
-    );
+    let mut cells = generate_random_cells(1, 4, block, 2);
+    let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
         .method(Method::POST)
         .uri("http://localhost:9999")
