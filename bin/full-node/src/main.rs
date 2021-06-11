@@ -186,6 +186,15 @@ fn generate_kate_query_payload(block: usize, cells: &Vec<Cell>) -> String {
     format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#, block, query.join(", "))
 }
 
+fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse) {
+    assert_eq!(80*cells.len(), proof.result.len());
+    for i in 0..cells.len() {
+        let mut v = Vec::new();
+        v.extend_from_slice(&proof.result[i*80..i*80+80]);
+        cells[i].proof = v;
+    }
+}
+
 async fn get_kate_proof(block: usize) -> Result<(), String> {
     let mut cells = generate_random_cells(1, 4, block, 2);
     let payload = generate_kate_query_payload(block, &cells);
@@ -199,7 +208,8 @@ async fn get_kate_proof(block: usize) -> Result<(), String> {
     let resp = client.request(req).await.unwrap();
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
-    println!("{:?}", proof);
+    fill_cells_with_proofs(&mut cells, &proof);
+    println!("{:?}", cells);
 
     Ok(())
 }
