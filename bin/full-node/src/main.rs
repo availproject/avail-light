@@ -99,6 +99,13 @@ struct Digest {
     logs: Vec<String>,
 }
 
+#[derive(Deserialize, Debug)]
+struct BlockProofResponse {
+    jsonrpc: String,
+    id: u32,
+    result: Vec<u8>,
+}
+
 async fn get_blockhash(block: usize) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
@@ -149,6 +156,26 @@ fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result<usi
     } else {
         Err("not available".to_owned())
     }
+}
+
+async fn get_kate_proof(block: usize) -> Result<(), String> {
+    let payload = format!(
+        r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{{"row": {}, "col": {}}}]]}}"#,
+        block, 0, 1
+    );
+    let req = hyper::Request::builder()
+        .method(Method::POST)
+        .uri("http://localhost:9999")
+        .header("Content-Type", "application/json")
+        .body(hyper::Body::from(payload))
+        .unwrap();
+    let client = hyper::Client::new();
+    let resp = client.request(req).await.unwrap();
+    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
+    println!("{:?}", proof);
+
+    Ok(())
 }
 
 fn main() {
