@@ -4,6 +4,7 @@ use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tide::Request;
+use std::env;
 
 pub type Store = Arc<Mutex<HashMap<usize, usize>>>;
 
@@ -80,6 +81,14 @@ pub struct Cell {
     proof: Vec<u8>,
 }
 
+fn get_full_node_url() -> String {
+    if let Ok(v) = env::var("FullNodeURL") {
+        v
+    } else {
+        "http://localhost:9999".to_owned()
+    }
+}
+
 pub async fn get_blockhash(block: usize) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
@@ -87,7 +96,7 @@ pub async fn get_blockhash(block: usize) -> Result<String, String> {
     );
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri("http://localhost:9999")
+        .uri(get_full_node_url())
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
@@ -105,7 +114,7 @@ pub async fn get_block_by_hash(hash: String) -> Result<(), String> {
     );
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri("http://localhost:9999")
+        .uri(get_full_node_url())
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
@@ -165,7 +174,7 @@ pub async fn get_kate_proof(block: usize) -> Result<(), String> {
     let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri("http://localhost:9999")
+        .uri(get_full_node_url())
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
