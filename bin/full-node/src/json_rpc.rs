@@ -2,7 +2,7 @@ use hyper;
 use rand::{thread_rng, Rng};
 use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tide::Request;
 use std::env;
 
@@ -81,6 +81,13 @@ pub struct Cell {
     pub proof: Vec<u8>,
 }
 
+
+#[derive(Hash, Eq, PartialEq)]
+pub struct MatrixCell {
+    row: u16,
+    col: u16,
+}
+
 fn get_full_node_url() -> String {
     if let Ok(v) = env::var("FullNodeURL") {
         v
@@ -155,13 +162,24 @@ pub fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result
     }
 }
 
-pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize, count: u8) -> Vec<Cell> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize) -> Vec<Cell> {
+    let count: u16 = if max_rows * max_cols < 8 { 
+        max_rows * max_cols
+    } else {
+        8
+    };
+    
     let mut rng = thread_rng();
-    let mut buf = Vec::new();
-    for _ in 0..count {
+    let mut indices = HashSet::new();
+    while (indices.len() as u16) < count {
         let row = rng.gen::<u16>() % max_rows;
         let col = rng.gen::<u16>() % max_cols;
-        buf.push(Cell{block: block, row: row, col: col, ..Default::default()});
+        indices.insert(MatrixCell{row: row, col: col});
+    }
+
+    let mut buf = Vec::new();
+    for index in indices {
+        buf.push(Cell{block: block, row: index.row, col: index.col, ..Default::default()});
     }
     buf
 }
@@ -184,7 +202,7 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 pub async fn get_kate_proof(block: usize, max_rows: u16, max_cols: u16) -> Result<Vec<Cell>, String> {
-    let mut cells = generate_random_cells(max_rows, max_cols, block, 2);
+    let mut cells = generate_random_cells(max_rows, max_cols, block);
     let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
