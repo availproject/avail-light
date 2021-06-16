@@ -38,14 +38,14 @@ pub struct RPCResult {
 #[derive(Deserialize, Debug)]
 pub struct Block {
     extrinsics: Vec<String>,
-    header: Header,
+    pub header: Header,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Header {
     number: String,
     #[serde(rename = "extrinsicsRoot")]
-    extrinsics_root: ExtrinsicsRoot,
+    pub extrinsics_root: ExtrinsicsRoot,
     #[serde(rename = "parentHash")]
     parent_hash: String,
     #[serde(rename = "stateRoot")]
@@ -55,10 +55,10 @@ pub struct Header {
 
 #[derive(Deserialize, Debug)]
 pub struct ExtrinsicsRoot {
-    cols: u16,
-    rows: u16,
+    pub cols: u16,
+    pub rows: u16,
     hash: String,
-    commitment: Vec<u8>,
+    pub commitment: Vec<u8>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -75,10 +75,10 @@ pub struct BlockProofResponse {
 
 #[derive(Default, Debug)]
 pub struct Cell {
-    block: usize,
-    row: u8,
-    col: u8,
-    proof: Vec<u8>,
+    pub block: usize,
+    pub row: u16,
+    pub col: u16,
+    pub proof: Vec<u8>,
 }
 
 fn get_full_node_url() -> String {
@@ -107,7 +107,7 @@ pub async fn get_blockhash(block: usize) -> Result<String, String> {
     Ok(r.result)
 }
 
-pub async fn get_block_by_hash(hash: String) -> Result<(), String> {
+pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#,
         hash
@@ -122,14 +122,12 @@ pub async fn get_block_by_hash(hash: String) -> Result<(), String> {
     let resp = client.request(req).await.unwrap();
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let b: BlockResponse = serde_json::from_slice(&body).unwrap();
-    println!("{:?}", b);
-    Ok(())
+    Ok(b.result.block)
 }
 
-pub async fn get_block_by_number(block: usize) -> Result<(), String> {
+pub async fn get_block_by_number(block: usize) -> Result<Block, String> {
     let hash = get_blockhash(block).await.unwrap();
-    let _ = get_block_by_hash(hash).await.unwrap();
-    Ok(())
+    Ok(get_block_by_hash(hash).await.unwrap())
 }
 
 pub fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result<usize, String> {
@@ -141,12 +139,12 @@ pub fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result
     }
 }
 
-pub fn generate_random_cells(max_rows: u8, max_cols: u8, block: usize, count: u8) -> Vec<Cell> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize, count: u8) -> Vec<Cell> {
     let mut rng = thread_rng();
     let mut buf = Vec::new();
     for _ in 0..count {
-        let row = rng.gen::<u8>() % max_rows;
-        let col = rng.gen::<u8>() % max_cols;
+        let row = rng.gen::<u16>() % max_rows;
+        let col = rng.gen::<u16>() % max_cols;
         buf.push(Cell{block: block, row: row, col: col, ..Default::default()});
     }
     buf
@@ -169,8 +167,8 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
     }
 }
 
-pub async fn get_kate_proof(block: usize) -> Result<(), String> {
-    let mut cells = generate_random_cells(1, 4, block, 2);
+pub async fn get_kate_proof(block: usize, max_rows: u16, max_cols: u16) -> Result<Vec<Cell>, String> {
+    let mut cells = generate_random_cells(max_rows, max_cols, block, 2);
     let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
@@ -183,7 +181,5 @@ pub async fn get_kate_proof(block: usize) -> Result<(), String> {
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
     fill_cells_with_proofs(&mut cells, &proof);
-    println!("{:?}", cells);
-
-    Ok(())
+    Ok(cells)
 }

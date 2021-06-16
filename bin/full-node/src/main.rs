@@ -17,7 +17,6 @@
 
 #![recursion_limit = "1024"]
 #![deny(broken_intra_doc_links)]
-#![deny(unused_crate_dependencies)]
 
 use ::futures::{channel::oneshot, prelude::*};
 use smoldot::{
@@ -42,9 +41,10 @@ use tide::{Body, Request};
 use tracing::Instrument as _;
 
 mod cli;
-mod network_service;
-mod sync_service;
 mod json_rpc;
+mod network_service;
+mod proof_verification;
+mod sync_service;
 
 fn main() {
     ::futures::executor::block_on(async_main())
@@ -300,19 +300,34 @@ async fn async_main() {
         app.at("/v1/confidence/:block")
             .get(|req: Request<json_rpc::Store>| async move {
                 let block: usize = req.param("block")?.parse().unwrap_or(0);
-                let mut factor = 0;
                 match json_rpc::get_if_confidence_available(&req, block) {
                     Ok(v) => {
-                        factor = v;
+                        let conf = json_rpc::Confidence {
+                            block: block,
+                            factor: v,
+                        };
+                        return Body::from_json(&conf);
                     }
                     Err(e) => {
-                        println!("Error in lookup : {}", e);
+                        println!("No confidence found : {}", e);
+                        let _block = json_rpc::get_block_by_number(block).await.unwrap();
+                        let max_rows = _block.header.extrinsics_root.rows;
+                        let max_cols = _block.header.extrinsics_root.cols;
+                        let _cells = json_rpc::get_kate_proof(block, max_rows, max_cols)
+                            .await
+                            .unwrap();
+                        let count = proof_verification::verify_proof(
+                            max_rows,
+                            max_cols,
+                            &_cells,
+                            &_block.header.extrinsics_root.commitment,
+                        );
+                        println!("Successful proof verification {} times", count);
                     }
                 }
-                let _ = json_rpc::get_block_by_number(block).await.unwrap();
                 let conf = json_rpc::Confidence {
                     block: block,
-                    factor: factor,
+                    factor: 10,
                 };
                 Body::from_json(&conf)
             });

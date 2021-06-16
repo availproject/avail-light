@@ -1204,6 +1204,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
+name = "dusk-bls12_381"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a508bb2fece7b19a8cd95cca4d1ec7465aa2f5784286bbdb006ec853918b80f9"
+dependencies = [
+ "byteorder",
+ "rand_core 0.5.1",
+ "rayon",
+ "serde",
+ "subtle",
+]
+
+[[package]]
+name = "dusk-jubjub"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7572d18c38b1f00be3a17e89e5ec094e5c60197d2baedf5d45899e3116fea28"
+dependencies = [
+ "blake2",
+ "dusk-bls12_381",
+ "rand_core 0.5.1",
+ "subtle",
+]
+
+[[package]]
+name = "dusk-plonk"
+version = "0.3.5"
+source = "git+https://github.com/dusk-network/plonk?tag=v0.3.5#36ee6cb1dd8973d7bccddcad688a8d7eec2fbb9f"
+dependencies = [
+ "anyhow",
+ "dusk-bls12_381",
+ "dusk-jubjub",
+ "itertools 0.9.0",
+ "merlin 2.0.1",
+ "rand 0.7.3",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
+ "rayon",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "ed25519-zebra"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1906,6 +1949,18 @@ name = "memory_units"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d96e3f3c0b6325d8ccd83c33b28acb183edcb6c67938ba104ec546854b0882"
+
+[[package]]
+name = "merlin"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e261cf0f8b3c42ded9f7d2bb59dea03aa52bc8a1cbc7482f9fc3fd1229d3b42"
+dependencies = [
+ "byteorder",
+ "keccak",
+ "rand_core 0.5.1",
+ "zeroize",
+]
 
 [[package]]
 name = "merlin"
@@ -2758,7 +2813,7 @@ dependencies = [
  "arrayref",
  "arrayvec 0.5.2",
  "curve25519-dalek-ng",
- "merlin",
+ "merlin 3.0.0",
  "rand_core 0.6.2",
  "sha2",
  "subtle-ng",
@@ -2987,7 +3042,7 @@ dependencies = [
  "hashbrown 0.11.2",
  "hex",
  "libsecp256k1",
- "merlin",
+ "merlin 3.0.0",
  "multihash",
  "nom",
  "num-bigint",
@@ -3027,6 +3082,7 @@ dependencies = [
  "ctrlc",
  "derive_more",
  "directories",
+ "dusk-plonk",
  "ed25519-zebra",
  "fnv",
  "futures",
