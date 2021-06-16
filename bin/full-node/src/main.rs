@@ -87,12 +87,20 @@ struct Block {
 struct Header {
     number: String,
     #[serde(rename = "extrinsicsRoot")]
-    extrinsics_root: String,
+    extrinsics_root: ExtrinsicsRoot,
     #[serde(rename = "parentHash")]
     parent_hash: String,
     #[serde(rename = "stateRoot")]
     state_root: String,
     digest: Digest,
+}
+
+#[derive(Deserialize, Debug)]
+struct ExtrinsicsRoot {
+    cols: u16,
+    rows: u16,
+    hash: String,
+    commitment: Vec<u8>,
 }
 
 #[derive(Deserialize, Debug)]
