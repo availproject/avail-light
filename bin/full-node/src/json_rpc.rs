@@ -89,6 +89,22 @@ fn get_full_node_url() -> String {
     }
 }
 
+pub fn get_host() -> String {
+    if let Ok(v) = env::var("Host") {
+        v
+    } else {
+        "127.0.0.1".to_owned()
+    }
+}
+
+pub fn get_port() -> u16 {
+    if let Ok(v) = env::var("Port") {
+        v.parse::<u16>().unwrap()
+    } else {
+        7000
+    }
+}
+
 pub async fn get_blockhash(block: usize) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,

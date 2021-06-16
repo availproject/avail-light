@@ -332,7 +332,7 @@ async fn async_main() {
                 Body::from_json(&conf)
             });
 
-        if let Err(e) = app.listen("127.0.0.1:7000").await {
+        if let Err(e) = app.listen(format!("{}:{}", json_rpc::get_host(), json_rpc::get_port())).await {
             println!("{}", e);
         }
     };
