@@ -38,7 +38,7 @@ std = [
 # Before adding a crate here, please make sure that it is `no_std`-compatible. If a crate should
 # theoretically be `no_std`-compatible (i.e. doesn't need the help of the operating system) but is
 # not, or if things are sketchy, please leave a comment next to it.
-ahash = { version = "0.6.2", default-features = false }
+ahash = { version = "0.7.4", default-features = false }
 arrayvec = { version = "0.7.1", default-features = false }
 blake2-rfc = { version = "0.2.18", default-features = false }
 bs58 = { version = "0.4.0", default-features = false, features = ["alloc"] }
