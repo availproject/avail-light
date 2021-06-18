@@ -1,10 +1,12 @@
 use hyper;
+use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
-use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use tide::Request;
 use std::env;
+use std::sync::{Arc, Mutex};
+use tide::Request;
 
 pub type Store = Arc<Mutex<HashMap<usize, usize>>>;
 
@@ -81,7 +83,6 @@ pub struct Cell {
     pub proof: Vec<u8>,
 }
 
-
 #[derive(Hash, Eq, PartialEq)]
 pub struct MatrixCell {
     row: u16,
@@ -94,6 +95,11 @@ fn get_full_node_url() -> String {
     } else {
         "http://localhost:9999".to_owned()
     }
+}
+
+fn is_secure(url: &str) -> bool {
+    let re = Regex::new(r"^https://.*").unwrap();
+    re.is_match(url)
 }
 
 pub fn get_host() -> String {
@@ -123,8 +129,14 @@ pub async fn get_blockhash(block: usize) -> Result<String, String> {
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let client = hyper::Client::new();
-    let resp = client.request(req).await.unwrap();
+    let resp = if is_secure(&get_full_node_url()) {
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        client.request(req).await.unwrap()
+    } else {
+        let client = hyper::Client::new();
+        client.request(req).await.unwrap()
+    };
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let r: BlockHashResponse = serde_json::from_slice(&body).unwrap();
     Ok(r.result)
@@ -141,8 +153,14 @@ pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let client = hyper::Client::new();
-    let resp = client.request(req).await.unwrap();
+    let resp = if is_secure(&get_full_node_url()) {
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        client.request(req).await.unwrap()
+    } else {
+        let client = hyper::Client::new();
+        client.request(req).await.unwrap()
+    };
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let b: BlockResponse = serde_json::from_slice(&body).unwrap();
     Ok(b.result.block)
@@ -163,23 +181,27 @@ pub fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result
 }
 
 pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize) -> Vec<Cell> {
-    let count: u16 = if max_rows * max_cols < 8 { 
+    let count: u16 = if max_rows * max_cols < 8 {
         max_rows * max_cols
     } else {
         8
     };
-    
     let mut rng = thread_rng();
     let mut indices = HashSet::new();
     while (indices.len() as u16) < count {
         let row = rng.gen::<u16>() % max_rows;
         let col = rng.gen::<u16>() % max_cols;
-        indices.insert(MatrixCell{row: row, col: col});
+        indices.insert(MatrixCell { row: row, col: col });
     }
 
     let mut buf = Vec::new();
     for index in indices {
-        buf.push(Cell{block: block, row: index.row, col: index.col, ..Default::default()});
+        buf.push(Cell {
+            block: block,
+            row: index.row,
+            col: index.col,
+            ..Default::default()
+        });
     }
     buf
 }
@@ -189,19 +211,27 @@ pub fn generate_kate_query_payload(block: usize, cells: &Vec<Cell>) -> String {
     for cell in cells {
         query.push(format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col));
     }
-    format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#, block, query.join(", "))
+    format!(
+        r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
+        block,
+        query.join(", ")
+    )
 }
 
 pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse) {
-    assert_eq!(80*cells.len(), proof.result.len());
+    assert_eq!(80 * cells.len(), proof.result.len());
     for i in 0..cells.len() {
         let mut v = Vec::new();
-        v.extend_from_slice(&proof.result[i*80..i*80+80]);
+        v.extend_from_slice(&proof.result[i * 80..i * 80 + 80]);
         cells[i].proof = v;
     }
 }
 
-pub async fn get_kate_proof(block: usize, max_rows: u16, max_cols: u16) -> Result<Vec<Cell>, String> {
+pub async fn get_kate_proof(
+    block: usize,
+    max_rows: u16,
+    max_cols: u16,
+) -> Result<Vec<Cell>, String> {
     let mut cells = generate_random_cells(max_rows, max_cols, block);
     let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
@@ -210,8 +240,14 @@ pub async fn get_kate_proof(block: usize, max_rows: u16, max_cols: u16) -> Resul
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let client = hyper::Client::new();
-    let resp = client.request(req).await.unwrap();
+    let resp = if is_secure(&get_full_node_url()) {
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        client.request(req).await.unwrap()
+    } else {
+        let client = hyper::Client::new();
+        client.request(req).await.unwrap()
+    };
     let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
     let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
     fill_cells_with_proofs(&mut cells, &proof);
