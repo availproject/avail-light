@@ -19,6 +19,8 @@
 #![deny(broken_intra_doc_links)]
 
 use ::futures::{channel::oneshot, prelude::*};
+use hyper::service::Service;
+use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use smoldot::{
     chain, chain_spec,
     database::full_sqlite,
@@ -32,12 +34,14 @@ use std::{
     convert::TryFrom as _,
     fs, io, iter,
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
     thread,
     time::Duration,
 };
 use structopt::StructOpt as _;
-use tide::{Body, Request};
+use tokio;
 use tracing::Instrument as _;
 
 mod cli;
@@ -46,11 +50,119 @@ mod network_service;
 mod proof_verification;
 mod sync_service;
 
+/*
 fn main() {
     ::futures::executor::block_on(async_main())
 }
+*/
 
-async fn async_main() {
+struct Svc {
+    store: json_rpc::Store,
+}
+
+impl Service<Request<Body>> for Svc {
+    type Response = Response<Body>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
+            Ok(Response::builder().body(Body::from(s)).unwrap())
+        }
+
+        let res = match (req.method(), req.uri().path()) {
+            (&Method::GET, "/v1/confidence") => mk_response("hello !".to_owned()),
+            _ => {
+                let mut not_found = Response::default();
+                *not_found.status_mut() = StatusCode::NOT_FOUND;
+                Ok(not_found)
+            }
+        };
+
+        Box::pin(async { res })
+    }
+}
+
+struct MakeSvc {
+    store: json_rpc::Store,
+}
+
+impl<T> Service<T> for MakeSvc {
+    type Response = Svc;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _: T) -> Self::Future {
+        let store = self.store.clone();
+        let fut = async move { Ok(Svc { store }) };
+        Box::pin(fut)
+    }
+}
+
+#[tokio::main]
+async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let store: json_rpc::Store = Arc::new(Mutex::new(HashMap::new()));
+    // let addr = format!("{}:{}", json_rpc::get_host(), json_rpc::get_port());
+    let addr = ([127, 0, 0, 1], json_rpc::get_port()).into();
+    let server = Server::bind(&addr).serve(MakeSvc { store });
+    println!(
+        "Listening on {}:{}",
+        json_rpc::get_host(),
+        json_rpc::get_port()
+    );
+    server.await?;
+    /*
+    let mut app = tide::with_state(store);
+    app.at("/v1/confidence/:block")
+        .get(|req: Request<json_rpc::Store>| async move {
+            let block: usize = req.param("block")?.parse().unwrap_or(0);
+            match json_rpc::get_if_confidence_available(&req, block) {
+                Ok(v) => {
+                    let conf = json_rpc::Confidence {
+                        block: block,
+                        factor: v,
+                    };
+                    return Body::from_json(&conf);
+                }
+                Err(e) => {
+                    println!("No confidence found : {}", e);
+                    let _block = json_rpc::get_block_by_number(block).await.unwrap();
+                    let max_rows = _block.header.extrinsics_root.rows;
+                    let max_cols = _block.header.extrinsics_root.cols;
+                    println!("{}, {}", max_rows, max_cols);
+                    let _cells = json_rpc::get_kate_proof(block, max_rows, max_cols)
+                        .await
+                        .unwrap();
+                    println!("{:?}", _cells);
+                    let count = proof_verification::verify_proof(
+                        max_rows,
+                        max_cols,
+                        &_cells,
+                        &_block.header.extrinsics_root.commitment,
+                    );
+                    println!("Successful proof verification {} times", count);
+                }
+            }
+            let conf = json_rpc::Confidence {
+                block: block,
+                factor: 10,
+            };
+            Body::from_json(&conf)
+        });
+    */
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() {
     let cli_options = cli::CliOptions::from_args();
 
     // Setup the logging system of the binary.
@@ -294,49 +406,11 @@ async fn async_main() {
         None
     };
 
-    let http_server = async {
-        let store: json_rpc::Store = Arc::new(Mutex::new(HashMap::new()));
-        let mut app = tide::with_state(store);
-        app.at("/v1/confidence/:block")
-            .get(|req: Request<json_rpc::Store>| async move {
-                let block: usize = req.param("block")?.parse().unwrap_or(0);
-                match json_rpc::get_if_confidence_available(&req, block) {
-                    Ok(v) => {
-                        let conf = json_rpc::Confidence {
-                            block: block,
-                            factor: v,
-                        };
-                        return Body::from_json(&conf);
-                    }
-                    Err(e) => {
-                        println!("No confidence found : {}", e);
-                        let _block = json_rpc::get_block_by_number(block).await.unwrap();
-                        let max_rows = _block.header.extrinsics_root.rows;
-                        let max_cols = _block.header.extrinsics_root.cols;
-                        let _cells = json_rpc::get_kate_proof(block, max_rows, max_cols)
-                            .await
-                            .unwrap();
-                        let count = proof_verification::verify_proof(
-                            max_rows,
-                            max_cols,
-                            &_cells,
-                            &_block.header.extrinsics_root.commitment,
-                        );
-                        println!("Successful proof verification {} times", count);
-                    }
-                }
-                let conf = json_rpc::Confidence {
-                    block: block,
-                    factor: 10,
-                };
-                Body::from_json(&conf)
-            });
-
-        if let Err(e) = app.listen(format!("{}:{}", json_rpc::get_host(), json_rpc::get_port())).await {
-            println!("{}", e);
-        }
-    };
-    threads_pool.spawn_ok(http_server);
+    thread::spawn(|| {
+        let _ = run_server();
+    })
+    .join()
+    .expect("http server failed !");
 
     /*let mut telemetry = {
         let endpoints = chain_spec
