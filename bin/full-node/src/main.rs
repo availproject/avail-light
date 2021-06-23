@@ -21,6 +21,7 @@
 use ::futures::{channel::oneshot, prelude::*};
 use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use regex::Regex;
 use smoldot::{
     chain, chain_spec,
     database::full_sqlite,
@@ -56,6 +57,16 @@ fn main() {
 }
 */
 
+fn match_url(path: &str) -> Result<u32, String> {
+    let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
+    if let Some(caps) = re.captures(path) {
+        if let Some(block) = caps.get(2) {
+            return Ok(block.as_str().parse::<u32>().unwrap());
+        }
+    }
+    Err("no match found !".to_owned())
+}
+
 struct Svc {
     store: json_rpc::Store,
 }
@@ -70,20 +81,66 @@ impl Service<Request<Body>> for Svc {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
-            Ok(Response::builder().body(Body::from(s)).unwrap())
+        fn mk_response(s: String, code: u16) -> Result<Response<Body>, hyper::Error> {
+            Ok(Response::builder().status(code).header("Content-Type", "application/json").body(Body::from(s)).unwrap())
         }
 
-        let res = match (req.method(), req.uri().path()) {
-            (&Method::GET, "/v1/confidence") => mk_response("hello !".to_owned()),
-            _ => {
-                let mut not_found = Response::default();
-                *not_found.status_mut() = StatusCode::NOT_FOUND;
-                Ok(not_found)
+        fn get_confidence(db: &json_rpc::Store, block: u32) -> Result<u8, String> {
+            let handle = db.lock().unwrap();
+            if let Some(count) = handle.get(&block) {
+                Ok(*count)
+            } else {
+                Err("not available".to_owned())
             }
-        };
+        }
 
-        Box::pin(async { res })
+        fn set_confidence(db: &mut json_rpc::Store, block: u32, count: u8) {
+            let mut handle = db.lock().unwrap();
+            handle.insert(block, count);
+        }
+
+        let mut db = self.store.clone();
+        Box::pin(async move {
+            let res = match req.method() {
+                &Method::GET => {
+                    if let Ok(block_num) = match_url(req.uri().path()) {
+                        let count = match get_confidence(&db, block_num) {
+                            Ok(count) => {
+                                count
+                            }
+                            Err(_e) => {
+                                let block = json_rpc::get_block_by_number(block_num).await.unwrap();
+                                let max_rows = block.header.extrinsics_root.rows;
+                                let max_cols = block.header.extrinsics_root.cols;
+                                let cells =
+                                    json_rpc::get_kate_proof(block_num, max_rows, max_cols)
+                                        .await
+                                        .unwrap();
+                                let count = proof_verification::verify_proof(
+                                    max_rows,
+                                    max_cols,
+                                    &cells,
+                                    &block.header.extrinsics_root.commitment,
+                                );
+                                set_confidence(&mut db, block_num, count);
+                                count
+                            }
+                        };
+                        mk_response(format!(r#"{{"block": {}, "confidence": {}}}"#, block_num, count).to_owned(), 200)
+                    } else {
+                        let mut not_found = Response::default();
+                        *not_found.status_mut() = StatusCode::NOT_FOUND;
+                        Ok(not_found)
+                    }
+                }
+                _ => {
+                    let mut not_found = Response::default();
+                    *not_found.status_mut() = StatusCode::NOT_FOUND;
+                    Ok(not_found)
+                }
+            };
+            res
+        })
     }
 }
 

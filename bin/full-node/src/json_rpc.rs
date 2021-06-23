@@ -6,9 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::{Arc, Mutex};
-use tide::Request;
 
-pub type Store = Arc<Mutex<HashMap<usize, usize>>>;
+pub type Store = Arc<Mutex<HashMap<u32, u8>>>;
 
 #[derive(Deserialize, Serialize)]
 pub struct Confidence {
@@ -77,7 +76,7 @@ pub struct BlockProofResponse {
 
 #[derive(Default, Debug)]
 pub struct Cell {
-    pub block: usize,
+    pub block: u32,
     pub row: u16,
     pub col: u16,
     pub proof: Vec<u8>,
@@ -118,7 +117,7 @@ pub fn get_port() -> u16 {
     }
 }
 
-pub async fn get_blockhash(block: usize) -> Result<String, String> {
+pub async fn get_blockhash(block: u32) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
         block
@@ -166,21 +165,12 @@ pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
     Ok(b.result.block)
 }
 
-pub async fn get_block_by_number(block: usize) -> Result<Block, String> {
+pub async fn get_block_by_number(block: u32) -> Result<Block, String> {
     let hash = get_blockhash(block).await.unwrap();
     Ok(get_block_by_hash(hash).await.unwrap())
 }
 
-pub fn get_if_confidence_available(req: &Request<Store>, block: usize) -> Result<usize, String> {
-    let handle = req.state().lock().unwrap();
-    if let Some(v) = handle.get(&block) {
-        Ok(*v)
-    } else {
-        Err("not available".to_owned())
-    }
-}
-
-pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize) -> Vec<Cell> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u32) -> Vec<Cell> {
     let count: u16 = if max_rows * max_cols < 8 {
         max_rows * max_cols
     } else {
@@ -206,7 +196,7 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: usize) -> Vec<
     buf
 }
 
-pub fn generate_kate_query_payload(block: usize, cells: &Vec<Cell>) -> String {
+pub fn generate_kate_query_payload(block: u32, cells: &Vec<Cell>) -> String {
     let mut query = Vec::new();
     for cell in cells {
         query.push(format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col));
@@ -228,7 +218,7 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 pub async fn get_kate_proof(
-    block: usize,
+    block: u32,
     max_rows: u16,
     max_cols: u16,
 ) -> Result<Vec<Cell>, String> {
