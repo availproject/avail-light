@@ -20,6 +20,7 @@
 
 use ::futures::{channel::oneshot, prelude::*};
 use hyper::service::Service;
+use hyper::header::{ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use regex::Regex;
 use smoldot::{
@@ -39,11 +40,12 @@ use std::{
     sync::{Arc, Mutex},
     task::{Context, Poll},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use structopt::StructOpt as _;
 use tokio;
 use tracing::Instrument as _;
+use chrono::{Local, DateTime};
 
 mod cli;
 mod json_rpc;
@@ -82,7 +84,7 @@ impl Service<Request<Body>> for Svc {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         fn mk_response(s: String, code: u16) -> Result<Response<Body>, hyper::Error> {
-            Ok(Response::builder().status(code).header("Content-Type", "application/json").body(Body::from(s)).unwrap())
+            Ok(Response::builder().status(code).header(ACCESS_CONTROL_ALLOW_ORIGIN, "*").header("Content-Type", "application/json").body(Body::from(s)).unwrap())
         }
 
         fn get_confidence(db: &json_rpc::Store, block: u32) -> Result<u8, String> {
@@ -94,10 +96,17 @@ impl Service<Request<Body>> for Svc {
             }
         }
 
+        fn calculate_confidence(count: u8) -> f64 {
+            100f64 * (1f64 - 1f64 / 2u32.pow(count as u32) as f64)
+        }
+
         fn set_confidence(db: &mut json_rpc::Store, block: u32, count: u8) {
             let mut handle = db.lock().unwrap();
             handle.insert(block, count);
         }
+
+        let local_tm: DateTime<Local> = Local::now();
+        println!("⚡️ {} | {} | {}", local_tm.to_rfc2822(), req.method(), req.uri().path());
 
         let mut db = self.store.clone();
         Box::pin(async move {
@@ -109,6 +118,7 @@ impl Service<Request<Body>> for Svc {
                                 count
                             }
                             Err(_e) => {
+                                let begin = Instant::now();
                                 let block = json_rpc::get_block_by_number(block_num).await.unwrap();
                                 let max_rows = block.header.extrinsics_root.rows;
                                 let max_cols = block.header.extrinsics_root.cols;
@@ -122,20 +132,23 @@ impl Service<Request<Body>> for Svc {
                                     &cells,
                                     &block.header.extrinsics_root.commitment,
                                 );
+                                println!("✅ Completed {} rounds of verification for #{} in {:?}", count, block_num, begin.elapsed());
                                 set_confidence(&mut db, block_num, count);
                                 count
                             }
                         };
-                        mk_response(format!(r#"{{"block": {}, "confidence": {}}}"#, block_num, count).to_owned(), 200)
+                        mk_response(format!(r#"{{"block": {}, "confidence": {}}}"#, block_num, calculate_confidence(count)).to_owned(), 200)
                     } else {
                         let mut not_found = Response::default();
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
+                        not_found.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
                         Ok(not_found)
                     }
                 }
                 _ => {
                     let mut not_found = Response::default();
                     *not_found.status_mut() = StatusCode::NOT_FOUND;
+                    not_found.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
                     Ok(not_found)
                 }
             };
