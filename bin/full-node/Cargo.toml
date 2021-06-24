@@ -40,3 +40,4 @@ dusk-plonk = { git = "https://github.com/dusk-network/plonk", tag = "v0.3.5" }
 hyper-tls = "0.5"
 regex = "1.5"
 chrono = "0.4.19"
+num = "0.4"

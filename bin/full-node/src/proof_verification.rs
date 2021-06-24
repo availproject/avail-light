@@ -720,11 +720,11 @@ pub fn verify_proof(
     total_cols: u16,
     cells: &Vec<Cell>,
     commitment: &Vec<u8>
-) -> u8 {
-    let mut count: u8 = 0;
+) -> u32 {
+    let mut count: u32 = 0;
 
     for cell in cells {
-        let block = cell.block.try_into().unwrap();
+        let block = cell.block;
         let row = cell.row;
         let col = cell.col;
         let _proof = &cell.proof;

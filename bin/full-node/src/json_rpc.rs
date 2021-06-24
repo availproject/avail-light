@@ -7,13 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::{Arc, Mutex};
 
-pub type Store = Arc<Mutex<HashMap<u32, u8>>>;
-
-#[derive(Deserialize, Serialize)]
-pub struct Confidence {
-    pub block: usize,
-    pub factor: usize,
-}
+pub type Store = Arc<Mutex<HashMap<u64, u32>>>;
 
 #[derive(Deserialize, Debug)]
 pub struct BlockHashResponse {
@@ -76,7 +70,7 @@ pub struct BlockProofResponse {
 
 #[derive(Default, Debug)]
 pub struct Cell {
-    pub block: u32,
+    pub block: u64,
     pub row: u16,
     pub col: u16,
     pub proof: Vec<u8>,
@@ -117,7 +111,7 @@ pub fn get_port() -> u16 {
     }
 }
 
-pub async fn get_blockhash(block: u32) -> Result<String, String> {
+pub async fn get_blockhash(block: u64) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
         block
@@ -165,12 +159,12 @@ pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
     Ok(b.result.block)
 }
 
-pub async fn get_block_by_number(block: u32) -> Result<Block, String> {
+pub async fn get_block_by_number(block: u64) -> Result<Block, String> {
     let hash = get_blockhash(block).await.unwrap();
     Ok(get_block_by_hash(hash).await.unwrap())
 }
 
-pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u32) -> Vec<Cell> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Cell> {
     let count: u16 = if max_rows * max_cols < 8 {
         max_rows * max_cols
     } else {
@@ -196,7 +190,7 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u32) -> Vec<Ce
     buf
 }
 
-pub fn generate_kate_query_payload(block: u32, cells: &Vec<Cell>) -> String {
+pub fn generate_kate_query_payload(block: u64, cells: &Vec<Cell>) -> String {
     let mut query = Vec::new();
     for cell in cells {
         query.push(format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col));
@@ -218,7 +212,7 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 pub async fn get_kate_proof(
-    block: u32,
+    block: u64,
     max_rows: u16,
     max_cols: u16,
 ) -> Result<Vec<Cell>, String> {

@@ -46,6 +46,7 @@ use structopt::StructOpt as _;
 use tokio;
 use tracing::Instrument as _;
 use chrono::{Local, DateTime};
+use num::{FromPrimitive, BigUint};
 
 mod cli;
 mod json_rpc;
@@ -59,11 +60,11 @@ fn main() {
 }
 */
 
-fn match_url(path: &str) -> Result<u32, String> {
+fn match_url(path: &str) -> Result<u64, String> {
     let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
     if let Some(caps) = re.captures(path) {
         if let Some(block) = caps.get(2) {
-            return Ok(block.as_str().parse::<u32>().unwrap());
+            return Ok(block.as_str().parse::<u64>().unwrap());
         }
     }
     Err("no match found !".to_owned())
@@ -83,11 +84,11 @@ impl Service<Request<Body>> for Svc {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
-        fn mk_response(s: String, code: u16) -> Result<Response<Body>, hyper::Error> {
-            Ok(Response::builder().status(code).header(ACCESS_CONTROL_ALLOW_ORIGIN, "*").header("Content-Type", "application/json").body(Body::from(s)).unwrap())
+        fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
+            Ok(Response::builder().status(200).header(ACCESS_CONTROL_ALLOW_ORIGIN, "*").header("Content-Type", "application/json").body(Body::from(s)).unwrap())
         }
 
-        fn get_confidence(db: &json_rpc::Store, block: u32) -> Result<u8, String> {
+        fn get_confidence(db: &json_rpc::Store, block: u64) -> Result<u32, String> {
             let handle = db.lock().unwrap();
             if let Some(count) = handle.get(&block) {
                 Ok(*count)
@@ -96,11 +97,18 @@ impl Service<Request<Body>> for Svc {
             }
         }
 
-        fn calculate_confidence(count: u8) -> f64 {
-            100f64 * (1f64 - 1f64 / 2u32.pow(count as u32) as f64)
+        fn calculate_confidence(count: u32) -> f64 {
+            100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
         }
 
-        fn set_confidence(db: &mut json_rpc::Store, block: u32, count: u8) {
+        fn serialised_confidence(block: u64, factor: f64) -> String {
+            let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
+            let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
+            let _shifted: BigUint = _block << 32 | _factor;
+            _shifted.to_str_radix(10)
+        }
+
+        fn set_confidence(db: &mut json_rpc::Store, block: u64, count: u32) {
             let mut handle = db.lock().unwrap();
             handle.insert(block, count);
         }
@@ -137,7 +145,9 @@ impl Service<Request<Body>> for Svc {
                                 count
                             }
                         };
-                        mk_response(format!(r#"{{"block": {}, "confidence": {}}}"#, block_num, calculate_confidence(count)).to_owned(), 200)
+                        let conf = calculate_confidence(count);
+                        let serialised_conf = serialised_confidence(block_num, conf);
+                        mk_response(format!(r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#, block_num, conf, serialised_conf).to_owned())
                     } else {
                         let mut not_found = Response::default();
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
