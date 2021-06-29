@@ -364,7 +364,7 @@ fn start_sync(
                                 }
                                 all::BlockVerification::Success {
                                     sync: sync_out,
-                                    is_new_best,
+                                    is_new_best: _,
                                     next_actions,
                                     ..
                                 } => {

@@ -19,9 +19,11 @@
 #![deny(broken_intra_doc_links)]
 
 use ::futures::{channel::oneshot, prelude::*};
+use chrono::{DateTime, Local};
+use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 use hyper::service::Service;
-use hyper::header::{ACCESS_CONTROL_ALLOW_ORIGIN};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use num::{BigUint, FromPrimitive};
 use regex::Regex;
 use smoldot::{
     chain, chain_spec,
@@ -45,8 +47,6 @@ use std::{
 use structopt::StructOpt as _;
 use tokio;
 use tracing::Instrument as _;
-use chrono::{Local, DateTime};
-use num::{FromPrimitive, BigUint};
 
 mod cli;
 mod json_rpc;
@@ -54,27 +54,11 @@ mod network_service;
 mod proof_verification;
 mod sync_service;
 
-/*
-fn main() {
-    ::futures::executor::block_on(async_main())
-}
-*/
-
-fn match_url(path: &str) -> Result<u64, String> {
-    let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
-    if let Some(caps) = re.captures(path) {
-        if let Some(block) = caps.get(2) {
-            return Ok(block.as_str().parse::<u64>().unwrap());
-        }
-    }
-    Err("no match found !".to_owned())
-}
-
-struct Svc {
+struct Handler {
     store: json_rpc::Store,
 }
 
-impl Service<Request<Body>> for Svc {
+impl Service<Request<Body>> for Handler {
     type Response = Response<Body>;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -84,8 +68,23 @@ impl Service<Request<Body>> for Svc {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        fn match_url(path: &str) -> Result<u64, String> {
+            let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
+            if let Some(caps) = re.captures(path) {
+                if let Some(block) = caps.get(2) {
+                    return Ok(block.as_str().parse::<u64>().unwrap());
+                }
+            }
+            Err("no match found !".to_owned())
+        }
+
         fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
-            Ok(Response::builder().status(200).header(ACCESS_CONTROL_ALLOW_ORIGIN, "*").header("Content-Type", "application/json").body(Body::from(s)).unwrap())
+            Ok(Response::builder()
+                .status(200)
+                .header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .header("Content-Type", "application/json")
+                .body(Body::from(s))
+                .unwrap())
         }
 
         fn get_confidence(db: &json_rpc::Store, block: u64) -> Result<u32, String> {
@@ -103,7 +102,8 @@ impl Service<Request<Body>> for Svc {
 
         fn serialised_confidence(block: u64, factor: f64) -> String {
             let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
-            let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
+            let _factor: BigUint =
+                FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
             let _shifted: BigUint = _block << 32 | _factor;
             _shifted.to_str_radix(10)
         }
@@ -114,7 +114,12 @@ impl Service<Request<Body>> for Svc {
         }
 
         let local_tm: DateTime<Local> = Local::now();
-        println!("⚡️ {} | {} | {}", local_tm.to_rfc2822(), req.method(), req.uri().path());
+        println!(
+            "⚡️ {} | {} | {}",
+            local_tm.to_rfc2822(),
+            req.method(),
+            req.uri().path()
+        );
 
         let mut db = self.store.clone();
         Box::pin(async move {
@@ -122,43 +127,55 @@ impl Service<Request<Body>> for Svc {
                 &Method::GET => {
                     if let Ok(block_num) = match_url(req.uri().path()) {
                         let count = match get_confidence(&db, block_num) {
-                            Ok(count) => {
-                                count
-                            }
+                            Ok(count) => count,
                             Err(_e) => {
                                 let begin = Instant::now();
                                 let block = json_rpc::get_block_by_number(block_num).await.unwrap();
                                 let max_rows = block.header.extrinsics_root.rows;
                                 let max_cols = block.header.extrinsics_root.cols;
-                                let cells =
-                                    json_rpc::get_kate_proof(block_num, max_rows, max_cols)
-                                        .await
-                                        .unwrap();
+                                let cells = json_rpc::get_kate_proof(block_num, max_rows, max_cols)
+                                    .await
+                                    .unwrap();
                                 let count = proof_verification::verify_proof(
                                     max_rows,
                                     max_cols,
                                     &cells,
                                     &block.header.extrinsics_root.commitment,
                                 );
-                                println!("✅ Completed {} rounds of verification for #{} in {:?}", count, block_num, begin.elapsed());
+                                println!(
+                                    "✅ Completed {} rounds of verification for #{} in {:?}",
+                                    count,
+                                    block_num,
+                                    begin.elapsed()
+                                );
                                 set_confidence(&mut db, block_num, count);
                                 count
                             }
                         };
                         let conf = calculate_confidence(count);
                         let serialised_conf = serialised_confidence(block_num, conf);
-                        mk_response(format!(r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#, block_num, conf, serialised_conf).to_owned())
+                        mk_response(
+                            format!(
+                                r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
+                                block_num, conf, serialised_conf
+                            )
+                            .to_owned(),
+                        )
                     } else {
                         let mut not_found = Response::default();
                         *not_found.status_mut() = StatusCode::NOT_FOUND;
-                        not_found.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+                        not_found
+                            .headers_mut()
+                            .insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
                         Ok(not_found)
                     }
                 }
                 _ => {
                     let mut not_found = Response::default();
                     *not_found.status_mut() = StatusCode::NOT_FOUND;
-                    not_found.headers_mut().insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+                    not_found
+                        .headers_mut()
+                        .insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
                     Ok(not_found)
                 }
             };
@@ -167,12 +184,12 @@ impl Service<Request<Body>> for Svc {
     }
 }
 
-struct MakeSvc {
+struct MakeHandler {
     store: json_rpc::Store,
 }
 
-impl<T> Service<T> for MakeSvc {
-    type Response = Svc;
+impl<T> Service<T> for MakeHandler {
+    type Response = Handler;
     type Error = hyper::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
@@ -182,7 +199,7 @@ impl<T> Service<T> for MakeSvc {
 
     fn call(&mut self, _: T) -> Self::Future {
         let store = self.store.clone();
-        let fut = async move { Ok(Svc { store }) };
+        let fut = async move { Ok(Handler { store }) };
         Box::pin(fut)
     }
 }
@@ -190,54 +207,10 @@ impl<T> Service<T> for MakeSvc {
 #[tokio::main]
 async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let store: json_rpc::Store = Arc::new(Mutex::new(HashMap::new()));
-    // let addr = format!("{}:{}", json_rpc::get_host(), json_rpc::get_port());
     let addr = ([127, 0, 0, 1], json_rpc::get_port()).into();
-    let server = Server::bind(&addr).serve(MakeSvc { store });
-    println!(
-        "Listening on {}:{}",
-        json_rpc::get_host(),
-        json_rpc::get_port()
-    );
+    let server = Server::bind(&addr).serve(MakeHandler { store });
+    println!("✅ Listening on http://127.0.0.1:{}", json_rpc::get_port());
     server.await?;
-    /*
-    let mut app = tide::with_state(store);
-    app.at("/v1/confidence/:block")
-        .get(|req: Request<json_rpc::Store>| async move {
-            let block: usize = req.param("block")?.parse().unwrap_or(0);
-            match json_rpc::get_if_confidence_available(&req, block) {
-                Ok(v) => {
-                    let conf = json_rpc::Confidence {
-                        block: block,
-                        factor: v,
-                    };
-                    return Body::from_json(&conf);
-                }
-                Err(e) => {
-                    println!("No confidence found : {}", e);
-                    let _block = json_rpc::get_block_by_number(block).await.unwrap();
-                    let max_rows = _block.header.extrinsics_root.rows;
-                    let max_cols = _block.header.extrinsics_root.cols;
-                    println!("{}, {}", max_rows, max_cols);
-                    let _cells = json_rpc::get_kate_proof(block, max_rows, max_cols)
-                        .await
-                        .unwrap();
-                    println!("{:?}", _cells);
-                    let count = proof_verification::verify_proof(
-                        max_rows,
-                        max_cols,
-                        &_cells,
-                        &_block.header.extrinsics_root.commitment,
-                    );
-                    println!("Successful proof verification {} times", count);
-                }
-            }
-            let conf = json_rpc::Confidence {
-                block: block,
-                factor: 10,
-            };
-            Body::from_json(&conf)
-        });
-    */
     Ok(())
 }
 

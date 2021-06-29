@@ -2,7 +2,7 @@ use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -93,14 +93,6 @@ fn get_full_node_url() -> String {
 fn is_secure(url: &str) -> bool {
     let re = Regex::new(r"^https://.*").unwrap();
     re.is_match(url)
-}
-
-pub fn get_host() -> String {
-    if let Ok(v) = env::var("Host") {
-        v
-    } else {
-        "127.0.0.1".to_owned()
-    }
 }
 
 pub fn get_port() -> u16 {
