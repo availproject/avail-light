@@ -207,6 +207,61 @@ pub enum Error {
     PowIdeologicallyNotSupported,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExtrinsicsRootRef<'a> {
+    /// The merkle root of the extrinsics.
+    pub hash: &'a [u8; 32],
+    pub commitment: Vec<u8>,
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl<'a> ExtrinsicsRootRef<'a> {
+    pub fn scale_encoding(&self) -> Vec<u8> {
+        let commitment_size = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+            self.commitment.len() as u16,
+        ));
+
+        let rows = parity_scale_codec::Encode::encode(&self.rows);
+        let cols = parity_scale_codec::Encode::encode(&self.cols);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.hash[..]);
+        buf.extend(commitment_size);
+        buf.extend_from_slice(&self.commitment[..]);
+        buf.extend(rows);
+        buf.extend(cols);
+        buf
+    }
+
+    pub fn scale_decoding(mut encoded: &'a [u8]) -> ExtrinsicsRootRef<'a> {
+        let hash: &[u8; 32] = TryFrom::try_from(&encoded[0..32]).unwrap();
+        encoded = &encoded[32..];
+        let size: parity_scale_codec::Compact<u16> = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        let commitment: Vec<u8> = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
+        encoded = &encoded[size.0 as usize..];
+        let rows: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        let cols: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        ExtrinsicsRootRef {
+            hash: hash,
+            commitment: commitment,
+            rows: rows,
+            cols: cols,
+        }
+    }
+}
+
+impl<'a> From<&'a ExtrinsicsRoot> for ExtrinsicsRootRef<'a> {
+    fn from(extrinsics_root: &'a ExtrinsicsRoot) -> ExtrinsicsRootRef<'a> {
+        ExtrinsicsRootRef {
+            hash: &extrinsics_root.hash,
+            commitment: extrinsics_root.commitment,
+            rows: extrinsics_root.rows,
+            cols: extrinsics_root.cols,
+        }
+    }
+}
+
 /// Header of a block, after decoding.
 ///
 /// Note that the information in there are not guaranteed to be exact. The exactness of the
@@ -219,8 +274,7 @@ pub struct HeaderRef<'a> {
     pub number: u64,
     /// The state trie merkle root
     pub state_root: &'a [u8; 32],
-    /// The merkle root of the extrinsics.
-    pub extrinsics_root: &'a [u8; 32],
+    pub extrinsics_root: ExtrinsicsRootRef<'a>,
     /// List of auxiliary data appended to the block header.
     pub digest: DigestRef<'a>,
 }
@@ -245,7 +299,7 @@ impl<'a> HeaderRef<'a> {
             &self.state_root[..],
         ))))
         .chain(iter::once(either::Either::Left(either::Either::Left(
-            &self.extrinsics_root[..],
+            self.extrinsics_root.scale_encoding(),
         ))))
         .chain(self.digest.scale_encoding().map(either::Either::Right))
     }
@@ -271,8 +325,63 @@ impl<'a> From<&'a Header> for HeaderRef<'a> {
             parent_hash: &a.parent_hash,
             number: a.number,
             state_root: &a.state_root,
-            extrinsics_root: &a.extrinsics_root,
+            extrinsics_root: (&a.extrinsics_root).into(),
             digest: (&a.digest).into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtrinsicsRoot {
+    /// The merkle root of the extrinsics.
+    pub hash: [u8; 32],
+    pub commitment: Vec<u8>,
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl ExtrinsicsRoot {
+    pub fn scale_encoding(&self) -> Vec<u8> {
+        let commitment_size = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
+            self.commitment.len() as u16,
+        ));
+
+        let rows = parity_scale_codec::Encode::encode(&self.rows);
+        let cols = parity_scale_codec::Encode::encode(&self.cols);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.hash[..]);
+        buf.extend(commitment_size);
+        buf.extend_from_slice(&self.commitment[..]);
+        buf.extend(rows);
+        buf.extend(cols);
+        buf
+    }
+
+    pub fn scale_decoding(mut encoded: &[u8]) -> ExtrinsicsRoot {
+        let hash: [u8; 32] = TryFrom::try_from(&encoded[0..32]).unwrap();
+        encoded = &encoded[32..];
+        let size: parity_scale_codec::Compact<u16> = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        let commitment: Vec<u8> = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
+        encoded = &encoded[size.0 as usize..];
+        let rows: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        let cols: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        ExtrinsicsRoot {
+            hash: hash,
+            commitment: commitment,
+            rows: rows,
+            cols: cols,
+        }
+    }
+}
+
+impl<'a> From<ExtrinsicsRootRef<'a>> for ExtrinsicsRoot {
+    fn from(extrinsics_root: ExtrinsicsRootRef<'a>) -> ExtrinsicsRoot { 
+        ExtrinsicsRoot {
+            hash: *extrinsics_root.hash,
+            commitment: extrinsics_root.commitment,
+            rows: extrinsics_root.rows,
+            cols: extrinsics_root.cols,
         }
     }
 }
@@ -289,8 +398,7 @@ pub struct Header {
     pub number: u64,
     /// The state trie merkle root
     pub state_root: [u8; 32],
-    /// The merkle root of the extrinsics.
-    pub extrinsics_root: [u8; 32],
+    pub extrinsics_root: ExtrinsicsRoot,
     /// List of auxiliary data appended to the block header.
     pub digest: Digest,
 }
@@ -321,7 +429,7 @@ impl<'a> From<HeaderRef<'a>> for Header {
             parent_hash: *a.parent_hash,
             number: a.number,
             state_root: *a.state_root,
-            extrinsics_root: *a.extrinsics_root,
+            extrinsics_root: a.extrinsics_root.into(),
             digest: a.digest.into(),
         }
     }
