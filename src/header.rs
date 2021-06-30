@@ -145,9 +145,8 @@ pub fn decode_partial(mut scale_encoded: &[u8]) -> Result<(HeaderRef, &[u8]), Er
 
     let state_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];
-    let extrinsics_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
-    scale_encoded = &scale_encoded[32..];
-
+    let (extrinsics_root, consumed) = ExtrinsicsRootRef::scale_decoding(&mut &scale_encoded);
+    scale_encoded = &scale_encoded[consumed as usize..];
     let (digest, remainder) = DigestRef::from_scale_bytes(scale_encoded)?;
 
     let header = HeaderRef {
@@ -211,13 +210,15 @@ pub enum Error {
 pub struct ExtrinsicsRootRef<'a> {
     /// The merkle root of the extrinsics.
     pub hash: &'a [u8; 32],
-    pub commitment: Vec<u8>,
+    pub commitment: &'a [u8],
     pub rows: u16,
     pub cols: u16,
 }
 
 impl<'a> ExtrinsicsRootRef<'a> {
-    pub fn scale_encoding(&self) -> Vec<u8> {
+    pub fn scale_encoding(
+        &self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + 'a> + Clone + 'a {
         let commitment_size = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
             self.commitment.len() as u16,
         ));
@@ -225,29 +226,52 @@ impl<'a> ExtrinsicsRootRef<'a> {
         let rows = parity_scale_codec::Encode::encode(&self.rows);
         let cols = parity_scale_codec::Encode::encode(&self.cols);
 
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&self.hash[..]);
-        buf.extend(commitment_size);
-        buf.extend_from_slice(&self.commitment[..]);
-        buf.extend(rows);
-        buf.extend(cols);
-        buf
+        iter::once(either::Either::Left(either::Either::Left(&self.hash[..])))
+            .chain::<iter::Once<either::Either<either::Either<&[u8], Vec<u8>>, Vec<u8>>>>(
+                iter::once(either::Either::Left(either::Either::Right(commitment_size))),
+            )
+            .chain(iter::once(either::Either::Left(either::Either::Left(
+                &self.commitment[..],
+            ))))
+            .chain(iter::once(either::Either::Left(either::Either::Right(
+                rows,
+            ))))
+            .chain(iter::once(either::Either::Left(either::Either::Right(
+                cols,
+            ))))
     }
 
-    pub fn scale_decoding(mut encoded: &'a [u8]) -> ExtrinsicsRootRef<'a> {
+    pub fn scale_encoding_vec(&self) -> Vec<u8> {
+        self.scale_encoding().fold(Vec::new(), |mut a, b| {
+            a.extend_from_slice(b.as_ref());
+            a
+        })
+    }
+
+    fn scale_decoding(mut encoded: &'a [u8]) -> (ExtrinsicsRootRef<'a>, u16) {
+        let mut total = 0;
         let hash: &[u8; 32] = TryFrom::try_from(&encoded[0..32]).unwrap();
         encoded = &encoded[32..];
-        let size: parity_scale_codec::Compact<u16> = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        let commitment: Vec<u8> = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
+        total += 32;
+        let size: parity_scale_codec::Compact<u16> =
+            parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        total += 2;
+        let commitment: &[u8] = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
         encoded = &encoded[size.0 as usize..];
+        total += size.0;
         let rows: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
+        total += 2;
         let cols: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        ExtrinsicsRootRef {
-            hash: hash,
-            commitment: commitment,
-            rows: rows,
-            cols: cols,
-        }
+        total += 2;
+        (
+            ExtrinsicsRootRef {
+                hash: hash,
+                commitment: commitment,
+                rows: rows,
+                cols: cols,
+            },
+            total,
+        )
     }
 }
 
@@ -255,7 +279,7 @@ impl<'a> From<&'a ExtrinsicsRoot> for ExtrinsicsRootRef<'a> {
     fn from(extrinsics_root: &'a ExtrinsicsRoot) -> ExtrinsicsRootRef<'a> {
         ExtrinsicsRootRef {
             hash: &extrinsics_root.hash,
-            commitment: extrinsics_root.commitment,
+            commitment: &extrinsics_root.commitment[..],
             rows: extrinsics_root.rows,
             cols: extrinsics_root.cols,
         }
@@ -298,8 +322,8 @@ impl<'a> HeaderRef<'a> {
         .chain(iter::once(either::Either::Left(either::Either::Left(
             &self.state_root[..],
         ))))
-        .chain(iter::once(either::Either::Left(either::Either::Left(
-            self.extrinsics_root.scale_encoding(),
+        .chain(iter::once(either::Either::Left(either::Either::Right(
+            self.extrinsics_root.scale_encoding_vec(),
         ))))
         .chain(self.digest.scale_encoding().map(either::Either::Right))
     }
@@ -341,45 +365,22 @@ pub struct ExtrinsicsRoot {
 }
 
 impl ExtrinsicsRoot {
-    pub fn scale_encoding(&self) -> Vec<u8> {
-        let commitment_size = parity_scale_codec::Encode::encode(&parity_scale_codec::Compact(
-            self.commitment.len() as u16,
-        ));
-
-        let rows = parity_scale_codec::Encode::encode(&self.rows);
-        let cols = parity_scale_codec::Encode::encode(&self.cols);
-
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&self.hash[..]);
-        buf.extend(commitment_size);
-        buf.extend_from_slice(&self.commitment[..]);
-        buf.extend(rows);
-        buf.extend(cols);
-        buf
+    pub fn scale_encoding(
+        &'_ self,
+    ) -> impl Iterator<Item = impl AsRef<[u8]> + Clone + '_> + Clone + '_ {
+        ExtrinsicsRootRef::from(self).scale_encoding()
     }
 
-    pub fn scale_decoding(mut encoded: &[u8]) -> ExtrinsicsRoot {
-        let hash: [u8; 32] = TryFrom::try_from(&encoded[0..32]).unwrap();
-        encoded = &encoded[32..];
-        let size: parity_scale_codec::Compact<u16> = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        let commitment: Vec<u8> = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
-        encoded = &encoded[size.0 as usize..];
-        let rows: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        let cols: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        ExtrinsicsRoot {
-            hash: hash,
-            commitment: commitment,
-            rows: rows,
-            cols: cols,
-        }
+    pub fn scale_encoding_vec(&self) -> Vec<u8> {
+        ExtrinsicsRootRef::from(self).scale_encoding_vec()
     }
 }
 
 impl<'a> From<ExtrinsicsRootRef<'a>> for ExtrinsicsRoot {
-    fn from(extrinsics_root: ExtrinsicsRootRef<'a>) -> ExtrinsicsRoot { 
+    fn from(extrinsics_root: ExtrinsicsRootRef<'a>) -> ExtrinsicsRoot {
         ExtrinsicsRoot {
             hash: *extrinsics_root.hash,
-            commitment: extrinsics_root.commitment,
+            commitment: extrinsics_root.commitment.to_vec(),
             rows: extrinsics_root.rows,
             cols: extrinsics_root.cols,
         }
