@@ -168,7 +168,12 @@ pub fn build_block(config: Config) -> BlockBuild {
                     Some(n) => n,
                     None => return BlockBuild::Finished(Err(Error::BlockHeightOverflow)),
                 },
-                extrinsics_root: &[0; 32],
+                extrinsics_root: header::ExtrinsicsRootRef {
+                    hash: &[0; 32],
+                    commitment: &Vec::new()[..],
+                    rows: 0,
+                    cols: 0,
+                },
                 state_root: &[0; 32],
                 digest: header::DigestRef::from_slice(&[match config.consensus_digest_log_item {
                     ConfigPreRuntime::Aura(item) => header::DigestItem::AuraPreDigest(item),
