@@ -355,7 +355,7 @@ impl<'a> From<&'a Header> for HeaderRef<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ExtrinsicsRoot {
     /// The merkle root of the extrinsics.
     pub hash: [u8; 32],

@@ -253,7 +253,12 @@ pub fn calculate_genesis_block_header(chain_spec: &chain_spec::ChainSpec) -> hea
         parent_hash: [0; 32],
         number: 0,
         state_root,
-        extrinsics_root: trie::empty_trie_merkle_value(),
+        extrinsics_root: header::ExtrinsicsRoot {
+            hash: trie::empty_trie_merkle_value(),
+            commitment: Default::default(),
+            rows: 0,
+            cols: 0,
+        },
         digest: header::DigestRef::empty().into(),
     }
 }
