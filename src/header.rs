@@ -146,7 +146,7 @@ pub fn decode_partial(mut scale_encoded: &[u8]) -> Result<(HeaderRef, &[u8]), Er
     let state_root: &[u8; 32] = TryFrom::try_from(&scale_encoded[0..32]).unwrap();
     scale_encoded = &scale_encoded[32..];
     let (extrinsics_root, consumed) = ExtrinsicsRootRef::scale_decoding(&mut &scale_encoded);
-    scale_encoded = &scale_encoded[consumed as usize..];
+    scale_encoded = &scale_encoded[consumed..];
     let (digest, remainder) = DigestRef::from_scale_bytes(scale_encoded)?;
 
     let header = HeaderRef {
@@ -248,21 +248,17 @@ impl<'a> ExtrinsicsRootRef<'a> {
         })
     }
 
-    fn scale_decoding(mut encoded: &'a [u8]) -> (ExtrinsicsRootRef<'a>, u16) {
-        let mut total = 0;
+    fn scale_decoding(mut encoded: &'a [u8]) -> (ExtrinsicsRootRef<'a>, usize) {
+        let begin = encoded.len();
         let hash: &[u8; 32] = TryFrom::try_from(&encoded[0..32]).unwrap();
         encoded = &encoded[32..];
-        total += 32;
         let size: parity_scale_codec::Compact<u16> =
             parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        total += 2;
         let commitment: &[u8] = TryFrom::try_from(&encoded[0..(size.0 as usize)]).unwrap();
         encoded = &encoded[size.0 as usize..];
-        total += size.0;
         let rows: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        total += 2;
         let cols: u16 = parity_scale_codec::Decode::decode(&mut encoded).unwrap();
-        total += 2;
+        let end = encoded.len();
         (
             ExtrinsicsRootRef {
                 hash: hash,
@@ -270,7 +266,7 @@ impl<'a> ExtrinsicsRootRef<'a> {
                 rows: rows,
                 cols: cols,
             },
-            total,
+            begin - end,
         )
     }
 }
