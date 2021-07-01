@@ -1,66 +1,93 @@
-Lightweight Substrate and Polkadot client.
+# avail-light
 
-# Introduction
+Data Availability ( generic ) Light Client for Polygon Avail DA Layer
 
-`smoldot` is a prototype of an alternative client of [Substrate](https://github.com/paritytech/substrate)-based chains, including [Polkadot](https://github.com/paritytech/polkadot/).
+## Motivation
 
-In order to simplify the code, two main design decisions have been made compared to Substrate:
+A need for light client which joins p2p networking layer formed by Polygon Avail Validator & Full Nodes; receives messages by implementing block announce, consensus etc. p2p protocols; verifies block content by random sampling; exposes HTTP server for responding to gained block confidence queries --- made us write this piece of software.
 
-- No native runtime. The execution time of the `wasmtime` library is satisfying enough that having a native runtime isn't critical anymore.
+**For more context: [Polygon Avail](https://avail-docs.matic.today)**
 
-- No pluggable architecture. `smoldot` supports a certain hardcoded list of consensus algorithms, at the moment Babe, Aura, and GrandPa. Support for other algorithms can only be added by modifying the code of smoldot, and it is not possible to plug a custom algorithm from outside.
+> Note: It stands on shoulders of [smoldot](https://github.com/paritytech/smoldot).
 
-## How to test
+## Installation
 
-There exists two clients: the full client and the wasm light node.
+- Make sure you've `gcc`, `pkg-config`, `sqlite3` installed
+- You need to also have `cargo` for building & packaging
 
-### Full client
+> Here's a [guide](https://substrate.dev/docs/en/knowledgebase/getting-started) !
 
-The full client is a binary similar to the official Polkadot client, and can be tested with `cargo run`.
+- After cloning the repo, run following from root of project
 
-> Note: The `Cargo.toml` contains a section `[profile.dev] opt-level = 2`, and as such `cargo run` alone should give performances close to the ones in release mode.
+```bash
+make build
+```
 
-The following list is a best-effort list of packages that must be available on the system in order to compile the full node:
+- For running light client, set following environment variables
 
-- `clang` or `gcc`
-- `pkg-config`
-- `sqlite`
+```bash
+export FullNodeURL=https://polygon-da-rpc.matic.today
+export Port=7000
+```
 
-### Wasm light node
+---
 
-Pre-requisite: in order to run the wasm light node, you must have installed [rustup](https://rustup.rs/).
+Field | Interpretation
+--- | ---
+FullNodeURL | RPC Url of full/ validator node, used for asking proofs `( default: http://localhost:9999 )`
+Port | HTTP Server to run on this port `( default: 7000 )`
 
-The wasm light node can be tested with `cd bin/wasm-node/javascript` and `npm start`. This will start a WebSocket server capable of answering JSON-RPC requests. You can then navigate to <https://polkadot.js.org/apps/?rpc=ws%3A%2F%2F127.0.0.1%3A9944> in order to interact with the Westend chain.
+---
 
-> Note: The `npm start` command starts a small JavaScript shim, on top of the wasm light node, that hardcodes the chain to Westend and starts the WebSocket server. The wasm light node itself can connect to a variety of different chains (not only Westend) and doesn't start any server.
+- Running light client with in-memory database
 
-# Objectives
+```bash
+make run_temp
+```
 
-There exists multiple objectives behind this repository:
+- For using in-disk database ( **Recommended when in production** )
 
-- Write a client implementation that is as comprehensive as possible, to make it easier to understand the various components of a Substrate/Polkadot client. A large emphasis is put on documentation, and the documentation of the `main` branch is automatically deployed [here](https://paritytech.github.io/smoldot/smoldot/index.html).
-- Implement a client that is lighter than Substrate, in terms of memory consumption, number of threads, and code size, in order to compile it to WebAssembly and distribute it in webpages.
-- Experiment with a new code architecture, to maybe upstream some components to Substrate and Polkadot.
+```bash
+make run
+```
 
-# Status
+- For directly interacting with  binary
 
-As a quick overview, at the time of writing of this README, the following is supported:
+```bash
+./target/release/full-node -h
+```
 
-- Verifying Babe and Aura blocks.
-- "Executing" blocks, by calling `Core_execute_block`.
-- Verifying GrandPa justifications.
-- "Optimistic syncing", in other words syncing by assuming that there isn't any fork.
-- Verifying storage trie proofs.
-- The WebSocket JSON-RPC server is in progress, but its design is still changing.
-- An informant.
-- A telemetry client (mostly copy-pasted from Substrate and substrate-telemetry).
-- An unfinished new networking stack.
+> Polygon Avail's chain-spec file is [here](bin/polygon-avail.json)
 
-The following isn't done yet:
+## Usage
 
-- Authoring blocks isn't supported.
-- There is no transaction pool.
-- Anything related to GrandPa networking messages. Finality can only be determined by asking a full node for a justification.
-- No actual database for the full client.
-- The changes trie isn't implemented (it is not enabled on Westend, Kusama and Polkadot at the moment).
-- A Prometheus server. While not difficult to implement, it seems a bit overkill to have one at the moment.
+### Block Confidence
+
+- Send query
+
+```bash
+curl -s localhost:7000/v1/confidence/2 | jq # for block 2
+```
+
+- Response looks like
+
+```json
+{
+  "block": 2,
+  "confidence": 93.75,
+  "serialisedConfidence": 9527434592
+}
+```
+
+Field | Interpretation
+--- | ---
+block | Confidence for block **X**
+confidence | Confidence factor calculated out of 100 ( i.e. percentage value )
+serialisedConfidence | Calculated using `block << 32 \| int32(confidence * 10 ** 7)`
+
+```python3
+>>> (2 << 32) | int(93.75 * (10 ** 7))
+9527434592
+```
+
+> `serialisedConfidence` field is used in on-chain light client ( with Chainlink Model ), where field fits in 256 bits ( i.e. as uint256 )
