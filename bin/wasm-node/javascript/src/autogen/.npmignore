@@ -1,2 +1,0 @@
-# This .npmignore file exists in order to counteract the .gitignore file and
-# include .js files of this directory in the package anyway
