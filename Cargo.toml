@@ -1,0 +1,25 @@
+[package]
+name = "avail-rust-light-client"
+version = "0.1.0"
+edition = "2018"
+authors = ["kailaskr05@gmail.com"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio-tungstenite = "*"
+url = "2.2.2"
+tokio = { version = "1.2.0", features = ["full"] }
+futures-util = "*"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.68"
+hyper = { version = "0.14", features = ["full"]}
+hyper-tls = "*"
+rand = "*"
+dusk-plonk = { git = "https://github.com/dusk-network/plonk", tag = "v0.3.5" }
+regex = "1.5"
+hex = "0.4"
+num = "0.4.0"
+futures = { version = "0.3.15", default-features = false, features = ["std", "thread-pool"] }
+chrono = "0.4.19"
+dotenv = "0.15.0"
