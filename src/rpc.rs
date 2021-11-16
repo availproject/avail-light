@@ -296,13 +296,13 @@ pub fn generate_app_specific_cells(
 ) -> Vec<Cell> {
     let mut buf = Vec::new();
     let rows: u16 = 0;
-    for i in 0..size {
+    for i in 0..=size {
         let rows = if rows < max_rows {
-            index as u16 / max_col
+            (index-1) as u16 / max_col
         } else {
-            (index as u16 / max_col) + i as u16
+            ((index-1) as u16 / max_col) + i as u16
         };
-        let cols = (index as u16 % max_col) + i as u16;
+        let cols =  ((index-1) as u16 % max_col) + i as u16;
         buf.push(Cell {
             block: block,
             row: rows as u16,
