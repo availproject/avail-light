@@ -25,6 +25,7 @@ touch .env
 FullNodeURL=
 FullNodeWSURL=
 PORT=7000
+APPID=
 ```
 
 Environment Variable | Interpretation
