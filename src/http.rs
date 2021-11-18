@@ -101,7 +101,7 @@ impl Service<Request<Body>> for Handler {
                                 let block = rpc::get_block_by_number(block_num).await.unwrap();
                                 let max_rows = block.header.extrinsics_root.rows;
                                 let max_cols = block.header.extrinsics_root.cols;
-                                let cells = rpc::get_kate_proof(block_num, max_rows, max_cols)
+                                let cells = rpc::get_kate_proof(block_num, max_rows, max_cols,false)
                                     .await
                                     .unwrap();
                                 let count = proof::verify_proof(

@@ -134,6 +134,15 @@ pub fn get_port() -> u16 {
     }
 }
 
+pub fn get_app_id() -> u16 {
+    dotenv().ok();
+    if let Ok(v) = env::var("APPID") {
+        v.parse::<u16>().unwrap()
+    } else {
+        0
+    }
+}
+
 pub async fn get_blockhash(block: u64) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
@@ -234,36 +243,20 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
     }
 }
 
-pub async fn get_kate_proof(block: u64, max_rows: u16, max_cols: u16) -> Result<Vec<Cell>, String> {
-
-    /* @@note : 
-    the following code is for modularizing the code. 
-    It basically used for asdr branch to check for index
+pub async fn get_kate_proof(block: u64, max_rows: u16, max_cols: u16, app_id: bool) -> Result<Vec<Cell>, String> {
 
     let num = get_block_by_number(block).await.unwrap();
     let app_index = num.header.app_data_lookup.index;
     let app_size = num.header.app_data_lookup.size;
-    let mut cells = if app_index.is_empty() {
-        let cpy = generate_random_cells(max_rows, max_cols, block);
-        cpy
-    } else {
-        let app_tup = app_index[0];
-        let app_ind = app_tup.1;
-        let cpy = generate_app_specific_cells(app_size, app_ind, rows, cols, block);
-        cpy
-    };
-    */
 
-    let num = get_block_by_number(block).await.unwrap();
-    let app_index = num.header.app_data_lookup.index;
-    let app_size = num.header.app_data_lookup.size;
-    let mut cells = if app_index.is_empty() {
+    //checking for if the user is subscribed for a particular APPID
+    let mut cells = if app_id==false{
         let cpy = generate_random_cells(max_rows, max_cols, block);
         cpy
-    } else {
+    }else{
         let app_tup = app_index[0];
         let app_ind = app_tup.1;
-        let cpy = generate_app_specific_cells(app_size, app_ind, max_rows, max_cols, block);
+        let cpy =  generate_app_specific_cells(app_size, app_ind, max_rows, max_cols, block);
         cpy
     };
     let payload = generate_kate_query_payload(block, &cells);

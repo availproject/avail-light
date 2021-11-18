@@ -64,10 +64,20 @@ pub async fn main() {
                 let num = &z.unwrap();
                 let max_rows = response.params.result.extrinsics_root.rows;
                 let max_cols = response.params.result.extrinsics_root.cols;
+                let app_index = response.params.result.app_data_lookup.index;
+                // let app_tup = if app_index.is_empty(){
+                //     (0,0)
+                // }else{
+                //     let app = app_index[0];
+                //     app
+                
+                // };
+                // let app_id = app_tup.0;
+                // let app_ind= app_tup.1;
                 let commitment = response.params.result.extrinsics_root.commitment;
 
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(*num, max_rows, max_cols).await.unwrap();
+                let cells = rpc::get_kate_proof(*num, max_rows, max_cols,false).await.unwrap();
                 println!("\n🛠   Verifying block :{}", *num);
 
                 //hyper request for verifying the proof
@@ -79,12 +89,34 @@ pub async fn main() {
 
                 let conf = calculate_confidence(count);
                 let serialised_conf = serialised_confidence(*num, conf);
+                {
                 let mut handle = db.lock().unwrap();
                 handle.insert(*num, count);
                 println!(
                     "block: {}, confidence: {}, serialisedConfidence {}",
                     *num, conf, serialised_conf
                 );
+                }
+
+                /*note:
+                The following is the part when the user have already subscribed 
+                to an appID and now its verifying every cell that contains the data
+                */
+                if app_index.is_empty(){
+                    println!("\n 💡 Nothing more to verify");
+                }else{
+                    let req_id = rpc::get_app_id();
+                    if conf > 92.0 && req_id>0{
+                        let req_cells = rpc::get_kate_proof(*num, max_rows, max_cols,true).await.unwrap();                    
+                        println!("\n💡   Verifying block :{} because APPID is given ", *num);
+                        //hyper request for verifying the proof
+                        let count = proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
+                        println!(
+                        "✅ Completed {} rounds of verification for block number {} ",
+                        count, num
+                        ); 
+                    }
+                }
             }
             Err(error) => println!("Misconstructed Header: {:?}", error),
         }
