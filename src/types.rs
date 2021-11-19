@@ -240,3 +240,10 @@ pub struct Response {
     method: String,
     pub params: QueryResult,
 }
+
+#[derive(Debug)]
+pub struct ClientMsg {
+    pub num: u64,
+    pub max_rows: u16,
+    pub max_cols: u16,
+}

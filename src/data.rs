@@ -10,12 +10,12 @@ use libipld::multihash::Code;
 use libipld::Ipld;
 use std::collections::BTreeMap;
 
-pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
+async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
     let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);
     IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
 }
 
-pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
+async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
     let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
     for row in 0..row_count {
@@ -27,7 +27,7 @@ pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
     }
 }
 
-pub async fn construct_rowwise(block: u64, row_count: u16, col_count: u16) -> L1Row {
+async fn construct_rowwise(block: u64, row_count: u16, col_count: u16) -> L1Row {
     let mut l0_cols: Vec<L0Col> = Vec::with_capacity(col_count as usize);
 
     for col in 0..col_count {
@@ -44,7 +44,7 @@ pub async fn construct_matrix(block: u64, row_count: u16, col_count: u16) -> Dat
     }
 }
 
-pub async fn push_cell(
+async fn push_cell(
     cell: BaseCell,
     ipfs: &Ipfs<DefaultParams>,
     pin: &TempPin,
@@ -55,11 +55,7 @@ pub async fn push_cell(
     Ok(*cell.cid())
 }
 
-pub async fn push_col(
-    col: L0Col,
-    ipfs: &Ipfs<DefaultParams>,
-    pin: &TempPin,
-) -> anyhow::Result<Cid> {
+async fn push_col(col: L0Col, ipfs: &Ipfs<DefaultParams>, pin: &TempPin) -> anyhow::Result<Cid> {
     let mut cell_cids: Vec<Ipld> = Vec::with_capacity(col.base_cells.len());
 
     for cell in col.base_cells {
@@ -77,7 +73,7 @@ pub async fn push_col(
     Ok(*coded_col.cid())
 }
 
-pub async fn push_row(
+async fn push_row(
     row: L1Row,
     block_num: i128,
     latest_cid: Option<Cid>,

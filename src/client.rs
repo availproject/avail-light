@@ -7,12 +7,61 @@ extern crate rand;
 extern crate tempdir;
 extern crate tokio;
 
-use crate::types::Event;
+use crate::data::{construct_matrix, push_matrix};
+use crate::types::{ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ed25519_dalek::{PublicKey, SecretKey};
-use ipfs_embed::{DefaultParams as IPFSDefaultParams, Ipfs, Keypair, NetworkConfig, StorageConfig};
+use ipfs_embed::{
+    DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
+    StorageConfig,
+};
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 use tempdir::TempDir;
+
+async fn run_client(
+    seed: u64,
+    peers: Vec<(PeerId, Multiaddr)>,
+    block_rx: Receiver<ClientMsg>,
+    self_info_tx: Sender<(PeerId, Multiaddr)>,
+    destroy_rx: Receiver<bool>,
+) -> anyhow::Result<()> {
+    // @note make ipfs node's port user choosable
+    let ipfs = make_client(seed, 37000, &format!("node_{}", seed)).await?;
+    let pin = ipfs.create_temp_pin()?;
+
+    // inform invoker about self
+    self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
+
+    // bootstrap client with non-empty set of
+    // application clients
+    if peers.len() > 0 {
+        ipfs.bootstrap(&peers).await?;
+    }
+
+    loop {
+        // Receive metadata related to newly mined block
+        // such as block number, dimension of data matrix etc.
+        // and encode it into hierarchical structure, preparing
+        // for push into ipfs.
+        //
+        // Finally it's pushed to ipfs, while
+        // linking it with previous block data matrix's CID.
+        match block_rx.recv() {
+            Ok(block) => {
+                let matrix = construct_matrix(block.num, block.max_rows, block.max_cols).await;
+                push_matrix(matrix, None, &ipfs, &pin).await?;
+            }
+            Err(e) => {
+                println!("Error encountered while listening for blocks: {}", e);
+                break;
+            }
+        };
+    }
+
+    destroy_rx.recv()?; // waiting for signal to kill self !
+    Ok(())
+}
 
 pub async fn make_client(
     seed: u64,
