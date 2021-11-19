@@ -3,31 +3,12 @@ extern crate ipfs_embed;
 extern crate libipld;
 
 use crate::rpc::get_kate_query_proof_by_cell;
-use ipfs_embed::{Block, DefaultParams};
-use ipfs_embed::{Cid, DefaultParams as IPFSDefaultParams, Ipfs, TempPin};
+use crate::types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row};
+use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::codec_impl::IpldCodec;
 use libipld::multihash::Code;
 use libipld::Ipld;
 use std::collections::BTreeMap;
-
-pub type IpldBlock = Block<DefaultParams>;
-pub type BaseCell = IpldBlock;
-
-#[derive(Clone)]
-pub struct L0Col {
-    pub base_cells: Vec<BaseCell>,
-}
-
-#[derive(Clone)]
-pub struct L1Row {
-    pub l0_cols: Vec<L0Col>,
-}
-
-#[derive(Clone)]
-pub struct DataMatrix {
-    pub block_num: i128,
-    pub l1_row: L1Row,
-}
 
 pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
     let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);
@@ -65,7 +46,7 @@ pub async fn construct_matrix(block: u64, row_count: u16, col_count: u16) -> Dat
 
 pub async fn push_cell(
     cell: BaseCell,
-    ipfs: &Ipfs<IPFSDefaultParams>,
+    ipfs: &Ipfs<DefaultParams>,
     pin: &TempPin,
 ) -> anyhow::Result<Cid> {
     ipfs.temp_pin(pin, cell.cid())?;

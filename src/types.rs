@@ -1,6 +1,7 @@
 extern crate ipfs_embed;
 
-use ipfs_embed::{Block, DefaultParams as IPFSDefaultParams, Multiaddr, PeerId, StreamId};
+use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId, StreamId};
+use serde::Deserialize;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
@@ -16,7 +17,7 @@ pub enum Event {
     Disconnected(PeerId),
     Subscribed(PeerId, String),
     Unsubscribed(PeerId, String),
-    Block(Block<IPFSDefaultParams>),
+    Block(IpfsBlock<DefaultParams>),
     Flushed,
     Synced,
     Bootstrapped,
@@ -111,7 +112,7 @@ impl std::str::FromStr for Event {
                     let s = std::str::from_utf8(chunk)?;
                     data.push(u8::from_str_radix(s, 16)?);
                 }
-                let block = Block::new(cid, data)?;
+                let block = IpfsBlock::new(cid, data)?;
                 Self::Block(block)
             }
             Some("<flushed") => Self::Flushed,
@@ -125,4 +126,117 @@ impl std::str::FromStr for Event {
             _ => return Err(anyhow::anyhow!("invalid event `{}`", s)),
         })
     }
+}
+
+pub type IpldBlock = IpfsBlock<DefaultParams>;
+pub type BaseCell = IpldBlock;
+
+#[derive(Clone)]
+pub struct L0Col {
+    pub base_cells: Vec<BaseCell>,
+}
+
+#[derive(Clone)]
+pub struct L1Row {
+    pub l0_cols: Vec<L0Col>,
+}
+
+#[derive(Clone)]
+pub struct DataMatrix {
+    pub block_num: i128,
+    pub l1_row: L1Row,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct BlockHashResponse {
+    jsonrpc: String,
+    id: u32,
+    pub result: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct BlockResponse {
+    jsonrpc: String,
+    id: u32,
+    pub result: RPCResult,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RPCResult {
+    pub block: Block,
+    #[serde(skip_deserializing)]
+    pub justification: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Block {
+    pub extrinsics: Vec<Vec<u8>>,
+    pub header: Header,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Header {
+    pub number: String,
+    #[serde(rename = "extrinsicsRoot")]
+    pub extrinsics_root: ExtrinsicsRoot,
+    #[serde(rename = "parentHash")]
+    parent_hash: String,
+    #[serde(rename = "stateRoot")]
+    state_root: String,
+    digest: Digest,
+    #[serde(rename = "appDataLookup")]
+    pub app_data_lookup: AppDataIndex,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ExtrinsicsRoot {
+    pub cols: u16,
+    pub rows: u16,
+    pub hash: String,
+    pub commitment: Vec<u8>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Digest {
+    logs: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct AppDataIndex {
+    pub size: u32,
+    pub index: Vec<(u32, u32)>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct BlockProofResponse {
+    jsonrpc: String,
+    id: u32,
+    pub result: Vec<u8>,
+}
+
+#[derive(Default, Debug)]
+pub struct Cell {
+    pub block: u64,
+    pub row: u16,
+    pub col: u16,
+    pub proof: Vec<u8>,
+}
+
+#[derive(Hash, Eq, PartialEq)]
+pub struct MatrixCell {
+    pub row: u16,
+    pub col: u16,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct QueryResult {
+    pub result: Header,
+    subscription: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Response {
+    jsonrpc: String,
+    method: String,
+    pub params: QueryResult,
 }

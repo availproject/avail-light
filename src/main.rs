@@ -60,7 +60,7 @@ pub async fn main() {
         let data = message.unwrap().into_data();
         match serde_json::from_slice(&data) {
             Ok(response) => {
-                let response: rpc::Response = response;
+                let response: types::Response = response;
                 let block_number = response.params.result.number;
                 let raw = &block_number;
                 let without_prefix = raw.trim_start_matches("0x");
@@ -131,7 +131,7 @@ pub async fn main() {
 /* note:
     following are the support functions.
 */
-pub fn fill_cells_with_proofs(cells: &mut Vec<rpc::Cell>, proof: &rpc::BlockProofResponse) {
+pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::BlockProofResponse) {
     assert_eq!(80 * cells.len(), proof.result.len());
     for i in 0..cells.len() {
         let mut v = Vec::new();

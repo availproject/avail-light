@@ -1,106 +1,12 @@
 #![allow(dead_code)]
+use crate::types::*;
 use dotenv::dotenv;
 use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
-
-#[derive(Deserialize, Debug)]
-pub struct BlockHashResponse {
-    jsonrpc: String,
-    id: u32,
-    result: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BlockResponse {
-    jsonrpc: String,
-    id: u32,
-    pub result: RPCResult,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct RPCResult {
-    pub block: Block,
-    #[serde(skip_deserializing)]
-    pub justification: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Block {
-    pub extrinsics: Vec<Vec<u8>>,
-    pub header: Header,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Header {
-    pub number: String,
-    #[serde(rename = "extrinsicsRoot")]
-    pub extrinsics_root: ExtrinsicsRoot,
-    #[serde(rename = "parentHash")]
-    parent_hash: String,
-    #[serde(rename = "stateRoot")]
-    state_root: String,
-    digest: Digest,
-    #[serde(rename = "appDataLookup")]
-    pub app_data_lookup: AppDataIndex,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ExtrinsicsRoot {
-    pub cols: u16,
-    pub rows: u16,
-    pub hash: String,
-    pub commitment: Vec<u8>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Digest {
-    logs: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct AppDataIndex {
-    pub size: u32,
-    pub index: Vec<(u32, u32)>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct BlockProofResponse {
-    jsonrpc: String,
-    id: u32,
-    pub result: Vec<u8>,
-}
-
-#[derive(Default, Debug)]
-pub struct Cell {
-    pub block: u64,
-    pub row: u16,
-    pub col: u16,
-    pub proof: Vec<u8>,
-}
-
-#[derive(Hash, Eq, PartialEq)]
-pub struct MatrixCell {
-    row: u16,
-    col: u16,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct QueryResult {
-    pub result: Header,
-    subscription: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Response {
-    jsonrpc: String,
-    method: String,
-    pub params: QueryResult,
-}
 
 pub fn get_ws_node_url() -> String {
     dotenv().ok();

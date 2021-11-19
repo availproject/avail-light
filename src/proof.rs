@@ -1,4 +1,4 @@
-use crate::rpc::Cell;
+use crate::types::Cell;
 use dusk_plonk::bls12_381::G1Affine;
 use dusk_plonk::commitment_scheme::kzg10;
 use dusk_plonk::fft::EvaluationDomain;
