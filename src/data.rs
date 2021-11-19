@@ -131,3 +131,19 @@ pub async fn push_row(
 
     Ok(*coded_matrix.cid())
 }
+
+pub async fn push_matrix(
+    data_matrix: DataMatrix,
+    latest_cid: Option<Cid>,
+    ipfs: &Ipfs<DefaultParams>,
+    pin: &TempPin,
+) -> anyhow::Result<Cid> {
+    Ok(push_row(
+        data_matrix.l1_row,
+        data_matrix.block_num,
+        latest_cid,
+        ipfs,
+        pin,
+    )
+    .await?)
+}
