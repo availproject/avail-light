@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use dotenv::dotenv;
 use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
@@ -6,7 +7,6 @@ use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::env;
-use dotenv::dotenv;
 
 #[derive(Deserialize, Debug)]
 pub struct BlockHashResponse {
@@ -243,20 +243,52 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
     }
 }
 
-pub async fn get_kate_proof(block: u64, max_rows: u16, max_cols: u16, app_id: bool) -> Result<Vec<Cell>, String> {
+// Get proof of certain cell for given block, from full node
+pub async fn get_kate_query_proof_by_cell(block: u64, cell: Cell) -> Vec<u8> {
+    let payload: String = format!(
+        r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
+        block,
+        format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col)
+    );
 
+    let req = hyper::Request::builder()
+        .method(hyper::Method::POST)
+        .uri(get_full_node_url())
+        .header("Content-Type", "application/json")
+        .body(hyper::Body::from(payload))
+        .unwrap();
+    let resp = if is_secure(&get_full_node_url()) {
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        client.request(req).await.unwrap()
+    } else {
+        let client = hyper::Client::new();
+        client.request(req).await.unwrap()
+    };
+    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+    let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
+
+    proof.result
+}
+
+pub async fn get_kate_proof(
+    block: u64,
+    max_rows: u16,
+    max_cols: u16,
+    app_id: bool,
+) -> Result<Vec<Cell>, String> {
     let num = get_block_by_number(block).await.unwrap();
     let app_index = num.header.app_data_lookup.index;
     let app_size = num.header.app_data_lookup.size;
 
     //checking for if the user is subscribed for a particular APPID
-    let mut cells = if app_id==false{
+    let mut cells = if app_id == false {
         let cpy = generate_random_cells(max_rows, max_cols, block);
         cpy
-    }else{
+    } else {
         let app_tup = app_index[0];
         let app_ind = app_tup.1;
-        let cpy =  generate_app_specific_cells(app_size, app_ind, max_rows, max_cols, block);
+        let cpy = generate_app_specific_cells(app_size, app_ind, max_rows, max_cols, block);
         cpy
     };
     let payload = generate_kate_query_payload(block, &cells);
@@ -291,11 +323,11 @@ pub fn generate_app_specific_cells(
     let rows: u16 = 0;
     for i in 0..=size {
         let rows = if rows < max_rows {
-            (index-1) as u16 / max_col
+            (index - 1) as u16 / max_col
         } else {
-            ((index-1) as u16 / max_col) + i as u16
+            ((index - 1) as u16 / max_col) + i as u16
         };
-        let cols =  ((index-1) as u16 % max_col) + i as u16;
+        let cols = ((index - 1) as u16 % max_col) + i as u16;
         buf.push(Cell {
             block: block,
             row: rows as u16,
