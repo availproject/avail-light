@@ -244,11 +244,11 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 // Get proof of certain cell for given block, from full node
-pub async fn get_kate_query_proof_by_cell(block: u64, cell: Cell) -> Vec<u8> {
+pub async fn get_kate_query_proof_by_cell(block: u64, row: u16, col: u16) -> Vec<u8> {
     let payload: String = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
         block,
-        format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col)
+        format!(r#"{{"row": {}, "col": {}}}"#, row, col)
     );
 
     let req = hyper::Request::builder()

@@ -26,7 +26,19 @@ pub struct DataMatrix {
     pub l1_row: L1Row,
 }
 
-pub async fn construct_cell(block: u64, cell: Cell) -> BaseCell {
-    let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, cell).await.unwrap());
+pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
+    let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await.unwrap());
     IpldCodec::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
+}
+
+pub async fn construct_colwise(row_count: u16, col: u16) -> L0Col {
+    let mut base_cells: Vec<BaseCell> = Vec::new();
+
+    for row in 0..row_count {
+        base_cells.push(construct_cell(block, row, col).await);
+    }
+
+    L0Col {
+        base_cells: base_cells,
+    }
 }

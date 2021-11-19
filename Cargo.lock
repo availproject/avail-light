@@ -1481,9 +1481,11 @@ dependencies = [
  "cached",
  "fnv",
  "libipld-cbor",
+ "libipld-cbor-derive",
  "libipld-core",
  "libipld-json",
  "libipld-macro",
+ "libipld-pb",
  "log",
  "multihash",
  "parking_lot",
@@ -1499,6 +1501,18 @@ dependencies = [
  "byteorder",
  "libipld-core",
  "thiserror",
+]
+
+[[package]]
+name = "libipld-cbor-derive"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80cf5eeddac31280a924ac77ad90df98887ccc8c351c324b11d15b620f8cf74f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "synstructure",
 ]
 
 [[package]]
@@ -1534,6 +1548,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d553f07747f7cb5e62d15de5fb416bf0e22968b2ee685226e91faaffd43a464"
 dependencies = [
  "libipld-core",
+]
+
+[[package]]
+name = "libipld-pb"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ddbe8356b2bb59c6875d329b3f28cb323d3c0cd07a2b9804a7008e1856e4727"
+dependencies = [
+ "libipld-core",
+ "prost 0.7.0",
+ "prost-build 0.7.0",
+ "thiserror",
 ]
 
 [[package]]
@@ -1634,8 +1660,8 @@ dependencies = [
  "multistream-select",
  "parking_lot",
  "pin-project 1.0.8",
- "prost",
- "prost-build",
+ "prost 0.8.0",
+ "prost-build 0.8.0",
  "rand 0.7.3",
  "ring",
  "rw-stream-sink",
@@ -1677,8 +1703,8 @@ dependencies = [
  "libp2p-core",
  "libp2p-swarm",
  "log",
- "prost",
- "prost-build",
+ "prost 0.8.0",
+ "prost-build 0.8.0",
  "rand 0.7.3",
  "regex",
  "sha2",
@@ -1697,8 +1723,8 @@ dependencies = [
  "libp2p-core",
  "libp2p-swarm",
  "log",
- "prost",
- "prost-build",
+ "prost 0.8.0",
+ "prost-build 0.8.0",
  "smallvec",
  "wasm-timer",
 ]
@@ -1718,8 +1744,8 @@ dependencies = [
  "libp2p-core",
  "libp2p-swarm",
  "log",
- "prost",
- "prost-build",
+ "prost 0.8.0",
+ "prost-build 0.8.0",
  "rand 0.7.3",
  "sha2",
  "smallvec",
@@ -1780,8 +1806,8 @@ dependencies = [
  "lazy_static",
  "libp2p-core",
  "log",
- "prost",
- "prost-build",
+ "prost 0.8.0",
+ "prost-build 0.8.0",
  "rand 0.8.4",
  "sha2",
  "snow",
@@ -2584,12 +2610,40 @@ dependencies = [
 
 [[package]]
 name = "prost"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
+dependencies = [
+ "bytes",
+ "prost-derive 0.7.0",
+]
+
+[[package]]
+name = "prost"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de5e2533f59d08fcf364fd374ebda0692a70bd6d7e66ef97f306f45c6c5d8020"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.8.0",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
+dependencies = [
+ "bytes",
+ "heck",
+ "itertools 0.9.0",
+ "log",
+ "multimap",
+ "petgraph",
+ "prost 0.7.0",
+ "prost-types 0.7.0",
+ "tempfile",
+ "which",
 ]
 
 [[package]]
@@ -2604,10 +2658,23 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prost",
- "prost-types",
+ "prost 0.8.0",
+ "prost-types 0.8.0",
  "tempfile",
  "which",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
+dependencies = [
+ "anyhow",
+ "itertools 0.9.0",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -2625,12 +2692,22 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
+dependencies = [
+ "bytes",
+ "prost 0.7.0",
+]
+
+[[package]]
+name = "prost-types"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "603bbd6394701d13f3f25aada59c7de9d35a6a5887cfc156181234a44002771b"
 dependencies = [
  "bytes",
- "prost",
+ "prost 0.8.0",
 ]
 
 [[package]]
