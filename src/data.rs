@@ -34,7 +34,7 @@ pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
 }
 
 pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
-    let mut base_cells: Vec<BaseCell> = Vec::new();
+    let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
     for row in 0..row_count {
         base_cells.push(construct_cell(block, row, col).await);
@@ -46,7 +46,7 @@ pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
 }
 
 pub async fn construct_rowwise(block: u64, row_count: u16, col_count: u16) -> L1Row {
-    let mut l0_cols: Vec<L0Col> = Vec::new();
+    let mut l0_cols: Vec<L0Col> = Vec::with_capacity(col_count as usize);
 
     for col in 0..col_count {
         l0_cols.push(construct_colwise(block, row_count, col).await);
@@ -69,5 +69,28 @@ pub async fn push_cell(
 ) -> anyhow::Result<Cid> {
     ipfs.temp_pin(pin, cell.cid())?;
     ipfs.insert(&cell)?;
+
     Ok(*cell.cid())
+}
+
+pub async fn push_col(
+    col: L0Col,
+    ipfs: &Ipfs<DefaultParams>,
+    pin: &TempPin,
+) -> anyhow::Result<Cid> {
+    let mut cell_cids: Vec<Ipld> = Vec::with_capacity(col.base_cells.len());
+
+    for cell in col.base_cells {
+        if let Ok(cid) = push_cell(cell, ipfs, pin).await {
+            cell_cids.push(Ipld::Link(cid));
+        };
+    }
+
+    let col = Ipld::List(cell_cids);
+    let coded_col = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &col).unwrap();
+
+    ipfs.temp_pin(pin, coded_col.cid())?;
+    ipfs.insert(&coded_col)?;
+
+    Ok(*coded_col.cid())
 }
