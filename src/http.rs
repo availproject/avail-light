@@ -16,9 +16,9 @@ use std::{
 };
 use tokio;
 
-// 💡 HTTP part where handles the RPC Queries 
+// 💡 HTTP part where handles the RPC Queries
 
-//service part of hyper 
+//service part of hyper
 struct Handler {
     store: Arc<Mutex<HashMap<u64, u32>>>,
 }
@@ -93,7 +93,10 @@ impl Service<Request<Body>> for Handler {
                     if let Ok(block_num) = match_url(req.uri().path()) {
                         let count = match get_confidence(db.clone(), block_num) {
                             Ok(count) => {
-                                println!(" confidence already stored in memory 😄 for blocknumber {} ", block_num);
+                                println!(
+                                    " confidence already stored in memory 😄 for blocknumber {} ",
+                                    block_num
+                                );
                                 count
                             }
                             Err(_e) => {
@@ -101,9 +104,10 @@ impl Service<Request<Body>> for Handler {
                                 let block = rpc::get_block_by_number(block_num).await.unwrap();
                                 let max_rows = block.header.extrinsics_root.rows;
                                 let max_cols = block.header.extrinsics_root.cols;
-                                let cells = rpc::get_kate_proof(block_num, max_rows, max_cols,false)
-                                    .await
-                                    .unwrap();
+                                let cells =
+                                    rpc::get_kate_proof(block_num, max_rows, max_cols, false)
+                                        .await
+                                        .unwrap();
                                 let count = proof::verify_proof(
                                     max_rows,
                                     max_cols,

@@ -6,11 +6,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+mod data;
 mod http;
 mod proof;
 mod rpc;
+use data::construct_matrix;
 
-//Main function of the Light-client which handles ws and rpc 
+//Main function of the Light-client which handles ws and rpc
 
 #[tokio::main]
 pub async fn main() {
@@ -18,9 +20,9 @@ pub async fn main() {
     let db: Sto = Arc::new(Mutex::new(HashMap::new()));
     let cp = db.clone();
 
-    /* note: 
+    /* note:
         thread for handling the RPC query
-        RPC query is helpful when the block is mined before client started running. 
+        RPC query is helpful when the block is mined before client started running.
     */
 
     thread::spawn(move || {
@@ -56,7 +58,7 @@ pub async fn main() {
         let data = message.unwrap().into_data();
         match serde_json::from_slice(&data) {
             Ok(response) => {
-                let response:rpc::Response = response;
+                let response: rpc::Response = response;
                 let block_number = response.params.result.number;
                 let raw = &block_number;
                 let without_prefix = raw.trim_start_matches("0x");
@@ -65,19 +67,15 @@ pub async fn main() {
                 let max_rows = response.params.result.extrinsics_root.rows;
                 let max_cols = response.params.result.extrinsics_root.cols;
                 let app_index = response.params.result.app_data_lookup.index;
-                // let app_tup = if app_index.is_empty(){
-                //     (0,0)
-                // }else{
-                //     let app = app_index[0];
-                //     app
-                
-                // };
-                // let app_id = app_tup.0;
-                // let app_ind= app_tup.1;
                 let commitment = response.params.result.extrinsics_root.commitment;
 
+                let mat = construct_matrix(*num, max_rows, max_cols).await;
+                println!("constructed matrix for {}", mat.block_num);
+
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(*num, max_rows, max_cols,false).await.unwrap();
+                let cells = rpc::get_kate_proof(*num, max_rows, max_cols, false)
+                    .await
+                    .unwrap();
                 println!("\n🛠   Verifying block :{}", *num);
 
                 //hyper request for verifying the proof
@@ -90,31 +88,34 @@ pub async fn main() {
                 let conf = calculate_confidence(count);
                 let serialised_conf = serialised_confidence(*num, conf);
                 {
-                let mut handle = db.lock().unwrap();
-                handle.insert(*num, count);
-                println!(
-                    "block: {}, confidence: {}, serialisedConfidence {}",
-                    *num, conf, serialised_conf
-                );
+                    let mut handle = db.lock().unwrap();
+                    handle.insert(*num, count);
+                    println!(
+                        "block: {}, confidence: {}, serialisedConfidence {}",
+                        *num, conf, serialised_conf
+                    );
                 }
 
                 /*note:
-                The following is the part when the user have already subscribed 
+                The following is the part when the user have already subscribed
                 to an appID and now its verifying every cell that contains the data
                 */
-                if app_index.is_empty(){
+                if app_index.is_empty() {
                     println!("\n 💡 Nothing more to verify");
-                }else{
+                } else {
                     let req_id = rpc::get_app_id();
-                    if conf > 92.0 && req_id>0{
-                        let req_cells = rpc::get_kate_proof(*num, max_rows, max_cols,true).await.unwrap();                    
+                    if conf > 92.0 && req_id > 0 {
+                        let req_cells = rpc::get_kate_proof(*num, max_rows, max_cols, true)
+                            .await
+                            .unwrap();
                         println!("\n💡   Verifying block :{} because APPID is given ", *num);
                         //hyper request for verifying the proof
-                        let count = proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
+                        let count =
+                            proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
                         println!(
-                        "✅ Completed {} rounds of verification for block number {} ",
-                        count, num
-                        ); 
+                            "✅ Completed {} rounds of verification for block number {} ",
+                            count, num
+                        );
                     }
                 }
             }
@@ -123,9 +124,7 @@ pub async fn main() {
     });
 
     read_future.await;
-
 }
-
 
 /* note:
     following are the support functions.
@@ -149,4 +148,3 @@ fn serialised_confidence(block: u64, factor: f64) -> String {
     let _shifted: BigUint = _block << 32 | _factor;
     _shifted.to_str_radix(10)
 }
-

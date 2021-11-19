@@ -1,7 +1,7 @@
 extern crate ipfs_embed;
 extern crate libipld;
 
-use crate::rpc::{get_kate_query_proof_by_cell, Cell};
+use crate::rpc::get_kate_query_proof_by_cell;
 use ipfs_embed::{Block, DefaultParams};
 use libipld::codec_impl::IpldCodec;
 use libipld::multihash::Code;
@@ -27,8 +27,8 @@ pub struct DataMatrix {
 }
 
 pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
-    let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await.unwrap());
-    IpldCodec::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
+    let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);
+    IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
 }
 
 pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
