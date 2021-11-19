@@ -31,7 +31,7 @@ pub async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
     IpldCodec::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
 }
 
-pub async fn construct_colwise(row_count: u16, col: u16) -> L0Col {
+pub async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
     let mut base_cells: Vec<BaseCell> = Vec::new();
 
     for row in 0..row_count {
@@ -40,5 +40,22 @@ pub async fn construct_colwise(row_count: u16, col: u16) -> L0Col {
 
     L0Col {
         base_cells: base_cells,
+    }
+}
+
+pub async fn construct_rowwise(block: u64, row_count: u16, col_count: u16) -> L1Row {
+    let mut l0_cols: Vec<L0Col> = Vec::new();
+
+    for col in 0..col_count {
+        l0_cols.push(construct_colwise(block, row_count, col).await);
+    }
+
+    L1Row { l0_cols: l0_cols }
+}
+
+pub async fn construct_matrix(block: u64, row_count: u16, col_count: u16) -> DataMatrix {
+    DataMatrix {
+        l1_row: construct_rowwise(block, row_count, col_count).await,
+        block_num: block as i128,
     }
 }
