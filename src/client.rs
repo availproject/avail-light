@@ -15,17 +15,18 @@ use ipfs_embed::{
     DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     StorageConfig,
 };
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::time::Duration;
 use tempdir::TempDir;
 
-async fn run_client(
+#[tokio::main]
+pub async fn run_client(
     seed: u64,
     peers: Vec<(PeerId, Multiaddr)>,
     block_rx: Receiver<ClientMsg>,
-    self_info_tx: Sender<(PeerId, Multiaddr)>,
+    self_info_tx: SyncSender<(PeerId, Multiaddr)>,
     destroy_rx: Receiver<bool>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // @note make ipfs node's port user choosable
     let ipfs = make_client(seed, 37000, &format!("node_{}", seed)).await?;
     let pin = ipfs.create_temp_pin()?;
@@ -51,6 +52,8 @@ async fn run_client(
             Ok(block) => {
                 let matrix = construct_matrix(block.num, block.max_rows, block.max_cols).await;
                 push_matrix(matrix, None, &ipfs, &pin).await?;
+
+                println!("✅ Block {} available on IPFS", block.num);
             }
             Err(e) => {
                 println!("Error encountered while listening for blocks: {}", e);
@@ -80,11 +83,8 @@ pub async fn make_client(
 
     let mut stream = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
     if let ipfs_embed::ListenerEvent::NewListenAddr(_) = stream.next().await.unwrap() {
-        println!(
-            "self: {}\t{:?}",
-            ipfs.local_peer_id(),
-            ipfs.listeners().clone()
-        );
+        /* do nothing useful here, just ensure ipfs-node has
+        started listening on specified port */
     }
 
     tokio::task::spawn(async move {
