@@ -8,6 +8,7 @@ use ipfs_embed::{Cid, DefaultParams as IPFSDefaultParams, Ipfs, TempPin};
 use libipld::codec_impl::IpldCodec;
 use libipld::multihash::Code;
 use libipld::Ipld;
+use std::collections::BTreeMap;
 
 pub type IpldBlock = Block<DefaultParams>;
 pub type BaseCell = IpldBlock;
@@ -93,4 +94,40 @@ pub async fn push_col(
     ipfs.insert(&coded_col)?;
 
     Ok(*coded_col.cid())
+}
+
+pub async fn push_row(
+    row: L1Row,
+    block_num: i128,
+    latest_cid: Option<Cid>,
+    ipfs: &Ipfs<DefaultParams>,
+    pin: &TempPin,
+) -> anyhow::Result<Cid> {
+    let mut col_cids: Vec<Ipld> = Vec::with_capacity(row.l0_cols.len());
+
+    for col in row.l0_cols {
+        if let Ok(cid) = push_col(col, ipfs, pin).await {
+            col_cids.push(Ipld::Link(cid));
+        };
+    }
+
+    let mut map = BTreeMap::new();
+
+    map.insert("columns".to_owned(), Ipld::List(col_cids));
+    map.insert("block".to_owned(), Ipld::Integer(block_num));
+    map.insert(
+        "prev".to_owned(),
+        match latest_cid {
+            Some(cid) => Ipld::Link(cid),
+            None => Ipld::Null,
+        },
+    );
+
+    let map = Ipld::StringMap(map);
+    let coded_matrix = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map).unwrap();
+
+    ipfs.temp_pin(pin, coded_matrix.cid())?;
+    ipfs.insert(&coded_matrix)?;
+
+    Ok(*coded_matrix.cid())
 }
