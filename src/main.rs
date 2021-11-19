@@ -1,18 +1,19 @@
 use futures_util::{SinkExt, StreamExt};
+use ipfs_embed::{Multiaddr, PeerId};
 use num::{BigUint, FromPrimitive};
-use serde_json;
 use std::collections::HashMap;
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
 mod client;
 mod data;
 mod http;
 mod proof;
 mod rpc;
 mod types;
-use data::construct_matrix;
 
 //Main function of the Light-client which handles ws and rpc
 
@@ -33,28 +34,34 @@ pub async fn main() {
         http::run_server(cp.clone()).unwrap();
     });
 
-    let url = url::Url::parse(&rpc::get_ws_node_url()).unwrap();
+    // communication channels being established for talking to
+    // ipfs backed application client
+    let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
+    let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
+    let (destroy_tx, destroy_rx) = sync_channel::<bool>(1);
+
+    thread::spawn(move || {
+        client::run_client(1, Vec::new(), block_rx, self_info_tx, destroy_rx).unwrap();
+    });
+
+    let (peer_id, addrs) = self_info_rx.recv().unwrap();
+    println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 
     //tokio-tungesnite method for ws connection to substrate.
+    let url = url::Url::parse(&rpc::get_ws_node_url()).unwrap();
     let (ws_stream, _response) = connect_async(url).await.expect("Failed to connect");
-    println!("Connected to Substrate Node");
-
     let (mut write, mut read) = ws_stream.split();
 
+    // attempt subscription to full node block mining stream
     write
         .send(Message::Text(
-            r#"{
-        "id":1, 
-        "jsonrpc":"2.0", 
-        "method": "subscribe_newHead"
-    }"#
-            .to_string()
-                + "\n",
+            r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
         ))
         .await
         .unwrap();
 
     let _subscription_result = read.next().await.unwrap().unwrap().into_data();
+    println!("Connected to Substrate Node");
 
     let read_future = read.for_each(|message| async {
         let data = message.unwrap().into_data();
@@ -70,9 +77,6 @@ pub async fn main() {
                 let max_cols = response.params.result.extrinsics_root.cols;
                 let app_index = response.params.result.app_data_lookup.index;
                 let commitment = response.params.result.extrinsics_root.commitment;
-
-                let mat = construct_matrix(*num, max_rows, max_cols).await;
-                println!("constructed matrix for {}", mat.block_num);
 
                 //hyper request for getting the kate query request
                 let cells = rpc::get_kate_proof(*num, max_rows, max_cols, false)
@@ -120,12 +124,25 @@ pub async fn main() {
                         );
                     }
                 }
+
+                // notify ipfs-based application client
+                // that newly mined block has been received
+                block_tx
+                    .send(types::ClientMsg {
+                        num: *num,
+                        max_rows: max_rows,
+                        max_cols: max_cols,
+                    })
+                    .unwrap();
             }
             Err(error) => println!("Misconstructed Header: {:?}", error),
         }
     });
 
     read_future.await;
+    // inform ipfs-backed application client running thread
+    // that it can kill self now, as process is going to die itself !
+    destroy_tx.send(true).unwrap();
 }
 
 /* note:
