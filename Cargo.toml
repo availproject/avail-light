@@ -23,3 +23,5 @@ num = "0.4.0"
 futures = { version = "0.3.15", default-features = false, features = ["std", "thread-pool"] }
 chrono = "0.4.19"
 dotenv = "0.15.0"
+libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor", "dag-json"] }
+ipfs-embed = { version = "0.22.4" }
