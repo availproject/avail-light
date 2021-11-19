@@ -1,8 +1,10 @@
+extern crate anyhow;
 extern crate ipfs_embed;
 extern crate libipld;
 
 use crate::rpc::get_kate_query_proof_by_cell;
 use ipfs_embed::{Block, DefaultParams};
+use ipfs_embed::{Cid, DefaultParams as IPFSDefaultParams, Ipfs, TempPin};
 use libipld::codec_impl::IpldCodec;
 use libipld::multihash::Code;
 use libipld::Ipld;
@@ -58,4 +60,14 @@ pub async fn construct_matrix(block: u64, row_count: u16, col_count: u16) -> Dat
         l1_row: construct_rowwise(block, row_count, col_count).await,
         block_num: block as i128,
     }
+}
+
+pub async fn push_cell(
+    cell: BaseCell,
+    ipfs: &Ipfs<IPFSDefaultParams>,
+    pin: &TempPin,
+) -> anyhow::Result<Cid> {
+    ipfs.temp_pin(pin, cell.cid())?;
+    ipfs.insert(&cell)?;
+    Ok(*cell.cid())
 }

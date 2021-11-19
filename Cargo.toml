@@ -25,6 +25,7 @@ chrono = "0.4.19"
 dotenv = "0.15.0"
 libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor", "dag-json"] }
 ipfs-embed = { version = "0.22.4" }
+anyhow = "1.0.41"
 
 [dev-dependencies]
 libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor", "dag-pb", "derive"] }
