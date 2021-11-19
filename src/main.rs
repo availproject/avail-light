@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+mod client;
 mod data;
 mod http;
 mod proof;
