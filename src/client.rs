@@ -12,7 +12,7 @@ use crate::types::{ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ed25519_dalek::{PublicKey, SecretKey};
 use ipfs_embed::{
-    DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
+    Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     StorageConfig,
 };
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -40,6 +40,16 @@ pub async fn run_client(
         ipfs.bootstrap(&peers).await?;
     }
 
+    // @note initialising with empty latest cid
+    // but when first block is received, say number `N`
+    // for preparing and pushing it to IPFS, block `N-1`'s
+    // CID is required, where to get it from ?
+    //
+    // I need to talk to preexisting peers, who has been
+    // part of network longer than I'm
+    //
+    // It's WIP
+    let mut latest_cid: Option<Cid> = None;
     loop {
         // Receive metadata related to newly mined block
         // such as block number, dimension of data matrix etc.
@@ -51,9 +61,13 @@ pub async fn run_client(
         match block_rx.recv() {
             Ok(block) => {
                 let matrix = construct_matrix(block.num, block.max_rows, block.max_cols).await;
-                push_matrix(matrix, None, &ipfs, &pin).await?;
+                latest_cid = Some(push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await?);
 
-                println!("✅ Block {} available on IPFS", block.num);
+                println!(
+                    "✅ Block {} available on IPFS\t{}",
+                    block.num,
+                    latest_cid.unwrap().clone()
+                );
             }
             Err(e) => {
                 println!("Error encountered while listening for blocks: {}", e);

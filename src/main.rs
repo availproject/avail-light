@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 mod client;
@@ -29,8 +28,6 @@ pub async fn main() {
     */
 
     thread::spawn(move || {
-        println!("RPC server is also running..😃");
-        thread::sleep(time::Duration::from_millis(500));
         http::run_server(cp.clone()).unwrap();
     });
 
@@ -82,12 +79,12 @@ pub async fn main() {
                 let cells = rpc::get_kate_proof(*num, max_rows, max_cols, false)
                     .await
                     .unwrap();
-                println!("\n🛠   Verifying block :{}", *num);
+                println!("Verifying block {}", *num);
 
                 //hyper request for verifying the proof
                 let count = proof::verify_proof(max_rows, max_cols, &cells, &commitment);
                 println!(
-                    "✅ Completed {} rounds of verification for block number {} ",
+                    "Completed {} rounds of verification for block number {} ",
                     count, num
                 );
 
@@ -106,20 +103,18 @@ pub async fn main() {
                 The following is the part when the user have already subscribed
                 to an appID and now its verifying every cell that contains the data
                 */
-                if app_index.is_empty() {
-                    println!("\n 💡 Nothing more to verify");
-                } else {
+                if !app_index.is_empty() {
                     let req_id = rpc::get_app_id();
                     if conf > 92.0 && req_id > 0 {
                         let req_cells = rpc::get_kate_proof(*num, max_rows, max_cols, true)
                             .await
                             .unwrap();
-                        println!("\n💡   Verifying block :{} because APPID is given ", *num);
+                        println!("Verifying block :{} because APPID is given ", *num);
                         //hyper request for verifying the proof
                         let count =
                             proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
                         println!(
-                            "✅ Completed {} rounds of verification for block number {} ",
+                            "Completed {} rounds of verification for block number {} ",
                             count, num
                         );
                     }

@@ -182,7 +182,7 @@ pub async fn run_server(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = ([127, 0, 0, 1], rpc::get_port()).into();
     let server = Server::bind(&addr).serve(MakeHandler { store });
-    println!("✅ Listening on http://127.0.0.1:{}", rpc::get_port());
+    println!("RPC running on http://127.0.0.1:{}", rpc::get_port());
     server.await?;
     Ok(())
 }
