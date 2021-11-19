@@ -11,6 +11,7 @@ mod data;
 mod http;
 mod proof;
 mod rpc;
+mod types;
 use data::construct_matrix;
 
 //Main function of the Light-client which handles ws and rpc
