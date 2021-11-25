@@ -130,20 +130,24 @@ mod tests {
 
     #[test]
     fn data_reconstruction_success() {
-        let domain_size = 1usize << 2;
+        let domain_size = 1usize << 4;
         let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
 
+        // some dummy source data I care about
         let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
         for i in 0..domain_size {
             src.push(BlsScalar::from(1 << (i + 1)));
         }
+        // fill extended portion of vector with zeros
         for _ in domain_size..(2 * domain_size) {
             src.push(BlsScalar::zero());
         }
 
+        // erasure code it
         let coded_src = eval_domain.fft(&src);
+        // choose random subset of it ( >= 50% )
         let (coded_src_subset, _) = random_subset(&coded_src);
-
+        // reconstruct 100% erasure coded values from random coded subset
         let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
 
         for i in 0..(2 * domain_size) {
@@ -159,7 +163,7 @@ mod tests {
 
     #[test]
     fn data_reconstruction_failure() {
-        let domain_size = 1usize << 2;
+        let domain_size = 1usize << 4;
         let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
 
         let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
@@ -171,18 +175,34 @@ mod tests {
         }
 
         let coded_src = eval_domain.fft(&src);
-        let (coded_src_subset, _) = random_subset(&coded_src);
-
+        let (mut coded_src_subset, available) = random_subset(&coded_src);
+        // intentionally drop a few coded elements such that
+        // < 50% is available
+        drop_few(&mut coded_src_subset, available);
+        // attempt to reconstruct 100% coded data from <50 % coded data
+        // I've available
         let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
 
+        let mut mismatch_count = 0;
         for i in 0..(2 * domain_size) {
-            assert_eq!(coded_src[i], coded_recovered[i]);
+            if coded_src[i] != coded_recovered[i] {
+                mismatch_count += 1;
+            }
         }
 
-        let dst = eval_domain.ifft(&coded_recovered);
+        assert!(mismatch_count > 0);
+    }
 
-        for i in 0..(2 * domain_size) {
-            assert_eq!(src[i], dst[i]);
+    fn drop_few(data: &mut [Option<BlsScalar>], mut available: usize) {
+        assert!(available <= data.len());
+
+        let mut idx = 0;
+        while available >= data.len() / 2 {
+            if let Some(_) = data[idx] {
+                data[idx] = None;
+                available -= 1;
+            }
+            idx += 1;
         }
     }
 
@@ -190,7 +210,7 @@ mod tests {
     // reconstruction purpose
     //
     // @note this is just a helper function for writing test case
-    fn random_subset(data: &[BlsScalar]) -> (Vec<Option<BlsScalar>>, u64) {
+    fn random_subset(data: &[BlsScalar]) -> (Vec<Option<BlsScalar>>, usize) {
         let mut rng = StdRng::seed_from_u64(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -211,7 +231,7 @@ mod tests {
         // already we've >=50% data available
         // so just return & attempt to reconstruct back
         if available >= data.len() / 2 {
-            (subset, available as u64)
+            (subset, available)
         } else {
             for i in 0..data.len() {
                 if let None = subset[i] {
@@ -225,7 +245,7 @@ mod tests {
                     available += 1;
                 }
             }
-            (subset, available as u64)
+            (subset, available)
         }
     }
 }
