@@ -184,3 +184,55 @@ pub fn reconstruct_column(row_count: usize, cells: &[Cell]) -> Result<Vec<BlsSca
 
     reconstruct_poly(eval_domain, subset)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconstruct_certain_column() {
+        let domain_size = 1usize << 2;
+        let row_count = 2 * domain_size;
+        let eval_domain = EvaluationDomain::new(row_count).unwrap();
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
+        for i in 0..domain_size {
+            src.push(BlsScalar::from(1 << (i + 1)));
+        }
+        for _ in domain_size..row_count {
+            src.push(BlsScalar::zero());
+        }
+
+        // erasure coded all data
+        let coded = eval_domain.fft(&src);
+        assert!(coded.len() == row_count);
+
+        let cells = vec![
+            Cell {
+                row: 0,
+                proof: coded[0].to_bytes().to_vec(),
+                ..Default::default()
+            },
+            Cell {
+                row: 4,
+                proof: coded[4].to_bytes().to_vec(),
+                ..Default::default()
+            },
+            Cell {
+                row: 6,
+                proof: coded[6].to_bytes().to_vec(),
+                ..Default::default()
+            },
+            Cell {
+                row: 2,
+                proof: coded[2].to_bytes().to_vec(),
+                ..Default::default()
+            },
+        ];
+
+        let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
+        for i in 0..row_count {
+            assert_eq!(coded[i], reconstructed[i]);
+        }
+    }
+}
