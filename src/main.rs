@@ -13,6 +13,7 @@ mod http;
 mod proof;
 mod rpc;
 mod types;
+mod recovery;
 
 //Main function of the Light-client which handles ws and rpc
 
