@@ -1,13 +1,16 @@
 use dusk_plonk::fft::EvaluationDomain;
 use dusk_plonk::prelude::BlsScalar;
 
+// This module is taken from https://gist.github.com/itzmeanjan/4acf9338d9233e79cfbee5d311e7a0b4
+// which I wrote few months back when exploring polynomial based erasure coding technique !
+
 pub fn reconstruct_poly(
     // domain I'm working with
     // all (i)ffts to be performed on it
     eval_domain: EvaluationDomain,
-    // subset of avialable data
+    // subset of available data
     subset: Vec<Option<BlsScalar>>,
-) -> Vec<BlsScalar> {
+) -> Result<Vec<BlsScalar>, String> {
     let mut missing_indices = Vec::new();
     for i in 0..subset.len() {
         if let None = subset[i] {
@@ -18,11 +21,9 @@ pub fn reconstruct_poly(
         zero_poly_fn(eval_domain, &missing_indices[..], subset.len() as u64);
     for i in 0..subset.len() {
         if let None = subset[i] {
-            assert_eq!(
-                zero_eval[i],
-                BlsScalar::zero(),
-                "bad zero poly evaluation !"
-            );
+            if !(zero_eval[i] == BlsScalar::zero()) {
+                return Err("bad zero poly evaluation !".to_owned());
+            }
         }
     }
     let mut poly_evals_with_zero: Vec<BlsScalar> = Vec::new();
@@ -41,18 +42,12 @@ pub fn reconstruct_poly(
     for i in 0..eval_shifted_poly_with_zero.len() {
         eval_shifted_poly_with_zero[i] *= eval_shifted_zero_poly[i].invert().unwrap();
     }
+
     let mut shifted_reconstructed_poly = eval_domain.ifft(&eval_shifted_poly_with_zero[..]);
     unshift_poly(&mut shifted_reconstructed_poly[..]);
+
     let reconstructed_data = eval_domain.fft(&shifted_reconstructed_poly[..]);
-    for i in 0..subset.len() {
-        if let Some(v) = subset[i] {
-            assert_eq!(
-                v, reconstructed_data[i],
-                "failed to reconstruct correctly !"
-            )
-        }
-    }
-    reconstructed_data
+    Ok(reconstructed_data)
 }
 
 fn expand_root_of_unity(eval_domain: EvaluationDomain) -> Vec<BlsScalar> {
@@ -123,5 +118,114 @@ fn unshift_poly(poly: &mut [BlsScalar]) {
     for i in 0..poly.len() {
         poly[i] *= factor_power;
         factor_power *= shift_factor;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn data_reconstruction_success() {
+        let domain_size = 1usize << 2;
+        let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
+        for i in 0..domain_size {
+            src.push(BlsScalar::from(1 << (i + 1)));
+        }
+        for _ in domain_size..(2 * domain_size) {
+            src.push(BlsScalar::zero());
+        }
+
+        let coded_src = eval_domain.fft(&src);
+        let (coded_src_subset, _) = random_subset(&coded_src);
+
+        let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(coded_src[i], coded_recovered[i]);
+        }
+
+        let dst = eval_domain.ifft(&coded_recovered);
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(src[i], dst[i]);
+        }
+    }
+
+    #[test]
+    fn data_reconstruction_failure() {
+        let domain_size = 1usize << 2;
+        let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
+        for i in 0..domain_size {
+            src.push(BlsScalar::from(1 << (i + 1)));
+        }
+        for _ in domain_size..(2 * domain_size) {
+            src.push(BlsScalar::zero());
+        }
+
+        let coded_src = eval_domain.fft(&src);
+        let (coded_src_subset, _) = random_subset(&coded_src);
+
+        let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(coded_src[i], coded_recovered[i]);
+        }
+
+        let dst = eval_domain.ifft(&coded_recovered);
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(src[i], dst[i]);
+        }
+    }
+
+    // select a random subset of coded data to be used for
+    // reconstruction purpose
+    //
+    // @note this is just a helper function for writing test case
+    fn random_subset(data: &[BlsScalar]) -> (Vec<Option<BlsScalar>>, u64) {
+        let mut rng = StdRng::seed_from_u64(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        );
+        let mut subset: Vec<Option<BlsScalar>> = Vec::with_capacity(data.len());
+        let mut available = 0;
+        for i in 0..data.len() {
+            if rng.gen::<u8>() % 2 == 0 {
+                subset.push(Some(data[i]));
+                available += 1;
+            } else {
+                subset.push(None);
+            }
+        }
+
+        // already we've >=50% data available
+        // so just return & attempt to reconstruct back
+        if available >= data.len() / 2 {
+            (subset, available as u64)
+        } else {
+            for i in 0..data.len() {
+                if let None = subset[i] {
+                    // enough data added, >=50% needs
+                    // to be present
+                    if available >= data.len() / 2 {
+                        break;
+                    }
+
+                    subset[i] = Some(data[i]);
+                    available += 1;
+                }
+            }
+            (subset, available as u64)
+        }
     }
 }
