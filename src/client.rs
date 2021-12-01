@@ -9,7 +9,7 @@ extern crate tokio;
 
 use crate::data::{
     construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
-    prepare_block_cid_fact_message, push_matrix,
+    prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 };
 use crate::types::{BlockCidPair, ClientMsg, Event};
 use async_std::stream::StreamExt;
@@ -72,31 +72,30 @@ pub async fn run_client(
                         if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
                             {
                                 let mut handle = block_cid_store_0.lock().unwrap();
-                                if !handle.contains_key(&block) {
-                                    handle.insert(
-                                        block,
-                                        BlockCidPair {
-                                            cid: cid,
-                                            self_computed: false, // because this block CID is received over network !
-                                        },
-                                    );
-                                } else {
-                                    match handle.get(&block) {
-                                        Some(v) => {
-                                            if v.self_computed && v.cid != cid {
-                                                println!(
-                                                    "received CID doesn't match host computed CID"
-                                                );
-                                            }
-                                            // @note what happens if have-CID is not host computed and
-                                            // CID mismatch is encountered ?
-                                            //
-                                            // Need to verify/ self-compute CID and reach to a (more) stable
-                                            // state
+
+                                match handle.get(&block) {
+                                    Some(v) => {
+                                        if v.self_computed && v.cid != cid {
+                                            println!(
+                                                "received CID doesn't match host computed CID"
+                                            );
                                         }
-                                        None => {}
-                                    };
-                                }
+                                        // @note what happens if have-CID is not host computed and
+                                        // CID mismatch is encountered ?
+                                        //
+                                        // Need to verify/ self-compute CID and reach to a (more) stable
+                                        // state
+                                    }
+                                    None => {
+                                        handle.insert(
+                                            block,
+                                            BlockCidPair {
+                                                cid: cid,
+                                                self_computed: false, // because this block CID is received over network !
+                                            },
+                                        );
+                                    }
+                                };
                             }
 
                             println!("received message on `topic/block_cid_fact`\t{}", peer);
@@ -114,6 +113,10 @@ pub async fn run_client(
 
     // listen for messages received from ask topic !
     let block_cid_store_1 = block_cid_store.clone();
+    // IPFS instance to be used for responding
+    // back to peer when some question is asked on ask
+    // channel, given that answer is known to peer !
+    let ipfs_clone = ipfs.clone();
     tokio::task::spawn(async move {
         loop {
             let msg = ask_topic.next().await;
@@ -126,9 +129,58 @@ pub async fn run_client(
                         println!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        // @note do something useful with data received !
                         println!("received {:?} from {}", msg, peer);
-                        if let Some((_block, _cid)) = decode_block_cid_ask_message(msg.to_vec()) {
+                        if let Some((block, cid)) = decode_block_cid_ask_message(msg.to_vec()) {
+                            {
+                                let mut handle = block_cid_store_1.lock().unwrap();
+
+                                // this is a question kind message
+                                // on ask channel, so this peer is evaluating
+                                // whether it can answer it or not !
+                                if cid == None {
+                                    match handle.get(&block) {
+                                        Some(v) => {
+                                            // @note shall I introduce a way to denote whether CID is
+                                            // peer computed or self computed ?
+                                            let msg =
+                                                prepare_block_cid_ask_message(block, Some(v.cid));
+                                            ipfs_clone
+                                                .publish("topic/block_cid_ask", msg) // respond back on same channel
+                                                .unwrap(); // the question is received on
+                                        }
+                                        None => {
+                                            // supposedly this peer can't help !
+                                            // @note can this peer act so that it can help asking peer ?
+                                        }
+                                    };
+                                } else {
+                                    // this is a answer kind message on ask channel
+                                    match handle.get(&block) {
+                                        Some(v) => {
+                                            if v.self_computed && v.cid != cid.unwrap() {
+                                                println!(
+                                                    "received CID doesn't match host computed CID"
+                                                );
+                                            }
+                                            // @note what happens if have-CID is not host computed and
+                                            // CID mismatch is encountered ?
+                                            //
+                                            // Need to verify/ self-compute CID and reach to a (more) stable
+                                            // state
+                                        }
+                                        None => {
+                                            handle.insert(
+                                                block,
+                                                BlockCidPair {
+                                                    cid: cid.unwrap(),
+                                                    self_computed: false, // because this block CID is received over network !
+                                                },
+                                            );
+                                        }
+                                    };
+                                }
+                            }
+
                             println!("received message on `topic/block_cid_ask`\t{}", peer);
                         }
                     }
