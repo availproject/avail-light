@@ -11,14 +11,16 @@ use crate::data::{
     construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
     prepare_block_cid_fact_message, push_matrix,
 };
-use crate::types::{ClientMsg, Event};
+use crate::types::{BlockCidPair, ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ed25519_dalek::{PublicKey, SecretKey};
 use ipfs_embed::{
     Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     StorageConfig,
 };
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempdir::TempDir;
 
@@ -43,6 +45,9 @@ pub async fn run_client(
         ipfs.bootstrap(&peers).await?;
     }
 
+    // block to CID mapping to locally kept here ( in thead safe manner ! )
+    let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
+
     // broadcast fact i.e. some block number is mapped to some
     // Cid ( of respective block data matrix ) to all peers subscribed
     let mut fact_topic = ipfs.subscribe("topic/block_cid_fact").unwrap();
@@ -51,6 +56,7 @@ pub async fn run_client(
     let mut ask_topic = ipfs.subscribe("topic/block_cid_ask").unwrap();
 
     // listen for messages received on fact topic !
+    let block_cid_store_0 = block_cid_store.clone();
     tokio::task::spawn(async move {
         loop {
             let msg = fact_topic.next().await;
@@ -63,10 +69,40 @@ pub async fn run_client(
                         println!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        // @note do something useful with decoded data
-                        if let Some((_block, _cid)) = decode_block_cid_fact_message(msg.to_vec()) {
+                        if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
+                            {
+                                let mut handle = block_cid_store_0.lock().unwrap();
+                                if !handle.contains_key(&block) {
+                                    handle.insert(
+                                        block,
+                                        BlockCidPair {
+                                            cid: cid,
+                                            self_computed: false, // because this block CID is received over network !
+                                        },
+                                    );
+                                } else {
+                                    match handle.get(&block) {
+                                        Some(v) => {
+                                            if v.self_computed && v.cid != cid {
+                                                println!(
+                                                    "received CID doesn't match host computed CID"
+                                                );
+                                            }
+                                            // @note what happens if have-CID is not host computed and
+                                            // CID mismatch is encountered ?
+                                            //
+                                            // Need to verify/ self-compute CID and reach to a (more) stable
+                                            // state
+                                        }
+                                        None => {}
+                                    };
+                                }
+                            }
+
                             println!("received message on `topic/block_cid_fact`\t{}", peer);
                         }
+
+                        // received message was not decodable !
                     }
                 },
                 None => {
@@ -77,6 +113,7 @@ pub async fn run_client(
     });
 
     // listen for messages received from ask topic !
+    let block_cid_store_1 = block_cid_store.clone();
     tokio::task::spawn(async move {
         loop {
             let msg = ask_topic.next().await;
@@ -129,6 +166,26 @@ pub async fn run_client(
                 // publish block-cid mapping message over gossipsub network
                 let msg = prepare_block_cid_fact_message(block.num as i128, latest_cid.unwrap());
                 ipfs.publish("topic/block_cid_fact", msg).unwrap();
+
+                // thread-safely put an entry in local in-memory store
+                // for block to cid mapping
+                //
+                // it can be used later for for serving clients or
+                // answering to questions asked by other peers over
+                // gossipsub network
+                //
+                // once a CID is self-computed, it'll never be rewritten even
+                // when conflicting fact is found over gossipsub channel
+                {
+                    let mut handle = block_cid_store.lock().unwrap();
+                    handle.insert(
+                        block.num as i128,
+                        BlockCidPair {
+                            cid: latest_cid.unwrap(),
+                            self_computed: true, // because this block CID is self-computed !
+                        },
+                    );
+                }
 
                 println!(
                     "✅ Block {} available\t{}",

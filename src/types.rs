@@ -1,6 +1,6 @@
 extern crate ipfs_embed;
 
-use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId, StreamId};
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
 use serde::Deserialize;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -126,6 +126,12 @@ impl std::str::FromStr for Event {
             _ => return Err(anyhow::anyhow!("invalid event `{}`", s)),
         })
     }
+}
+
+#[derive(Clone)]
+pub struct BlockCidPair {
+    pub cid: Cid,            // cid of some certain block number's data matrix
+    pub self_computed: bool, // is this CID computed by this process ?
 }
 
 pub type IpldBlock = IpfsBlock<DefaultParams>;
