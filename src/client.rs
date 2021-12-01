@@ -40,6 +40,61 @@ pub async fn run_client(
         ipfs.bootstrap(&peers).await?;
     }
 
+    // broadcast fact i.e. some block number is mapped to some
+    // Cid ( of respective block data matrix ) to all peers subscribed
+    let mut fact_topic = ipfs.subscribe("topic/block_cid_fact").unwrap();
+    // ask over gossip network which Cid is associated with which block number
+    // and expect some one, who knows, will answer it
+    let mut ask_topic = ipfs.subscribe("topic/block_cid_ask").unwrap();
+
+    // listen for messages received on fact topic !
+    tokio::task::spawn(async move {
+        loop {
+            let msg = fact_topic.next().await;
+            match msg {
+                Some(msg) => match msg {
+                    ipfs_embed::GossipEvent::Subscribed(peer) => {
+                        println!("subscribed to topic `topic/block_cid_fact`\t{}", peer);
+                    }
+                    ipfs_embed::GossipEvent::Unsubscribed(peer) => {
+                        println!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
+                    }
+                    ipfs_embed::GossipEvent::Message(peer, msg) => {
+                        // @note really do something with data received !
+                        println!("received {:?} from {}", msg, peer);
+                    }
+                },
+                None => {
+                    break;
+                }
+            }
+        }
+    });
+
+    // listen for messages received from ask topic !
+    tokio::task::spawn(async move {
+        loop {
+            let msg = ask_topic.next().await;
+            match msg {
+                Some(msg) => match msg {
+                    ipfs_embed::GossipEvent::Subscribed(peer) => {
+                        println!("subscribed to topic `topic/block_cid_ask`\t{}", peer);
+                    }
+                    ipfs_embed::GossipEvent::Unsubscribed(peer) => {
+                        println!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
+                    }
+                    ipfs_embed::GossipEvent::Message(peer, msg) => {
+                        // @note really do something with data received !
+                        println!("received {:?} from {}", msg, peer);
+                    }
+                },
+                None => {
+                    break;
+                }
+            }
+        }
+    });
+
     // @note initialising with empty latest cid
     // but when first block is received, say number `N`
     // for preparing and pushing it to IPFS, block `N-1`'s
@@ -65,7 +120,7 @@ pub async fn run_client(
 
                 // publish block-cid mapping message over gossipsub network
                 let msg = prepare_block_cid_message(block.num as i128, latest_cid.unwrap());
-                ipfs.publish("topic/block_cid", msg).unwrap();
+                ipfs.publish("topic/block_cid_fact", msg).unwrap();
 
                 println!(
                     "✅ Block {} available\t{}",
