@@ -256,6 +256,44 @@ pub async fn run_client(
     Ok(())
 }
 
+// Given a certain block number, this function prepares a question-kind message
+// and sends over gossip network on ask channel ( topic )
+//
+// After that it wait for some time ( to be more specific as of now 4 seconds )
+//
+// Then acquires local data store ( block to cid mapping ) lock
+// and looks up whether some helpful peer has already answered
+// question or not
+//
+// If yes returns obtained CID
+//
+// @note How to verify whether this CID is correct or not ?
+async fn ask_block_cid(
+    block: i128,
+    ipfs: &Ipfs<IPFSDefaultParams>,
+    store: Arc<Mutex<HashMap<i128, BlockCidPair>>>,
+) -> Result<Cid, &str> {
+    // send message over gossip network !
+    let msg = prepare_block_cid_ask_message(block, None);
+    if let Err(_) = ipfs.publish("topic/block_cid_ask", msg) {
+        return Err("failed to send gossip message");
+    }
+
+    // wait for 4 seconds !
+    std::thread::sleep(Duration::from_secs(4));
+
+    // thread-safely attempt to read from data store
+    // whether question has been answer by some peer already
+    // or not
+    {
+        let handle = store.lock().unwrap();
+        match handle.get(&block) {
+            Some(v) => Ok(v.cid),
+            None => Err("failed to find CID"),
+        }
+    }
+}
+
 pub async fn make_client(
     seed: u64,
     port: u16,
