@@ -1475,7 +1475,6 @@ dependencies = [
  "cached",
  "fnv",
  "libipld-cbor",
- "libipld-cbor-derive",
  "libipld-core",
  "libipld-macro",
  "log",
@@ -1493,18 +1492,6 @@ dependencies = [
  "byteorder",
  "libipld-core",
  "thiserror",
-]
-
-[[package]]
-name = "libipld-cbor-derive"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80cf5eeddac31280a924ac77ad90df98887ccc8c351c324b11d15b620f8cf74f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "synstructure",
 ]
 
 [[package]]

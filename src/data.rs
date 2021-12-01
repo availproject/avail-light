@@ -10,10 +10,10 @@ use dusk_plonk::bls12_381::BlsScalar;
 use dusk_plonk::fft::EvaluationDomain;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::codec_impl::IpldCodec;
-use libipld::multihash::Code;
+use libipld::multihash::{Code, MultihashDigest};
 use libipld::Ipld;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
     let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);
@@ -128,6 +128,77 @@ pub async fn push_matrix(
         pin,
     )
     .await?)
+}
+
+// Takes block number along with respective CID of block data matrix
+// which was just inserted into local data store ( IPFS backed )
+// and encodes it which will be returned back from this function
+// as byte array ( well vector ). This byte array will be published
+// on some pre-agreed upon topic over Gossipsub network, so that
+// if some other peer doesn't compute/ store this block data matrix itself,
+// it should be able to atleast learn of the CID corresponding to block number,
+// so that it can fetch it when required.
+pub fn prepare_block_cid_message(block: i128, cid: Cid) -> Vec<u8> {
+    let mut map = BTreeMap::new();
+
+    map.insert("block".to_owned(), Ipld::Integer(block));
+    map.insert("cid".to_owned(), Ipld::Link(cid));
+
+    let map = Ipld::StringMap(map);
+    let coded = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map).unwrap();
+
+    coded.data().to_vec()
+}
+
+// Extracts respective CID block number from IPLD
+// encapsulated data object
+fn extract_cid(data: &Ipld) -> Option<Cid> {
+    match data {
+        Ipld::Link(cid) => Some(*cid),
+        _ => None,
+    }
+}
+
+// Extracts block number from IPLD encapsulated data object
+fn extract_block(data: &Ipld) -> Option<i128> {
+    match data {
+        Ipld::Integer(block) => Some(*block),
+        _ => None,
+    }
+}
+
+// Takes a IPLD coded message as byte array, which is probably
+// received from other peer due to topic subscription, and attempts
+// to decode it into two constituent components i.e. block number
+// and respective Cid of block data matrix
+pub fn decode_block_cid_message(msg: Vec<u8>) -> Option<(i128, Cid)> {
+    let m_hash = Code::Blake3_256.digest(&msg[..]);
+    let cid = Cid::new_v1(IpldCodec::DagCbor.into(), m_hash);
+
+    let coded_msg = IpldBlock::new(cid, msg).unwrap();
+    let decoded_msg = coded_msg.ipld().unwrap();
+
+    match decoded_msg {
+        Ipld::StringMap(map) => {
+            let map: BTreeMap<String, Ipld> = map;
+            let block = if let Some(data) = map.get("block") {
+                extract_block(data)
+            } else {
+                None
+            };
+            let cid = if let Some(data) = map.get("cid") {
+                extract_cid(data)
+            } else {
+                None
+            };
+            if block == None || cid == None {
+                None
+            } else {
+                Some((block.unwrap(), cid.unwrap()))
+            }
+        }
+        _ => None,
+    }
 }
 
 // use this function for reconstructing back all cells of certain column
