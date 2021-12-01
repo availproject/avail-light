@@ -7,7 +7,10 @@ extern crate rand;
 extern crate tempdir;
 extern crate tokio;
 
-use crate::data::{construct_matrix, prepare_block_cid_message, push_matrix};
+use crate::data::{
+    construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
+    prepare_block_cid_fact_message, push_matrix,
+};
 use crate::types::{ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ed25519_dalek::{PublicKey, SecretKey};
@@ -60,8 +63,10 @@ pub async fn run_client(
                         println!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        // @note really do something with data received !
-                        println!("received {:?} from {}", msg, peer);
+                        // @note do something useful with decoded data
+                        if let Some((_block, _cid)) = decode_block_cid_fact_message(msg.to_vec()) {
+                            println!("received message on `topic/block_cid_fact`\t{}", peer);
+                        }
                     }
                 },
                 None => {
@@ -84,8 +89,11 @@ pub async fn run_client(
                         println!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        // @note really do something with data received !
+                        // @note do something useful with data received !
                         println!("received {:?} from {}", msg, peer);
+                        if let Some((_block, _cid)) = decode_block_cid_ask_message(msg.to_vec()) {
+                            println!("received message on `topic/block_cid_ask`\t{}", peer);
+                        }
                     }
                 },
                 None => {
@@ -119,7 +127,7 @@ pub async fn run_client(
                 latest_cid = Some(push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await?);
 
                 // publish block-cid mapping message over gossipsub network
-                let msg = prepare_block_cid_message(block.num as i128, latest_cid.unwrap());
+                let msg = prepare_block_cid_fact_message(block.num as i128, latest_cid.unwrap());
                 ipfs.publish("topic/block_cid_fact", msg).unwrap();
 
                 println!(
