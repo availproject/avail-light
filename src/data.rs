@@ -260,6 +260,23 @@ pub fn reconstruct_column(row_count: usize, cells: &[Cell]) -> Result<Vec<BlsSca
 mod tests {
     use super::*;
 
+    #[test]
+    fn gossip_message_coding_decoding() {
+        let block: i128 = 1 << 31;
+        let cid: Cid = {
+            let flag = Ipld::Bool(true);
+            *IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
+                .unwrap()
+                .cid()
+        };
+
+        let msg = prepare_block_cid_message(block, cid);
+        let (block_dec, cid_dec) = decode_block_cid_message(msg).unwrap();
+
+        assert_eq!(block, block_dec);
+        assert_eq!(cid, cid_dec);
+    }
+
     // Following test cases attempt to figure out any loop holes
     // I might be leaving, when reconstructing whole column of data
     // matrix when >= 50% of those cells along a certain column
