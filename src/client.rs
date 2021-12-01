@@ -7,7 +7,7 @@ extern crate rand;
 extern crate tempdir;
 extern crate tokio;
 
-use crate::data::{construct_matrix, push_matrix};
+use crate::data::{construct_matrix, prepare_block_cid_message, push_matrix};
 use crate::types::{ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ed25519_dalek::{PublicKey, SecretKey};
@@ -63,8 +63,12 @@ pub async fn run_client(
                 let matrix = construct_matrix(block.num, block.max_rows, block.max_cols).await;
                 latest_cid = Some(push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await?);
 
+                // publish block-cid mapping message over gossipsub network
+                let msg = prepare_block_cid_message(block.num as i128, latest_cid.unwrap());
+                ipfs.publish("topic/block_cid", msg).unwrap();
+
                 println!(
-                    "✅ Block {} available on IPFS\t{}",
+                    "✅ Block {} available\t{}",
                     block.num,
                     latest_cid.unwrap().clone()
                 );

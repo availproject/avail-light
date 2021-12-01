@@ -13,7 +13,7 @@ use libipld::codec_impl::IpldCodec;
 use libipld::multihash::{Code, MultihashDigest};
 use libipld::Ipld;
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
 async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
     let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);

@@ -11,9 +11,9 @@ mod client;
 mod data;
 mod http;
 mod proof;
+mod recovery;
 mod rpc;
 mod types;
-mod recovery;
 
 //Main function of the Light-client which handles ws and rpc
 
