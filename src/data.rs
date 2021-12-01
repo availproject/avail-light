@@ -342,10 +342,21 @@ pub fn reconstruct_column(row_count: usize, cells: &[Cell]) -> Result<Vec<BlsSca
 
 #[cfg(test)]
 mod tests {
+    extern crate rand;
+
     use super::*;
+    use rand::prelude::random;
+
+    fn random_data(n: u64) -> Vec<u8> {
+        let mut data = Vec::with_capacity(n as usize);
+        for _ in 0..n {
+            data.push(random::<u8>());
+        }
+        data
+    }
 
     #[test]
-    fn gossip_message_coding_decoding() {
+    fn fact_message_encoding_decoding_success() {
         let block: i128 = 1 << 31;
         let cid: Cid = {
             let flag = Ipld::Bool(true);
@@ -359,6 +370,56 @@ mod tests {
 
         assert_eq!(block, block_dec);
         assert_eq!(cid, cid_dec);
+    }
+
+    #[test]
+    fn fact_message_decoding_failure() {
+        // 256 bytes of random data
+        let msg = random_data(256);
+        assert_eq!(decode_block_cid_fact_message(msg), None);
+    }
+
+    #[test]
+    fn ask_message_encoding_decoding_success_0() {
+        let block: i128 = 1 << 31;
+        // notice Cid is known for this ask message
+        // denoting it's an answer to some question mesasge
+        let cid: Cid = {
+            let flag = Ipld::Bool(true);
+            *IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
+                .unwrap()
+                .cid()
+        };
+
+        let msg = prepare_block_cid_ask_message(block, Some(cid));
+        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg).unwrap();
+
+        assert_eq!(block, block_dec);
+        assert_eq!(cid, cid_dec.unwrap());
+    }
+
+    #[test]
+    fn ask_message_encoding_decoding_success_1() {
+        let block: i128 = 1 << 31;
+        // notice Cid is unknown is this case, denoting
+        // it's question message, asked by some peer
+        //
+        // as good peer, responsibility is responding
+        // back on same channel with block, cid pair
+        let cid = None;
+
+        let msg = prepare_block_cid_ask_message(block, cid);
+        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg).unwrap();
+
+        assert_eq!(block, block_dec);
+        assert_eq!(cid_dec, None);
+    }
+
+    #[test]
+    fn ask_message_decoding_failure() {
+        // 256 bytes of random data
+        let msg = random_data(256);
+        assert_eq!(decode_block_cid_ask_message(msg), None);
     }
 
     // Following test cases attempt to figure out any loop holes
