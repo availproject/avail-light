@@ -215,16 +215,17 @@ fn extract_block(data: &Ipld) -> Option<i128> {
 // if some other peer doesn't compute/ store this block data matrix itself,
 // it should be able to atleast learn of the CID corresponding to block number,
 // so that it can fetch it when required.
-pub fn prepare_block_cid_fact_message(block: i128, cid: Cid) -> Vec<u8> {
+pub fn prepare_block_cid_fact_message(block: i128, cid: Cid) -> Result<Vec<u8>, String> {
     let mut map = BTreeMap::new();
 
     map.insert("block".to_owned(), Ipld::Integer(block));
     map.insert("cid".to_owned(), Ipld::Link(cid));
 
     let map = Ipld::StringMap(map);
-    let coded = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map).unwrap();
-
-    coded.data().to_vec()
+    match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
+        Ok(coded) => Ok(coded.data().to_vec()),
+        Err(_) => Err("failed to IPLD encode fact topic gossip message".to_owned()),
+    }
 }
 
 // Takes a IPLD coded fact channel message as byte array, which is
@@ -278,7 +279,7 @@ pub fn decode_block_cid_fact_message(msg: Vec<u8>) -> Option<(i128, Cid)> {
 // questions & expect someone will answer it
 //
 // Same channel will be used when attempting to answer back to question
-pub fn prepare_block_cid_ask_message(block: i128, cid: Option<Cid>) -> Vec<u8> {
+pub fn prepare_block_cid_ask_message(block: i128, cid: Option<Cid>) -> Result<Vec<u8>, String> {
     let mut map = BTreeMap::new();
 
     map.insert("block".to_owned(), Ipld::Integer(block));
@@ -291,9 +292,11 @@ pub fn prepare_block_cid_ask_message(block: i128, cid: Option<Cid>) -> Vec<u8> {
     );
 
     let map = Ipld::StringMap(map);
-    let coded = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map).unwrap();
 
-    coded.data().to_vec()
+    match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
+        Ok(coded) => Ok(coded.data().to_vec()),
+        Err(_) => Err("failed to IPLD encode ask topic gossip message".to_owned()),
+    }
 }
 
 // Accepts IPLD coded ask channel message and attempts to decode it
@@ -425,7 +428,7 @@ mod tests {
         };
 
         let msg = prepare_block_cid_fact_message(block, cid);
-        let (block_dec, cid_dec) = decode_block_cid_fact_message(msg).unwrap();
+        let (block_dec, cid_dec) = decode_block_cid_fact_message(msg.unwrap()).unwrap();
 
         assert_eq!(block, block_dec);
         assert_eq!(cid, cid_dec);
@@ -451,7 +454,7 @@ mod tests {
         };
 
         let msg = prepare_block_cid_ask_message(block, Some(cid));
-        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg).unwrap();
+        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg.unwrap()).unwrap();
 
         assert_eq!(block, block_dec);
         assert_eq!(cid, cid_dec.unwrap());
@@ -468,7 +471,7 @@ mod tests {
         let cid = None;
 
         let msg = prepare_block_cid_ask_message(block, cid);
-        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg).unwrap();
+        let (block_dec, cid_dec) = decode_block_cid_ask_message(msg.unwrap()).unwrap();
 
         assert_eq!(block, block_dec);
         assert_eq!(cid_dec, None);

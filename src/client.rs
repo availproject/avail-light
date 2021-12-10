@@ -147,11 +147,23 @@ pub async fn run_client(
                                         Some(v) => {
                                             // @note shall I introduce a way to denote whether CID is
                                             // peer computed or self computed ?
-                                            let msg =
-                                                prepare_block_cid_ask_message(block, Some(v.cid));
-                                            ipfs_clone
-                                                .publish("topic/block_cid_ask", msg) // respond back on same channel
-                                                .unwrap(); // the question is received on
+                                            match prepare_block_cid_ask_message(block, Some(v.cid))
+                                            {
+                                                Ok(msg) => {
+                                                    // respond back on same channel
+                                                    // the question is received on
+                                                    if let Ok(_) = ipfs_clone
+                                                        .publish("topic/block_cid_ask", msg)
+                                                    {
+                                                        println!("answer question received on `topic/block_cid_ask` channel");
+                                                    } else {
+                                                        println!("error: failed to publish answer to question on `topic/block_cid_ask` channel");
+                                                    }
+                                                }
+                                                Err(msg) => {
+                                                    println!("error: {}", msg);
+                                                }
+                                            };
                                         }
                                         None => {
                                             // supposedly this peer can't help !
@@ -231,39 +243,46 @@ pub async fn run_client(
                                 latest_cid = Some(cid);
 
                                 // publish block-cid mapping message over gossipsub network
-                                let msg = prepare_block_cid_fact_message(
+                                match prepare_block_cid_fact_message(
                                     block.num as i128,
                                     latest_cid.unwrap(), // this should be safe !
-                                );
-                                match ipfs.publish("topic/block_cid_fact", msg) {
-                                    Ok(_) => {
-                                        // thread-safely put an entry in local in-memory store
-                                        // for block to cid mapping
-                                        //
-                                        // it can be used later for for serving clients or
-                                        // answering to questions asked by other peers over
-                                        // gossipsub network
-                                        //
-                                        // once a CID is self-computed, it'll never be rewritten even
-                                        // when conflicting fact is found over gossipsub channel
-                                        {
-                                            let mut handle = block_cid_store.lock().unwrap();
-                                            handle.insert(
-                                                block.num as i128,
-                                                BlockCidPair {
-                                                    cid: latest_cid.unwrap(),
-                                                    self_computed: true, // because this block CID is self-computed !
-                                                },
-                                            );
-                                        }
-                                        println!(
-                                            "✅ Block {} available\t{}",
-                                            block.num,
-                                            latest_cid.unwrap().clone()
-                                        );
+                                ) {
+                                    Ok(msg) => {
+                                        match ipfs.publish("topic/block_cid_fact", msg) {
+                                            Ok(_) => {
+                                                // thread-safely put an entry in local in-memory store
+                                                // for block to cid mapping
+                                                //
+                                                // it can be used later for for serving clients or
+                                                // answering to questions asked by other peers over
+                                                // gossipsub network
+                                                //
+                                                // once a CID is self-computed, it'll never be rewritten even
+                                                // when conflicting fact is found over gossipsub channel
+                                                {
+                                                    let mut handle =
+                                                        block_cid_store.lock().unwrap();
+                                                    handle.insert(
+                                                        block.num as i128,
+                                                        BlockCidPair {
+                                                            cid: latest_cid.unwrap(),
+                                                            self_computed: true, // because this block CID is self-computed !
+                                                        },
+                                                    );
+                                                }
+                                                println!(
+                                                    "✅ Block {} available\t{}",
+                                                    block.num,
+                                                    latest_cid.unwrap().clone()
+                                                );
+                                            }
+                                            Err(_) => {
+                                                println!("error: failed to publish fact on `topic/block_cid_fact` topic");
+                                            }
+                                        };
                                     }
-                                    Err(_) => {
-                                        println!("error: failed to publish fact on `topic/block_cid_fact` topic");
+                                    Err(msg) => {
+                                        println!("error: {}", msg);
                                     }
                                 };
                             }
@@ -304,25 +323,27 @@ async fn ask_block_cid(
     block: i128,
     ipfs: &Ipfs<IPFSDefaultParams>,
     store: Arc<Mutex<HashMap<i128, BlockCidPair>>>,
-) -> Result<Cid, &str> {
+) -> Result<Cid, String> {
     // send message over gossip network !
-    let msg = prepare_block_cid_ask_message(block, None);
-    if let Err(_) = ipfs.publish("topic/block_cid_ask", msg) {
-        return Err("failed to send gossip message");
-    }
-
-    // wait for 4 seconds !
-    std::thread::sleep(Duration::from_secs(4));
-
-    // thread-safely attempt to read from data store
-    // whether question has been answer by some peer already
-    // or not
-    {
-        let handle = store.lock().unwrap();
-        match handle.get(&block) {
-            Some(v) => Ok(v.cid),
-            None => Err("failed to find CID"),
+    match prepare_block_cid_ask_message(block, None) {
+        Ok(msg) => {
+            if let Err(_) = ipfs.publish("topic/block_cid_ask", msg) {
+                return Err("failed to send gossip message".to_owned());
+            }
+            // wait for 4 seconds !
+            std::thread::sleep(Duration::from_secs(4));
+            // thread-safely attempt to read from data store
+            // whether question has been answer by some peer already
+            // or not
+            {
+                let handle = store.lock().unwrap();
+                match handle.get(&block) {
+                    Some(v) => Ok(v.cid),
+                    None => Err("failed to find CID".to_owned()),
+                }
+            }
         }
+        Err(msg) => Err(msg),
     }
 }
 
