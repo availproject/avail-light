@@ -2,3 +2,4 @@
 **/*.rs.bk
 .env
 .DS_Store
+config.yaml

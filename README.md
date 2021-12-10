@@ -1,4 +1,4 @@
-# AVAIL -light-client
+# avail-light
 
 Light client for Data Availability Blockchain of Polygon 💻
 
@@ -15,26 +15,26 @@ Naive approach for building one DA light client, which will do following
 ## Installation
 
 - First clone this repo in your local setup
-- Create one `.env` file in root of project & put following content
+- Create one yaml configuration file in root of project & put following content
 
 ```bash
-touch .env
+touch config.yaml
 ```
 
-```
-FullNodeURL=
-FullNodeWSURL=
-PORT=7000
-APPID=
+```yaml
+http_server_host = "127.0.0.1"
+http_server_port = 7000
+
+ipfs_seed = 1
+ipfs_port = 37000
+ipfs_path = "avail_ipfs_store"
+
+full_node_rpc = "http://127.0.0.1:9933"
+full_node_ws = "ws://127.0.0.1:9944"
+app_id = 0
 ```
 
-Environment Variable | Interpretation
---- | ---
-FullNodeWSURL | Light client subcribes to full node, over **Websocket** transport, for receiving notification, as soon as new block gets mined
-FullNodeURL | Light client listens to full node over **HTTP**, for getting the blocks using RPC calls
-PORT | Light client exposes RPC server over HTTP, at this port number
-
-- Now, let's run light client
+- Now, let's run client
 
 ```bash
 cargo run
