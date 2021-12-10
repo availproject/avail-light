@@ -30,6 +30,7 @@ tempdir = "0.3.7"
 ed25519-dalek = "1.0.1"
 async-std = { version = "1.9.0", features = ["attributes"] }
 confy = "0.4.0"
+num_cpus = "1.13.0"
 
 [features]
 logs = []
