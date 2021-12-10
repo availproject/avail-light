@@ -16,23 +16,43 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String, String> {
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
         block
     );
-    let req = hyper::Request::builder()
+
+    match hyper::Request::builder()
         .method(hyper::Method::POST)
         .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
-        .unwrap();
-    let resp = if is_secure(url) {
-        let https = HttpsConnector::new();
-        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-        client.request(req).await.unwrap()
-    } else {
-        let client = hyper::Client::new();
-        client.request(req).await.unwrap()
-    };
-    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-    let r: BlockHashResponse = serde_json::from_slice(&body).unwrap();
-    Ok(r.result)
+    {
+        Ok(req) => {
+            let resp = if is_secure(url) {
+                let https = HttpsConnector::new();
+                let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            } else {
+                let client = hyper::Client::new();
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            };
+
+            match resp {
+                Some(resp) => {
+                    if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
+                        let r: BlockHashResponse = serde_json::from_slice(&body).unwrap();
+                        Ok(r.result)
+                    } else {
+                        Err("failed to read HTTP POST response".to_owned())
+                    }
+                }
+                None => Err("failed to send HTTP POST request".to_owned()),
+            }
+        }
+        Err(_) => Err("failed to build HTTP POST request object".to_owned()),
+    }
 }
 
 pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block, String> {
