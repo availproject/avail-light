@@ -51,18 +51,22 @@ pub async fn main() {
         println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
     }
 
-    let block_header_store = Arc::new(Mutex::new(HashMap::<u64, types::Block>::new()));
-    let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
-        .await
-        .expect("failed to get latest block header of chain");
+    let block_header_store = Arc::new(Mutex::new(HashMap::<u64, types::Header>::new()));
 
-    let latest_block = hex_to_u64_block_number(block_header.number);
-    let url = cfg.http_server_host.clone();
-    tokio::spawn(async move {
-        sync::sync_block_headers(url, 0, latest_block, block_header_store).await;
-    });
+    {
+        let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
+            .await
+            .expect("failed to get latest block header of chain");
 
-    println!("Syncing from 0 to {}", latest_block);
+        let latest_block = hex_to_u64_block_number(block_header.number);
+        let url = cfg.full_node_rpc.clone();
+        let store = block_header_store.clone();
+        tokio::spawn(async move {
+            sync::sync_block_headers(url, 0, latest_block, store).await;
+        });
+
+        println!("Syncing from 0 to {}", latest_block);
+    }
 
     //tokio-tungesnite method for ws connection to substrate.
     let url = url::Url::parse(&cfg.full_node_ws).unwrap();
@@ -84,15 +88,18 @@ pub async fn main() {
         let data = message.unwrap().into_data();
         match serde_json::from_slice(&data) {
             Ok(response) => {
-                let response: types::Response = response;
+                let resp: types::Response = response;
+                let header = resp.params.result;
+
                 // well this is in hex form as `String`
-                let block_num_hex = response.params.result.number;
+                let block_num_hex = header.number.clone();
                 // now this is in `u64`
                 let num = hex_to_u64_block_number(block_num_hex);
-                let max_rows = response.params.result.extrinsics_root.rows;
-                let max_cols = response.params.result.extrinsics_root.cols;
-                let app_index = response.params.result.app_data_lookup.index;
-                let commitment = response.params.result.extrinsics_root.commitment;
+
+                let max_rows = header.extrinsics_root.rows;
+                let max_cols = header.extrinsics_root.cols;
+                let app_index = header.app_data_lookup.index.clone();
+                let commitment = header.extrinsics_root.commitment.clone();
 
                 //hyper request for getting the kate query request
                 let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, false)
@@ -138,6 +145,19 @@ pub async fn main() {
                             count, num
                         );
                     }
+                }
+
+                // obtain a handle of block header data store
+                // and push latest mined block's header, to be used
+                // later for verifying IPFS stored data
+                //
+                // @note this same data store is also written to
+                // another competing thread, which syncs all block headers
+                // in range [0, LATEST], where LATEST = latest block number
+                // when this process started
+                {
+                    let mut handle = block_header_store.lock().unwrap();
+                    handle.insert(num, header);
                 }
 
                 // notify ipfs-based application client
