@@ -1,7 +1,7 @@
 extern crate ipfs_embed;
 
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
@@ -252,4 +252,31 @@ pub struct ClientMsg {
     pub num: u64,
     pub max_rows: u16,
     pub max_cols: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RuntimeConfig {
+    pub http_server_host: String,
+    pub http_server_port: u16,
+    pub ipfs_seed: u64,
+    pub ipfs_port: u16,
+    pub ipfs_path: String,
+    pub full_node_rpc: String,
+    pub full_node_ws: String,
+    pub app_id: u16,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        RuntimeConfig {
+            http_server_host: "127.0.0.1".to_owned(),
+            http_server_port: 7000,
+            ipfs_seed: 1,
+            ipfs_port: 37000,
+            ipfs_path: format!("avail_ipfs_node_{}", 1),
+            full_node_rpc: "http://localhost:9933".to_owned(),
+            full_node_ws: "ws://localhost:9944".to_owned(),
+            app_id: 0,
+        }
+    }
 }
