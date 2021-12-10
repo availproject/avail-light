@@ -103,8 +103,8 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block, String>
 //
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
-pub async fn get_chain_header(url: &str) -> Result<Block, String> {
-    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHead"}}"#,);
+pub async fn get_chain_header(url: &str) -> Result<Header, String> {
+    let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader"}}"#,);
 
     match hyper::Request::builder()
         .method(hyper::Method::POST)
@@ -131,8 +131,8 @@ pub async fn get_chain_header(url: &str) -> Result<Block, String> {
             match resp {
                 Some(resp) => {
                     if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
-                        let r: BlockResponse = serde_json::from_slice(&body).unwrap();
-                        Ok(r.result.block)
+                        let r: BlockHeaderResponse = serde_json::from_slice(&body).unwrap();
+                        Ok(r.result)
                     } else {
                         Err("failed to read HTTP POST response".to_owned())
                     }

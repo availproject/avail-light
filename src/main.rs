@@ -56,7 +56,7 @@ pub async fn main() {
         .await
         .expect("failed to get latest block header of chain");
 
-    let latest_block = hex_to_u64_block_number(block_header.header.number);
+    let latest_block = hex_to_u64_block_number(block_header.number);
     let url = cfg.http_server_host.clone();
     tokio::spawn(async move {
         sync::sync_block_headers(url, 0, latest_block, block_header_store).await;

@@ -168,6 +168,13 @@ pub struct BlockResponse {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct BlockHeaderResponse {
+    jsonrpc: String,
+    id: u32,
+    pub result: Header,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct RPCResult {
     pub block: Block,
     #[serde(skip_deserializing)]
