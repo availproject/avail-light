@@ -65,7 +65,7 @@ pub async fn main() {
             sync::sync_block_headers(url, 0, latest_block, store).await;
         });
 
-        println!("Syncing from 0 to {}", latest_block);
+        println!("Syncing block headers from 0 to {}", latest_block);
     }
 
     //tokio-tungesnite method for ws connection to substrate.
