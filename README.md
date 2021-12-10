@@ -32,6 +32,8 @@ ipfs_path = "avail_ipfs_store"
 full_node_rpc = "http://127.0.0.1:9933"
 full_node_ws = "ws://127.0.0.1:9944"
 app_id = 0
+
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
 ```
 
 - Now, let's run client
