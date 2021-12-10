@@ -254,7 +254,7 @@ pub struct ClientMsg {
     pub max_cols: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
     pub http_server_host: String,
     pub http_server_port: u16,
@@ -274,8 +274,8 @@ impl Default for RuntimeConfig {
             ipfs_seed: 1,
             ipfs_port: 37000,
             ipfs_path: format!("avail_ipfs_node_{}", 1),
-            full_node_rpc: "http://localhost:9933".to_owned(),
-            full_node_ws: "ws://localhost:9944".to_owned(),
+            full_node_rpc: "http://127.0.0.1:9933".to_owned(),
+            full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
         }
     }

@@ -21,6 +21,7 @@ use tokio;
 //service part of hyper
 struct Handler {
     store: Arc<Mutex<HashMap<u64, u32>>>,
+    url: String,
 }
 
 impl Service<Request<Body>> for Handler {
@@ -87,6 +88,7 @@ impl Service<Request<Body>> for Handler {
         );
 
         let mut db = self.store.clone();
+        let url = self.url.clone();
         Box::pin(async move {
             let res = match req.method() {
                 &Method::GET => {
@@ -101,11 +103,12 @@ impl Service<Request<Body>> for Handler {
                             }
                             Err(_e) => {
                                 let begin = Instant::now();
-                                let block = rpc::get_block_by_number(block_num).await.unwrap();
+                                let block =
+                                    rpc::get_block_by_number(&url, block_num).await.unwrap();
                                 let max_rows = block.header.extrinsics_root.rows;
                                 let max_cols = block.header.extrinsics_root.cols;
                                 let cells =
-                                    rpc::get_kate_proof(block_num, max_rows, max_cols, false)
+                                    rpc::get_kate_proof(&url, block_num, max_rows, max_cols, false)
                                         .await
                                         .unwrap();
                                 let count = proof::verify_proof(
@@ -158,6 +161,7 @@ impl Service<Request<Body>> for Handler {
 
 struct MakeHandler {
     store: Arc<Mutex<HashMap<u64, u32>>>,
+    url: String,
 }
 
 impl<T> Service<T> for MakeHandler {
@@ -171,7 +175,13 @@ impl<T> Service<T> for MakeHandler {
 
     fn call(&mut self, _: T) -> Self::Future {
         let store = self.store.clone();
-        let fut = async move { Ok(Handler { store }) };
+        let url = self.url.clone();
+        let fut = async move {
+            Ok(Handler {
+                store: store,
+                url: url,
+            })
+        };
         Box::pin(fut)
     }
 }
@@ -179,10 +189,21 @@ impl<T> Service<T> for MakeHandler {
 #[tokio::main]
 pub async fn run_server(
     store: Arc<Mutex<HashMap<u64, u32>>>,
+    cfg: super::types::RuntimeConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = ([127, 0, 0, 1], rpc::get_port()).into();
-    let server = Server::bind(&addr).serve(MakeHandler { store });
-    println!("RPC running on http://127.0.0.1:{}", rpc::get_port());
+    let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
+        .parse()
+        .expect("Bad Http server host/ port, found in config file");
+    let server = Server::bind(&addr).serve(MakeHandler {
+        store: store,
+        url: cfg.full_node_rpc,
+    });
+
+    println!(
+        "RPC running on http://{}:{}",
+        cfg.http_server_host, cfg.http_server_port
+    );
+
     server.await?;
     Ok(())
 }

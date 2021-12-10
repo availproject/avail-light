@@ -1,66 +1,28 @@
 #![allow(dead_code)]
 use crate::types::*;
-use dotenv::dotenv;
 use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use std::collections::HashSet;
-use std::env;
-
-pub fn get_ws_node_url() -> String {
-    dotenv().ok();
-    if let Ok(v) = env::var("FullNodeWSURL") {
-        v
-    } else {
-        "ws://localhost:9944".to_owned()
-    }
-}
-
-pub fn get_full_node_url() -> String {
-    dotenv().ok();
-    if let Ok(v) = env::var("FullNodeURL") {
-        v
-    } else {
-        "http://localhost:9933".to_owned()
-    }
-}
 
 fn is_secure(url: &str) -> bool {
     let re = Regex::new(r"^https://.*").unwrap();
     re.is_match(url)
 }
 
-pub fn get_port() -> u16 {
-    dotenv().ok();
-    if let Ok(v) = env::var("Port") {
-        v.parse::<u16>().unwrap()
-    } else {
-        7000
-    }
-}
-
-pub fn get_app_id() -> u16 {
-    dotenv().ok();
-    if let Ok(v) = env::var("APPID") {
-        v.parse::<u16>().unwrap()
-    } else {
-        0
-    }
-}
-
-pub async fn get_blockhash(block: u64) -> Result<String, String> {
+pub async fn get_blockhash(url: &str, block: u64) -> Result<String, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
         block
     );
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri(get_full_node_url())
+        .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let resp = if is_secure(&get_full_node_url()) {
+    let resp = if is_secure(url) {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build::<_, hyper::Body>(https);
         client.request(req).await.unwrap()
@@ -73,18 +35,18 @@ pub async fn get_blockhash(block: u64) -> Result<String, String> {
     Ok(r.result)
 }
 
-pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
+pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block, String> {
     let payload = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#,
         hash
     );
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri(get_full_node_url())
+        .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let resp = if is_secure(&get_full_node_url()) {
+    let resp = if is_secure(url) {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build::<_, hyper::Body>(https);
         client.request(req).await.unwrap()
@@ -97,9 +59,9 @@ pub async fn get_block_by_hash(hash: String) -> Result<Block, String> {
     Ok(b.result.block)
 }
 
-pub async fn get_block_by_number(block: u64) -> Result<Block, String> {
-    let hash = get_blockhash(block).await.unwrap();
-    Ok(get_block_by_hash(hash).await.unwrap())
+pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block, String> {
+    let hash = get_blockhash(url, block).await.unwrap();
+    Ok(get_block_by_hash(url, hash).await.unwrap())
 }
 
 pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Cell> {
@@ -150,7 +112,7 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 // Get proof of certain cell for given block, from full node
-pub async fn get_kate_query_proof_by_cell(block: u64, row: u16, col: u16) -> Vec<u8> {
+pub async fn get_kate_query_proof_by_cell(url: &str, block: u64, row: u16, col: u16) -> Vec<u8> {
     let payload: String = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
         block,
@@ -159,11 +121,11 @@ pub async fn get_kate_query_proof_by_cell(block: u64, row: u16, col: u16) -> Vec
 
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri(get_full_node_url())
+        .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let resp = if is_secure(&get_full_node_url()) {
+    let resp = if is_secure(url) {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build::<_, hyper::Body>(https);
         client.request(req).await.unwrap()
@@ -178,12 +140,13 @@ pub async fn get_kate_query_proof_by_cell(block: u64, row: u16, col: u16) -> Vec
 }
 
 pub async fn get_kate_proof(
+    url: &str,
     block: u64,
     max_rows: u16,
     max_cols: u16,
     app_id: bool,
 ) -> Result<Vec<Cell>, String> {
-    let num = get_block_by_number(block).await.unwrap();
+    let num = get_block_by_number(url, block).await.unwrap();
     let app_index = num.header.app_data_lookup.index;
     let app_size = num.header.app_data_lookup.size;
 
@@ -200,11 +163,11 @@ pub async fn get_kate_proof(
     let payload = generate_kate_query_payload(block, &cells);
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
-        .uri(get_full_node_url())
+        .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
         .unwrap();
-    let resp = if is_secure(&get_full_node_url()) {
+    let resp = if is_secure(url) {
         let https = HttpsConnector::new();
         let client = hyper::Client::builder().build::<_, hyper::Body>(https);
         client.request(req).await.unwrap()

@@ -15,16 +15,16 @@ use libipld::Ipld;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-async fn construct_cell(block: u64, row: u16, col: u16) -> BaseCell {
-    let data = Ipld::Bytes(get_kate_query_proof_by_cell(block, row, col).await);
+async fn construct_cell(url: &str, block: u64, row: u16, col: u16) -> BaseCell {
+    let data = Ipld::Bytes(get_kate_query_proof_by_cell(url, block, row, col).await);
     IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data).unwrap()
 }
 
-async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
+async fn construct_colwise(url: &str, block: u64, row_count: u16, col: u16) -> L0Col {
     let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
     for row in 0..row_count {
-        base_cells.push(construct_cell(block, row, col).await);
+        base_cells.push(construct_cell(url, block, row, col).await);
     }
 
     L0Col {
@@ -32,19 +32,19 @@ async fn construct_colwise(block: u64, row_count: u16, col: u16) -> L0Col {
     }
 }
 
-async fn construct_rowwise(block: u64, row_count: u16, col_count: u16) -> L1Row {
+async fn construct_rowwise(url: &str, block: u64, row_count: u16, col_count: u16) -> L1Row {
     let mut l0_cols: Vec<L0Col> = Vec::with_capacity(col_count as usize);
 
     for col in 0..col_count {
-        l0_cols.push(construct_colwise(block, row_count, col).await);
+        l0_cols.push(construct_colwise(url, block, row_count, col).await);
     }
 
     L1Row { l0_cols: l0_cols }
 }
 
-pub async fn construct_matrix(block: u64, row_count: u16, col_count: u16) -> DataMatrix {
+pub async fn construct_matrix(url: &str, block: u64, row_count: u16, col_count: u16) -> DataMatrix {
     DataMatrix {
-        l1_row: construct_rowwise(block, row_count, col_count).await,
+        l1_row: construct_rowwise(url, block, row_count, col_count).await,
         block_num: block as i128,
     }
 }

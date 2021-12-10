@@ -1,3 +1,5 @@
+extern crate confy;
+
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use num::{BigUint, FromPrimitive};
@@ -15,21 +17,20 @@ mod recovery;
 mod rpc;
 mod types;
 
-//Main function of the Light-client which handles ws and rpc
-
 #[tokio::main]
 pub async fn main() {
+    let cfg: types::RuntimeConfig = confy::load_path("config.yaml").unwrap();
+    println!("Using {:?}", cfg);
+
     pub type Sto = Arc<Mutex<HashMap<u64, u32>>>;
     let db: Sto = Arc::new(Mutex::new(HashMap::new()));
     let cp = db.clone();
 
-    /* note:
-        thread for handling the RPC query
-        RPC query is helpful when the block is mined before client started running.
-    */
-
+    // this spawns one thread of execution which runs one http server
+    // for handling RPC
+    let cfg_ = cfg.clone();
     thread::spawn(move || {
-        http::run_server(cp.clone()).unwrap();
+        http::run_server(cp.clone(), cfg_).unwrap();
     });
 
     // communication channels being established for talking to
@@ -38,15 +39,19 @@ pub async fn main() {
     let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
     let (destroy_tx, destroy_rx) = sync_channel::<bool>(1);
 
+    // this one will spawn one thread for running ipfs client, while managing data discovery
+    // and reconstruction
+    let cfg_ = cfg.clone();
     thread::spawn(move || {
-        client::run_client(1, Vec::new(), block_rx, self_info_tx, destroy_rx).unwrap();
+        client::run_client(cfg_, block_rx, self_info_tx, destroy_rx).unwrap();
     });
 
-    let (peer_id, addrs) = self_info_rx.recv().unwrap();
-    println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
+    if let Ok((peer_id, addrs)) = self_info_rx.recv() {
+        println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
+    }
 
     //tokio-tungesnite method for ws connection to substrate.
-    let url = url::Url::parse(&rpc::get_ws_node_url()).unwrap();
+    let url = url::Url::parse(&cfg.full_node_ws).unwrap();
     let (ws_stream, _response) = connect_async(url).await.expect("Failed to connect");
     let (mut write, mut read) = ws_stream.split();
 
@@ -77,9 +82,10 @@ pub async fn main() {
                 let commitment = response.params.result.extrinsics_root.commitment;
 
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(*num, max_rows, max_cols, false)
-                    .await
-                    .unwrap();
+                let cells =
+                    rpc::get_kate_proof(&cfg.full_node_rpc, *num, max_rows, max_cols, false)
+                        .await
+                        .unwrap();
                 println!("Verifying block {}", *num);
 
                 //hyper request for verifying the proof
@@ -105,11 +111,12 @@ pub async fn main() {
                 to an appID and now its verifying every cell that contains the data
                 */
                 if !app_index.is_empty() {
-                    let req_id = rpc::get_app_id();
+                    let req_id = cfg.app_id;
                     if conf > 92.0 && req_id > 0 {
-                        let req_cells = rpc::get_kate_proof(*num, max_rows, max_cols, true)
-                            .await
-                            .unwrap();
+                        let req_cells =
+                            rpc::get_kate_proof(&cfg.full_node_rpc, *num, max_rows, max_cols, true)
+                                .await
+                                .unwrap();
                         println!("Verifying block :{} because APPID is given ", *num);
                         //hyper request for verifying the proof
                         let count =

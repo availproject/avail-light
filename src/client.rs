@@ -26,24 +26,22 @@ use tempdir::TempDir;
 
 #[tokio::main]
 pub async fn run_client(
-    seed: u64,
-    peers: Vec<(PeerId, Multiaddr)>,
+    cfg: super::types::RuntimeConfig,
     block_rx: Receiver<ClientMsg>,
     self_info_tx: SyncSender<(PeerId, Multiaddr)>,
     destroy_rx: Receiver<bool>,
 ) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // @note make ipfs node's port user choosable
-    let ipfs = make_client(seed, 37000, &format!("node_{}", seed)).await?;
+    let ipfs = make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
     let pin = ipfs.create_temp_pin()?;
 
     // inform invoker about self
     self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
-    // bootstrap client with non-empty set of
-    // application clients
-    if peers.len() > 0 {
-        ipfs.bootstrap(&peers).await?;
-    }
+    // // bootstrap client with non-empty set of
+    // // application clients
+    // if peers.len() > 0 {
+    //     ipfs.bootstrap(&peers).await?;
+    // }
 
     // block to CID mapping to locally kept here ( in thead safe manner ! )
     let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
@@ -212,7 +210,13 @@ pub async fn run_client(
         // linking it with previous block data matrix's CID.
         match block_rx.recv() {
             Ok(block) => {
-                let matrix = construct_matrix(block.num, block.max_rows, block.max_cols).await;
+                let matrix = construct_matrix(
+                    &cfg.full_node_rpc,
+                    block.num,
+                    block.max_rows,
+                    block.max_cols,
+                )
+                .await;
                 latest_cid = Some(push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await?);
 
                 // publish block-cid mapping message over gossipsub network
