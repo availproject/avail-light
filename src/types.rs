@@ -264,6 +264,7 @@ pub struct RuntimeConfig {
     pub full_node_rpc: String,
     pub full_node_ws: String,
     pub app_id: u16,
+    pub bootstraps: Vec<(String, Multiaddr)>,
 }
 
 impl Default for RuntimeConfig {
@@ -277,6 +278,7 @@ impl Default for RuntimeConfig {
             full_node_rpc: "http://127.0.0.1:9933".to_owned(),
             full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
+            bootstraps: Vec::new(),
         }
     }
 }

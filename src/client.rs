@@ -19,6 +19,7 @@ use ipfs_embed::{
     StorageConfig,
 };
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -37,11 +38,17 @@ pub async fn run_client(
     // inform invoker about self
     self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
-    // // bootstrap client with non-empty set of
-    // // application clients
-    // if peers.len() > 0 {
-    //     ipfs.bootstrap(&peers).await?;
-    // }
+    // bootstrap client with non-empty set of
+    // application clients
+    if cfg.bootstraps.len() > 0 {
+        ipfs.bootstrap(
+            &cfg.bootstraps
+                .into_iter()
+                .map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
+                .collect::<Vec<(_, _)>>()[..],
+        )
+        .await?;
+    }
 
     // block to CID mapping to locally kept here ( in thead safe manner ! )
     let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
