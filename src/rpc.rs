@@ -100,8 +100,10 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block, String>
 }
 
 pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block, String> {
-    let hash = get_blockhash(url, block).await.unwrap();
-    Ok(get_block_by_hash(url, hash).await.unwrap())
+    match get_blockhash(url, block).await {
+        Ok(hash) => get_block_by_hash(url, hash).await,
+        Err(msg) => Err(msg),
+    }
 }
 
 pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Cell> {
@@ -152,31 +154,54 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse)
 }
 
 // Get proof of certain cell for given block, from full node
-pub async fn get_kate_query_proof_by_cell(url: &str, block: u64, row: u16, col: u16) -> Vec<u8> {
+pub async fn get_kate_query_proof_by_cell(
+    url: &str,
+    block: u64,
+    row: u16,
+    col: u16,
+) -> Result<Vec<u8>, String> {
     let payload: String = format!(
         r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
         block,
         format!(r#"{{"row": {}, "col": {}}}"#, row, col)
     );
 
-    let req = hyper::Request::builder()
+    match hyper::Request::builder()
         .method(hyper::Method::POST)
         .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
-        .unwrap();
-    let resp = if is_secure(url) {
-        let https = HttpsConnector::new();
-        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-        client.request(req).await.unwrap()
-    } else {
-        let client = hyper::Client::new();
-        client.request(req).await.unwrap()
-    };
-    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-    let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
+    {
+        Ok(req) => {
+            let resp = if is_secure(url) {
+                let https = HttpsConnector::new();
+                let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            } else {
+                let client = hyper::Client::new();
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            };
 
-    proof.result
+            match resp {
+                Some(resp) => {
+                    if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
+                        let r: BlockProofResponse = serde_json::from_slice(&body).unwrap();
+                        Ok(r.result)
+                    } else {
+                        Err("failed to read HTTP POST response".to_owned())
+                    }
+                }
+                None => Err("failed to send HTTP POST request".to_owned()),
+            }
+        }
+        Err(_) => Err("failed to build HTTP POST request object".to_owned()),
+    }
 }
 
 pub async fn get_kate_proof(
@@ -201,24 +226,44 @@ pub async fn get_kate_proof(
         cpy
     };
     let payload = generate_kate_query_payload(block, &cells);
-    let req = hyper::Request::builder()
+
+    match hyper::Request::builder()
         .method(hyper::Method::POST)
         .uri(url)
         .header("Content-Type", "application/json")
         .body(hyper::Body::from(payload))
-        .unwrap();
-    let resp = if is_secure(url) {
-        let https = HttpsConnector::new();
-        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-        client.request(req).await.unwrap()
-    } else {
-        let client = hyper::Client::new();
-        client.request(req).await.unwrap()
-    };
-    let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-    let proof: BlockProofResponse = serde_json::from_slice(&body).unwrap();
-    fill_cells_with_proofs(&mut cells, &proof);
-    Ok(cells)
+    {
+        Ok(req) => {
+            let resp = if is_secure(url) {
+                let https = HttpsConnector::new();
+                let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            } else {
+                let client = hyper::Client::new();
+                match client.request(req).await {
+                    Ok(resp) => Some(resp),
+                    Err(_) => None,
+                }
+            };
+
+            match resp {
+                Some(resp) => {
+                    if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
+                        let r: BlockProofResponse = serde_json::from_slice(&body).unwrap();
+                        fill_cells_with_proofs(&mut cells, &r);
+                        Ok(cells)
+                    } else {
+                        Err("failed to read HTTP POST response".to_owned())
+                    }
+                }
+                None => Err("failed to send HTTP POST request".to_owned()),
+            }
+        }
+        Err(_) => Err("failed to build HTTP POST request object".to_owned()),
+    }
 }
 
 pub fn generate_app_specific_cells(
