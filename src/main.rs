@@ -15,6 +15,7 @@ mod http;
 mod proof;
 mod recovery;
 mod rpc;
+mod sync;
 mod types;
 
 #[tokio::main]
@@ -50,6 +51,19 @@ pub async fn main() {
         println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
     }
 
+    let block_header_store = Arc::new(Mutex::new(HashMap::<u64, types::Block>::new()));
+    let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
+        .await
+        .expect("failed to get latest block header of chain");
+
+    let latest_block = hex_to_u64_block_number(block_header.header.number);
+    let url = cfg.http_server_host.clone();
+    tokio::spawn(async move {
+        sync::sync_block_headers(url, 0, latest_block, block_header_store).await;
+    });
+
+    println!("Syncing from 0 to {}", latest_block);
+
     //tokio-tungesnite method for ws connection to substrate.
     let url = url::Url::parse(&cfg.full_node_ws).unwrap();
     let (ws_stream, _response) = connect_async(url).await.expect("Failed to connect");
@@ -71,22 +85,20 @@ pub async fn main() {
         match serde_json::from_slice(&data) {
             Ok(response) => {
                 let response: types::Response = response;
-                let block_number = response.params.result.number;
-                let raw = &block_number;
-                let without_prefix = raw.trim_start_matches("0x");
-                let z = u64::from_str_radix(without_prefix, 16);
-                let num = &z.unwrap();
+                // well this is in hex form as `String`
+                let block_num_hex = response.params.result.number;
+                // now this is in `u64`
+                let num = hex_to_u64_block_number(block_num_hex);
                 let max_rows = response.params.result.extrinsics_root.rows;
                 let max_cols = response.params.result.extrinsics_root.cols;
                 let app_index = response.params.result.app_data_lookup.index;
                 let commitment = response.params.result.extrinsics_root.commitment;
 
                 //hyper request for getting the kate query request
-                let cells =
-                    rpc::get_kate_proof(&cfg.full_node_rpc, *num, max_rows, max_cols, false)
-                        .await
-                        .unwrap();
-                println!("Verifying block {}", *num);
+                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, false)
+                    .await
+                    .unwrap();
+                println!("Verifying block {}", num);
 
                 //hyper request for verifying the proof
                 let count = proof::verify_proof(max_rows, max_cols, &cells, &commitment);
@@ -96,13 +108,13 @@ pub async fn main() {
                 );
 
                 let conf = calculate_confidence(count);
-                let serialised_conf = serialised_confidence(*num, conf);
+                let serialised_conf = serialised_confidence(num, conf);
                 {
                     let mut handle = db.lock().unwrap();
-                    handle.insert(*num, count);
+                    handle.insert(num, count);
                     println!(
                         "block: {}, confidence: {}, serialisedConfidence {}",
-                        *num, conf, serialised_conf
+                        num, conf, serialised_conf
                     );
                 }
 
@@ -114,10 +126,10 @@ pub async fn main() {
                     let req_id = cfg.app_id;
                     if conf > 92.0 && req_id > 0 {
                         let req_cells =
-                            rpc::get_kate_proof(&cfg.full_node_rpc, *num, max_rows, max_cols, true)
+                            rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, true)
                                 .await
                                 .unwrap();
-                        println!("Verifying block :{} because APPID is given ", *num);
+                        println!("Verifying block :{} because APPID is given ", num);
                         //hyper request for verifying the proof
                         let count =
                             proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
@@ -132,7 +144,7 @@ pub async fn main() {
                 // that newly mined block has been received
                 block_tx
                     .send(types::ClientMsg {
-                        num: *num,
+                        num: num,
                         max_rows: max_rows,
                         max_cols: max_cols,
                     })
@@ -169,4 +181,9 @@ fn serialised_confidence(block: u64, factor: f64) -> String {
     let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
     let _shifted: BigUint = _block << 32 | _factor;
     _shifted.to_str_radix(10)
+}
+
+fn hex_to_u64_block_number(num: String) -> u64 {
+    let wo_prefix = num.trim_start_matches("0x");
+    u64::from_str_radix(wo_prefix, 16).unwrap()
 }
