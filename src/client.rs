@@ -217,44 +217,65 @@ pub async fn run_client(
         // linking it with previous block data matrix's CID.
         match block_rx.recv() {
             Ok(block) => {
-                let matrix = construct_matrix(
+                match construct_matrix(
                     &cfg.full_node_rpc,
                     block.num,
                     block.max_rows,
                     block.max_cols,
                 )
-                .await;
-                latest_cid = Some(push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await?);
-
-                // publish block-cid mapping message over gossipsub network
-                let msg = prepare_block_cid_fact_message(block.num as i128, latest_cid.unwrap());
-                ipfs.publish("topic/block_cid_fact", msg).unwrap();
-
-                // thread-safely put an entry in local in-memory store
-                // for block to cid mapping
-                //
-                // it can be used later for for serving clients or
-                // answering to questions asked by other peers over
-                // gossipsub network
-                //
-                // once a CID is self-computed, it'll never be rewritten even
-                // when conflicting fact is found over gossipsub channel
+                .await
                 {
-                    let mut handle = block_cid_store.lock().unwrap();
-                    handle.insert(
-                        block.num as i128,
-                        BlockCidPair {
-                            cid: latest_cid.unwrap(),
-                            self_computed: true, // because this block CID is self-computed !
-                        },
-                    );
-                }
+                    Ok(matrix) => {
+                        match push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await {
+                            Ok(cid) => {
+                                latest_cid = Some(cid);
 
-                println!(
-                    "✅ Block {} available\t{}",
-                    block.num,
-                    latest_cid.unwrap().clone()
-                );
+                                // publish block-cid mapping message over gossipsub network
+                                let msg = prepare_block_cid_fact_message(
+                                    block.num as i128,
+                                    latest_cid.unwrap(), // this should be safe !
+                                );
+                                match ipfs.publish("topic/block_cid_fact", msg) {
+                                    Ok(_) => {
+                                        // thread-safely put an entry in local in-memory store
+                                        // for block to cid mapping
+                                        //
+                                        // it can be used later for for serving clients or
+                                        // answering to questions asked by other peers over
+                                        // gossipsub network
+                                        //
+                                        // once a CID is self-computed, it'll never be rewritten even
+                                        // when conflicting fact is found over gossipsub channel
+                                        {
+                                            let mut handle = block_cid_store.lock().unwrap();
+                                            handle.insert(
+                                                block.num as i128,
+                                                BlockCidPair {
+                                                    cid: latest_cid.unwrap(),
+                                                    self_computed: true, // because this block CID is self-computed !
+                                                },
+                                            );
+                                        }
+                                        println!(
+                                            "✅ Block {} available\t{}",
+                                            block.num,
+                                            latest_cid.unwrap().clone()
+                                        );
+                                    }
+                                    Err(_) => {
+                                        println!("error: failed to publish fact on `topic/block_cid_fact` topic");
+                                    }
+                                };
+                            }
+                            Err(msg) => {
+                                println!("error: {}", msg);
+                            }
+                        }
+                    }
+                    Err(msg) => {
+                        println!("error: {}", msg);
+                    }
+                };
             }
             Err(e) => {
                 println!("Error encountered while listening for blocks: {}", e);

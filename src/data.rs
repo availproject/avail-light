@@ -134,12 +134,17 @@ async fn push_row(
     latest_cid: Option<Cid>,
     ipfs: &Ipfs<DefaultParams>,
     pin: &TempPin,
-) -> anyhow::Result<Cid> {
+) -> anyhow::Result<Cid, String> {
     let mut col_cids: Vec<Ipld> = Vec::with_capacity(row.l0_cols.len());
 
     for col in row.l0_cols {
-        if let Ok(cid) = push_col(col, ipfs, pin).await {
-            col_cids.push(Ipld::Link(cid));
+        match push_col(col, ipfs, pin).await {
+            Ok(cid) => {
+                col_cids.push(Ipld::Link(cid));
+            }
+            Err(msg) => {
+                return Err(msg);
+            }
         };
     }
 
@@ -156,12 +161,16 @@ async fn push_row(
     );
 
     let map = Ipld::StringMap(map);
-    let coded_matrix = IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map).unwrap();
-
-    ipfs.temp_pin(pin, coded_matrix.cid())?;
-    ipfs.insert(&coded_matrix)?;
-
-    Ok(*coded_matrix.cid())
+    match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
+        Ok(coded_mat) => match ipfs.temp_pin(pin, coded_mat.cid()) {
+            Ok(_) => match ipfs.insert(&coded_mat) {
+                Ok(_) => Ok(*coded_mat.cid()),
+                Err(_) => Err("failed to IPFS insert row of data matrix".to_owned()),
+            },
+            Err(_) => Err("failed to IPFS pin row of data matrix".to_owned()),
+        },
+        Err(_) => Err("failed to IPLD encode row of data matrix".to_owned()),
+    }
 }
 
 pub async fn push_matrix(
@@ -169,15 +178,15 @@ pub async fn push_matrix(
     latest_cid: Option<Cid>,
     ipfs: &Ipfs<DefaultParams>,
     pin: &TempPin,
-) -> anyhow::Result<Cid> {
-    Ok(push_row(
+) -> anyhow::Result<Cid, String> {
+    push_row(
         data_matrix.l1_row,
         data_matrix.block_num,
         latest_cid,
         ipfs,
         pin,
     )
-    .await?)
+    .await
 }
 
 // Extracts respective CID block number from IPLD
