@@ -1,16 +1,17 @@
 extern crate futures;
 extern crate num_cpus;
+extern crate rocksdb;
 
 use futures::stream::{self, StreamExt};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use rocksdb::{DBWithThreadMode, SingleThreaded};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 pub async fn sync_block_headers(
     url: String,
     start_block: u64,
     end_block: u64,
-    header_store: Arc<Mutex<HashMap<u64, super::types::Header>>>,
+    header_store: Arc<DBWithThreadMode<SingleThreaded>>,
 ) {
     let fut = stream::iter(
         (start_block..(end_block + 1))
@@ -26,8 +27,15 @@ pub async fn sync_block_headers(
 
             match super::rpc::get_block_by_number(&url, block_num).await {
                 Ok(block_body) => {
-                    let mut handle = store.lock().unwrap();
-                    handle.insert(block_num, block_body.header);
+                    store
+                        .put_cf(
+                            store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+                            block_num.to_be_bytes(),
+                            serde_json::to_string(&block_body.header)
+                                .unwrap()
+                                .as_bytes(),
+                        )
+                        .unwrap();
 
                     println!(
                         "Synced block header of {}\t{:?}",

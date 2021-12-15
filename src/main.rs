@@ -44,7 +44,6 @@ pub async fn main() {
     // Prepare key value data store opening
     //
     // cf = column family
-
     let mut confidence_cf_opts = Options::default();
     confidence_cf_opts.set_max_write_buffer_number(16);
     let confidence_cf_desp =
@@ -70,15 +69,12 @@ pub async fn main() {
     // Have access to key value data store, now this can be safely used
     // from multiple threads of execution
 
-    pub type Sto = Arc<Mutex<HashMap<u64, u32>>>;
-    let db: Sto = Arc::new(Mutex::new(HashMap::new()));
-    let cp = db.clone();
-
     // this spawns one thread of execution which runs one http server
     // for handling RPC
+    let db_0 = db.clone();
     let cfg_ = cfg.clone();
     thread::spawn(move || {
-        http::run_server(cp.clone(), cfg_).unwrap();
+        http::run_server(db_0, cfg_).unwrap();
     });
 
     // communication channels being established for talking to
@@ -98,22 +94,18 @@ pub async fn main() {
         println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
     }
 
-    let block_header_store = Arc::new(Mutex::new(HashMap::<u64, types::Header>::new()));
+    let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
+        .await
+        .expect("failed to get latest block header of chain");
 
-    {
-        let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
-            .await
-            .expect("failed to get latest block header of chain");
+    let latest_block = hex_to_u64_block_number(block_header.number);
+    let url = cfg.full_node_rpc.clone();
+    let db_1 = db.clone();
+    tokio::spawn(async move {
+        sync::sync_block_headers(url, 0, latest_block, db_1).await;
+    });
 
-        let latest_block = hex_to_u64_block_number(block_header.number);
-        let url = cfg.full_node_rpc.clone();
-        let store = block_header_store.clone();
-        tokio::spawn(async move {
-            sync::sync_block_headers(url, 0, latest_block, store).await;
-        });
-
-        println!("Syncing block headers from 0 to {}", latest_block);
-    }
+    println!("Syncing block headers from 0 to {}", latest_block);
 
     //tokio-tungesnite method for ws connection to substrate.
     let url = url::Url::parse(&cfg.full_node_ws).unwrap();
@@ -130,6 +122,10 @@ pub async fn main() {
 
     let _subscription_result = read.next().await.unwrap().unwrap().into_data();
     println!("Connected to Substrate Node");
+
+    let db_2 = db.clone();
+    let cf_handle_0 = db_2.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
+    let cf_handle_1 = db_2.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
 
     let read_future = read.for_each(|message| async {
         let data = message.unwrap().into_data();
@@ -163,14 +159,14 @@ pub async fn main() {
 
                 let conf = calculate_confidence(count);
                 let serialised_conf = serialised_confidence(num, conf);
-                {
-                    let mut handle = db.lock().unwrap();
-                    handle.insert(num, count);
-                    println!(
-                        "block: {}, confidence: {}, serialisedConfidence {}",
-                        num, conf, serialised_conf
-                    );
-                }
+
+                // write confidence factor into on-disk database
+                db_2.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
+                    .unwrap();
+                println!(
+                    "block: {}, confidence: {}, serialisedConfidence {}",
+                    num, conf, serialised_conf
+                );
 
                 /*note:
                 The following is the part when the user have already subscribed
@@ -194,18 +190,20 @@ pub async fn main() {
                     }
                 }
 
-                // obtain a handle of block header data store
-                // and push latest mined block's header, to be used
+                // push latest mined block's header into column family specified
+                // for keeping block headers, to be used
                 // later for verifying IPFS stored data
                 //
                 // @note this same data store is also written to in
                 // another competing thread, which syncs all block headers
                 // in range [0, LATEST], where LATEST = latest block number
                 // when this process started
-                {
-                    let mut handle = block_header_store.lock().unwrap();
-                    handle.insert(num, header);
-                }
+                db_2.put_cf(
+                    cf_handle_1,
+                    num.to_be_bytes(),
+                    serde_json::to_string(&header).unwrap().as_bytes(),
+                )
+                .unwrap();
 
                 // notify ipfs-based application client
                 // that newly mined block has been received

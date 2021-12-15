@@ -187,7 +187,7 @@ pub struct Block {
     pub header: Header,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Header {
     pub number: String,
     #[serde(rename = "extrinsicsRoot")]
@@ -201,7 +201,7 @@ pub struct Header {
     pub app_data_lookup: AppDataIndex,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ExtrinsicsRoot {
     pub cols: u16,
     pub rows: u16,
@@ -209,12 +209,12 @@ pub struct ExtrinsicsRoot {
     pub commitment: Vec<u8>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Digest {
     logs: Vec<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AppDataIndex {
     pub size: u32,
     pub index: Vec<(u32, u32)>,

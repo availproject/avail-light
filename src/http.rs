@@ -1,5 +1,5 @@
-use crate::proof;
-use crate::rpc;
+extern crate rocksdb;
+
 use ::futures::prelude::*;
 use chrono::{DateTime, Local};
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
@@ -7,12 +7,12 @@ use hyper::service::Service;
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use num::{BigUint, FromPrimitive};
 use regex::Regex;
-use std::collections::HashMap;
+use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
+use std::convert::TryInto;
 use std::{
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
-    time::Instant,
 };
 use tokio;
 
@@ -20,8 +20,7 @@ use tokio;
 
 //service part of hyper
 struct Handler {
-    store: Arc<Mutex<HashMap<u64, u32>>>,
-    url: String,
+    store: Arc<DBWithThreadMode<SingleThreaded>>,
 }
 
 impl Service<Request<Body>> for Handler {
@@ -53,12 +52,17 @@ impl Service<Request<Body>> for Handler {
                 .unwrap())
         }
 
-        fn get_confidence(db: Arc<Mutex<HashMap<u64, u32>>>, block: u64) -> Result<u32, String> {
-            let handle = db.lock().unwrap();
-            if let Some(count) = handle.get(&block) {
-                Ok(*count)
-            } else {
-                Err("not available".to_owned())
+        fn get_confidence(
+            db: Arc<DBWithThreadMode<SingleThreaded>>,
+            cf_handle: &ColumnFamily,
+            block: u64,
+        ) -> Result<u32, String> {
+            match db.get_cf(cf_handle, block.to_be_bytes()) {
+                Ok(v) => match v {
+                    Some(v) => Ok(u32::from_be_bytes(v.try_into().unwrap())),
+                    None => Err("failed to find entry in confidence store".to_owned()),
+                },
+                Err(_) => Err("failed to find entry in confidence store".to_owned()),
             }
         }
 
@@ -74,11 +78,6 @@ impl Service<Request<Body>> for Handler {
             _shifted.to_str_radix(10)
         }
 
-        fn set_confidence(db: &mut Arc<Mutex<HashMap<u64, u32>>>, block: u64, count: u32) {
-            let mut handle = db.lock().unwrap();
-            handle.insert(block, count);
-        }
-
         let local_tm: DateTime<Local> = Local::now();
         println!(
             "⚡️ {} | {} | {}",
@@ -87,44 +86,23 @@ impl Service<Request<Body>> for Handler {
             req.uri().path()
         );
 
-        let mut db = self.store.clone();
-        let url = self.url.clone();
+        let db = self.store.clone();
+
         Box::pin(async move {
             let res = match req.method() {
                 &Method::GET => {
                     if let Ok(block_num) = match_url(req.uri().path()) {
-                        let count = match get_confidence(db.clone(), block_num) {
-                            Ok(count) => {
-                                println!(
-                                    " confidence already stored in memory 😄 for blocknumber {} ",
-                                    block_num
-                                );
-                                count
-                            }
-                            Err(_e) => {
-                                let begin = Instant::now();
-                                let block =
-                                    rpc::get_block_by_number(&url, block_num).await.unwrap();
-                                let max_rows = block.header.extrinsics_root.rows;
-                                let max_cols = block.header.extrinsics_root.cols;
-                                let cells =
-                                    rpc::get_kate_proof(&url, block_num, max_rows, max_cols, false)
-                                        .await
-                                        .unwrap();
-                                let count = proof::verify_proof(
-                                    max_rows,
-                                    max_cols,
-                                    &cells,
-                                    &block.header.extrinsics_root.commitment,
-                                );
-                                println!(
-                                    "✅ Completed {} rounds of verification for #{} in {:?}\n",
-                                    count,
-                                    block_num,
-                                    begin.elapsed()
-                                );
-                                set_confidence(&mut db, block_num, count);
-                                count
+                        let count = match get_confidence(
+                            db.clone(),
+                            db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
+                            block_num,
+                        ) {
+                            Ok(count) => count,
+                            Err(e) => {
+                                // if for some reason confidence is not found
+                                // in on disk database, client receives following response
+                                println!("error: {}", e);
+                                0
                             }
                         };
                         let conf = calculate_confidence(count);
@@ -160,8 +138,7 @@ impl Service<Request<Body>> for Handler {
 }
 
 struct MakeHandler {
-    store: Arc<Mutex<HashMap<u64, u32>>>,
-    url: String,
+    store: Arc<DBWithThreadMode<SingleThreaded>>,
 }
 
 impl<T> Service<T> for MakeHandler {
@@ -175,29 +152,20 @@ impl<T> Service<T> for MakeHandler {
 
     fn call(&mut self, _: T) -> Self::Future {
         let store = self.store.clone();
-        let url = self.url.clone();
-        let fut = async move {
-            Ok(Handler {
-                store: store,
-                url: url,
-            })
-        };
+        let fut = async move { Ok(Handler { store: store }) };
         Box::pin(fut)
     }
 }
 
 #[tokio::main]
 pub async fn run_server(
-    store: Arc<Mutex<HashMap<u64, u32>>>,
+    store: Arc<DBWithThreadMode<SingleThreaded>>,
     cfg: super::types::RuntimeConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
         .parse()
         .expect("Bad Http server host/ port, found in config file");
-    let server = Server::bind(&addr).serve(MakeHandler {
-        store: store,
-        url: cfg.full_node_rpc,
-    });
+    let server = Server::bind(&addr).serve(MakeHandler { store: store });
 
     println!(
         "RPC running on http://{}:{}",
