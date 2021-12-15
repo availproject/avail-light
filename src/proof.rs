@@ -702,6 +702,7 @@ fn kc_verify_proof(
 // Just a wrapper function, to be used when spawning threads for verifying proofs
 // for a certain block
 fn kc_verify_proof_wrapper(
+    block_num: u64,
     row: u16,
     col: u16,
     total_rows: usize,
@@ -711,15 +712,22 @@ fn kc_verify_proof_wrapper(
 ) -> bool {
     let status = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
     if status {
-        println!("➕ Verified cell ({:>3}, {:>3}) ", row, col);
+        println!(
+            "Verified cell ({}, {}) of block {}",
+            row, col, block_num
+        );
     } else {
-        println!("❌ Failed for cell ({:>3}, {:>3}) ", row, col);
+        println!(
+            "Failed for cell ({}, {}) of block {}",
+            row, col, block_num
+        );
     }
 
     status
 }
 
 pub fn verify_proof(
+    block_num: u64,
     total_rows: u16,
     total_cols: u16,
     cells: &Vec<Cell>,
@@ -736,6 +744,7 @@ pub fn verify_proof(
         let _commitment = &commitment[c_start..c_end].to_vec();
 
         if kc_verify_proof_wrapper(
+            block_num,
             row,
             col,
             total_rows.into(),

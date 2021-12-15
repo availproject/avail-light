@@ -9,6 +9,7 @@ use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 use std::thread;
+use std::time::SystemTime;
 use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -148,34 +149,32 @@ pub async fn main() {
                 // now this is in `u64`
                 let num = hex_to_u64_block_number(block_num_hex);
 
+                let begin = SystemTime::now();
+
                 let max_rows = header.extrinsics_root.rows;
                 let max_cols = header.extrinsics_root.cols;
-                let app_index = header.app_data_lookup.index.clone();
                 let commitment = header.extrinsics_root.commitment.clone();
 
                 //hyper request for getting the kate query request
                 let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, false)
                     .await
                     .unwrap();
-                println!("Verifying block {}", num);
 
                 //hyper request for verifying the proof
-                let count = proof::verify_proof(max_rows, max_cols, &cells, &commitment);
+                let count = proof::verify_proof(num, max_rows, max_cols, &cells, &commitment);
                 println!(
-                    "Completed {} rounds of verification for block number {} ",
-                    count, num
+                    "Completed {} verification rounds for block {}\t{:?}",
+                    count,
+                    num,
+                    begin.elapsed().unwrap()
                 );
-
-                let conf = calculate_confidence(count);
-                let serialised_conf = serialised_confidence(num, conf);
 
                 // write confidence factor into on-disk database
                 db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
                     .unwrap();
-                println!(
-                    "block: {}, confidence: {}, serialisedConfidence {}",
-                    num, conf, serialised_conf
-                );
+
+                let conf = calculate_confidence(count);
+                let app_index = header.app_data_lookup.index.clone();
 
                 /*note:
                 The following is the part when the user have already subscribed
@@ -191,9 +190,9 @@ pub async fn main() {
                         println!("Verifying block :{} because APPID is given ", num);
                         //hyper request for verifying the proof
                         let count =
-                            proof::verify_proof(max_rows, max_cols, &req_cells, &commitment);
+                            proof::verify_proof(num, max_rows, max_cols, &req_cells, &commitment);
                         println!(
-                            "Completed {} rounds of verification for block number {} ",
+                            "Completed {} rounds of verification for block {} ",
                             count, num
                         );
                     }
