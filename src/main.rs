@@ -1,12 +1,15 @@
 extern crate confy;
+extern crate structopt;
 
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use num::{BigUint, FromPrimitive};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 mod client;
@@ -18,9 +21,22 @@ mod rpc;
 mod sync;
 mod types;
 
+#[derive(StructOpt, Debug)]
+#[structopt(
+    name = "avail-light",
+    about = "Light Client for Polygon Avail Blockchain",
+    author = "Polygon Avail Team",
+    version = "0.1.0"
+)]
+struct CliOpts {
+    #[structopt(short = "c", long = "config", default_value = "config.yaml")]
+    config: String,
+}
+
 #[tokio::main]
 pub async fn main() {
-    let cfg: types::RuntimeConfig = confy::load_path("config.yaml").unwrap();
+    let opts = CliOpts::from_args();
+    let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
     println!("Using {:?}", cfg);
 
     pub type Sto = Arc<Mutex<HashMap<u64, u32>>>;
@@ -151,7 +167,7 @@ pub async fn main() {
                 // and push latest mined block's header, to be used
                 // later for verifying IPFS stored data
                 //
-                // @note this same data store is also written to
+                // @note this same data store is also written to in
                 // another competing thread, which syncs all block headers
                 // in range [0, LATEST], where LATEST = latest block number
                 // when this process started
@@ -187,7 +203,7 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::Block
     assert_eq!(80 * cells.len(), proof.result.len());
     for i in 0..cells.len() {
         let mut v = Vec::new();
-        v.extend_from_slice(&proof.result[i * 80..i * 80 + 80]);
+        v.extend_from_slice(&proof.result[i * 80..(i + 1) * 80]);
         cells[i].proof = v;
     }
 }
