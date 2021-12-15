@@ -20,10 +20,27 @@ pub async fn sync_block_headers(
             .zip((0..(end_block - start_block + 1)).map(move |_| header_store.clone())),
     )
     .for_each_concurrent(
-        num_cpus::get() << 2, // twice the number of logical CPUs available on machine
+        num_cpus::get() << 2, // square of the number of logical CPUs available on machine
         // run those many concurrent syncing lightweight tasks, not threads
         |((block_num, url), store)| async move {
             let begin = SystemTime::now();
+
+            match store.get_pinned_cf(
+                store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+                block_num.to_be_bytes(),
+            ) {
+                Ok(v) => match v {
+                    Some(_) => {
+                        println!("Block header exists for {}", block_num);
+                        return;
+                    }
+                    None => {}
+                },
+                Err(_) => {}
+            };
+            // if block header look up fails, only then comes here for
+            // fetching and storing block header as part of (light weight)
+            // syncing process
 
             match super::rpc::get_block_by_number(&url, block_num).await {
                 Ok(block_body) => {
