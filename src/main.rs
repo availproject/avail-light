@@ -1,11 +1,12 @@
 extern crate confy;
+extern crate rocksdb;
 extern crate structopt;
 
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use num::{BigUint, FromPrimitive};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -13,6 +14,7 @@ use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 mod client;
+mod consts;
 mod data;
 mod http;
 mod proof;
@@ -38,6 +40,35 @@ pub async fn main() {
     let opts = CliOpts::from_args();
     let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
     println!("Using {:?}", cfg);
+
+    // Prepare key value data store opening
+    //
+    // cf = column family
+
+    let mut confidence_cf_opts = Options::default();
+    confidence_cf_opts.set_max_write_buffer_number(16);
+    let confidence_cf_desp =
+        ColumnFamilyDescriptor::new(consts::CONFIDENCE_FACTOR_CF, confidence_cf_opts);
+
+    let mut block_header_cf_opts = Options::default();
+    block_header_cf_opts.set_max_write_buffer_number(16);
+    let block_header_cf_desp =
+        ColumnFamilyDescriptor::new(consts::BLOCK_HEADER_CF, block_header_cf_opts);
+
+    let mut db_opts = Options::default();
+    db_opts.create_if_missing(true);
+    db_opts.create_missing_column_families(true);
+
+    let db = Arc::new(
+        DB::open_cf_descriptors(
+            &db_opts,
+            cfg.avail_path.clone(),
+            vec![confidence_cf_desp, block_header_cf_desp],
+        )
+        .unwrap(),
+    );
+    // Have access to key value data store, now this can be safely used
+    // from multiple threads of execution
 
     pub type Sto = Arc<Mutex<HashMap<u64, u32>>>;
     let db: Sto = Arc::new(Mutex::new(HashMap::new()));

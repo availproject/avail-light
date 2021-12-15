@@ -272,6 +272,7 @@ pub struct RuntimeConfig {
     pub full_node_ws: String,
     pub app_id: u16,
     pub bootstraps: Vec<(String, Multiaddr)>,
+    pub avail_path: String
 }
 
 impl Default for RuntimeConfig {
@@ -286,6 +287,7 @@ impl Default for RuntimeConfig {
             full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
             bootstraps: Vec::new(),
+            avail_path: format!("avail_light_client_{}", 1)
         }
     }
 }
