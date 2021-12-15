@@ -19,7 +19,7 @@ use ipfs_embed::{
     Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     StorageConfig,
 };
-use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
+use rocksdb::{DBWithThreadMode, SingleThreaded};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -80,9 +80,7 @@ pub async fn run_client(
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
                         if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
                             {
-                                let mut handle = block_cid_store_0.lock().unwrap();
-
-                                match handle.get(&block) {
+                                match get_block_cid_entry(block_cid_store_0.clone(), block) {
                                     Some(v) => {
                                         if v.self_computed && v.cid != cid {
                                             println!(
@@ -96,13 +94,19 @@ pub async fn run_client(
                                         // state
                                     }
                                     None => {
-                                        handle.insert(
+                                        match set_block_cid_entry(
+                                            block_cid_store_0.clone(),
                                             block,
                                             BlockCidPair {
                                                 cid: cid,
                                                 self_computed: false, // because this block CID is received over network !
                                             },
-                                        );
+                                        ) {
+                                            Ok(_) => {}
+                                            Err(e) => {
+                                                println!("error: {}", e);
+                                            }
+                                        };
                                     }
                                 };
                             }
@@ -141,13 +145,11 @@ pub async fn run_client(
                         println!("received {:?} from {}", msg, peer);
                         if let Some((block, cid)) = decode_block_cid_ask_message(msg.to_vec()) {
                             {
-                                let mut handle = block_cid_store_1.lock().unwrap();
-
                                 // this is a question kind message
                                 // on ask channel, so this peer is evaluating
                                 // whether it can answer it or not !
                                 if cid == None {
-                                    match handle.get(&block) {
+                                    match get_block_cid_entry(block_cid_store_1.clone(), block) {
                                         Some(v) => {
                                             // @note shall I introduce a way to denote whether CID is
                                             // peer computed or self computed ?
@@ -176,7 +178,7 @@ pub async fn run_client(
                                     };
                                 } else {
                                     // this is a answer kind message on ask channel
-                                    match handle.get(&block) {
+                                    match get_block_cid_entry(block_cid_store_1.clone(), block) {
                                         Some(v) => {
                                             if v.self_computed && v.cid != cid.unwrap() {
                                                 println!(
@@ -190,13 +192,19 @@ pub async fn run_client(
                                             // state
                                         }
                                         None => {
-                                            handle.insert(
+                                            match set_block_cid_entry(
+                                                block_cid_store_1.clone(),
                                                 block,
                                                 BlockCidPair {
                                                     cid: cid.unwrap(),
                                                     self_computed: false, // because this block CID is received over network !
                                                 },
-                                            );
+                                            ) {
+                                                Ok(_) => {}
+                                                Err(e) => {
+                                                    println!("error: {}", e);
+                                                }
+                                            }
                                         }
                                     };
                                 }
@@ -263,17 +271,20 @@ pub async fn run_client(
                                                 //
                                                 // once a CID is self-computed, it'll never be rewritten even
                                                 // when conflicting fact is found over gossipsub channel
-                                                {
-                                                    let mut handle =
-                                                        block_cid_store.lock().unwrap();
-                                                    handle.insert(
-                                                        block.num as i128,
-                                                        BlockCidPair {
-                                                            cid: latest_cid.unwrap(),
-                                                            self_computed: true, // because this block CID is self-computed !
-                                                        },
-                                                    );
-                                                }
+                                                match set_block_cid_entry(
+                                                    block_cid_store.clone(),
+                                                    block.num as i128,
+                                                    BlockCidPair {
+                                                        cid: latest_cid.unwrap(),
+                                                        self_computed: true, // because this block CID is self-computed !
+                                                    },
+                                                ) {
+                                                    Ok(_) => {}
+                                                    Err(e) => {
+                                                        println!("error: {}", e);
+                                                    }
+                                                };
+
                                                 println!(
                                                     "✅ Block {} available\t{}",
                                                     block.num,
@@ -421,7 +432,7 @@ pub fn keypair(i: u64) -> Keypair {
 
 pub fn get_block_cid_entry(
     store: Arc<DBWithThreadMode<SingleThreaded>>,
-    block: u64,
+    block: i128,
 ) -> Option<crate::types::BlockCidPair> {
     match store.get_cf(
         store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
@@ -444,7 +455,7 @@ pub fn get_block_cid_entry(
 
 pub fn set_block_cid_entry(
     store: Arc<DBWithThreadMode<SingleThreaded>>,
-    block: u64,
+    block: i128,
     pair: BlockCidPair,
 ) -> Result<(), String> {
     let serialisable_pair = crate::types::BlockCidPersistablePair {

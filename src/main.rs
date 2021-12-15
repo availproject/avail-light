@@ -53,6 +53,10 @@ pub async fn main() {
     let block_header_cf_desp =
         ColumnFamilyDescriptor::new(consts::BLOCK_HEADER_CF, block_header_cf_opts);
 
+    let mut block_cid_cf_opts = Options::default();
+    block_cid_cf_opts.set_max_write_buffer_number(16);
+    let block_cid_cf_desp = ColumnFamilyDescriptor::new(consts::BLOCK_CID_CF, block_cid_cf_opts);
+
     let mut db_opts = Options::default();
     db_opts.create_if_missing(true);
     db_opts.create_missing_column_families(true);
@@ -61,7 +65,7 @@ pub async fn main() {
         DB::open_cf_descriptors(
             &db_opts,
             cfg.avail_path.clone(),
-            vec![confidence_cf_desp, block_header_cf_desp],
+            vec![confidence_cf_desp, block_header_cf_desp, block_cid_cf_desp],
         )
         .unwrap(),
     );
@@ -84,9 +88,10 @@ pub async fn main() {
 
     // this one will spawn one thread for running ipfs client, while managing data discovery
     // and reconstruction
+    let db_1 = db.clone();
     let cfg_ = cfg.clone();
     thread::spawn(move || {
-        client::run_client(cfg_, block_rx, self_info_tx, destroy_rx).unwrap();
+        client::run_client(cfg_, db_1, block_rx, self_info_tx, destroy_rx).unwrap();
     });
 
     if let Ok((peer_id, addrs)) = self_info_rx.recv() {
@@ -99,9 +104,9 @@ pub async fn main() {
 
     let latest_block = hex_to_u64_block_number(block_header.number);
     let url = cfg.full_node_rpc.clone();
-    let db_1 = db.clone();
+    let db_2 = db.clone();
     tokio::spawn(async move {
-        sync::sync_block_headers(url, 0, latest_block, db_1).await;
+        sync::sync_block_headers(url, 0, latest_block, db_2).await;
     });
 
     println!("Syncing block headers from 0 to {}", latest_block);
@@ -122,9 +127,9 @@ pub async fn main() {
     let _subscription_result = read.next().await.unwrap().unwrap().into_data();
     println!("Connected to Substrate Node");
 
-    let db_2 = db.clone();
-    let cf_handle_0 = db_2.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
-    let cf_handle_1 = db_2.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
+    let db_3 = db.clone();
+    let cf_handle_0 = db_3.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
+    let cf_handle_1 = db_3.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
 
     let read_future = read.for_each(|message| async {
         let data = message.unwrap().into_data();
@@ -160,7 +165,7 @@ pub async fn main() {
                 let serialised_conf = serialised_confidence(num, conf);
 
                 // write confidence factor into on-disk database
-                db_2.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
+                db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
                     .unwrap();
                 println!(
                     "block: {}, confidence: {}, serialisedConfidence {}",
@@ -197,7 +202,7 @@ pub async fn main() {
                 // another competing thread, which syncs all block headers
                 // in range [0, LATEST], where LATEST = latest block number
                 // when this process started
-                db_2.put_cf(
+                db_3.put_cf(
                     cf_handle_1,
                     num.to_be_bytes(),
                     serde_json::to_string(&header).unwrap().as_bytes(),
