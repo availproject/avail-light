@@ -134,6 +134,15 @@ pub struct BlockCidPair {
     pub self_computed: bool, // is this CID computed by this process ?
 }
 
+// Same as above struct, just that it can be easily JSON serialised
+// and deserialised, so it's easy to push it into on-disk data store
+// where block <-> cid mapping is maintained
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BlockCidPersistablePair {
+    pub cid: String,
+    pub self_computed: bool,
+}
+
 pub type IpldBlock = IpfsBlock<DefaultParams>;
 pub type BaseCell = IpldBlock;
 
@@ -272,7 +281,7 @@ pub struct RuntimeConfig {
     pub full_node_ws: String,
     pub app_id: u16,
     pub bootstraps: Vec<(String, Multiaddr)>,
-    pub avail_path: String
+    pub avail_path: String,
 }
 
 impl Default for RuntimeConfig {
@@ -287,7 +296,7 @@ impl Default for RuntimeConfig {
             full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
             bootstraps: Vec::new(),
-            avail_path: format!("avail_light_client_{}", 1)
+            avail_path: format!("avail_light_client_{}", 1),
         }
     }
 }

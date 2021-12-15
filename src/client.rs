@@ -4,6 +4,7 @@ extern crate ed25519_dalek;
 extern crate ipfs_embed;
 extern crate libipld;
 extern crate rand;
+extern crate rocksdb;
 extern crate tempdir;
 extern crate tokio;
 
@@ -18,7 +19,9 @@ use ipfs_embed::{
     Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     StorageConfig,
 };
+use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
@@ -28,6 +31,7 @@ use tempdir::TempDir;
 #[tokio::main]
 pub async fn run_client(
     cfg: super::types::RuntimeConfig,
+    block_cid_store: Arc<DBWithThreadMode<SingleThreaded>>,
     block_rx: Receiver<ClientMsg>,
     self_info_tx: SyncSender<(PeerId, Multiaddr)>,
     destroy_rx: Receiver<bool>,
@@ -50,8 +54,8 @@ pub async fn run_client(
         .await?;
     }
 
-    // block to CID mapping to locally kept here ( in thead safe manner ! )
-    let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
+    // // block to CID mapping to locally kept here ( in thead safe manner ! )
+    // let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
 
     // broadcast fact i.e. some block number is mapped to some
     // Cid ( of respective block data matrix ) to all peers subscribed
@@ -410,4 +414,51 @@ pub fn keypair(i: u64) -> Keypair {
     let secret = SecretKey::from_bytes(&keypair).unwrap();
     let public = PublicKey::from(&secret);
     Keypair { secret, public }
+}
+
+// Following two are utility functions for interacting with local on-disk data store
+// where block -> cid mapping is maintained
+
+pub fn get_block_cid_entry(
+    store: Arc<DBWithThreadMode<SingleThreaded>>,
+    block: u64,
+) -> Option<crate::types::BlockCidPair> {
+    match store.get_cf(
+        store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
+        block.to_be_bytes(),
+    ) {
+        Ok(v) => match v {
+            Some(v) => {
+                let pair: crate::types::BlockCidPersistablePair =
+                    serde_json::from_slice(&v).unwrap();
+                Some(crate::types::BlockCidPair {
+                    cid: Cid::try_from(pair.cid).unwrap(),
+                    self_computed: pair.self_computed,
+                })
+            }
+            None => None,
+        },
+        Err(_) => None,
+    }
+}
+
+pub fn set_block_cid_entry(
+    store: Arc<DBWithThreadMode<SingleThreaded>>,
+    block: u64,
+    pair: BlockCidPair,
+) -> Result<(), String> {
+    let serialisable_pair = crate::types::BlockCidPersistablePair {
+        cid: pair.cid.to_string(),
+        self_computed: pair.self_computed,
+    };
+    let serialised = serde_json::to_string(&serialisable_pair).unwrap();
+
+    match store.put_cf(
+        store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
+        block.to_be_bytes(),
+        serialised.as_bytes(),
+    ) {
+        Ok(_) => Ok(()),
+        Err(_) => Err("failed to put block -> cid entry in database".to_owned()),
+    }
 }
