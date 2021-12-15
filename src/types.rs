@@ -236,7 +236,7 @@ pub struct BlockProofResponse {
     pub result: Vec<u8>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Cell {
     pub block: u64,
     pub row: u16,

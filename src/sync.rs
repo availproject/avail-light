@@ -87,11 +87,7 @@ pub async fn sync_block_headers(
                             .unwrap();
 
                     let count = crate::proof::verify_proof(
-                        block_num,
-                        max_rows,
-                        max_cols,
-                        &cells,
-                        &commitment,
+                        block_num, max_rows, max_cols, cells, commitment,
                     );
                     println!(
                         "Completed {} verification rounds for block {}\t{:?}",

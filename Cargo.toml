@@ -33,6 +33,7 @@ confy = "0.4.0"
 num_cpus = "1.13.0"
 structopt = "0.3.25"
 rocksdb = "0.17.0"
+threadpool = "1.8.1"
 
 [features]
 logs = []

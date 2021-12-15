@@ -161,7 +161,8 @@ pub async fn main() {
                     .unwrap();
 
                 //hyper request for verifying the proof
-                let count = proof::verify_proof(num, max_rows, max_cols, &cells, &commitment);
+                let count =
+                    proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
                 println!(
                     "Completed {} verification rounds for block {}\t{:?}",
                     count,
@@ -190,7 +191,7 @@ pub async fn main() {
                         println!("Verifying block :{} because APPID is given ", num);
                         //hyper request for verifying the proof
                         let count =
-                            proof::verify_proof(num, max_rows, max_cols, &req_cells, &commitment);
+                            proof::verify_proof(num, max_rows, max_cols, req_cells, commitment);
                         println!(
                             "Completed {} rounds of verification for block {} ",
                             count, num

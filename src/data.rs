@@ -37,7 +37,7 @@ async fn construct_colwise(
     let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
     for row in 0..row_count {
-        let cell = match construct_cell(url, block, row, col).await {
+        match construct_cell(url, block, row, col).await {
             Ok(cell) => {
                 base_cells.push(cell);
             }

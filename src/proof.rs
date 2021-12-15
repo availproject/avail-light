@@ -1,16 +1,20 @@
+extern crate threadpool;
+
 use crate::types::Cell;
 use dusk_plonk::bls12_381::G1Affine;
 use dusk_plonk::commitment_scheme::kzg10;
 use dusk_plonk::fft::EvaluationDomain;
 use std::convert::TryInto;
+use std::sync::mpsc::channel;
+use std::sync::Arc;
 
 // code for light client to verify incoming kate proofs
 // args - now - column number, response (witness + evaluation_point = 48 + 32 bytes), commitment (as bytes)
 // args - in future - multiple sets of these
 fn kc_verify_proof(
     col_num: u16,
-    response: &Vec<u8>,
-    commitment: &Vec<u8>,
+    response: &[u8],
+    commitment: &[u8],
     total_rows: usize,
     total_cols: usize,
 ) -> bool {
@@ -673,7 +677,6 @@ fn kc_verify_proof(
 
     let commitment_point = G1Affine::from_compressed(
         commitment
-            .as_slice()
             .try_into()
             .expect("commitment slice with incorrect length"),
     )
@@ -707,20 +710,14 @@ fn kc_verify_proof_wrapper(
     col: u16,
     total_rows: usize,
     total_cols: usize,
-    proof: &Vec<u8>,
-    commitment: &Vec<u8>,
+    proof: &[u8],
+    commitment: &[u8],
 ) -> bool {
     let status = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
     if status {
-        println!(
-            "Verified cell ({}, {}) of block {}",
-            row, col, block_num
-        );
+        println!("Verified cell ({}, {}) of block {}", row, col, block_num);
     } else {
-        println!(
-            "Failed for cell ({}, {}) of block {}",
-            row, col, block_num
-        );
+        println!("Failed for cell ({}, {}) of block {}", row, col, block_num);
     }
 
     status
@@ -730,31 +727,34 @@ pub fn verify_proof(
     block_num: u64,
     total_rows: u16,
     total_cols: u16,
-    cells: &Vec<Cell>,
-    commitment: &Vec<u8>,
+    cells: Vec<Cell>,
+    commitment: Vec<u8>,
 ) -> u32 {
-    let mut count: u32 = 0;
+    let cpus = num_cpus::get();
+    let pool = threadpool::ThreadPool::new(cpus);
+    let (tx, rx) = channel::<bool>();
+    let jobs = cells.len();
+    let commitment = Arc::new(commitment.clone());
 
     for cell in cells {
-        let row = cell.row;
-        let col = cell.col;
-        let _proof = &cell.proof;
-        let c_start = usize::from(row) * 48;
-        let c_end = c_start + 48;
-        let _commitment = &commitment[c_start..c_end].to_vec();
+        let _row = cell.row;
+        let _col = cell.col;
+        let tx = tx.clone();
+        let commitment = commitment.clone();
 
-        if kc_verify_proof_wrapper(
-            block_num,
-            row,
-            col,
-            total_rows.into(),
-            total_cols.into(),
-            _proof,
-            _commitment,
-        ) {
-            count += 1;
-        }
+        pool.execute(move || {
+            tx.send(kc_verify_proof_wrapper(
+                block_num,
+                _row,
+                _col,
+                total_rows as usize,
+                total_cols as usize,
+                &cell.proof,
+                &commitment[_row as usize * 48..(_row as usize + 1) * 48],
+            ))
+            .unwrap();
+        });
     }
 
-    count
+    rx.iter().take(jobs).filter(|&v| v).count() as u32
 }
