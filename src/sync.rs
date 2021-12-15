@@ -31,7 +31,6 @@ pub async fn sync_block_headers(
             ) {
                 Ok(v) => match v {
                     Some(_) => {
-                        println!("Block header exists for {}", block_num);
                         return;
                     }
                     None => {}

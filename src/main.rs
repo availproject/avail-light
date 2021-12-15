@@ -30,7 +30,12 @@ mod types;
     version = "0.1.0"
 )]
 struct CliOpts {
-    #[structopt(short = "c", long = "config", default_value = "config.yaml")]
+    #[structopt(
+        short = "c",
+        long = "config",
+        default_value = "config.yaml",
+        help = "yaml configuration file"
+    )]
     config: String,
 }
 
