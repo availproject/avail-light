@@ -14,10 +14,9 @@ use crate::data::{
 };
 use crate::types::{BlockCidPair, ClientMsg, Event};
 use async_std::stream::StreamExt;
-use ed25519_dalek::{PublicKey, SecretKey};
 use ipfs_embed::{
     Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
-    StorageConfig,
+    PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
 use rocksdb::{DBWithThreadMode, SingleThreaded};
 use std::collections::HashMap;
@@ -26,7 +25,6 @@ use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tempdir::TempDir;
 
 #[tokio::main]
 pub async fn run_client(
@@ -55,7 +53,6 @@ pub async fn run_client(
     }
 
     // // block to CID mapping to locally kept here ( in thead safe manner ! )
-    // let block_cid_store = Arc::new(Mutex::new(HashMap::<i128, BlockCidPair>::new()));
 
     // broadcast fact i.e. some block number is mapped to some
     // Cid ( of respective block data matrix ) to all peers subscribed
@@ -369,9 +366,9 @@ pub async fn make_client(
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
     let sweep_interval = Duration::from_secs(60);
 
-    let path_buf = TempDir::new(path)?;
+    let path_buf = std::path::PathBuf::from_str(path).unwrap();
     let storage = StorageConfig::new(None, 10, sweep_interval);
-    let mut network = NetworkConfig::new(path_buf.path().into(), keypair(seed));
+    let mut network = NetworkConfig::new(path_buf, keypair(seed));
     network.mdns = None;
 
     let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
@@ -425,6 +422,10 @@ pub fn keypair(i: u64) -> Keypair {
     let secret = SecretKey::from_bytes(&keypair).unwrap();
     let public = PublicKey::from(&secret);
     Keypair { secret, public }
+}
+
+pub fn peer_id(i: u64) -> PeerId {
+    keypair(i).to_peer_id()
 }
 
 // Following two are utility functions for interacting with local on-disk data store
