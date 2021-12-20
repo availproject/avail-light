@@ -1,6 +1,5 @@
 use dusk_plonk::fft::EvaluationDomain;
 use dusk_plonk::prelude::BlsScalar;
-use std::convert::TryInto;
 
 // This module is taken from https://gist.github.com/itzmeanjan/4acf9338d9233e79cfbee5d311e7a0b4
 // which I wrote few months back when exploring polynomial based erasure coding technique !
