@@ -1,5 +1,6 @@
 use dusk_plonk::fft::EvaluationDomain;
 use dusk_plonk::prelude::BlsScalar;
+use std::convert::TryInto;
 
 // This module is taken from https://gist.github.com/itzmeanjan/4acf9338d9233e79cfbee5d311e7a0b4
 // which I wrote few months back when exploring polynomial based erasure coding technique !
@@ -157,12 +158,12 @@ mod tests {
         let dst = eval_domain.ifft(&coded_recovered);
 
         for i in 0..(2 * domain_size) {
-            assert_eq!(src[i], dst[i]);
+            assert_eq!(src[i].to_bytes(), dst[i].to_bytes());
         }
     }
 
     #[test]
-    fn data_reconstruction_failure() {
+    fn data_reconstruction_failure_0() {
         let domain_size = 1usize << 4;
         let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
 
@@ -191,6 +192,195 @@ mod tests {
         }
 
         assert!(mismatch_count > 0);
+    }
+
+    // Context behind following three test cases, where one failure condition
+    // along with one possible solution, is demonstrated
+    //
+    // Need for writing these test cases originates in a conversation
+    // with Prabal<https://github.com/prabal-banerjee> where we were discussing
+    // how to ensure input byte chunks to dusk-plonk's `BlsScalar::from_bytes_wide()`
+    // is always lesser than prime field modulus ( 255 bits wide ), because in our case
+    // we'll get data bytes from arbitrary sources which will be converted into
+    // (multiple) field elements, by splitting them into smaller chunks, each of size 48 bytes.
+    //
+    // Now imagine we got a 48-bytes wide chunk with content like [0xff; 48]
+    // When that's attempted to be converted into field element it should be wrapped
+    // around and original value will be lost
+    //
+    // We want to specify a way for `how a large byte string is splitted into field elements
+    // such that no values are required to be wrapped around i.e. all values must be lesser
+    // than 255-bit prime ?`
+    //
+    // One way to go about solving this problem is grouping large byte array into 254-bits
+    // chunks, then we should not encounter that problem as value is always lesser than
+    // prime number which is 255 -bits
+    //
+    // We'd like to spend some more time on this before we finalise anything
+    // i.e. input parsing ( considering input endianness ),
+    // bit width of chunks before attempt of conversion to prime field element etc.
+    #[test]
+    #[should_panic]
+    fn data_reconstruction_failure_1() {
+        let domain_size = 1usize << 4;
+        let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
+
+        let input = [0xffu8; 32];
+
+        let input_wide: [u8; 64] = {
+            let mut v = vec![];
+
+            v.extend_from_slice(&input.to_vec()[..]);
+            v.extend_from_slice(&[0u8; 32].to_vec()[..]);
+
+            v.try_into().unwrap()
+        };
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
+        for _ in 0..domain_size {
+            src.push(BlsScalar::from_bytes_wide(&input_wide));
+        }
+        for _ in domain_size..(2 * domain_size) {
+            src.push(BlsScalar::zero());
+        }
+
+        // erasure code it
+        let coded_src = eval_domain.fft(&src);
+        // choose random subset of it ( >= 50% )
+        let (coded_src_subset, _) = random_subset(&coded_src);
+        // reconstruct 100% erasure coded values from random coded subset
+        let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(coded_src[i], coded_recovered[i]);
+        }
+
+        let dst = eval_domain.ifft(&coded_recovered);
+
+        for i in 0..domain_size {
+            assert_eq!(input, dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
+        // this is redundant here, test should fail in above for-loop, still I'm keeping it here
+        // for sake of completeness
+        for i in domain_size..(2 * domain_size) {
+            assert_eq!([0u8; 32], dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
+    }
+
+    #[test]
+    fn data_reconstruction_failure_2() {
+        let domain_size = 1usize << 4;
+        let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
+
+        // here I modify little endian input byte array such that
+        // value represented in lesser that 255-bit prime field element,
+        // we're working with on BLS12-381 curve
+        //
+        // and that's the reason why this test case passes !
+        //
+        // this test case is written to show that we need to make sure
+        // we define a proper way for parsing elements from large input byte array
+        // in smaller chunks with endianess consideration
+        //
+        // and following demonstrated way can be a way, where we group consequtive 254-bits
+        // making sure it never goes over MOD for this prime field
+        //
+        // As I can think of now, that will require us to index inside bytes (for last 6 -bits)
+        let mut input = [0xffu8; 32];
+        input[31] &= 0b0011_1111; // check this line, which is modifying little endian input to bring it below MOD of prime field
+
+        let input_wide: [u8; 64] = {
+            let mut v = vec![];
+
+            v.extend_from_slice(&input.to_vec()[..]);
+            v.extend_from_slice(&[0u8; 32].to_vec()[..]);
+
+            v.try_into().unwrap()
+        };
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
+        for _ in 0..domain_size {
+            src.push(BlsScalar::from_bytes_wide(&input_wide));
+        }
+        for _ in domain_size..(2 * domain_size) {
+            src.push(BlsScalar::zero());
+        }
+
+        // erasure code it
+        let coded_src = eval_domain.fft(&src);
+        // choose random subset of it ( >= 50% )
+        let (coded_src_subset, _) = random_subset(&coded_src);
+        // reconstruct 100% erasure coded values from random coded subset
+        let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(coded_src[i], coded_recovered[i]);
+        }
+
+        let dst = eval_domain.ifft(&coded_recovered);
+
+        for i in 0..domain_size {
+            assert_eq!(input, dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
+        for i in domain_size..(2 * domain_size) {
+            assert_eq!([0u8; 32], dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn data_reconstruction_failure_3() {
+        let domain_size = 1usize << 4;
+        let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
+
+        // here also I demonstrate that if input byte array is parsed such that each
+        // consequtive 255 -bits are taken together, still there's a possibility that
+        // it'll produce a number which will be greater than prine field modulus, which
+        // is also 255 -bits, but not necessarily highest representable number using 255 -bits
+        //
+        // so this test case must fail
+        let mut input = [0xffu8; 32];
+        input[31] &= 0b0111_1111;
+
+        let input_wide: [u8; 64] = {
+            let mut v = vec![];
+
+            v.extend_from_slice(&input.to_vec()[..]);
+            v.extend_from_slice(&[0u8; 32].to_vec()[..]);
+
+            v.try_into().unwrap()
+        };
+
+        let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
+        for _ in 0..domain_size {
+            src.push(BlsScalar::from_bytes_wide(&input_wide));
+        }
+        // fill extended portion of vector with zeros
+        for _ in domain_size..(2 * domain_size) {
+            src.push(BlsScalar::zero());
+        }
+
+        // erasure code it
+        let coded_src = eval_domain.fft(&src);
+        // choose random subset of it ( >= 50% )
+        let (coded_src_subset, _) = random_subset(&coded_src);
+        // reconstruct 100% erasure coded values from random coded subset
+        let coded_recovered = reconstruct_poly(eval_domain, coded_src_subset).unwrap();
+
+        for i in 0..(2 * domain_size) {
+            assert_eq!(coded_src[i], coded_recovered[i]);
+        }
+
+        let dst = eval_domain.ifft(&coded_recovered);
+
+        for i in 0..domain_size {
+            assert_eq!(input, dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
+        // this is redundant here, test should fail in above for-loop, still I'm keeping it here
+        // for sake of completeness
+        for i in domain_size..(2 * domain_size) {
+            assert_eq!([0u8; 32], dst[i].to_bytes(), "{}", format!("at i = {}", i));
+        }
     }
 
     fn drop_few(data: &mut [Option<BlsScalar>], mut available: usize) {
