@@ -229,28 +229,34 @@ pub fn extract_cell(data: &Ipld) -> Option<Vec<u8>> {
 /// Given a decoded IPLD object, which represented one coded data matrix
 /// extracts out all components ( i.e. block number, column CID list
 /// and previous CID )
-pub fn destructure_matrix(data: &Ipld) -> Option<(Option<i128>, Option<Vec<Cid>>, Option<Cid>)> {
+pub fn destructure_matrix(
+    data: &Ipld,
+) -> Option<(Option<i128>, Option<Vec<Option<Cid>>>, Option<Cid>)> {
     match data {
-        Ipld::StringMap(map) => match map.get("block") {
-            Some(block) => {
-                let block = extract_block(block);
-                match map.get("columns") {
-                    Some(cols) => {
-                        let cols = extract_links(cols);
-                        match map.get("prev") {
-                            Some(prev) => Some((block, cols, extract_cid(prev))),
-                            None => None,
+        Ipld::StringMap(map) => {
+            let map: &BTreeMap<String, Ipld> = map;
+            match map.get("block") {
+                Some(block) => {
+                    let block = extract_block(block);
+                    match map.get("columns") {
+                        Some(cols) => {
+                            let cols = extract_links(cols);
+                            match map.get("prev") {
+                                Some(prev) => {
+                                    let prev = extract_cid(prev);
+                                    Some((block, cols, prev))
+                                }
+                                None => None,
+                            }
                         }
+                        None => None,
                     }
-                    None => None,
                 }
+                None => None,
             }
-            None => None,
-        },
+        }
         _ => None,
-    };
-
-    None
+    }
 }
 
 // Takes block number along with respective CID of block data matrix
@@ -452,6 +458,8 @@ pub fn reconstruct_column(row_count: usize, cells: &[Cell]) -> Result<Vec<BlsSca
 mod tests {
     extern crate rand;
 
+    use super::super::client::make_client;
+    use super::construct_matrix;
     use super::*;
     use rand::prelude::random;
 
@@ -792,6 +800,66 @@ mod tests {
         let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
         for i in 0..row_count {
             assert_eq!(coded[i], reconstructed[i]);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_data_matrix_coding_decoding_flow() {
+        let ipfs = make_client(1, 10000, "test").await.unwrap();
+        let block: u64 = 1 << 63;
+        let row_c = 4;
+        let col_c = 4;
+        let cells: Vec<Option<Vec<u8>>> = vec![
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+            Some(random_data(48)),
+        ];
+        let arced = Arc::new(cells.clone());
+        let data_matrix = construct_matrix(block, row_c, col_c, arced).unwrap();
+        let prev_cid: Cid = {
+            let flag = Ipld::Bool(true);
+            *IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
+                .unwrap()
+                .cid()
+        };
+        let pin = ipfs.create_temp_pin().unwrap();
+        let root_cid = push_matrix(data_matrix, Some(prev_cid), &ipfs, &pin)
+            .await
+            .unwrap();
+
+        let coded_mat = ipfs.get(&root_cid).unwrap();
+        let decoded_mat = coded_mat.ipld().unwrap();
+        let (block_, col_cids, prev_cid_) = destructure_matrix(&decoded_mat).unwrap();
+
+        assert_eq!(block_.unwrap() as u64, block);
+        assert_eq!(prev_cid_.unwrap(), prev_cid);
+
+        for (col, &col_cid) in col_cids.unwrap().iter().enumerate() {
+            let coded_col = ipfs.get(&col_cid.unwrap()).unwrap();
+            let decoded_col = coded_col.ipld().unwrap();
+            let cell_cids = extract_links(&decoded_col).unwrap();
+
+            for (row, &cell_cid) in cell_cids.iter().enumerate() {
+                let coded_cell = ipfs.get(&cell_cid.unwrap()).unwrap();
+                let decoded_cell = coded_cell.ipld().unwrap();
+                let cell = extract_cell(&decoded_cell).unwrap();
+
+                let lin_index = row * col_c as usize + col;
+                assert_eq!(cells[lin_index].as_ref().unwrap().to_vec(), cell);
+            }
         }
     }
 }
