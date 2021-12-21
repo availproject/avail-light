@@ -300,3 +300,19 @@ impl Default for RuntimeConfig {
         }
     }
 }
+
+/// This structure is used for encapsulating all things required for
+/// querying IPFS client for cell content
+
+/// A specific block number is required
+/// In that block row and column numbers are required
+/// Finally one channel is also passed which will be used
+/// by this message receiver to respond back as an attempt to
+/// resolve query
+#[derive(Clone)]
+pub struct CellContentQueryPayload {
+    pub block: u64,
+    pub row: u16,
+    pub col: u16,
+    pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
+}

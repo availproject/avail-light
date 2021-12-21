@@ -189,9 +189,8 @@ pub async fn push_matrix(
     .await
 }
 
-// Extracts respective CID block number from IPLD
-// encapsulated data object
-fn extract_cid(data: &Ipld) -> Option<Cid> {
+/// Extracts respective CID from IPLD encapsulated data object
+pub fn extract_cid(data: &Ipld) -> Option<Cid> {
     match data {
         Ipld::Link(cid) => Some(*cid),
         Ipld::Null => None,
@@ -199,10 +198,26 @@ fn extract_cid(data: &Ipld) -> Option<Cid> {
     }
 }
 
-// Extracts block number from IPLD encapsulated data object
-fn extract_block(data: &Ipld) -> Option<i128> {
+/// Extracts block number from IPLD encapsulated data object
+pub fn extract_block(data: &Ipld) -> Option<i128> {
     match data {
         Ipld::Integer(block) => Some(*block),
+        _ => None,
+    }
+}
+
+/// Extracts out list of CIDs from IPLD coded message
+pub fn extract_links(data: &Ipld) -> Option<Vec<Option<Cid>>> {
+    match data {
+        Ipld::List(links) => Some(links.iter().map(|link| extract_cid(link)).collect()),
+        _ => None,
+    }
+}
+
+/// Extracts out content of cell from IPLD coded message
+pub fn extract_cell(data: &Ipld) -> Option<Vec<u8>> {
+    match data {
+        Ipld::Bytes(v) => Some(v.to_vec()),
         _ => None,
     }
 }
