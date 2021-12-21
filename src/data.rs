@@ -226,6 +226,33 @@ pub fn extract_cell(data: &Ipld) -> Option<Vec<u8>> {
     }
 }
 
+/// Given a decoded IPLD object, which represented one coded data matrix
+/// extracts out all components ( i.e. block number, column CID list
+/// and previous CID )
+pub fn destructure_matrix(data: &Ipld) -> Option<(Option<i128>, Option<Vec<Cid>>, Option<Cid>)> {
+    match data {
+        Ipld::StringMap(map) => match map.get("block") {
+            Some(block) => {
+                let block = extract_block(block);
+                match map.get("columns") {
+                    Some(cols) => {
+                        let cols = extract_links(cols);
+                        match map.get("prev") {
+                            Some(prev) => Some((block, cols, extract_cid(prev))),
+                            None => None,
+                        }
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        },
+        _ => None,
+    };
+
+    None
+}
+
 // Takes block number along with respective CID of block data matrix
 // which was just inserted into local data store ( IPFS backed )
 // and encodes it which will be returned back from this function
