@@ -263,7 +263,7 @@ pub struct Response {
     pub params: QueryResult,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct ClientMsg {
     pub num: u64,
     pub max_rows: u16,

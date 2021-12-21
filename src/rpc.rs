@@ -1,10 +1,15 @@
-#![allow(dead_code)]
+extern crate futures;
+extern crate num_cpus;
+
 use crate::types::*;
+use futures::stream::{self, StreamExt};
 use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 fn is_secure(url: &str) -> bool {
     let re = Regex::new(r"^https://.*").unwrap();
@@ -246,6 +251,54 @@ pub async fn get_kate_query_proof_by_cell(
             }
         }
         Err(_) => Err("failed to build HTTP POST request object".to_owned()),
+    }
+}
+
+/// For a given block number, retrieves all cell contents by concurrently performing
+/// kate proof query RPC and finally returns back one vector of length M x N, when
+/// data matrix has M -many rows and N -many columns.
+///
+/// Each element of resulting vector either has cell content or has nothing ( represented as None )
+pub async fn get_all_cells(url: &str, msg: &ClientMsg) -> Result<Vec<Option<Vec<u8>>>, String> {
+    let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![
+        None;
+        (msg.max_rows * msg.max_cols)
+            as usize
+    ]));
+
+    let begin = SystemTime::now();
+    let store_0 = store.clone();
+    let fut = stream::iter(0..msg.max_rows as usize)
+        .flat_map(|row| stream::iter(0..msg.max_cols as usize).map(move |col| (row, col)))
+        .zip(stream::iter(0..(msg.max_rows * msg.max_cols) as usize).map(move |_| store_0.clone()))
+        .for_each_concurrent(num_cpus::get(), |((row, col), store)| async move {
+            match get_kate_query_proof_by_cell(url, msg.num, row as u16, col as u16).await {
+                Ok(v) => {
+                    let mut handle = store.lock().unwrap();
+                    handle[row * msg.max_cols as usize + col] = Some(v);
+                }
+                Err(e) => {
+                    let mut handle = store.lock().unwrap();
+                    handle[row * msg.max_cols as usize + col] = None;
+                    println!("error: {}", e)
+                }
+            }
+        });
+
+    fut.await;
+    println!(
+        "received {} cells of block {}\t{:?}",
+        msg.max_cols * msg.max_rows,
+        msg.num,
+        begin.elapsed().unwrap()
+    );
+
+    match Arc::try_unwrap(store) {
+        Ok(lock) => match lock.into_inner() {
+            Ok(v) => Ok(v),
+            Err(_) => Err("failed to unwrap Mutex".to_owned()),
+        },
+        Err(_) => Err("failed to unwrap Arc".to_owned()),
     }
 }
 
