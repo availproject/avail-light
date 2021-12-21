@@ -18,6 +18,17 @@ use std::{
 };
 use tokio;
 
+pub fn calculate_confidence(count: u32) -> f64 {
+    100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
+}
+
+pub fn serialised_confidence(block: u64, factor: f64) -> String {
+    let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
+    let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
+    let _shifted: BigUint = _block << 32 | _factor;
+    _shifted.to_str_radix(10)
+}
+
 // 💡 HTTP part where handles the RPC Queries
 
 //service part of hyper
@@ -66,18 +77,6 @@ impl Service<Request<Body>> for Handler {
                 },
                 Err(_) => Err("failed to find entry in confidence store".to_owned()),
             }
-        }
-
-        fn calculate_confidence(count: u32) -> f64 {
-            100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
-        }
-
-        fn serialised_confidence(block: u64, factor: f64) -> String {
-            let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
-            let _factor: BigUint =
-                FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
-            let _shifted: BigUint = _block << 32 | _factor;
-            _shifted.to_str_radix(10)
         }
 
         let local_tm: DateTime<Local> = Local::now();

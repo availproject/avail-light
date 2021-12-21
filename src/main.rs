@@ -2,9 +2,9 @@ extern crate confy;
 extern crate rocksdb;
 extern crate structopt;
 
+use crate::http::calculate_confidence;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
-use num::{BigUint, FromPrimitive};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
@@ -260,17 +260,6 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::Block
         v.extend_from_slice(&proof.result[i * 80..(i + 1) * 80]);
         cells[i].proof = v;
     }
-}
-
-fn calculate_confidence(count: u32) -> f64 {
-    100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
-}
-
-fn serialised_confidence(block: u64, factor: f64) -> String {
-    let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
-    let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
-    let _shifted: BigUint = _block << 32 | _factor;
-    _shifted.to_str_radix(10)
 }
 
 fn hex_to_u64_block_number(num: String) -> u64 {
