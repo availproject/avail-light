@@ -1,5 +1,6 @@
 extern crate rocksdb;
 
+use crate::types::CellContentQueryPayload;
 use ::futures::prelude::*;
 use chrono::{DateTime, Local};
 use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
@@ -9,6 +10,7 @@ use num::{BigUint, FromPrimitive};
 use regex::Regex;
 use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
 use std::convert::TryInto;
+use std::sync::mpsc::SyncSender;
 use std::{
     pin::Pin,
     sync::Arc,
@@ -161,6 +163,7 @@ impl<T> Service<T> for MakeHandler {
 pub async fn run_server(
     store: Arc<DBWithThreadMode<SingleThreaded>>,
     cfg: super::types::RuntimeConfig,
+    _cell_query_tx: SyncSender<CellContentQueryPayload>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
         .parse()

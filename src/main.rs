@@ -78,12 +78,20 @@ pub async fn main() {
     // Have access to key value data store, now this can be safely used
     // from multiple threads of execution
 
+    // This channel will be used for message based communication between
+    // two tasks
+    //
+    // task_0: HTTP request handler ( query sender )
+    // task_1: IPFS client ( query receiver & hopefully successfully resolver )
+    let (cell_query_tx, cell_query_rx) =
+        sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
+
     // this spawns one thread of execution which runs one http server
     // for handling RPC
     let db_0 = db.clone();
     let cfg_ = cfg.clone();
     thread::spawn(move || {
-        http::run_server(db_0, cfg_).unwrap();
+        http::run_server(db_0, cfg_, cell_query_tx).unwrap();
     });
 
     // communication channels being established for talking to
@@ -97,7 +105,15 @@ pub async fn main() {
     let db_1 = db.clone();
     let cfg_ = cfg.clone();
     thread::spawn(move || {
-        client::run_client(cfg_, db_1, block_rx, self_info_tx, destroy_rx).unwrap();
+        client::run_client(
+            cfg_,
+            db_1,
+            block_rx,
+            self_info_tx,
+            destroy_rx,
+            cell_query_rx,
+        )
+        .unwrap();
     });
 
     if let Ok((peer_id, addrs)) = self_info_rx.recv() {

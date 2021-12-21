@@ -12,13 +12,16 @@ use crate::data::{
     construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
     prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 };
+use crate::data::{extract_block, extract_cell, extract_links};
 use crate::types::{BlockCidPair, ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ipfs_embed::{
     Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
     PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
+use libipld::Ipld;
 use rocksdb::{DBWithThreadMode, SingleThreaded};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -33,6 +36,7 @@ pub async fn run_client(
     block_rx: Receiver<ClientMsg>,
     self_info_tx: SyncSender<(PeerId, Multiaddr)>,
     destroy_rx: Receiver<bool>,
+    cell_query_rx: Receiver<crate::types::CellContentQueryPayload>,
 ) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let ipfs = make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
     let pin = ipfs.create_temp_pin()?;
@@ -51,6 +55,160 @@ pub async fn run_client(
         )
         .await?;
     }
+
+    let ipfs_0: Ipfs<IPFSDefaultParams> = ipfs.clone();
+    let block_cid_store_2 = block_cid_store.clone();
+    tokio::task::spawn(async move {
+        for query in cell_query_rx {
+            match get_block_cid_entry(block_cid_store_2.clone(), query.block as i128) {
+                Some(v) => {
+                    match ipfs_0.contains(&v.cid) {
+                        Ok(have) => {
+                            if !have {
+                                println!("block CID {:?} not present in local client", v.cid);
+                                continue;
+                            }
+
+                            match ipfs_0.get(&v.cid) {
+                                Ok(v) => {
+                                    let dec_mat: Ipld;
+                                    if let Ok(v) = v.ipld() {
+                                        dec_mat = v;
+                                    } else {
+                                        println!("error: failed to IPLD decode data matrix");
+                                        continue;
+                                    }
+
+                                    match dec_mat {
+                                        Ipld::StringMap(map) => {
+                                            let map: BTreeMap<String, Ipld> = map;
+                                            let block = if let Some(data) = map.get("block") {
+                                                extract_block(data)
+                                            } else {
+                                                None
+                                            };
+
+                                            if block == None {
+                                                println!("error: failed to extract block number from message");
+                                                continue;
+                                            }
+
+                                            let block = block.unwrap(); // safe to do so !
+                                            if block as u64 != query.block {
+                                                // just make it sure that everything is good
+                                                println!("error: expected {} but received {} after CID based look up", query.block, block);
+                                                continue;
+                                            }
+
+                                            let cids = if let Some(data) = map.get("columns") {
+                                                extract_links(data)
+                                            } else {
+                                                None
+                                            };
+
+                                            if cids == None {
+                                                println!("error: failed to extract column CIDs from message");
+                                                continue;
+                                            }
+
+                                            let cids = cids.unwrap(); // safe to do so !
+                                            if query.col as usize >= cids.len() {
+                                                // ensure indexing into vector is good move
+                                                println!("error: queried column {}, though max available columns {}", query.col, cids.len());
+                                                continue;
+                                            }
+
+                                            let col_cid = cids[query.col as usize];
+                                            if col_cid == None {
+                                                println!("error: failed to extract respective column CID");
+                                                continue;
+                                            }
+
+                                            let col_cid = col_cid.unwrap(); // safe to do so !
+
+                                            match ipfs_0.get(&col_cid) {
+                                                Ok(v) => {
+                                                    let dec_col: Ipld;
+                                                    if let Ok(v) = v.ipld() {
+                                                        dec_col = v;
+                                                    } else {
+                                                        println!("error: failed to IPLD decode data matrix column");
+                                                        continue;
+                                                    }
+
+                                                    let row_cids: Vec<Option<Cid>>;
+                                                    if let Some(v) = extract_links(&dec_col) {
+                                                        row_cids = v;
+                                                    } else {
+                                                        println!("error: failed to extract row CIDs from message");
+                                                        continue;
+                                                    }
+
+                                                    if query.row as usize >= row_cids.len() {
+                                                        // ensure indexing into vector is good move
+                                                        println!("error: queried row {}, though max available rows {}", query.row, row_cids.len());
+                                                        continue;
+                                                    }
+
+                                                    let row_cid = row_cids[query.row as usize];
+                                                    if row_cid == None {
+                                                        println!("error: failed to extract respective row CID");
+                                                        continue;
+                                                    }
+
+                                                    // safe to do so !
+                                                    let row_cid = row_cid.unwrap();
+
+                                                    match ipfs_0.get(&row_cid) {
+                                                        Ok(v) => {
+                                                            let dec_cell: Ipld;
+                                                            if let Ok(v) = v.ipld() {
+                                                                dec_cell = v;
+                                                            } else {
+                                                                println!("error: failed to IPLD decode data matrix cell");
+                                                                continue;
+                                                            }
+
+                                                            // respond back with content of cell
+                                                            if let Err(_) = query
+                                                                .res_chan
+                                                                .try_send(extract_cell(&dec_cell))
+                                                            {
+                                                                println!("error: failed to respond back to querying party");
+                                                            }
+                                                        }
+                                                        Err(_) => {
+                                                            println!("error: failed to get data matrix cell from storage");
+                                                        }
+                                                    };
+                                                }
+                                                Err(_) => {
+                                                    println!("error: failed to get data matrix column from storage");
+                                                }
+                                            };
+                                        }
+                                        _ => {}
+                                    };
+                                }
+                                Err(_) => {
+                                    println!("error: failed to get data matrix from storage");
+                                }
+                            };
+                        }
+                        Err(_) => {
+                            println!("block CID {:?} not present in local client", v.cid);
+                        }
+                    };
+                }
+                None => {
+                    println!("error: no CID entry found for block {}", query.block);
+                    if let Err(_) = query.res_chan.try_send(None) {
+                        println!("error: failed to respond back to querying party");
+                    }
+                }
+            }
+        }
+    });
 
     // // block to CID mapping to locally kept here ( in thead safe manner ! )
 
@@ -126,7 +284,7 @@ pub async fn run_client(
     // IPFS instance to be used for responding
     // back to peer when some question is asked on ask
     // channel, given that answer is known to peer !
-    let ipfs_clone = ipfs.clone();
+    let ipfs_1 = ipfs.clone();
     tokio::task::spawn(async move {
         loop {
             let msg = ask_topic.next().await;
@@ -155,8 +313,8 @@ pub async fn run_client(
                                                 Ok(msg) => {
                                                     // respond back on same channel
                                                     // the question is received on
-                                                    if let Ok(_) = ipfs_clone
-                                                        .publish("topic/block_cid_ask", msg)
+                                                    if let Ok(_) =
+                                                        ipfs_1.publish("topic/block_cid_ask", msg)
                                                     {
                                                         println!("answer question received on `topic/block_cid_ask` channel");
                                                     } else {
