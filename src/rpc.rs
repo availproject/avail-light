@@ -287,7 +287,7 @@ pub async fn get_all_cells(url: &str, msg: &ClientMsg) -> Result<Vec<Option<Vec<
 
     fut.await;
     println!(
-        "received {} cells of block {}\t{:?}",
+        "Received {} cells of block {}\t{:?}",
         msg.max_cols * msg.max_rows,
         msg.num,
         begin.elapsed().unwrap()
