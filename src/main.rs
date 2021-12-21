@@ -172,7 +172,7 @@ pub async fn main() {
                 let commitment = header.extrinsics_root.commitment.clone();
 
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, false)
+                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, 0)
                     .await
                     .unwrap();
 
@@ -198,20 +198,23 @@ pub async fn main() {
                 to an appID and now its verifying every cell that contains the data
                 */
                 if !app_index.is_empty() {
-                    let req_id = cfg.app_id;
-                    if conf > 92.0 && req_id > 0 {
-                        let req_cells =
-                            rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, true)
-                                .await
-                                .unwrap();
-                        println!("Verifying block :{} because APPID is given ", num);
-                        //hyper request for verifying the proof
-                        let count =
-                            proof::verify_proof(num, max_rows, max_cols, req_cells, commitment);
-                        println!(
-                            "Completed {} rounds of verification for block {} ",
-                            count, num
-                        );
+                    let req_id = cfg.app_id as u32;
+                    for i in 0..app_index.len(){
+                        if req_id == app_index[i].0 {
+                            if conf > 92.0 && req_id>0{
+                                let req_cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await.unwrap();                    
+                                println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
+                                //hyper request for verifying the proof
+                                proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone());
+                                println!(
+                                "✅ Completed {} rounds of verification for block number {} ",
+                                count, num
+                                ); 
+                            }
+                        }else{
+                            continue;
+                        }
+                
                     }
                 }
 

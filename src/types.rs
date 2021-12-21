@@ -190,13 +190,13 @@ pub struct RPCResult {
     pub justification: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Block {
     pub extrinsics: Vec<Vec<u8>>,
     pub header: Header,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Header {
     pub number: String,
     #[serde(rename = "extrinsicsRoot")]
@@ -210,7 +210,7 @@ pub struct Header {
     pub app_data_lookup: AppDataIndex,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtrinsicsRoot {
     pub cols: u16,
     pub rows: u16,
@@ -218,12 +218,12 @@ pub struct ExtrinsicsRoot {
     pub commitment: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Digest {
     logs: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppDataIndex {
     pub size: u32,
     pub index: Vec<(u32, u32)>,

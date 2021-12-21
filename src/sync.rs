@@ -82,7 +82,7 @@ pub async fn sync_block_headers(
                     let commitment = block_body.header.extrinsics_root.commitment;
 
                     let cells =
-                        crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, false)
+                        crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, 0)
                             .await
                             .unwrap();
 
