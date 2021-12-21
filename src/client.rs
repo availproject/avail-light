@@ -13,6 +13,7 @@ use crate::data::{
     prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 };
 use crate::data::{extract_block, extract_cell, extract_links};
+use crate::rpc::get_all_cells;
 use crate::types::{BlockCidPair, ClientMsg, Event};
 use async_std::stream::StreamExt;
 use ipfs_embed::{
@@ -396,73 +397,80 @@ pub async fn run_client(
         // linking it with previous block data matrix's CID.
         match block_rx.recv() {
             Ok(block) => {
-                match construct_matrix(
-                    &cfg.full_node_rpc,
-                    block.num,
-                    block.max_rows,
-                    block.max_cols,
-                )
-                .await
-                {
-                    Ok(matrix) => {
-                        match push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await {
-                            Ok(cid) => {
-                                latest_cid = Some(cid);
+                match get_all_cells(&cfg.full_node_rpc, &block).await {
+                    Ok(cells) => {
+                        // just wrapped into arc so that it's cheap
+                        // calling `.clone()`
+                        let arced_cells = Arc::new(cells);
 
-                                // publish block-cid mapping message over gossipsub network
-                                match prepare_block_cid_fact_message(
-                                    block.num as i128,
-                                    latest_cid.unwrap(), // this should be safe !
-                                ) {
-                                    Ok(msg) => {
-                                        match ipfs.publish("topic/block_cid_fact", msg) {
-                                            Ok(_) => {
-                                                // thread-safely put an entry in local in-memory store
-                                                // for block to cid mapping
-                                                //
-                                                // it can be used later for for serving clients or
-                                                // answering to questions asked by other peers over
-                                                // gossipsub network
-                                                //
-                                                // once a CID is self-computed, it'll never be rewritten even
-                                                // when conflicting fact is found over gossipsub channel
-                                                match set_block_cid_entry(
-                                                    block_cid_store.clone(),
-                                                    block.num as i128,
-                                                    BlockCidPair {
-                                                        cid: latest_cid.unwrap(),
-                                                        self_computed: true, // because this block CID is self-computed !
-                                                    },
-                                                ) {
-                                                    Ok(_) => {}
-                                                    Err(e) => {
-                                                        println!("error: {}", e);
+                        match construct_matrix(
+                            block.num,
+                            block.max_rows,
+                            block.max_cols,
+                            arced_cells,
+                        ) {
+                            Ok(matrix) => {
+                                match push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await {
+                                    Ok(cid) => {
+                                        latest_cid = Some(cid);
+                                        // publish block-cid mapping message over gossipsub network
+                                        match prepare_block_cid_fact_message(
+                                            block.num as i128,
+                                            latest_cid.unwrap(), // this should be safe !
+                                        ) {
+                                            Ok(msg) => {
+                                                match ipfs.publish("topic/block_cid_fact", msg) {
+                                                    Ok(_) => {
+                                                        // thread-safely put an entry in local in-memory store
+                                                        // for block to cid mapping
+                                                        //
+                                                        // it can be used later for for serving clients or
+                                                        // answering to questions asked by other peers over
+                                                        // gossipsub network
+                                                        //
+                                                        // once a CID is self-computed, it'll never be rewritten even
+                                                        // when conflicting fact is found over gossipsub channel
+                                                        match set_block_cid_entry(
+                                                            block_cid_store.clone(),
+                                                            block.num as i128,
+                                                            BlockCidPair {
+                                                                cid: latest_cid.unwrap(),
+                                                                self_computed: true, // because this block CID is self-computed !
+                                                            },
+                                                        ) {
+                                                            Ok(_) => {}
+                                                            Err(e) => {
+                                                                println!("error: {}", e);
+                                                            }
+                                                        };
+                                                        println!(
+                                                            "✅ Block {} available\t{}",
+                                                            block.num,
+                                                            latest_cid.unwrap().clone()
+                                                        );
+                                                    }
+                                                    Err(_) => {
+                                                        println!("error: failed to publish fact on `topic/block_cid_fact` topic");
                                                     }
                                                 };
-
-                                                println!(
-                                                    "✅ Block {} available\t{}",
-                                                    block.num,
-                                                    latest_cid.unwrap().clone()
-                                                );
                                             }
-                                            Err(_) => {
-                                                println!("error: failed to publish fact on `topic/block_cid_fact` topic");
+                                            Err(msg) => {
+                                                println!("error: {}", msg);
                                             }
                                         };
                                     }
                                     Err(msg) => {
                                         println!("error: {}", msg);
                                     }
-                                };
+                                }
                             }
                             Err(msg) => {
                                 println!("error: {}", msg);
                             }
-                        }
+                        };
                     }
-                    Err(msg) => {
-                        println!("error: {}", msg);
+                    Err(e) => {
+                        println!("error: {}", e);
                     }
                 };
             }

@@ -4,7 +4,6 @@ extern crate ipfs_embed;
 extern crate libipld;
 
 use crate::recovery::reconstruct_poly;
-use crate::rpc::get_kate_query_proof_by_cell;
 use crate::types::{BaseCell, Cell, DataMatrix, IpldBlock, L0Col, L1Row};
 use dusk_plonk::bls12_381::BlsScalar;
 use dusk_plonk::fft::EvaluationDomain;
@@ -14,30 +13,36 @@ use libipld::multihash::{Code, MultihashDigest};
 use libipld::Ipld;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::sync::Arc;
 
-async fn construct_cell(url: &str, block: u64, row: u16, col: u16) -> Result<BaseCell, String> {
-    match get_kate_query_proof_by_cell(url, block, row, col).await {
-        Ok(cell) => {
-            let data = Ipld::Bytes(cell);
+fn construct_cell(
+    row: u16,
+    col: u16,
+    col_count: u16,
+    cells: Arc<Vec<Option<Vec<u8>>>>,
+) -> Result<BaseCell, String> {
+    match &cells[(row * col_count + col) as usize] {
+        Some(cell) => {
+            let data = Ipld::Bytes(cell.to_owned());
             match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data) {
                 Ok(coded_cell) => Ok(coded_cell),
                 Err(_) => Err("failed to IPLD encode cell of data matrix".to_owned()),
             }
         }
-        Err(msg) => Err(msg),
+        None => Err("failed to construct cell due to unavailability of data".to_owned()),
     }
 }
 
-async fn construct_colwise(
-    url: &str,
-    block: u64,
+fn construct_colwise(
     row_count: u16,
+    col_count: u16,
     col: u16,
+    cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<L0Col, String> {
     let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
     for row in 0..row_count {
-        match construct_cell(url, block, row, col).await {
+        match construct_cell(row, col, col_count, cells.clone()) {
             Ok(cell) => {
                 base_cells.push(cell);
             }
@@ -50,16 +55,15 @@ async fn construct_colwise(
     })
 }
 
-async fn construct_rowwise(
-    url: &str,
-    block: u64,
+fn construct_rowwise(
     row_count: u16,
     col_count: u16,
+    cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<L1Row, String> {
     let mut l0_cols: Vec<L0Col> = Vec::with_capacity(col_count as usize);
 
     for col in 0..col_count {
-        match construct_colwise(url, block, row_count, col).await {
+        match construct_colwise(row_count, col_count, col, cells.clone()) {
             Ok(col) => {
                 l0_cols.push(col);
             }
@@ -70,13 +74,13 @@ async fn construct_rowwise(
     Ok(L1Row { l0_cols: l0_cols })
 }
 
-pub async fn construct_matrix(
-    url: &str,
+pub fn construct_matrix(
     block: u64,
     row_count: u16,
     col_count: u16,
+    cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<DataMatrix, String> {
-    match construct_rowwise(url, block, row_count, col_count).await {
+    match construct_rowwise(row_count, col_count, cells.clone()) {
         Ok(row) => Ok(DataMatrix {
             l1_row: row,
             block_num: block as i128,
