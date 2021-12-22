@@ -280,6 +280,7 @@ pub struct RuntimeConfig {
     pub full_node_rpc: String,
     pub full_node_ws: String,
     pub app_id: u16,
+    pub confidence: f64,
     pub bootstraps: Vec<(String, Multiaddr)>,
     pub avail_path: String,
 }
@@ -295,6 +296,7 @@ impl Default for RuntimeConfig {
             full_node_rpc: "http://127.0.0.1:9933".to_owned(),
             full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
+            confidence: 92.0,
             bootstraps: Vec::new(),
             avail_path: format!("avail_light_client_{}", 1),
         }

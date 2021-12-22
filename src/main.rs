@@ -199,22 +199,27 @@ pub async fn main() {
                 */
                 if !app_index.is_empty() {
                     let req_id = cfg.app_id as u32;
+                    let req_conf = cfg.confidence;
                     for i in 0..app_index.len(){
                         if req_id == app_index[i].0 {
-                            if conf > 92.0 && req_id>0{
-                                let req_cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await.unwrap();                    
-                                println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
-                                //hyper request for verifying the proof
-                                proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone());
-                                println!(
-                                "✅ Completed {} rounds of verification for block number {} ",
-                                count, num
-                                ); 
+                            if conf >= req_conf && req_id>0{
+                                let req_cells =Some(rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await.unwrap());
+                                if let Some(j) = req_cells{
+                                    println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
+                                    //hyper request for verifying the proof
+                                    proof::verify_proof(num, max_rows, max_cols, j, commitment.clone());
+                                    println!(
+                                    "✅ Completed {} rounds of verification for block number {} ",
+                                    count, num
+                                    );
+                                }else{
+                                    println!("\n❌ Proof verification failed. Data availability cannot be ensured");
+                                }
+                                
                             }
                         }else{
                             continue;
                         }
-                
                     }
                 }
 

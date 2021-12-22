@@ -7,7 +7,7 @@ use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -310,21 +310,23 @@ pub async fn get_kate_proof(
     app_id: u32,
 ) -> Result<Vec<Cell>, String> {
     let num = get_block_by_number(url, block).await.unwrap();
-    let app_index = num.header.app_data_lookup.index.clone();
+    //tuple of values (id,index)
+    let index_tuple = num.header.app_data_lookup.index.clone();
 
     //checking for if the user is subscribed for a particular APPID
     let mut cells = if app_id == 0 {
         let cpy = generate_random_cells(max_rows, max_cols, block);
         cpy
     } else {
-        let mut app:u32 = 0;
-        for i in 0..app_index.len(){
-            if app_id == app_index[i].0 {
-                app = app_index[i].1; 
-                break;   
+        //this is where the index for a specific app_ID is checked; from the tuple (id, index).
+        let mut app_ind: u32 = 0;
+        for i in 0..index_tuple.len() {
+            if app_id == index_tuple[i].0 {
+                app_ind = index_tuple[i].1;
+                break;
             }
         }
-        let cpy =  generate_app_specific_cells(app, max_cols, block, num, app_id);
+        let cpy = generate_app_specific_cells(app_ind, max_cols, block, num, app_id);
         cpy
     };
     let payload = generate_kate_query_payload(block, &cells);
@@ -380,8 +382,8 @@ pub fn generate_app_specific_cells(
     let endsize = hash_ind.get(&id).unwrap();
 
     for index in index..=*endsize {
-        let rows = (index-1) as u16 / max_col;
-        let cols = (index-1) as u16 % max_col;
+        let rows = (index - 1) as u16 / max_col;
+        let cols = (index - 1) as u16 % max_col;
 
         buf.push(Cell {
             block: num,
@@ -393,19 +395,18 @@ pub fn generate_app_specific_cells(
     buf
 }
 
-pub fn get_id_specific_size(num:Block )->HashMap<u32,u32>{
+pub fn get_id_specific_size(num: Block) -> HashMap<u32, u32> {
     let app_index = num.header.app_data_lookup.index;
     let app_size = num.header.app_data_lookup.size;
-    let mut index:HashMap<u32,u32> = HashMap::new();
-    for i in 0..app_index.len(){
-        if i+1 == app_index.len(){
+    let mut index: HashMap<u32, u32> = HashMap::new();
+    for i in 0..app_index.len() {
+        if i + 1 == app_index.len() {
             let esize = app_size;
-            index.insert(app_index[i].0,esize);
-        }else{
-            let size = app_index[i+1].1 - 1;
+            index.insert(app_index[i].0, esize);
+        } else {
+            let size = app_index[i + 1].1 - 1;
             index.insert(app_index[i].0, size);
         }
     }
     index
 }
-
