@@ -203,19 +203,26 @@ pub async fn main() {
                     for i in 0..app_index.len(){
                         if req_id == app_index[i].0 {
                             if conf >= req_conf && req_id>0{
-                                let req_cells =Some(rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await.unwrap());
-                                if let Some(j) = req_cells{
-                                    println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
-                                    //hyper request for verifying the proof
-                                    proof::verify_proof(num, max_rows, max_cols, j, commitment.clone());
-                                    println!(
-                                    "✅ Completed {} rounds of verification for block number {} ",
-                                    count, num
-                                    );
-                                }else{
-                                    println!("\n❌ Proof verification failed. Data availability cannot be ensured");
-                                }
-                                
+                                let req_cells = match rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await {
+                                    Ok(req_cells) => Some(req_cells), 
+                                    Err(_) => None, 
+                                };
+                                match req_cells {
+                                    Some(req_cells) => { 
+                                        println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
+                                        //hyper request for verifying the proof
+                                        let count =Some(proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone()));
+                                        if let Some(j) = count {
+                                            println!(
+                                                        "✅ Completed {} rounds of verification for block number {} ",
+                                                        j, num
+                                                        );
+                                        }else{
+                                            println!("\n ❌proof verification failed, data availability cannot ensured");
+                                        }
+                                    }
+                                    _ => println!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
+                                }    
                             }
                         }else{
                             continue;
