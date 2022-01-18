@@ -198,10 +198,10 @@ mod tests {
     //
     // Need for writing these test cases originates in a conversation
     // with Prabal<https://github.com/prabal-banerjee> where we were discussing
-    // how to ensure input byte chunks to dusk-plonk's `BlsScalar::from_bytes_wide()`
+    // how to ensure input byte chunks to dusk-plonk's `BlsScalar::from_bytes()`
     // is always lesser than prime field modulus ( 255 bits wide ), because
     // we'll get data bytes from arbitrary sources which will be concatenated into
-    // single byte array & finally (multiple) field elements to be produced from contiguous chunks,
+    // single large byte array & finally (multiple) field elements to be produced by chunking contiguous bytes,
     // splitting bytearray into smaller chunks, each of size 32 bytes.
     //
     // Now imagine we got a 32-bytes wide chunk with content like [0xff; 32] --- all 256 -bits are set
@@ -215,11 +215,17 @@ mod tests {
     //
     // One natural way to think about solving this problem is grouping large byte array into 254-bits
     // chunks, then we should not encounter that problem as value is always lesser than
-    // prime number which is 255 -bits. But that requires indexing within a byte i.e. not at byte boundaries.
+    // prime number which is 255 -bits. But that requires indexing within a byte i.e. not at byte boundary.
     //
     // **Solution** So we decided to chunk contiguous 31 bytes from large input byte array and
-    // append zeros to each chunk for making 64 -bytes wide before inputting
-    // 512 -bit integer to `BlsScalar::from_bytes_wide( ... )` function
+    // append zero byte(s) to each chunk for making 32 -bytes wide before inputting
+    // 256 -bit integer to `BlsScalar::from_bytes( ... )` function
+    //
+    // Note, this means, for each field element of 256 -bits, we've 6 -bits free to use
+    // and at this moment that's just set to zeros !
+    // Other 2 -bits of MSB will always be 0 for avoiding modular division related issue.
+    //
+    // Is there a way to make use of 6 -bits of most significant byte, in every field element ?
     //
     // Test `data_reconstruction_failure_1` shows how chunking with 32 contiguous bytes
     // results into error where data is lost due to modular division
@@ -236,17 +242,16 @@ mod tests {
         let domain_size = ((input.len() as f64) / GROUP_TOGETHER as f64).ceil() as usize;
         let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
 
-        let mut input_wide: Vec<[u8; 64]> = Vec::with_capacity(domain_size);
+        let mut input_wide: Vec<[u8; 32]> = Vec::with_capacity(domain_size);
 
         for chunk in input.chunks(GROUP_TOGETHER) {
-            let widened: [u8; 64] = {
+            let widened: [u8; 32] = {
                 let mut v = vec![];
                 v.extend_from_slice(&chunk.to_vec()[..]);
                 // pad last chunk with required -many zeros
                 for _ in 0..(GROUP_TOGETHER - chunk.len()) {
                     v.push(0u8);
-                }
-                v.extend_from_slice(&[0u8; GROUP_TOGETHER].to_vec()[..]);
+                } // v is 32 -bytes
                 v.try_into().unwrap()
             };
 
@@ -255,7 +260,7 @@ mod tests {
 
         let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
         for i in 0..domain_size {
-            src.push(BlsScalar::from_bytes_wide(&input_wide[i]));
+            src.push(BlsScalar::from_bytes(&input_wide[i]).unwrap());
         }
         for _ in 0..domain_size {
             src.push(BlsScalar::zero());
@@ -303,17 +308,17 @@ mod tests {
         let domain_size = ((input.len() as f64) / GROUP_TOGETHER as f64).ceil() as usize;
         let eval_domain = EvaluationDomain::new(domain_size * 2).unwrap();
 
-        let mut input_wide: Vec<[u8; 64]> = Vec::with_capacity(domain_size);
+        let mut input_wide: Vec<[u8; 32]> = Vec::with_capacity(domain_size);
 
         for chunk in input.chunks(GROUP_TOGETHER) {
-            let widened: [u8; 64] = {
+            let widened: [u8; 32] = {
                 let mut v = vec![];
                 v.extend_from_slice(&chunk.to_vec()[..]);
                 // pad last chunk with required -many zeros
                 for _ in 0..(GROUP_TOGETHER - chunk.len()) {
                     v.push(0u8);
-                }
-                v.extend_from_slice(&[0u8; GROUP_TOGETHER + 2].to_vec()[..]);
+                } // v is 31 -bytes
+                v.push(0u8); // v is now 32 -bytes
                 v.try_into().unwrap()
             };
 
@@ -322,7 +327,7 @@ mod tests {
 
         let mut src: Vec<BlsScalar> = Vec::with_capacity(domain_size * 2);
         for i in 0..domain_size {
-            src.push(BlsScalar::from_bytes_wide(&input_wide[i]));
+            src.push(BlsScalar::from_bytes(&input_wide[i]).unwrap());
         }
         for _ in 0..domain_size {
             src.push(BlsScalar::zero());
