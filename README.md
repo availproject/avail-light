@@ -33,6 +33,7 @@ full_node_rpc = "http://127.0.0.1:9933"
 full_node_ws = "ws://127.0.0.1:9944"
 app_id = 0
 confidence = 92.0
+avail_path = "avail_path"
 
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
 ```
@@ -40,7 +41,7 @@ bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127
 - Now, let's run client
 
 ```bash
-cargo run
+cargo run -- -c config.yaml  
 ```
 
 ## Usage
