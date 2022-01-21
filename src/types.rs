@@ -190,13 +190,13 @@ pub struct RPCResult {
     pub justification: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Block {
     pub extrinsics: Vec<Vec<u8>>,
     pub header: Header,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Header {
     pub number: String,
     #[serde(rename = "extrinsicsRoot")]
@@ -210,7 +210,7 @@ pub struct Header {
     pub app_data_lookup: AppDataIndex,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtrinsicsRoot {
     pub cols: u16,
     pub rows: u16,
@@ -218,12 +218,12 @@ pub struct ExtrinsicsRoot {
     pub commitment: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Digest {
     logs: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppDataIndex {
     pub size: u32,
     pub index: Vec<(u32, u32)>,
@@ -280,6 +280,7 @@ pub struct RuntimeConfig {
     pub full_node_rpc: String,
     pub full_node_ws: String,
     pub app_id: u16,
+    pub confidence: f64,
     pub bootstraps: Vec<(String, Multiaddr)>,
     pub avail_path: String,
 }
@@ -295,6 +296,7 @@ impl Default for RuntimeConfig {
             full_node_rpc: "http://127.0.0.1:9933".to_owned(),
             full_node_ws: "ws://127.0.0.1:9944".to_owned(),
             app_id: 0,
+            confidence: 92.0,
             bootstraps: Vec::new(),
             avail_path: format!("avail_light_client_{}", 1),
         }

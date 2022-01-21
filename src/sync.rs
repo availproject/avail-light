@@ -81,10 +81,9 @@ pub async fn sync_block_headers(
                     let max_cols = block_body.header.extrinsics_root.cols;
                     let commitment = block_body.header.extrinsics_root.commitment;
 
-                    let cells =
-                        crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, false)
-                            .await
-                            .unwrap();
+                    let cells = crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, 0)
+                        .await
+                        .unwrap();
 
                     let count = crate::proof::verify_proof(
                         block_num, max_rows, max_cols, cells, commitment,

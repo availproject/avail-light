@@ -172,7 +172,7 @@ pub async fn main() {
                 let commitment = header.extrinsics_root.commitment.clone();
 
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, false)
+                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, 0)
                     .await
                     .unwrap();
 
@@ -198,20 +198,35 @@ pub async fn main() {
                 to an appID and now its verifying every cell that contains the data
                 */
                 if !app_index.is_empty() {
-                    let req_id = cfg.app_id;
-                    if conf > 92.0 && req_id > 0 {
-                        let req_cells =
-                            rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, true)
-                                .await
-                                .unwrap();
-                        println!("Verifying block :{} because APPID is given ", num);
-                        //hyper request for verifying the proof
-                        let count =
-                            proof::verify_proof(num, max_rows, max_cols, req_cells, commitment);
-                        println!(
-                            "Completed {} rounds of verification for block {} ",
-                            count, num
-                        );
+                    let req_id = cfg.app_id as u32;
+                    let req_conf = cfg.confidence;
+                    for i in 0..app_index.len(){
+                        if req_id == app_index[i].0 {
+                            if conf >= req_conf && req_id>0{
+                                let req_cells = match rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await {
+                                    Ok(req_cells) => Some(req_cells), 
+                                    Err(_) => None, 
+                                };
+                                match req_cells {
+                                    Some(req_cells) => { 
+                                        println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
+                                        //hyper request for verifying the proof
+                                        let count =Some(proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone()));
+                                        if let Some(j) = count {
+                                            println!(
+                                                        "✅ Completed {} rounds of verification for block number {} ",
+                                                        j, num
+                                                        );
+                                        }else{
+                                            println!("\n ❌proof verification failed, data availability cannot ensured");
+                                        }
+                                    }
+                                    _ => println!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
+                                }    
+                            }
+                        }else{
+                            continue;
+                        }
                     }
                 }
 
