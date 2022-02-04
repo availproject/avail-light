@@ -127,8 +127,9 @@ pub async fn main() {
     let latest_block = hex_to_u64_block_number(block_header.number);
     let url = cfg.full_node_rpc.clone();
     let db_2 = db.clone();
+    let app_id: u32 = cfg.app_id as u32;
     tokio::spawn(async move {
-        sync::sync_block_headers(url, 0, latest_block, db_2).await;
+        sync::sync_block_headers(url, 0, latest_block, db_2, app_id).await;
     });
 
     println!("Syncing block headers from 0 to {}", latest_block);
@@ -172,7 +173,7 @@ pub async fn main() {
                 let commitment = header.extrinsics_root.commitment.clone();
 
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, 0)
+                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
                     .await
                     .unwrap();
 
@@ -248,12 +249,8 @@ pub async fn main() {
                 // notify ipfs-based application client
                 // that newly mined block has been received
                 block_tx
-                    .send(types::ClientMsg {
-                        num: num,
-                        max_rows: max_rows,
-                        max_cols: max_cols,
-                    })
-                    .unwrap();
+                    .send(types::ClientMsg { num, max_rows, max_cols })
+		    .unwrap()
             }
             Err(error) => println!("Misconstructed Header: {:?}", error),
         }
