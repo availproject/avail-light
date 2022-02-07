@@ -248,9 +248,7 @@ pub async fn main() {
 
                 // notify ipfs-based application client
                 // that newly mined block has been received
-                block_tx
-                    .send(types::ClientMsg { num, max_rows, max_cols })
-		    .unwrap()
+                block_tx.send(types::ClientMsg { num, max_rows, max_cols }).unwrap()
             }
             Err(error) => println!("Misconstructed Header: {:?}", error),
         }

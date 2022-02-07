@@ -315,7 +315,7 @@ pub async fn get_kate_proof(
     let index_tuple = num.header.app_data_lookup.index.clone();
 
     //checking for if the user is subscribed for a particular APPID
-    let mut cells = if app_id == 0 {
+    let mut cells = if app_id == 0 || index_tuple.iter().all(|elem| app_id != elem.0) {
         generate_random_cells(max_rows, max_cols, block)
     } else {
         //this is where the index for a specific app_ID is checked; from the tuple (id, index).
