@@ -3,10 +3,13 @@ extern crate dusk_plonk;
 extern crate ipfs_embed;
 extern crate libipld;
 
-use crate::recovery::reconstruct_poly;
-use crate::types::{BaseCell, Cell, DataMatrix, IpldBlock, L0Col, L1Row};
-use dusk_plonk::bls12_381::BlsScalar;
-use dusk_plonk::fft::EvaluationDomain;
+use crate::{
+    recovery::reconstruct_poly,
+    types::{BaseCell, Cell, DataMatrix, IpldBlock, L0Col, L1Row},
+};
+use dusk_bytes::Serializable;
+use dusk_plonk::{bls12_381::BlsScalar, fft::EvaluationDomain};
+
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::codec_impl::IpldCodec;
 use libipld::multihash::{Code, MultihashDigest};
