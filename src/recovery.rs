@@ -127,6 +127,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use dusk_bytes::Serializable;
+
 
     #[test]
     fn data_reconstruction_success() {
