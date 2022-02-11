@@ -1,55 +1,115 @@
-// Smoldot
-// Copyright (C) 2019-2021  Parity Technologies (UK) Ltd.
-// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+extern crate futures;
+extern crate num_cpus;
+extern crate rocksdb;
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+use futures::stream::{self, StreamExt};
+use rocksdb::{DBWithThreadMode, SingleThreaded};
+use std::sync::Arc;
+use std::time::SystemTime;
 
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+pub async fn sync_block_headers(
+    url: String,
+    start_block: u64,
+    end_block: u64,
+    header_store: Arc<DBWithThreadMode<SingleThreaded>>,
+) {
+    let fut = stream::iter(
+        (start_block..(end_block + 1))
+            .map(move |block_num| block_num)
+            .zip((0..(end_block - start_block + 1)).map(move |_| url.clone()))
+            .zip((0..(end_block - start_block + 1)).map(move |_| header_store.clone())),
+    )
+    .for_each_concurrent(
+        num_cpus::get(), // number of logical CPUs available on machine
+        // run those many concurrent syncing lightweight tasks, not threads
+        |((block_num, url), store)| async move {
+            match store.get_pinned_cf(
+                store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+                block_num.to_be_bytes(),
+            ) {
+                Ok(v) => match v {
+                    Some(_) => {
+                        return;
+                    }
+                    None => {}
+                },
+                Err(_) => {}
+            };
+            // if block header look up fails, only then comes here for
+            // fetching and storing block header as part of (light weight)
+            // syncing process
+            let begin = SystemTime::now();
 
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+            match super::rpc::get_block_by_number(&url, block_num).await {
+                Ok(block_body) => {
+                    store
+                        .put_cf(
+                            store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+                            block_num.to_be_bytes(),
+                            serde_json::to_string(&block_body.header)
+                                .unwrap()
+                                .as_bytes(),
+                        )
+                        .unwrap();
 
-//! Syncing, short for synchronizing, consists in synchronizing the state of a local chain with
-//! the state of the chain contained in other machines, called *remotes* or *sources*.
-//!
-//! > **Note**: While the above summary is a bit abstract, in practice it is almost always
-//! >           done by exchanging messages through a peer-to-peer network.
-//!
-//! Multiple strategies exist for syncing, one for each sub-module, and which one to employ
-//! depends on the amount of information that is desired (e.g. is it required to know the header
-//! and/or body of every single block, or can some blocks be skipped?) and the distance between
-//! the highest block of the local chain and the highest block available on the remotes.
-//!
-//! The [`all`] module represents a good combination of all syncing strategies and should be the
-//! default choice for most clients.
-//!
-//! # About safety
-//!
-//! While there exists various trade-offs between syncing strategies, safety is never part of
-//! these trade-offs. All syncing strategies are safe, in the sense that malicious remotes cannot
-//! corrupt the state of the local chain.
-//!
-//! It is possible, however, for a malicious remote to omit some information, such as the
-//! existence of a specific block. If all the remotes that are being synchronized from are
-//! malicious and collude to omit the same information, there is no way for the local node to
-//! learn this information or even to be aware that it is missing an information. This is called
-//! an **eclipse attack**.
-//!
-//! For this reason, it is important to ensure a large number and a good distribution of the
-//! sources. In the context of a peer-to-peer network where machines are picked randomly, a
-//! minimum threshold of around 7 peers is generally considered acceptable. Similarly, in the
-//! context of a peer-to-peer network, it is important to establish outgoing connections to other
-//! nodes and not only rely on incoming connections, as there is otherwise the possibility of a
-//! single actor controlling all said incoming connections.
+                    println!(
+                        "Synced block header of {}\t{:?}",
+                        block_num,
+                        begin.elapsed().unwrap()
+                    );
 
-pub mod all;
-pub mod all_forks;
-pub mod grandpa_warp_sync;
-pub mod optimistic;
-pub mod para;
+                    // If it's found that this certain block is not verified
+                    // then it'll be verified now
+                    match store.get_pinned_cf(
+                        store
+                            .cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
+                            .unwrap(),
+                        block_num.to_be_bytes(),
+                    ) {
+                        Ok(v) => match v {
+                            Some(_) => {
+                                return;
+                            }
+                            None => {}
+                        },
+                        Err(_) => {}
+                    };
+
+                    let begin = SystemTime::now();
+
+                    let max_rows = block_body.header.extrinsics_root.rows;
+                    let max_cols = block_body.header.extrinsics_root.cols;
+                    let commitment = block_body.header.extrinsics_root.commitment;
+
+                    let cells = crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, 0)
+                        .await
+                        .unwrap();
+
+                    let count = crate::proof::verify_proof(
+                        block_num, max_rows, max_cols, cells, commitment,
+                    );
+                    println!(
+                        "Completed {} verification rounds for block {}\t{:?}",
+                        count,
+                        block_num,
+                        begin.elapsed().unwrap()
+                    );
+                    // write confidence factor into on-disk database
+                    store
+                        .put_cf(
+                            store
+                                .cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
+                                .unwrap(),
+                            block_num.to_be_bytes(),
+                            count.to_be_bytes(),
+                        )
+                        .unwrap();
+                }
+                Err(msg) => {
+                    println!("error: {}", msg);
+                }
+            };
+        },
+    );
+    fut.await;
+}
