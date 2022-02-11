@@ -309,14 +309,14 @@ pub async fn get_kate_proof(
     max_cols: u16,
     app_id: u32,
 ) -> Result<Vec<Cell>, String> {
-    let num = get_block_by_number(url, block).await.unwrap();
+    let num = get_block_by_number(url, block).await?;
+
     //tuple of values (id,index)
     let index_tuple = num.header.app_data_lookup.index.clone();
 
     //checking for if the user is subscribed for a particular APPID
     let mut cells = if app_id == 0 {
-        let cpy = generate_random_cells(max_rows, max_cols, block);
-        cpy
+        generate_random_cells(max_rows, max_cols, block)
     } else {
         //this is where the index for a specific app_ID is checked; from the tuple (id, index).
         let mut app_ind: u32 = 0;
@@ -326,48 +326,41 @@ pub async fn get_kate_proof(
                 break;
             }
         }
-        let cpy = generate_app_specific_cells(app_ind, max_cols, block, num, app_id);
-        cpy
+        generate_app_specific_cells(app_ind, max_cols, block, num, app_id)
     };
     let payload = generate_kate_query_payload(block, &cells);
 
-    match hyper::Request::builder()
+    let req = hyper::Request::builder()
         .method(hyper::Method::POST)
         .uri(url)
         .header("Content-Type", "application/json")
-        .body(hyper::Body::from(payload))
-    {
-        Ok(req) => {
-            let resp = if is_secure(url) {
-                let https = HttpsConnector::new();
-                let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-                match client.request(req).await {
-                    Ok(resp) => Some(resp),
-                    Err(_) => None,
-                }
-            } else {
-                let client = hyper::Client::new();
-                match client.request(req).await {
-                    Ok(resp) => Some(resp),
-                    Err(_) => None,
-                }
-            };
+        .body(hyper::Body::from(payload.clone()))
+        .map_err(|builder_err| {
+            format!(
+                "failed to build HTTP POST request object: {:?}",
+                builder_err
+            )
+        })?;
 
-            match resp {
-                Some(resp) => {
-                    if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
-                        let r: BlockProofResponse = serde_json::from_slice(&body).unwrap();
-                        fill_cells_with_proofs(&mut cells, &r);
-                        Ok(cells)
-                    } else {
-                        Err("failed to read HTTP POST response".to_owned())
-                    }
-                }
-                None => Err("failed to send HTTP POST request".to_owned()),
-            }
-        }
-        Err(_) => Err("failed to build HTTP POST request object".to_owned()),
+    let resp = if is_secure(url) {
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        client.request(req).await
+    } else {
+        let client = hyper::Client::new();
+        client.request(req).await
     }
+    .map_err(|e| format!("failed to send HTTP POST request: {:?}", e))?;
+
+    let body = hyper::body::to_bytes(resp.into_body())
+        .await
+        .map_err(|resp_err| format!("failed to read HTTP POST response: {:?}", resp_err))?;
+
+    let r: BlockProofResponse = serde_json::from_slice(&body)
+        .map_err(|json_err| format!("Body cannot be decoded (err={:?}): {:?}", json_err, body))?;
+
+    fill_cells_with_proofs(&mut cells, &r);
+    Ok(cells)
 }
 
 pub fn generate_app_specific_cells(
