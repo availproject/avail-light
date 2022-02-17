@@ -43,6 +43,7 @@ pub async fn sync_block_headers(
 
             match super::rpc::get_block_by_number(&url, block_num).await {
                 Ok(block_body) => {
+		    println!("Block {} app index {:?}", block_num, block_body.header.app_data_lookup.index);
                     store
                         .put_cf(
                             store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
@@ -85,6 +86,8 @@ pub async fn sync_block_headers(
                     let cells = crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, app_id)
                         .await
                         .unwrap();
+
+		    println!("Fetched {} cells of app {} of block {} for verification", cells.len(), app_id, block_num);
 
                     let count = crate::proof::verify_proof(
                         block_num, max_rows, max_cols, cells, commitment,

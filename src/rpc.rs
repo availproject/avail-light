@@ -314,6 +314,11 @@ pub async fn get_kate_proof(
     //tuple of values (id,index)
     let index_tuple = num.header.app_data_lookup.index.clone();
 
+    println!(
+        "Getting kate proof block {}, apps index {:?}",
+        block, index_tuple
+    );
+
     //checking for if the user is subscribed for a particular APPID
     let mut cells = if app_id == 0 || index_tuple.iter().all(|elem| app_id != elem.0) {
         generate_random_cells(max_rows, max_cols, block)
@@ -326,7 +331,11 @@ pub async fn get_kate_proof(
                 break;
             }
         }
-        generate_app_specific_cells(app_ind, max_cols, block, num, app_id)
+	println!(
+	    "{} chunks for app {} found in block {}",
+	    app_ind, app_id, block
+	);
+	generate_app_specific_cells(app_ind, max_cols, block, num, app_id)
     };
     let payload = generate_kate_query_payload(block, &cells);
 

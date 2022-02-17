@@ -213,8 +213,8 @@ pub async fn main() {
                                 };
                                 match req_cells {
                                     Some(req_cells) => { 
-                                        println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
-                                        //hyper request for verifying the proof
+					println!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
+					//hyper request for verifying the proof
                                         let count =Some(proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone()));
                                         if let Some(j) = count {
                                             println!(

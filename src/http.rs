@@ -98,7 +98,10 @@ impl Service<Request<Body>> for Handler {
                             db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
                             block_num,
                         ) {
-                            Ok(count) => count,
+                            Ok(count) => {
+                                println!("Confidence for block {} found in a store", block_num);
+                                count
+                            }
                             Err(e) => {
                                 // if for some reason confidence is not found
                                 // in on disk database, client receives following response
