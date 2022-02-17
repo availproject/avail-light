@@ -12,6 +12,7 @@ use std::thread;
 use std::time::SystemTime;
 use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use simple_logger::SimpleLogger;
 
 mod client;
 mod consts;
@@ -42,6 +43,8 @@ struct CliOpts {
 
 #[tokio::main]
 pub async fn main() {
+    SimpleLogger::new().with_level(log::LevelFilter::Info).init().unwrap();
+
     let opts = CliOpts::from_args();
     let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
     println!("Using {:?}", cfg);
