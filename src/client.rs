@@ -66,7 +66,7 @@ pub async fn run_client(
                     match ipfs_0.contains(&v.cid) {
                         Ok(have) => {
                             if !have {
-                                println!("block CID {:?} not present in local client", v.cid);
+                                log::info!("block CID {:?} not present in local client", v.cid);
                                 continue;
                             }
 
@@ -76,7 +76,7 @@ pub async fn run_client(
                                     if let Ok(v) = v.ipld() {
                                         dec_mat = v;
                                     } else {
-                                        println!("error: failed to IPLD decode data matrix");
+                                        log::info!("error: failed to IPLD decode data matrix");
                                         continue;
                                     }
 
@@ -90,14 +90,14 @@ pub async fn run_client(
                                             };
 
                                             if block == None {
-                                                println!("error: failed to extract block number from message");
+                                                log::info!("error: failed to extract block number from message");
                                                 continue;
                                             }
 
                                             let block = block.unwrap(); // safe to do so !
                                             if block as u64 != query.block {
                                                 // just make it sure that everything is good
-                                                println!("error: expected {} but received {} after CID based look up", query.block, block);
+                                                log::info!("error: expected {} but received {} after CID based look up", query.block, block);
                                                 continue;
                                             }
 
@@ -108,20 +108,20 @@ pub async fn run_client(
                                             };
 
                                             if cids == None {
-                                                println!("error: failed to extract column CIDs from message");
+                                                log::info!("error: failed to extract column CIDs from message");
                                                 continue;
                                             }
 
                                             let cids = cids.unwrap(); // safe to do so !
                                             if query.col as usize >= cids.len() {
                                                 // ensure indexing into vector is good move
-                                                println!("error: queried column {}, though max available columns {}", query.col, cids.len());
+                                                log::info!("error: queried column {}, though max available columns {}", query.col, cids.len());
                                                 continue;
                                             }
 
                                             let col_cid = cids[query.col as usize];
                                             if col_cid == None {
-                                                println!("error: failed to extract respective column CID");
+                                                log::info!("error: failed to extract respective column CID");
                                                 continue;
                                             }
 
@@ -133,7 +133,7 @@ pub async fn run_client(
                                                     if let Ok(v) = v.ipld() {
                                                         dec_col = v;
                                                     } else {
-                                                        println!("error: failed to IPLD decode data matrix column");
+                                                        log::info!("error: failed to IPLD decode data matrix column");
                                                         continue;
                                                     }
 
@@ -141,19 +141,19 @@ pub async fn run_client(
                                                     if let Some(v) = extract_links(&dec_col) {
                                                         row_cids = v;
                                                     } else {
-                                                        println!("error: failed to extract row CIDs from message");
+                                                        log::info!("error: failed to extract row CIDs from message");
                                                         continue;
                                                     }
 
                                                     if query.row as usize >= row_cids.len() {
                                                         // ensure indexing into vector is good move
-                                                        println!("error: queried row {}, though max available rows {}", query.row, row_cids.len());
+                                                        log::info!("error: queried row {}, though max available rows {}", query.row, row_cids.len());
                                                         continue;
                                                     }
 
                                                     let row_cid = row_cids[query.row as usize];
                                                     if row_cid == None {
-                                                        println!("error: failed to extract respective row CID");
+                                                        log::info!("error: failed to extract respective row CID");
                                                         continue;
                                                     }
 
@@ -166,7 +166,7 @@ pub async fn run_client(
                                                             if let Ok(v) = v.ipld() {
                                                                 dec_cell = v;
                                                             } else {
-                                                                println!("error: failed to IPLD decode data matrix cell");
+                                                                log::info!("error: failed to IPLD decode data matrix cell");
                                                                 continue;
                                                             }
 
@@ -175,16 +175,16 @@ pub async fn run_client(
                                                                 .res_chan
                                                                 .try_send(extract_cell(&dec_cell))
                                                             {
-                                                                println!("error: failed to respond back to querying party");
+                                                                log::info!("error: failed to respond back to querying party");
                                                             }
                                                         }
                                                         Err(_) => {
-                                                            println!("error: failed to get data matrix cell from storage");
+                                                            log::info!("error: failed to get data matrix cell from storage");
                                                         }
                                                     };
                                                 }
                                                 Err(_) => {
-                                                    println!("error: failed to get data matrix column from storage");
+                                                    log::info!("error: failed to get data matrix column from storage");
                                                 }
                                             };
                                         }
@@ -192,19 +192,19 @@ pub async fn run_client(
                                     };
                                 }
                                 Err(_) => {
-                                    println!("error: failed to get data matrix from storage");
+                                    log::info!("error: failed to get data matrix from storage");
                                 }
                             };
                         }
                         Err(_) => {
-                            println!("block CID {:?} not present in local client", v.cid);
+                            log::info!("block CID {:?} not present in local client", v.cid);
                         }
                     };
                 }
                 None => {
-                    println!("error: no CID entry found for block {}", query.block);
+                    log::info!("error: no CID entry found for block {}", query.block);
                     if let Err(_) = query.res_chan.try_send(None) {
-                        println!("error: failed to respond back to querying party");
+                        log::info!("error: failed to respond back to querying party");
                     }
                 }
             }
@@ -228,10 +228,10 @@ pub async fn run_client(
             match msg {
                 Some(msg) => match msg {
                     ipfs_embed::GossipEvent::Subscribed(peer) => {
-                        println!("subscribed to topic `topic/block_cid_fact`\t{}", peer);
+                        log::info!("subscribed to topic `topic/block_cid_fact`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-                        println!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
+                        log::info!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
                         if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
@@ -239,7 +239,7 @@ pub async fn run_client(
                                 match get_block_cid_entry(block_cid_store_0.clone(), block) {
                                     Some(v) => {
                                         if v.self_computed && v.cid != cid {
-                                            println!(
+                                            log::info!(
                                                 "received CID doesn't match host computed CID"
                                             );
                                         }
@@ -260,14 +260,14 @@ pub async fn run_client(
                                         ) {
                                             Ok(_) => {}
                                             Err(e) => {
-                                                println!("error: {}", e);
+                                                log::info!("error: {}", e);
                                             }
                                         };
                                     }
                                 };
                             }
 
-                            println!("received message on `topic/block_cid_fact`\t{}", peer);
+                            log::info!("received message on `topic/block_cid_fact`\t{}", peer);
                         }
 
                         // received message was not decodable !
@@ -292,13 +292,13 @@ pub async fn run_client(
             match msg {
                 Some(msg) => match msg {
                     ipfs_embed::GossipEvent::Subscribed(peer) => {
-                        println!("subscribed to topic `topic/block_cid_ask`\t{}", peer);
+                        log::info!("subscribed to topic `topic/block_cid_ask`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-                        println!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
+                        log::info!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
                     }
                     ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        println!("received {:?} from {}", msg, peer);
+                        log::info!("received {:?} from {}", msg, peer);
                         if let Some((block, cid)) = decode_block_cid_ask_message(msg.to_vec()) {
                             {
                                 // this is a question kind message
@@ -317,13 +317,13 @@ pub async fn run_client(
                                                     if let Ok(_) =
                                                         ipfs_1.publish("topic/block_cid_ask", msg)
                                                     {
-                                                        println!("answer question received on `topic/block_cid_ask` channel");
+                                                        log::info!("answer question received on `topic/block_cid_ask` channel");
                                                     } else {
-                                                        println!("error: failed to publish answer to question on `topic/block_cid_ask` channel");
+                                                        log::info!("error: failed to publish answer to question on `topic/block_cid_ask` channel");
                                                     }
                                                 }
                                                 Err(msg) => {
-                                                    println!("error: {}", msg);
+                                                    log::info!("error: {}", msg);
                                                 }
                                             };
                                         }
@@ -337,7 +337,7 @@ pub async fn run_client(
                                     match get_block_cid_entry(block_cid_store_1.clone(), block) {
                                         Some(v) => {
                                             if v.self_computed && v.cid != cid.unwrap() {
-                                                println!(
+                                                log::info!(
                                                     "received CID doesn't match host computed CID"
                                                 );
                                             }
@@ -358,7 +358,7 @@ pub async fn run_client(
                                             ) {
                                                 Ok(_) => {}
                                                 Err(e) => {
-                                                    println!("error: {}", e);
+                                                    log::info!("error: {}", e);
                                                 }
                                             }
                                         }
@@ -366,7 +366,7 @@ pub async fn run_client(
                                 }
                             }
 
-                            println!("received message on `topic/block_cid_ask`\t{}", peer);
+                            log::info!("received message on `topic/block_cid_ask`\t{}", peer);
                         }
                     }
                 },
@@ -440,42 +440,42 @@ pub async fn run_client(
                                                         ) {
                                                             Ok(_) => {}
                                                             Err(e) => {
-                                                                println!("error: {}", e);
+                                                                log::info!("error: {}", e);
                                                             }
                                                         };
-                                                        println!(
+                                                        log::info!(
                                                             "✅ Block {} available\t{}",
                                                             block.num,
                                                             latest_cid.unwrap().clone()
                                                         );
                                                     }
                                                     Err(_) => {
-                                                        println!("error: failed to publish fact on `topic/block_cid_fact` topic");
+                                                        log::info!("error: failed to publish fact on `topic/block_cid_fact` topic");
                                                     }
                                                 };
                                             }
                                             Err(msg) => {
-                                                println!("error: {}", msg);
+                                                log::info!("error: {}", msg);
                                             }
                                         };
                                     }
                                     Err(msg) => {
-                                        println!("error: {}", msg);
+                                        log::info!("error: {}", msg);
                                     }
                                 }
                             }
                             Err(msg) => {
-                                println!("error: {}", msg);
+                                log::info!("error: {}", msg);
                             }
                         };
                     }
                     Err(e) => {
-                        println!("error: {}", e);
+                        log::info!("error: {}", e);
                     }
                 };
             }
             Err(e) => {
-                println!("Error encountered while listening for blocks: {}", e);
+                log::info!("Error encountered while listening for blocks: {}", e);
                 break;
             }
         };
@@ -574,7 +574,7 @@ pub async fn make_client(
             };
             if let Some(_event) = event {
                 #[cfg(feature = "logs")]
-                println!("{}", _event);
+                log::info!("{}", _event);
             }
         }
     });

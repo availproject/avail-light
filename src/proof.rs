@@ -42,7 +42,7 @@ fn kc_verify_proof(
     let raw_pp = public_params.to_raw_var_bytes();
     let hash_pp = hex::encode(sp_core::blake2_128(&raw_pp));
     let hex_pp = hex::encode(raw_pp);
-    println!("Public params ({}): hash: {}", hex_pp.len(), hash_pp);
+    log::info!("Public params ({}): hash: {}", hex_pp.len(), hash_pp);
 
     let (_, verifier_key) = public_params.trim(total_cols).unwrap();
 
@@ -52,7 +52,7 @@ fn kc_verify_proof(
 
     let (witness, eval) = response.split_at(48);
 
-    // println!("{:?} {:?}", witness.len(), eval.len());
+    // log::info!("{:?} {:?}", witness.len(), eval.len());
 
     let commitment_point = G1Affine::from_bytes(
         commitment
@@ -81,7 +81,7 @@ fn kc_verify_proof(
     let point = row_dom_x_pts[col_num as usize];
     let verification = verifier_key.batch_check(&[point], &[proof], &mut Transcript::new(b""));
     if let Err(verification_err) = &verification {
-        println!("Verification error: {:?}", verification_err);
+        log::info!("Verification error: {:?}", verification_err);
     }
 
     verification.is_ok()
@@ -100,9 +100,9 @@ fn kc_verify_proof_wrapper(
 ) -> bool {
     let status = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
     if status {
-        println!("Verified cell ({}, {}) of block {}", row, col, block_num);
+        log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
     } else {
-        println!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+        log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
     }
 
     status

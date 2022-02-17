@@ -280,13 +280,13 @@ pub async fn get_all_cells(url: &str, msg: &ClientMsg) -> Result<Vec<Option<Vec<
                 Err(e) => {
                     let mut handle = store.lock().unwrap();
                     handle[row * msg.max_cols as usize + col] = None;
-                    println!("error: {}", e)
+                    log::info!("error: {}", e)
                 }
             }
         });
 
     fut.await;
-    println!(
+    log::info!(
         "Received {} cells of block {}\t{:?}",
         msg.max_cols * msg.max_rows,
         msg.num,
@@ -314,7 +314,7 @@ pub async fn get_kate_proof(
     //tuple of values (id,index)
     let index_tuple = num.header.app_data_lookup.index.clone();
 
-    println!(
+    log::info!(
         "Getting kate proof block {}, apps index {:?}",
         block, index_tuple
     );
@@ -331,7 +331,7 @@ pub async fn get_kate_proof(
                 break;
             }
         }
-	println!(
+	log::info!(
 	    "{} chunks for app {} found in block {}",
 	    app_ind, app_id, block
 	);
