@@ -12,6 +12,7 @@ use std::thread;
 use std::time::SystemTime;
 use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use simple_logger::SimpleLogger;
 
 mod client;
 mod consts;
@@ -42,9 +43,11 @@ struct CliOpts {
 
 #[tokio::main]
 pub async fn main() {
+    SimpleLogger::new().with_level(log::LevelFilter::Info).init().unwrap();
+
     let opts = CliOpts::from_args();
     let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
-    println!("Using {:?}", cfg);
+    log::info!("Using {:?}", cfg);
 
     // Prepare key value data store opening
     //
@@ -117,7 +120,7 @@ pub async fn main() {
     });
 
     if let Ok((peer_id, addrs)) = self_info_rx.recv() {
-        println!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
+        log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
     }
 
     let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
@@ -132,7 +135,7 @@ pub async fn main() {
         sync::sync_block_headers(url, 0, latest_block, db_2, app_id).await;
     });
 
-    println!("Syncing block headers from 0 to {}", latest_block);
+    log::info!("Syncing block headers from 0 to {}", latest_block);
 
     //tokio-tungesnite method for ws connection to substrate.
     let url = url::Url::parse(&cfg.full_node_ws).unwrap();
@@ -148,7 +151,7 @@ pub async fn main() {
         .unwrap();
 
     let _subscription_result = read.next().await.unwrap().unwrap().into_data();
-    println!("Connected to Substrate Node");
+    log::info!("Connected to Substrate Node");
 
     let db_3 = db.clone();
     let cf_handle_0 = db_3.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
@@ -180,7 +183,7 @@ pub async fn main() {
                 //hyper request for verifying the proof
                 let count =
                     proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
-                println!(
+                log::info!(
                     "Completed {} verification rounds for block {}\t{:?}",
                     count,
                     num,
@@ -210,19 +213,19 @@ pub async fn main() {
                                 };
                                 match req_cells {
                                     Some(req_cells) => { 
-                                        println!("\n💡Verifying all the cells containing data of block :{} because APPID is given ", num);
-                                        //hyper request for verifying the proof
+					log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
+					//hyper request for verifying the proof
                                         let count =Some(proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone()));
                                         if let Some(j) = count {
-                                            println!(
+                                            log::info!(
                                                         "✅ Completed {} rounds of verification for block number {} ",
                                                         j, num
                                                         );
                                         }else{
-                                            println!("\n ❌proof verification failed, data availability cannot ensured");
+                                            log::info!("\n ❌proof verification failed, data availability cannot ensured");
                                         }
                                     }
-                                    _ => println!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
+                                    _ => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
                                 }    
                             }
                         }else{
@@ -250,7 +253,7 @@ pub async fn main() {
                 // that newly mined block has been received
                 block_tx.send(types::ClientMsg { num, max_rows, max_cols }).unwrap()
             }
-            Err(error) => println!("Misconstructed Header: {:?}", error),
+            Err(error) => log::info!("Misconstructed Header: {:?}", error),
         }
     });
 

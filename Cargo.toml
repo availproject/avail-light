@@ -39,6 +39,8 @@ rocksdb = { version = "0.17.0", features = ["snappy"] }
 threadpool = "1.8.1"
 merlin = {version = "3.0", default-features = false}
 sp-core = "3.0.0" 
+log = "0.4"
+simple_logger = "2.1.0"
 
 [features]
 logs = []

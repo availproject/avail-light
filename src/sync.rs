@@ -43,6 +43,7 @@ pub async fn sync_block_headers(
 
             match super::rpc::get_block_by_number(&url, block_num).await {
                 Ok(block_body) => {
+		    log::info!("Block {} app index {:?}", block_num, block_body.header.app_data_lookup.index);
                     store
                         .put_cf(
                             store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
@@ -53,7 +54,7 @@ pub async fn sync_block_headers(
                         )
                         .unwrap();
 
-                    println!(
+                    log::info!(
                         "Synced block header of {}\t{:?}",
                         block_num,
                         begin.elapsed().unwrap()
@@ -86,10 +87,12 @@ pub async fn sync_block_headers(
                         .await
                         .unwrap();
 
+		    log::info!("Fetched {} cells of app {} of block {} for verification", cells.len(), app_id, block_num);
+
                     let count = crate::proof::verify_proof(
                         block_num, max_rows, max_cols, cells, commitment,
                     );
-                    println!(
+                    log::info!(
                         "Completed {} verification rounds for block {}\t{:?}",
                         count,
                         block_num,
@@ -107,7 +110,7 @@ pub async fn sync_block_headers(
                         .unwrap();
                 }
                 Err(msg) => {
-                    println!("error: {}", msg);
+                    log::info!("error: {}", msg);
                 }
             };
         },

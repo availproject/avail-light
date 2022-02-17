@@ -80,7 +80,7 @@ impl Service<Request<Body>> for Handler {
         }
 
         let local_tm: DateTime<Local> = Local::now();
-        println!(
+        log::info!(
             "⚡️ {} | {} | {}",
             local_tm.to_rfc2822(),
             req.method(),
@@ -98,11 +98,14 @@ impl Service<Request<Body>> for Handler {
                             db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
                             block_num,
                         ) {
-                            Ok(count) => count,
+                            Ok(count) => {
+                                log::info!("Confidence for block {} found in a store", block_num);
+                                count
+                            }
                             Err(e) => {
                                 // if for some reason confidence is not found
                                 // in on disk database, client receives following response
-                                println!("error: {}", e);
+                                log::info!("error: {}", e);
                                 0
                             }
                         };
@@ -169,9 +172,10 @@ pub async fn run_server(
         .expect("Bad Http server host/ port, found in config file");
     let server = Server::bind(&addr).serve(MakeHandler { store: store });
 
-    println!(
+    log::info!(
         "RPC running on http://{}:{}",
-        cfg.http_server_host, cfg.http_server_port
+        cfg.http_server_host,
+        cfg.http_server_port
     );
 
     server.await?;
