@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, convert::TryInto, sync::Arc};
 use dusk_bytes::Serializable;
 use dusk_plonk::{bls12_381::BlsScalar, fft::EvaluationDomain};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
+
 use libipld::{
 	codec_impl::IpldCodec,
 	multihash::{Code, MultihashDigest},
@@ -15,8 +16,7 @@ use libipld::{
 };
 
 use crate::{
-	recovery::reconstruct_poly,
-	types::{BaseCell, Cell, DataMatrix, IpldBlock, L0Col, L1Row},
+	types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row},
 };
 
 fn construct_cell(
@@ -395,65 +395,11 @@ pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)>
 	}
 }
 
-// use this function for reconstructing back all cells of certain column
-// when at least 50% of them are available
-//
-// if everything goes fine, returned vector in case of success should have
-// `row_count`-many cells of some specific column, in coded form
-//
-// performing one round of ifft should reveal original data which were
-// coded together
-pub fn reconstruct_column(row_count: usize, cells: &[Cell]) -> Result<Vec<BlsScalar>, String> {
-	// just ensures all rows are from same column !
-	// it's required as that's how it's erasure coded during
-	// construction in validator node
-	fn check_cells(cells: &[Cell]) {
-		assert!(cells.len() > 0);
-		let col = cells[0].col;
-		for cell in cells {
-			assert_eq!(col, cell.col);
-		}
-	}
-
-	// given row index in column of interest, finds it if present
-	// and returns back wrapped in `Some`, otherwise returns `None`
-	fn find_row_by_index(idx: usize, cells: &[Cell]) -> Option<BlsScalar> {
-		for cell in cells {
-			if cell.row == idx as u16 {
-				return Some(
-					BlsScalar::from_bytes(
-						&cell.proof[..]
-							.try_into()
-							.expect("didn't find u8 array of length 32"),
-					)
-					.unwrap(),
-				);
-			}
-		}
-		None
-	}
-
-	// row count of data matrix must be power of two !
-	assert!(row_count & (row_count - 1) == 0);
-	assert!(cells.len() >= row_count / 2 && cells.len() <= row_count);
-	check_cells(cells);
-
-	let eval_domain = EvaluationDomain::new(row_count).unwrap();
-	let mut subset: Vec<Option<BlsScalar>> = Vec::with_capacity(row_count);
-
-	// fill up vector in ordered fashion
-	// @note the way it's done should be improved
-	for i in 0..row_count {
-		subset.push(find_row_by_index(i, cells));
-	}
-
-	reconstruct_poly(eval_domain, subset)
-}
-
 #[cfg(test)]
 mod tests {
 	extern crate rand;
 
+	use kate_recovery::com::{reconstruct_column, Cell};
 	use rand::prelude::random;
 
 	use super::{super::client::make_client, construct_matrix, *};
@@ -547,17 +493,19 @@ mod tests {
 
 		let domain_size = 1usize << 2;
 		let row_count = 2 * domain_size;
-		let eval_domain = EvaluationDomain::new(row_count).unwrap();
+		let eval_domain = EvaluationDomain::new(domain_size).unwrap();
 
 		let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
 		for i in 0..domain_size {
 			src.push(BlsScalar::from(1 << (i + 1)));
 		}
+		eval_domain.ifft_slice(src.as_mut_slice());
 		for _ in domain_size..row_count {
 			src.push(BlsScalar::zero());
 		}
 
 		// erasure coded all data
+		let eval_domain = EvaluationDomain::new(row_count).unwrap();
 		let coded = eval_domain.fft(&src);
 		assert!(coded.len() == row_count);
 
@@ -585,65 +533,8 @@ mod tests {
 		];
 
 		let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
-		for i in 0..row_count {
-			assert_eq!(coded[i], reconstructed[i]);
-		}
-	}
-
-	#[test]
-	fn reconstruct_column_success_1() {
-		// Just an extension of above test, where I also
-		// attempt to decode back to original data and
-		// run some assertions [ must work ! ]
-
-		let domain_size = 1usize << 2;
-		let row_count = 2 * domain_size;
-		let eval_domain = EvaluationDomain::new(row_count).unwrap();
-
-		let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
 		for i in 0..domain_size {
-			src.push(BlsScalar::from(1 << (i + 1)));
-		}
-		for _ in domain_size..row_count {
-			src.push(BlsScalar::zero());
-		}
-
-		// erasure coded all data
-		let coded = eval_domain.fft(&src);
-		assert!(coded.len() == row_count);
-
-		let cells = vec![
-			Cell {
-				row: 0,
-				proof: coded[0].to_bytes().to_vec(),
-				..Default::default()
-			},
-			Cell {
-				row: 4,
-				proof: coded[4].to_bytes().to_vec(),
-				..Default::default()
-			},
-			Cell {
-				row: 6,
-				proof: coded[6].to_bytes().to_vec(),
-				..Default::default()
-			},
-			Cell {
-				row: 2,
-				proof: coded[2].to_bytes().to_vec(),
-				..Default::default()
-			},
-		];
-
-		let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
-		for i in 0..row_count {
-			assert_eq!(coded[i], reconstructed[i]);
-		}
-
-		let decoded = eval_domain.ifft(&reconstructed);
-
-		for i in 0..row_count {
-			assert_eq!(src[i], decoded[i]);
+			assert_eq!(coded[i * 2], reconstructed[i], "{} elem doesn't match", i);
 		}
 	}
 
@@ -656,17 +547,19 @@ mod tests {
 
 		let domain_size = 1usize << 2;
 		let row_count = 2 * domain_size;
-		let eval_domain = EvaluationDomain::new(row_count).unwrap();
+		let eval_domain = EvaluationDomain::new(domain_size).unwrap();
 
 		let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
 		for i in 0..domain_size {
 			src.push(BlsScalar::from(1 << (i + 1)));
 		}
+		eval_domain.ifft_slice(src.as_mut_slice());
 		for _ in domain_size..row_count {
 			src.push(BlsScalar::zero());
 		}
 
 		// erasure coded all data
+		let eval_domain = EvaluationDomain::new(row_count).unwrap();
 		let coded = eval_domain.fft(&src);
 		assert!(coded.len() == row_count);
 
@@ -694,8 +587,8 @@ mod tests {
 		];
 
 		let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
-		for i in 0..row_count {
-			assert_eq!(coded[i], reconstructed[i]);
+		for i in 0..domain_size {
+			assert_eq!(coded[i * 2], reconstructed[i]);
 		}
 	}
 
@@ -708,17 +601,19 @@ mod tests {
 
 		let domain_size = 1usize << 2;
 		let row_count = 2 * domain_size;
-		let eval_domain = EvaluationDomain::new(row_count).unwrap();
+		let eval_domain = EvaluationDomain::new(domain_size).unwrap();
 
 		let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
 		for i in 0..domain_size {
 			src.push(BlsScalar::from(1 << (i + 1)));
 		}
+		eval_domain.ifft_slice(src.as_mut_slice());
 		for _ in domain_size..row_count {
 			src.push(BlsScalar::zero());
 		}
 
 		// erasure coded all data
+		let eval_domain = EvaluationDomain::new(row_count).unwrap();
 		let coded = eval_domain.fft(&src);
 		assert!(coded.len() == row_count);
 
@@ -741,8 +636,8 @@ mod tests {
 		];
 
 		let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
-		for i in 0..row_count {
-			assert_eq!(coded[i], reconstructed[i]);
+		for i in 0..domain_size {
+			assert_eq!(coded[i * 2], reconstructed[i]);
 		}
 	}
 
@@ -755,17 +650,19 @@ mod tests {
 
 		let domain_size = 1usize << 2;
 		let row_count = 2 * domain_size;
-		let eval_domain = EvaluationDomain::new(row_count).unwrap();
+		let eval_domain = EvaluationDomain::new(domain_size).unwrap();
 
 		let mut src: Vec<BlsScalar> = Vec::with_capacity(row_count);
 		for i in 0..domain_size {
 			src.push(BlsScalar::from(1 << (i + 1)));
 		}
+		eval_domain.ifft_slice(src.as_mut_slice());
 		for _ in domain_size..row_count {
 			src.push(BlsScalar::zero());
 		}
 
 		// erasure coded all data
+		let eval_domain = EvaluationDomain::new(row_count).unwrap();
 		let coded = eval_domain.fft(&src);
 		assert!(coded.len() == row_count);
 
@@ -793,8 +690,8 @@ mod tests {
 		];
 
 		let reconstructed = reconstruct_column(row_count, &cells[..]).unwrap();
-		for i in 0..row_count {
-			assert_eq!(coded[i], reconstructed[i]);
+		for i in 0..domain_size {
+			assert_eq!(coded[i * 2], reconstructed[i]);
 		}
 	}
 
