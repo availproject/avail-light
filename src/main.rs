@@ -129,9 +129,15 @@ pub async fn main() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	}
 
-	let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
-		.await
-		.expect("failed to get latest block header of chain");
+	let block_header = match rpc::get_chain_header(&cfg.full_node_rpc)
+		.await {
+			Ok(head) => head, 
+			Err(e) => {
+				println!("❗❗failed to get latest block header of chain, check if connected to node \n{:?}",e);
+				return
+			},
+		};
+		// .expect("failed to get latest block header of chain, check if connected to node");
 
 	let latest_block = hex_to_u64_block_number(block_header.number);
 	let url = cfg.full_node_rpc.clone();
@@ -154,7 +160,7 @@ pub async fn main() {
 			r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
 		))
 		.await
-		.unwrap();
+		.expect("subscription failed");
 
 	let _subscription_result = read.next().await.unwrap().unwrap().into_data();
 	log::info!("Connected to Substrate Node");
@@ -164,7 +170,15 @@ pub async fn main() {
 	let cf_handle_1 = db_3.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
 
 	let read_future = read.for_each(|message| async {
-        let data = message.unwrap().into_data();
+        // let data = message.unwrap().into_data();
+		let data = match message{
+			Ok(msg) => msg.into_data(),
+			Err(e) => {
+				println!("❗❗failed to read next message from subscription, check if node connected \n{:?}",e);
+				return
+			},				
+		};
+		
         match serde_json::from_slice(&data) {
             Ok(response) => {
                 let resp: types::Response = response;
@@ -180,11 +194,21 @@ pub async fn main() {
                 let max_rows = header.extrinsics_root.rows;
                 let max_cols = header.extrinsics_root.cols;
                 let commitment = header.extrinsics_root.commitment.clone();
-
+				
+				if (max_cols<3){
+					println!("lower number of chunks");
+					break;
+				}
                 //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
-                    .await
-                    .unwrap();
+                let cells =match rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
+                    .await{
+						Ok(cells) => cells,
+						Err(e) => {
+						println!("❗❗Failed to connect to node because of number of chunks are <3 \n{:?}",e);
+						return
+						},
+					};
+                    
 
                 //hyper request for verifying the proof
                 let count =
