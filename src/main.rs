@@ -22,7 +22,6 @@ mod consts;
 mod data;
 mod http;
 mod proof;
-mod recovery;
 mod rpc;
 mod sync;
 mod types;
