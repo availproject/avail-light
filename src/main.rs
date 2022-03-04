@@ -133,7 +133,7 @@ pub async fn main() {
 		.await {
 			Ok(head) => head, 
 			Err(e) => {
-				println!("❗❗failed to get latest block header of chain, check if connected to node \n{:?}",e);
+				log::info!("❗❗failed to get latest block header of chain, check if connected to node \n{:?}",e);
 				return
 			},
 		};
@@ -174,7 +174,7 @@ pub async fn main() {
 		let data = match message{
 			Ok(msg) => msg.into_data(),
 			Err(e) => {
-				println!("❗❗failed to read next message from subscription, check if node connected \n{:?}",e);
+				log::info!("❗❗failed to read next message from subscription, check if node connected \n{:?}",e);
 				return
 			},				
 		};
@@ -195,19 +195,21 @@ pub async fn main() {
                 let max_cols = header.extrinsics_root.cols;
                 let commitment = header.extrinsics_root.commitment.clone();
 				
-				if (max_cols<3){
-					println!("lower number of chunks");
-					break;
+				if max_cols<3{
+					log::info!("lower number of chunks");
+					std::process::exit(0);
 				}
                 //hyper request for getting the kate query request
                 let cells =match rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
-                    .await{
-						Ok(cells) => cells,
-						Err(e) => {
-						println!("❗❗Failed to connect to node because of number of chunks are <3 \n{:?}",e);
-						return
-						},
-					};
+                    .await
+						{
+							Ok(cells) => cells,
+							Err(error) => 
+							{
+								log::info!("❗❗Failed to connect to node because of number of chunks are <3 \n{:?}",error);
+								return
+							},
+						};
                     
 
                 //hyper request for verifying the proof
