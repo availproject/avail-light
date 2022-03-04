@@ -1,6 +1,6 @@
 extern crate ipfs_embed;
 
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Head, Multiaddr, PeerId, StreamId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -263,11 +263,12 @@ pub struct Response {
 	pub params: QueryResult,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct ClientMsg {
 	pub num: u64,
 	pub max_rows: u16,
 	pub max_cols: u16,
+	pub header: Header,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

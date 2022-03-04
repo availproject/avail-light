@@ -8,16 +8,13 @@ use std::{collections::BTreeMap, convert::TryInto, sync::Arc};
 use dusk_bytes::Serializable;
 use dusk_plonk::{bls12_381::BlsScalar, fft::EvaluationDomain};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
-
 use libipld::{
 	codec_impl::IpldCodec,
 	multihash::{Code, MultihashDigest},
 	Ipld,
 };
 
-use crate::{
-	types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row},
-};
+use crate::types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row};
 
 fn construct_cell(
 	row: u16,
@@ -512,22 +509,22 @@ mod tests {
 		let cells = vec![
 			Cell {
 				row: 0,
-				proof: coded[0].to_bytes().to_vec(),
+				data: coded[0].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 4,
-				proof: coded[4].to_bytes().to_vec(),
+				data: coded[4].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 6,
-				proof: coded[6].to_bytes().to_vec(),
+				data: coded[6].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 2,
-				proof: coded[2].to_bytes().to_vec(),
+				data: coded[2].to_bytes().to_vec(),
 				..Default::default()
 			},
 		];
@@ -566,22 +563,22 @@ mod tests {
 		let cells = vec![
 			Cell {
 				row: 0,
-				proof: coded[0].to_bytes().to_vec(),
+				data: coded[0].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 0,
-				proof: coded[0].to_bytes().to_vec(),
+				data: coded[0].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 6,
-				proof: coded[6].to_bytes().to_vec(),
+				data: coded[6].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 2,
-				proof: coded[2].to_bytes().to_vec(),
+				data: coded[2].to_bytes().to_vec(),
 				..Default::default()
 			},
 		];
@@ -620,17 +617,17 @@ mod tests {
 		let cells = vec![
 			Cell {
 				row: 4,
-				proof: coded[4].to_bytes().to_vec(),
+				data: coded[4].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 6,
-				proof: coded[6].to_bytes().to_vec(),
+				data: coded[6].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 2,
-				proof: coded[2].to_bytes().to_vec(),
+				data: coded[2].to_bytes().to_vec(),
 				..Default::default()
 			},
 		];
@@ -669,22 +666,22 @@ mod tests {
 		let cells = vec![
 			Cell {
 				row: 0,
-				proof: coded[0].to_bytes().to_vec(),
+				data: coded[0].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 5,
-				proof: coded[4].to_bytes().to_vec(),
+				data: coded[4].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 6,
-				proof: coded[6].to_bytes().to_vec(),
+				data: coded[6].to_bytes().to_vec(),
 				..Default::default()
 			},
 			Cell {
 				row: 2,
-				proof: coded[2].to_bytes().to_vec(),
+				data: coded[2].to_bytes().to_vec(),
 				..Default::default()
 			},
 		];
