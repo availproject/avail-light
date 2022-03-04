@@ -24,6 +24,7 @@ use ipfs_embed::{
 	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
 	PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
+use kate_recovery::com::{reconstruct_app_extrinsics, Cell};
 use libipld::Ipld;
 use rocksdb::{DBWithThreadMode, SingleThreaded};
 
@@ -406,9 +407,41 @@ pub async fn run_client(
 			Ok(block) => {
 				match get_all_cells(&cfg.full_node_rpc, &block).await {
 					Ok(cells) => {
+						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+							col.iter()
+								.enumerate()
+								.flat_map(|(i, cells)| {
+									cells.clone().map(|data| Cell {
+										row: i as u16,
+										col: col_num,
+										data: data[48..].to_vec(),
+									})
+								})
+								.collect::<Vec<Cell>>()
+						}
+
 						// just wrapped into arc so that it's cheap
 						// calling `.clone()`
 						let arced_cells = Arc::new(cells);
+
+						let columns = arced_cells
+							.chunks_exact(block.max_rows as usize)
+							.enumerate()
+							.map(|(i, col)| to_column_cells(i as u16, col))
+							.collect::<Vec<Vec<Cell>>>();
+
+						let layout = layout_from_index(
+							block.header.app_data_lookup.index.as_slice(),
+							block.header.app_data_lookup.size,
+						);
+
+						let ext = reconstruct_app_extrinsics(
+							layout,
+							columns,
+							block.max_rows as usize,
+							32,
+						);
+						log::info!("Reconstructed extrinsic: {:?}", ext);
 
 						match construct_matrix(
 							block.num,
@@ -417,7 +450,7 @@ pub async fn run_client(
 							arced_cells,
 						) {
 							Ok(matrix) => {
-								match push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await {
+								match push_matrix(matrix, latest_cid, &ipfs, &pin).await {
 									Ok(cid) => {
 										latest_cid = Some(cid);
 										// publish block-cid mapping message over gossipsub network
@@ -622,6 +655,39 @@ pub fn get_block_cid_entry(
 			None => None,
 		},
 		Err(_) => None,
+	}
+}
+
+fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
+	let mut layout: Vec<(u32, u32)> = Vec::with_capacity(index.len() + 1);
+	if index.is_empty() {
+		return vec![(0, size)];
+	}
+	layout.push((0, index[0].1 - 1));
+	for i in 1..index.len() - 1 {
+		layout.push((index[i - 1].0, index[i].1 - index[i - 1].1));
+	}
+	if index.len() > 1 {
+		let last_idx = index.len() - 1;
+		layout.push((
+			index[last_idx - 1].0,
+			index[last_idx].1 - index[last_idx - 1].1,
+		));
+		layout.push((index[last_idx].0, size - index[last_idx].1 + 1));
+	}
+	layout
+}
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_layout_from_index() {
+		let expected = vec![(0, 2), (1, 3), (2, 5)];
+		assert_eq!(layout_from_index(&[(1, 3), (2, 6)], 10), expected);
+
+		let expected = vec![(0, 11), (1, 3), (3, 6)];
+		assert_eq!(layout_from_index(&[(1, 12), (3, 15)], 20), expected);
 	}
 }
 
