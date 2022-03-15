@@ -441,7 +441,7 @@ pub async fn run_client(
 							block.max_rows as usize,
 							32,
 						);
-						log::info!("Reconstructed extrinsic: {:?}", ext);
+						log::debug!("Reconstructed extrinsic: {:?}", ext);
 
 						match construct_matrix(
 							block.num,
