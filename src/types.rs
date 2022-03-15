@@ -284,6 +284,7 @@ pub struct RuntimeConfig {
 	pub confidence: f64,
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	pub avail_path: String,
+	pub log_level: String,
 }
 
 impl Default for RuntimeConfig {
@@ -300,6 +301,7 @@ impl Default for RuntimeConfig {
 			confidence: 92.0,
 			bootstraps: Vec::new(),
 			avail_path: format!("avail_light_client_{}", 1),
+			log_level: "INFO".to_owned(),
 		}
 	}
 }

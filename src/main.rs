@@ -45,13 +45,20 @@ struct CliOpts {
 
 #[tokio::main]
 pub async fn main() {
+	let opts = CliOpts::from_args();
+	let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
+
+	let parsed_log_level = cfg.log_level.to_uppercase().parse::<log::LevelFilter>();
+
 	SimpleLogger::new()
-		.with_level(log::LevelFilter::Info)
+		.with_level(*parsed_log_level.as_ref().unwrap_or(&log::LevelFilter::Info))
 		.init()
 		.unwrap();
 
-	let opts = CliOpts::from_args();
-	let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
+	if let Err(parse_error) = parsed_log_level {
+		log::warn!("Using default log level: {}", parse_error);
+	}
+
 	log::info!("Using {:?}", cfg);
 
 	// Prepare key value data store opening
