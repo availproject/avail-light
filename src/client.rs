@@ -537,6 +537,7 @@ pub async fn run_client(
 // If yes returns obtained CID
 //
 // @note How to verify whether this CID is correct or not ?
+#[allow(dead_code)]
 async fn ask_block_cid(
 	block: i128,
 	ipfs: &Ipfs<IPFSDefaultParams>,
@@ -630,6 +631,7 @@ pub fn keypair(i: u64) -> Keypair {
 	Keypair { secret, public }
 }
 
+#[allow(dead_code)]
 pub fn peer_id(i: u64) -> PeerId { keypair(i).to_peer_id() }
 
 // Following two are utility functions for interacting with local on-disk data store
