@@ -1,6 +1,6 @@
 extern crate ipfs_embed;
 
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Head, Multiaddr, PeerId, StreamId};
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -164,22 +164,22 @@ pub struct DataMatrix {
 
 #[derive(Deserialize, Debug)]
 pub struct BlockHashResponse {
-	jsonrpc: String,
-	id: u32,
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
 	pub result: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct BlockResponse {
-	jsonrpc: String,
-	id: u32,
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
 	pub result: RPCResult,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct BlockHeaderResponse {
-	jsonrpc: String,
-	id: u32,
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
 	pub result: Header,
 }
 
@@ -230,9 +230,17 @@ pub struct AppDataIndex {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct JsonRPCHeader {
+	#[serde(rename = "jsonrpc")]
+	_jsonrpc: String,
+	#[serde(rename = "id")]
+	_id: u32,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct BlockProofResponse {
-	jsonrpc: String,
-	id: u32,
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
 	pub result: Vec<u8>,
 }
 
@@ -253,13 +261,16 @@ pub struct MatrixCell {
 #[derive(Deserialize, Debug)]
 pub struct QueryResult {
 	pub result: Header,
-	subscription: String,
+	#[serde(rename = "subscription")]
+	_subscription: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Response {
-	jsonrpc: String,
-	method: String,
+	#[serde(rename = "jsonrpc")]
+	_jsonrpc: String,
+	#[serde(rename = "method")]
+	_method: String,
 	pub params: QueryResult,
 }
 

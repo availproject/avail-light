@@ -3,10 +3,8 @@ extern crate dusk_plonk;
 extern crate ipfs_embed;
 extern crate libipld;
 
-use std::{collections::BTreeMap, convert::TryInto, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
-use dusk_bytes::Serializable;
-use dusk_plonk::{bls12_381::BlsScalar, fft::EvaluationDomain};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::{
 	codec_impl::IpldCodec,
@@ -225,6 +223,7 @@ pub fn extract_cell(data: &Ipld) -> Option<Vec<u8>> {
 /// Given a decoded IPLD object, which represented one coded data matrix
 /// extracts out all components ( i.e. block number, column CID list
 /// and previous CID )
+#[allow(dead_code)]
 pub fn destructure_matrix(
 	data: &Ipld,
 ) -> Option<(Option<i128>, Option<Vec<Option<Cid>>>, Option<Cid>)> {
@@ -396,6 +395,8 @@ pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)>
 mod tests {
 	extern crate rand;
 
+	use dusk_bytes::Serializable;
+	use dusk_plonk::{bls12_381::BlsScalar, fft::EvaluationDomain};
 	use kate_recovery::com::{reconstruct_column, Cell};
 	use rand::prelude::random;
 

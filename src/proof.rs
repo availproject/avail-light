@@ -8,7 +8,7 @@ use std::{
 use dusk_bytes::Serializable;
 use dusk_plonk::{
 	bls12_381::G1Affine,
-	commitment_scheme::kzg10::{commitment::Commitment, proof::Proof, *},
+	commitment_scheme::kzg10::{commitment::Commitment, proof::Proof},
 	fft::EvaluationDomain,
 };
 use merlin::Transcript;
