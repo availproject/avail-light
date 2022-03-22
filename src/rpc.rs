@@ -82,45 +82,33 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 //
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
-pub async fn get_chain_header(url: &str) -> Result<Header, String> {
+pub async fn get_chain_header(url: &str) -> Result<Header> {
 	let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader"}}"#,);
 
-	match hyper::Request::builder()
+	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-	{
-		Ok(req) => {
-			let resp = if is_secure(url) {
-				let https = HttpsConnector::new();
-				let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-				match client.request(req).await {
-					Ok(resp) => Some(resp),
-					Err(_) => None,
-				}
-			} else {
-				let client = hyper::Client::new();
-				match client.request(req).await {
-					Ok(resp) => Some(resp),
-					Err(_) => None,
-				}
-			};
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
+	
+		let resp = if is_secure(url) {
+			let https = HttpsConnector::new();
+			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+			client.request(req).await
+		} else {
+			let client = hyper::Client::new();
+			client.request(req).await
+		}
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-			match resp {
-				Some(resp) => {
-					if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
-						let r: BlockHeaderResponse = serde_json::from_slice(&body).unwrap();
-						Ok(r.result)
-					} else {
-						Err("failed to read HTTP POST response".to_owned())
-					}
-				},
-				None => Err("failed to send HTTP POST request".to_owned()),
-			}
-		},
-		Err(_) => Err("failed to build HTTP POST request object".to_owned()),
-	}
+		let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		let r: BlockHeaderResponse = serde_json::from_slice(&body)
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		Ok(r.result)
+		
 }
 
 pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
@@ -321,7 +309,7 @@ pub async fn get_kate_proof(
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload.clone()))
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		.map_err(|e| anyhow::anyhow!(r#"failed to read HTTP post{}"#, e))?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();

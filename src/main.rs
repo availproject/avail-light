@@ -47,7 +47,7 @@ struct CliOpts {
 #[tokio::main]
 pub async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
-	let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
+	let cfg: types::RuntimeConfig = confy::load_path(opts.config)?;
 
 	let parsed_log_level = cfg.log_level.to_uppercase().parse::<log::LevelFilter>();
 
@@ -137,8 +137,7 @@ pub async fn do_main() -> Result<()> {
 	}
 
 	let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
-		.await
-		.expect("failed to get latest block header of chain");
+		.await?;
 
 	let latest_block = hex_to_u64_block_number(block_header.number);
 	let url = cfg.full_node_rpc.clone();
@@ -170,7 +169,7 @@ pub async fn do_main() -> Result<()> {
 	let cf_handle_0 = db_3.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
 	let cf_handle_1 = db_3.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
 
-	let read_future = read.for_each(|message| async {
+	while let Some(message) = read.next().await {
         let data = message.unwrap().into_data();
         match serde_json::from_slice(&data) {
             Ok(response) => {
@@ -190,9 +189,7 @@ pub async fn do_main() -> Result<()> {
 
                 //hyper request for getting the kate query request
                 let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
-                    .await
-                    .unwrap();
-
+                    .await?;
                 //hyper request for verifying the proof
                 let count =
                     proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
@@ -268,9 +265,8 @@ pub async fn do_main() -> Result<()> {
             }
             Err(error) => log::info!("Misconstructed Header: {:?}", error),
         }
-    });
+    }
 
-	read_future.await;
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
 	destroy_tx.send(true).unwrap();
@@ -299,3 +295,5 @@ fn hex_to_u64_block_number(num: String) -> u64 {
 	let wo_prefix = num.trim_start_matches("0x");
 	u64::from_str_radix(wo_prefix, 16).unwrap()
 }
+
+
