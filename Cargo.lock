@@ -348,6 +348,7 @@ dependencies = [
  "sp-core",
  "structopt",
  "tempdir",
+ "thiserror",
  "threadpool",
  "tokio",
  "tokio-tungstenite",

@@ -14,6 +14,7 @@ use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use anyhow::{Result};
 
 use crate::http::calculate_confidence;
 
@@ -44,7 +45,7 @@ struct CliOpts {
 }
 
 #[tokio::main]
-pub async fn main() {
+pub async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
 	let cfg: types::RuntimeConfig = confy::load_path(opts.config).unwrap();
 
@@ -52,8 +53,8 @@ pub async fn main() {
 
 	SimpleLogger::new()
 		.with_level(*parsed_log_level.as_ref().unwrap_or(&log::LevelFilter::Info))
-		.init()
-		.unwrap();
+		.init()?;
+		
 
 	if let Err(parse_error) = parsed_log_level {
 		log::warn!("Using default log level: {}", parse_error);
@@ -150,8 +151,8 @@ pub async fn main() {
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 
 	//tokio-tungesnite method for ws connection to substrate.
-	let url = url::Url::parse(&cfg.full_node_ws).unwrap();
-	let (ws_stream, _response) = connect_async(url).await.expect("Failed to connect");
+	let url = url::Url::parse(&cfg.full_node_ws)?;
+	let (ws_stream, _response) = connect_async(url).await?;
 	let (mut write, mut read) = ws_stream.split();
 
 	// attempt subscription to full node block mining stream
@@ -159,8 +160,8 @@ pub async fn main() {
 		.send(Message::Text(
 			r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
 		))
-		.await
-		.unwrap();
+		.await?;
+		
 
 	let _subscription_result = read.next().await.unwrap().unwrap().into_data();
 	log::info!("Connected to Substrate Node");
@@ -263,7 +264,7 @@ pub async fn main() {
 
                 // notify ipfs-based application client
                 // that newly mined block has been received
-                block_tx.send(types::ClientMsg { num, max_rows, max_cols, header }).unwrap()
+                block_tx.send(types::ClientMsg { num, max_rows, max_cols, header }).unwrap();
             }
             Err(error) => log::info!("Misconstructed Header: {:?}", error),
         }
@@ -273,6 +274,13 @@ pub async fn main() {
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
 	destroy_tx.send(true).unwrap();
+
+	Ok(())
+}
+
+#[tokio::main]
+pub async fn main() -> Result<()> {
+	do_main().map_err(|e| {eprintln!("{:?}", e); e})
 }
 
 /* note:
