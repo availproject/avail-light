@@ -7,12 +7,12 @@ use std::{
 	time::SystemTime,
 };
 
+use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
-use anyhow::Result;
 
 use crate::types::*;
 
@@ -33,20 +33,23 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
 		.map_err(|e| anyhow::anyhow!("{}", e))?;
-	
-		let resp = if is_secure(url) {
-			let https = HttpsConnector::new();
-				let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-				client.request(req).await
-				} else {
-					let client = hyper::Client::new();
-					client.request(req).await
-				}
-				.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-				let body = hyper::body::to_bytes(resp.into_body()).await.map_err(|e| anyhow::anyhow!("{}", e))?;
-				let r: BlockHashResponse = serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
-				Ok(r.result)					
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.map_err(|e| anyhow::anyhow!("{}", e))?;
+
+	let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
+	let r: BlockHashResponse =
+		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
+	Ok(r.result)
 }
 
 pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
@@ -62,20 +65,21 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		.body(hyper::Body::from(payload))
 		.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-		let resp = if is_secure(url) {
-			let https = HttpsConnector::new();
-			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-			client.request(req).await
-			}
-			else{
-			let client = hyper::Client::new();
-			client.request(req).await 
-			}
-			.map_err(|e| anyhow::anyhow!("{}", e))?;
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-			let body = hyper::body::to_bytes(resp.into_body()).await.map_err(|e| anyhow::anyhow!("{}", e))?;
-			let r: BlockResponse = serde_json::from_slice(&body).unwrap();
-			Ok(r.result.block)
+	let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.map_err(|e| anyhow::anyhow!("{}", e))?;
+	let r: BlockResponse = serde_json::from_slice(&body).unwrap();
+	Ok(r.result.block)
 }
 
 // RPC for obtaining header of latest block mined by network
@@ -91,24 +95,23 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
 		.map_err(|e| anyhow::anyhow!("{}", e))?;
-	
-		let resp = if is_secure(url) {
-			let https = HttpsConnector::new();
-			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-			client.request(req).await
-		} else {
-			let client = hyper::Client::new();
-			client.request(req).await
-		}
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-		let body = hyper::body::to_bytes(resp.into_body())
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.map_err(|e| anyhow::anyhow!("{}", e))?;
+
+	let body = hyper::body::to_bytes(resp.into_body())
 		.await
 		.map_err(|e| anyhow::anyhow!("{}", e))?;
-		let r: BlockHeaderResponse = serde_json::from_slice(&body)
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
-		Ok(r.result)
-		
+	let r: BlockHeaderResponse =
+		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
+	Ok(r.result)
 }
 
 pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
@@ -325,8 +328,8 @@ pub async fn get_kate_proof(
 		.await
 		.map_err(|e| anyhow::anyhow!("{}", e))?;
 
-	let r: BlockProofResponse = serde_json::from_slice(&body)
-	.map_err(|e| anyhow::anyhow!("{}", e))?;
+	let r: BlockProofResponse =
+		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
 
 	fill_cells_with_proofs(&mut cells, &r);
 	Ok(cells)

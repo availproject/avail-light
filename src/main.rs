@@ -8,13 +8,13 @@ use std::{
 	time::SystemTime,
 };
 
+use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use anyhow::{Result};
 
 use crate::http::calculate_confidence;
 
@@ -44,7 +44,6 @@ struct CliOpts {
 	config: String,
 }
 
-#[tokio::main]
 pub async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
 	let cfg: types::RuntimeConfig = confy::load_path(opts.config)?;
@@ -54,7 +53,6 @@ pub async fn do_main() -> Result<()> {
 	SimpleLogger::new()
 		.with_level(*parsed_log_level.as_ref().unwrap_or(&log::LevelFilter::Info))
 		.init()?;
-		
 
 	if let Err(parse_error) = parsed_log_level {
 		log::warn!("Using default log level: {}", parse_error);
@@ -136,8 +134,7 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	}
 
-	let block_header = rpc::get_chain_header(&cfg.full_node_rpc)
-		.await?;
+	let block_header = rpc::get_chain_header(&cfg.full_node_rpc).await?;
 
 	let latest_block = hex_to_u64_block_number(block_header.number);
 	let url = cfg.full_node_rpc.clone();
@@ -160,7 +157,6 @@ pub async fn do_main() -> Result<()> {
 			r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
 		))
 		.await?;
-		
 
 	let _subscription_result = read.next().await.unwrap().unwrap().into_data();
 	log::info!("Connected to Substrate Node");
@@ -170,58 +166,67 @@ pub async fn do_main() -> Result<()> {
 	let cf_handle_1 = db_3.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
 
 	while let Some(message) = read.next().await {
-        let data = message.unwrap().into_data();
-        match serde_json::from_slice(&data) {
-            Ok(response) => {
-                let resp: types::Response = response;
-                let header = resp.params.result;
+		let data = message?.into_data();
+		match serde_json::from_slice(&data) {
+			Ok(response) => {
+				let resp: types::Response = response;
+				let header = resp.params.result;
 
-                // well this is in hex form as `String`
-                let block_num_hex = header.number.clone();
-                // now this is in `u64`
-                let num = hex_to_u64_block_number(block_num_hex);
+				// well this is in hex form as `String`
+				let block_num_hex = header.number.clone();
+				// now this is in `u64`
+				let num = hex_to_u64_block_number(block_num_hex);
 
-                let begin = SystemTime::now();
+				let begin = SystemTime::now();
 
-                let max_rows = header.extrinsics_root.rows;
-                let max_cols = header.extrinsics_root.cols;
-                let commitment = header.extrinsics_root.commitment.clone();
+				let max_rows = header.extrinsics_root.rows;
+				let max_cols = header.extrinsics_root.cols;
+				let commitment = header.extrinsics_root.commitment.clone();
 
-                //hyper request for getting the kate query request
-                let cells = rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
-                    .await?;
-                //hyper request for verifying the proof
-                let count =
-                    proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
-                log::info!(
-                    "Completed {} verification rounds for block {}\t{:?}",
-                    count,
-                    num,
-                    begin.elapsed().unwrap()
-                );
+				//hyper request for getting the kate query request
+				let cells =
+					rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
+						.await?;
+				//hyper request for verifying the proof
+				let count =
+					proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
+				log::info!(
+					"Completed {} verification rounds for block {}\t{:?}",
+					count,
+					num,
+					begin.elapsed().unwrap()
+				);
 
-                // write confidence factor into on-disk database
-                db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
-                    .unwrap();
+				// write confidence factor into on-disk database
+				db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
+					.unwrap();
 
-                let conf = calculate_confidence(count);
-                let app_index = header.app_data_lookup.index.clone();
+				let conf = calculate_confidence(count);
+				let app_index = header.app_data_lookup.index.clone();
 
-                /*note:
-                The following is the part when the user have already subscribed
-                to an appID and now its verifying every cell that contains the data
-                */
-                if !app_index.is_empty() {
-                    let req_id = cfg.app_id as u32;
-                    let req_conf = cfg.confidence;
-                    for i in 0..app_index.len(){
-                        if req_id == app_index[i].0 {
-                            if conf >= req_conf && req_id>0{
-                                let req_cells = match rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, req_id).await {
-                                    Ok(req_cells) => Some(req_cells),
-                                    Err(_) => None,
-                                };
-                                match req_cells {
+				/*note:
+				The following is the part when the user have already subscribed
+				to an appID and now its verifying every cell that contains the data
+				*/
+				if !app_index.is_empty() {
+					let req_id = cfg.app_id as u32;
+					let req_conf = cfg.confidence;
+					for i in 0..app_index.len() {
+						if req_id == app_index[i].0 {
+							if conf >= req_conf && req_id > 0 {
+								let req_cells = match rpc::get_kate_proof(
+									&cfg.full_node_rpc,
+									num,
+									max_rows,
+									max_cols,
+									req_id,
+								)
+								.await
+								{
+									Ok(req_cells) => Some(req_cells),
+									Err(_) => None,
+								};
+								match req_cells {
                                     Some(req_cells) => {
 					log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
 					//hyper request for verifying the proof
@@ -237,35 +242,42 @@ pub async fn do_main() -> Result<()> {
                                     }
                                     _ => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
                                 }
-                            }
-                        }else{
-                            continue;
-                        }
-                    }
-                }
+							}
+						} else {
+							continue;
+						}
+					}
+				}
 
-                // push latest mined block's header into column family specified
-                // for keeping block headers, to be used
-                // later for verifying IPFS stored data
-                //
-                // @note this same data store is also written to in
-                // another competing thread, which syncs all block headers
-                // in range [0, LATEST], where LATEST = latest block number
-                // when this process started
-                db_3.put_cf(
-                    cf_handle_1,
-                    num.to_be_bytes(),
-                    serde_json::to_string(&header).unwrap().as_bytes(),
-                )
-                .unwrap();
+				// push latest mined block's header into column family specified
+				// for keeping block headers, to be used
+				// later for verifying IPFS stored data
+				//
+				// @note this same data store is also written to in
+				// another competing thread, which syncs all block headers
+				// in range [0, LATEST], where LATEST = latest block number
+				// when this process started
+				db_3.put_cf(
+					cf_handle_1,
+					num.to_be_bytes(),
+					serde_json::to_string(&header).unwrap().as_bytes(),
+				)
+				.unwrap();
 
-                // notify ipfs-based application client
-                // that newly mined block has been received
-                block_tx.send(types::ClientMsg { num, max_rows, max_cols, header }).unwrap();
-            }
-            Err(error) => log::info!("Misconstructed Header: {:?}", error),
-        }
-    }
+				// notify ipfs-based application client
+				// that newly mined block has been received
+				block_tx
+					.send(types::ClientMsg {
+						num,
+						max_rows,
+						max_cols,
+						header,
+					})
+					.unwrap();
+			},
+			Err(error) => log::info!("Misconstructed Header: {:?}", error),
+		}
+	}
 
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
@@ -276,7 +288,10 @@ pub async fn do_main() -> Result<()> {
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
-	do_main().map_err(|e| {eprintln!("{:?}", e); e})
+	do_main().await.map_err(|e| {
+		log::error!("{:?}", e);
+		e
+	})
 }
 
 /* note:
@@ -295,5 +310,3 @@ fn hex_to_u64_block_number(num: String) -> u64 {
 	let wo_prefix = num.trim_start_matches("0x");
 	u64::from_str_radix(wo_prefix, 16).unwrap()
 }
-
-
