@@ -8,7 +8,7 @@ use std::{
 	time::SystemTime,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -87,7 +87,7 @@ pub async fn do_main() -> Result<()> {
 			block_header_cf_desp,
 			block_cid_cf_desp,
 		])
-		.unwrap(),
+		.context("Failed to open database")?,
 	);
 	// Have access to key value data store, now this can be safely used
 	// from multiple threads of execution
@@ -162,8 +162,12 @@ pub async fn do_main() -> Result<()> {
 	log::info!("Connected to Substrate Node");
 
 	let db_3 = db.clone();
-	let cf_handle_0 = db_3.cf_handle(consts::CONFIDENCE_FACTOR_CF).unwrap();
-	let cf_handle_1 = db_3.cf_handle(consts::BLOCK_HEADER_CF).unwrap();
+	let cf_handle_0 = db_3
+		.cf_handle(consts::CONFIDENCE_FACTOR_CF)
+		.context("failed to get cf handle")?;
+	let cf_handle_1 = db_3
+		.cf_handle(consts::BLOCK_HEADER_CF)
+		.context("failed to get cf handle")?;
 
 	while let Some(message) = read.next().await {
 		let data = message?.into_data();
@@ -181,9 +185,9 @@ pub async fn do_main() -> Result<()> {
 
 				let max_rows = header.extrinsics_root.rows;
 				let max_cols = header.extrinsics_root.cols;
-				if max_cols < 3 {
-					log::error!("Invalid Header, Chunk size less than 3");
-				}
+					if max_cols < 3{
+						log::error!("chunk size less than 3");
+					}
 				let commitment = header.extrinsics_root.commitment.clone();
 
 				//hyper request for getting the kate query request
@@ -197,12 +201,14 @@ pub async fn do_main() -> Result<()> {
 					"Completed {} verification rounds for block {}\t{:?}",
 					count,
 					num,
-					begin.elapsed().unwrap()
+					begin
+						.elapsed()
+						.context("failed to get complete verification")?
 				);
 
 				// write confidence factor into on-disk database
 				db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
-					.unwrap();
+					.context("failed to write confidence factor")?;
 
 				let conf = calculate_confidence(count);
 				let app_index = header.app_data_lookup.index.clone();
@@ -263,9 +269,9 @@ pub async fn do_main() -> Result<()> {
 				db_3.put_cf(
 					cf_handle_1,
 					num.to_be_bytes(),
-					serde_json::to_string(&header).unwrap().as_bytes(),
+					serde_json::to_string(&header)?.as_bytes(),
 				)
-				.unwrap();
+				.context("failed to write block header")?;
 
 				// notify ipfs-based application client
 				// that newly mined block has been received
@@ -276,7 +282,7 @@ pub async fn do_main() -> Result<()> {
 						max_cols,
 						header,
 					})
-					.unwrap();
+					.context("failed to send block to client")?;
 			},
 			Err(error) => log::info!("Misconstructed Header: {:?}", error),
 		}
@@ -284,7 +290,9 @@ pub async fn do_main() -> Result<()> {
 
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
-	destroy_tx.send(true).unwrap();
+	destroy_tx
+		.send(true)
+		.context("failed to send block to client")?;
 
 	Ok(())
 }

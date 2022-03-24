@@ -7,7 +7,7 @@ use std::{
 	time::SystemTime,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::stream::{self, StreamExt};
 use hyper;
 use hyper_tls::HttpsConnector;
@@ -32,7 +32,7 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(get_blockhash)")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -42,13 +42,13 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.map_err(|e| anyhow::anyhow!("{}", e))?;
+	.context("failed to build HTTP POST request object(get_blockhash)")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
-	let r: BlockHashResponse =
-		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(get_blockhash)")?;
+	let r: BlockHashResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(get_blockhash)")?;
 	Ok(r.result)
 }
 
@@ -63,7 +63,7 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(get_block_byhash)")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -73,12 +73,13 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.map_err(|e| anyhow::anyhow!("{}", e))?;
+	.context("failed to build HTTP POST request object(get_block_byhash)")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
-	let r: BlockResponse = serde_json::from_slice(&body).unwrap();
+		.context("failed to build HTTP POST request object(get_block_byhash)")?;
+	let r: BlockResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(get_block_byhash)")?;
 	Ok(r.result.block)
 }
 
@@ -94,7 +95,7 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -104,13 +105,13 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.map_err(|e| anyhow::anyhow!("{}", e))?;
+	.context("failed to build HTTP POST request object(get_chainHeader)")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
-	let r: BlockHeaderResponse =
-		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+	let r: BlockHeaderResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
 	Ok(r.result)
 }
 
@@ -312,7 +313,7 @@ pub async fn get_kate_proof(
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload.clone()))
-		.map_err(|e| anyhow::anyhow!(r#"failed to read HTTP post{}"#, e))?;
+		.context("failed to build HTTP POST request object(kate_proof)")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -322,14 +323,14 @@ pub async fn get_kate_proof(
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.map_err(|e| anyhow::anyhow!("{}", e))?;
+	.context("failed to build HTTP POST request object(kate_proof)")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.map_err(|e| anyhow::anyhow!("{}", e))?;
+		.context("failed to build HTTP POST request object(kate_proof)")?;
 
-	let r: BlockProofResponse =
-		serde_json::from_slice(&body).map_err(|e| anyhow::anyhow!("{}", e))?;
+	let r: BlockProofResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(kate_proof)")?;
 
 	fill_cells_with_proofs(&mut cells, &r);
 	Ok(cells)
