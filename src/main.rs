@@ -181,8 +181,11 @@ pub async fn do_main() -> Result<()> {
 
 				let max_rows = header.extrinsics_root.rows;
 				let max_cols = header.extrinsics_root.cols;
+				if max_cols < 3 {
+					log::error!("Invalid Header, Chunk size less than 3");
+				}
 				let commitment = header.extrinsics_root.commitment.clone();
-
+				
 				//hyper request for getting the kate query request
 				let cells =
 					rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
