@@ -88,9 +88,15 @@ pub async fn sync_block_headers(
 					let commitment = block_body.header.extrinsics_root.commitment;
 
 					let cells =
-						crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, app_id)
-							.await
-							.unwrap();
+						match crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, app_id)
+							.await{
+								Ok(cells) => cells,
+								Err(e) =>{
+									log::error!("❗❗failed to get kate_proof {:?}",e);
+									return
+								},
+							};
+							
 
 					log::info!(
 						"Fetched {} cells of app {} of block {} for verification",
