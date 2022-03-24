@@ -185,7 +185,7 @@ pub async fn do_main() -> Result<()> {
 					log::error!("Invalid Header, Chunk size less than 3");
 				}
 				let commitment = header.extrinsics_root.commitment.clone();
-				
+
 				//hyper request for getting the kate query request
 				let cells =
 					rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
