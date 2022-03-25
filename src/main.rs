@@ -147,8 +147,8 @@ pub async fn do_main() -> Result<()> {
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 
 	//tokio-tungesnite method for ws connection to substrate.
-	let url = url::Url::parse(&cfg.full_node_ws)?;
-	let (ws_stream, _response) = connect_async(url).await?;
+	let url = url::Url::parse(&cfg.full_node_ws).context("Invalid url: Failed to connect")?;
+	let (ws_stream, _response) = connect_async(url).await.context("Failed to connect to ws")?;
 	let (mut write, mut read) = ws_stream.split();
 
 	// attempt subscription to full node block mining stream
@@ -156,7 +156,7 @@ pub async fn do_main() -> Result<()> {
 		.send(Message::Text(
 			r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
 		))
-		.await?;
+		.await.context("ws-message(subscribe_newHead) send failed")?;
 
 	let _subscription_result = read.next().await.unwrap().unwrap().into_data();
 	log::info!("Connected to Substrate Node");
