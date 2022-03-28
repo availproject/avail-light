@@ -93,7 +93,7 @@ To generate report, run
 
 To clean up generate coverage information files, run
 
-	$> rm **/*.profraw
+	$> find . -name \*.profraw -type f -exec rm -f {} +
 
 Open `index.html` from `./target/debug/coverage/` folder to review coverage data.
 
