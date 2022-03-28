@@ -1,5 +1,7 @@
 # avail-light
 
+[![Build status](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/maticnetwork/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/maticnetwork/avail-light)
+
 Light client for Data Availability Blockchain of Polygon 💻
 
 ![demo](./img/prod_demo.png)
