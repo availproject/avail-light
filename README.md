@@ -68,5 +68,33 @@ curl -s localhost:7000/v1/confidence/ _block-number_
 **Note :** Serialised confidence calculated as: 
 > `blockNumber << 32 | int32(confidence * 10 ** 7)`, where confidence is represented as out of 10 ** 9
 
+## Test code coverage report
+
+We are using [grcov](https://github.com/mozilla/grcov) to aggregate code coverage information and generate reports.
+
+To install grcov run
+
+	$> cargo install grcov
+
+Source code coverage data is generated when running tests with
+
+	$> env RUSTFLAGS="-C instrument-coverage" \
+		LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
+		cargo test
+
+To generate report, run
+
+	$> grcov . -s . \
+		--binary-path ./target/debug/ \
+		-t html \
+		--branch \
+		--ignore-not-existing -o \
+		./target/debug/coverage/
+
+To clean up generate coverage information files, run
+
+	$> rm **/*.profraw
+
+Open `index.html` from `./target/debug/coverage/` folder to review coverage data.
 
 
