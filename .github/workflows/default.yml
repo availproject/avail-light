@@ -31,7 +31,7 @@ jobs:
             # NOTE: Until https://github.com/actions-rs/toolchain/pull/209 is merged,
             # this should be synced with rust-toolchain.toml file.
             # After merge, this section should be removed.
-            toolchain: nightly-2022-01-20
+            toolchain: nightly-2022-03-01
             components: rustfmt, clippy
             profile: minimal
 
