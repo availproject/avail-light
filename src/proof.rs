@@ -126,7 +126,7 @@ fn kc_verify_proof_wrapper(
 			verification.status.is_ok()
 		},
 		Err(error) => {
-			log::info!(
+			log::error!(
 				"Failed for cell ({}, {}) of block {} with error {}",
 				row,
 				col,
