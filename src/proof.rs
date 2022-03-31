@@ -27,7 +27,7 @@ pub mod testnet {
 }
 
 pub struct ProofVerification {
-	pub status: bool,
+	pub status: Result<(), dusk_plonk::error::Error>,
 	pub public_params_hash: String,
 	pub public_params_len: usize,
 }
@@ -83,15 +83,11 @@ fn kc_verify_proof(
 	};
 
 	let point = row_dom_x_pts[col_num as usize];
-	let verification = verifier_key.batch_check(&[point], &[proof], &mut Transcript::new(b""));
-	if let Err(verification_err) = &verification {
-		log::info!("Verification error: {:?}", verification_err);
-	}
-
+	let status = verifier_key.batch_check(&[point], &[proof], &mut Transcript::new(b""));
 	let raw_pp = public_params.to_raw_var_bytes();
 
 	ProofVerification {
-		status: verification.is_ok(),
+		status,
 		public_params_hash: hex::encode(sp_core::blake2_128(&raw_pp)),
 		public_params_len: hex::encode(raw_pp).len(),
 	}
@@ -109,18 +105,22 @@ fn kc_verify_proof_wrapper(
 	commitment: &[u8],
 ) -> bool {
 	let verification = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
-	if verification.status {
-		log::info!(
-			"Public params ({}): hash: {}",
-			verification.public_params_len,
-			verification.public_params_hash
-		);
-		log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
-	} else {
-		log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+	match &verification.status {
+		Ok(()) => {
+			log::info!(
+				"Public params ({}): hash: {}",
+				verification.public_params_len,
+				verification.public_params_hash
+			);
+			log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
+		},
+		Err(verification_err) => {
+			log::info!("Verification error: {:?}", verification_err);
+			log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+		},
 	}
 
-	status
+	verification.status.is_ok()
 }
 
 pub fn verify_proof(
