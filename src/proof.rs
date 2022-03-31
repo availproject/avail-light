@@ -105,13 +105,13 @@ fn kc_verify_proof_wrapper(
 	commitment: &[u8],
 ) -> bool {
 	let verification = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
+	log::info!(
+		"Public params ({}): hash: {}",
+		verification.public_params_len,
+		verification.public_params_hash
+	);
 	match &verification.status {
 		Ok(()) => {
-			log::info!(
-				"Public params ({}): hash: {}",
-				verification.public_params_len,
-				verification.public_params_hash
-			);
 			log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
 		},
 		Err(verification_err) => {
