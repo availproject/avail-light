@@ -26,6 +26,12 @@ pub mod testnet {
 	}
 }
 
+pub struct ProofVerification {
+	pub status: bool,
+	pub public_params_hash: String,
+	pub public_params_len: usize,
+}
+
 // code for light client to verify incoming kate proofs
 // args - now - column number, response (witness + evaluation_point = 48 + 32 bytes), commitment (as bytes)
 // args - in future - multiple sets of these
@@ -35,16 +41,12 @@ fn kc_verify_proof(
 	commitment: &[u8],
 	total_rows: usize,
 	total_cols: usize,
-) -> bool {
+) -> ProofVerification {
 	// let total_rows = 128;
 	let _extended_total_rows = total_rows * 2;
 	// let total_cols = 256;
 
 	let public_params = testnet::public_params(256);
-	let raw_pp = public_params.to_raw_var_bytes();
-	let hash_pp = hex::encode(sp_core::blake2_128(&raw_pp));
-	let hex_pp = hex::encode(raw_pp);
-	log::info!("Public params ({}): hash: {}", hex_pp.len(), hash_pp);
 
 	let (_, verifier_key) = public_params.trim(total_cols).unwrap();
 
@@ -86,7 +88,13 @@ fn kc_verify_proof(
 		log::info!("Verification error: {:?}", verification_err);
 	}
 
-	verification.is_ok()
+	let raw_pp = public_params.to_raw_var_bytes();
+
+	ProofVerification {
+		status: verification.is_ok(),
+		public_params_hash: hex::encode(sp_core::blake2_128(&raw_pp)),
+		public_params_len: hex::encode(raw_pp).len(),
+	}
 }
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
@@ -100,8 +108,13 @@ fn kc_verify_proof_wrapper(
 	proof: &[u8],
 	commitment: &[u8],
 ) -> bool {
-	let status = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
-	if status {
+	let verification = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
+	if verification.status {
+		log::info!(
+			"Public params ({}): hash: {}",
+			verification.public_params_len,
+			verification.public_params_hash
+		);
 		log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
 	} else {
 		log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
