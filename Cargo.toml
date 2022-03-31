@@ -18,12 +18,7 @@ serde_json = "1.0.68"
 hyper = { version = "0.14", features = ["full"]}
 hyper-tls = "0.5.0"
 rand = "0.8.4"
-rand_core = "0.6.3"
-# rand_chacha = "0.3"
-dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", tag = "v0.8.2-polygon-2" }
-dusk-bytes = "0.1"
 regex = "1.5"
-hex = "0.4"
 num = "0.4.0"
 futures = { version = "0.3.15", default-features = false, features = ["std", "thread-pool"] }
 chrono = "0.4.19"
@@ -39,7 +34,6 @@ num_cpus = "1.13.0"
 structopt = "0.3.25"
 rocksdb = { version = "0.17.0", features = ["snappy"] }
 threadpool = "1.8.1"
-# merlin = {version = "3.0", default-features = false}
 log = "0.4"
 simple_logger = "2.1.0"
 
