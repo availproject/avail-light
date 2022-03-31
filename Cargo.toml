@@ -8,6 +8,7 @@ authors = ["Polygon Avail Team"]
 
 [dependencies]
 kate-recovery = {git = "https://github.com/maticnetwork/avail.git"}
+kate-proof = {git = "https://github.com/maticnetwork/avail.git"}
 tokio-tungstenite = "0.16.1"
 url = "2.2.2"
 tokio = { version = "1.2.0", features = ["full"] }
@@ -18,7 +19,7 @@ hyper = { version = "0.14", features = ["full"]}
 hyper-tls = "0.5.0"
 rand = "0.8.4"
 rand_core = "0.6.3"
-rand_chacha = "0.3"
+# rand_chacha = "0.3"
 dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", tag = "v0.8.2-polygon-2" }
 dusk-bytes = "0.1"
 regex = "1.5"
@@ -38,8 +39,7 @@ num_cpus = "1.13.0"
 structopt = "0.3.25"
 rocksdb = { version = "0.17.0", features = ["snappy"] }
 threadpool = "1.8.1"
-merlin = {version = "3.0", default-features = false}
-sp-core = "3.0.0" 
+# merlin = {version = "3.0", default-features = false}
 log = "0.4"
 simple_logger = "2.1.0"
 
