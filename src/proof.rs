@@ -5,6 +5,7 @@ use std::{
 	sync::{mpsc::channel, Arc},
 };
 
+use anyhow::{anyhow, Context};
 use dusk_bytes::Serializable;
 use dusk_plonk::{
 	bls12_381::G1Affine,
@@ -26,6 +27,12 @@ pub mod testnet {
 	}
 }
 
+pub struct ProofVerification {
+	pub status: Result<(), dusk_plonk::error::Error>,
+	pub public_params_hash: String,
+	pub public_params_len: usize,
+}
+
 // code for light client to verify incoming kate proofs
 // args - now - column number, response (witness + evaluation_point = 48 + 32 bytes), commitment (as bytes)
 // args - in future - multiple sets of these
@@ -35,16 +42,12 @@ fn kc_verify_proof(
 	commitment: &[u8],
 	total_rows: usize,
 	total_cols: usize,
-) -> bool {
+) -> anyhow::Result<ProofVerification> {
 	// let total_rows = 128;
 	let _extended_total_rows = total_rows * 2;
 	// let total_cols = 256;
 
 	let public_params = testnet::public_params(256);
-	let raw_pp = public_params.to_raw_var_bytes();
-	let hash_pp = hex::encode(sp_core::blake2_128(&raw_pp));
-	let hex_pp = hex::encode(raw_pp);
-	log::info!("Public params ({}): hash: {}", hex_pp.len(), hash_pp);
 
 	let (_, verifier_key) = public_params.trim(total_cols).unwrap();
 
@@ -59,20 +62,21 @@ fn kc_verify_proof(
 	let commitment_point = G1Affine::from_bytes(
 		commitment
 			.try_into()
-			.expect("commitment slice with incorrect length"),
+			.context("commitment slice with incorrect length")?,
 	)
 	.expect("Invalid commitment point");
 	let eval_point = dusk_plonk::prelude::BlsScalar::from_bytes(
 		eval.try_into()
-			.expect("evaluation point slice with incorrect length"),
+			.context("evaluation point slice with incorrect length")?,
 	)
 	.unwrap();
 	let witness_point = G1Affine::from_bytes(
 		witness
 			.try_into()
-			.expect("witness slice with incorrect length"),
+			.context("witness slice with incorrect length")?,
 	)
-	.expect("Invalid witness point");
+	.map_err(|_| anyhow!("Invalid witness point"))?;
+	// Discarding error due to unimplemented traits which prevents us to use context
 
 	let proof = Proof {
 		commitment_to_witness: Commitment::from(witness_point),
@@ -81,12 +85,14 @@ fn kc_verify_proof(
 	};
 
 	let point = row_dom_x_pts[col_num as usize];
-	let verification = verifier_key.batch_check(&[point], &[proof], &mut Transcript::new(b""));
-	if let Err(verification_err) = &verification {
-		log::info!("Verification error: {:?}", verification_err);
-	}
+	let status = verifier_key.batch_check(&[point], &[proof], &mut Transcript::new(b""));
+	let raw_pp = public_params.to_raw_var_bytes();
 
-	verification.is_ok()
+	Ok(ProofVerification {
+		status,
+		public_params_hash: hex::encode(sp_core::blake2_128(&raw_pp)),
+		public_params_len: hex::encode(raw_pp).len(),
+	})
 }
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
@@ -100,14 +106,36 @@ fn kc_verify_proof_wrapper(
 	proof: &[u8],
 	commitment: &[u8],
 ) -> bool {
-	let status = kc_verify_proof(col, proof, commitment, total_rows, total_cols);
-	if status {
-		log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
-	} else {
-		log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
-	}
+	match kc_verify_proof(col, proof, commitment, total_rows, total_cols) {
+		Ok(verification) => {
+			log::info!(
+				"Public params ({}): hash: {}",
+				verification.public_params_len,
+				verification.public_params_hash
+			);
+			match &verification.status {
+				Ok(()) => {
+					log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
+				},
+				Err(verification_err) => {
+					log::info!("Verification error: {:?}", verification_err);
+					log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+				},
+			}
 
-	status
+			verification.status.is_ok()
+		},
+		Err(error) => {
+			log::error!(
+				"Failed for cell ({}, {}) of block {} with error {}",
+				row,
+				col,
+				block_num,
+				error
+			);
+			false
+		},
+	}
 }
 
 pub fn verify_proof(
