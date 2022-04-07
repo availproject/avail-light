@@ -220,36 +220,33 @@ pub async fn do_main() -> Result<()> {
 				The following is the part when the user have already subscribed
 				to an appID and now its verifying every cell that contains the data
 				*/
-				if !app_index.is_empty() {
-					let req_id = cfg.app_id as u32;
-					let req_conf = cfg.confidence;
-					for app in app_index {
-						if req_id == app.0 {
-							if conf >= req_conf && req_id > 0 {
-								match rpc::get_kate_proof(
-									&cfg.full_node_rpc,
-									num,
-									max_rows,
-									max_cols,
-									req_id,
-								).await {
-								    Ok(req_cells) => {
-									log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
-									//hyper request for verifying the proof
-									let count = proof::verify_proof(
-										num,
-										max_rows,
-										max_cols,
-										req_cells,
-										commitment.clone(),
-									);
-									log::info!("✅ Completed {} rounds of verification for block number {} ", count, num );
-								    },
-								    Err(_) => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
-								}
-							}
+				if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
+					for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0) {
+						let proof = rpc::get_kate_proof(
+							&cfg.full_node_rpc,
+							num,
+							max_rows,
+							max_cols,
+							*app_id,
+						)
+						.await;
+						if let Ok(req_cells) = proof {
+							log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
+							//hyper request for verifying the proof
+							let count = proof::verify_proof(
+								num,
+								max_rows,
+								max_cols,
+								req_cells,
+								commitment.clone(),
+							);
+							log::info!(
+								"✅ Completed {} rounds of verification for block number {} ",
+								count,
+								num
+							);
 						} else {
-							continue;
+							log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
 						}
 					}
 				}
