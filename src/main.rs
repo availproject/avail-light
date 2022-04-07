@@ -226,19 +226,14 @@ pub async fn do_main() -> Result<()> {
 					for i in 0..app_index.len() {
 						if req_id == app_index[i].0 {
 							if conf >= req_conf && req_id > 0 {
-								let req_cells = match rpc::get_kate_proof(
+								match rpc::get_kate_proof(
 									&cfg.full_node_rpc,
 									num,
 									max_rows,
 									max_cols,
 									req_id,
-								)
-								.await
-								{
-									Ok(req_cells) => Some(req_cells),
-									Err(_) => None,
-								};
-								if let Some(req_cells) = req_cells {
+								).await {
+								    Ok(req_cells) => {
 									log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
 									//hyper request for verifying the proof
 									let count = proof::verify_proof(
@@ -249,8 +244,8 @@ pub async fn do_main() -> Result<()> {
 										commitment.clone(),
 									);
 									log::info!("✅ Completed {} rounds of verification for block number {} ", count, num );
-								} else {
-									log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
+								    },
+								    Err(_) => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
 								}
 							}
 						} else {
