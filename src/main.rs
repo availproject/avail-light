@@ -175,9 +175,8 @@ pub async fn do_main() -> Result<()> {
 	while let Some(message) = read.next().await {
 		let data = message?.into_data();
 		match serde_json::from_slice(&data) {
-			Ok(response) => {
-				let resp: types::Response = response;
-				let header = resp.params.result;
+			Ok(types::Response { params, .. }) => {
+				let header = params.result;
 
 				// well this is in hex form as `String`
 				let block_num_hex = header.number.clone();
