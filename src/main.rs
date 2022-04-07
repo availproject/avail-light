@@ -238,18 +238,20 @@ pub async fn do_main() -> Result<()> {
 									Ok(req_cells) => Some(req_cells),
 									Err(_) => None,
 								};
-								match req_cells {
-                                    Some(req_cells) => {
-					log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
-					//hyper request for verifying the proof
-                                        let count = proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone());
-                                            log::info!(
-                                                        "✅ Completed {} rounds of verification for block number {} ",
-                                                        count, num
-                                                        );
-                                    }
-                                    _ => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
-                                }
+								if let Some(req_cells) = req_cells {
+									log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
+									//hyper request for verifying the proof
+									let count = proof::verify_proof(
+										num,
+										max_rows,
+										max_cols,
+										req_cells,
+										commitment.clone(),
+									);
+									log::info!("✅ Completed {} rounds of verification for block number {} ", count, num );
+								} else {
+									log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
+								}
 							}
 						} else {
 							continue;
