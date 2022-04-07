@@ -223,8 +223,8 @@ pub async fn do_main() -> Result<()> {
 				if !app_index.is_empty() {
 					let req_id = cfg.app_id as u32;
 					let req_conf = cfg.confidence;
-					for i in 0..app_index.len() {
-						if req_id == app_index[i].0 {
+					for app in app_index {
+						if req_id == app.0 {
 							if conf >= req_conf && req_id > 0 {
 								match rpc::get_kate_proof(
 									&cfg.full_node_rpc,
