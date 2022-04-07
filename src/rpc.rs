@@ -270,43 +270,38 @@ pub async fn get_all_cells(url: &str, msg: &ClientMsg) -> Result<Vec<Option<Vec<
 
 pub async fn get_kate_proof(
 	url: &str,
-	block: u64,
+	block_num: u64,
 	max_rows: u16,
 	max_cols: u16,
 	app_id: u32,
 ) -> Result<Vec<Cell>> {
-	let num = get_block_by_number(url, block).await?;
+	let block = get_block_by_number(url, block_num).await?;
 
 	//tuple of values (id,index)
-	let index_tuple = num.header.app_data_lookup.index.clone();
+	let index_tuple = block.header.app_data_lookup.index.clone();
 
 	log::info!(
 		"Getting kate proof block {}, apps index {:?}",
-		block,
+		block_num,
 		index_tuple
 	);
 
-	//checking for if the user is subscribed for a particular APPID
-	let mut cells = if app_id == 0 || index_tuple.iter().all(|elem| app_id != elem.0) {
-		generate_random_cells(max_rows, max_cols, block)
-	} else {
-		//this is where the index for a specific app_ID is checked; from the tuple (id, index).
-		let mut app_ind: u32 = 0;
-		for i in 0..index_tuple.len() {
-			if app_id == index_tuple[i].0 {
-				app_ind = index_tuple[i].1;
-				break;
-			}
-		}
-		log::info!(
-			"{} chunks for app {} found in block {}",
-			app_ind,
-			app_id,
-			block
-		);
-		generate_app_specific_cells(app_ind, max_cols, block, num, app_id)
+	let mut cells = match index_tuple
+		.iter()
+		.find(|elem| app_id != 0 && app_id == elem.0)
+	{
+		None => generate_random_cells(max_rows, max_cols, block_num),
+		Some((app_id, offset)) => {
+			log::info!(
+				"{} chunks for app {} found in block {}",
+				offset,
+				app_id,
+				block_num
+			);
+			generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
+		},
 	};
-	let payload = generate_kate_query_payload(block, &cells);
+	let payload = generate_kate_query_payload(block_num, &cells);
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
