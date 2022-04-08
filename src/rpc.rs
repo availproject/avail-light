@@ -216,32 +216,29 @@ pub async fn get_kate_query_proof_by_cell(
 ///
 /// Each element of resulting vector either has cell content or has nothing ( represented as None )
 pub async fn get_all_cells(url: &str, msg: &ClientMsg) -> Result<Vec<Option<Vec<u8>>>, String> {
-	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![
-		None;
-		(msg.max_rows * msg.max_cols)
-			as usize
-	]));
+	let store_size: usize = (msg.max_rows * msg.max_cols) as usize;
+	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; store_size]));
 
 	let begin = SystemTime::now();
+
 	let store_0 = store.clone();
-	let fut = stream::iter(0..msg.max_rows as usize)
+
+	stream::iter(0..msg.max_rows as usize)
 		.flat_map(|row| stream::iter(0..msg.max_cols as usize).map(move |col| (row, col)))
 		.zip(stream::iter(0..(msg.max_rows * msg.max_cols) as usize).map(move |_| store_0.clone()))
 		.for_each_concurrent(num_cpus::get(), |((row, col), store)| async move {
-			match get_kate_query_proof_by_cell(url, msg.num, row as u16, col as u16).await {
-				Ok(v) => {
-					let mut handle = store.lock().unwrap();
-					handle[row * msg.max_cols as usize + col] = Some(v);
-				},
+			let proof = get_kate_query_proof_by_cell(url, msg.num, row as u16, col as u16).await;
+			let mut handle = store.lock().unwrap();
+			match proof {
+				Ok(v) => handle[row * msg.max_cols as usize + col] = Some(v),
 				Err(e) => {
-					let mut handle = store.lock().unwrap();
 					handle[row * msg.max_cols as usize + col] = None;
-					log::info!("error: {}", e)
+					log::info!("error: {}", e);
 				},
 			}
-		});
+		})
+		.await;
 
-	fut.await;
 	log::info!(
 		"Received {} cells of block {}\t{:?}",
 		msg.max_cols * msg.max_rows,
