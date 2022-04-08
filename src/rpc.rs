@@ -9,7 +9,6 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures::stream::{self, StreamExt};
-use hyper;
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -158,15 +157,6 @@ pub fn generate_kate_query_payload(block: u64, cells: &Vec<Cell>) -> String {
 		block,
 		query.join(", ")
 	)
-}
-
-pub fn fill_cells_with_proofs(cells: &mut Vec<Cell>, proof: &BlockProofResponse) {
-	assert_eq!(80 * cells.len(), proof.result.len());
-	for i in 0..cells.len() {
-		let mut v = Vec::new();
-		v.extend_from_slice(&proof.result[i * 80..i * 80 + 80]);
-		cells[i].proof = v;
-	}
 }
 
 // Get proof of certain cell for given block, from full node
@@ -324,10 +314,16 @@ pub async fn get_kate_proof(
 		.await
 		.context("failed to build HTTP POST request object(kate_proof)")?;
 
-	let r: BlockProofResponse = serde_json::from_slice(&body)
+	let proofs: BlockProofResponse = serde_json::from_slice(&body)
 		.context("failed to build HTTP POST request object(kate_proof)")?;
 
-	fill_cells_with_proofs(&mut cells, &r);
+	let proofs_by_cell = proofs.by_cell(cells.len());
+
+	cells
+		.iter_mut()
+		.zip(proofs_by_cell)
+		.for_each(|(cell, proof)| cell.proof = proof.to_vec());
+
 	Ok(cells)
 }
 
