@@ -454,10 +454,8 @@ pub async fn run_client(
 									Ok(cid) => {
 										latest_cid = Some(cid);
 										// publish block-cid mapping message over gossipsub network
-										match prepare_block_cid_fact_message(
-											block.num as i128,
-											latest_cid.unwrap(), // this should be safe !
-										) {
+										match prepare_block_cid_fact_message(block.num as i128, cid)
+										{
 											Ok(msg) => {
 												match ipfs.publish("topic/block_cid_fact", msg) {
 													Ok(_) => {
@@ -474,7 +472,7 @@ pub async fn run_client(
 															block_cid_store.clone(),
 															block.num as i128,
 															BlockCidPair {
-																cid: latest_cid.unwrap(),
+																cid,
 																self_computed: true, // because this block CID is self-computed !
 															},
 														) {
@@ -486,7 +484,7 @@ pub async fn run_client(
 														log::info!(
 															"✅ Block {} available\t{}",
 															block.num,
-															latest_cid.unwrap().clone()
+															cid.clone()
 														);
 													},
 													Err(_) => {
