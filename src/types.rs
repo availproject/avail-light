@@ -54,6 +54,10 @@ impl std::fmt::Display for Event {
 	}
 }
 
+const CELL_SIZE: usize = 32;
+const PROOF_SIZE: usize = 48;
+const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
+
 impl std::str::FromStr for Event {
 	type Err = anyhow::Error;
 
@@ -242,6 +246,13 @@ pub struct BlockProofResponse {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
 	pub result: Vec<u8>,
+}
+
+impl BlockProofResponse {
+	pub fn by_cell(&self, cells_len: usize) -> impl Iterator<Item = &[u8]> {
+		assert_eq!(CELL_WITH_PROOF_SIZE * cells_len, self.result.len());
+		self.result.chunks_exact(CELL_WITH_PROOF_SIZE)
+	}
 }
 
 #[derive(Default, Debug, Clone)]
