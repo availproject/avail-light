@@ -34,7 +34,7 @@ use crate::{
 		extract_block, extract_cell, extract_links, get_matrix, prepare_block_cid_ask_message,
 		prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::get_all_cells,
+	rpc::get_cells,
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -406,21 +406,47 @@ pub async fn run_client(
 		match block_rx.recv() {
 			Ok(block) => {
 				let block_cid_entry =
-					get_block_cid_entry(block_cid_store.clone(), block.num as i128);
+					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
+						.map(|pair| pair.cid);
 
-				let mut ipfs_cells: Vec<Vec<Option<Vec<u8>>>> = vec![];
-				if let Some(block_cid) = block_cid_entry {
-					ipfs_cells = get_matrix(&ipfs.clone(), &block_cid.cid)?;
-				};
+				let ipfs_cells = get_matrix(&ipfs, block_cid_entry).unwrap_or_else(|err| {
+					log::error!("Fail to fetch cells from IPFS: {}", err);
+					vec![]
+				});
+
 				log::info!(
 					"Fetched {} cells from IPFS",
 					ipfs_cells
 						.iter()
-						.fold(0usize, |sum, val| { sum + val.iter().flatten().count() })
+						.fold(0usize, |sum, val| sum + val.iter().flatten().count())
 				);
 
-				match get_all_cells(&cfg.full_node_rpc, &block).await {
-					Ok(cells) => {
+				let requested_cells = (0..block.max_cols as usize)
+					.flat_map(|col| (0..block.max_rows as usize).map(move |row| (row, col)))
+					.filter(|(row, col)| {
+						ipfs_cells.get(*col).and_then(|col| col.get(*row)).is_none()
+					})
+					.collect::<Vec<(usize, usize)>>();
+
+				log::info!(
+					"Requested {} cells from the full node",
+					requested_cells.len()
+				);
+
+				match get_cells(&cfg.full_node_rpc, &block, &requested_cells).await {
+					Ok(mut cells) => {
+						for col in 0..block.max_cols as usize {
+							for row in 0..block.max_rows as usize {
+								let index = col * block.max_rows as usize + row;
+								if cells[index].is_none() {
+									cells[index] = ipfs_cells
+										.get(col)
+										.and_then(|col| col.get(row))
+										.and_then(|val| val.to_owned());
+								}
+							}
+						}
+
 						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
 								.enumerate()
@@ -452,7 +478,7 @@ pub async fn run_client(
 						let ext = reconstruct_app_extrinsics(
 							layout,
 							columns,
-							block.max_rows as usize,
+							(block.max_rows / 2) as usize,
 							32,
 						);
 						log::debug!("Reconstructed extrinsic: {:?}", ext);

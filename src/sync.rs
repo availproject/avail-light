@@ -83,7 +83,7 @@ pub async fn sync_block_headers(
 
 					let begin = SystemTime::now();
 
-					let max_rows = block_body.header.extrinsics_root.rows;
+					let max_rows = block_body.header.extrinsics_root.rows * 2;
 					let max_cols = block_body.header.extrinsics_root.cols;
 					let commitment = block_body.header.extrinsics_root.commitment;
 
