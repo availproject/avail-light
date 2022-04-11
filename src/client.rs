@@ -31,7 +31,7 @@ use rocksdb::{DBWithThreadMode, SingleThreaded};
 use crate::{
 	data::{
 		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
-		extract_block, extract_cell, extract_links, prepare_block_cid_ask_message,
+		extract_block, extract_cell, extract_links, get_matrix, prepare_block_cid_ask_message,
 		prepare_block_cid_fact_message, push_matrix,
 	},
 	rpc::get_all_cells,
@@ -405,6 +405,20 @@ pub async fn run_client(
 		// linking it with previous block data matrix's CID.
 		match block_rx.recv() {
 			Ok(block) => {
+				let block_cid_entry =
+					get_block_cid_entry(block_cid_store.clone(), block.num as i128);
+
+				let mut ipfs_cells: Vec<Vec<Option<Vec<u8>>>> = vec![];
+				if let Some(block_cid) = block_cid_entry {
+					ipfs_cells = get_matrix(&ipfs.clone(), &block_cid.cid)?;
+				};
+				log::info!(
+					"Fetched {} cells from IPFS",
+					ipfs_cells
+						.iter()
+						.fold(0usize, |sum, val| { sum + val.iter().flatten().count() })
+				);
+
 				match get_all_cells(&cfg.full_node_rpc, &block).await {
 					Ok(cells) => {
 						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {

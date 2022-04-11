@@ -4,6 +4,7 @@ extern crate libipld;
 
 use std::{collections::BTreeMap, sync::Arc};
 
+use anyhow::{Context, Result};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::{
 	codec_impl::IpldCodec,
@@ -83,6 +84,38 @@ pub fn construct_matrix(
 		}),
 		Err(msg) => return Err(msg),
 	}
+}
+
+type Cell = Vec<u8>;
+type Column = Vec<Option<Cell>>;
+type Matrix = Vec<Column>;
+
+pub fn get_matrix(ipfs: &Ipfs<DefaultParams>, block_cid: &Cid) -> Result<Matrix> {
+	fn get_cell(ipfs: &Ipfs<DefaultParams>, cell_cid: &Cid) -> Result<Option<Cell>> {
+		ipfs.get(cell_cid)?
+			.ipld()
+			.map(|decoded_cell| extract_cell(&decoded_cell))
+	}
+
+	fn get_column(ipfs: &Ipfs<DefaultParams>, column_cid: &Cid) -> Result<Column> {
+		ipfs.get(column_cid)?
+			.ipld()
+			.and_then(|decoded| extract_links(&decoded).context("Cannot extract links"))?
+			.iter()
+			.flat_map(|link| link.context("Link is missing"))
+			.map(|cell_cid| get_cell(ipfs, &cell_cid).context("Cannot get cell"))
+			.collect::<Result<Column>>()
+	}
+
+	Ok(ipfs
+		.get(block_cid)?
+		.ipld()
+		.and_then(|root| destructure_matrix(&root).context("Cannot destructure root block"))
+		.and_then(|(_, column_cids, _)| column_cids.context("No column block cids"))?
+		.iter()
+		.flat_map(|column_cid| column_cid.context("No column block cid"))
+		.flat_map(|column_cid| get_column(ipfs, &column_cid).context("Cannot get column"))
+		.collect::<Matrix>())
 }
 
 async fn push_cell(
