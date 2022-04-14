@@ -1,7 +1,8 @@
 extern crate ipfs_embed;
 
+use codec::Decode;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
@@ -196,8 +197,24 @@ pub struct RPCResult {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Block {
-	pub extrinsics: Vec<Vec<u8>>,
+	pub extrinsics: Vec<Extrinsic>,
 	pub header: Header,
+}
+
+#[derive(Debug, Clone)]
+pub struct Extrinsic {
+	pub data: Vec<u8>,
+}
+
+impl<'a> Deserialize<'a> for Extrinsic {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'a>,
+	{
+		Ok(Self {
+			data: sp_core::bytes::deserialize(deserializer)?,
+		})
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
