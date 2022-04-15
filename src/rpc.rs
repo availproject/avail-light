@@ -396,49 +396,34 @@ pub async fn check_connection(
 }
 
 pub async fn check_http(full_node_rpc:Vec<String>) -> Result<String> {
-	println!("testing the check_http");
 	let mut rpc_url= String::new(); 
 	for x in full_node_rpc.iter(){
-		println!("testing x{:?}",x);
 		let url_ = x.parse::<hyper::Uri>().context("http url parse failed")?;
-		println!("testing url {:?}",url_);
 		if is_secure(x) {
-			println!("testing the is_secure");
 			let https = HttpsConnector::new();
 			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
 			let res = match client.get(url_).await{
 				Ok(c) => c,
-				Err(e) => {
-					println!("error in secure http");
-					continue;
-				},
+				Err(_) => continue,
 			};
 			if res.status().is_success() {
-				println!("testing res in https");
 				rpc_url.push_str(x);
 				break;
 			}				
 		}else{
-			println!("testing the block");
 			let client = hyper::Client::new();	
-			println!("testing after client is build");
 			let _res = match client.get(url_).await{
 				Ok(c) => c,
-				Err(e) => {
-					println!("error in else http");
-					continue;
-				},
+				Err(_) => continue,
 			};
 			println!("res status {:?}",_res.status());
 			//@TODO: need to find an alternative way for http part
 			// if _res.status().is_success() {
-				// if let Ok(v) = get_chain_header(x).await {
-					println!("testing in else {:?}",x);
+				if let Ok(_v) = get_chain_header(x).await {
 					rpc_url.push_str(x);
-					// break;
-				
+					break;
+				}
 		}	
 	}
-	println!("💡 testing rpc_URL {:?}",rpc_url.clone());
 	Ok(rpc_url)
 }
