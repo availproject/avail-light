@@ -34,7 +34,7 @@ use crate::{
 		extract_block, extract_cell, extract_links, prepare_block_cid_ask_message,
 		prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::get_all_cells,
+	rpc::{get_all_cells,check_http},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -403,9 +403,11 @@ pub async fn run_client(
 		//
 		// Finally it's pushed to ipfs, while
 		// linking it with previous block data matrix's CID.
+		println!("testing the check_http calling in client");
+		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
-				match get_all_cells(&cfg.full_node_rpc, &block).await {
+				match get_all_cells(&rpc_, &block).await {
 					Ok(cells) => {
 						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
