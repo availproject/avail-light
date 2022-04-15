@@ -403,7 +403,6 @@ pub async fn run_client(
 		//
 		// Finally it's pushed to ipfs, while
 		// linking it with previous block data matrix's CID.
-		println!("testing the check_http calling in client");
 		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
