@@ -408,7 +408,6 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 				Ok(c) => c,
 				Err(_) => continue,
 			};
-			println!("res status {:?}", _res.status());
 			//@TODO: need to find an alternative way for http part
 			// if _res.status().is_success() {
 			if let Ok(_v) = get_chain_header(x).await {
