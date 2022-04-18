@@ -410,7 +410,7 @@ pub async fn run_client(
 						.map(|pair| pair.cid);
 
 				let ipfs_cells = get_matrix(&ipfs, block_cid_entry).unwrap_or_else(|err| {
-					log::error!("Fail to fetch cells from IPFS: {}", err);
+					log::info!("Fail to fetch cells from IPFS: {}", err);
 					vec![]
 				});
 
