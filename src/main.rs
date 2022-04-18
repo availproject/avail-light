@@ -150,12 +150,8 @@ pub async fn do_main() -> Result<()> {
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 	//@TODO: better option than loop needed
 	loop {
-		let ws_ = rpc::check_connection(cfg.full_node_ws.clone()).await;
-		let ws = match ws_ {
-			Ok(a) => a,
-			Err(e) => return Err(e),
-		};
-		match ws {
+		// let ws_ = rpc::check_connection(cfg.full_node_ws.clone()).await?;
+		match rpc::check_connection(cfg.full_node_ws.clone()).await? {
 			Some(a) => {
 				let (mut write, mut read) = a.split();
 				write
@@ -211,7 +207,6 @@ pub async fn do_main() -> Result<()> {
 							let cells =
 								rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, app_id)
 									.await?;
-
 							//hyper request for verifying the proof
 							let count = proof::verify_proof(
 								num,
@@ -308,7 +303,7 @@ pub async fn do_main() -> Result<()> {
 				}
 			},
 			_ => {},
-		};
+		}
 	}
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
