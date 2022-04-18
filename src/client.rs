@@ -34,7 +34,7 @@ use crate::{
 		extract_block, extract_cell, extract_links, prepare_block_cid_ask_message,
 		prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::{get_all_cells,check_http},
+	rpc::{check_http, get_all_cells},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
