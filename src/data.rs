@@ -68,6 +68,16 @@ type Cell = Vec<u8>;
 type Column = Vec<Option<Cell>>;
 type Matrix = Vec<Column>;
 
+pub fn matrix_cells(rows: usize, cols: usize) -> impl Iterator<Item = (usize, usize)> {
+	(0..cols as usize).flat_map(move |col| (0..rows as usize).map(move |row| (row, col)))
+}
+
+pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
+	matrix_cells(rows as usize, cols as usize)
+		.filter(|(row, col)| matrix.get(*col).and_then(|col| col.get(*row)).is_none())
+		.collect::<Vec<(usize, usize)>>()
+}
+
 fn get_cell(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Option<Cell>> {
 	ipfs.get(cid)
 		.and_then(|result| result.ipld())
@@ -409,7 +419,9 @@ pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)>
 mod tests {
 	extern crate rand;
 
+	use proptest::{collection, prelude::*};
 	use rand::prelude::random;
+	use test_case::test_case;
 
 	use super::{super::client::make_client, construct_matrix, *};
 
@@ -436,6 +448,44 @@ mod tests {
 
 		assert_eq!(block, block_dec);
 		assert_eq!(cid, cid_dec);
+	}
+
+	fn matrix_strategy() -> impl Strategy<Value = Vec<Vec<Option<Vec<u8>>>>> {
+		collection::vec(
+			collection::vec(any::<Option<Vec<u8>>>(), collection::size_range(1..64)),
+			collection::size_range(1..64),
+		)
+	}
+
+	fn non_empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
+		matrix_cells(rows as usize, cols as usize)
+			.filter(|(row, col)| matrix.get(*col).and_then(|col| col.get(*row)).is_some())
+			.collect::<Vec<(usize, usize)>>()
+	}
+
+	proptest! {
+		#[test]
+		fn matrix_cells_length_is_correct(rows in 0usize..1024, cols in 0usize..1024) {
+			prop_assert_eq!(matrix_cells(rows, cols).count(), rows * cols);
+		}
+
+		#[test]
+		fn empty_cells_length_is_correct(matrix in matrix_strategy()) {
+			let cols = matrix.len() as u16;
+			let rows = matrix[0].len() as u16;
+			let empty_cells_len = empty_cells(&matrix, cols, rows).len() as u16;
+			let non_empty_cells_len = non_empty_cells(&matrix, cols, rows).len() as u16;
+
+			prop_assert_eq!(empty_cells_len + non_empty_cells_len, rows * cols);
+		}
+	}
+
+	#[test_case(1, 1 => vec![(0, 0)] ; "one cell")]
+	#[test_case(4, 1 => vec![(0, 0), (1, 0), (2,0), (3,0)] ; "four rows, one column")]
+	#[test_case(1, 4 => vec![(0, 0), (0, 1), (0,2), (0,3)] ; "four columns, one row")]
+	#[test_case(2, 2 => vec![(0, 0), (0, 1), (1,0), (1,1)] ; "square matrix")]
+	fn test_matrix_cells(rows: usize, cols: usize) -> Vec<(usize, usize)> {
+		matrix_cells(rows, cols).collect::<Vec<(usize, usize)>>()
 	}
 
 	#[test]
