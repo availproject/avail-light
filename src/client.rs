@@ -31,8 +31,8 @@ use rocksdb::{DBWithThreadMode, SingleThreaded};
 use crate::{
 	data::{
 		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
-		extract_block, extract_cell, extract_links, get_matrix, prepare_block_cid_ask_message,
-		prepare_block_cid_fact_message, push_matrix,
+		extract_block, extract_cell, extract_links, get_matrix, matrix_cells,
+		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
 	rpc::get_cells,
 	types::{BlockCidPair, ClientMsg, Event},
@@ -430,15 +430,13 @@ pub async fn run_client(
 
 				match get_cells(&cfg.full_node_rpc, &block, &requested_cells).await {
 					Ok(mut cells) => {
-						for col in 0..block.max_cols as usize {
-							for row in 0..block.max_rows as usize {
-								let index = col * block.max_rows as usize + row;
-								if cells[index].is_none() {
-									cells[index] = ipfs_cells
-										.get(col)
-										.and_then(|col| col.get(row))
-										.and_then(|val| val.to_owned());
-								}
+						for (row, col) in matrix_cells(block.max_rows, block.max_cols) {
+							let index = col * block.max_rows as usize + row;
+							if cells[index].is_none() {
+								cells[index] = ipfs_cells
+									.get(col)
+									.and_then(|col| col.get(row))
+									.and_then(|val| val.to_owned());
 							}
 						}
 

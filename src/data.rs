@@ -68,12 +68,12 @@ type Cell = Vec<u8>;
 type Column = Vec<Option<Cell>>;
 type Matrix = Vec<Column>;
 
-pub fn matrix_cells(rows: usize, cols: usize) -> impl Iterator<Item = (usize, usize)> {
+pub fn matrix_cells(rows: u16, cols: u16) -> impl Iterator<Item = (usize, usize)> {
 	(0..cols as usize).flat_map(move |col| (0..rows as usize).map(move |row| (row, col)))
 }
 
 pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
-	matrix_cells(rows as usize, cols as usize)
+	matrix_cells(rows, cols)
 		.filter(|(row, col)| matrix.get(*col).and_then(|col| col.get(*row)).is_none())
 		.collect::<Vec<(usize, usize)>>()
 }
