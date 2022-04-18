@@ -149,11 +149,9 @@ pub async fn do_main() -> Result<()> {
 
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 	//@TODO: better option than loop needed
-	loop {
 		// let ws_ = rpc::check_connection(cfg.full_node_ws.clone()).await?;
-		match rpc::check_connection(cfg.full_node_ws.clone()).await? {
-			Some(a) => {
-				let (mut write, mut read) = a.split();
+		while let Some(z)= rpc::check_connection(cfg.full_node_ws.clone()).await? {
+				let (mut write, mut read) = z.split();
 				write
 					.send(Message::Text(
 						r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string()
@@ -163,7 +161,6 @@ pub async fn do_main() -> Result<()> {
 					.context("ws-message(subscribe_newHead) send failed")?;
 
 				// let _subscription_result = read.next().await.unwrap().unwrap().into_data();
-				let s = read.next().await;
 				log::info!("Connected to Substrate Node");
 
 				let db_3 = db.clone();
@@ -301,10 +298,8 @@ pub async fn do_main() -> Result<()> {
 						Err(error) => log::info!("Misconstructed Header: {:?}", error),
 					}
 				}
-			},
-			_ => {},
 		}
-	}
+	
 	// inform ipfs-backed application client running thread
 	// that it can kill self now, as process is going to die itself !
 	destroy_tx
