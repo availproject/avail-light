@@ -73,9 +73,22 @@ pub fn matrix_cells(rows: u16, cols: u16) -> impl Iterator<Item = (usize, usize)
 }
 
 pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
+	// TODO: Optimal solution is to use proper Matrix abstraction to derive empty cells
 	matrix_cells(rows, cols)
-		.filter(|(row, col)| matrix.get(*col).and_then(|col| col.get(*row)).is_none())
+		.filter(|(row, col)| {
+			matrix
+				.get(*col)
+				.and_then(|col| col.get(*row))
+				.map(|cell| cell.is_none())
+				.unwrap_or(true)
+		})
 		.collect::<Vec<(usize, usize)>>()
+}
+
+pub fn non_empty_cells_len(matrix: &Matrix) -> usize {
+	matrix
+		.iter()
+		.fold(0usize, |sum, val| sum + val.iter().flatten().count())
 }
 
 fn get_cell(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Option<Cell>> {
@@ -451,40 +464,35 @@ mod tests {
 	}
 
 	fn matrix_strategy() -> impl Strategy<Value = Vec<Vec<Option<Vec<u8>>>>> {
+		let rows_len = (1..64usize).next().unwrap();
 		collection::vec(
-			collection::vec(any::<Option<Vec<u8>>>(), collection::size_range(1..64)),
+			collection::vec(any::<Option<Vec<u8>>>(), rows_len),
 			collection::size_range(1..64),
 		)
 	}
 
-	fn non_empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
-		matrix_cells(rows as usize, cols as usize)
-			.filter(|(row, col)| matrix.get(*col).and_then(|col| col.get(*row)).is_some())
-			.collect::<Vec<(usize, usize)>>()
-	}
-
 	proptest! {
 		#[test]
-		fn matrix_cells_length_is_correct(rows in 0usize..1024, cols in 0usize..1024) {
-			prop_assert_eq!(matrix_cells(rows, cols).count(), rows * cols);
+		fn matrix_cells_length_is_correct(rows in 0u16..1024, cols in 0u16..1024) {
+			prop_assert_eq!(matrix_cells(rows, cols).count(), rows as usize * cols as usize);
 		}
 
 		#[test]
 		fn empty_cells_length_is_correct(matrix in matrix_strategy()) {
-			let cols = matrix.len() as u16;
-			let rows = matrix[0].len() as u16;
-			let empty_cells_len = empty_cells(&matrix, cols, rows).len() as u16;
-			let non_empty_cells_len = non_empty_cells(&matrix, cols, rows).len() as u16;
+			let cols = matrix.len() ;
+			let rows = matrix[0].len() ;
+			let empty_cells_len = empty_cells(&matrix, cols as u16, rows as u16).len();
+			let non_empty_cells_len =  non_empty_cells_len(&matrix);
 
-			prop_assert_eq!(empty_cells_len + non_empty_cells_len, rows * cols);
+			prop_assert_eq!(empty_cells_len + non_empty_cells_len, (rows * cols) as usize);
 		}
 	}
 
 	#[test_case(1, 1 => vec![(0, 0)] ; "one cell")]
 	#[test_case(4, 1 => vec![(0, 0), (1, 0), (2,0), (3,0)] ; "four rows, one column")]
 	#[test_case(1, 4 => vec![(0, 0), (0, 1), (0,2), (0,3)] ; "four columns, one row")]
-	#[test_case(2, 2 => vec![(0, 0), (0, 1), (1,0), (1,1)] ; "square matrix")]
-	fn test_matrix_cells(rows: usize, cols: usize) -> Vec<(usize, usize)> {
+	#[test_case(2, 2 => vec![(0, 0), (1, 0), (0,1), (1,1)] ; "square matrix")]
+	fn test_matrix_cells(rows: u16, cols: u16) -> Vec<(usize, usize)> {
 		matrix_cells(rows, cols).collect::<Vec<(usize, usize)>>()
 	}
 

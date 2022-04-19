@@ -31,7 +31,7 @@ use rocksdb::{DBWithThreadMode, SingleThreaded};
 use crate::{
 	data::{
 		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
-		extract_block, extract_cell, extract_links, get_matrix, matrix_cells,
+		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
 	rpc::get_cells,
@@ -414,17 +414,11 @@ pub async fn run_client(
 					vec![]
 				});
 
-				log::info!(
-					"Fetched {} cells from IPFS",
-					ipfs_cells
-						.iter()
-						.fold(0usize, |sum, val| sum + val.iter().flatten().count())
-				);
-
 				let requested_cells = empty_cells(&ipfs_cells, block.max_cols, block.max_rows);
 
 				log::info!(
-					"Requested {} cells from the full node",
+					"Got {} cells from IPFS, requesting {} from full node",
+					non_empty_cells_len(&ipfs_cells),
 					requested_cells.len()
 				);
 

@@ -185,6 +185,7 @@ pub async fn do_main() -> Result<()> {
 
 				let begin = SystemTime::now();
 
+				// TODO: Setting max rows * 2 to match extended matrix dimensions
 				let max_rows = header.extrinsics_root.rows * 2;
 				let max_cols = header.extrinsics_root.cols;
 				if max_cols < 3 {
