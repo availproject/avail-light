@@ -144,10 +144,11 @@ pub async fn do_main() -> Result<()> {
 		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
 	});
 
+	let urls = rpc::parse_urls(cfg.full_node_ws)?;
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 	//@TODO: better option than loop needed
 		// let ws_ = rpc::check_connection(cfg.full_node_ws.clone()).await?;
-		while let Some(z)= rpc::check_connection(cfg.full_node_ws.clone()).await? {
+		while let Some(z)= rpc::check_connection(&urls).await {
 				let (mut write, mut read) = z.split();
 				write
 					.send(Message::Text(
