@@ -9,7 +9,7 @@ use std::{
 	time::SystemTime,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::stream::{self, StreamExt};
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
@@ -380,19 +380,23 @@ pub fn get_id_specific_size(num: Block) -> HashMap<u32, u32> {
 	index
 }
 
+pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
+	urls.iter()
+		.map(|url| url::Url::parse(url))
+		.map(|r| r.map_err(|parse_error| anyhow!("Cannot parse URL: {}", parse_error)))
+		.collect::<Result<Vec<_>>>()
+}
+
 pub async fn check_connection(
-	full_node_ws: Vec<String>,
-) -> Result<Option<WebSocketStream<MaybeTlsStream<TcpStream>>>> {
-	let mut ws_ = None;
-	for x in full_node_ws.iter() {
-		let _url = url::Url::parse(&x)?;
-		if let Ok(v) = connect_async(_url).await {
-			let (ws__, _) = v;
-			ws_ = Some(ws__);
-			break;
+	full_node_ws: &[url::Url],
+) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+	// TODO: We are ignoring errors here, we should probably return result instead of option
+	for url in full_node_ws.iter() {
+		if let Ok((ws, _)) = connect_async(url).await {
+			return Some(ws);
 		};
 	}
-	Ok(ws_)
+	None
 }
 
 pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
