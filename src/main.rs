@@ -132,12 +132,9 @@ pub async fn do_main() -> Result<()> {
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
-	let rpc_url = match rpc::check_http(cfg.full_node_rpc).await {
-		Ok(a) => a,
-		Err(e) => return Err(e),
-	};
-	let rpc_: &str = &*rpc_url;
-	let block_header = rpc::get_chain_header(rpc_).await?;
+	
+	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
 	let latest_block = hex_to_u64_block_number(block_header.number);
 	let rpc_ = rpc_url.clone();
