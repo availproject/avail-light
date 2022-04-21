@@ -369,7 +369,7 @@ pub fn get_id_specific_size(num: Block) -> HashMap<u32, u32> {
 	}
 	index
 }
-
+//parsing the urls given in the vector of urls
 pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
 	urls.iter()
 		.map(|url| url::Url::parse(url))
@@ -377,6 +377,7 @@ pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
 		.collect::<Result<Vec<_>>>()
 }
 
+//fn to check the ws url is working properly and return it
 pub async fn check_connection(
 	full_node_ws: &[url::Url],
 ) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
@@ -389,6 +390,7 @@ pub async fn check_connection(
 	None
 }
 
+//fn to check the rpc_url is secure or not and if it is working properly to return
 pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	let mut rpc_url = String::new();
 	for x in full_node_rpc.iter() {
