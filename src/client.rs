@@ -34,7 +34,7 @@ use crate::{
 		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::get_cells,
+	rpc::{check_http, get_cells},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -403,6 +403,7 @@ pub async fn run_client(
 		//
 		// Finally it's pushed to ipfs, while
 		// linking it with previous block data matrix's CID.
+		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
 				let block_cid_entry =
@@ -422,7 +423,7 @@ pub async fn run_client(
 					requested_cells.len()
 				);
 
-				match get_cells(&cfg.full_node_rpc, &block, &requested_cells).await {
+				match get_cells(&rpc_, &block, &requested_cells).await {
 					Ok(mut cells) => {
 						for (row, col) in matrix_cells(block.max_rows, block.max_cols) {
 							let index = col * block.max_rows as usize + row;

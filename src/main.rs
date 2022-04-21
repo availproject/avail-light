@@ -14,7 +14,7 @@ use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::http::calculate_confidence;
 
@@ -61,7 +61,6 @@ pub async fn do_main() -> Result<()> {
 	log::info!("Using {:?}", cfg);
 
 	// Prepare key value data store opening
-	//
 	// cf = column family
 	let mut confidence_cf_opts = Options::default();
 	confidence_cf_opts.set_max_write_buffer_number(16);
@@ -129,155 +128,148 @@ pub async fn do_main() -> Result<()> {
 		)
 		.unwrap();
 	});
-
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
-	}
+	};
 
-	let block_header = rpc::get_chain_header(&cfg.full_node_rpc).await?;
+	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
 	let latest_block = hex_to_u64_block_number(block_header.number);
-	let url = cfg.full_node_rpc.clone();
+	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
 	let app_id: u32 = cfg.app_id as u32;
 	tokio::spawn(async move {
-		sync::sync_block_headers(url, 0, latest_block, db_2, app_id).await;
+		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
 	});
 
+	let urls = rpc::parse_urls(cfg.full_node_ws)?;
 	log::info!("Syncing block headers from 0 to {}", latest_block);
+	while let Some(z) = rpc::check_connection(&urls).await {
+		let (mut write, mut read) = z.split();
+		write
+			.send(Message::Text(
+				r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
+			))
+			.await
+			.context("ws-message(subscribe_newHead) send failed")?;
 
-	//tokio-tungesnite method for ws connection to substrate.
-	let url = url::Url::parse(&cfg.full_node_ws).context("Invalid url: Failed to connect")?;
-	let (ws_stream, _response) = connect_async(url)
-		.await
-		.context("Failed to connect to ws")?;
-	let (mut write, mut read) = ws_stream.split();
+		log::info!("Connected to Substrate Node");
 
-	// attempt subscription to full node block mining stream
-	write
-		.send(Message::Text(
-			r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
-		))
-		.await
-		.context("ws-message(subscribe_newHead) send failed")?;
+		let db_3 = db.clone();
+		let cf_handle_0 = db_3
+			.cf_handle(consts::CONFIDENCE_FACTOR_CF)
+			.context("failed to get cf handle")?;
+		let cf_handle_1 = db_3
+			.cf_handle(consts::BLOCK_HEADER_CF)
+			.context("failed to get cf handle")?;
 
-	let _subscription_result = read.next().await.unwrap().unwrap().into_data();
-	log::info!("Connected to Substrate Node");
+		while let Some(message) = read.next().await {
+			let data = message?.into_data();
+			match serde_json::from_slice(&data) {
+				Ok(types::Response { params, .. }) => {
+					let header = params.result;
 
-	let db_3 = db.clone();
-	let cf_handle_0 = db_3
-		.cf_handle(consts::CONFIDENCE_FACTOR_CF)
-		.context("failed to get cf handle")?;
-	let cf_handle_1 = db_3
-		.cf_handle(consts::BLOCK_HEADER_CF)
-		.context("failed to get cf handle")?;
+					// well this is in hex form as `String`
+					let block_num_hex = header.number.clone();
+					// now this is in `u64`
+					let num = hex_to_u64_block_number(block_num_hex);
 
-	while let Some(message) = read.next().await {
-		let data = message?.into_data();
-		match serde_json::from_slice(&data) {
-			Ok(types::Response { params, .. }) => {
-				let header = params.result;
+					let begin = SystemTime::now();
 
-				// well this is in hex form as `String`
-				let block_num_hex = header.number.clone();
-				// now this is in `u64`
-				let num = hex_to_u64_block_number(block_num_hex);
-
-				let begin = SystemTime::now();
-
-				// TODO: Setting max rows * 2 to match extended matrix dimensions
-				let max_rows = header.extrinsics_root.rows * 2;
-				let max_cols = header.extrinsics_root.cols;
-				if max_cols < 3 {
-					log::error!("chunk size less than 3");
-				}
-				let commitment = header.extrinsics_root.commitment.clone();
-
-				//hyper request for getting the kate query request
-				let cells =
-					rpc::get_kate_proof(&cfg.full_node_rpc, num, max_rows, max_cols, app_id)
-						.await?;
-				//hyper request for verifying the proof
-				let count =
-					proof::verify_proof(num, max_rows, max_cols, cells.clone(), commitment.clone());
-				log::info!(
-					"Completed {} verification rounds for block {}\t{:?}",
-					count,
-					num,
-					begin
-						.elapsed()
-						.context("failed to get complete verification")?
-				);
-
-				// write confidence factor into on-disk database
-				db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
-					.context("failed to write confidence factor")?;
-
-				let conf = calculate_confidence(count);
-				let app_index = header.app_data_lookup.index.clone();
-
-				/*note:
-				The following is the part when the user have already subscribed
-				to an appID and now its verifying every cell that contains the data
-				*/
-				if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
-					for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0) {
-						let proof = rpc::get_kate_proof(
-							&cfg.full_node_rpc,
-							num,
-							max_rows,
-							max_cols,
-							*app_id,
-						)
-						.await;
-						if let Ok(req_cells) = proof {
-							log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
-							//hyper request for verifying the proof
-							let count = proof::verify_proof(
-								num,
-								max_rows,
-								max_cols,
-								req_cells,
-								commitment.clone(),
-							);
-							log::info!(
-								"✅ Completed {} rounds of verification for block number {} ",
-								count,
-								num
-							);
-						} else {
-							log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
-						}
+					// TODO: Setting max rows * 2 to match extended matrix dimensions
+					let max_rows = header.extrinsics_root.rows * 2;
+					let max_cols = header.extrinsics_root.cols;
+					if max_cols < 3 {
+						log::error!("chunk size less than 3");
 					}
-				}
-
-				// push latest mined block's header into column family specified
-				// for keeping block headers, to be used
-				// later for verifying IPFS stored data
-				//
-				// @note this same data store is also written to in
-				// another competing thread, which syncs all block headers
-				// in range [0, LATEST], where LATEST = latest block number
-				// when this process started
-				db_3.put_cf(
-					cf_handle_1,
-					num.to_be_bytes(),
-					serde_json::to_string(&header)?.as_bytes(),
-				)
-				.context("failed to write block header")?;
-
-				// notify ipfs-based application client
-				// that newly mined block has been received
-				block_tx
-					.send(types::ClientMsg {
+					let commitment = header.extrinsics_root.commitment.clone();
+					//hyper request for getting the kate query request
+					let cells =
+						rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, app_id).await?;
+					//hyper request for verifying the proof
+					let count = proof::verify_proof(
 						num,
 						max_rows,
 						max_cols,
-						header,
-					})
-					.context("failed to send block to client")?;
-			},
-			Err(error) => log::info!("Misconstructed Header: {:?}", error),
+						cells.clone(),
+						commitment.clone(),
+					);
+					log::info!(
+						"Completed {} verification rounds for block {}\t{:?}",
+						count,
+						num,
+						begin
+							.elapsed()
+							.context("failed to get complete verification")?
+					);
+
+					// write confidence factor into on-disk database
+					db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
+						.context("failed to write confidence factor")?;
+
+					let conf = calculate_confidence(count);
+					let app_index = header.app_data_lookup.index.clone();
+
+					/*note:
+					The following is the part when the user have already subscribed
+					to an appID and now its verifying every cell that contains the data
+					*/
+					if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
+						for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0)
+						{
+							let proof =
+								rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, *app_id)
+									.await;
+							if let Ok(req_cells) = proof {
+								log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
+								//hyper request for verifying the proof
+								let count = proof::verify_proof(
+									num,
+									max_rows,
+									max_cols,
+									req_cells,
+									commitment.clone(),
+								);
+								log::info!(
+									"✅ Completed {} rounds of verification for block number {} ",
+									count,
+									num
+								);
+							} else {
+								log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
+							}
+						}
+					}
+
+					// push latest mined block's header into column family specified
+					// for keeping block headers, to be used
+					// later for verifying IPFS stored data
+					//
+					// @note this same data store is also written to in
+					// another competing thread, which syncs all block headers
+					// in range [0, LATEST], where LATEST = latest block number
+					// when this process started
+					db_3.put_cf(
+						cf_handle_1,
+						num.to_be_bytes(),
+						serde_json::to_string(&header)?.as_bytes(),
+					)
+					.context("failed to write block header")?;
+
+					// notify ipfs-based application client
+					// that newly mined block has been received
+					block_tx
+						.send(types::ClientMsg {
+							num,
+							max_rows,
+							max_cols,
+							header,
+						})
+						.context("failed to send block to client")?;
+				},
+				Err(error) => log::info!("Misconstructed Header: {:?}", error),
+			}
 		}
 	}
 

@@ -7,11 +7,13 @@ use std::{
 	time::SystemTime,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::stream::{self, StreamExt};
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use crate::types::*;
 
@@ -366,4 +368,56 @@ pub fn get_id_specific_size(num: Block) -> HashMap<u32, u32> {
 		}
 	}
 	index
+}
+//parsing the urls given in the vector of urls
+pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
+	urls.iter()
+		.map(|url| url::Url::parse(url))
+		.map(|r| r.map_err(|parse_error| anyhow!("Cannot parse URL: {}", parse_error)))
+		.collect::<Result<Vec<_>>>()
+}
+
+//fn to check the ws url is working properly and return it
+pub async fn check_connection(
+	full_node_ws: &[url::Url],
+) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+	// TODO: We are ignoring errors here, we should probably return result instead of option
+	for url in full_node_ws.iter() {
+		if let Ok((ws, _)) = connect_async(url).await {
+			return Some(ws);
+		};
+	}
+	None
+}
+
+//fn to check the rpc_url is secure or not and if it is working properly to return
+pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
+	let mut rpc_url = String::new();
+	for x in full_node_rpc.iter() {
+		let url_ = x.parse::<hyper::Uri>().context("http url parse failed")?;
+		if is_secure(x) {
+			let https = HttpsConnector::new();
+			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+			let res = match client.get(url_).await {
+				Ok(c) => c,
+				Err(_) => continue,
+			};
+			if res.status().is_success() {
+				rpc_url.push_str(x);
+				break;
+			}
+		} else {
+			let client = hyper::Client::new();
+			let _res = match client.get(url_).await {
+				Ok(c) => c,
+				Err(_) => continue,
+			};
+			//@TODO: need to find an alternative way for http part
+			if let Ok(_v) = get_chain_header(x).await {
+				rpc_url.push_str(x);
+				break;
+			}
+		}
+	}
+	Ok(rpc_url)
 }
