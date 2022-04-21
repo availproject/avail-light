@@ -61,7 +61,6 @@ pub async fn do_main() -> Result<()> {
 	log::info!("Using {:?}", cfg);
 
 	// Prepare key value data store opening
-	//
 	// cf = column family
 	let mut confidence_cf_opts = Options::default();
 	confidence_cf_opts.set_max_write_buffer_number(16);
@@ -146,8 +145,6 @@ pub async fn do_main() -> Result<()> {
 
 	let urls = rpc::parse_urls(cfg.full_node_ws)?;
 	log::info!("Syncing block headers from 0 to {}", latest_block);
-	//@TODO: better option than loop needed
-	// let ws_ = rpc::check_connection(cfg.full_node_ws.clone()).await?;
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
 		write
@@ -157,7 +154,6 @@ pub async fn do_main() -> Result<()> {
 			.await
 			.context("ws-message(subscribe_newHead) send failed")?;
 
-		// let _subscription_result = read.next().await.unwrap().unwrap().into_data();
 		log::info!("Connected to Substrate Node");
 
 		let db_3 = db.clone();
@@ -167,15 +163,6 @@ pub async fn do_main() -> Result<()> {
 		let cf_handle_1 = db_3
 			.cf_handle(consts::BLOCK_HEADER_CF)
 			.context("failed to get cf handle")?;
-
-		// while(true) {
-		// 	match(read.next().await) {
-		// 		Ok(_) => {
-
-		// 		}
-		// 		Err(_) => {}
-		// 	};
-		// }
 
 		while let Some(message) = read.next().await {
 			let data = message?.into_data();

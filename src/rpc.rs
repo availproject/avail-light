@@ -1,8 +1,6 @@
 extern crate futures;
 extern crate num_cpus;
 
-// use async_std::net::TcpStream;
-// use std::net::TcpStream;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, Mutex},
@@ -413,7 +411,6 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 				Err(_) => continue,
 			};
 			//@TODO: need to find an alternative way for http part
-			// if _res.status().is_success() {
 			if let Ok(_v) = get_chain_header(x).await {
 				rpc_url.push_str(x);
 				break;
