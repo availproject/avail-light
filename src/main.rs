@@ -180,9 +180,8 @@ pub async fn do_main() -> Result<()> {
 		while let Some(message) = read.next().await {
 			let data = message?.into_data();
 			match serde_json::from_slice(&data) {
-				Ok(response) => {
-					let resp: types::Response = response;
-					let header = resp.params.result;
+				Ok(types::Response { params, .. }) => {
+					let header = params.result;
 
 					// well this is in hex form as `String`
 					let block_num_hex = header.number.clone();
@@ -191,6 +190,7 @@ pub async fn do_main() -> Result<()> {
 
 					let begin = SystemTime::now();
 
+					// TODO: Setting max rows * 2 to match extended matrix dimensions
 					let max_rows = header.extrinsics_root.rows * 2;
 					let max_cols = header.extrinsics_root.cols;
 					if max_cols < 3 {
@@ -228,39 +228,29 @@ pub async fn do_main() -> Result<()> {
 					The following is the part when the user have already subscribed
 					to an appID and now its verifying every cell that contains the data
 					*/
-					if !app_index.is_empty() {
-						let req_id = cfg.app_id as u32;
-						let req_conf = cfg.confidence;
-						for i in 0..app_index.len() {
-							if req_id == app_index[i].0 {
-								if conf >= req_conf && req_id > 0 {
-									let req_cells = match rpc::get_kate_proof(
-										&rpc_url, num, max_rows, max_cols, req_id,
-									)
-									.await
-									{
-										Ok(req_cells) => Some(req_cells),
-										Err(_) => None,
-									};
-									match req_cells {
-														Some(req_cells) => {
-										log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, req_id);
-										//hyper request for verifying the proof
-															let count =Some(proof::verify_proof(num, max_rows, max_cols, req_cells, commitment.clone()));
-															if let Some(j) = count {
-																log::info!(
-																			"✅ Completed {} rounds of verification for block number {} ",
-																			j, num
-																			);
-															}else{
-																log::info!("\n ❌proof verification failed, data availability cannot ensured");
-															}
-														}
-														_ => log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured"),
-													}
-								}
+					if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
+						for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0)
+						{
+							let proof =
+								rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, *app_id)
+									.await;
+							if let Ok(req_cells) = proof {
+								log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
+								//hyper request for verifying the proof
+								let count = proof::verify_proof(
+									num,
+									max_rows,
+									max_cols,
+									req_cells,
+									commitment.clone(),
+								);
+								log::info!(
+									"✅ Completed {} rounds of verification for block number {} ",
+									count,
+									num
+								);
 							} else {
-								continue;
+								log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
 							}
 						}
 					}
