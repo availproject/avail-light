@@ -39,5 +39,9 @@ simple_logger = "2.1.0"
 sp-core = "4.0.0-dev"
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "full", "bit-vec"] }
 
+[dev-dependencies]
+proptest = "1.0.0"
+test-case = "1.2.3"
+
 [features]
 logs = []

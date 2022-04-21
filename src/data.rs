@@ -4,6 +4,7 @@ extern crate libipld;
 
 use std::{collections::BTreeMap, sync::Arc};
 
+use anyhow::{Context, Result};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::{
 	codec_impl::IpldCodec,
@@ -16,31 +17,28 @@ use crate::types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row};
 fn construct_cell(
 	row: u16,
 	col: u16,
-	col_count: u16,
+	row_count: u16,
 	cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<BaseCell, String> {
-	match &cells[(row * col_count + col) as usize] {
-		Some(cell) => {
+	cells[(col * row_count + row) as usize]
+		.as_ref()
+		.ok_or_else(|| "failed to construct cell due to unavailability of data".to_owned())
+		.and_then(|cell| {
 			let data = Ipld::Bytes(cell.to_owned());
-			match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data) {
-				Ok(coded_cell) => Ok(coded_cell),
-				Err(_) => Err("failed to IPLD encode cell of data matrix".to_owned()),
-			}
-		},
-		None => Err("failed to construct cell due to unavailability of data".to_owned()),
-	}
+			IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &data)
+				.map_err(|_| "failed to IPLD encode cell of data matrix".to_owned())
+		})
 }
 
 fn construct_colwise(
 	row_count: u16,
-	col_count: u16,
 	col: u16,
 	cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<L0Col, String> {
 	let mut base_cells: Vec<BaseCell> = Vec::with_capacity(row_count as usize);
 
 	for row in 0..row_count {
-		match construct_cell(row, col, col_count, cells.clone()) {
+		match construct_cell(row, col, row_count, cells.clone()) {
 			Ok(cell) => {
 				base_cells.push(cell);
 			},
@@ -51,37 +49,88 @@ fn construct_colwise(
 	Ok(L0Col { base_cells })
 }
 
-fn construct_rowwise(
-	row_count: u16,
-	col_count: u16,
-	cells: Arc<Vec<Option<Vec<u8>>>>,
-) -> Result<L1Row, String> {
-	let mut l0_cols: Vec<L0Col> = Vec::with_capacity(col_count as usize);
-
-	for col in 0..col_count {
-		match construct_colwise(row_count, col_count, col, cells.clone()) {
-			Ok(col) => {
-				l0_cols.push(col);
-			},
-			Err(msg) => return Err(msg),
-		};
-	}
-
-	Ok(L1Row { l0_cols })
-}
-
 pub fn construct_matrix(
 	block: u64,
 	row_count: u16,
 	col_count: u16,
 	cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<DataMatrix, String> {
-	match construct_rowwise(row_count, col_count, cells.clone()) {
-		Ok(row) => Ok(DataMatrix {
-			l1_row: row,
+	(0..col_count)
+		.map(move |col| construct_colwise(row_count, col, cells.clone()))
+		.collect::<Result<Vec<_>, String>>()
+		.map(|l0_cols| DataMatrix {
+			l1_row: L1Row { l0_cols },
 			block_num: block as i128,
-		}),
-		Err(msg) => return Err(msg),
+		})
+}
+
+type Cell = Vec<u8>;
+type Column = Vec<Option<Cell>>;
+type Matrix = Vec<Column>;
+
+pub fn matrix_cells(rows: u16, cols: u16) -> impl Iterator<Item = (usize, usize)> {
+	(0..cols as usize).flat_map(move |col| (0..rows as usize).map(move |row| (row, col)))
+}
+
+pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)> {
+	// TODO: Optimal solution is to use proper Matrix abstraction to derive empty cells
+	matrix_cells(rows, cols)
+		.filter(|(row, col)| {
+			matrix
+				.get(*col)
+				.and_then(|col| col.get(*row))
+				.map(|cell| cell.is_none())
+				.unwrap_or(true)
+		})
+		.collect::<Vec<(usize, usize)>>()
+}
+
+pub fn non_empty_cells_len(matrix: &Matrix) -> usize {
+	matrix
+		.iter()
+		.fold(0usize, |sum, val| sum + val.iter().flatten().count())
+}
+
+fn get_cell(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Option<Cell>> {
+	ipfs.get(cid)
+		.and_then(|result| result.ipld())
+		.map(|decoded| extract_cell(&decoded))
+		.context("Cannot get cell")
+}
+
+fn get_column(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Column> {
+	let links = ipfs
+		.get(cid)
+		.and_then(|result| result.ipld())
+		.and_then(|decoded| extract_links(&decoded).context("Cannot extract cell links"))
+		.context("Cannot get cell links")?;
+
+	links
+		.iter()
+		.flat_map(|link| link.context("Cell link is missing"))
+		.map(|cell_cid| get_cell(ipfs, &cell_cid))
+		.collect::<Result<Column>>()
+		.context("Cannot get column cells")
+}
+
+pub fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Result<Matrix> {
+	match root_cid {
+		None => Ok(vec![]),
+		Some(cid) => {
+			let column_cids = ipfs
+				.get(&cid)
+				.and_then(|result| result.ipld())
+				.and_then(|root| destructure_matrix(&root).context("Cannot destructure root block"))
+				.and_then(|(_, column_cids, _)| column_cids.context("No column block cids"))
+				.context("Cannot get column cids")?;
+
+			column_cids
+				.iter()
+				.flat_map(|column_cid| column_cid.context("No column block cid"))
+				.map(|column_cid| get_column(ipfs, &column_cid))
+				.collect::<Result<Matrix>>()
+				.context("Cannot get matrix")
+		},
 	}
 }
 
@@ -206,7 +255,7 @@ pub fn extract_block(data: &Ipld) -> Option<i128> {
 /// Extracts out list of CIDs from IPLD coded message
 pub fn extract_links(data: &Ipld) -> Option<Vec<Option<Cid>>> {
 	match data {
-		Ipld::List(links) => Some(links.iter().map(|link| extract_cid(link)).collect()),
+		Ipld::List(links) => Some(links.iter().map(extract_cid).collect()),
 		_ => None,
 	}
 }
@@ -222,31 +271,20 @@ pub fn extract_cell(data: &Ipld) -> Option<Vec<u8>> {
 /// Given a decoded IPLD object, which represented one coded data matrix
 /// extracts out all components ( i.e. block number, column CID list
 /// and previous CID )
-#[allow(dead_code)]
 pub fn destructure_matrix(
 	data: &Ipld,
 ) -> Option<(Option<i128>, Option<Vec<Option<Cid>>>, Option<Cid>)> {
 	match data {
 		Ipld::StringMap(map) => {
-			let map: &BTreeMap<String, Ipld> = map;
-			match map.get("block") {
-				Some(block) => {
-					let block = extract_block(block);
-					match map.get("columns") {
-						Some(cols) => {
-							let cols = extract_links(cols);
-							match map.get("prev") {
-								Some(prev) => {
-									let prev = extract_cid(prev);
-									Some((block, cols, prev))
-								},
-								None => None,
-							}
-						},
-						None => None,
-					}
+			let block = map.get("block");
+			let cols = map.get("columns");
+			let prev = map.get("prev");
+
+			match (block, cols, prev) {
+				(Some(block), Some(cols), Some(prev)) => {
+					Some((extract_block(block), extract_links(cols), extract_cid(prev)))
 				},
-				None => None,
+				_ => None,
 			}
 		},
 		_ => None,
@@ -394,7 +432,9 @@ pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)>
 mod tests {
 	extern crate rand;
 
+	use proptest::{collection, prelude::*};
 	use rand::prelude::random;
+	use test_case::test_case;
 
 	use super::{super::client::make_client, construct_matrix, *};
 
@@ -421,6 +461,39 @@ mod tests {
 
 		assert_eq!(block, block_dec);
 		assert_eq!(cid, cid_dec);
+	}
+
+	fn matrix_strategy() -> impl Strategy<Value = Vec<Vec<Option<Vec<u8>>>>> {
+		let rows_len = (1..64usize).next().unwrap();
+		collection::vec(
+			collection::vec(any::<Option<Vec<u8>>>(), rows_len),
+			collection::size_range(1..64),
+		)
+	}
+
+	proptest! {
+		#[test]
+		fn matrix_cells_length_is_correct(rows in 0u16..1024, cols in 0u16..1024) {
+			prop_assert_eq!(matrix_cells(rows, cols).count(), rows as usize * cols as usize);
+		}
+
+		#[test]
+		fn empty_cells_length_is_correct(matrix in matrix_strategy()) {
+			let cols = matrix.len() ;
+			let rows = matrix[0].len() ;
+			let empty_cells_len = empty_cells(&matrix, cols as u16, rows as u16).len();
+			let non_empty_cells_len =  non_empty_cells_len(&matrix);
+
+			prop_assert_eq!(empty_cells_len + non_empty_cells_len, (rows * cols) as usize);
+		}
+	}
+
+	#[test_case(1, 1 => vec![(0, 0)] ; "one cell")]
+	#[test_case(4, 1 => vec![(0, 0), (1, 0), (2,0), (3,0)] ; "four rows, one column")]
+	#[test_case(1, 4 => vec![(0, 0), (0, 1), (0,2), (0,3)] ; "four columns, one row")]
+	#[test_case(2, 2 => vec![(0, 0), (1, 0), (0,1), (1,1)] ; "square matrix")]
+	fn test_matrix_cells(rows: u16, cols: u16) -> Vec<(usize, usize)> {
+		matrix_cells(rows, cols).collect::<Vec<(usize, usize)>>()
 	}
 
 	#[test]
@@ -480,22 +553,22 @@ mod tests {
 		let row_c = 4;
 		let col_c = 4;
 		let cells: Vec<Option<Vec<u8>>> = vec![
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
-			Some(random_data(48)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
+			Some(random_data(80)),
 		];
 		let arced = Arc::new(cells.clone());
 		let data_matrix = construct_matrix(block, row_c, col_c, arced).unwrap();
@@ -510,25 +583,13 @@ mod tests {
 			.await
 			.unwrap();
 
-		let coded_mat = ipfs.get(&root_cid).unwrap();
-		let decoded_mat = coded_mat.ipld().unwrap();
-		let (block_, col_cids, prev_cid_) = destructure_matrix(&decoded_mat).unwrap();
+		let result = get_matrix(&ipfs, Some(root_cid)).unwrap();
 
-		assert_eq!(block_.unwrap() as u64, block);
-		assert_eq!(prev_cid_.unwrap(), prev_cid);
+		let mut cells_iter = cells.iter();
 
-		for (col, &col_cid) in col_cids.unwrap().iter().enumerate() {
-			let coded_col = ipfs.get(&col_cid.unwrap()).unwrap();
-			let decoded_col = coded_col.ipld().unwrap();
-			let cell_cids = extract_links(&decoded_col).unwrap();
-
-			for (row, &cell_cid) in cell_cids.iter().enumerate() {
-				let coded_cell = ipfs.get(&cell_cid.unwrap()).unwrap();
-				let decoded_cell = coded_cell.ipld().unwrap();
-				let cell = extract_cell(&decoded_cell).unwrap();
-
-				let lin_index = row * col_c as usize + col;
-				assert_eq!(cells[lin_index].as_ref().unwrap().to_vec(), cell);
+		for col in result {
+			for cell in col {
+				assert_eq!(cells_iter.next().unwrap().as_ref().unwrap(), &cell.unwrap());
 			}
 		}
 	}

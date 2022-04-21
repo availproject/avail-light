@@ -1,6 +1,5 @@
 extern crate ipfs_embed;
 
-use codec::Decode;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
 use serde::{Deserialize, Deserializer, Serialize};
 

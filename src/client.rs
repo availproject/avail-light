@@ -30,11 +30,11 @@ use rocksdb::{DBWithThreadMode, SingleThreaded};
 
 use crate::{
 	data::{
-		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
-		extract_block, extract_cell, extract_links, prepare_block_cid_ask_message,
-		prepare_block_cid_fact_message, push_matrix,
+		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
+		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
+		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::get_all_cells,
+	rpc::get_cells,
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -405,8 +405,35 @@ pub async fn run_client(
 		// linking it with previous block data matrix's CID.
 		match block_rx.recv() {
 			Ok(block) => {
-				match get_all_cells(&cfg.full_node_rpc, &block).await {
-					Ok(cells) => {
+				let block_cid_entry =
+					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
+						.map(|pair| pair.cid);
+
+				let ipfs_cells = get_matrix(&ipfs, block_cid_entry).unwrap_or_else(|err| {
+					log::info!("Fail to fetch cells from IPFS: {}", err);
+					vec![]
+				});
+
+				let requested_cells = empty_cells(&ipfs_cells, block.max_cols, block.max_rows);
+
+				log::info!(
+					"Got {} cells from IPFS, requesting {} from full node",
+					non_empty_cells_len(&ipfs_cells),
+					requested_cells.len()
+				);
+
+				match get_cells(&cfg.full_node_rpc, &block, &requested_cells).await {
+					Ok(mut cells) => {
+						for (row, col) in matrix_cells(block.max_rows, block.max_cols) {
+							let index = col * block.max_rows as usize + row;
+							if cells[index].is_none() {
+								cells[index] = ipfs_cells
+									.get(col)
+									.and_then(|col| col.get(row))
+									.and_then(|val| val.to_owned());
+							}
+						}
+
 						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
 								.enumerate()
@@ -438,7 +465,7 @@ pub async fn run_client(
 						let ext = reconstruct_app_extrinsics(
 							layout,
 							columns,
-							block.max_rows as usize,
+							(block.max_rows / 2) as usize,
 							32,
 						);
 						log::debug!("Reconstructed extrinsic: {:?}", ext);
