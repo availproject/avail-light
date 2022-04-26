@@ -313,6 +313,8 @@ pub struct ClientMsg {
 pub struct RuntimeConfig {
 	pub http_server_host: String,
 	pub http_server_port: u16,
+	pub http_data_port: u16,
+	pub http_appdata_port: u16,
 	pub ipfs_seed: u64,
 	pub ipfs_port: u16,
 	pub ipfs_path: String,
@@ -330,12 +332,13 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7000,
+			http_data_port: 9000,
+			http_appdata_port: 3001,
 			ipfs_seed: 1,
 			ipfs_port: 37000,
 			ipfs_path: format!("avail_ipfs_node_{}", 1),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
-
 			app_id: 0,
 			confidence: 92.0,
 			bootstraps: Vec::new(),

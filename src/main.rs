@@ -18,6 +18,8 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::http::calculate_confidence;
 
+mod api;
+mod api_2;
 mod client;
 mod consts;
 mod data;
@@ -128,6 +130,15 @@ pub async fn do_main() -> Result<()> {
 		)
 		.unwrap();
 	});
+
+	let db_4 = db.clone();
+	let cfg_clone = cfg.clone();
+	thread::spawn(move || {
+		api::run_data_server(db_4, cfg_clone).unwrap();
+	});
+	let db_5 = db.clone();
+	let cfg_clone_2 = cfg.clone();
+	thread::spawn(move || api_2::run_appdata_server(db_5, cfg_clone_2));
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
@@ -187,6 +198,7 @@ pub async fn do_main() -> Result<()> {
 					//hyper request for getting the kate query request
 					let cells =
 						rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, app_id).await?;
+
 					//hyper request for verifying the proof
 					let count = proof::verify_proof(
 						num,
