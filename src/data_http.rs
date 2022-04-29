@@ -38,23 +38,6 @@ impl Service<Request<Body>> for Handler {
 	}
 
 	fn call(&mut self, req: Request<Body>) -> Self::Future {
-		// fn get_headers(
-		// 	db: Arc<DBWithThreadMode<SingleThreaded>>,
-		// 	cf_handle: &ColumnFamily,
-		// 	block: u64,
-		// ) -> Result<Header, String> {
-		// 	match db.get_cf(cf_handle, block.to_be_bytes()) {
-		// 		Ok(v) => match v {
-		// 			Some(v) => {
-		// 				let header: Header = serde_json::from_slice(&v).unwrap();
-		// 				Ok(header)
-		// 			},
-		// 			None => Err("no header found".to_owned()),
-		// 		},
-		// 		Err(_) => Err("no header found".to_owned()),
-		// 	}
-		// }
-
 		fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
 			Ok(Response::builder()
 				.status(200)
@@ -91,6 +74,7 @@ impl Service<Request<Body>> for Handler {
 						.unwrap();
 						let mut vec = Vec::new();
 						//cell logic to be written here
+						// @TODO: fetching logic to be re written with optimisation
 						match app_id {
 							-1 => {
 								let max_cols = headers.extrinsics_root.cols;
@@ -174,6 +158,7 @@ pub async fn run_appdata_server(
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
 	cfg: super::types::RuntimeConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	// @TODO: need to add routing
 	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_data_port)
 		.parse()
 		.expect("Bad Http server host/ port, found in config file");
