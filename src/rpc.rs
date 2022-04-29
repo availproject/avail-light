@@ -10,8 +10,10 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use futures::stream::{self, StreamExt};
 use hyper_tls::HttpsConnector;
+use if_chain::if_chain;
 use rand::{thread_rng, Rng};
 use regex::Regex;
+use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
@@ -420,4 +422,78 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 		}
 	}
 	Ok(rpc_url)
+}
+
+pub fn match_block_url(url: &str) -> Result<u64> {
+	let re = Regex::new(r"^(/v1/appdata/(\d{1,})/([-]?\d{1,}))$")?;
+	if_chain! {
+		if let Some(captures) = re.captures(url);
+		if let Some(block) = captures.get(2);
+		then{
+			return Ok(block.as_str().parse::<u64>().context("block parse failed")?);
+		}
+		else{
+			return Err(anyhow!("block parse failed"));
+		}
+	}
+}
+
+pub fn match_id_url(url: &str) -> Result<i32> {
+	let re = Regex::new(r"^(/v1/appdata/(\d{1,})/([-]?\d{1,}))$")?;
+	if_chain! {
+		if let Some(captures) = re.captures(url);
+		if let Some(id) = captures.get(3);
+		then{
+			return Ok(id.as_str().parse::<i32>().context("id parse failed")?);
+		}
+		else{
+			return Err(anyhow!("id parse failed"));
+		}
+	}
+}
+
+pub fn check_id(
+	header: Header,
+	app_id: u32,
+	block_num: u64,
+	block: Block,
+) -> Result<Vec<Cell>, String> {
+	let max_cols = header.extrinsics_root.cols;
+	let index = header.app_data_lookup.index;
+	let cells = match index
+		.iter()
+		.find(|elem| app_id != 0 && app_id as u32 == elem.0)
+	{
+		Some((app_id, offset)) => {
+			log::info!(
+				"{} chunks for app {} found in block {}",
+				offset,
+				app_id,
+				block_num
+			);
+			generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
+		},
+		None => {
+			vec![]
+		},
+	};
+	Ok(cells)
+}
+
+pub fn get_headers(
+	db: Arc<DBWithThreadMode<SingleThreaded>>,
+	cf_handle: &ColumnFamily,
+	block: u64,
+) -> Result<Header> {
+	match db.get_cf(cf_handle, block.to_be_bytes()) {
+		Ok(v) => {
+			if let Some(v) = v {
+				let header: Header = serde_json::from_slice(&v).context("header parse failed")?;
+				Ok(header)
+			} else {
+				Err(anyhow!("no header found"))
+			}
+		},
+		Err(_) => Err(anyhow!("no header found")),
+	}
 }

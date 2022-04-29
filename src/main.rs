@@ -18,11 +18,10 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::http::calculate_confidence;
 
-mod api;
-mod api_2;
 mod client;
 mod consts;
 mod data;
+mod data_http;
 mod http;
 mod proof;
 mod rpc;
@@ -131,14 +130,9 @@ pub async fn do_main() -> Result<()> {
 		.unwrap();
 	});
 
-	let db_4 = db.clone();
-	let cfg_clone = cfg.clone();
-	thread::spawn(move || {
-		api::run_data_server(db_4, cfg_clone).unwrap();
-	});
 	let db_5 = db.clone();
 	let cfg_clone_2 = cfg.clone();
-	thread::spawn(move || api_2::run_appdata_server(db_5, cfg_clone_2));
+	thread::spawn(move || data_http::run_appdata_server(db_5, cfg_clone_2));
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};

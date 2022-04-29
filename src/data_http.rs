@@ -12,15 +12,12 @@ use hyper::{
 	header::ACCESS_CONTROL_ALLOW_ORIGIN, service::Service, Body, Method, Request, Response, Server,
 	StatusCode,
 };
-use regex::Regex;
 use rocksdb::{DBWithThreadMode, SingleThreaded};
 use tokio;
 
-use crate::{
-	rpc::{
-		check_http, generate_app_specific_cells, get_block_by_number, get_kate_query_proof_by_cell,
-	},
-	types::{Block, Cell, Header},
+use crate::rpc::{
+	check_http, check_id, get_block_by_number, get_headers, get_kate_query_proof_by_cell,
+	match_block_url, match_id_url,
 };
 
 // 💡 HTTP part where handles the RPC Queries
@@ -41,51 +38,22 @@ impl Service<Request<Body>> for Handler {
 	}
 
 	fn call(&mut self, req: Request<Body>) -> Self::Future {
-		fn match_url_block(path: &str) -> Result<u64, String> {
-			let re = Regex::new(r"^(/v1/appdata/(\d{1,})/(\d{1,}))$").unwrap();
-			if let Some(caps) = re.captures(path) {
-				if let Some(block) = caps.get(2) {
-					return Ok(block.as_str().parse::<u64>().unwrap());
-				}
-			}
-			Err("no match found !".to_owned())
-		}
-		fn match_url_id(path: &str) -> Result<u64, String> {
-			let re = Regex::new(r"^(/v1/appdata/(\d{1,})/(\d{1,}))$").unwrap();
-			if let Some(caps) = re.captures(path) {
-				if let Some(block) = caps.get(3) {
-					return Ok(block.as_str().parse::<u64>().unwrap());
-				}
-			}
-			Err("no match found !".to_owned())
-		}
-		fn check_id(
-			header: Header,
-			app_id: u32,
-			block_num: u64,
-			block: Block,
-		) -> Result<Vec<Cell>, String> {
-			let max_cols = header.extrinsics_root.cols;
-			let index = header.app_data_lookup.index;
-			let cells = match index
-				.iter()
-				.find(|elem| app_id != 0 && app_id as u32 == elem.0)
-			{
-				Some((app_id, offset)) => {
-					log::info!(
-						"{} chunks for app {} found in block {}",
-						offset,
-						app_id,
-						block_num
-					);
-					generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
-				},
-				None => {
-					vec![]
-				},
-			};
-			Ok(cells)
-		}
+		// fn get_headers(
+		// 	db: Arc<DBWithThreadMode<SingleThreaded>>,
+		// 	cf_handle: &ColumnFamily,
+		// 	block: u64,
+		// ) -> Result<Header, String> {
+		// 	match db.get_cf(cf_handle, block.to_be_bytes()) {
+		// 		Ok(v) => match v {
+		// 			Some(v) => {
+		// 				let header: Header = serde_json::from_slice(&v).unwrap();
+		// 				Ok(header)
+		// 			},
+		// 			None => Err("no header found".to_owned()),
+		// 		},
+		// 		Err(_) => Err("no header found".to_owned()),
+		// 	}
+		// }
 
 		fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
 			Ok(Response::builder()
@@ -104,46 +72,58 @@ impl Service<Request<Body>> for Handler {
 			req.uri().path()
 		);
 
-		let _db = self.store.clone();
+		let db = self.store.clone();
 		let url = self.url.clone();
 
 		Box::pin(async move {
 			let res = match req.method() {
 				&Method::GET => {
-					if let Ok(block_num) = match_url_block(req.uri().path()) {
-						if let Ok(app_id) = match_url_id(req.uri().path()) {
-							//cell logic to be written here
-							let block = get_block_by_number(&url, block_num).await.unwrap();
-							let header = block.clone().header;
-							// let max_rows = header.extrinsics_root.rows;
-							// let max_cols = header.extrinsics_root.cols;
-
-							// let cells = get_kate_proof(&url, block_num, max_rows, max_cols, app_id as u32).await.unwrap();
-							let mut vec = Vec::new();
-							// for cell in cells.iter(){
-							//     vec.push((cell.proof).clone());
-							// }
-							let cells =
-								check_id(header, app_id as u32, block_num, block.clone()).unwrap();
-							for i in cells.iter() {
-								let data =
-									get_kate_query_proof_by_cell(&url, block_num, i.row, i.col)
-										.await
+					if let (Ok(block_num), Ok(app_id)) = (
+						match_block_url(req.uri().path()),
+						match_id_url(req.uri().path()),
+					) {
+						let block = get_block_by_number(&url, block_num).await.unwrap();
+						let headers = get_headers(
+							db.clone(),
+							db.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+							block_num,
+						)
+						.unwrap();
+						let mut vec = Vec::new();
+						//cell logic to be written here
+						match app_id {
+							-1 => {
+								let max_cols = headers.extrinsics_root.cols;
+								let max_rows = headers.extrinsics_root.rows;
+								for i in 0..max_rows {
+									for j in 0..max_cols {
+										let cells =
+											get_kate_query_proof_by_cell(&url, block_num, i, j)
+												.await
+												.unwrap();
+										vec.push(cells);
+									}
+								}
+							},
+							0 => {
+								vec.push(vec![]);
+							},
+							_ => {
+								let cells =
+									check_id(headers, app_id as u32, block_num, block.clone())
 										.unwrap();
-								vec.push(data);
-							}
-							mk_response(
-								format!(r#"{{"block": {}, "data": {:?}}}"#, block_num, vec)
-									.to_owned(),
-							)
-						} else {
-							let mut not_found = Response::default();
-							*not_found.status_mut() = StatusCode::NOT_FOUND;
-							not_found
-								.headers_mut()
-								.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
-							Ok(not_found)
+								for i in cells.iter() {
+									let data =
+										get_kate_query_proof_by_cell(&url, block_num, i.row, i.col)
+											.await
+											.unwrap();
+									vec.push(data);
+								}
+							},
 						}
+						mk_response(
+							format!(r#"{{"block": {}, "data": {:?}}}"#, block_num, vec).to_owned(),
+						)
 					} else {
 						let mut not_found = Response::default();
 						*not_found.status_mut() = StatusCode::NOT_FOUND;
@@ -166,7 +146,7 @@ impl Service<Request<Body>> for Handler {
 		})
 	}
 }
-
+//service handler for the data server
 struct MakeHandler {
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
 	url: String,
@@ -194,7 +174,7 @@ pub async fn run_appdata_server(
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
 	cfg: super::types::RuntimeConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_appdata_port)
+	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_data_port)
 		.parse()
 		.expect("Bad Http server host/ port, found in config file");
 	let rpc_url = check_http(cfg.full_node_rpc).await.unwrap();
