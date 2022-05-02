@@ -1,115 +1,130 @@
-extern crate futures;
-extern crate num_cpus;
-extern crate rocksdb;
+use std::{sync::Arc, time::SystemTime};
 
+use anyhow::Context;
 use futures::stream::{self, StreamExt};
-use rocksdb::{DBWithThreadMode, SingleThreaded};
-use std::sync::Arc;
-use std::time::SystemTime;
+use rocksdb::{ColumnFamilyRef, DB};
+
+use crate::{
+	consts::{BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, MAX_CONCURRENT_TASKS},
+	error::{
+		self, into_error,
+		BlockSync::{InvalidJsonHeader, StoreWriteFailed},
+		BlockSyncCF,
+	},
+	proof::verify_proof,
+	rpc::{get_block_by_number, get_kate_proof},
+};
 
 pub async fn sync_block_headers(
-    url: String,
-    start_block: u64,
-    end_block: u64,
-    header_store: Arc<DBWithThreadMode<SingleThreaded>>,
+	url: &str,
+	start_block: u64,
+	end_block: u64,
+	store: Arc<DB>,
+	app_id: u32,
 ) {
-    let fut = stream::iter(
-        (start_block..(end_block + 1))
-            .map(move |block_num| block_num)
-            .zip((0..(end_block - start_block + 1)).map(move |_| url.clone()))
-            .zip((0..(end_block - start_block + 1)).map(move |_| header_store.clone())),
-    )
-    .for_each_concurrent(
-        num_cpus::get(), // number of logical CPUs available on machine
-        // run those many concurrent syncing lightweight tasks, not threads
-        |((block_num, url), store)| async move {
-            match store.get_pinned_cf(
-                store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
-                block_num.to_be_bytes(),
-            ) {
-                Ok(v) => match v {
-                    Some(_) => {
-                        return;
-                    }
-                    None => {}
-                },
-                Err(_) => {}
-            };
-            // if block header look up fails, only then comes here for
-            // fetching and storing block header as part of (light weight)
-            // syncing process
-            let begin = SystemTime::now();
+	let fetches = stream::iter(start_block..=end_block)
+		.map(|block| fetch_and_store_block_header(&store, url, block, app_id))
+		.buffered(MAX_CONCURRENT_TASKS)
+		.collect::<Vec<_>>()
+		.await;
 
-            match super::rpc::get_block_by_number(&url, block_num).await {
-                Ok(block_body) => {
-                    store
-                        .put_cf(
-                            store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
-                            block_num.to_be_bytes(),
-                            serde_json::to_string(&block_body.header)
-                                .unwrap()
-                                .as_bytes(),
-                        )
-                        .unwrap();
+	fetches.into_iter().for_each(|fetch| {
+		if let Err(e) = fetch {
+			into_error(&e);
+		}
+	});
+}
 
-                    println!(
-                        "Synced block header of {}\t{:?}",
-                        block_num,
-                        begin.elapsed().unwrap()
-                    );
+async fn fetch_and_store_block_header(
+	store: &DB,
+	url: &str,
+	block_num: u64,
+	app_id: u32,
+) -> Result<(), error::App> {
+	let block_id = block_num.to_be_bytes();
 
-                    // If it's found that this certain block is not verified
-                    // then it'll be verified now
-                    match store.get_pinned_cf(
-                        store
-                            .cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-                            .unwrap(),
-                        block_num.to_be_bytes(),
-                    ) {
-                        Ok(v) => match v {
-                            Some(_) => {
-                                return;
-                            }
-                            None => {}
-                        },
-                        Err(_) => {}
-                    };
+	// if block header look up fails, only then comes here for
+	// fetching and storing block header as part of (light weight)
+	// syncing process
+	if is_cf_cached(store, &header_cf(store), block_id) {
+		log::info!("Block header {} is cached, ignoring sync", block_num);
+		return Ok(());
+	}
 
-                    let begin = SystemTime::now();
+	let begin = SystemTime::now();
+	let block_body = get_block_by_number(url, block_num)
+		.await
+		.with_context(|| format!("Block {} cannot be fetched", block_num))?;
+	log::info!(
+		"Block {} app index {:?}",
+		block_num,
+		block_body.header.app_data_lookup.index
+	);
 
-                    let max_rows = block_body.header.extrinsics_root.rows;
-                    let max_cols = block_body.header.extrinsics_root.cols;
-                    let commitment = block_body.header.extrinsics_root.commitment;
+	// Store header
+	let header = serde_json::to_string(&block_body.header)
+		.map_err(|_| InvalidJsonHeader)?
+		.into_bytes();
+	store
+		.put_cf(&header_cf(store), block_id, header)
+		.map_err(|_| StoreWriteFailed(block_num, BlockSyncCF::BlockHeader))?;
+	log::info!(
+		"Synced block header of {}\t{:?}",
+		block_num,
+		begin.elapsed()?
+	);
 
-                    let cells = crate::rpc::get_kate_proof(&url, block_num, max_rows, max_cols, 0)
-                        .await
-                        .unwrap();
+	// If it's found that this certain block is not verified
+	// then it'll be verified now
+	if is_cf_cached(store, &confidence_cf(store), block_id) {
+		log::info!("Block {} is already verified", block_num);
+		return Ok(());
+	}
+	let begin = SystemTime::now();
 
-                    let count = crate::proof::verify_proof(
-                        block_num, max_rows, max_cols, cells, commitment,
-                    );
-                    println!(
-                        "Completed {} verification rounds for block {}\t{:?}",
-                        count,
-                        block_num,
-                        begin.elapsed().unwrap()
-                    );
-                    // write confidence factor into on-disk database
-                    store
-                        .put_cf(
-                            store
-                                .cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-                                .unwrap(),
-                            block_num.to_be_bytes(),
-                            count.to_be_bytes(),
-                        )
-                        .unwrap();
-                }
-                Err(msg) => {
-                    println!("error: {}", msg);
-                }
-            };
-        },
-    );
-    fut.await;
+	// TODO: Setting max rows * 2 to match extended matrix dimensions
+	let max_rows = block_body.header.extrinsics_root.rows * 2;
+	let max_cols = block_body.header.extrinsics_root.cols;
+	let commitment = block_body.header.extrinsics_root.commitment;
+
+	let cells = get_kate_proof(url, block_num, max_rows, max_cols, app_id)
+		.await
+		.with_context(|| format!("Kate proof cannot be fetched for block {}", block_num))?;
+
+	log::info!(
+		"Fetched {} cells of app {} of block {} for verification",
+		cells.len(),
+		app_id,
+		block_num
+	);
+
+	let count = verify_proof(block_num, max_rows, max_cols, cells, commitment);
+	log::info!(
+		"Completed {} verification rounds for block {}\t{:?}",
+		count,
+		block_num,
+		begin.elapsed()?
+	);
+
+	// write confidence factor into on-disk database
+	store
+		.put_cf(&confidence_cf(store), block_id, count.to_be_bytes())
+		.map_err(|_| StoreWriteFailed(block_num, BlockSyncCF::ConfidenceFactor).into())
+}
+
+#[inline]
+fn is_cf_cached<'a>(store: &'a DB, cf: &ColumnFamilyRef<'a>, block: [u8; 8]) -> bool {
+	store.get_pinned_cf(cf, block).ok().flatten().is_some()
+}
+
+pub fn header_cf(store: &'_ DB) -> ColumnFamilyRef<'_> {
+	store
+		.cf_handle(BLOCK_HEADER_CF)
+		.expect("`BLOCK_HEADER_CF` is valid .qed")
+}
+
+pub fn confidence_cf(store: &'_ DB) -> ColumnFamilyRef<'_> {
+	store
+		.cf_handle(CONFIDENCE_FACTOR_CF)
+		.expect("`CONFIDENCE_FACTOR_CF` is valid .qed")
 }

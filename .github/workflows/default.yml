@@ -1,0 +1,63 @@
+name: Polygon Avail Light CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+        # A repository can have up to 10GB of caches.
+        # Check https://github.com/actions/cache for details.
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: actions-rs/toolchain@v1
+        with:
+            # NOTE: Until https://github.com/actions-rs/toolchain/pull/209 is merged,
+            # this should be synced with rust-toolchain.toml file.
+            # After merge, this section should be removed.
+            toolchain: nightly-2022-03-10
+            components: rustfmt, clippy, llvm-tools-preview
+            profile: minimal
+
+      - name: Check code formatting
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --check
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+        env:
+          RUSTFLAGS: "-C instrument-coverage"
+          LLVM_PROFILE_FILE: "profile-%p-%m.profraw"
+
+      - name: Generate test code coverage report
+        run: |
+          cargo install --force grcov
+          grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o lcov.info
+
+      - name: Upload test code coverage report to codecov.io
+        uses: codecov/codecov-action@v2
+        with:
+          files: lcov.info
+
+      - name: Cleanup
+        run: find . -name \*.profraw -type f -exec rm -f {} +

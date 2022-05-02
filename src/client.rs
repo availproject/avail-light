@@ -1,488 +1,434 @@
-extern crate anyhow;
-extern crate async_std;
-extern crate ed25519_dalek;
-extern crate ipfs_embed;
-extern crate libipld;
-extern crate rand;
-extern crate rocksdb;
-extern crate tempdir;
-extern crate tokio;
+use std::{
+	collections::{BTreeMap, HashMap},
+	iter::repeat,
+	str::FromStr,
+	sync::{
+		mpsc::{Receiver, SyncSender},
+		Arc, Mutex,
+	},
+	time::Duration,
+};
 
-use crate::data::{
-    construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message,
-    prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
-};
-use crate::data::{extract_block, extract_cell, extract_links};
-use crate::rpc::get_all_cells;
-use crate::types::{BlockCidPair, ClientMsg, Event};
+use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
+use futures::stream;
 use ipfs_embed::{
-    Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
-    PublicKey, SecretKey, StorageConfig, ToLibp2p,
+	Cid, DefaultParams as IPFSDefaultParams, GossipEvent, Ipfs, Keypair, Multiaddr, NetworkConfig,
+	PeerId, PublicKey, SecretKey, StorageConfig, TempPin, ToLibp2p,
 };
+use kate_recovery::com::{reconstruct_app_extrinsics, Cell};
 use libipld::Ipld;
-use rocksdb::{DBWithThreadMode, SingleThreaded};
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::str::FromStr;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use rocksdb::DB;
+use tokio::time::sleep;
+
+use crate::{
+	consts::BLOCK_CID_CF,
+	data::{
+		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
+		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
+		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix, Matrix,
+	},
+	ensure,
+	error::{self, into_warning, IpldField, StoreType, Topic},
+	rpc::{check_http, get_cells},
+	types::{
+		BlockCidPair, BlockCidPersistablePair, CellContentQueryPayload, Cells, ClientMsg, Event,
+	},
+};
 
 #[tokio::main]
 pub async fn run_client(
-    cfg: super::types::RuntimeConfig,
-    block_cid_store: Arc<DBWithThreadMode<SingleThreaded>>,
-    block_rx: Receiver<ClientMsg>,
-    self_info_tx: SyncSender<(PeerId, Multiaddr)>,
-    destroy_rx: Receiver<bool>,
-    cell_query_rx: Receiver<crate::types::CellContentQueryPayload>,
-) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let ipfs = make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
-    let pin = ipfs.create_temp_pin()?;
+	cfg: super::types::RuntimeConfig,
+	store: Arc<DB>,
+	block_rx: Receiver<ClientMsg>,
+	self_info_tx: SyncSender<(PeerId, Multiaddr)>,
+	destroy_rx: Receiver<bool>,
+	cell_query_rx: Receiver<CellContentQueryPayload>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let ipfs = make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
+	let pin = ipfs.create_temp_pin()?;
 
-    // inform invoker about self
-    self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
+	// inform invoker about self
+	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
-    // bootstrap client with non-empty set of
-    // application clients
-    if cfg.bootstraps.len() > 0 {
-        ipfs.bootstrap(
-            &cfg.bootstraps
-                .into_iter()
-                .map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
-                .collect::<Vec<(_, _)>>()[..],
-        )
-        .await?;
-    }
+	// bootstrap client with non-empty set of
+	// application clients
+	if !cfg.bootstraps.is_empty() {
+		ipfs.bootstrap(
+			&cfg.bootstraps
+				.into_iter()
+				.map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
+				.collect::<Vec<(_, _)>>()[..],
+		)
+		.await?;
+	}
 
-    let ipfs_0: Ipfs<IPFSDefaultParams> = ipfs.clone();
-    let block_cid_store_2 = block_cid_store.clone();
-    tokio::task::spawn(async move {
-        for query in cell_query_rx {
-            match get_block_cid_entry(block_cid_store_2.clone(), query.block as i128) {
-                Some(v) => {
-                    match ipfs_0.contains(&v.cid) {
-                        Ok(have) => {
-                            if !have {
-                                println!("block CID {:?} not present in local client", v.cid);
-                                continue;
-                            }
+	// Process Cell Queries.
+	let cell_ipfs = ipfs.clone();
+	let cell_store = Arc::clone(&store);
+	tokio::task::spawn(async move {
+		cell_query_rx.into_iter().for_each(|query| {
+			let _ = do_cell_query(&cell_ipfs, &cell_store, query).inspect_err(into_warning);
+		});
+	});
 
-                            match ipfs_0.get(&v.cid) {
-                                Ok(v) => {
-                                    let dec_mat: Ipld;
-                                    if let Ok(v) = v.ipld() {
-                                        dec_mat = v;
-                                    } else {
-                                        println!("error: failed to IPLD decode data matrix");
-                                        continue;
-                                    }
+	// block to CID mapping to locally kept here ( in thead safe manner ! )
 
-                                    match dec_mat {
-                                        Ipld::StringMap(map) => {
-                                            let map: BTreeMap<String, Ipld> = map;
-                                            let block = if let Some(data) = map.get("block") {
-                                                extract_block(data)
-                                            } else {
-                                                None
-                                            };
+	// broadcast fact i.e. some block number is mapped to some
+	// Cid ( of respective block data matrix ) to all peers subscribed
+	let fact_topic = ipfs.subscribe("topic/block_cid_fact").unwrap();
 
-                                            if block == None {
-                                                println!("error: failed to extract block number from message");
-                                                continue;
-                                            }
+	// listen for messages received on fact topic !
+	let fact_ipfs = ipfs.clone();
+	let fact_store = Arc::clone(&store);
+	tokio::task::spawn(async move {
+		fact_topic.for_each(|msg| {
+			const TOPIC: &str = "topic/block_cid_fact";
+			let store = fact_store.as_ref();
+			do_gossip_msg(&fact_ipfs, store, msg, TOPIC, do_gossip_fact_msg)
+		});
+	});
 
-                                            let block = block.unwrap(); // safe to do so !
-                                            if block as u64 != query.block {
-                                                // just make it sure that everything is good
-                                                println!("error: expected {} but received {} after CID based look up", query.block, block);
-                                                continue;
-                                            }
+	// ask over gossip network which Cid is associated with which block number
+	// and expect some one, who knows, will answer it
+	let ask_topic = ipfs.subscribe("topic/block_cid_ask").unwrap();
+	// IPFS instance to be used for responding
+	// back to peer when some question is asked on ask
+	// channel, given that answer is known to peer !
+	let ask_ipfs = ipfs.clone();
+	let ask_store = Arc::clone(&store);
+	tokio::task::spawn(async move {
+		ask_topic
+			.zip(stream::iter(repeat(ask_store)))
+			.for_each(|(msg, store)| {
+				const TOPIC: &str = "topic/block_cid_ask";
+				do_gossip_msg(&ask_ipfs, &store, msg, TOPIC, do_gossip_ask_msg)
+			});
+	});
 
-                                            let cids = if let Some(data) = map.get("columns") {
-                                                extract_links(data)
-                                            } else {
-                                                None
-                                            };
+	let rpc = cfg.full_node_rpc.clone();
+	let _ = process_received_blocks(&ipfs, store.as_ref(), &pin, block_rx, rpc).await?;
 
-                                            if cids == None {
-                                                println!("error: failed to extract column CIDs from message");
-                                                continue;
-                                            }
+	destroy_rx.recv()?; // waiting for signal to kill self !
+	Ok(())
+}
 
-                                            let cids = cids.unwrap(); // safe to do so !
-                                            if query.col as usize >= cids.len() {
-                                                // ensure indexing into vector is good move
-                                                println!("error: queried column {}, though max available columns {}", query.col, cids.len());
-                                                continue;
-                                            }
+fn do_cell_query(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	store: &DB,
+	query: CellContentQueryPayload,
+) -> Result<(), error::App> {
+	let cid = get_block_cid_entry(store, query.block as i128)
+		.ok_or_else(|| {
+			let _ = query.res_chan.try_send(None);
+			error::Client::BlockCIDNotFound(query.block)
+		})?
+		.cid;
 
-                                            let col_cid = cids[query.col as usize];
-                                            if col_cid == None {
-                                                println!("error: failed to extract respective column CID");
-                                                continue;
-                                            }
+	let have = ipfs
+		.contains(&cid)
+		.with_context(|| format!("IPFS does not contain CID {}", cid))?;
+	ensure!(have, error::Client::CIDNotFound(cid, StoreType::Ipfs));
 
-                                            let col_cid = col_cid.unwrap(); // safe to do so !
+	let dec_mat: Ipld = ipfs
+		.get(&cid)?
+		.ipld()
+		.with_context(|| format!("Empty Ipld on  CID {}", cid))?;
 
-                                            match ipfs_0.get(&col_cid) {
-                                                Ok(v) => {
-                                                    let dec_col: Ipld;
-                                                    if let Ok(v) = v.ipld() {
-                                                        dec_col = v;
-                                                    } else {
-                                                        println!("error: failed to IPLD decode data matrix column");
-                                                        continue;
-                                                    }
+	if let Ipld::StringMap(map) = dec_mat {
+		do_ipld_cell_query(ipfs, query, map)?;
+	}
 
-                                                    let row_cids: Vec<Option<Cid>>;
-                                                    if let Some(v) = extract_links(&dec_col) {
-                                                        row_cids = v;
-                                                    } else {
-                                                        println!("error: failed to extract row CIDs from message");
-                                                        continue;
-                                                    }
+	Ok(())
+}
 
-                                                    if query.row as usize >= row_cids.len() {
-                                                        // ensure indexing into vector is good move
-                                                        println!("error: queried row {}, though max available rows {}", query.row, row_cids.len());
-                                                        continue;
-                                                    }
+fn do_ipld_cell_query(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	query: CellContentQueryPayload,
+	map: BTreeMap<String, Ipld>,
+) -> Result<(), error::App> {
+	let block = map
+		.get("block")
+		.and_then(extract_block)
+		.ok_or(error::Client::MissingFieldOnIpld(IpldField::Block))?;
+	ensure!(
+		block == query.block as i128,
+		error::Client::MismatchBlockOnIpld(block, query.block)
+	);
 
-                                                    let row_cid = row_cids[query.row as usize];
-                                                    if row_cid == None {
-                                                        println!("error: failed to extract respective row CID");
-                                                        continue;
-                                                    }
+	let cids = map
+		.get("columns")
+		.and_then(extract_links)
+		.ok_or(error::Client::MissingFieldOnIpld(IpldField::Columns))?;
 
-                                                    // safe to do so !
-                                                    let row_cid = row_cid.unwrap();
+	ensure!(
+		(query.col as usize) < cids.len(),
+		error::Client::MaxColumnExceeded(query.col, cids.len())
+	);
+	let col_cid = cids[query.col as usize].ok_or(error::Client::EmptyColumnOnCidList(query.col))?;
 
-                                                    match ipfs_0.get(&row_cid) {
-                                                        Ok(v) => {
-                                                            let dec_cell: Ipld;
-                                                            if let Ok(v) = v.ipld() {
-                                                                dec_cell = v;
-                                                            } else {
-                                                                println!("error: failed to IPLD decode data matrix cell");
-                                                                continue;
-                                                            }
+	let dec_col = ipfs
+		.get(&col_cid)
+		.with_context(|| format!("IPFS cannot fetch the column CID {}", col_cid))?
+		.ipld()
+		.with_context(|| format!("Empty Ipld on column CID {}", col_cid))?;
 
-                                                            // respond back with content of cell
-                                                            if let Err(_) = query
-                                                                .res_chan
-                                                                .try_send(extract_cell(&dec_cell))
-                                                            {
-                                                                println!("error: failed to respond back to querying party");
-                                                            }
-                                                        }
-                                                        Err(_) => {
-                                                            println!("error: failed to get data matrix cell from storage");
-                                                        }
-                                                    };
-                                                }
-                                                Err(_) => {
-                                                    println!("error: failed to get data matrix column from storage");
-                                                }
-                                            };
-                                        }
-                                        _ => {}
-                                    };
-                                }
-                                Err(_) => {
-                                    println!("error: failed to get data matrix from storage");
-                                }
-                            };
-                        }
-                        Err(_) => {
-                            println!("block CID {:?} not present in local client", v.cid);
-                        }
-                    };
-                }
-                None => {
-                    println!("error: no CID entry found for block {}", query.block);
-                    if let Err(_) = query.res_chan.try_send(None) {
-                        println!("error: failed to respond back to querying party");
-                    }
-                }
-            }
-        }
-    });
+	let row_cids =
+		extract_links(&dec_col).ok_or(error::Client::MissingFieldOnIpld(IpldField::Rows))?;
+	ensure!(
+		(query.row as usize) < row_cids.len(),
+		error::Client::MaxRowExceeded(query.row, row_cids.len())
+	);
 
-    // // block to CID mapping to locally kept here ( in thead safe manner ! )
+	let row_cid =
+		row_cids[query.row as usize].ok_or(error::Client::EmptyRowOnCidList(query.row))?;
 
-    // broadcast fact i.e. some block number is mapped to some
-    // Cid ( of respective block data matrix ) to all peers subscribed
-    let mut fact_topic = ipfs.subscribe("topic/block_cid_fact").unwrap();
-    // ask over gossip network which Cid is associated with which block number
-    // and expect some one, who knows, will answer it
-    let mut ask_topic = ipfs.subscribe("topic/block_cid_ask").unwrap();
+	let dec_cell = ipfs
+		.get(&row_cid)
+		.with_context(|| format!("IPFS cannot fetch the row CID {}", row_cid))?
+		.ipld()
+		.with_context(|| "Failed to IPLD decode data matrix cell".to_string())?;
 
-    // listen for messages received on fact topic !
-    let block_cid_store_0 = block_cid_store.clone();
-    tokio::task::spawn(async move {
-        loop {
-            let msg = fact_topic.next().await;
-            match msg {
-                Some(msg) => match msg {
-                    ipfs_embed::GossipEvent::Subscribed(peer) => {
-                        println!("subscribed to topic `topic/block_cid_fact`\t{}", peer);
-                    }
-                    ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-                        println!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
-                    }
-                    ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
-                            {
-                                match get_block_cid_entry(block_cid_store_0.clone(), block) {
-                                    Some(v) => {
-                                        if v.self_computed && v.cid != cid {
-                                            println!(
-                                                "received CID doesn't match host computed CID"
-                                            );
-                                        }
-                                        // @note what happens if have-CID is not host computed and
-                                        // CID mismatch is encountered ?
-                                        //
-                                        // Need to verify/ self-compute CID and reach to a (more) stable
-                                        // state
-                                    }
-                                    None => {
-                                        match set_block_cid_entry(
-                                            block_cid_store_0.clone(),
-                                            block,
-                                            BlockCidPair {
-                                                cid: cid,
-                                                self_computed: false, // because this block CID is received over network !
-                                            },
-                                        ) {
-                                            Ok(_) => {}
-                                            Err(e) => {
-                                                println!("error: {}", e);
-                                            }
-                                        };
-                                    }
-                                };
-                            }
+	// respond back with content of cell
+	query
+		.res_chan
+		.try_send(extract_cell(&dec_cell))
+		.map_err(|err| error::Client::ResponseChannelFailed(err).into())
+}
 
-                            println!("received message on `topic/block_cid_fact`\t{}", peer);
-                        }
+fn do_gossip_msg<F>(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	store: &DB,
+	msg: GossipEvent,
+	topic: &str,
+	msg_handler: F,
+) where
+	F: FnOnce(&Ipfs<IPFSDefaultParams>, &DB, PeerId, Vec<u8>) -> Result<(), error::App>,
+{
+	match msg {
+		GossipEvent::Subscribed(peer) => {
+			log::info!("subscribed to topic `{}`\t{}", topic, peer);
+		},
+		GossipEvent::Unsubscribed(peer) => {
+			log::info!("unsubscribed from topic `{}`\t{}", topic, peer);
+		},
+		GossipEvent::Message(peer, msg) => {
+			log::info!("received message on `{}`\t{}", topic, peer);
+			let _ = msg_handler(ipfs, store, peer, msg.to_vec()).inspect_err(into_warning);
+		},
+	}
+}
 
-                        // received message was not decodable !
-                    }
-                },
-                None => {
-                    break;
-                }
-            }
-        }
-    });
+fn do_gossip_fact_msg(
+	_ipfs: &Ipfs<IPFSDefaultParams>,
+	store: &DB,
+	peer: PeerId,
+	msg: Vec<u8>,
+) -> Result<(), error::App> {
+	if let Some((block, cid)) = decode_block_cid_fact_message(msg) {
+		log::info!("received message on `topic/block_cid_fact`\t{}", peer);
 
-    // listen for messages received from ask topic !
-    let block_cid_store_1 = block_cid_store.clone();
-    // IPFS instance to be used for responding
-    // back to peer when some question is asked on ask
-    // channel, given that answer is known to peer !
-    let ipfs_1 = ipfs.clone();
-    tokio::task::spawn(async move {
-        loop {
-            let msg = ask_topic.next().await;
-            match msg {
-                Some(msg) => match msg {
-                    ipfs_embed::GossipEvent::Subscribed(peer) => {
-                        println!("subscribed to topic `topic/block_cid_ask`\t{}", peer);
-                    }
-                    ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-                        println!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
-                    }
-                    ipfs_embed::GossipEvent::Message(peer, msg) => {
-                        println!("received {:?} from {}", msg, peer);
-                        if let Some((block, cid)) = decode_block_cid_ask_message(msg.to_vec()) {
-                            {
-                                // this is a question kind message
-                                // on ask channel, so this peer is evaluating
-                                // whether it can answer it or not !
-                                if cid == None {
-                                    match get_block_cid_entry(block_cid_store_1.clone(), block) {
-                                        Some(v) => {
-                                            // @note shall I introduce a way to denote whether CID is
-                                            // peer computed or self computed ?
-                                            match prepare_block_cid_ask_message(block, Some(v.cid))
-                                            {
-                                                Ok(msg) => {
-                                                    // respond back on same channel
-                                                    // the question is received on
-                                                    if let Ok(_) =
-                                                        ipfs_1.publish("topic/block_cid_ask", msg)
-                                                    {
-                                                        println!("answer question received on `topic/block_cid_ask` channel");
-                                                    } else {
-                                                        println!("error: failed to publish answer to question on `topic/block_cid_ask` channel");
-                                                    }
-                                                }
-                                                Err(msg) => {
-                                                    println!("error: {}", msg);
-                                                }
-                                            };
-                                        }
-                                        None => {
-                                            // supposedly this peer can't help !
-                                            // @note can this peer act so that it can help asking peer ?
-                                        }
-                                    };
-                                } else {
-                                    // this is a answer kind message on ask channel
-                                    match get_block_cid_entry(block_cid_store_1.clone(), block) {
-                                        Some(v) => {
-                                            if v.self_computed && v.cid != cid.unwrap() {
-                                                println!(
-                                                    "received CID doesn't match host computed CID"
-                                                );
-                                            }
-                                            // @note what happens if have-CID is not host computed and
-                                            // CID mismatch is encountered ?
-                                            //
-                                            // Need to verify/ self-compute CID and reach to a (more) stable
-                                            // state
-                                        }
-                                        None => {
-                                            match set_block_cid_entry(
-                                                block_cid_store_1.clone(),
-                                                block,
-                                                BlockCidPair {
-                                                    cid: cid.unwrap(),
-                                                    self_computed: false, // because this block CID is received over network !
-                                                },
-                                            ) {
-                                                Ok(_) => {}
-                                                Err(e) => {
-                                                    println!("error: {}", e);
-                                                }
-                                            }
-                                        }
-                                    };
-                                }
-                            }
+		match get_block_cid_entry(store, block) {
+			Some(v) => {
+				// @note what happens if have-CID is not host computed and
+				// CID mismatch is encountered ?
+				//
+				// Need to verify/ self-compute CID and reach to a (more) stable
+				// state
+				ensure!(
+					!v.self_computed && v.cid == cid,
+					error::Client::ReceivedCIDMismatch(v.cid, cid)
+				);
+			},
+			None => {
+				let _ = set_block_cid_entry(store, block, BlockCidPair {
+					cid,
+					self_computed: false, // because this block CID is received over network !
+				})?;
+			},
+		};
+	}
+	Ok(())
+}
 
-                            println!("received message on `topic/block_cid_ask`\t{}", peer);
-                        }
-                    }
-                },
-                None => {
-                    break;
-                }
-            }
-        }
-    });
+fn do_gossip_ask_msg(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	store: &DB,
+	_peer: PeerId,
+	msg: Vec<u8>,
+) -> Result<(), error::App> {
+	match decode_block_cid_ask_message(msg) {
+		Some((block, None)) => {
+			// this is a question kind message
+			// on ask channel, so this peer is evaluating
+			// whether it can answer it or not !
+			if let Some(v) = get_block_cid_entry(store, block) {
+				// @note shall I introduce a way to denote whether CID is
+				// peer computed or self computed ?
+				let ask_msg = prepare_block_cid_ask_message(block, Some(v.cid));
 
-    // @note initialising with empty latest cid
-    // but when first block is received, say number `N`
-    // for preparing and pushing it to IPFS, block `N-1`'s
-    // CID is required, where to get it from ?
-    //
-    // I need to talk to preexisting peers, who has been
-    // part of network longer than I'm
-    //
-    // It's WIP
-    let mut latest_cid: Option<Cid> = None;
-    loop {
-        // Receive metadata related to newly mined block
-        // such as block number, dimension of data matrix etc.
-        // and encode it into hierarchical structure, preparing
-        // for push into ipfs.
-        //
-        // Finally it's pushed to ipfs, while
-        // linking it with previous block data matrix's CID.
-        match block_rx.recv() {
-            Ok(block) => {
-                match get_all_cells(&cfg.full_node_rpc, &block).await {
-                    Ok(cells) => {
-                        // just wrapped into arc so that it's cheap
-                        // calling `.clone()`
-                        let arced_cells = Arc::new(cells);
+				// respond back on same channel
+				// the question is received on
+				ipfs.publish("topic/block_cid_ask", ask_msg)?;
+				log::info!("answer question received on `topic/block_cid_ask` channel");
+			}
+		},
+		Some((block, Some(cid))) => {
+			// this is a answer kind message on ask channel
+			match get_block_cid_entry(store, block) {
+				Some(v) => {
+					ensure!(
+						!v.self_computed && v.cid == cid,
+						error::Client::ReceivedCIDMismatch(v.cid, cid)
+					);
+					// @note what happens if have-CID is not host computed and
+					// CID mismatch is encountered ?
+					//
+					// Need to verify/ self-compute CID and reach to a (more) stable
+					// state
+				},
+				None => {
+					let pair = BlockCidPair {
+						cid,
+						self_computed: false,
+					};
+					set_block_cid_entry(store, block, pair)?;
+				},
+			}
+		},
+		_ => {},
+	}
+	Ok(())
+}
 
-                        match construct_matrix(
-                            block.num,
-                            block.max_rows,
-                            block.max_cols,
-                            arced_cells,
-                        ) {
-                            Ok(matrix) => {
-                                match push_matrix(matrix, latest_cid.clone(), &ipfs, &pin).await {
-                                    Ok(cid) => {
-                                        latest_cid = Some(cid);
-                                        // publish block-cid mapping message over gossipsub network
-                                        match prepare_block_cid_fact_message(
-                                            block.num as i128,
-                                            latest_cid.unwrap(), // this should be safe !
-                                        ) {
-                                            Ok(msg) => {
-                                                match ipfs.publish("topic/block_cid_fact", msg) {
-                                                    Ok(_) => {
-                                                        // thread-safely put an entry in local in-memory store
-                                                        // for block to cid mapping
-                                                        //
-                                                        // it can be used later for for serving clients or
-                                                        // answering to questions asked by other peers over
-                                                        // gossipsub network
-                                                        //
-                                                        // once a CID is self-computed, it'll never be rewritten even
-                                                        // when conflicting fact is found over gossipsub channel
-                                                        match set_block_cid_entry(
-                                                            block_cid_store.clone(),
-                                                            block.num as i128,
-                                                            BlockCidPair {
-                                                                cid: latest_cid.unwrap(),
-                                                                self_computed: true, // because this block CID is self-computed !
-                                                            },
-                                                        ) {
-                                                            Ok(_) => {}
-                                                            Err(e) => {
-                                                                println!("error: {}", e);
-                                                            }
-                                                        };
-                                                        println!(
-                                                            "✅ Block {} available\t{}",
-                                                            block.num,
-                                                            latest_cid.unwrap().clone()
-                                                        );
-                                                    }
-                                                    Err(_) => {
-                                                        println!("error: failed to publish fact on `topic/block_cid_fact` topic");
-                                                    }
-                                                };
-                                            }
-                                            Err(msg) => {
-                                                println!("error: {}", msg);
-                                            }
-                                        };
-                                    }
-                                    Err(msg) => {
-                                        println!("error: {}", msg);
-                                    }
-                                }
-                            }
-                            Err(msg) => {
-                                println!("error: {}", msg);
-                            }
-                        };
-                    }
-                    Err(e) => {
-                        println!("error: {}", e);
-                    }
-                };
-            }
-            Err(e) => {
-                println!("Error encountered while listening for blocks: {}", e);
-                break;
-            }
-        };
-    }
+async fn process_received_blocks(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	store: &DB,
+	pin: &TempPin,
+	block_rx: Receiver<ClientMsg>,
+	full_node_rpc: Vec<String>,
+) -> Result<(), error::App> {
+	// @note initialising with empty latest cid
+	// but when first block is received, say number `N`
+	// for preparing and pushing it to IPFS, block `N-1`'s
+	// CID is required, where to get it from ?
+	//
+	// I need to talk to preexisting peers, who has been
+	// part of network longer than I'm
+	//
+	// It's WIP
+	let mut latest_cid: Option<Cid> = None;
+	for block in block_rx {
+		// Receive metadata related to newly mined block
+		// such as block number, dimension of data matrix etc.
+		// and encode it into hierarchical structure, preparing
+		// for push into ipfs.
+		//
+		// Finally it's pushed to ipfs, while
+		// linking it with previous block data matrix's CID.
+		let rpc_ = check_http(&full_node_rpc).await?;
+		let block_cid_entry = get_block_cid_entry(store, block.num as i128).map(|pair| pair.cid);
 
-    destroy_rx.recv()?; // waiting for signal to kill self !
-    Ok(())
+		let ipfs_cells = get_matrix(ipfs, block_cid_entry)
+			.inspect_err(|err| log::error!("Fail to fetch cells from IPFS: {}", err))
+			.unwrap_or_default();
+
+		let requested_cells = empty_cells(&ipfs_cells, block.max_cols, block.max_rows);
+
+		log::info!(
+			"Got {} cells from IPFS, requesting {} from full node",
+			non_empty_cells_len(&ipfs_cells),
+			requested_cells.len()
+		);
+
+		let cells = get_cells(&rpc_, &block, &requested_cells).await;
+		latest_cid = process_cells(ipfs, store, pin, &block, &ipfs_cells, latest_cid, cells)
+			.await
+			.inspect_err(into_warning)
+			.ok()
+			.or(latest_cid);
+	}
+
+	Ok(())
+}
+
+fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+	col.iter()
+		.enumerate()
+		.flat_map(|(i, cells)| {
+			cells.clone().map(|data| Cell {
+				row: i as u16,
+				col: col_num,
+				data: data[48..].to_vec(),
+			})
+		})
+		.collect::<Vec<Cell>>()
+}
+
+async fn process_cells(
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	block_cid_store: &DB,
+	pin: &TempPin,
+	block: &ClientMsg,
+	ipfs_cells: &Matrix,
+	latest_cid: Option<Cid>,
+	mut cells: Cells,
+) -> Result<Cid, error::App> {
+	for (row, col) in matrix_cells(block.max_rows, block.max_cols) {
+		let index = col * block.max_rows as usize + row;
+
+		if cells[index].is_none() {
+			cells[index] = ipfs_cells
+				.get(col)
+				.and_then(|col| col.get(row))
+				.and_then(|val| val.to_owned());
+		}
+	}
+
+	// just wrapped into arc so that it's cheap
+	// calling `.clone()`
+	let columns = cells
+		.chunks_exact(block.max_rows as usize)
+		.enumerate()
+		.map(|(i, col)| to_column_cells(i as u16, col))
+		.collect::<Vec<Vec<Cell>>>();
+
+	let layout = layout_from_index(
+		block.header.app_data_lookup.index.as_slice(),
+		block.header.app_data_lookup.size,
+	);
+
+	let ext = reconstruct_app_extrinsics(layout, columns, (block.max_rows / 2) as usize, 32);
+	log::debug!("Reconstructed extrinsic: {:?}", ext);
+
+	let matrix = construct_matrix(block.num, block.max_rows, block.max_cols, &cells)?;
+	let cid = push_matrix(matrix, latest_cid, ipfs, pin).await?;
+
+	// publish block-cid mapping message over gossipsub network
+	let msg = prepare_block_cid_fact_message(block.num as i128, cid);
+	let _ = ipfs.publish("topic/block_cid_fact", msg)?;
+
+	// thread-safely put an entry in local in-memory store
+	// for block to cid mapping
+	//
+	// it can be used later for for serving clients or
+	// answering to questions asked by other peers over
+	// gossipsub network
+	//
+	// once a CID is self-computed, it'll never be rewritten even
+	// when conflicting fact is found over gossipsub channel
+	let _ = set_block_cid_entry(
+		block_cid_store,
+		block.num as i128,
+		// because this block CID is self-computed !
+		BlockCidPair {
+			cid,
+			self_computed: true,
+		},
+	)?;
+
+	log::info!("✅ Block {} available\t{}", block.num, cid);
+	Ok(cid)
 }
 
 // Given a certain block number, this function prepares a question-kind message
@@ -497,146 +443,177 @@ pub async fn run_client(
 // If yes returns obtained CID
 //
 // @note How to verify whether this CID is correct or not ?
+#[allow(dead_code)]
 async fn ask_block_cid(
-    block: i128,
-    ipfs: &Ipfs<IPFSDefaultParams>,
-    store: Arc<Mutex<HashMap<i128, BlockCidPair>>>,
-) -> Result<Cid, String> {
-    // send message over gossip network !
-    match prepare_block_cid_ask_message(block, None) {
-        Ok(msg) => {
-            if let Err(_) = ipfs.publish("topic/block_cid_ask", msg) {
-                return Err("failed to send gossip message".to_owned());
-            }
-            // wait for 4 seconds !
-            std::thread::sleep(Duration::from_secs(4));
-            // thread-safely attempt to read from data store
-            // whether question has been answer by some peer already
-            // or not
-            {
-                let handle = store.lock().unwrap();
-                match handle.get(&block) {
-                    Some(v) => Ok(v.cid),
-                    None => Err("failed to find CID".to_owned()),
-                }
-            }
-        }
-        Err(msg) => Err(msg),
-    }
+	block: i128,
+	ipfs: &Ipfs<IPFSDefaultParams>,
+	store: Arc<Mutex<HashMap<i128, BlockCidPair>>>,
+) -> Result<Cid, error::App> {
+	// send message over gossip network !
+	let msg = prepare_block_cid_ask_message(block, None);
+
+	ipfs.publish("topic/block_cid_ask", msg)
+		.map_err(|_| error::IpfsClient::SendGossipMessage(Topic::Ask))?;
+
+	// wait for 4 seconds !
+	sleep(Duration::from_secs(4)).await;
+
+	// thread-safely attempt to read from data store
+	// whether question has been answer by some peer already
+	// or not
+	let cid = store
+		.lock()
+		.unwrap()
+		.get(&block)
+		.ok_or(error::Client::BlockNotFound(block))?
+		.cid;
+
+	Ok(cid)
 }
 
 pub async fn make_client(
-    seed: u64,
-    port: u16,
-    path: &str,
+	seed: u64,
+	port: u16,
+	path: &str,
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
-    let sweep_interval = Duration::from_secs(60);
+	let sweep_interval = Duration::from_secs(60);
 
-    let path_buf = std::path::PathBuf::from_str(path).unwrap();
-    let storage = StorageConfig::new(None, 10, sweep_interval);
-    let mut network = NetworkConfig::new(path_buf, keypair(seed));
-    network.mdns = None;
+	let path_buf = std::path::PathBuf::from_str(path).unwrap();
+	let storage = StorageConfig::new(None, 10, sweep_interval);
+	let mut network = NetworkConfig::new(path_buf, keypair(seed));
+	network.mdns = None;
 
-    let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
-    let mut events = ipfs.swarm_events();
+	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
+	let mut events = ipfs.swarm_events();
 
-    let mut stream = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
-    if let ipfs_embed::ListenerEvent::NewListenAddr(_) = stream.next().await.unwrap() {
-        /* do nothing useful here, just ensure ipfs-node has
-        started listening on specified port */
-    }
+	let mut stream = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
+	if let ipfs_embed::ListenerEvent::NewListenAddr(_) = stream.next().await.unwrap() {
+		/* do nothing useful here, just ensure ipfs-node has
+		started listening on specified port */
+	}
 
-    tokio::task::spawn(async move {
-        while let Some(event) = events.next().await {
-            let event = match event {
-                ipfs_embed::Event::NewListener(_) => Some(Event::NewListener),
-                ipfs_embed::Event::NewListenAddr(_, addr) => Some(Event::NewListenAddr(addr)),
-                ipfs_embed::Event::ExpiredListenAddr(_, addr) => {
-                    Some(Event::ExpiredListenAddr(addr))
-                }
-                ipfs_embed::Event::ListenerClosed(_) => Some(Event::ListenerClosed),
-                ipfs_embed::Event::NewExternalAddr(addr) => Some(Event::NewExternalAddr(addr)),
-                ipfs_embed::Event::ExpiredExternalAddr(addr) => {
-                    Some(Event::ExpiredExternalAddr(addr))
-                }
-                ipfs_embed::Event::Discovered(peer_id) => Some(Event::Discovered(peer_id)),
-                ipfs_embed::Event::Unreachable(peer_id) => Some(Event::Unreachable(peer_id)),
-                ipfs_embed::Event::Connected(peer_id) => Some(Event::Connected(peer_id)),
-                ipfs_embed::Event::Disconnected(peer_id) => Some(Event::Disconnected(peer_id)),
-                ipfs_embed::Event::Subscribed(peer_id, topic) => {
-                    Some(Event::Subscribed(peer_id, topic))
-                }
-                ipfs_embed::Event::Unsubscribed(peer_id, topic) => {
-                    Some(Event::Unsubscribed(peer_id, topic))
-                }
-                ipfs_embed::Event::Bootstrapped => Some(Event::Bootstrapped),
-                ipfs_embed::Event::NewHead(head) => Some(Event::NewHead(*head.id(), head.len())),
-            };
-            if let Some(_event) = event {
-                #[cfg(feature = "logs")]
-                println!("{}", _event);
-            }
-        }
-    });
+	tokio::task::spawn(async move {
+		while let Some(event) = events.next().await {
+			let event = match event {
+				ipfs_embed::Event::NewListener(_) => Some(Event::NewListener),
+				ipfs_embed::Event::NewListenAddr(_, addr) => Some(Event::NewListenAddr(addr)),
+				ipfs_embed::Event::ExpiredListenAddr(_, addr) => {
+					Some(Event::ExpiredListenAddr(addr))
+				},
+				ipfs_embed::Event::ListenerClosed(_) => Some(Event::ListenerClosed),
+				ipfs_embed::Event::NewExternalAddr(addr) => Some(Event::NewExternalAddr(addr)),
+				ipfs_embed::Event::ExpiredExternalAddr(addr) => {
+					Some(Event::ExpiredExternalAddr(addr))
+				},
+				ipfs_embed::Event::Discovered(peer_id) => Some(Event::Discovered(peer_id)),
+				ipfs_embed::Event::Unreachable(peer_id) => Some(Event::Unreachable(peer_id)),
+				ipfs_embed::Event::Connected(peer_id) => Some(Event::Connected(peer_id)),
+				ipfs_embed::Event::Disconnected(peer_id) => Some(Event::Disconnected(peer_id)),
+				ipfs_embed::Event::Subscribed(peer_id, topic) => {
+					Some(Event::Subscribed(peer_id, topic))
+				},
+				ipfs_embed::Event::Unsubscribed(peer_id, topic) => {
+					Some(Event::Unsubscribed(peer_id, topic))
+				},
+				ipfs_embed::Event::Bootstrapped => Some(Event::Bootstrapped),
+				ipfs_embed::Event::NewHead(head) => Some(Event::NewHead(*head.id(), head.len())),
+			};
+			if let Some(_event) = event {
+				#[cfg(feature = "logs")]
+				log::info!("{}", _event);
+			}
+		}
+	});
 
-    Ok(ipfs)
+	Ok(ipfs)
 }
 
 pub fn keypair(i: u64) -> Keypair {
-    let mut keypair = [0; 32];
-    keypair[..8].copy_from_slice(&i.to_be_bytes());
-    let secret = SecretKey::from_bytes(&keypair).unwrap();
-    let public = PublicKey::from(&secret);
-    Keypair { secret, public }
+	let mut keypair = [0; 32];
+	keypair[..8].copy_from_slice(&i.to_be_bytes());
+	let secret = SecretKey::from_bytes(&keypair).unwrap();
+	let public = PublicKey::from(&secret);
+	Keypair { secret, public }
 }
 
-pub fn peer_id(i: u64) -> PeerId {
-    keypair(i).to_peer_id()
-}
+#[allow(dead_code)]
+pub fn peer_id(i: u64) -> PeerId { keypair(i).to_peer_id() }
 
 // Following two are utility functions for interacting with local on-disk data store
 // where block -> cid mapping is maintained
 
-pub fn get_block_cid_entry(
-    store: Arc<DBWithThreadMode<SingleThreaded>>,
-    block: i128,
-) -> Option<crate::types::BlockCidPair> {
-    match store.get_cf(
-        store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
-        block.to_be_bytes(),
-    ) {
-        Ok(v) => match v {
-            Some(v) => {
-                let pair: crate::types::BlockCidPersistablePair =
-                    serde_json::from_slice(&v).unwrap();
-                Some(crate::types::BlockCidPair {
-                    cid: Cid::try_from(pair.cid).unwrap(),
-                    self_computed: pair.self_computed,
-                })
-            }
-            None => None,
-        },
-        Err(_) => None,
-    }
+pub fn get_block_cid_entry(store: &DB, block: i128) -> Option<BlockCidPair> {
+	// Load from storage.
+	let column = store.cf_handle(BLOCK_CID_CF)?;
+	let key = block.to_be_bytes();
+	let encoded_pair = store.get_cf(&column, key).ok().flatten()?;
+
+	// Transform into `BlockCidPair`.
+	let pair: BlockCidPersistablePair = serde_json::from_slice(&encoded_pair).ok()?;
+	let cid = pair.cid.try_into().ok()?;
+	let block_cid_pair = BlockCidPair {
+		cid,
+		self_computed: pair.self_computed,
+	};
+
+	Some(block_cid_pair)
 }
 
-pub fn set_block_cid_entry(
-    store: Arc<DBWithThreadMode<SingleThreaded>>,
-    block: i128,
-    pair: BlockCidPair,
-) -> Result<(), String> {
-    let serialisable_pair = crate::types::BlockCidPersistablePair {
-        cid: pair.cid.to_string(),
-        self_computed: pair.self_computed,
-    };
-    let serialised = serde_json::to_string(&serialisable_pair).unwrap();
+fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
+	if index.is_empty() {
+		return vec![(0, size)];
+	}
 
-    match store.put_cf(
-        store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
-        block.to_be_bytes(),
-        serialised.as_bytes(),
-    ) {
-        Ok(_) => Ok(()),
-        Err(_) => Err("failed to put block -> cid entry in database".to_owned()),
-    }
+	let (app_ids, offsets): (Vec<_>, Vec<_>) = index.iter().cloned().unzip();
+	// Prepend app_id zero
+	let mut app_ids_ext = vec![0];
+	app_ids_ext.extend(app_ids);
+
+	// Prepend offset 0 for app_id 0
+	let mut offsets_ext = vec![0];
+	offsets_ext.extend(offsets);
+
+	let mut sizes = offsets_ext[0..offsets_ext.len() - 1]
+		.iter()
+		.zip(offsets_ext[1..].iter())
+		.map(|(a, b)| b - a)
+		.collect::<Vec<_>>();
+
+	let remaining_size: u32 = size - sizes.iter().sum::<u32>();
+	sizes.push(remaining_size);
+
+	app_ids_ext.into_iter().zip(sizes.into_iter()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_layout_from_index() {
+		let expected = vec![(0, 3), (1, 3), (2, 4)];
+		assert_eq!(layout_from_index(&[(1, 3), (2, 6)], 10), expected);
+
+		let expected = vec![(0, 12), (1, 3), (3, 5)];
+		assert_eq!(layout_from_index(&[(1, 12), (3, 15)], 20), expected);
+
+		let expected = vec![(0, 1), (1, 5)];
+		assert_eq!(layout_from_index(&[(1, 1)], 6), expected);
+	}
+}
+
+pub fn set_block_cid_entry(store: &DB, block: i128, pair: BlockCidPair) -> Result<(), error::App> {
+	let serialisable_pair = BlockCidPersistablePair {
+		cid: pair.cid.to_string(),
+		self_computed: pair.self_computed,
+	};
+	let serialised = serde_json::to_string(&serialisable_pair)
+		.expect("`BlockCidPersistablePair` is unfallible on serde serialization .qed");
+	let column = store
+		.cf_handle(BLOCK_CID_CF)
+		.expect("`BLOCK_CID_CF` is valid .qed");
+
+	store
+		.put_cf(&column, block.to_be_bytes(), serialised.as_bytes())
+		.map_err(error::App::from)
 }
