@@ -16,12 +16,11 @@ use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::http::calculate_confidence;
+use crate::rpc::calculate_confidence;
 
 mod client;
 mod consts;
 mod data;
-mod data_http;
 mod http;
 mod proof;
 mod rpc;
@@ -99,14 +98,8 @@ pub async fn do_main() -> Result<()> {
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, cell_query_rx) =
 		sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
+	let cell_query = cell_query_tx.clone();
 
-	// this spawns one thread of execution which runs one http server
-	// for handling RPC
-	let db_0 = db.clone();
-	let cfg_ = cfg.clone();
-	thread::spawn(move || {
-		http::run_server(db_0, cfg_, cell_query_tx).unwrap();
-	});
 
 	// communication channels being established for talking to
 	// ipfs backed application client
@@ -132,7 +125,8 @@ pub async fn do_main() -> Result<()> {
 
 	let db_5 = db.clone();
 	let cfg_clone_2 = cfg.clone();
-	thread::spawn(move || data_http::run_appdata_server(db_5, cfg_clone_2));
+	thread::spawn(move || http::run_appdata_server(db_5, cfg_clone_2, cell_query).unwrap());
+
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};

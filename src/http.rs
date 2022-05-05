@@ -1,7 +1,6 @@
 extern crate rocksdb;
 
 use std::{
-	convert::TryInto,
 	pin::Pin,
 	sync::{mpsc::SyncSender, Arc},
 	task::{Context, Poll},
@@ -13,27 +12,24 @@ use hyper::{
 	header::ACCESS_CONTROL_ALLOW_ORIGIN, service::Service, Body, Method, Request, Response, Server,
 	StatusCode,
 };
-use num::{BigUint, FromPrimitive};
-use regex::Regex;
-use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
+use rocksdb::{DBWithThreadMode, SingleThreaded};
 use tokio;
 
-use crate::types::CellContentQueryPayload;
-
-pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
-
-pub fn serialised_confidence(block: u64, factor: f64) -> String {
-	let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
-	let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
-	let _shifted: BigUint = _block << 32 | _factor;
-	_shifted.to_str_radix(10)
-}
+use crate::{
+	rpc::{
+		calculate_confidence, check_http, check_id, get_block_by_number, get_confidence,
+		get_headers, get_kate_query_proof_by_cell, match_block_url, match_id_url, match_url,
+		serialised_confidence,
+	},
+	types::CellContentQueryPayload,
+};
 
 // 💡 HTTP part where handles the RPC Queries
 
 //service part of hyper
 struct Handler {
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
+	url: String,
 }
 
 impl Service<Request<Body>> for Handler {
@@ -46,16 +42,6 @@ impl Service<Request<Body>> for Handler {
 	}
 
 	fn call(&mut self, req: Request<Body>) -> Self::Future {
-		fn match_url(path: &str) -> Result<u64, String> {
-			let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
-			if let Some(caps) = re.captures(path) {
-				if let Some(block) = caps.get(2) {
-					return Ok(block.as_str().parse::<u64>().unwrap());
-				}
-			}
-			Err("no match found !".to_owned())
-		}
-
 		fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
 			Ok(Response::builder()
 				.status(200)
@@ -63,20 +49,6 @@ impl Service<Request<Body>> for Handler {
 				.header("Content-Type", "application/json")
 				.body(Body::from(s))
 				.unwrap())
-		}
-
-		fn get_confidence(
-			db: Arc<DBWithThreadMode<SingleThreaded>>,
-			cf_handle: &ColumnFamily,
-			block: u64,
-		) -> Result<u32, String> {
-			match db.get_cf(cf_handle, block.to_be_bytes()) {
-				Ok(v) => match v {
-					Some(v) => Ok(u32::from_be_bytes(v.try_into().unwrap())),
-					None => Err("failed to find entry in confidence store".to_owned()),
-				},
-				Err(_) => Err("failed to find entry in confidence store".to_owned()),
-			}
 		}
 
 		let local_tm: DateTime<Local> = Local::now();
@@ -88,43 +60,126 @@ impl Service<Request<Body>> for Handler {
 		);
 
 		let db = self.store.clone();
+		let url = self.url.clone();
 
 		Box::pin(async move {
 			let res = match req.method() {
 				&Method::GET => {
-					if let Ok(block_num) = match_url(req.uri().path()) {
-						let count = match get_confidence(
-							db.clone(),
-							db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
-							block_num,
-						) {
-							Ok(count) => {
-								log::info!("Confidence for block {} found in a store", block_num);
-								count
-							},
-							Err(e) => {
-								// if for some reason confidence is not found
-								// in on disk database, client receives following response
-								log::info!("error: {}", e);
-								0
-							},
-						};
-						let conf = calculate_confidence(count);
-						let serialised_conf = serialised_confidence(block_num, conf);
-						mk_response(
-							format!(
-								r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
-								block_num, conf, serialised_conf
-							)
-							.to_owned(),
-						)
-					} else {
-						let mut not_found = Response::default();
-						*not_found.status_mut() = StatusCode::NOT_FOUND;
-						not_found
-							.headers_mut()
-							.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
-						Ok(not_found)
+					let path = req.uri().path();
+					let v: Vec<&str> = path.split('/').collect();
+					match v[2] {
+						"confidence" => {
+							if let Ok(block_num) = match_url(req.uri().path()) {
+								let count = match get_confidence(
+									db.clone(),
+									db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
+									block_num,
+								) {
+									Ok(count) => {
+										log::info!(
+											"Confidence for block {} found in a store",
+											block_num
+										);
+										count
+									},
+									Err(e) => {
+										// if for some reason confidence is not found
+										// in on disk database, client receives following response
+										log::info!("error: {}", e);
+										0
+									},
+								};
+								let conf = calculate_confidence(count);
+								let serialised_conf = serialised_confidence(block_num, conf);
+								mk_response(
+									format!(
+										r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
+										block_num, conf, serialised_conf
+									)
+									.to_owned(),
+								)
+							} else {
+								let mut not_found = Response::default();
+								*not_found.status_mut() = StatusCode::NOT_FOUND;
+								not_found
+									.headers_mut()
+									.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+								Ok(not_found)
+							}
+						},
+						"appdata" => {
+							if let (Ok(block_num), Ok(app_id)) = (
+								match_block_url(req.uri().path()),
+								match_id_url(req.uri().path()),
+							) {
+								let block = get_block_by_number(&url, block_num).await.unwrap();
+								let headers = get_headers(
+									db.clone(),
+									db.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+									block_num,
+								)
+								.unwrap();
+								let mut vec = Vec::new();
+								//cell logic to be written here
+								// @TODO: fetching logic to be re written with optimisation
+								match app_id {
+									-1 => {
+										let max_cols = headers.extrinsics_root.cols;
+										let max_rows = headers.extrinsics_root.rows;
+										for i in 0..max_rows {
+											for j in 0..max_cols {
+												let cells = get_kate_query_proof_by_cell(
+													&url, block_num, i, j,
+												)
+												.await
+												.unwrap();
+												vec.push(cells);
+											}
+										}
+									},
+									0 => {
+										vec.push(vec![]);
+									},
+									_ => {
+										let cells = check_id(
+											headers,
+											app_id as u32,
+											block_num,
+											block.clone(),
+										)
+										.unwrap();
+										for i in cells.iter() {
+											let data = get_kate_query_proof_by_cell(
+												&url, block_num, i.row, i.col,
+											)
+											.await
+											.unwrap();
+											vec.push(data);
+										}
+									},
+								}
+								mk_response(
+									format!(r#"{{"block": {}, "data": {:?}}}"#, block_num, vec)
+										.to_owned(),
+								)
+							} else {
+								let mut not_found = Response::default();
+								*not_found.status_mut() = StatusCode::NOT_FOUND;
+								not_found
+									.headers_mut()
+									.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+								Ok(not_found)
+							}
+						},
+
+						_ => {
+							let mut not_found = Response::default();
+							*not_found.status_mut() = StatusCode::NOT_FOUND;
+							not_found
+								.headers_mut()
+								.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+							Ok(not_found)
+						},
 					}
 				},
 				_ => {
@@ -140,9 +195,10 @@ impl Service<Request<Body>> for Handler {
 		})
 	}
 }
-
+//service handler for the data server
 struct MakeHandler {
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
+	url: String,
 }
 
 impl<T> Service<T> for MakeHandler {
@@ -156,28 +212,27 @@ impl<T> Service<T> for MakeHandler {
 
 	fn call(&mut self, _: T) -> Self::Future {
 		let store = self.store.clone();
-		let fut = async move { Ok(Handler { store }) };
+		let url = self.url.clone();
+		let fut = async move { Ok(Handler { store, url }) };
 		Box::pin(fut)
 	}
 }
 
 #[tokio::main]
-pub async fn run_server(
+pub async fn run_appdata_server(
 	store: Arc<DBWithThreadMode<SingleThreaded>>,
 	cfg: super::types::RuntimeConfig,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
+	// @TODO: need to add routing
+	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_data_port)
 		.parse()
 		.expect("Bad Http server host/ port, found in config file");
-	let server = Server::bind(&addr).serve(MakeHandler { store });
-
-	log::info!(
-		"RPC running on http://{}:{}",
-		cfg.http_server_host,
-		cfg.http_server_port
-	);
-
+	let rpc_url = check_http(cfg.full_node_rpc).await.unwrap();
+	let server = Server::bind(&addr).serve(MakeHandler {
+		store,
+		url: rpc_url,
+	});
 	server.await?;
 	Ok(())
 }

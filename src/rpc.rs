@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use futures::stream::{self, StreamExt};
 use hyper_tls::HttpsConnector;
 use if_chain::if_chain;
+use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
@@ -424,6 +425,16 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	Ok(rpc_url)
 }
 
+pub fn match_url(path: &str) -> Result<u64, String> {
+	let re = Regex::new(r"^(/v1/confidence/(\d{1,}))$").unwrap();
+	if let Some(caps) = re.captures(path) {
+		if let Some(block) = caps.get(2) {
+			return Ok(block.as_str().parse::<u64>().unwrap());
+		}
+	}
+	Err("no match found !".to_owned())
+}
+
 pub fn match_block_url(url: &str) -> Result<u64> {
 	let re = Regex::new(r"^(/v1/appdata/(\d{1,})/([-]?\d{1,}))$")?;
 	if_chain! {
@@ -450,6 +461,28 @@ pub fn match_id_url(url: &str) -> Result<i32> {
 			return Err(anyhow!("id parse failed"));
 		}
 	}
+}
+
+pub fn get_confidence(
+	db: Arc<DBWithThreadMode<SingleThreaded>>,
+	cf_handle: &ColumnFamily,
+	block: u64,
+) -> Result<u32, String> {
+	match db.get_cf(cf_handle, block.to_be_bytes()) {
+		Ok(v) => match v {
+			Some(v) => Ok(u32::from_be_bytes(v.try_into().unwrap())),
+			None => Err("failed to find entry in confidence store".to_owned()),
+		},
+		Err(_) => Err("failed to find entry in confidence store".to_owned()),
+	}
+}
+pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
+
+pub fn serialised_confidence(block: u64, factor: f64) -> String {
+	let _block: BigUint = FromPrimitive::from_u64(block).unwrap();
+	let _factor: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64).unwrap();
+	let _shifted: BigUint = _block << 32 | _factor;
+	_shifted.to_str_radix(10)
 }
 
 pub fn check_id(
