@@ -225,7 +225,7 @@ pub async fn run_appdata_server(
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	// @TODO: need to add routing
-	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_data_port)
+	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
 		.parse()
 		.expect("Bad Http server host/ port, found in config file");
 	let rpc_url = check_http(cfg.full_node_rpc).await.unwrap();
