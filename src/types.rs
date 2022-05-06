@@ -312,7 +312,7 @@ pub struct ClientMsg {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
 	pub http_server_host: String,
-	pub http_data_port: u16,
+	pub http_server_port: u16,
 	pub ipfs_seed: u64,
 	pub ipfs_port: u16,
 	pub ipfs_path: String,
@@ -329,7 +329,7 @@ impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
-			http_data_port: 9000,
+			http_server_port: 7000,
 			ipfs_seed: 1,
 			ipfs_port: 37000,
 			ipfs_path: format!("avail_ipfs_node_{}", 1),
