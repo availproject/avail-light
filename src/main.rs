@@ -100,7 +100,6 @@ pub async fn do_main() -> Result<()> {
 		sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	let cell_query = cell_query_tx.clone();
 
-
 	// communication channels being established for talking to
 	// ipfs backed application client
 	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
