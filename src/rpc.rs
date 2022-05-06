@@ -518,15 +518,10 @@ pub fn get_headers(
 	cf_handle: &ColumnFamily,
 	block: u64,
 ) -> Result<Header> {
-	match db.get_cf(cf_handle, block.to_be_bytes()) {
-		Ok(v) => {
-			if let Some(v) = v {
-				let header: Header = serde_json::from_slice(&v).context("header parse failed")?;
-				Ok(header)
-			} else {
-				Err(anyhow!("no header found"))
-			}
-		},
-		Err(_) => Err(anyhow!("no header found")),
-	}
+	let data = db
+		.get_cf(cf_handle, block.to_be_bytes())
+		.context("cannot find header")?
+		.ok_or_else(|| anyhow!("missing header"))?;
+
+	serde_json::from_slice(&data).context("header parse failed")
 }
