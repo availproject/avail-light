@@ -265,7 +265,7 @@ pub async fn get_kate_proof(
 	block_num: u64,
 	max_rows: u16,
 	max_cols: u16,
-	app_id: u32,
+	mut cells: Vec<Cell>,
 ) -> Result<Vec<Cell>> {
 	let block = get_block_by_number(url, block_num).await?;
 
@@ -278,21 +278,21 @@ pub async fn get_kate_proof(
 		index_tuple
 	);
 
-	let mut cells = match index_tuple
-		.iter()
-		.find(|elem| app_id != 0 && app_id == elem.0)
-	{
-		None => generate_random_cells(max_rows, max_cols, block_num),
-		Some((app_id, offset)) => {
-			log::info!(
-				"{} chunks for app {} found in block {}",
-				offset,
-				app_id,
-				block_num
-			);
-			generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
-		},
-	};
+	// let mut cells = match index_tuple
+	// 	.iter()
+	// 	.find(|elem| app_id != 0 && app_id == elem.0)
+	// {
+	// 	None => generate_random_cells(max_rows, max_cols, block_num),
+	// 	Some((app_id, offset)) => {
+	// 		log::info!(
+	// 			"{} chunks for app {} found in block {}",
+	// 			offset,
+	// 			app_id,
+	// 			block_num
+	// 		);
+	// 		generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
+	// 	},
+	// };
 	let payload = generate_kate_query_payload(block_num, &cells);
 
 	let req = hyper::Request::builder()

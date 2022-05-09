@@ -181,9 +181,11 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
+					let index_tuple = header.app_data_lookup.index.clone();
+					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					//hyper request for getting the kate query request
 					let cells =
-						rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, app_id).await?;
+						rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, kate_cells).await?;
 					//hyper request for verifying the proof
 					let count = proof::verify_proof(
 						num,
@@ -212,31 +214,91 @@ pub async fn do_main() -> Result<()> {
 					The following is the part when the user have already subscribed
 					to an appID and now its verifying every cell that contains the data
 					*/
-					if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
-						for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0)
-						{
-							let proof =
-								rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, *app_id)
-									.await;
-							if let Ok(req_cells) = proof {
-								log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
-								//hyper request for verifying the proof
-								let count = proof::verify_proof(
-									num,
-									max_rows,
-									max_cols,
-									req_cells,
-									commitment.clone(),
-								);
-								log::info!(
-									"✅ Completed {} rounds of verification for block number {} ",
-									count,
-									num
-								);
-							} else {
-								log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
-							}
-						}
+					// if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
+					// 	for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0)
+					// 	{
+					// 		let proof =
+					// 			rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, *app_id)
+					// 				.await;
+					// 		if let Ok(req_cells) = proof {
+					// 			log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
+					// 			//hyper request for verifying the proof
+					// 			let count = proof::verify_proof(
+					// 				num,
+					// 				max_rows,
+					// 				max_cols,
+					// 				req_cells,
+					// 				commitment.clone(),
+					// 			);
+					// 			log::info!(
+					// 				"✅ Completed {} rounds of verification for block number {} ",
+					// 				count,
+					// 				num
+					// 			);
+					// 		} else {
+					// 			log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
+					// 		}
+					// 	}
+					// }
+					// if conf >= cfg.confidence  {
+					// 	if cfg.app_id as i16 == -1{
+					// 		let cells =
+					// 	}else if cfg.app_id as i16 == 0 {
+
+					// 	}
+					// 	else if cfg.app_id > 0{
+
+					// 	}
+					// }
+					//@TODO @kailas: Major optimization needed here
+					if conf >= cfg.confidence && !app_index.is_empty() {
+						let mut query_cells: Vec<types::Cell> = match cfg.app_id as i16 {
+							n if n == -1 => {
+								let mut cells = Vec::new();
+								for i in 0..max_rows {
+									for j in 0..max_cols {
+										cells.push(types::Cell {
+											block: num,
+											row: i,
+											col: j,
+											..Default::default()
+										});
+									}
+								}
+								cells
+							},
+							n if n > 0 => {
+								let mut cells = if let Some((app_id, offset)) = index_tuple
+									.iter()
+									.find(|elem| app_id != 0 && app_id == elem.0)
+								{
+									log::info!(
+										"{} chunks for app {} found in block {}",
+										offset,
+										app_id,
+										num
+									);
+									let block = rpc::get_block_by_number(&rpc_url, num).await?;
+									rpc::generate_app_specific_cells(
+										*offset, max_cols, num, block, *app_id,
+									)
+								} else {
+									vec![]
+								};
+								cells
+							},
+							_ => {
+								log::info!("\n ❌ no app id is given, random sampling begins");
+								vec![]
+							},
+						};
+						proof::verify_proof(
+							num,
+							max_rows,
+							max_cols,
+							query_cells,
+							commitment.clone(),
+						);
 					}
 
 					// push latest mined block's header into column family specified
