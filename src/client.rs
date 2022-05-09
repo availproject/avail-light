@@ -12,17 +12,14 @@ use std::{
 	collections::{BTreeMap, HashMap},
 	convert::TryFrom,
 	str::FromStr,
-	sync::{
-		mpsc::{Receiver, SyncSender},
-		Arc, Mutex,
-	},
+	sync::{mpsc::Receiver, Arc, Mutex},
 	time::Duration,
 };
 
 use async_std::stream::StreamExt;
 use ipfs_embed::{
-	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
-	PublicKey, SecretKey, StorageConfig, ToLibp2p,
+	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, NetworkConfig, PeerId, PublicKey,
+	SecretKey, StorageConfig, ToLibp2p,
 };
 use kate_recovery::com::{reconstruct_app_extrinsics, Cell};
 use libipld::Ipld;
@@ -43,28 +40,11 @@ pub async fn run_client(
 	cfg: super::types::RuntimeConfig,
 	block_cid_store: Arc<DB>,
 	block_rx: Receiver<ClientMsg>,
-	self_info_tx: SyncSender<(PeerId, Multiaddr)>,
 	destroy_rx: Receiver<bool>,
 	cell_query_rx: Receiver<crate::types::CellContentQueryPayload>,
+	ipfs: Ipfs<IPFSDefaultParams>,
 ) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let ipfs = make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
 	let pin = ipfs.create_temp_pin()?;
-
-	// inform invoker about self
-	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
-
-	// bootstrap client with non-empty set of
-	// application clients
-	if cfg.bootstraps.len() > 0 {
-		ipfs.bootstrap(
-			&cfg.bootstraps
-				.into_iter()
-				.map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
-				.collect::<Vec<(_, _)>>()[..],
-		)
-		.await?;
-	}
-
 	let ipfs_0: Ipfs<IPFSDefaultParams> = ipfs.clone();
 	let block_cid_store_2 = block_cid_store.clone();
 	tokio::task::spawn(async move {
