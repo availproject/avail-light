@@ -586,7 +586,6 @@ pub async fn make_client(
 	network.mdns = None;
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
-	let mut events = ipfs.swarm_events();
 
 	let mut stream = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
 	if let ipfs_embed::ListenerEvent::NewListenAddr(_) = stream.next().await.unwrap() {
@@ -594,40 +593,31 @@ pub async fn make_client(
 		started listening on specified port */
 	}
 
-	tokio::task::spawn(async move {
-		while let Some(event) = events.next().await {
-			let event = match event {
-				ipfs_embed::Event::NewListener(_) => Some(Event::NewListener),
-				ipfs_embed::Event::NewListenAddr(_, addr) => Some(Event::NewListenAddr(addr)),
-				ipfs_embed::Event::ExpiredListenAddr(_, addr) => {
-					Some(Event::ExpiredListenAddr(addr))
-				},
-				ipfs_embed::Event::ListenerClosed(_) => Some(Event::ListenerClosed),
-				ipfs_embed::Event::NewExternalAddr(addr) => Some(Event::NewExternalAddr(addr)),
-				ipfs_embed::Event::ExpiredExternalAddr(addr) => {
-					Some(Event::ExpiredExternalAddr(addr))
-				},
-				ipfs_embed::Event::Discovered(peer_id) => Some(Event::Discovered(peer_id)),
-				ipfs_embed::Event::Unreachable(peer_id) => Some(Event::Unreachable(peer_id)),
-				ipfs_embed::Event::Connected(peer_id) => Some(Event::Connected(peer_id)),
-				ipfs_embed::Event::Disconnected(peer_id) => Some(Event::Disconnected(peer_id)),
-				ipfs_embed::Event::Subscribed(peer_id, topic) => {
-					Some(Event::Subscribed(peer_id, topic))
-				},
-				ipfs_embed::Event::Unsubscribed(peer_id, topic) => {
-					Some(Event::Unsubscribed(peer_id, topic))
-				},
-				ipfs_embed::Event::Bootstrapped => Some(Event::Bootstrapped),
-				ipfs_embed::Event::NewHead(head) => Some(Event::NewHead(*head.id(), head.len())),
-			};
-			if let Some(_event) = event {
-				#[cfg(feature = "logs")]
-				log::info!("{}", _event);
-			}
-		}
-	});
-
 	Ok(ipfs)
+}
+
+#[cfg(feature = "logs")]
+pub async fn log_events(ipfs: Ipfs<IPFSDefaultParams>) {
+	let mut events = ipfs.swarm_events();
+	while let Some(event) = events.next().await {
+		let event = match event {
+			ipfs_embed::Event::NewListener(_) => Event::NewListener,
+			ipfs_embed::Event::NewListenAddr(_, addr) => Event::NewListenAddr(addr),
+			ipfs_embed::Event::ExpiredListenAddr(_, addr) => Event::ExpiredListenAddr(addr),
+			ipfs_embed::Event::ListenerClosed(_) => Event::ListenerClosed,
+			ipfs_embed::Event::NewExternalAddr(addr) => Event::NewExternalAddr(addr),
+			ipfs_embed::Event::ExpiredExternalAddr(addr) => Event::ExpiredExternalAddr(addr),
+			ipfs_embed::Event::Discovered(peer_id) => Event::Discovered(peer_id),
+			ipfs_embed::Event::Unreachable(peer_id) => Event::Unreachable(peer_id),
+			ipfs_embed::Event::Connected(peer_id) => Event::Connected(peer_id),
+			ipfs_embed::Event::Disconnected(peer_id) => Event::Disconnected(peer_id),
+			ipfs_embed::Event::Subscribed(peer_id, topic) => Event::Subscribed(peer_id, topic),
+			ipfs_embed::Event::Unsubscribed(peer_id, topic) => Event::Unsubscribed(peer_id, topic),
+			ipfs_embed::Event::Bootstrapped => Event::Bootstrapped,
+			ipfs_embed::Event::NewHead(head) => Event::NewHead(*head.id(), head.len()),
+		};
+		log::info!("Received event: {}", event);
+	}
 }
 
 pub fn keypair(i: u64) -> Keypair {

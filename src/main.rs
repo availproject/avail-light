@@ -116,6 +116,9 @@ pub async fn do_main() -> Result<()> {
 
 	let ipfs = client::make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
 
+	#[cfg(feature = "logs")]
+	tokio::task::spawn(client::log_events(ipfs.clone()));
+
 	// inform invoker about self
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
