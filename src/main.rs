@@ -3,6 +3,7 @@ extern crate rocksdb;
 extern crate structopt;
 
 use std::{
+	str::FromStr,
 	sync::{mpsc::sync_channel, Arc},
 	thread,
 	time::SystemTime,
@@ -113,20 +114,30 @@ pub async fn do_main() -> Result<()> {
 	let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
 	let (destroy_tx, destroy_rx) = sync_channel::<bool>(1);
 
+	let ipfs = client::make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
+
+	// inform invoker about self
+	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
+
+	// bootstrap client with non-empty set of
+	// application clients
+	if !cfg.bootstraps.is_empty() {
+		ipfs.bootstrap(
+			&cfg.bootstraps
+				.clone()
+				.into_iter()
+				.map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
+				.collect::<Vec<(_, _)>>()[..],
+		)
+		.await?;
+	}
+
 	// this one will spawn one thread for running ipfs client, while managing data discovery
 	// and reconstruction
 	let db_1 = db.clone();
 	let cfg_ = cfg.clone();
 	thread::spawn(move || {
-		client::run_client(
-			cfg_,
-			db_1,
-			block_rx,
-			self_info_tx,
-			destroy_rx,
-			cell_query_rx,
-		)
-		.unwrap();
+		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs).unwrap();
 	});
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
