@@ -52,14 +52,17 @@ pub async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
 	let cfg: types::RuntimeConfig = confy::load_path(opts.config)?;
 
-	let parsed_log_level = cfg.log_level.to_uppercase().parse::<log::LevelFilter>();
+	let (log_level, parse_error) = cfg
+		.log_level
+		.to_uppercase()
+		.parse::<log::LevelFilter>()
+		.map(|log_level| (log_level, None))
+		.unwrap_or_else(|parse_err| (log::LevelFilter::Info, Some(parse_err)));
 
-	SimpleLogger::new()
-		.with_level(*parsed_log_level.as_ref().unwrap_or(&log::LevelFilter::Info))
-		.init()?;
+	SimpleLogger::new().with_level(log_level).init()?;
 
-	if let Err(parse_error) = parsed_log_level {
-		log::warn!("Using default log level: {}", parse_error);
+	if let Some(error) = parse_error {
+		log::warn!("Using default log level: {}", error);
 	}
 
 	log::info!("Using {:?}", cfg);
