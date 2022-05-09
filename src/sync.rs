@@ -5,13 +5,13 @@ extern crate rocksdb;
 use std::{sync::Arc, time::SystemTime};
 
 use futures::stream::{self, StreamExt};
-use rocksdb::{DBWithThreadMode, SingleThreaded};
+use rocksdb::DB;
 
 pub async fn sync_block_headers(
 	url: String,
 	start_block: u64,
 	end_block: u64,
-	header_store: Arc<DBWithThreadMode<SingleThreaded>>,
+	header_store: Arc<DB>,
 	app_id: u32,
 ) {
 	let fut = stream::iter(
@@ -25,7 +25,7 @@ pub async fn sync_block_headers(
 		// run those many concurrent syncing lightweight tasks, not threads
 		|((block_num, url), store)| async move {
 			match store.get_pinned_cf(
-				store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+				&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
 				block_num.to_be_bytes(),
 			) {
 				Ok(v) => match v {
@@ -50,7 +50,7 @@ pub async fn sync_block_headers(
 					);
 					store
 						.put_cf(
-							store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
+							&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
 							block_num.to_be_bytes(),
 							serde_json::to_string(&block_body.header)
 								.unwrap()
@@ -67,7 +67,7 @@ pub async fn sync_block_headers(
 					// If it's found that this certain block is not verified
 					// then it'll be verified now
 					match store.get_pinned_cf(
-						store
+						&store
 							.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
 							.unwrap(),
 						block_num.to_be_bytes(),
@@ -119,7 +119,7 @@ pub async fn sync_block_headers(
 					// write confidence factor into on-disk database
 					store
 						.put_cf(
-							store
+							&store
 								.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
 								.unwrap(),
 							block_num.to_be_bytes(),

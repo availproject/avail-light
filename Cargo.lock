@@ -1807,9 +1807,9 @@ dependencies = [
 
 [[package]]
 name = "ipfs-embed"
-version = "0.22.4"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c3eabfe41bd1f8f0da8e251fcf57184ed795366bf5dda8d95c9c775859a6fee"
+checksum = "9f92bc0a39a129b9049aa7ea8344386ffb6f9efc83dc6967805bdc5326485c54"
 dependencies = [
  "anyhow",
  "async-global-executor",
@@ -1907,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git#da51a7368a2f86bf274e496604d574f27f5a4dcf"
+source = "git+https://github.com/maticnetwork/avail.git?branch=miguel/ava-154-proof-verification-fails-on-light#6c8781e17c49e0c4aa0ce889c1af92f40a2e5cfa"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1922,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git#da51a7368a2f86bf274e496604d574f27f5a4dcf"
+source = "git+https://github.com/maticnetwork/avail.git?branch=miguel/ava-154-proof-verification-fails-on-light#6c8781e17c49e0c4aa0ce889c1af92f40a2e5cfa"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
@@ -2308,15 +2308,14 @@ dependencies = [
 
 [[package]]
 name = "libp2p-quic"
-version = "0.6.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efab133f41ec02c6554c10c31e919f24ccca21c61316b1ddc473d1604fc3728a"
+checksum = "1de8fda3ccc284d52049fab92db2b1fcd9d6b0ac4e09760456a2d4d6ada585a7"
 dependencies = [
  "anyhow",
  "async-global-executor",
  "async-io",
  "bytes",
- "ed25519-dalek",
  "fnv",
  "futures",
  "if-watch",
@@ -3465,9 +3464,9 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quinn-noise"
-version = "0.3.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e1c50d22f398d489a79753d17bab5a6f9fb48e5cc537ce50b0bb9312ae07ea9"
+checksum = "83e7626a7a184fe86b38d5b3a87722695d3108a89a3d856a75e42e1cfb49db34"
 dependencies = [
  "bytes",
  "chacha20poly1305",
@@ -4699,7 +4698,9 @@ checksum = "e80b39df6afcc12cdf752398ade96a6b9e99c903dfdc36e53ad10b9c366bca72"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -4869,6 +4870,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.5",
  "sha-1",
  "thiserror",

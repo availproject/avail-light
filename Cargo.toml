@@ -7,9 +7,9 @@ authors = ["Polygon Avail Team"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kate-recovery = {git = "https://github.com/maticnetwork/avail.git"}
-kate-proof = {git = "https://github.com/maticnetwork/avail.git"}
-tokio-tungstenite = "0.16.1"
+kate-recovery = {git = "https://github.com/maticnetwork/avail.git", branch = "miguel/ava-154-proof-verification-fails-on-light"}
+kate-proof = {git = "https://github.com/maticnetwork/avail.git", branch = "miguel/ava-154-proof-verification-fails-on-light"}
+tokio-tungstenite = { version = "0.16.1", features = ["native-tls"] }
 url = "2.2.2"
 tokio = { version = "1.2.0", features = ["full"] }
 futures-util = "0.3.17"
@@ -24,7 +24,7 @@ futures = { version = "0.3.15", default-features = false, features = ["std", "th
 chrono = "0.4.19"
 libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor"] }
 multihash = { version = "0.14.0", default-features = false, features = ["blake3"] }
-ipfs-embed = { version = "0.22.4" }
+ipfs-embed = { version = "=0.22.3" }
 anyhow = "1.0.41"
 tempdir = "0.3.7"
 ed25519-dalek = "1.0.1"
@@ -32,7 +32,7 @@ async-std = { version = "1.9.0", features = ["attributes"] }
 confy = "0.4.0"
 num_cpus = "1.13.0"
 structopt = "0.3.25"
-rocksdb = { version = "0.17.0", features = ["snappy"] }
+rocksdb = { version = "0.17.0", features = ["snappy", "multi-threaded-cf"] }
 threadpool = "1.8.1"
 log = "0.4"
 simple_logger = "2.1.0"

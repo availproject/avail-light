@@ -135,7 +135,7 @@ pub async fn do_main() -> Result<()> {
 	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
-	let latest_block = hex_to_u64_block_number(block_header.number);
+	let latest_block = block_header.number;
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
 	let app_id: u32 = cfg.app_id as u32;
@@ -143,16 +143,15 @@ pub async fn do_main() -> Result<()> {
 		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
 	});
 
+	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(cfg.full_node_ws)?;
 	log::info!("Syncing block headers from 0 to {}", latest_block);
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
 		write
-			.send(Message::Text(
-				r#"{"id":1, "jsonrpc":"2.0", "method": "subscribe_newHead"}"#.to_string() + "\n",
-			))
+			.send(Message::Text(BODY.to_string()))
 			.await
-			.context("ws-message(subscribe_newHead) send failed")?;
+			.context("ws-message(chain_subscribeFinalizedHeads) send failed")?;
 
 		log::info!("Connected to Substrate Node");
 
@@ -170,10 +169,8 @@ pub async fn do_main() -> Result<()> {
 				Ok(types::Response { params, .. }) => {
 					let header = params.result;
 
-					// well this is in hex form as `String`
-					let block_num_hex = header.number.clone();
 					// now this is in `u64`
-					let num = hex_to_u64_block_number(block_num_hex);
+					let num = header.number;
 
 					let begin = SystemTime::now();
 
@@ -205,7 +202,7 @@ pub async fn do_main() -> Result<()> {
 					);
 
 					// write confidence factor into on-disk database
-					db_3.put_cf(cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
+					db_3.put_cf(&cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
 						.context("failed to write confidence factor")?;
 
 					let conf = calculate_confidence(count);
@@ -251,7 +248,7 @@ pub async fn do_main() -> Result<()> {
 					// in range [0, LATEST], where LATEST = latest block number
 					// when this process started
 					db_3.put_cf(
-						cf_handle_1,
+						&cf_handle_1,
 						num.to_be_bytes(),
 						serde_json::to_string(&header)?.as_bytes(),
 					)
@@ -300,9 +297,4 @@ pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::Block
 		v.extend_from_slice(&proof.result[i * 80..(i + 1) * 80]);
 		cells[i].proof = v;
 	}
-}
-
-fn hex_to_u64_block_number(num: String) -> u64 {
-	let wo_prefix = num.trim_start_matches("0x");
-	u64::from_str_radix(wo_prefix, 16).unwrap()
 }
