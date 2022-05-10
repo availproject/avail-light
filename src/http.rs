@@ -15,7 +15,7 @@ use hyper::{
 };
 use num::{BigUint, FromPrimitive};
 use regex::Regex;
-use rocksdb::{ColumnFamily, DBWithThreadMode, SingleThreaded};
+use rocksdb::{BoundColumnFamily, DB};
 use tokio;
 
 use crate::types::CellContentQueryPayload;
@@ -33,7 +33,7 @@ pub fn serialised_confidence(block: u64, factor: f64) -> String {
 
 //service part of hyper
 struct Handler {
-	store: Arc<DBWithThreadMode<SingleThreaded>>,
+	store: Arc<DB>,
 }
 
 impl Service<Request<Body>> for Handler {
@@ -66,11 +66,11 @@ impl Service<Request<Body>> for Handler {
 		}
 
 		fn get_confidence(
-			db: Arc<DBWithThreadMode<SingleThreaded>>,
-			cf_handle: &ColumnFamily,
+			db: Arc<DB>,
+			cf_handle: Arc<BoundColumnFamily<'_>>,
 			block: u64,
 		) -> Result<u32, String> {
-			match db.get_cf(cf_handle, block.to_be_bytes()) {
+			match db.get_cf(&cf_handle, block.to_be_bytes()) {
 				Ok(v) => match v {
 					Some(v) => Ok(u32::from_be_bytes(v.try_into().unwrap())),
 					None => Err("failed to find entry in confidence store".to_owned()),
@@ -142,7 +142,7 @@ impl Service<Request<Body>> for Handler {
 }
 
 struct MakeHandler {
-	store: Arc<DBWithThreadMode<SingleThreaded>>,
+	store: Arc<DB>,
 }
 
 impl<T> Service<T> for MakeHandler {
@@ -163,7 +163,7 @@ impl<T> Service<T> for MakeHandler {
 
 #[tokio::main]
 pub async fn run_server(
-	store: Arc<DBWithThreadMode<SingleThreaded>>,
+	store: Arc<DB>,
 	cfg: super::types::RuntimeConfig,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

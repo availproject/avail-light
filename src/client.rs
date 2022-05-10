@@ -26,7 +26,7 @@ use ipfs_embed::{
 };
 use kate_recovery::com::{reconstruct_app_extrinsics, Cell};
 use libipld::Ipld;
-use rocksdb::{DBWithThreadMode, SingleThreaded};
+use rocksdb::DB;
 
 use crate::{
 	data::{
@@ -41,7 +41,7 @@ use crate::{
 #[tokio::main]
 pub async fn run_client(
 	cfg: super::types::RuntimeConfig,
-	block_cid_store: Arc<DBWithThreadMode<SingleThreaded>>,
+	block_cid_store: Arc<DB>,
 	block_rx: Receiver<ClientMsg>,
 	self_info_tx: SyncSender<(PeerId, Multiaddr)>,
 	destroy_rx: Receiver<bool>,
@@ -663,12 +663,9 @@ pub fn peer_id(i: u64) -> PeerId { keypair(i).to_peer_id() }
 // Following two are utility functions for interacting with local on-disk data store
 // where block -> cid mapping is maintained
 
-pub fn get_block_cid_entry(
-	store: Arc<DBWithThreadMode<SingleThreaded>>,
-	block: i128,
-) -> Option<crate::types::BlockCidPair> {
+pub fn get_block_cid_entry(store: Arc<DB>, block: i128) -> Option<crate::types::BlockCidPair> {
 	match store.get_cf(
-		store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
+		&store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
 		block.to_be_bytes(),
 	) {
 		Ok(v) => match v {
@@ -729,11 +726,7 @@ mod tests {
 	}
 }
 
-pub fn set_block_cid_entry(
-	store: Arc<DBWithThreadMode<SingleThreaded>>,
-	block: i128,
-	pair: BlockCidPair,
-) -> Result<(), String> {
+pub fn set_block_cid_entry(store: Arc<DB>, block: i128, pair: BlockCidPair) -> Result<(), String> {
 	let serialisable_pair = crate::types::BlockCidPersistablePair {
 		cid: pair.cid.to_string(),
 		self_computed: pair.self_computed,
@@ -741,7 +734,7 @@ pub fn set_block_cid_entry(
 	let serialised = serde_json::to_string(&serialisable_pair).unwrap();
 
 	match store.put_cf(
-		store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
+		&store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
 		block.to_be_bytes(),
 		serialised.as_bytes(),
 	) {
