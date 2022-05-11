@@ -333,9 +333,9 @@ pub fn generate_app_specific_cells(
 	buf
 }
 
-pub fn get_id_specific_size(num: Header) -> HashMap<u32, u32> {
-	let app_index = num.app_data_lookup.index;
-	let app_size = num.app_data_lookup.size;
+pub fn get_id_specific_size(block_header: Header) -> HashMap<u32, u32> {
+	let app_index = block_header.app_data_lookup.index;
+	let app_size = block_header.app_data_lookup.size;
 	let mut index: HashMap<u32, u32> = HashMap::new();
 	for i in 0..app_index.len() {
 		if i + 1 == app_index.len() {
