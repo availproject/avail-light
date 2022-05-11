@@ -7,6 +7,8 @@ use std::{sync::Arc, time::SystemTime};
 use futures::stream::{self, StreamExt};
 use rocksdb::DB;
 
+use crate::rpc::{generate_random_cells};
+
 pub async fn sync_block_headers(
 	url: String,
 	start_block: u64,
@@ -87,11 +89,11 @@ pub async fn sync_block_headers(
 					let max_rows = block_body.header.extrinsics_root.rows * 2;
 					let max_cols = block_body.header.extrinsics_root.cols;
 					let commitment = block_body.header.extrinsics_root.commitment;
+					let block_num = block_body.header.number.clone();
+					// now this is in `u64`
+					let kate_cells = generate_random_cells(max_rows, max_cols, block_num);
 
-					let cells = match crate::rpc::get_kate_proof(
-						&url, block_num, max_rows, max_cols, app_id,
-					)
-					.await
+					let cells = match crate::rpc::get_kate_proof(&url, block_num, kate_cells).await
 					{
 						Ok(cells) => cells,
 						Err(e) => {

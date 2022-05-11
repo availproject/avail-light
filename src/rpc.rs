@@ -260,13 +260,7 @@ pub async fn get_cells(
 		.and_then(|inner| inner.map_err(|_| "Failed to unwrap Mutex".to_owned()))
 }
 
-pub async fn get_kate_proof(
-	url: &str,
-	block_num: u64,
-	max_rows: u16,
-	max_cols: u16,
-	mut cells: Vec<Cell>,
-) -> Result<Vec<Cell>> {
+pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> Result<Vec<Cell>> {
 	let block = get_block_by_number(url, block_num).await?;
 
 	//tuple of values (id,index)
@@ -278,21 +272,6 @@ pub async fn get_kate_proof(
 		index_tuple
 	);
 
-	// let mut cells = match index_tuple
-	// 	.iter()
-	// 	.find(|elem| app_id != 0 && app_id == elem.0)
-	// {
-	// 	None => generate_random_cells(max_rows, max_cols, block_num),
-	// 	Some((app_id, offset)) => {
-	// 		log::info!(
-	// 			"{} chunks for app {} found in block {}",
-	// 			offset,
-	// 			app_id,
-	// 			block_num
-	// 		);
-	// 		generate_app_specific_cells(*offset, max_cols, block_num, block, *app_id)
-	// 	},
-	// };
 	let payload = generate_kate_query_payload(block_num, &cells);
 
 	let req = hyper::Request::builder()
@@ -333,16 +312,16 @@ pub fn generate_app_specific_cells(
 	index: u32,
 	max_col: u16,
 	num: u64,
-	block: Block,
+	header: Header,
 	id: u32,
 ) -> Vec<Cell> {
 	let mut buf = Vec::new();
-	let hash_ind = get_id_specific_size(block);
+	let hash_ind = get_id_specific_size(header);
 	let endsize = hash_ind.get(&id).unwrap();
 
-	for index in index..=*endsize {
-		let rows = (index - 1) as u16 / max_col;
-		let cols = (index - 1) as u16 % max_col;
+	(index..*endsize).for_each(|index| {
+		let rows = (index) as u16 / max_col;
+		let cols = (index) as u16 % max_col;
 
 		buf.push(Cell {
 			block: num,
@@ -350,13 +329,13 @@ pub fn generate_app_specific_cells(
 			col: cols as u16,
 			..Default::default()
 		});
-	}
+	});
 	buf
 }
 
-pub fn get_id_specific_size(num: Block) -> HashMap<u32, u32> {
-	let app_index = num.header.app_data_lookup.index;
-	let app_size = num.header.app_data_lookup.size;
+pub fn get_id_specific_size(num: Header) -> HashMap<u32, u32> {
+	let app_index = num.app_data_lookup.index;
+	let app_size = num.app_data_lookup.size;
 	let mut index: HashMap<u32, u32> = HashMap::new();
 	for i in 0..app_index.len() {
 		if i + 1 == app_index.len() {
@@ -421,3 +400,4 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	}
 	Ok(rpc_url)
 }
+
