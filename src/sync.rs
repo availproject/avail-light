@@ -7,7 +7,7 @@ use std::{sync::Arc, time::SystemTime};
 use futures::stream::{self, StreamExt};
 use rocksdb::DB;
 
-use crate::rpc::{generate_random_cells};
+use crate::rpc::generate_random_cells;
 
 pub async fn sync_block_headers(
 	url: String,

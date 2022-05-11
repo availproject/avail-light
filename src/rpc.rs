@@ -400,4 +400,3 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	}
 	Ok(rpc_url)
 }
-
