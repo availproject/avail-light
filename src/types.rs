@@ -286,6 +286,7 @@ pub struct Cell {
 	pub block: u64,
 	pub row: u16,
 	pub col: u16,
+	pub data: Vec<u8>,
 	pub proof: Vec<u8>,
 }
 

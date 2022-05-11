@@ -11,7 +11,12 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Multiaddr, PeerId};
+use ipfs_embed::{Block, Cid, DefaultParams, Ipfs, Multiaddr, PeerId};
+use libipld::{
+	codec_impl::IpldCodec,
+	multihash::{Code, MultihashDigest},
+	Ipld,
+};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -119,12 +124,9 @@ pub async fn do_main() -> Result<()> {
 
 	let ipfs = client::make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
 
-<<<<<<< HEAD
 	#[cfg(feature = "logs")]
 	tokio::task::spawn(client::log_events(ipfs.clone()));
 
-=======
->>>>>>> Move ipfs client creation to main.
 	// inform invoker about self
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
@@ -145,8 +147,9 @@ pub async fn do_main() -> Result<()> {
 	// and reconstruction
 	let db_1 = db.clone();
 	let cfg_ = cfg.clone();
+	let ipfs_ = ipfs.clone();
 	thread::spawn(move || {
-		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs).unwrap();
+		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs_).unwrap();
 	});
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
@@ -159,6 +162,7 @@ pub async fn do_main() -> Result<()> {
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
 	let app_id: u32 = cfg.app_id as u32;
+	let mut cells: Vec<types::Cell>;
 	tokio::spawn(async move {
 		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
 	});
@@ -299,6 +303,9 @@ pub async fn do_main() -> Result<()> {
 					)
 					.context("failed to write block header")?;
 
+					// Push the randomly selected cells to IPFS
+					push_cells_to_ipfs(cells, ipfs.clone());
+
 					// notify ipfs-based application client
 					// that newly mined block has been received
 					block_tx
@@ -332,14 +339,46 @@ pub async fn main() -> Result<()> {
 	})
 }
 
-/* note:
-	following are the support functions.
-*/
-pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::BlockProofResponse) {
-	assert_eq!(80 * cells.len(), proof.result.len());
-	for i in 0..cells.len() {
-		let mut v = Vec::new();
-		v.extend_from_slice(&proof.result[i * 80..(i + 1) * 80]);
-		cells[i].proof = v;
+pub fn push_cells_to_ipfs(cells: Vec<types::Cell>, ipfs: Ipfs<DefaultParams>) {
+	// TODO: optimization - paralelize IPFS insertion
+	for cell in cells {
+		// Generate ned CID from `block_number:col:row`
+		let unique_cell_reference =
+			cell.block.to_string() + ":" + &cell.col.to_string() + ":" + &cell.row.to_string();
+		println!("unique cell reference: {:?}", unique_cell_reference);
+		let hash = Code::Sha3_256.digest(unique_cell_reference.as_bytes());
+		println!("mh: {:?}", hash);
+		let cell_cid = Cid::new_v1(IpldCodec::DagCbor.into(), hash);
+
+		// Block data isn't encoded
+		// TODO: optimization - multiple cells inside a single block (per appID)
+		let block = Block::<DefaultParams>::new_unchecked(cell_cid, cell.data);
+
+		// Temp pin per cell
+		// Log and skip cells that produce errors when inserting
+		match ipfs.create_temp_pin() {
+			Ok(pin) => {
+				let result = ipfs.temp_pin(&pin, block.cid()).and(ipfs.insert(&block));
+				match result {
+					Ok(_) => {},
+					Err(error) => {
+						log::info!(
+							"Error inserting cell to IPFS: {}. Cell reference: {}",
+							error,
+							unique_cell_reference
+						);
+						continue;
+					},
+				}
+			},
+			Err(error) => {
+				log::info!(
+					"Error creating temp pin {}. Cell reference: {}",
+					error,
+					unique_cell_reference
+				);
+				continue;
+			},
+		}
 	}
 }
