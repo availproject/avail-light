@@ -1907,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=miguel/ava-154-proof-verification-fails-on-light#6c8781e17c49e0c4aa0ce889c1af92f40a2e5cfa"
+source = "git+https://github.com/maticnetwork/avail.git?tag=v1.0.0#741bc5740a7195ca1c1453d1a0c9192b8ab169c0"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1922,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=miguel/ava-154-proof-verification-fails-on-light#6c8781e17c49e0c4aa0ce889c1af92f40a2e5cfa"
+source = "git+https://github.com/maticnetwork/avail.git?tag=v1.0.0#741bc5740a7195ca1c1453d1a0c9192b8ab169c0"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
