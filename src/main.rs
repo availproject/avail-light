@@ -356,29 +356,17 @@ pub fn push_cells_to_ipfs(cells: Vec<types::Cell>, ipfs: Ipfs<DefaultParams>) {
 
 		// Temp pin per cell
 		// Log and skip cells that produce errors when inserting
-		match ipfs.create_temp_pin() {
-			Ok(pin) => {
-				let result = ipfs.temp_pin(&pin, block.cid()).and(ipfs.insert(&block));
-				match result {
-					Ok(_) => {},
-					Err(error) => {
-						log::info!(
-							"Error inserting cell to IPFS: {}. Cell reference: {}",
-							error,
-							unique_cell_reference
-						);
-						continue;
-					},
-				}
-			},
-			Err(error) => {
-				log::info!(
-					"Error creating temp pin {}. Cell reference: {}",
-					error,
-					unique_cell_reference
-				);
-				continue;
-			},
+		let result = ipfs
+			.create_temp_pin()
+			.and_then(|pin| ipfs.temp_pin(&pin, block.cid()))
+			.and(ipfs.insert(&block));
+
+		if let Err(error) = result {
+			log::info!(
+				"Error pushing cell to IPFS: {}. Cell reference: {}",
+				error,
+				unique_cell_reference
+			);
 		}
 	}
 }
