@@ -15,7 +15,6 @@ use ipfs_embed::{Block, Cid, DefaultParams, Ipfs, Multiaddr, PeerId};
 use libipld::{
 	codec_impl::IpldCodec,
 	multihash::{Code, MultihashDigest},
-	Ipld,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;

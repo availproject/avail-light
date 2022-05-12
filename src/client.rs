@@ -32,7 +32,7 @@ use crate::{
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
 	rpc::{check_http, get_cells},
-	types::{BlockCidPair, ClientMsg, Event},
+	types::{BlockCidPair, ClientMsg},
 };
 
 #[tokio::main]
