@@ -1,6 +1,11 @@
 extern crate ipfs_embed;
 
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
+use libipld::{
+	multihash::{Code, MultihashDigest},
+	IpldCodec,
+};
+use multihash::Multihash;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -293,6 +298,16 @@ pub struct Cell {
 impl Cell {
 	/// Cell refrence in format `block_number:column_number:row_number`
 	pub fn reference(&self) -> String { format!("{}:{}:{}", self.block, self.col, self.row) }
+
+	pub fn hash(&self) -> Multihash { Code::Sha3_256.digest(self.reference().as_bytes()) }
+
+	pub fn cid(&self) -> Cid { Cid::new_v1(IpldCodec::DagCbor.into(), self.hash()) }
+
+	// Block data isn't encoded
+	// TODO: optimization - multiple cells inside a single block (per appID)
+	pub fn to_ipfs_block(self) -> IpfsBlock<DefaultParams> {
+		IpfsBlock::<DefaultParams>::new_unchecked(self.cid(), self.data)
+	}
 }
 
 #[derive(Hash, Eq, PartialEq)]

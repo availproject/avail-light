@@ -11,12 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Block, Cid, DefaultParams, Ipfs, Multiaddr, PeerId};
-use libipld::{
-	codec_impl::IpldCodec,
-	multihash::{Code, MultihashDigest},
-};
-use multihash::Multihash;
+use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -304,7 +299,18 @@ pub async fn do_main() -> Result<()> {
 					.context("failed to write block header")?;
 
 					// Push the randomly selected cells to IPFS
-					push_cells_to_ipfs(cells, ipfs.clone());
+					for cell in cells {
+						let reference = cell.reference();
+						println!("cell reference: {:?}, hash: {:?}", reference, &cell.hash());
+
+						if let Err(error) = ipfs.insert(&cell.to_ipfs_block()) {
+							log::info!(
+								"Error pushing cell to IPFS: {}. Cell reference: {}",
+								error,
+								reference
+							);
+						}
+					}
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
@@ -337,35 +343,4 @@ pub async fn main() -> Result<()> {
 		log::error!("{:?}", e);
 		e
 	})
-}
-
-fn hash(cell: &types::Cell) -> Multihash { Code::Sha3_256.digest(cell.reference().as_bytes()) }
-
-fn cid(cell: &types::Cell) -> Cid { Cid::new_v1(IpldCodec::DagCbor.into(), hash(cell)) }
-
-pub fn push_cells_to_ipfs(cells: Vec<types::Cell>, ipfs: Ipfs<DefaultParams>) {
-	// TODO: optimization - paralelize IPFS insertion
-	for cell in cells {
-		let reference = cell.reference();
-		println!("cell reference: {:?}, hash: {:?}", reference, hash(&cell));
-
-		// Block data isn't encoded
-		// TODO: optimization - multiple cells inside a single block (per appID)
-		let block = Block::<DefaultParams>::new_unchecked(cid(&cell), cell.data);
-
-		// Temp pin per cell
-		// Log and skip cells that produce errors when inserting
-		let result = ipfs
-			.create_temp_pin()
-			.and_then(|pin| ipfs.temp_pin(&pin, block.cid()))
-			.and(ipfs.insert(&block));
-
-		if let Err(error) = result {
-			log::info!(
-				"Error pushing cell to IPFS: {}. Cell reference: {}",
-				error,
-				reference
-			);
-		}
-	}
 }
