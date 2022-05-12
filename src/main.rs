@@ -216,18 +216,9 @@ pub async fn do_main() -> Result<()> {
 					//@TODO : Major optimization needed here
 					if conf >= cfg.confidence && !app_index.is_empty() {
 						let query_cells: Vec<types::Cell> = match cfg.app_id {
-							n if n == -1 => {
-								println!("\n 👻 cehcking max rows {:?}", max_rows);
-								// for i in 0..max_rows {
-								// 	for j in 0..max_cols {
-								// 		cells.push(types::Cell {
-								// 			block: num,
-								// 			row: i,
-								// 			col: j,
-								// 			..Default::default()
-								// 		});
-								// 	}
-								// }
+							//@TODO: Number of cells that can handle -1 case needs to set or set to 50% of total cells
+							// otherwise LC will ctrash because of kate_query_proof limit
+							n if n == -1 => {								
 								let cells: Vec<types::Cell> = (0..max_cols as u16)
 									.flat_map(move |col| {
 										(0..max_rows as u16).map(move |row| types::Cell {
