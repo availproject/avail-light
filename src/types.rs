@@ -290,6 +290,11 @@ pub struct Cell {
 	pub proof: Vec<u8>,
 }
 
+impl Cell {
+	/// Cell refrence in format `block_number:column_number:row_number`
+	pub fn reference(&self) -> String { format!("{}:{}:{}", self.block, self.col, self.row) }
+}
+
 #[derive(Hash, Eq, PartialEq)]
 pub struct MatrixCell {
 	pub row: u16,

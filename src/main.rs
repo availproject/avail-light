@@ -16,6 +16,7 @@ use libipld::{
 	codec_impl::IpldCodec,
 	multihash::{Code, MultihashDigest},
 };
+use multihash::Multihash;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -338,20 +339,19 @@ pub async fn main() -> Result<()> {
 	})
 }
 
+fn hash(cell: &types::Cell) -> Multihash { Code::Sha3_256.digest(cell.reference().as_bytes()) }
+
+fn cid(cell: &types::Cell) -> Cid { Cid::new_v1(IpldCodec::DagCbor.into(), hash(cell)) }
+
 pub fn push_cells_to_ipfs(cells: Vec<types::Cell>, ipfs: Ipfs<DefaultParams>) {
 	// TODO: optimization - paralelize IPFS insertion
 	for cell in cells {
-		// Generate ned CID from `block_number:col:row`
-		let unique_cell_reference =
-			cell.block.to_string() + ":" + &cell.col.to_string() + ":" + &cell.row.to_string();
-		println!("unique cell reference: {:?}", unique_cell_reference);
-		let hash = Code::Sha3_256.digest(unique_cell_reference.as_bytes());
-		println!("mh: {:?}", hash);
-		let cell_cid = Cid::new_v1(IpldCodec::DagCbor.into(), hash);
+		let reference = cell.reference();
+		println!("cell reference: {:?}, hash: {:?}", reference, hash(&cell));
 
 		// Block data isn't encoded
 		// TODO: optimization - multiple cells inside a single block (per appID)
-		let block = Block::<DefaultParams>::new_unchecked(cell_cid, cell.data);
+		let block = Block::<DefaultParams>::new_unchecked(cid(&cell), cell.data);
 
 		// Temp pin per cell
 		// Log and skip cells that produce errors when inserting
@@ -364,7 +364,7 @@ pub fn push_cells_to_ipfs(cells: Vec<types::Cell>, ipfs: Ipfs<DefaultParams>) {
 			log::info!(
 				"Error pushing cell to IPFS: {}. Cell reference: {}",
 				error,
-				unique_cell_reference
+				reference
 			);
 		}
 	}
