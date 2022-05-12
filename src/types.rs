@@ -339,7 +339,7 @@ pub struct RuntimeConfig {
 	pub ipfs_path: String,
 	pub full_node_rpc: Vec<String>,
 	pub full_node_ws: Vec<String>,
-	pub app_id: u16,
+	pub app_id: i16,
 	pub confidence: f64,
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	pub avail_path: String,

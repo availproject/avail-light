@@ -181,9 +181,10 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
+					let index_tuple = header.app_data_lookup.index.clone();
+					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					//hyper request for getting the kate query request
-					let cells =
-						rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, app_id).await?;
+					let cells = rpc::get_kate_proof(&rpc_url, num, kate_cells).await?;
 					//hyper request for verifying the proof
 					let count = proof::verify_proof(
 						num,
@@ -212,31 +213,55 @@ pub async fn do_main() -> Result<()> {
 					The following is the part when the user have already subscribed
 					to an appID and now its verifying every cell that contains the data
 					*/
-					if cfg.app_id > 0 && conf >= cfg.confidence && !app_index.is_empty() {
-						for (app_id, _) in app_index.iter().filter(|app| cfg.app_id as u32 == app.0)
-						{
-							let proof =
-								rpc::get_kate_proof(&rpc_url, num, max_rows, max_cols, *app_id)
-									.await;
-							if let Ok(req_cells) = proof {
-								log::info!("\n💡Verifying all {} cells containing data of block :{} because app id {} is given ", req_cells.len(), num, app_id);
-								//hyper request for verifying the proof
-								let count = proof::verify_proof(
-									num,
-									max_rows,
-									max_cols,
-									req_cells,
-									commitment.clone(),
-								);
-								log::info!(
-									"✅ Completed {} rounds of verification for block number {} ",
-									count,
-									num
-								);
-							} else {
-								log::info!("\n ❌ getting proof cells failed, data availability cannot be ensured");
-							}
-						}
+					//@TODO : Major optimization needed here
+					if conf >= cfg.confidence && !app_index.is_empty() {
+						let query_cells: Vec<types::Cell> = match cfg.app_id {
+							//@TODO: Number of cells that can handle -1 case needs to set or set to 50% of total cells
+							// otherwise LC will ctrash because of kate_query_proof limit
+							n if n == -1 => {
+								let cells: Vec<types::Cell> = (0..max_cols as u16)
+									.flat_map(move |col| {
+										(0..max_rows as u16).map(move |row| types::Cell {
+											block: 1,
+											row,
+											col,
+											..Default::default()
+										})
+									})
+									.collect();
+								cells
+							},
+							n if n > 0 => {
+								let cells = if let Some((app_id, offset)) = index_tuple
+									.iter()
+									.find(|elem| app_id != 0 && app_id == elem.0)
+								{
+									log::info!(
+										"{} chunks for app {} found in block {}",
+										offset,
+										app_id,
+										num
+									);
+									rpc::generate_app_specific_cells(
+										*offset,
+										max_cols,
+										num,
+										header.clone(),
+										*app_id,
+									)
+								} else {
+									vec![]
+								};
+								cells
+							},
+							_ => {
+								log::info!("\n ❌ no app id is given, random sampling begins");
+								vec![]
+							},
+						};
+						let cells = rpc::get_kate_proof(&rpc_url, num, query_cells).await?;
+						let _count =
+							proof::verify_proof(num, max_rows, max_cols, cells, commitment.clone());
 					}
 
 					// push latest mined block's header into column family specified
