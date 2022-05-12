@@ -5,6 +5,7 @@ extern crate libipld;
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{Context, Result};
+use futures::future::join_all;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
 use libipld::{
 	codec_impl::IpldCodec,
@@ -91,44 +92,58 @@ pub fn non_empty_cells_len(matrix: &Matrix) -> usize {
 		.fold(0usize, |sum, val| sum + val.iter().flatten().count())
 }
 
-fn get_cell(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Option<Cell>> {
-	ipfs.get(cid)
+async fn get_cell(ipfs: &Ipfs<DefaultParams>, cid: Cid) -> Result<Option<Cell>> {
+	let peers = ipfs.peers();
+	ipfs.fetch(&cid, peers)
+		.await
 		.and_then(|result| result.ipld())
 		.map(|decoded| extract_cell(&decoded))
 		.context("Cannot get cell")
 }
 
-fn get_column(ipfs: &Ipfs<DefaultParams>, cid: &Cid) -> Result<Column> {
+async fn get_column(ipfs: &Ipfs<DefaultParams>, cid: Cid) -> Result<Column> {
+	let peers = ipfs.peers();
 	let links = ipfs
-		.get(cid)
+		.fetch(&cid, peers)
+		.await
 		.and_then(|result| result.ipld())
 		.and_then(|decoded| extract_links(&decoded).context("Cannot extract cell links"))
 		.context("Cannot get cell links")?;
 
-	links
+	let future_col = links
 		.iter()
 		.flat_map(|link| link.context("Cell link is missing"))
-		.map(|cell_cid| get_cell(ipfs, &cell_cid))
-		.collect::<Result<Column>>()
+		.map(|cell_cid| get_cell(ipfs, cell_cid))
+		.collect::<Vec<_>>();
+
+	let col = join_all(future_col).await;
+	col.into_iter()
+		.collect::<Result<Vec<_>>>()
 		.context("Cannot get column cells")
 }
 
-pub fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Result<Matrix> {
+pub async fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Result<Matrix> {
 	match root_cid {
 		None => Ok(vec![]),
 		Some(cid) => {
+			let peers = ipfs.peers();
 			let column_cids = ipfs
-				.get(&cid)
+				.fetch(&cid, peers)
+				.await
 				.and_then(|result| result.ipld())
 				.and_then(|root| destructure_matrix(&root).context("Cannot destructure root block"))
 				.and_then(|(_, column_cids, _)| column_cids.context("No column block cids"))
 				.context("Cannot get column cids")?;
 
-			column_cids
+			let future_mat = column_cids
 				.iter()
 				.flat_map(|column_cid| column_cid.context("No column block cid"))
-				.map(|column_cid| get_column(ipfs, &column_cid))
-				.collect::<Result<Matrix>>()
+				.map(|column_cid| get_column(ipfs, column_cid))
+				.collect::<Vec<_>>();
+
+			let mat = join_all(future_mat).await;
+			mat.into_iter()
+				.collect::<Result<Vec<_>>>()
 				.context("Cannot get matrix")
 		},
 	}
@@ -583,7 +598,7 @@ mod tests {
 			.await
 			.unwrap();
 
-		let result = get_matrix(&ipfs, Some(root_cid)).unwrap();
+		let result = get_matrix(&ipfs, Some(root_cid)).await.unwrap();
 
 		let mut cells_iter = cells.iter();
 

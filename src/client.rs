@@ -409,11 +409,12 @@ pub async fn run_client(
 				let block_cid_entry =
 					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
 						.map(|pair| pair.cid);
-
-				let ipfs_cells = get_matrix(&ipfs, block_cid_entry).unwrap_or_else(|err| {
-					log::info!("Fail to fetch cells from IPFS: {}", err);
-					vec![]
-				});
+				let ipfs_cells = get_matrix(&ipfs, block_cid_entry)
+					.await
+					.unwrap_or_else(|err| {
+						log::info!("Fail to fetch cells from IPFS: {}", err);
+						vec![]
+					});
 
 				let requested_cells = empty_cells(&ipfs_cells, block.max_cols, block.max_rows);
 
