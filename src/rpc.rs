@@ -378,7 +378,8 @@ fn from_kate_cell(block: u64, cell: &kate_recovery::com::Cell) -> Cell {
 		block,
 		row: cell.row,
 		col: cell.col,
-		proof: cell.data.to_vec(),
+		data: cell.data[48..].to_vec(),
+		proof: cell.data[..48].to_vec(),
 	}
 }
 
