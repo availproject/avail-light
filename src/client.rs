@@ -33,7 +33,7 @@ use crate::{
 	},
 	proof::verify_proof,
 	rpc::{check_http, from_kate_cells, get_cells},
-	types::{BlockCidPair, ClientMsg, Event},
+	types::{BlockCidPair, ClientMsg},
 };
 
 #[tokio::main]
