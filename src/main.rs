@@ -145,8 +145,9 @@ pub async fn do_main() -> Result<()> {
 	// and reconstruction
 	let db_1 = db.clone();
 	let cfg_ = cfg.clone();
+	let ipfs_ = ipfs.clone();
 	thread::spawn(move || {
-		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs).unwrap();
+		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs_).unwrap();
 	});
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
@@ -158,6 +159,7 @@ pub async fn do_main() -> Result<()> {
 	let latest_block = block_header.number;
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
+
 	tokio::spawn(async move {
 		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2).await;
 	});
@@ -365,6 +367,20 @@ pub async fn do_main() -> Result<()> {
 					)
 					.context("failed to write block header")?;
 
+					// Push the randomly selected cells to IPFS
+					for cell in cells {
+						let reference = cell.reference();
+						println!("cell reference: {:?}, hash: {:?}", reference, &cell.hash());
+
+						if let Err(error) = ipfs.insert(&cell.to_ipfs_block()) {
+							log::info!(
+								"Error pushing cell to IPFS: {}. Cell reference: {}",
+								error,
+								reference
+							);
+						}
+					}
+
 					// notify ipfs-based application client
 					// that newly mined block has been received
 					block_tx
@@ -396,16 +412,4 @@ pub async fn main() -> Result<()> {
 		log::error!("{:?}", e);
 		e
 	})
-}
-
-/* note:
-	following are the support functions.
-*/
-pub fn fill_cells_with_proofs(cells: &mut Vec<types::Cell>, proof: &types::BlockProofResponse) {
-	assert_eq!(80 * cells.len(), proof.result.len());
-	for i in 0..cells.len() {
-		let mut v = Vec::new();
-		v.extend_from_slice(&proof.result[i * 80..(i + 1) * 80]);
-		cells[i].proof = v;
-	}
 }
