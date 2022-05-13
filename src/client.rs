@@ -9,10 +9,10 @@ extern crate tempdir;
 extern crate tokio;
 
 use std::{
-	collections::{BTreeMap, HashMap},
+	collections::BTreeMap,
 	convert::TryFrom,
 	str::FromStr,
-	sync::{mpsc::Receiver, Arc, Mutex},
+	sync::{mpsc::Receiver, Arc},
 	time::Duration,
 };
 
@@ -27,12 +27,11 @@ use rocksdb::DB;
 
 use crate::{
 	data::{
-		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
-		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
-		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
+		construct_matrix, empty_cells, extract_block, extract_cell, extract_links, get_matrix,
+		matrix_cells, non_empty_cells_len, push_matrix,
 	},
 	rpc::{check_http, get_cells},
-	types::{BlockCidPair, ClientMsg},
+	types::ClientMsg,
 };
 
 #[tokio::main]
@@ -199,172 +198,6 @@ pub async fn run_client(
 		}
 	});
 
-	// // block to CID mapping to locally kept here ( in thead safe manner ! )
-
-	// broadcast fact i.e. some block number is mapped to some
-	// Cid ( of respective block data matrix ) to all peers subscribed
-	let mut fact_topic = ipfs.subscribe("topic/block_cid_fact").unwrap();
-	// ask over gossip network which Cid is associated with which block number
-	// and expect some one, who knows, will answer it
-	let mut ask_topic = ipfs.subscribe("topic/block_cid_ask").unwrap();
-
-	// listen for messages received on fact topic !
-	let block_cid_store_0 = block_cid_store.clone();
-	tokio::task::spawn(async move {
-		loop {
-			let msg = fact_topic.next().await;
-			match msg {
-				Some(msg) => match msg {
-					ipfs_embed::GossipEvent::Subscribed(peer) => {
-						log::info!("subscribed to topic `topic/block_cid_fact`\t{}", peer);
-					},
-					ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-						log::info!("unsubscribed from topic `topic/block_cid_fact`\t{}", peer);
-					},
-					ipfs_embed::GossipEvent::Message(peer, msg) => {
-						if let Some((block, cid)) = decode_block_cid_fact_message(msg.to_vec()) {
-							{
-								match get_block_cid_entry(block_cid_store_0.clone(), block) {
-									Some(v) => {
-										if v.self_computed && v.cid != cid {
-											log::info!(
-												"received CID doesn't match host computed CID"
-											);
-										}
-										// @note what happens if have-CID is not host computed and
-										// CID mismatch is encountered ?
-										//
-										// Need to verify/ self-compute CID and reach to a (more) stable
-										// state
-									},
-									None => {
-										match set_block_cid_entry(
-											block_cid_store_0.clone(),
-											block,
-											BlockCidPair {
-												cid,
-												self_computed: false, // because this block CID is received over network !
-											},
-										) {
-											Ok(_) => {},
-											Err(e) => {
-												log::info!("error: {}", e);
-											},
-										};
-									},
-								};
-							}
-
-							log::info!("received message on `topic/block_cid_fact`\t{}", peer);
-						}
-
-						// received message was not decodable !
-					},
-				},
-				None => {
-					break;
-				},
-			}
-		}
-	});
-
-	// listen for messages received from ask topic !
-	let block_cid_store_1 = block_cid_store.clone();
-	// IPFS instance to be used for responding
-	// back to peer when some question is asked on ask
-	// channel, given that answer is known to peer !
-	let ipfs_1 = ipfs.clone();
-	tokio::task::spawn(async move {
-		loop {
-			let msg = ask_topic.next().await;
-			match msg {
-				Some(msg) => match msg {
-					ipfs_embed::GossipEvent::Subscribed(peer) => {
-						log::info!("subscribed to topic `topic/block_cid_ask`\t{}", peer);
-					},
-					ipfs_embed::GossipEvent::Unsubscribed(peer) => {
-						log::info!("unsubscribed from topic `topic/block_cid_ask`\t{}", peer);
-					},
-					ipfs_embed::GossipEvent::Message(peer, msg) => {
-						log::info!("received {:?} from {}", msg, peer);
-						if let Some((block, cid)) = decode_block_cid_ask_message(msg.to_vec()) {
-							{
-								// this is a question kind message
-								// on ask channel, so this peer is evaluating
-								// whether it can answer it or not !
-								if cid == None {
-									match get_block_cid_entry(block_cid_store_1.clone(), block) {
-										Some(v) => {
-											// @note shall I introduce a way to denote whether CID is
-											// peer computed or self computed ?
-											match prepare_block_cid_ask_message(block, Some(v.cid))
-											{
-												Ok(msg) => {
-													// respond back on same channel
-													// the question is received on
-													if let Ok(_) =
-														ipfs_1.publish("topic/block_cid_ask", msg)
-													{
-														log::info!("answer question received on `topic/block_cid_ask` channel");
-													} else {
-														log::info!("error: failed to publish answer to question on `topic/block_cid_ask` channel");
-													}
-												},
-												Err(msg) => {
-													log::info!("error: {}", msg);
-												},
-											};
-										},
-										None => {
-											// supposedly this peer can't help !
-											// @note can this peer act so that it can help asking peer ?
-										},
-									};
-								} else {
-									// this is a answer kind message on ask channel
-									match get_block_cid_entry(block_cid_store_1.clone(), block) {
-										Some(v) => {
-											if v.self_computed && v.cid != cid.unwrap() {
-												log::info!(
-													"received CID doesn't match host computed CID"
-												);
-											}
-											// @note what happens if have-CID is not host computed and
-											// CID mismatch is encountered ?
-											//
-											// Need to verify/ self-compute CID and reach to a (more) stable
-											// state
-										},
-										None => {
-											match set_block_cid_entry(
-												block_cid_store_1.clone(),
-												block,
-												BlockCidPair {
-													cid: cid.unwrap(),
-													self_computed: false, // because this block CID is received over network !
-												},
-											) {
-												Ok(_) => {},
-												Err(e) => {
-													log::info!("error: {}", e);
-												},
-											}
-										},
-									};
-								}
-							}
-
-							log::info!("received message on `topic/block_cid_ask`\t{}", peer);
-						}
-					},
-				},
-				None => {
-					break;
-				},
-			}
-		}
-	});
-
 	// @note initialising with empty latest cid
 	// but when first block is received, say number `N`
 	// for preparing and pushing it to IPFS, block `N-1`'s
@@ -462,49 +295,11 @@ pub async fn run_client(
 								match push_matrix(matrix, latest_cid, &ipfs, &pin).await {
 									Ok(cid) => {
 										latest_cid = Some(cid);
-										// publish block-cid mapping message over gossipsub network
-										match prepare_block_cid_fact_message(block.num as i128, cid)
-										{
-											Ok(msg) => {
-												match ipfs.publish("topic/block_cid_fact", msg) {
-													Ok(_) => {
-														// thread-safely put an entry in local in-memory store
-														// for block to cid mapping
-														//
-														// it can be used later for for serving clients or
-														// answering to questions asked by other peers over
-														// gossipsub network
-														//
-														// once a CID is self-computed, it'll never be rewritten even
-														// when conflicting fact is found over gossipsub channel
-														match set_block_cid_entry(
-															block_cid_store.clone(),
-															block.num as i128,
-															BlockCidPair {
-																cid,
-																self_computed: true, // because this block CID is self-computed !
-															},
-														) {
-															Ok(_) => {},
-															Err(e) => {
-																log::info!("error: {}", e);
-															},
-														};
-														log::info!(
-															"✅ Block {} available\t{}",
-															block.num,
-															cid.clone()
-														);
-													},
-													Err(_) => {
-														log::info!("error: failed to publish fact on `topic/block_cid_fact` topic");
-													},
-												};
-											},
-											Err(msg) => {
-												log::info!("error: {}", msg);
-											},
-										};
+										log::info!(
+											"✅ Block {} available\t{}",
+											block.num,
+											cid.clone()
+										);
 									},
 									Err(msg) => {
 										log::info!("error: {}", msg);
@@ -530,47 +325,6 @@ pub async fn run_client(
 
 	destroy_rx.recv()?; // waiting for signal to kill self !
 	Ok(())
-}
-
-// Given a certain block number, this function prepares a question-kind message
-// and sends over gossip network on ask channel ( topic )
-//
-// After that it wait for some time ( to be more specific as of now 4 seconds )
-//
-// Then acquires local data store ( block to cid mapping ) lock
-// and looks up whether some helpful peer has already answered
-// question or not
-//
-// If yes returns obtained CID
-//
-// @note How to verify whether this CID is correct or not ?
-#[allow(dead_code)]
-async fn ask_block_cid(
-	block: i128,
-	ipfs: &Ipfs<IPFSDefaultParams>,
-	store: Arc<Mutex<HashMap<i128, BlockCidPair>>>,
-) -> Result<Cid, String> {
-	// send message over gossip network !
-	match prepare_block_cid_ask_message(block, None) {
-		Ok(msg) => {
-			if let Err(_) = ipfs.publish("topic/block_cid_ask", msg) {
-				return Err("failed to send gossip message".to_owned());
-			}
-			// wait for 4 seconds !
-			std::thread::sleep(Duration::from_secs(4));
-			// thread-safely attempt to read from data store
-			// whether question has been answer by some peer already
-			// or not
-			{
-				let handle = store.lock().unwrap();
-				match handle.get(&block) {
-					Some(v) => Ok(v.cid),
-					None => Err("failed to find CID".to_owned()),
-				}
-			}
-		},
-		Err(msg) => Err(msg),
-	}
 }
 
 pub async fn make_client(
@@ -694,22 +448,5 @@ mod tests {
 
 		let expected = vec![(0, 1), (1, 5)];
 		assert_eq!(layout_from_index(&[(1, 1)], 6), expected);
-	}
-}
-
-pub fn set_block_cid_entry(store: Arc<DB>, block: i128, pair: BlockCidPair) -> Result<(), String> {
-	let serialisable_pair = crate::types::BlockCidPersistablePair {
-		cid: pair.cid.to_string(),
-		self_computed: pair.self_computed,
-	};
-	let serialised = serde_json::to_string(&serialisable_pair).unwrap();
-
-	match store.put_cf(
-		&store.cf_handle(crate::consts::BLOCK_CID_CF).unwrap(),
-		block.to_be_bytes(),
-		serialised.as_bytes(),
-	) {
-		Ok(_) => Ok(()),
-		Err(_) => Err("failed to put block -> cid entry in database".to_owned()),
 	}
 }

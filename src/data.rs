@@ -7,11 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use anyhow::{Context, Result};
 use futures::future::join_all;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
-use libipld::{
-	codec_impl::IpldCodec,
-	multihash::{Code, MultihashDigest},
-	Ipld,
-};
+use libipld::{codec_impl::IpldCodec, multihash::Code, Ipld};
 
 use crate::types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row};
 
@@ -306,143 +302,6 @@ pub fn destructure_matrix(
 	}
 }
 
-// Takes block number along with respective CID of block data matrix
-// which was just inserted into local data store ( IPFS backed )
-// and encodes it which will be returned back from this function
-// as byte array ( well vector ). This byte array will be published
-// on some pre-agreed upon topic over Gossipsub network, so that
-// if some other peer doesn't compute/ store this block data matrix itself,
-// it should be able to atleast learn of the CID corresponding to block number,
-// so that it can fetch it when required.
-pub fn prepare_block_cid_fact_message(block: i128, cid: Cid) -> Result<Vec<u8>, String> {
-	let mut map = BTreeMap::new();
-
-	map.insert("block".to_owned(), Ipld::Integer(block));
-	map.insert("cid".to_owned(), Ipld::Link(cid));
-
-	let map = Ipld::StringMap(map);
-	match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
-		Ok(coded) => Ok(coded.data().to_vec()),
-		Err(_) => Err("failed to IPLD encode fact topic gossip message".to_owned()),
-	}
-}
-
-// Takes a IPLD coded fact channel message as byte array, which is
-// received from other peer on fact topic, and attempts
-// to decode it into two constituent components i.e. block number
-// and respective Cid of block data matrix
-pub fn decode_block_cid_fact_message(msg: Vec<u8>) -> Option<(i128, Cid)> {
-	let m_hash = Code::Blake3_256.digest(&msg[..]);
-	let cid = Cid::new_v1(IpldCodec::DagCbor.into(), m_hash);
-
-	let coded_msg: IpldBlock;
-	if let Ok(v) = IpldBlock::new(cid, msg) {
-		coded_msg = v;
-	} else {
-		return None;
-	}
-
-	let decoded_msg: Ipld;
-	if let Ok(v) = coded_msg.ipld() {
-		decoded_msg = v;
-	} else {
-		return None;
-	}
-
-	match decoded_msg {
-		Ipld::StringMap(map) => {
-			let map: BTreeMap<String, Ipld> = map;
-			let block = if let Some(data) = map.get("block") {
-				extract_block(data)
-			} else {
-				None
-			};
-			let cid = if let Some(data) = map.get("cid") {
-				extract_cid(data)
-			} else {
-				None
-			};
-			if block == None || cid == None {
-				None
-			} else {
-				Some((block.unwrap(), cid.unwrap()))
-			}
-		},
-		_ => None,
-	}
-}
-
-// Some peer who doesn't know about block data matrix CID of some specified
-// block number, may need to know same, sends a message over pre-agreed upon
-// channel ( topic ). I call this channel ask channel, where peers get to ask
-// questions & expect someone will answer it
-//
-// Same channel will be used when attempting to answer back to question
-pub fn prepare_block_cid_ask_message(block: i128, cid: Option<Cid>) -> Result<Vec<u8>, String> {
-	let mut map = BTreeMap::new();
-
-	map.insert("block".to_owned(), Ipld::Integer(block));
-	map.insert("cid".to_owned(), match cid {
-		Some(cid) => Ipld::Link(cid),
-		None => Ipld::Null,
-	});
-
-	let map = Ipld::StringMap(map);
-
-	match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
-		Ok(coded) => Ok(coded.data().to_vec()),
-		Err(_) => Err("failed to IPLD encode ask topic gossip message".to_owned()),
-	}
-}
-
-// Accepts IPLD coded ask channel message and attempts to decode it
-// such that whether this message is a question or answer to it
-// can be understood by function invoker by checking returned component types
-//
-// Always block number should be coded inside message, but if this is a question kind message
-// Cid will be Null encoded ( returned as None ), where for answer type message
-// Cid will be encoded as IPLD Link ( returned as Some ).
-pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)> {
-	let m_hash = Code::Blake3_256.digest(&msg[..]);
-	let cid = Cid::new_v1(IpldCodec::DagCbor.into(), m_hash);
-
-	let coded_msg: IpldBlock;
-	if let Ok(v) = IpldBlock::new(cid, msg) {
-		coded_msg = v;
-	} else {
-		return None;
-	}
-
-	let decoded_msg: Ipld;
-	if let Ok(v) = coded_msg.ipld() {
-		decoded_msg = v;
-	} else {
-		return None;
-	}
-
-	match decoded_msg {
-		Ipld::StringMap(map) => {
-			let map: BTreeMap<String, Ipld> = map;
-			let block = if let Some(data) = map.get("block") {
-				extract_block(data)
-			} else {
-				None
-			};
-			let cid = if let Some(data) = map.get("cid") {
-				extract_cid(data)
-			} else {
-				None
-			};
-			if block == None {
-				None
-			} else {
-				Some((block.unwrap(), cid))
-			}
-		},
-		_ => None,
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	extern crate rand;
@@ -459,23 +318,6 @@ mod tests {
 			data.push(random::<u8>());
 		}
 		data
-	}
-
-	#[test]
-	fn fact_message_encoding_decoding_success() {
-		let block: i128 = 1 << 31;
-		let cid: Cid = {
-			let flag = Ipld::Bool(true);
-			*IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
-				.unwrap()
-				.cid()
-		};
-
-		let msg = prepare_block_cid_fact_message(block, cid);
-		let (block_dec, cid_dec) = decode_block_cid_fact_message(msg.unwrap()).unwrap();
-
-		assert_eq!(block, block_dec);
-		assert_eq!(cid, cid_dec);
 	}
 
 	fn matrix_strategy() -> impl Strategy<Value = Vec<Vec<Option<Vec<u8>>>>> {
@@ -509,56 +351,6 @@ mod tests {
 	#[test_case(2, 2 => vec![(0, 0), (1, 0), (0,1), (1,1)] ; "square matrix")]
 	fn test_matrix_cells(rows: u16, cols: u16) -> Vec<(usize, usize)> {
 		matrix_cells(rows, cols).collect::<Vec<(usize, usize)>>()
-	}
-
-	#[test]
-	fn fact_message_decoding_failure() {
-		// 256 bytes of random data
-		let msg = random_data(256);
-		assert_eq!(decode_block_cid_fact_message(msg), None);
-	}
-
-	#[test]
-	fn ask_message_encoding_decoding_success_0() {
-		let block: i128 = 1 << 31;
-		// notice Cid is known for this ask message
-		// denoting it's an answer to some question mesasge
-		let cid: Cid = {
-			let flag = Ipld::Bool(true);
-			*IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
-				.unwrap()
-				.cid()
-		};
-
-		let msg = prepare_block_cid_ask_message(block, Some(cid));
-		let (block_dec, cid_dec) = decode_block_cid_ask_message(msg.unwrap()).unwrap();
-
-		assert_eq!(block, block_dec);
-		assert_eq!(cid, cid_dec.unwrap());
-	}
-
-	#[test]
-	fn ask_message_encoding_decoding_success_1() {
-		let block: i128 = 1 << 31;
-		// notice Cid is unknown is this case, denoting
-		// it's question message, asked by some peer
-		//
-		// as good peer, responsibility is responding
-		// back on same channel with block, cid pair
-		let cid = None;
-
-		let msg = prepare_block_cid_ask_message(block, cid);
-		let (block_dec, cid_dec) = decode_block_cid_ask_message(msg.unwrap()).unwrap();
-
-		assert_eq!(block, block_dec);
-		assert_eq!(cid_dec, None);
-	}
-
-	#[test]
-	fn ask_message_decoding_failure() {
-		// 256 bytes of random data
-		let msg = random_data(256);
-		assert_eq!(decode_block_cid_ask_message(msg), None);
 	}
 
 	#[tokio::test]

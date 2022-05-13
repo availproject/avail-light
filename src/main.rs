@@ -157,7 +157,6 @@ pub async fn do_main() -> Result<()> {
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
 	let app_id: u32 = cfg.app_id as u32;
-	let mut cells: Vec<types::Cell>;
 	tokio::spawn(async move {
 		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
 	});
