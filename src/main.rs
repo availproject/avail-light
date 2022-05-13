@@ -272,7 +272,7 @@ pub async fn do_main() -> Result<()> {
 							// (query_cells.chunks(10)).into_iter().for_each(|cell| {
 
 							// });
-							for cell in query_cells.chunks(10) {
+							for cell in query_cells.chunks(30) {
 								let cells =
 									rpc::get_kate_proof(&rpc_url, num, (*cell).to_vec()).await?;
 								let _count = proof::verify_proof(
