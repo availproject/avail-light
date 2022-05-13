@@ -182,7 +182,6 @@ pub async fn do_main() -> Result<()> {
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 					let index_tuple = header.app_data_lookup.index.clone();
-					println!("{:?}", header.app_data_lookup.size);
 					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					//hyper request for getting the kate query request
 					let cells = rpc::get_kate_proof(&rpc_url, num, kate_cells).await?;
