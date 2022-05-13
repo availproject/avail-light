@@ -2724,6 +2724,7 @@ dependencies = [
  "generic-array 0.14.5",
  "multihash-derive",
  "sha2 0.9.9",
+ "sha3",
  "unsigned-varint",
 ]
 
