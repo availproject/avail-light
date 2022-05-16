@@ -11,6 +11,7 @@ use std::{
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
+use kate_recovery::com::{reconstruct_app_extrinsics,app_specific_column_cells, MatrixDimensions};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -283,6 +284,25 @@ pub async fn do_main() -> Result<()> {
 									commitment.clone(),
 								);
 							}
+						}
+					}
+
+					let dimension = MatrixDimensions {
+						rows: max_rows as usize,
+						cols: max_cols as usize,
+						chunk_size: 32,
+					};
+					let recon_cells =
+						app_specific_column_cells(&app_index, &dimension, cfg.app_id as u32);
+					if let Some(cells) = recon_cells {
+						let app_ext = reconstruct_app_extrinsics(
+							&app_index,
+							&dimension,
+							cells,
+							Some(cfg.app_id as u32),
+						);
+						if let Ok(v) = app_ext {
+							log::info!("\n 📝 app extrinsics: {:?}", v);
 						}
 					}
 
