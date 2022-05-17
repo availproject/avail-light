@@ -415,15 +415,4 @@ pub fn from_kate_cell(block: u64, cell: Vec<kate_recovery::com::Cell>) -> Vec<Ce
 	vec
 }
 
-pub fn to_kate_cell(cell: Vec<Cell>) -> Vec<kate_recovery::com::Cell> {
-	let mut vec: Vec<kate_recovery::com::Cell> = Vec::new();
-	for cells in cell.iter() {
-		let cell = kate_recovery::com::Cell {
-			row: cells.row,
-			col: cells.col,
-			data: cells.proof[48..].to_vec(),
-		};
-		vec.push(cell);
-	}
-	vec
-}
+

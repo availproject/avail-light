@@ -11,7 +11,7 @@ use std::{
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
-use kate_recovery::com::{app_specific_column_cells, reconstruct_app_extrinsics, MatrixDimensions};
+use kate_recovery::com::{app_specific_column_cells, MatrixDimensions};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -250,8 +250,7 @@ pub async fn do_main() -> Result<()> {
 								vec![]
 							},
 						};
-
-						let data_cells = if query_cells.len() < 30 {
+						if query_cells.len() < 30 {
 							let cells = rpc::get_kate_proof(&rpc_url, num, query_cells).await?;
 							let _count = proof::verify_proof(
 								num,
@@ -260,9 +259,7 @@ pub async fn do_main() -> Result<()> {
 								cells.clone(),
 								commitment.clone(),
 							);
-							cells
 						} else {
-							let mut vec = Vec::new();
 							for cell in query_cells.chunks(30) {
 								let cells =
 									rpc::get_kate_proof(&rpc_url, num, (*cell).to_vec()).await?;
@@ -273,22 +270,8 @@ pub async fn do_main() -> Result<()> {
 									cells.clone(),
 									commitment.clone(),
 								);
-								vec.push(cells);
 							}
-							let full_data = vec.into_iter().flatten().collect::<Vec<types::Cell>>();
-							full_data
 						};
-						let recon_cells = rpc::to_kate_cell(data_cells.clone());
-						let app_ext = reconstruct_app_extrinsics(
-							&app_index,
-							&dimension,
-							recon_cells,
-							Some(1),
-						);
-						if let Ok(v) = app_ext {
-							log::info!("\n 📝 app extrinsics constructed successfully");
-							log::info!("\n 📝 app extrinsics: {:?}", v);
-						}
 					}
 
 					// push latest mined block's header into column family specified
