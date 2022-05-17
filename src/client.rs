@@ -24,9 +24,7 @@ use ipfs_embed::{
 	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
 	PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
-use kate_recovery::com::{
-	app_specific_column_cells, reconstruct_app_extrinsics, Cell, MatrixDimensions,
-};
+use kate_recovery::com::{reconstruct_app_extrinsics, Cell, MatrixDimensions};
 use libipld::Ipld;
 use rocksdb::DB;
 
@@ -455,31 +453,31 @@ pub async fn run_client(
 						// calling `.clone()`
 						let arced_cells = Arc::new(cells);
 
-						let _columns = arced_cells
+						let cells = arced_cells
 							.chunks_exact(block.max_rows as usize)
 							.enumerate()
-							.map(|(i, col)| to_column_cells(i as u16, col))
-							.collect::<Vec<Vec<Cell>>>();
+							.flat_map(|(i, col)| to_column_cells(i as u16, col))
+							.collect::<Vec<Cell>>();
 
 						let layout = layout_from_index(
 							block.header.app_data_lookup.index.as_slice(),
 							block.header.app_data_lookup.size,
 						);
 
-						//TODO: Verification needed
 						let dimension = MatrixDimensions {
 							rows: block.max_rows as usize,
 							cols: block.max_cols as usize,
 						};
-						let recon_cells =
-							app_specific_column_cells(&layout, &dimension, cfg.app_id as u32);
 
-						let ext = reconstruct_app_extrinsics(
-							&layout,
-							&dimension,
-							recon_cells.unwrap(),
-							Some(cfg.app_id as u32),
-						);
+						let option_app_id = if cfg.app_id > 0 {
+							Some(cfg.app_id as u32)
+						} else {
+							None
+						};
+
+						let ext =
+							reconstruct_app_extrinsics(&layout, &dimension, cells, option_app_id);
+
 						log::debug!("Reconstructed extrinsic: {:?}", ext);
 
 						match construct_matrix(

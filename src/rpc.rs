@@ -414,5 +414,3 @@ pub fn from_kate_cell(block: u64, cell: Vec<kate_recovery::com::Cell>) -> Vec<Ce
 	}
 	vec
 }
-
-
