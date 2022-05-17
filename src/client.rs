@@ -24,7 +24,9 @@ use ipfs_embed::{
 	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
 	PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
-use kate_recovery::com::{reconstruct_app_extrinsics, Cell, MatrixDimensions, app_specific_column_cells};
+use kate_recovery::com::{
+	app_specific_column_cells, reconstruct_app_extrinsics, Cell, MatrixDimensions,
+};
 use libipld::Ipld;
 use rocksdb::DB;
 
@@ -468,14 +470,13 @@ pub async fn run_client(
 						let dimension = MatrixDimensions {
 							rows: block.max_rows as usize,
 							cols: block.max_cols as usize,
-							chunk_size: 32,
 						};
 						let recon_cells =
-						app_specific_column_cells(&layout, &dimension, cfg.app_id as u32);
+							app_specific_column_cells(&layout, &dimension, cfg.app_id as u32);
 
 						let ext = reconstruct_app_extrinsics(
 							&layout,
-							&dimension,	
+							&dimension,
 							recon_cells.unwrap(),
 							Some(cfg.app_id as u32),
 						);
@@ -693,7 +694,7 @@ pub fn get_block_cid_entry(store: Arc<DB>, block: i128) -> Option<crate::types::
 	}
 }
 
-fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
+pub fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
 	if index.is_empty() {
 		return vec![(0, size)];
 	}

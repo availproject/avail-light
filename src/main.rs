@@ -11,7 +11,7 @@ use std::{
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
-use kate_recovery::com::{reconstruct_app_extrinsics,app_specific_column_cells, MatrixDimensions};
+use kate_recovery::com::{app_specific_column_cells, reconstruct_app_extrinsics, MatrixDimensions};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -182,7 +182,6 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
-					let index_tuple = header.app_data_lookup.index.clone();
 					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					//hyper request for getting the kate query request
 					let cells = rpc::get_kate_proof(&rpc_url, num, kate_cells).await?;
@@ -215,6 +214,10 @@ pub async fn do_main() -> Result<()> {
 					to an appID and now its verifying every cell that contains the data
 					*/
 					//@TODO : Major optimization needed here
+					let dimension = MatrixDimensions {
+						rows: max_rows as usize,
+						cols: max_cols as usize,
+					};
 					if conf >= cfg.confidence && !app_index.is_empty() {
 						let query_cells: Vec<types::Cell> = match cfg.app_id {
 							//@TODO: Number of cells that can handle -1 case needs to set or set to 50% of total cells
@@ -233,46 +236,33 @@ pub async fn do_main() -> Result<()> {
 								cells
 							},
 							n if n > 0 => {
-								let cells = if let Some((app_id, offset)) = index_tuple
-									.iter()
-									.find(|elem| app_id != 0 && app_id == elem.0)
-								{
-									log::info!(
-										"{} chunks for app {} found in block {}",
-										offset,
-										app_id,
-										num
-									);
-									rpc::generate_app_specific_cells(
-										*offset,
-										max_cols,
-										num,
-										header.clone(),
-										*app_id,
-									)
-								} else {
-									vec![]
-								};
-								cells
+								let layout = client::layout_from_index(
+									&app_index,
+									header.app_data_lookup.size,
+								);
+								let recon_cells =
+									app_specific_column_cells(&layout, &dimension, 1).unwrap();
+								let test_cells = rpc::from_kate_cell(num, recon_cells.clone());
+								test_cells
 							},
 							_ => {
 								log::info!("\n ❌ no app id is given, random sampling begins");
 								vec![]
 							},
 						};
-						if query_cells.len() < 30 {
+
+						let data_cells = if query_cells.len() < 30 {
 							let cells = rpc::get_kate_proof(&rpc_url, num, query_cells).await?;
 							let _count = proof::verify_proof(
 								num,
 								max_rows,
 								max_cols,
-								cells,
+								cells.clone(),
 								commitment.clone(),
 							);
+							cells
 						} else {
-							// (query_cells.chunks(10)).into_iter().for_each(|cell| {
-
-							// });
+							let mut vec = Vec::new();
 							for cell in query_cells.chunks(30) {
 								let cells =
 									rpc::get_kate_proof(&rpc_url, num, (*cell).to_vec()).await?;
@@ -280,28 +270,23 @@ pub async fn do_main() -> Result<()> {
 									num,
 									max_rows,
 									max_cols,
-									cells,
+									cells.clone(),
 									commitment.clone(),
 								);
+								vec.push(cells);
 							}
-						}
-					}
-
-					let dimension = MatrixDimensions {
-						rows: max_rows as usize,
-						cols: max_cols as usize,
-						chunk_size: 32,
-					};
-					let recon_cells =
-						app_specific_column_cells(&app_index, &dimension, cfg.app_id as u32);
-					if let Some(cells) = recon_cells {
+							let full_data = vec.into_iter().flatten().collect::<Vec<types::Cell>>();
+							full_data
+						};
+						let recon_cells = rpc::to_kate_cell(data_cells.clone());
 						let app_ext = reconstruct_app_extrinsics(
 							&app_index,
 							&dimension,
-							cells,
-							Some(cfg.app_id as u32),
+							recon_cells,
+							Some(1),
 						);
 						if let Ok(v) = app_ext {
+							log::info!("\n 📝 app extrinsics constructed successfully");
 							log::info!("\n 📝 app extrinsics: {:?}", v);
 						}
 					}
