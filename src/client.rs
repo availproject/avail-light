@@ -35,7 +35,7 @@ use crate::{
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
 	proof::verify_proof,
-	rpc::{check_http, from_kate_cell, get_cells},
+	rpc::{check_http, from_kate_cells, get_cells},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -437,7 +437,7 @@ pub async fn run_client(
 							}
 						}
 
-						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+						fn to_data_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
 								.enumerate()
 								.flat_map(|(i, cells)| {
@@ -450,45 +450,51 @@ pub async fn run_client(
 								.collect::<Vec<Cell>>()
 						}
 
-						fn full_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+						fn to_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
 								.enumerate()
 								.flat_map(|(i, cells)| {
 									cells.clone().map(|data| Cell {
 										row: i as u16,
 										col: col_num,
-										data: data.clone(),
+										data,
 									})
 								})
 								.collect::<Vec<Cell>>()
 						}
-						// if cfg.app_id < 0 {
-						// 	let data_cells = cells
-						// 		.clone()
-						// 		.chunks_exact(block.max_rows as usize)
-						// 		.enumerate()
-						// 		.flat_map(|(i, col)| full_column_cells(i as u16, col))
-						// 		.collect::<Vec<Cell>>();
-						// 	let for_verfiy_cells =
-						// 		from_kate_cell(block.header.number, data_cells.clone());
-						// 	println!("\n\n testing the client");
-						// 	let _count = verify_proof(
-						// 		block.header.number,
-						// 		block.max_rows,
-						// 		block.max_cols,
-						// 		for_verfiy_cells.clone(),
-						// 		block.header.extrinsics_root.commitment.clone(),
-						// 	);
-						// 	println!("\n{}", _count);
-						// }
+
 						// just wrapped into arc so that it's cheap
 						// calling `.clone()`
 						let arced_cells = Arc::new(cells);
-						let cells = arced_cells
+
+						let mut cells = arced_cells
 							.chunks_exact(block.max_rows as usize)
 							.enumerate()
-							.flat_map(|(i, col)| to_column_cells(i as u16, col))
+							.flat_map(|(i, col)| to_cells(i as u16, col))
 							.collect::<Vec<Cell>>();
+
+						let verified_cells_count = verify_proof(
+							block.header.number,
+							block.max_rows,
+							block.max_cols,
+							from_kate_cells(block.header.number, &cells),
+							block.header.extrinsics_root.commitment,
+						);
+
+						if (verified_cells_count as usize) < cells.len() {
+							log::info!(
+								"Verified {} of {} cells, skipping reconstruction",
+								verified_cells_count,
+								cells.len()
+							);
+							continue;
+						} else {
+							log::info!("Verified {} cells", verified_cells_count);
+						}
+
+						cells
+							.iter_mut()
+							.for_each(|cell| cell.data = cell.data[48..].to_vec());
 
 						let layout = layout_from_index(
 							block.header.app_data_lookup.index.as_slice(),
@@ -506,10 +512,11 @@ pub async fn run_client(
 							None
 						};
 
-						let ext =
-							reconstruct_app_extrinsics(&layout, &dimension, cells, option_app_id);
-
-						log::info!("Reconstructed extrinsic: {:?}", ext);
+						match reconstruct_app_extrinsics(&layout, &dimension, cells, option_app_id)
+						{
+							Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
+							Err(error) => log::error!("Reconstruction error: {}", error),
+						}
 
 						match construct_matrix(
 							block.num,

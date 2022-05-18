@@ -401,16 +401,18 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	Ok(rpc_url)
 }
 
-pub fn from_kate_cell(block: u64, cell: Vec<kate_recovery::com::Cell>) -> Vec<Cell> {
-	let mut vec: Vec<Cell> = Vec::new();
-	for cells in cell.iter() {
-		let cell = Cell {
-			block,
-			row: cells.row,
-			col: cells.col,
-			..Default::default()
-		};
-		vec.push(cell);
+fn from_kate_cell(block: u64, cell: &kate_recovery::com::Cell) -> Cell {
+	Cell {
+		block,
+		row: cell.row,
+		col: cell.col,
+		proof: cell.data.to_vec(),
 	}
-	vec
+}
+
+pub fn from_kate_cells(block: u64, cells: &[kate_recovery::com::Cell]) -> Vec<Cell> {
+	cells
+		.iter()
+		.map(|cell| from_kate_cell(block, cell))
+		.collect::<Vec<Cell>>()
 }

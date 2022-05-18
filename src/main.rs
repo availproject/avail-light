@@ -242,7 +242,7 @@ pub async fn do_main() -> Result<()> {
 								);
 								let recon_cells =
 									app_specific_column_cells(&layout, &dimension, 1).unwrap();
-								let test_cells = rpc::from_kate_cell(num, recon_cells.clone());
+								let test_cells = rpc::from_kate_cells(num, &recon_cells);
 								test_cells
 							},
 							_ => {
