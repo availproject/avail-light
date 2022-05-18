@@ -34,7 +34,8 @@ use crate::{
 		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::{check_http, get_cells},
+	proof::verify_proof,
+	rpc::{check_http, from_kate_cell, get_cells},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -449,10 +450,40 @@ pub async fn run_client(
 								.collect::<Vec<Cell>>()
 						}
 
+						fn full_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+							col.iter()
+								.enumerate()
+								.flat_map(|(i, cells)| {
+									cells.clone().map(|data| Cell {
+										row: i as u16,
+										col: col_num,
+										data: data.clone(),
+									})
+								})
+								.collect::<Vec<Cell>>()
+						}
+						// if cfg.app_id < 0 {
+						// 	let data_cells = cells
+						// 		.clone()
+						// 		.chunks_exact(block.max_rows as usize)
+						// 		.enumerate()
+						// 		.flat_map(|(i, col)| full_column_cells(i as u16, col))
+						// 		.collect::<Vec<Cell>>();
+						// 	let for_verfiy_cells =
+						// 		from_kate_cell(block.header.number, data_cells.clone());
+						// 	println!("\n\n testing the client");
+						// 	let _count = verify_proof(
+						// 		block.header.number,
+						// 		block.max_rows,
+						// 		block.max_cols,
+						// 		for_verfiy_cells.clone(),
+						// 		block.header.extrinsics_root.commitment.clone(),
+						// 	);
+						// 	println!("\n{}", _count);
+						// }
 						// just wrapped into arc so that it's cheap
 						// calling `.clone()`
 						let arced_cells = Arc::new(cells);
-
 						let cells = arced_cells
 							.chunks_exact(block.max_rows as usize)
 							.enumerate()
@@ -478,7 +509,7 @@ pub async fn run_client(
 						let ext =
 							reconstruct_app_extrinsics(&layout, &dimension, cells, option_app_id);
 
-						log::debug!("Reconstructed extrinsic: {:?}", ext);
+						log::info!("Reconstructed extrinsic: {:?}", ext);
 
 						match construct_matrix(
 							block.num,
