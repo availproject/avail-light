@@ -238,8 +238,13 @@ pub async fn do_main() -> Result<()> {
 								continue;
 							},
 							Some(recon_cells) => {
+								let recon_cells_half = recon_cells
+									.into_iter()
+									.filter(|cell| cell.row <= max_rows / 2)
+									.collect::<Vec<_>>();
+
 								let query_cells: Vec<types::Cell> =
-									rpc::from_kate_cells(num, &recon_cells);
+									rpc::from_kate_cells(num, &recon_cells_half);
 
 								let mut verified = true;
 								let mut verified_cells = vec![];
