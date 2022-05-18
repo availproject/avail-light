@@ -407,6 +407,9 @@ pub async fn run_client(
 		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
+				if cfg.app_id != -1 {
+					continue;
+				}
 				let block_cid_entry =
 					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
 						.map(|pair| pair.cid);
@@ -435,19 +438,6 @@ pub async fn run_client(
 									.and_then(|col| col.get(row))
 									.and_then(|val| val.to_owned());
 							}
-						}
-
-						fn to_data_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
-							col.iter()
-								.enumerate()
-								.flat_map(|(i, cells)| {
-									cells.clone().map(|data| Cell {
-										row: i as u16,
-										col: col_num,
-										data: data[48..].to_vec(),
-									})
-								})
-								.collect::<Vec<Cell>>()
 						}
 
 						fn to_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
@@ -490,32 +480,6 @@ pub async fn run_client(
 							continue;
 						} else {
 							log::info!("Verified {} cells", verified_cells_count);
-						}
-
-						cells
-							.iter_mut()
-							.for_each(|cell| cell.data = cell.data[48..].to_vec());
-
-						let layout = layout_from_index(
-							block.header.app_data_lookup.index.as_slice(),
-							block.header.app_data_lookup.size,
-						);
-
-						let dimension = MatrixDimensions {
-							rows: block.max_rows as usize,
-							cols: block.max_cols as usize,
-						};
-
-						let option_app_id = if cfg.app_id > 0 {
-							Some(cfg.app_id as u32)
-						} else {
-							None
-						};
-
-						match reconstruct_app_extrinsics(&layout, &dimension, cells, option_app_id)
-						{
-							Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
-							Err(error) => log::error!("Reconstruction error: {}", error),
 						}
 
 						match construct_matrix(
@@ -581,6 +545,25 @@ pub async fn run_client(
 								log::info!("error: {}", msg);
 							},
 						};
+
+						cells
+							.iter_mut()
+							.for_each(|cell| cell.data = cell.data[48..].to_vec());
+
+						let layout = layout_from_index(
+							block.header.app_data_lookup.index.as_slice(),
+							block.header.app_data_lookup.size,
+						);
+
+						let dimension = MatrixDimensions {
+							rows: block.max_rows as usize,
+							cols: block.max_cols as usize,
+						};
+
+						match reconstruct_app_extrinsics(&layout, &dimension, cells, None) {
+							Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
+							Err(error) => log::error!("Reconstruction error: {}", error),
+						}
 					},
 					Err(e) => {
 						log::info!("error: {}", e);
