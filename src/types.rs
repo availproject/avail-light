@@ -357,7 +357,7 @@ impl Default for RuntimeConfig {
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 
-			app_id: Some(0),
+			app_id: None,
 			confidence: 92.0,
 			bootstraps: Vec::new(),
 			avail_path: format!("avail_light_client_{}", 1),
