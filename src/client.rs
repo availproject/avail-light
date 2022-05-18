@@ -24,7 +24,7 @@ use ipfs_embed::{
 	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
 	PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
-use kate_recovery::com::{reconstruct_app_extrinsics, Cell, MatrixDimensions};
+use kate_recovery::com::{reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions};
 use libipld::Ipld;
 use rocksdb::DB;
 
@@ -555,12 +555,12 @@ pub async fn run_client(
 							block.header.app_data_lookup.size,
 						);
 
-						let dimension = MatrixDimensions {
+						let dimensions = ExtendedMatrixDimensions {
 							rows: block.max_rows as usize,
 							cols: block.max_cols as usize,
 						};
 
-						match reconstruct_app_extrinsics(&layout, &dimension, cells, None) {
+						match reconstruct_app_extrinsics(&layout, &dimensions, cells, None) {
 							Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
 							Err(error) => log::error!("Reconstruction error: {}", error),
 						}

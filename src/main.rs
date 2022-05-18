@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
 use kate_recovery::com::{
-	app_specific_column_cells, reconstruct_app_extrinsics, Cell, MatrixDimensions,
+	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
 };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
@@ -219,7 +219,7 @@ pub async fn do_main() -> Result<()> {
 					to an appID and now its verifying every cell that contains the data
 					*/
 					//@TODO : Major optimization needed here
-					let dimension = MatrixDimensions {
+					let dimension = ExtendedMatrixDimensions {
 						rows: max_rows as usize,
 						cols: max_cols as usize,
 					};
@@ -240,7 +240,7 @@ pub async fn do_main() -> Result<()> {
 							Some(recon_cells) => {
 								let recon_cells_half = recon_cells
 									.into_iter()
-									.filter(|cell| cell.row <= max_rows / 2)
+									.filter(|cell| cell.row < max_rows / 2)
 									.collect::<Vec<_>>();
 
 								let query_cells: Vec<types::Cell> =
@@ -287,7 +287,7 @@ pub async fn do_main() -> Result<()> {
 										header.app_data_lookup.size,
 									);
 
-									let dimension = MatrixDimensions {
+									let dimension = ExtendedMatrixDimensions {
 										rows: max_rows as usize,
 										cols: max_cols as usize,
 									};
