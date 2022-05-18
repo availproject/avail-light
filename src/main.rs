@@ -238,9 +238,11 @@ pub async fn do_main() -> Result<()> {
 								continue;
 							},
 							Some(recon_cells) => {
+								// Since extended rows count (max_rows) is divisible by 2,
+								// take first half of cells of a each column
 								let recon_cells_half = recon_cells
 									.into_iter()
-									.filter(|cell| cell.row < max_rows / 2)
+									.filter(|cell| cell.row <= (max_rows / 2 - 1))
 									.collect::<Vec<_>>();
 
 								let query_cells: Vec<types::Cell> =
