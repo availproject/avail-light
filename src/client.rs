@@ -407,7 +407,7 @@ pub async fn run_client(
 		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
-				if cfg.app_id != -1 {
+				if cfg.app_id.unwrap_or_default() != -1 {
 					continue;
 				}
 				let block_cid_entry =

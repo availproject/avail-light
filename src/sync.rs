@@ -14,7 +14,6 @@ pub async fn sync_block_headers(
 	start_block: u64,
 	end_block: u64,
 	header_store: Arc<DB>,
-	app_id: u32,
 ) {
 	let fut = stream::iter(
 		(start_block..(end_block + 1))
@@ -103,9 +102,8 @@ pub async fn sync_block_headers(
 					};
 
 					log::info!(
-						"Fetched {} cells of app {} of block {} for verification",
+						"Fetched {} cells of block {} for verification",
 						cells.len(),
-						app_id,
 						block_num
 					);
 

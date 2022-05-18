@@ -141,9 +141,8 @@ pub async fn do_main() -> Result<()> {
 	let latest_block = block_header.number;
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
-	let app_id: u32 = cfg.app_id as u32;
 	tokio::spawn(async move {
-		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
+		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2).await;
 	});
 
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -211,6 +210,10 @@ pub async fn do_main() -> Result<()> {
 					let conf = calculate_confidence(count);
 					let app_index = header.app_data_lookup.index.clone();
 
+					if cfg.app_id.is_none() {
+						continue;
+					}
+
 					/*note:
 					The following is the part when the user have already subscribed
 					to an appID and now its verifying every cell that contains the data
@@ -221,15 +224,17 @@ pub async fn do_main() -> Result<()> {
 						cols: max_cols as usize,
 					};
 
+					let app_id = cfg.app_id.unwrap_or_default();
+
 					if conf >= cfg.confidence
-						&& ((!app_index.is_empty() && cfg.app_id > 0) || cfg.app_id == 0)
+						&& ((!app_index.is_empty() && app_id > 0) || app_id == 0)
 					{
 						let layout =
 							client::layout_from_index(&app_index, header.app_data_lookup.size);
 
-						match app_specific_column_cells(&layout, &dimension, cfg.app_id as u32) {
+						match app_specific_column_cells(&layout, &dimension, app_id as u32) {
 							None => {
-								log::info!("No app specific cells for app {}", cfg.app_id);
+								log::info!("No app specific cells for app {}", app_id);
 								continue;
 							},
 							Some(recon_cells) => {
