@@ -11,14 +11,16 @@
 
 ## Introduction
 
-`avail-light` is a data availability light client that can do the following:
+Naive approach for building one AVAIL light client, which will do following
 
-* Listen for newly produced blocks.
-* Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
-  > As soon as a new block is available, the light client attempts to gain confidence by asking for a proof from a full 
-  client via JSON-RPC.
-* Batch processces blocks in reverse order (i.e. prioritizes the latest blocks) for lower numbered blocks where no confidence 
-  is yet gained.
+- Listen for newly mined blocks
+- As soon as new block is available, attempts to eventually gain confidence by asking for proof from full client _( via JSON RPC interface )_ for `N` many cells where cell is defined as `{row, col}` pair. The number of cells are randomly sampled to fetch the confidence eventually.
+
+### Modes of Operation
+
+1. **Light client**: This is the basic mode of operation and is always active in whichever mode it works. If the APP_ID is not given then this mode will be commence. In this mode, the client on each header it receieves will do the random sampling using RPC calls. The default number of random sampling is 8. It gets random cells in return, which verifies and calculate the confidence.
+2. **App-Specific-Mode**: In this mode if an App_ID(greater than 0) is given in the config file then the client would find out the cols related the App_ID given using the app_data_lookup in the header. Then it fetches the 50% of cells from the cols, verifies them and uses them to decode the app_extrinsics_data. 
+3. **Fat-Client-Mode**: In this mode, the client gets the entire extended matrix using IPFS if it is available or uses RPC calls to fetch. It verifies the entire cells and computes the CID mapping for the IPFS Pinning. It then decodes the entire matrix and reconstruct the entire app_specific_data related to all App_IDs.
 
 ## Installation
 
@@ -42,9 +44,13 @@ ipfs_seed = 1
 ipfs_port = 37000
 ipfs_path = "avail_ipfs_store"
 
+# put full_node_rpc = https://devnet-avail.polygon.technology/ incase you are connecting to devnet
 full_node_rpc = "http://127.0.0.1:9933"
+# put full_node_ws = wss://devnet-avail.polygon.technology/ws incase you are connecting to devnet
 full_node_ws = "ws://127.0.0.1:9944"
+# None in case of default Light Client Mode
 app_id = 0
+
 confidence = 92.0
 avail_path = "avail_path"
 
