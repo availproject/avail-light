@@ -300,7 +300,9 @@ pub async fn do_main() -> Result<()> {
 										reconstruction_cells,
 										None,
 									) {
-										Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
+										Ok(xts) => {
+											log::debug!("Reconstructed extrinsic: {:?}", xts)
+										},
 										Err(error) => {
 											log::error!("Reconstruction error: {}", error)
 										},

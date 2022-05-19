@@ -561,7 +561,7 @@ pub async fn run_client(
 						};
 
 						match reconstruct_app_extrinsics(&layout, &dimensions, cells, None) {
-							Ok(xts) => log::info!("Reconstructed extrinsic: {:?}", xts),
+							Ok(xts) => log::debug!("Reconstructed extrinsic: {:?}", xts),
 							Err(error) => log::error!("Reconstruction error: {}", error),
 						}
 					},
