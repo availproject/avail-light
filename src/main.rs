@@ -301,7 +301,28 @@ pub async fn do_main() -> Result<()> {
 										None,
 									) {
 										Ok(xts) => {
-											log::debug!("Reconstructed extrinsic: {:?}", xts)
+											for e in xts {
+												let data_hex_string = e
+													.1
+													.iter()
+													.map(|e| {
+														e.iter().fold(
+															String::new(),
+															|mut acc, e| {
+																acc.push_str(
+																	format!("{:02x}", e).as_str(),
+																);
+																acc
+															},
+														)
+													})
+													.collect::<Vec<_>>();
+												log::debug!(
+													"Reconstructed extrinsic: app_id={}, data={:?}",
+													e.0,
+													data_hex_string
+												);
+											}
 										},
 										Err(error) => {
 											log::error!("Reconstruction error: {}", error)

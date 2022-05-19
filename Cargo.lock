@@ -1907,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=8a4ae82#8a4ae829730f6e31c67cd670c66cd465b4182860"
+source = "git+https://github.com/maticnetwork/avail.git?rev=75930dd"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1922,11 +1922,12 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=8a4ae82#8a4ae829730f6e31c67cd670c66cd465b4182860"
+source = "git+https://github.com/maticnetwork/avail.git?rev=75930dd"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
  "getrandom 0.2.6",
+ "parity-scale-codec 3.1.2",
  "thiserror",
 ]
 
