@@ -1922,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=AVA-148#eb741db03e47c3e1fa5c2ba037db87d3cd9174a5"
+source = "git+https://github.com/maticnetwork/avail.git?branch=AVA-148#bbc1b626b55f9827cc97ea16d920cd898ce46e7a"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
