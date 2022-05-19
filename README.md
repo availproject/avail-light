@@ -11,7 +11,7 @@
 
 ## Introduction
 
-`avail-light` is a data availability light client that can do the following:
+Naive approach for building one AVAIL light client, which will do following
 
 * Listen for finalised blocks.
 * Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
