@@ -11,6 +11,9 @@ use std::{
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{Multiaddr, PeerId};
+use kate_recovery::com::{
+	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
+};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -138,9 +141,8 @@ pub async fn do_main() -> Result<()> {
 	let latest_block = block_header.number;
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
-	let app_id: u32 = cfg.app_id as u32;
 	tokio::spawn(async move {
-		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, app_id).await;
+		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2).await;
 	});
 
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -181,7 +183,6 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
-					let index_tuple = header.app_data_lookup.index.clone();
 					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					//hyper request for getting the kate query request
 					let cells = rpc::get_kate_proof(&rpc_url, num, kate_cells).await?;
@@ -209,59 +210,106 @@ pub async fn do_main() -> Result<()> {
 					let conf = calculate_confidence(count);
 					let app_index = header.app_data_lookup.index.clone();
 
+					if cfg.app_id.is_none() {
+						continue;
+					}
+
 					/*note:
 					The following is the part when the user have already subscribed
 					to an appID and now its verifying every cell that contains the data
 					*/
 					//@TODO : Major optimization needed here
-					if conf >= cfg.confidence && !app_index.is_empty() {
-						let query_cells: Vec<types::Cell> = match cfg.app_id {
-							//@TODO: Number of cells that can handle -1 case needs to set or set to 50% of total cells
-							// otherwise LC will ctrash because of kate_query_proof limit
-							n if n == -1 => {
-								let cells: Vec<types::Cell> = (0..max_cols as u16)
-									.flat_map(move |col| {
-										(0..max_rows as u16).map(move |row| types::Cell {
-											block: 1,
-											row,
-											col,
-											..Default::default()
-										})
-									})
-									.collect();
-								cells
+					let dimension = ExtendedMatrixDimensions {
+						rows: max_rows as usize,
+						cols: max_cols as usize,
+					};
+
+					let app_id = cfg.app_id.unwrap_or_default();
+
+					if conf >= cfg.confidence
+						&& ((!app_index.is_empty() && app_id > 0) || app_id == 0)
+					{
+						let layout =
+							client::layout_from_index(&app_index, header.app_data_lookup.size);
+
+						match app_specific_column_cells(&layout, &dimension, app_id as u32) {
+							None => {
+								log::info!("No app specific cells for app {}", app_id);
+								continue;
 							},
-							n if n > 0 => {
-								let cells = if let Some((app_id, offset)) = index_tuple
-									.iter()
-									.find(|elem| app_id != 0 && app_id == elem.0)
-								{
-									log::info!(
-										"{} chunks for app {} found in block {}",
-										offset,
-										app_id,
-										num
-									);
-									rpc::generate_app_specific_cells(
-										*offset,
-										max_cols,
+							Some(recon_cells) => {
+								// Since extended rows count (max_rows) is divisible by 2,
+								// take first half of cells of a each column
+								let recon_cells_half = recon_cells
+									.into_iter()
+									.filter(|cell| cell.row <= (max_rows / 2 - 1))
+									.collect::<Vec<_>>();
+
+								let query_cells: Vec<types::Cell> =
+									rpc::from_kate_cells(num, &recon_cells_half);
+
+								let mut verified = true;
+								let mut verified_cells = vec![];
+								for cell in query_cells.chunks(30) {
+									let cells =
+										rpc::get_kate_proof(&rpc_url, num, (*cell).to_vec())
+											.await?;
+									let verified_cells_count = proof::verify_proof(
 										num,
-										header.clone(),
-										*app_id,
-									)
-								} else {
-									vec![]
-								};
-								cells
+										max_rows,
+										max_cols,
+										cells.clone(),
+										commitment.clone(),
+									);
+									if (verified_cells_count as usize) < cells.len() {
+										log::info!(
+											"Verified {} of {} cells, skipping reconstruction",
+											verified_cells_count,
+											cells.len()
+										);
+										verified = false;
+										break;
+									} else {
+										log::info!("Verified {} cells", verified_cells_count);
+									}
+									verified_cells.extend(cells);
+								}
+								if verified {
+									let reconstruction_cells = verified_cells
+										.iter()
+										.map(|cell| Cell {
+											col: cell.col,
+											row: cell.row,
+											data: cell.proof[48..].to_vec(),
+										})
+										.collect::<Vec<_>>();
+
+									let layout = client::layout_from_index(
+										header.app_data_lookup.index.as_slice(),
+										header.app_data_lookup.size,
+									);
+
+									let dimension = ExtendedMatrixDimensions {
+										rows: max_rows as usize,
+										cols: max_cols as usize,
+									};
+
+									match reconstruct_app_extrinsics(
+										&layout,
+										&dimension,
+										reconstruction_cells,
+										None,
+									) {
+										Ok(xts) => {
+											log::debug!("Reconstructed extrinsic: {:?}", xts)
+										},
+										Err(error) => {
+											log::error!("Reconstruction error: {}", error)
+										},
+									}
+								}
 							},
-							_ => {
-								log::info!("\n ❌ no app id is given, random sampling begins");
-								vec![]
-							},
-						};
-						let cells = rpc::get_kate_proof(&rpc_url, num, query_cells).await?;
-						let _count =
-							proof::verify_proof(num, max_rows, max_cols, cells, commitment.clone());
+						}
 					}
 
 					// push latest mined block's header into column family specified

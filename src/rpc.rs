@@ -2,7 +2,7 @@ extern crate futures;
 extern crate num_cpus;
 
 use std::{
-	collections::{HashMap, HashSet},
+	collections::HashSet,
 	sync::{Arc, Mutex},
 	time::SystemTime,
 };
@@ -308,46 +308,6 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	Ok(cells)
 }
 
-pub fn generate_app_specific_cells(
-	index: u32,
-	max_col: u16,
-	num: u64,
-	header: Header,
-	id: u32,
-) -> Vec<Cell> {
-	let mut buf = Vec::new();
-	let hash_ind = get_id_specific_size(header);
-	let endsize = hash_ind.get(&id).unwrap();
-
-	(index..*endsize).for_each(|index| {
-		let rows = (index) as u16 / max_col;
-		let cols = (index) as u16 % max_col;
-
-		buf.push(Cell {
-			block: num,
-			row: rows as u16,
-			col: cols as u16,
-			..Default::default()
-		});
-	});
-	buf
-}
-
-pub fn get_id_specific_size(block_header: Header) -> HashMap<u32, u32> {
-	let app_index = block_header.app_data_lookup.index;
-	let app_size = block_header.app_data_lookup.size;
-	let mut index: HashMap<u32, u32> = HashMap::new();
-	for i in 0..app_index.len() {
-		if i + 1 == app_index.len() {
-			let esize = app_size;
-			index.insert(app_index[i].0, esize);
-		} else {
-			let size = app_index[i + 1].1 - 1;
-			index.insert(app_index[i].0, size);
-		}
-	}
-	index
-}
 //parsing the urls given in the vector of urls
 pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
 	urls.iter()
@@ -399,4 +359,20 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 		}
 	}
 	Ok(rpc_url)
+}
+
+fn from_kate_cell(block: u64, cell: &kate_recovery::com::Cell) -> Cell {
+	Cell {
+		block,
+		row: cell.row,
+		col: cell.col,
+		proof: cell.data.to_vec(),
+	}
+}
+
+pub fn from_kate_cells(block: u64, cells: &[kate_recovery::com::Cell]) -> Vec<Cell> {
+	cells
+		.iter()
+		.map(|cell| from_kate_cell(block, cell))
+		.collect::<Vec<Cell>>()
 }

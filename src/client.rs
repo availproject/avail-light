@@ -24,7 +24,7 @@ use ipfs_embed::{
 	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, Multiaddr, NetworkConfig, PeerId,
 	PublicKey, SecretKey, StorageConfig, ToLibp2p,
 };
-use kate_recovery::com::{reconstruct_app_extrinsics, Cell};
+use kate_recovery::com::{reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions};
 use libipld::Ipld;
 use rocksdb::DB;
 
@@ -34,7 +34,8 @@ use crate::{
 		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
 		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
 	},
-	rpc::{check_http, get_cells},
+	proof::verify_proof,
+	rpc::{check_http, from_kate_cells, get_cells},
 	types::{BlockCidPair, ClientMsg, Event},
 };
 
@@ -406,6 +407,9 @@ pub async fn run_client(
 		let rpc_ = check_http(cfg.full_node_rpc.clone()).await?;
 		match block_rx.recv() {
 			Ok(block) => {
+				if cfg.app_id.unwrap_or_default() != -1 {
+					continue;
+				}
 				let block_cid_entry =
 					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
 						.map(|pair| pair.cid);
@@ -436,14 +440,14 @@ pub async fn run_client(
 							}
 						}
 
-						fn to_column_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
+						fn to_cells(col_num: u16, col: &[Option<Vec<u8>>]) -> Vec<Cell> {
 							col.iter()
 								.enumerate()
 								.flat_map(|(i, cells)| {
 									cells.clone().map(|data| Cell {
 										row: i as u16,
 										col: col_num,
-										data: data[48..].to_vec(),
+										data,
 									})
 								})
 								.collect::<Vec<Cell>>()
@@ -453,24 +457,30 @@ pub async fn run_client(
 						// calling `.clone()`
 						let arced_cells = Arc::new(cells);
 
-						let columns = arced_cells
+						let mut cells = arced_cells
 							.chunks_exact(block.max_rows as usize)
 							.enumerate()
-							.map(|(i, col)| to_column_cells(i as u16, col))
-							.collect::<Vec<Vec<Cell>>>();
+							.flat_map(|(i, col)| to_cells(i as u16, col))
+							.collect::<Vec<Cell>>();
 
-						let layout = layout_from_index(
-							block.header.app_data_lookup.index.as_slice(),
-							block.header.app_data_lookup.size,
+						let verified_cells_count = verify_proof(
+							block.header.number,
+							block.max_rows,
+							block.max_cols,
+							from_kate_cells(block.header.number, &cells),
+							block.header.extrinsics_root.commitment,
 						);
 
-						let ext = reconstruct_app_extrinsics(
-							layout,
-							columns,
-							(block.max_rows / 2) as usize,
-							32,
-						);
-						log::debug!("Reconstructed extrinsic: {:?}", ext);
+						if (verified_cells_count as usize) < cells.len() {
+							log::info!(
+								"Verified {} of {} cells, skipping reconstruction",
+								verified_cells_count,
+								cells.len()
+							);
+							continue;
+						} else {
+							log::info!("Verified {} cells", verified_cells_count);
+						}
 
 						match construct_matrix(
 							block.num,
@@ -535,6 +545,25 @@ pub async fn run_client(
 								log::info!("error: {}", msg);
 							},
 						};
+
+						cells
+							.iter_mut()
+							.for_each(|cell| cell.data = cell.data[48..].to_vec());
+
+						let layout = layout_from_index(
+							block.header.app_data_lookup.index.as_slice(),
+							block.header.app_data_lookup.size,
+						);
+
+						let dimensions = ExtendedMatrixDimensions {
+							rows: block.max_rows as usize,
+							cols: block.max_cols as usize,
+						};
+
+						match reconstruct_app_extrinsics(&layout, &dimensions, cells, None) {
+							Ok(xts) => log::debug!("Reconstructed extrinsic: {:?}", xts),
+							Err(error) => log::error!("Reconstruction error: {}", error),
+						}
 					},
 					Err(e) => {
 						log::info!("error: {}", e);
@@ -684,7 +713,7 @@ pub fn get_block_cid_entry(store: Arc<DB>, block: i128) -> Option<crate::types::
 	}
 }
 
-fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
+pub fn layout_from_index(index: &[(u32, u32)], size: u32) -> Vec<(u32, u32)> {
 	if index.is_empty() {
 		return vec![(0, size)];
 	}
