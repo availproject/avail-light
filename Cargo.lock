@@ -1907,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?tag=v1.0.0#741bc5740a7195ca1c1453d1a0c9192b8ab169c0"
+source = "git+https://github.com/maticnetwork/avail.git?rev=8a4ae82#8a4ae829730f6e31c67cd670c66cd465b4182860"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1922,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=AVA-148#bbc1b626b55f9827cc97ea16d920cd898ce46e7a"
+source = "git+https://github.com/maticnetwork/avail.git?rev=8a4ae82#8a4ae829730f6e31c67cd670c66cd465b4182860"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
@@ -2930,9 +2930,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
+checksum = "7b10983b38c53aebdf33f542c6275b0f58a238129d00c4ae0e6fb59738d783ca"
 
 [[package]]
 name = "opaque-debug"
