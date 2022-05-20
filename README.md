@@ -11,7 +11,7 @@
 
 ## Introduction
 
-Build a data availability light client that will do following:
+`avail-light` is a data availability light client that can do the following:
 
 * Listen for newly produced blocks.
 * Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
