@@ -1,6 +1,6 @@
 <div align="Center">
 <h1>avail-light</h1>
-<h3> Data availability and computational integrity verified by avail light</h3>
+<h3> Light client for the Polygon Avail blockchain</h3>
 </div>
 
 <br>
