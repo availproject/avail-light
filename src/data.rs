@@ -6,14 +6,17 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
-use ipfs_embed::{Cid, DefaultParams, Ipfs, TempPin};
+use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, TempPin};
 use libipld::{
 	codec_impl::IpldCodec,
 	multihash::{Code, MultihashDigest},
 	Ipld,
 };
 
-use crate::types::{BaseCell, DataMatrix, IpldBlock, L0Col, L1Row};
+use crate::{
+	rpc,
+	types::{BaseCell, Cell as DataCell, DataMatrix, IpldBlock, L0Col, L1Row},
+};
 
 fn construct_cell(
 	row: u16,
@@ -448,6 +451,99 @@ pub fn decode_block_cid_ask_message(msg: Vec<u8>) -> Option<(i128, Option<Cid>)>
 		},
 		_ => None,
 	}
+}
+
+pub async fn ipfs_priority_get_cells(
+	cells: &mut Vec<DataCell>,
+	ipfs: &Ipfs<DefaultParams>,
+	rpc_url: &String,
+	block_num: u64,
+) -> Result<()> {
+	println!("ipfs priority get started...");
+	// Try fetching the cells from IPFS first
+	for (_, req_cell_data) in cells.iter_mut().enumerate() {
+		let peers = ipfs.peers();
+		println!("number of peers: {}", peers.len());
+		if peers.len() == 0 {
+			break;
+		}
+		// println!("list of connections: {:?}", ipfs.connections());
+		// TODO: paralelize fetching
+		// Skip cells that return error when fetching from IPFS
+		println!(
+			"Requesting from IPFS: CID: {}. Cell reference: {}.",
+			req_cell_data.cid(),
+			req_cell_data.reference()
+		);
+		let mut block_cid: Cid = Cid::default();
+		if let Ok(record) = ipfs
+			.get_record(
+				Key::from(req_cell_data.reference().as_bytes().to_vec()),
+				ipfs_embed::Quorum::One,
+			)
+			.await
+		{
+			block_cid = Cid::try_from(record[0].record.value.to_vec()).unwrap();
+		}
+
+		if let Err(error) = ipfs.fetch(&block_cid, peers).await.and_then(|block| {
+			// IPFS block data contains cell proof
+			println!("BLOCK DATA: {:?}", block.data());
+			req_cell_data.proof = block.data().to_vec();
+			req_cell_data.data = req_cell_data.proof[48..].to_vec();
+			Ok(())
+		}) {
+			println!("ERROR FETCHING FROM IPFS: {}.", error);
+		}
+		// .context(format!(
+		// 	"{}:{}:{}",
+		// 	req_cell_data.block, req_cell_data.col, req_cell_data.row
+		// ));
+		// ipfs.sync(&req_cell_data.cid(), peers).await?;
+	}
+	let mut ipfs_cell_count = 0;
+	for cell in cells.iter_mut() {
+		if cell.proof.len() != 0 {
+			ipfs_cell_count += 1;
+		}
+	}
+	println!("Number of cells fetched from IPFS: {}", ipfs_cell_count);
+
+	// Retrieve remaining cell proofs via RPC call to node
+	// TODO: handle case if 1 or more cells are unavailable via RPC (retry mechanism, generate new cells, etc)
+	let mut remaining_cells = rpc::get_kate_proof(
+		&rpc_url,
+		block_num,
+		cells
+			.clone()
+			.into_iter()
+			.filter(|cell| cell.proof.len() == 0)
+			.collect::<Vec<_>>(),
+	)
+	.await?;
+	remaining_cells.iter_mut().for_each(move |cell| {
+		cell.data = cell.proof[48..].to_vec();
+	});
+
+	for (cell_index, cell_data) in cells.iter_mut().enumerate() {
+		// Skip cells with data retrieved from IPFS
+		if cell_data.data.len() != 0 {
+			continue;
+		}
+		// Complexity not an issue bcs of the small number of remaining cells
+		for remaining_cell in remaining_cells.iter() {
+			if cell_data.block == remaining_cell.block
+				&& cell_data.col == remaining_cell.col
+				&& cell_data.row == remaining_cell.row
+			{
+				// println!("remaining cell data len: {}", remaining_cell.data.len());
+				cell_data.data = remaining_cell.data.clone();
+				cell_data.proof = remaining_cell.proof.clone();
+			}
+		}
+	}
+
+	return Ok(());
 }
 
 #[cfg(test)]
