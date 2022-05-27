@@ -19,7 +19,7 @@ use std::{
 use async_std::stream::StreamExt;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
-	Cid, DefaultParams as IPFSDefaultParams, Ipfs, NetworkConfig, StorageConfig, PeerId, Multiaddr
+	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Multiaddr, NetworkConfig, PeerId, StorageConfig,
 };
 use kate_recovery::com::{reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions};
 use libipld::Ipld;
@@ -651,7 +651,6 @@ pub async fn make_client(
 			.expect("Connection established");
 		ipfs.bootstrap(&[node]).await?;
 	}
-
 
 	Ok(ipfs)
 }

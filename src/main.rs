@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Multiaddr, PeerId, Record, Key};
+use ipfs_embed::{Key, Multiaddr, PeerId, Record};
 // use kate_recovery::com::{
 // 	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
 // };
@@ -126,7 +126,13 @@ pub async fn do_main() -> Result<()> {
 		.map(|(a, b)| (PeerId::from_str(a).expect("Valid peer id"), b.clone()))
 		.collect::<Vec<(PeerId, Multiaddr)>>();
 
-	let ipfs = client::make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path, bootstrap_nodes).await?;
+	let ipfs = client::make_client(
+		cfg.ipfs_seed,
+		cfg.ipfs_port,
+		&cfg.ipfs_path,
+		bootstrap_nodes,
+	)
+	.await?;
 
 	#[cfg(feature = "logs")]
 	tokio::task::spawn(client::log_events(ipfs.clone()));
