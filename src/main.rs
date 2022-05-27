@@ -371,7 +371,7 @@ pub async fn do_main() -> Result<()> {
 						let reference = cell.reference();
 						println!("cell reference: {:?}, hash: {:?}", reference, &cell.hash());
 
-						if let Err(error) = ipfs.insert(&cell.to_ipfs_block()) {
+						if let Err(error) = ipfs.insert(cell.to_ipfs_block()) {
 							log::info!(
 								"Error pushing cell to IPFS: {}. Cell reference: {}",
 								error,

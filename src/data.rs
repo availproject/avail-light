@@ -153,11 +153,12 @@ pub async fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Re
 async fn push_cell(
 	cell: BaseCell,
 	ipfs: &Ipfs<DefaultParams>,
-	pin: &TempPin,
+	pin: &mut TempPin,
 ) -> anyhow::Result<Cid, String> {
-	match ipfs.temp_pin(pin, cell.cid()) {
-		Ok(_) => match ipfs.insert(&cell) {
-			Ok(_) => Ok(*cell.cid()),
+	let cid = cell.cid().clone();
+	match ipfs.temp_pin(pin, &cid) {
+		Ok(_) => match ipfs.insert(cell) {
+			Ok(_) => Ok(cid),
 			Err(_) => Err("failed to IPFS insert cell of data matrix".to_owned()),
 		},
 		Err(_) => Err("failed to IPFS pin cell of data matrix".to_owned()),
@@ -167,7 +168,7 @@ async fn push_cell(
 async fn push_col(
 	col: L0Col,
 	ipfs: &Ipfs<DefaultParams>,
-	pin: &TempPin,
+	pin: &mut TempPin,
 ) -> anyhow::Result<Cid, String> {
 	let mut cell_cids: Vec<Ipld> = Vec::with_capacity(col.base_cells.len());
 
@@ -182,12 +183,15 @@ async fn push_col(
 
 	let col = Ipld::List(cell_cids);
 	match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &col) {
-		Ok(coded_col) => match ipfs.temp_pin(pin, coded_col.cid()) {
-			Ok(_) => match ipfs.insert(&coded_col) {
-				Ok(_) => Ok(*coded_col.cid()),
-				Err(_) => Err("failed to IPFS insert column of data matrix".to_owned()),
-			},
-			Err(_) => Err("failed to IPFS pin column of data matrix".to_owned()),
+		Ok(coded_col) => {
+			let cid = coded_col.cid().clone();
+			match ipfs.temp_pin(pin, &cid) {
+				Ok(_) => match ipfs.insert(coded_col) {
+					Ok(_) => Ok(cid),
+					Err(_) => Err("failed to IPFS insert column of data matrix".to_owned()),
+				},
+				Err(_) => Err("failed to IPFS pin column of data matrix".to_owned()),
+			}
 		},
 		Err(_) => Err("failed to IPLD encode column of data matrix".to_owned()),
 	}
@@ -198,7 +202,7 @@ async fn push_row(
 	block_num: i128,
 	latest_cid: Option<Cid>,
 	ipfs: &Ipfs<DefaultParams>,
-	pin: &TempPin,
+	pin: &mut TempPin,
 ) -> anyhow::Result<Cid, String> {
 	let mut col_cids: Vec<Ipld> = Vec::with_capacity(row.l0_cols.len());
 
@@ -224,12 +228,15 @@ async fn push_row(
 
 	let map = Ipld::StringMap(map);
 	match IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &map) {
-		Ok(coded_mat) => match ipfs.temp_pin(pin, coded_mat.cid()) {
-			Ok(_) => match ipfs.insert(&coded_mat) {
-				Ok(_) => Ok(*coded_mat.cid()),
-				Err(_) => Err("failed to IPFS insert row of data matrix".to_owned()),
-			},
-			Err(_) => Err("failed to IPFS pin row of data matrix".to_owned()),
+		Ok(coded_mat) => {
+			let cid = coded_mat.cid().clone();
+			match ipfs.temp_pin(pin, &cid) {
+				Ok(_) => match ipfs.insert(coded_mat) {
+					Ok(_) => Ok(cid),
+					Err(_) => Err("failed to IPFS insert row of data matrix".to_owned()),
+				},
+				Err(_) => Err("failed to IPFS pin row of data matrix".to_owned()),
+			}
 		},
 		Err(_) => Err("failed to IPLD encode row of data matrix".to_owned()),
 	}
@@ -239,7 +246,7 @@ pub async fn push_matrix(
 	data_matrix: DataMatrix,
 	latest_cid: Option<Cid>,
 	ipfs: &Ipfs<DefaultParams>,
-	pin: &TempPin,
+	pin: &mut TempPin,
 ) -> anyhow::Result<Cid, String> {
 	push_row(
 		data_matrix.l1_row,
@@ -594,8 +601,8 @@ mod tests {
 				.unwrap()
 				.cid()
 		};
-		let pin = ipfs.create_temp_pin().unwrap();
-		let root_cid = push_matrix(data_matrix, Some(prev_cid), &ipfs, &pin)
+		let pin = &mut ipfs.create_temp_pin().unwrap();
+		let root_cid = push_matrix(data_matrix, Some(prev_cid), &ipfs, pin)
 			.await
 			.unwrap();
 
