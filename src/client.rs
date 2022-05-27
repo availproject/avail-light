@@ -638,6 +638,8 @@ pub async fn make_client(
 	if !bootstrap_nodes.is_empty() {
 		ipfs.bootstrap(bootstrap_nodes).await?;
 	} else {
+		// If client is the first one on the network, wait for the second client ConnectionEstablished event to use it as bootstrap
+		// DHT requires boostrap to complete in order to be able to insert new records
 		let node = ipfs
 			.swarm_events()
 			.find_map(|event| {
