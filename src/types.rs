@@ -1,6 +1,7 @@
 extern crate ipfs_embed;
 
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
+use codec::{Decode, Encode};
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use libipld::{
 	multihash::{Code, MultihashDigest},
 	IpldCodec,
@@ -26,7 +27,8 @@ pub enum Event {
 	Flushed,
 	Synced,
 	Bootstrapped,
-	NewHead(StreamId, u64),
+	NewInfo(PeerId),
+	Other,
 }
 
 impl std::fmt::Display for Event {
@@ -53,7 +55,8 @@ impl std::fmt::Display for Event {
 			Self::Flushed => write!(f, "<flushed")?,
 			Self::Synced => write!(f, "<synced")?,
 			Self::Bootstrapped => write!(f, "<bootstrapped")?,
-			Self::NewHead(id, offset) => write!(f, "<newhead {} {}", id, offset)?,
+			Self::NewInfo(peer) => write!(f, "<newinfo {}", peer)?,
+			Self::Other => write!(f, "<other")?,
 		}
 		Ok(())
 	}
@@ -127,10 +130,9 @@ impl std::str::FromStr for Event {
 			Some("<flushed") => Self::Flushed,
 			Some("<synced") => Self::Synced,
 			Some("<bootstrapped") => Self::Bootstrapped,
-			Some("<newhead") => {
-				let id = parts.next().unwrap().parse()?;
-				let offset = parts.next().unwrap().parse()?;
-				Self::NewHead(id, offset)
+			Some("<newinfo") => {
+				let peer = parts.next().unwrap().parse()?;
+				Self::NewInfo(peer)
 			},
 			_ => return Err(anyhow::anyhow!("invalid event `{}`", s)),
 		})
