@@ -18,8 +18,8 @@ use std::{
 
 use async_std::stream::StreamExt;
 use ipfs_embed::{
-	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Keypair, NetworkConfig, PeerId, PublicKey,
-	SecretKey, StorageConfig, ToLibp2p,
+	identity::ed25519::{Keypair, SecretKey},
+	Cid, DefaultParams as IPFSDefaultParams, Ipfs, NetworkConfig, StorageConfig,
 };
 use kate_recovery::com::{reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions};
 use libipld::Ipld;
@@ -33,7 +33,7 @@ use crate::{
 	},
 	proof::verify_proof,
 	rpc::{check_http, from_kate_cells, get_cells},
-	types::{BlockCidPair, ClientMsg},
+	types::{BlockCidPair, ClientMsg, Event},
 };
 
 #[tokio::main]
@@ -45,7 +45,7 @@ pub async fn run_client(
 	cell_query_rx: Receiver<crate::types::CellContentQueryPayload>,
 	ipfs: Ipfs<IPFSDefaultParams>,
 ) -> anyhow::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let pin = ipfs.create_temp_pin()?;
+	let pin = &mut ipfs.create_temp_pin()?;
 	let ipfs_0: Ipfs<IPFSDefaultParams> = ipfs.clone();
 	let block_cid_store_2 = block_cid_store.clone();
 	tokio::task::spawn(async move {
@@ -469,7 +469,7 @@ pub async fn run_client(
 							arced_cells,
 						) {
 							Ok(matrix) => {
-								match push_matrix(matrix, latest_cid, &ipfs, &pin).await {
+								match push_matrix(matrix, latest_cid, &ipfs, pin).await {
 									Ok(cid) => {
 										latest_cid = Some(cid);
 										// publish block-cid mapping message over gossipsub network
@@ -625,10 +625,9 @@ pub async fn make_client(
 	path: &str,
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
 	let sweep_interval = Duration::from_secs(60);
-
 	let path_buf = std::path::PathBuf::from_str(path).unwrap();
-	let storage = StorageConfig::new(None, 10, sweep_interval);
-	let mut network = NetworkConfig::new(path_buf, keypair(seed));
+	let storage = StorageConfig::new(Some(path_buf), None, 10, sweep_interval);
+	let mut network = NetworkConfig::new(keypair(seed));
 	network.mdns = None;
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
@@ -660,7 +659,8 @@ pub async fn log_events(ipfs: Ipfs<IPFSDefaultParams>) {
 			ipfs_embed::Event::Subscribed(peer_id, topic) => Event::Subscribed(peer_id, topic),
 			ipfs_embed::Event::Unsubscribed(peer_id, topic) => Event::Unsubscribed(peer_id, topic),
 			ipfs_embed::Event::Bootstrapped => Event::Bootstrapped,
-			ipfs_embed::Event::NewHead(head) => Event::NewHead(*head.id(), head.len()),
+			ipfs_embed::Event::NewInfo(peer_id) => Event::NewInfo(peer_id),
+			_ => Event::Other, // TODO: Is there a purpose to handle those events?
 		};
 		log::info!("Received event: {}", event);
 	}
@@ -669,13 +669,9 @@ pub async fn log_events(ipfs: Ipfs<IPFSDefaultParams>) {
 pub fn keypair(i: u64) -> Keypair {
 	let mut keypair = [0; 32];
 	keypair[..8].copy_from_slice(&i.to_be_bytes());
-	let secret = SecretKey::from_bytes(&keypair).unwrap();
-	let public = PublicKey::from(&secret);
-	Keypair { secret, public }
+	let secret = SecretKey::from_bytes(keypair).unwrap();
+	Keypair::from(secret)
 }
-
-#[allow(dead_code)]
-pub fn peer_id(i: u64) -> PeerId { keypair(i).to_peer_id() }
 
 // Following two are utility functions for interacting with local on-disk data store
 // where block -> cid mapping is maintained
