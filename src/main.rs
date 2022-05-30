@@ -281,7 +281,7 @@ pub async fn do_main() -> Result<()> {
 						}
 					}
 					if let Err(error) = ipfs.flush().await {
-						println!("ERRROR FLUSHING: {}", error)
+						log::info!("Error flushin data do disk: {}", error,);
 					};
 
 					// notify ipfs-based application client

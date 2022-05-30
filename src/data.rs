@@ -459,47 +459,51 @@ pub async fn ipfs_priority_get_cells(
 	rpc_url: &String,
 	block_num: u64,
 ) -> Result<()> {
-	println!("ipfs priority get started...");
 	// Try fetching the cells from IPFS first
 	for (_, req_cell_data) in cells.iter_mut().enumerate() {
 		let peers = ipfs.peers();
-		println!("number of peers: {}", peers.len());
+		log::info!("Number of known peers: {}", peers.len());
 		if peers.len() == 0 {
 			break;
 		}
-		// println!("list of connections: {:?}", ipfs.connections());
 		// TODO: paralelize fetching
 		// Skip cells that return error when fetching from IPFS
-		println!(
-			"Requesting from IPFS: CID: {}. Cell reference: {}.",
-			req_cell_data.cid(),
+		log::info!(
+			"Requesting from IPFS: cell reference: {}.",
 			req_cell_data.reference()
 		);
-		let mut block_cid: Cid = Cid::default();
-		if let Ok(record) = ipfs
-			.get_record(
-				Key::from(req_cell_data.reference().as_bytes().to_vec()),
-				ipfs_embed::Quorum::One,
-			)
+
+		let key = Key::from(req_cell_data.reference().as_bytes().to_vec());
+		let (block_cid, get_record_error): (Cid, _) = ipfs
+			.get_record(key, ipfs_embed::Quorum::One)
 			.await
-		{
-			block_cid = Cid::try_from(record[0].record.value.to_vec()).unwrap();
+			.map(|record| record[0].record.value.to_vec())
+			.and_then(|cid_value| Cid::try_from(cid_value).context("Invalid CID value"))
+			.map(|cid| (cid, None))
+			.unwrap_or_else(|error| (Cid::default(), Some(error)));
+
+		if let Some(error) = get_record_error {
+			log::error!(
+				"Cannot get CID from record: {}. Cell reference: {}",
+				error,
+				req_cell_data.reference()
+			);
+			continue;
 		}
 
 		if let Err(error) = ipfs.fetch(&block_cid, peers).await.and_then(|block| {
 			// IPFS block data contains cell proof
-			println!("BLOCK DATA: {:?}", block.data());
 			req_cell_data.proof = block.data().to_vec();
 			req_cell_data.data = req_cell_data.proof[48..].to_vec();
 			Ok(())
 		}) {
-			println!("ERROR FETCHING FROM IPFS: {}.", error);
+			log::error!(
+				"Error fetching data from IPFS: {}. Cell reference: {}",
+				error,
+				req_cell_data.reference()
+			);
+			continue;
 		}
-		// .context(format!(
-		// 	"{}:{}:{}",
-		// 	req_cell_data.block, req_cell_data.col, req_cell_data.row
-		// ));
-		// ipfs.sync(&req_cell_data.cid(), peers).await?;
 	}
 	let mut ipfs_cell_count = 0;
 	for cell in cells.iter_mut() {
@@ -507,7 +511,7 @@ pub async fn ipfs_priority_get_cells(
 			ipfs_cell_count += 1;
 		}
 	}
-	println!("Number of cells fetched from IPFS: {}", ipfs_cell_count);
+	log::info!("Number of cells fetched from IPFS: {}", ipfs_cell_count);
 
 	// Retrieve remaining cell proofs via RPC call to node
 	// TODO: handle case if 1 or more cells are unavailable via RPC (retry mechanism, generate new cells, etc)
@@ -525,7 +529,7 @@ pub async fn ipfs_priority_get_cells(
 		cell.data = cell.proof[48..].to_vec();
 	});
 
-	for (cell_index, cell_data) in cells.iter_mut().enumerate() {
+	for (_, cell_data) in cells.iter_mut().enumerate() {
 		// Skip cells with data retrieved from IPFS
 		if cell_data.data.len() != 0 {
 			continue;
@@ -536,7 +540,6 @@ pub async fn ipfs_priority_get_cells(
 				&& cell_data.col == remaining_cell.col
 				&& cell_data.row == remaining_cell.row
 			{
-				// println!("remaining cell data len: {}", remaining_cell.data.len());
 				cell_data.data = remaining_cell.data.clone();
 				cell_data.proof = remaining_cell.proof.clone();
 			}
@@ -550,6 +553,7 @@ pub async fn ipfs_priority_get_cells(
 mod tests {
 	extern crate rand;
 
+	use ipfs_embed::{Multiaddr, PeerId};
 	use proptest::{collection, prelude::*};
 	use rand::prelude::random;
 	use test_case::test_case;
@@ -662,53 +666,5 @@ mod tests {
 		// 256 bytes of random data
 		let msg = random_data(256);
 		assert_eq!(decode_block_cid_ask_message(msg), None);
-	}
-
-	#[tokio::test]
-	async fn test_data_matrix_coding_decoding_flow() {
-		let ipfs = make_client(1, 10000, "test").await.unwrap();
-		let block: u64 = 1 << 63;
-		let row_c = 4;
-		let col_c = 4;
-		let cells: Vec<Option<Vec<u8>>> = vec![
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-			Some(random_data(80)),
-		];
-		let arced = Arc::new(cells.clone());
-		let data_matrix = construct_matrix(block, row_c, col_c, arced).unwrap();
-		let prev_cid: Cid = {
-			let flag = Ipld::Bool(true);
-			*IpldBlock::encode(IpldCodec::DagCbor, Code::Blake3_256, &flag)
-				.unwrap()
-				.cid()
-		};
-		let pin = &mut ipfs.create_temp_pin().unwrap();
-		let root_cid = push_matrix(data_matrix, Some(prev_cid), &ipfs, pin)
-			.await
-			.unwrap();
-
-		let result = get_matrix(&ipfs, Some(root_cid)).await.unwrap();
-
-		let mut cells_iter = cells.iter();
-
-		for col in result {
-			for cell in col {
-				assert_eq!(cells_iter.next().unwrap().as_ref().unwrap(), &cell.unwrap());
-			}
-		}
 	}
 }
