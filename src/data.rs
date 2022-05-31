@@ -71,7 +71,21 @@ pub fn construct_matrix(
 
 type Cell = Vec<u8>;
 type Column = Vec<Option<Cell>>;
-type Matrix = Vec<Column>;
+
+#[derive(Debug)]
+pub struct Matrix {
+	columns: Vec<Column>,
+}
+
+impl Matrix {
+	pub fn new() -> Self { Matrix { columns: vec![] } }
+
+	pub fn columns(&self) -> impl Iterator<Item = &Column> { self.columns.iter() }
+
+	pub fn get(&self, col: usize, row: usize) -> Option<&Option<Cell>> {
+		self.columns.get(col).and_then(|col| col.get(row))
+	}
+}
 
 pub fn matrix_cells(rows: u16, cols: u16) -> impl Iterator<Item = (usize, usize)> {
 	(0..cols as usize).flat_map(move |col| (0..rows as usize).map(move |row| (row, col)))
@@ -82,8 +96,7 @@ pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)>
 	matrix_cells(rows, cols)
 		.filter(|(row, col)| {
 			matrix
-				.get(*col)
-				.and_then(|col| col.get(*row))
+				.get(*col, *row)
 				.map(|cell| cell.is_none())
 				.unwrap_or(true)
 		})
@@ -92,7 +105,7 @@ pub fn empty_cells(matrix: &Matrix, cols: u16, rows: u16) -> Vec<(usize, usize)>
 
 pub fn non_empty_cells_len(matrix: &Matrix) -> usize {
 	matrix
-		.iter()
+		.columns()
 		.fold(0usize, |sum, val| sum + val.iter().flatten().count())
 }
 
@@ -128,7 +141,7 @@ async fn get_column(ipfs: &Ipfs<DefaultParams>, cid: Cid) -> Result<Column> {
 
 pub async fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Result<Matrix> {
 	match root_cid {
-		None => Ok(vec![]),
+		None => Ok(Matrix::new()),
 		Some(cid) => {
 			let peers = ipfs.peers();
 			let column_cids = ipfs
@@ -146,8 +159,10 @@ pub async fn get_matrix(ipfs: &Ipfs<DefaultParams>, root_cid: Option<Cid>) -> Re
 				.collect::<Vec<_>>();
 
 			let mat = join_all(future_mat).await;
+
 			mat.into_iter()
-				.collect::<Result<Vec<_>>>()
+				.collect::<Result<Vec<Column>>>()
+				.map(|columns| Matrix { columns })
 				.context("Cannot get matrix")
 		},
 	}
@@ -573,12 +588,13 @@ mod tests {
 		assert_eq!(cid, cid_dec);
 	}
 
-	fn matrix_strategy() -> impl Strategy<Value = Vec<Vec<Option<Vec<u8>>>>> {
+	fn matrix_strategy() -> impl Strategy<Value = Matrix> {
 		let rows_len = (1..64usize).next().unwrap();
 		collection::vec(
 			collection::vec(any::<Option<Vec<u8>>>(), rows_len),
 			collection::size_range(1..64),
 		)
+		.prop_map(move |columns| Matrix { columns })
 	}
 
 	proptest! {
@@ -589,8 +605,8 @@ mod tests {
 
 		#[test]
 		fn empty_cells_length_is_correct(matrix in matrix_strategy()) {
-			let cols = matrix.len() ;
-			let rows = matrix[0].len() ;
+			let cols = matrix.columns.len() ;
+			let rows = matrix.columns[0].len() ;
 			let empty_cells_len = empty_cells(&matrix, cols as u16, rows as u16).len();
 			let non_empty_cells_len =  non_empty_cells_len(&matrix);
 
