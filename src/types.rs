@@ -1,6 +1,7 @@
 extern crate ipfs_embed;
 
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
+use kate_recovery::com::ExtendedMatrixDimensions;
 use libipld::{
 	multihash::{Code, MultihashDigest},
 	IpldCodec,
@@ -346,12 +347,10 @@ pub struct SubscriptionResponse {
 	pub subscription_id: String,
 }
 
-#[derive(Debug, Clone)]
 pub struct ClientMsg {
-	pub num: u64,
-	pub max_rows: u16,
-	pub max_cols: u16,
-	pub header: Header,
+	pub number: u64,
+	pub dimensions: ExtendedMatrixDimensions,
+	pub lookup: AppDataIndex,
 }
 
 impl From<Header> for ClientMsg {
@@ -359,10 +358,12 @@ impl From<Header> for ClientMsg {
 		let ExtrinsicsRoot { rows, cols, .. } = header.extrinsics_root;
 
 		ClientMsg {
-			num: header.number,
-			max_rows: rows * 2,
-			max_cols: cols,
-			header,
+			number: header.number,
+			dimensions: ExtendedMatrixDimensions {
+				rows: (rows * 2) as usize,
+				cols: cols as usize,
+			},
+			lookup: header.app_data_lookup,
 		}
 	}
 }
