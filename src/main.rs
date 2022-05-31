@@ -205,7 +205,7 @@ pub async fn do_main() -> Result<()> {
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 					let mut cells = rpc::generate_random_cells(max_rows, max_cols, num);
-					println!(
+					log::info!(
 						"Random cells generated: {} from block: {}",
 						cells.len(),
 						num
@@ -213,7 +213,16 @@ pub async fn do_main() -> Result<()> {
 
 					let ipfs_2 = ipfs.clone();
 					// TODO: error handling
-					data::ipfs_priority_get_cells(&mut cells, &ipfs_2, &rpc_url, num).await?;
+					if let Err(error) =
+						data::ipfs_priority_get_cells(&mut cells, &ipfs_2, &rpc_url, num).await
+					{
+						log::error!(
+							"Error retrieveing cells for verification for block {}: {}",
+							num,
+							error
+						);
+						continue;
+					}
 
 					let count = proof::verify_proof(
 						num,

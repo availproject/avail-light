@@ -505,13 +505,12 @@ pub async fn ipfs_priority_get_cells(
 			continue;
 		}
 	}
-	let mut ipfs_cell_count = 0;
-	for cell in cells.iter_mut() {
-		if cell.proof.len() != 0 {
-			ipfs_cell_count += 1;
-		}
-	}
-	log::info!("Number of cells fetched from IPFS: {}", ipfs_cell_count);
+	let (fetched, _): (Vec<_>, Vec<_>) = cells
+		.iter()
+		.cloned()
+		.partition(|cell| !cell.proof.is_empty());
+
+	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
 
 	// Retrieve remaining cell proofs via RPC call to node
 	// TODO: handle case if 1 or more cells are unavailable via RPC (retry mechanism, generate new cells, etc)
@@ -529,20 +528,17 @@ pub async fn ipfs_priority_get_cells(
 		cell.data = cell.proof[48..].to_vec();
 	});
 
-	for (_, cell_data) in cells.iter_mut().enumerate() {
+	for cell_data in cells.iter_mut() {
 		// Skip cells with data retrieved from IPFS
 		if cell_data.data.len() != 0 {
 			continue;
 		}
 		// Complexity not an issue bcs of the small number of remaining cells
-		for remaining_cell in remaining_cells.iter() {
-			if cell_data.block == remaining_cell.block
-				&& cell_data.col == remaining_cell.col
-				&& cell_data.row == remaining_cell.row
-			{
-				cell_data.data = remaining_cell.data.clone();
-				cell_data.proof = remaining_cell.proof.clone();
-			}
+		for remaining_cell in remaining_cells.iter().filter(|cell| {
+			cell_data.block == cell.block && cell_data.col == cell.col && cell_data.row == cell.row
+		}) {
+			cell_data.data = remaining_cell.data.clone();
+			cell_data.proof = remaining_cell.proof.clone();
 		}
 	}
 
