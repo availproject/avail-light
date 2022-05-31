@@ -226,8 +226,8 @@ pub async fn get_cells(
 ) -> Result<Vec<Option<Vec<u8>>>, String> {
 	let begin = SystemTime::now();
 
-	let max_cells = (msg.max_rows as usize) * (msg.max_cols as usize);
-	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; max_cells]));
+	let store_size = msg.dimensions.rows * msg.dimensions.cols;
+	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; store_size]));
 
 	let store_0 = store.clone();
 	let cells_and_store = cells
@@ -236,10 +236,10 @@ pub async fn get_cells(
 
 	stream::iter(cells_and_store)
 		.for_each_concurrent(num_cpus::get(), |(row, col, store)| async move {
-			let proof = get_kate_query_proof_by_cell(url, msg.num, row as u16, col as u16).await;
+			let proof = get_kate_query_proof_by_cell(url, msg.number, row as u16, col as u16).await;
 
 			let mut handle = store.lock().unwrap();
-			handle[col * (msg.max_rows as usize) + row] = match proof {
+			handle[col * msg.dimensions.rows + row] = match proof {
 				Ok(v) => Some(v),
 				Err(e) => {
 					log::info!("error: {}", e);
@@ -251,8 +251,8 @@ pub async fn get_cells(
 
 	log::info!(
 		"Received {} cells of block {}\t{:?}",
-		max_cells,
-		msg.num,
+		store_size,
+		msg.number,
 		begin.elapsed().unwrap()
 	);
 
