@@ -17,18 +17,18 @@ fn kc_verify_proof_wrapper(
 ) -> bool {
 	match kate_proof::kc_verify_proof(col, proof, commitment, total_rows, total_cols) {
 		Ok(verification) => {
-			log::info!(
+			log::trace!(
 				"Public params ({}): hash: {}",
 				verification.public_params_len,
 				verification.public_params_hash
 			);
 			match &verification.status {
 				Ok(()) => {
-					log::info!("Verified cell ({}, {}) of block {}", row, col, block_num);
+					log::trace!("Verified cell ({}, {}) of block {}", row, col, block_num);
 				},
 				Err(verification_err) => {
-					log::info!("Verification error: {:?}", verification_err);
-					log::info!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+					log::error!("Verification error: {:?}", verification_err);
+					log::error!("Failed for cell ({}, {}) of block {}", row, col, block_num);
 				},
 			}
 
