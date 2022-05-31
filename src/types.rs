@@ -367,6 +367,21 @@ impl From<Header> for ClientMsg {
 	}
 }
 
+pub enum Mode {
+	LightClient,
+	AppClient(u32),
+}
+
+impl From<Option<u32>> for Mode {
+	fn from(app_id: Option<u32>) -> Self {
+		match app_id {
+			None => Mode::LightClient,
+			Some(0) => Mode::LightClient,
+			Some(app_id) => Mode::AppClient(app_id),
+		}
+	}
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
 	pub http_server_host: String,
@@ -376,7 +391,7 @@ pub struct RuntimeConfig {
 	pub ipfs_path: String,
 	pub full_node_rpc: Vec<String>,
 	pub full_node_ws: Vec<String>,
-	pub app_id: Option<i16>,
+	pub app_id: Option<u32>,
 	pub confidence: f64,
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	pub avail_path: String,
