@@ -308,7 +308,7 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	Ok(cells)
 }
 
-pub async fn get_chain(url: &str) -> Result<Vec<u8>> {
+pub async fn get_chain(url: &str) -> Result<String> {
 	println!("{:?}", url);
 	let payload: String =
 		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
@@ -318,7 +318,7 @@ pub async fn get_chain(url: &str) -> Result<Vec<u8>> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+		.context("failed to build HTTP POST request object(get_chain)")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -328,13 +328,13 @@ pub async fn get_chain(url: &str) -> Result<Vec<u8>> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(get_chainHeader)")?;
+	.context("failed to build HTTP POST request object(get_chain)")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+		.context("failed to build HTTP POST request object(get_chain)")?;
 	let r: GetChainResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+		.context("failed to build HTTP POST request object(get_chain)")?;
 	Ok(r.result)
 }
 
