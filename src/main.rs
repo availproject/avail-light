@@ -5,16 +5,16 @@ extern crate structopt;
 use std::{
 	str::FromStr,
 	sync::{mpsc::sync_channel, Arc},
-	thread,
+	thread, time,
 	time::SystemTime,
 };
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Multiaddr, PeerId};
-use kate_recovery::com::{
-	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
-};
+use ipfs_embed::{Key, Multiaddr, PeerId, Record};
+// use kate_recovery::com::{
+// 	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
+// };
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -120,7 +120,19 @@ pub async fn do_main() -> Result<()> {
 	let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
 	let (destroy_tx, destroy_rx) = sync_channel::<bool>(1);
 
-	let ipfs = client::make_client(cfg.ipfs_seed, cfg.ipfs_port, &cfg.ipfs_path).await?;
+	let bootstrap_nodes = &cfg
+		.bootstraps
+		.iter()
+		.map(|(a, b)| (PeerId::from_str(a).expect("Valid peer id"), b.clone()))
+		.collect::<Vec<(PeerId, Multiaddr)>>();
+
+	let ipfs = client::make_client(
+		cfg.ipfs_seed,
+		cfg.ipfs_port,
+		&cfg.ipfs_path,
+		bootstrap_nodes,
+	)
+	.await?;
 
 	#[cfg(feature = "logs")]
 	tokio::task::spawn(client::log_events(ipfs.clone()));
@@ -128,27 +140,14 @@ pub async fn do_main() -> Result<()> {
 	// inform invoker about self
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
-	// bootstrap client with non-empty set of
-	// application clients
-	if !cfg.bootstraps.is_empty() {
-		ipfs.bootstrap(
-			&cfg.bootstraps
-				.clone()
-				.into_iter()
-				.map(|(a, b)| (PeerId::from_str(&a).unwrap(), b))
-				.collect::<Vec<(_, _)>>()[..],
-		)
-		.await?;
-	}
-
 	// this one will spawn one thread for running ipfs client, while managing data discovery
 	// and reconstruction
 	let db_1 = db.clone();
 	let cfg_ = cfg.clone();
 	let ipfs_ = ipfs.clone();
-	thread::spawn(move || {
-		client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs_).unwrap();
-	});
+	// thread::spawn(move || {
+	// 	client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs_).unwrap();
+	// });
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
@@ -159,9 +158,12 @@ pub async fn do_main() -> Result<()> {
 	let latest_block = block_header.number;
 	let rpc_ = rpc_url.clone();
 	let db_2 = db.clone();
+	let ipfs2_ = ipfs.clone();
 
+	// TODO: implement proper sync between bootstrap completion and starting the sync function
+	thread::sleep(time::Duration::from_secs(3));
 	tokio::spawn(async move {
-		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2).await;
+		sync::sync_block_headers(rpc_.clone(), 0, latest_block, db_2, ipfs2_).await;
 	});
 
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -201,10 +203,26 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
-					let kate_cells = rpc::generate_random_cells(max_rows, max_cols, num);
-					//hyper request for getting the kate query request
-					let cells = rpc::get_kate_proof(&rpc_url, num, kate_cells).await?;
-					//hyper request for verifying the proof
+					let mut cells = rpc::generate_random_cells(max_rows, max_cols, num);
+					log::info!(
+						"Random cells generated: {} from block: {}",
+						cells.len(),
+						num
+					);
+
+					let ipfs_2 = ipfs.clone();
+					// TODO: error handling
+					if let Err(error) =
+						data::ipfs_priority_get_cells(&mut cells, &ipfs_2, &rpc_url, num).await
+					{
+						log::error!(
+							"Error retrieveing cells for verification for block {}: {}",
+							num,
+							error
+						);
+						continue;
+					}
+
 					let count = proof::verify_proof(
 						num,
 						max_rows,
@@ -226,130 +244,7 @@ pub async fn do_main() -> Result<()> {
 						.context("failed to write confidence factor")?;
 
 					let conf = calculate_confidence(count);
-					let app_index = header.app_data_lookup.index.clone();
-
-					if cfg.app_id.is_none() {
-						continue;
-					}
-
-					/*note:
-					The following is the part when the user have already subscribed
-					to an appID and now its verifying every cell that contains the data
-					*/
-					//@TODO : Major optimization needed here
-					let dimension = ExtendedMatrixDimensions {
-						rows: max_rows as usize,
-						cols: max_cols as usize,
-					};
-
-					let app_id = cfg.app_id.unwrap_or_default();
-
-					if conf >= cfg.confidence
-						&& ((!app_index.is_empty() && app_id > 0) || app_id == 0)
-					{
-						let layout =
-							client::layout_from_index(&app_index, header.app_data_lookup.size);
-
-						match app_specific_column_cells(&layout, &dimension, app_id as u32) {
-							None => {
-								log::info!("No app specific cells for app {}", app_id);
-								continue;
-							},
-							Some(recon_cells) => {
-								// Since extended rows count (max_rows) is divisible by 2,
-								// take first half of cells of a each column
-								let recon_cells_half = recon_cells
-									.into_iter()
-									.filter(|cell| cell.row <= (max_rows / 2 - 1))
-									.collect::<Vec<_>>();
-
-								let query_cells: Vec<types::Cell> =
-									rpc::from_kate_cells(num, &recon_cells_half);
-
-								let mut verified = true;
-								let mut verified_cells = vec![];
-								for cell in query_cells.chunks(30) {
-									let cells =
-										rpc::get_kate_proof(&rpc_url, num, (*cell).to_vec())
-											.await?;
-									let verified_cells_count = proof::verify_proof(
-										num,
-										max_rows,
-										max_cols,
-										cells.clone(),
-										commitment.clone(),
-									);
-									if (verified_cells_count as usize) < cells.len() {
-										log::info!(
-											"Verified {} of {} cells, skipping reconstruction",
-											verified_cells_count,
-											cells.len()
-										);
-										verified = false;
-										break;
-									} else {
-										log::info!("Verified {} cells", verified_cells_count);
-									}
-									verified_cells.extend(cells);
-								}
-								if verified {
-									let reconstruction_cells = verified_cells
-										.iter()
-										.map(|cell| Cell {
-											col: cell.col,
-											row: cell.row,
-											data: cell.proof[48..].to_vec(),
-										})
-										.collect::<Vec<_>>();
-
-									let layout = client::layout_from_index(
-										header.app_data_lookup.index.as_slice(),
-										header.app_data_lookup.size,
-									);
-
-									let dimension = ExtendedMatrixDimensions {
-										rows: max_rows as usize,
-										cols: max_cols as usize,
-									};
-
-									match reconstruct_app_extrinsics(
-										&layout,
-										&dimension,
-										reconstruction_cells,
-										None,
-									) {
-										Ok(xts) => {
-											for e in xts {
-												let data_hex_string = e
-													.1
-													.iter()
-													.map(|e| {
-														e.iter().fold(
-															String::new(),
-															|mut acc, e| {
-																acc.push_str(
-																	format!("{:02x}", e).as_str(),
-																);
-																acc
-															},
-														)
-													})
-													.collect::<Vec<_>>();
-												log::debug!(
-													"Reconstructed extrinsic: app_id={}, data={:?}",
-													e.0,
-													data_hex_string
-												);
-											}
-										},
-										Err(error) => {
-											log::error!("Reconstruction error: {}", error)
-										},
-									}
-								}
-							},
-						}
-					}
+					log::info!("Confidence factor for block {}: {}", num, conf);
 
 					// push latest mined block's header into column family specified
 					// for keeping block headers, to be used
@@ -368,28 +263,45 @@ pub async fn do_main() -> Result<()> {
 
 					// Push the randomly selected cells to IPFS
 					for cell in cells {
-						let reference = cell.reference();
-						println!("cell reference: {:?}, hash: {:?}", reference, &cell.hash());
-
-						if let Err(error) = ipfs.insert(cell.to_ipfs_block()) {
+						if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
 							log::info!(
 								"Error pushing cell to IPFS: {}. Cell reference: {}",
 								error,
-								reference
+								cell.reference()
+							);
+						}
+						// Add generated CID to DHT
+						if let Err(error) = ipfs
+							.put_record(
+								Record::new(
+									cell.reference().as_bytes().to_vec(),
+									cell.cid().to_bytes(),
+								),
+								ipfs_embed::Quorum::One,
+							)
+							.await
+						{
+							log::info!(
+								"Error inserting new record to DHT: {}. Cell reference: {}",
+								error,
+								cell.reference()
 							);
 						}
 					}
+					if let Err(error) = ipfs.flush().await {
+						log::info!("Error flushin data do disk: {}", error,);
+					};
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
-					block_tx
-						.send(types::ClientMsg {
-							num,
-							max_rows,
-							max_cols,
-							header,
-						})
-						.context("failed to send block to client")?;
+					// block_tx
+					// 	.send(types::ClientMsg {
+					// 		num,
+					// 		max_rows,
+					// 		max_cols,
+					// 		header,
+					// 	})
+					// 	.context("failed to send block to client")?;
 				},
 				Err(error) => log::info!("Misconstructed Header: {:?}", error),
 			}
