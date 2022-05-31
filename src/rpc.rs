@@ -308,8 +308,8 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	Ok(cells)
 }
 
+//rpc- only for checking the connecting to substrate node
 pub async fn get_chain(url: &str) -> Result<String> {
-	println!("{:?}", url);
 	let payload: String =
 		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
 
@@ -363,36 +363,9 @@ pub async fn check_connection(
 pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	let mut rpc_url = String::new();
 	for x in full_node_rpc.iter() {
-		let url_ = x.parse::<hyper::Uri>().context("http url parse failed")?;
-		if is_secure(x) {
-			let https = HttpsConnector::new();
-			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-			let res = match client.get(url_).await {
-				Ok(c) => c,
-				Err(_) => continue,
-			};
-			if res.status().is_success() {
-				rpc_url.push_str(x);
-				break;
-			} else if !(res.status().is_success()) {
-				if let Ok(_v) = get_chain(x).await {
-					rpc_url.push_str(x);
-					break;
-				}
-			} else {
-				log::error!("{} is not working", x);
-			}
-		} else {
-			let client = hyper::Client::new();
-			let _res = match client.get(url_).await {
-				Ok(c) => c,
-				Err(_) => continue,
-			};
-			//@TODO: need to find an alternative way for http part
-			if let Ok(_v) = get_chain(x).await {
-				rpc_url.push_str(x);
-				break;
-			}
+		if let Ok(_v) = get_chain(x).await {
+			rpc_url.push_str(x);
+			break;
 		}
 	}
 	Ok(rpc_url)

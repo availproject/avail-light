@@ -5,7 +5,7 @@ extern crate structopt;
 use std::{
 	sync::{mpsc::sync_channel, Arc},
 	thread,
-	time::SystemTime,
+	time::{Duration,SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -17,6 +17,7 @@ use kate_recovery::com::{
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
+use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::http::calculate_confidence;
@@ -135,7 +136,7 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
 
-	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+	let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
 	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
 	let latest_block = block_header.number;
@@ -170,7 +171,7 @@ pub async fn do_main() -> Result<()> {
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
 					let header = params.result;
-
+					let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
 					// now this is in `u64`
 					let num = header.number;
 
@@ -362,6 +363,7 @@ pub async fn do_main() -> Result<()> {
 				Err(error) => log::info!("Misconstructed Header: {:?}", error),
 			}
 		}
+		sleep(Duration::from_secs(10)).await;
 	}
 
 	// inform ipfs-backed application client running thread
