@@ -5,26 +5,24 @@ extern crate rocksdb;
 use std::{sync::Arc, time::SystemTime};
 
 use futures::stream::{self, StreamExt};
+use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
-use crate::rpc::generate_random_cells;
+use crate::{data, rpc};
 
 pub async fn sync_block_headers(
 	url: String,
 	start_block: u64,
 	end_block: u64,
 	header_store: Arc<DB>,
+	ipfs: Ipfs<DefaultParams>,
 ) {
-	let fut = stream::iter(
-		(start_block..(end_block + 1))
-			.map(move |block_num| block_num)
-			.zip((0..(end_block - start_block + 1)).map(move |_| url.clone()))
-			.zip((0..(end_block - start_block + 1)).map(move |_| header_store.clone())),
-	)
-	.for_each_concurrent(
+	let blocks = (start_block..=end_block)
+		.map(move |b| (b, url.clone(), header_store.clone(), ipfs.clone()));
+	let fut = stream::iter(blocks).for_each_concurrent(
 		num_cpus::get(), // number of logical CPUs available on machine
 		// run those many concurrent syncing lightweight tasks, not threads
-		|((block_num, url), store)| async move {
+		|(block_num, url, store, ipfs)| async move {
 			match store.get_pinned_cf(
 				&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
 				block_num.to_be_bytes(),
@@ -90,16 +88,9 @@ pub async fn sync_block_headers(
 					let commitment = block_body.header.extrinsics_root.commitment;
 					let block_num = block_body.header.number.clone();
 					// now this is in `u64`
-					let kate_cells = generate_random_cells(max_rows, max_cols, block_num);
+					let mut cells = rpc::generate_random_cells(max_rows, max_cols, block_num);
 
-					let cells = match crate::rpc::get_kate_proof(&url, block_num, kate_cells).await
-					{
-						Ok(cells) => cells,
-						Err(e) => {
-							log::error!("❗❗failed to get kate_proof {:?}", e);
-							return;
-						},
-					};
+					data::ipfs_priority_get_cells(&mut cells, &ipfs, &url, block_num).await;
 
 					log::info!(
 						"Fetched {} cells of block {} for verification",

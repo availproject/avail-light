@@ -307,14 +307,15 @@ impl Cell {
 	/// Cell refrence in format `block_number:column_number:row_number`
 	pub fn reference(&self) -> String { format!("{}:{}:{}", self.block, self.col, self.row) }
 
-	pub fn hash(&self) -> Multihash { Code::Sha3_256.digest(self.reference().as_bytes()) }
+	pub fn hash(&self) -> Multihash { Code::Sha3_256.digest(&self.proof) }
 
-	pub fn cid(&self) -> Cid { Cid::new_v1(IpldCodec::DagCbor.into(), self.hash()) }
+	pub fn cid(&self) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), self.hash()) }
 
 	// Block data isn't encoded
 	// TODO: optimization - multiple cells inside a single block (per appID)
+	// TODO: error handling
 	pub fn to_ipfs_block(self) -> IpfsBlock<DefaultParams> {
-		IpfsBlock::<DefaultParams>::new_unchecked(self.cid(), self.data)
+		IpfsBlock::<DefaultParams>::new(self.cid(), self.proof).unwrap()
 	}
 }
 
