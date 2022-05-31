@@ -20,7 +20,7 @@ use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::http::calculate_confidence;
+use crate::{http::calculate_confidence, types::Mode};
 
 mod app_client;
 mod client;
@@ -153,9 +153,8 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
 
-	let app_id = cfg.app_id.unwrap_or_default();
-	if app_id > 0 {
-		tokio::task::spawn(app_client::run(app_id as u16, block_rx));
+	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+		tokio::task::spawn(app_client::run(app_id, block_rx));
 	}
 
 	let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
