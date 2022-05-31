@@ -22,6 +22,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::http::calculate_confidence;
 
+mod app_client;
 mod client;
 mod consts;
 mod data;
@@ -152,6 +153,11 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
 
+	let app_id = cfg.app_id.unwrap_or_default();
+	if app_id > 0 {
+		tokio::task::spawn(app_client::run(app_id as u16, block_rx));
+	}
+
 	let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
 	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
@@ -190,7 +196,8 @@ pub async fn do_main() -> Result<()> {
 			let data = message?.into_data();
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
-					let header = params.result;
+					let header = &params.header;
+
 					// now this is in `u64`
 					let num = header.number;
 
@@ -203,6 +210,7 @@ pub async fn do_main() -> Result<()> {
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
+
 					let mut cells = rpc::generate_random_cells(max_rows, max_cols, num);
 					log::info!(
 						"Random cells generated: {} from block: {}",
@@ -294,14 +302,9 @@ pub async fn do_main() -> Result<()> {
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
-					// block_tx
-					// 	.send(types::ClientMsg {
-					// 		num,
-					// 		max_rows,
-					// 		max_cols,
-					// 		header,
-					// 	})
-					// 	.context("failed to send block to client")?;
+					block_tx
+						.send(types::ClientMsg::from(params.header))
+						.context("failed to send block message")?;
 				},
 				Err(error) => log::info!("Misconstructed Header: {:?}", error),
 			}
