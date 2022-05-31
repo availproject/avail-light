@@ -461,7 +461,7 @@ pub async fn ipfs_priority_get_cells(
 	block_num: u64,
 ) -> Result<()> {
 	// Try fetching the cells from IPFS first
-	for (_, req_cell_data) in cells.iter_mut().enumerate() {
+	for req_cell_data in cells.iter_mut() {
 		let peers = ipfs.peers();
 		log::info!("Number of known peers: {}", peers.len());
 		if peers.len() == 0 {
@@ -506,7 +506,7 @@ pub async fn ipfs_priority_get_cells(
 			continue;
 		}
 	}
-	let (fetched, _): (Vec<_>, Vec<_>) = cells
+	let (fetched, unfetched): (Vec<_>, Vec<_>) = cells
 		.iter()
 		.cloned()
 		.partition(|cell| !cell.proof.is_empty());
@@ -515,16 +515,7 @@ pub async fn ipfs_priority_get_cells(
 
 	// Retrieve remaining cell proofs via RPC call to node
 	// TODO: handle case if 1 or more cells are unavailable via RPC (retry mechanism, generate new cells, etc)
-	let mut remaining_cells = rpc::get_kate_proof(
-		&rpc_url,
-		block_num,
-		cells
-			.clone()
-			.into_iter()
-			.filter(|cell| cell.proof.len() == 0)
-			.collect::<Vec<_>>(),
-	)
-	.await?;
+	let mut remaining_cells = rpc::get_kate_proof(&rpc_url, block_num, unfetched).await?;
 	remaining_cells.iter_mut().for_each(move |cell| {
 		cell.data = cell.proof[48..].to_vec();
 	});
