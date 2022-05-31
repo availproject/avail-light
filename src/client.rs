@@ -19,7 +19,7 @@ use std::{
 use async_std::stream::StreamExt;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
-	Cid, DefaultParams as IPFSDefaultParams, Ipfs, NetworkConfig, StorageConfig,
+	Cid, DefaultParams as IPFSDefaultParams, Ipfs, Multiaddr, NetworkConfig, PeerId, StorageConfig,
 };
 use kate_recovery::com::{reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions};
 use libipld::Ipld;
@@ -623,8 +623,9 @@ pub async fn make_client(
 	seed: u64,
 	port: u16,
 	path: &str,
+	bootstrap_nodes: &Vec<(PeerId, Multiaddr)>,
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
-	let sweep_interval = Duration::from_secs(60);
+	let sweep_interval = Duration::from_secs(600);
 	let path_buf = std::path::PathBuf::from_str(path).unwrap();
 	let storage = StorageConfig::new(Some(path_buf), None, 10, sweep_interval);
 	let mut network = NetworkConfig::new(keypair(seed));
@@ -632,10 +633,25 @@ pub async fn make_client(
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
-	let mut stream = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
-	if let ipfs_embed::ListenerEvent::NewListenAddr(_) = stream.next().await.unwrap() {
-		/* do nothing useful here, just ensure ipfs-node has
-		started listening on specified port */
+	_ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
+
+	if !bootstrap_nodes.is_empty() {
+		ipfs.bootstrap(bootstrap_nodes).await?;
+	} else {
+		// If client is the first one on the network, wait for the second client ConnectionEstablished event to use it as bootstrap
+		// DHT requires boostrap to complete in order to be able to insert new records
+		let node = ipfs
+			.swarm_events()
+			.find_map(|event| {
+				if let ipfs_embed::Event::ConnectionEstablished(peer_id, connected_point) = event {
+					Some((peer_id, connected_point.get_remote_address().clone()))
+				} else {
+					None
+				}
+			})
+			.await
+			.expect("Connection established");
+		ipfs.bootstrap(&[node]).await?;
 	}
 
 	Ok(ipfs)
