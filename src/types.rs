@@ -320,7 +320,8 @@ pub struct MatrixCell {
 
 #[derive(Deserialize, Debug)]
 pub struct QueryResult {
-	pub result: Header,
+	#[serde(rename = "result")]
+	pub header: Header,
 	#[serde(rename = "subscription")]
 	_subscription: String,
 }
@@ -351,6 +352,19 @@ pub struct ClientMsg {
 	pub max_rows: u16,
 	pub max_cols: u16,
 	pub header: Header,
+}
+
+impl From<Header> for ClientMsg {
+	fn from(header: Header) -> Self {
+		let ExtrinsicsRoot { rows, cols, .. } = header.extrinsics_root;
+
+		ClientMsg {
+			num: header.number,
+			max_rows: rows * 2,
+			max_cols: cols,
+			header,
+		}
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
