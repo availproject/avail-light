@@ -29,7 +29,7 @@ use crate::{
 	data::{
 		construct_matrix, decode_block_cid_ask_message, decode_block_cid_fact_message, empty_cells,
 		extract_block, extract_cell, extract_links, get_matrix, matrix_cells, non_empty_cells_len,
-		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix,
+		prepare_block_cid_ask_message, prepare_block_cid_fact_message, push_matrix, Matrix,
 	},
 	proof::verify_proof,
 	rpc::{check_http, from_kate_cells, get_cells},
@@ -393,11 +393,12 @@ pub async fn run_client(
 				let block_cid_entry =
 					get_block_cid_entry(block_cid_store.clone(), block.num as i128)
 						.map(|pair| pair.cid);
+
 				let ipfs_cells = get_matrix(&ipfs, block_cid_entry)
 					.await
 					.unwrap_or_else(|err| {
 						log::info!("Fail to fetch cells from IPFS: {}", err);
-						vec![]
+						Matrix::new()
 					});
 
 				let requested_cells = empty_cells(&ipfs_cells, block.max_cols, block.max_rows);
@@ -413,10 +414,8 @@ pub async fn run_client(
 						for (row, col) in matrix_cells(block.max_rows, block.max_cols) {
 							let index = col * block.max_rows as usize + row;
 							if cells[index].is_none() {
-								cells[index] = ipfs_cells
-									.get(col)
-									.and_then(|col| col.get(row))
-									.and_then(|val| val.to_owned());
+								cells[index] =
+									ipfs_cells.get(col, row).and_then(|val| val.to_owned());
 							}
 						}
 
