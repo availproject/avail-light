@@ -31,6 +31,7 @@ mod proof;
 mod rpc;
 mod sync;
 mod types;
+mod util;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
