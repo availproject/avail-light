@@ -308,6 +308,36 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	Ok(cells)
 }
 
+pub async fn get_chain(url: &str) -> Result<Vec<u8>> {
+	println!("{:?}", url);
+	let payload: String =
+		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
+
+	let req = hyper::Request::builder()
+		.method(hyper::Method::POST)
+		.uri(url)
+		.header("Content-Type", "application/json")
+		.body(hyper::Body::from(payload))
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.context("failed to build HTTP POST request object(get_chainHeader)")?;
+
+	let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+	let r: GetChainResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+	Ok(r.result)
+}
+
 //parsing the urls given in the vector of urls
 pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
 	urls.iter()
@@ -344,6 +374,13 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 			if res.status().is_success() {
 				rpc_url.push_str(x);
 				break;
+			} else if !(res.status().is_success()) {
+				if let Ok(_v) = get_chain(x).await {
+					rpc_url.push_str(x);
+					break;
+				}
+			} else {
+				log::error!("{} is not working", x);
 			}
 		} else {
 			let client = hyper::Client::new();
@@ -352,7 +389,7 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 				Err(_) => continue,
 			};
 			//@TODO: need to find an alternative way for http part
-			if let Ok(_v) = get_chain_header(x).await {
+			if let Ok(_v) = get_chain(x).await {
 				rpc_url.push_str(x);
 				break;
 			}

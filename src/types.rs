@@ -174,6 +174,13 @@ pub struct BlockHashResponse {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct GetChainResponse {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	pub result: Vec<u8>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct BlockResponse {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
