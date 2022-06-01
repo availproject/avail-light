@@ -3,7 +3,7 @@ extern crate ipfs_embed;
 extern crate libipld;
 
 use anyhow::{Context, Result};
-use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId, TempPin};
+use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId};
 
 use crate::types::Cell as DataCell;
 
