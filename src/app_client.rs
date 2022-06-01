@@ -6,7 +6,7 @@ use kate_recovery::com::app_specific_cells;
 
 use crate::{
 	data::fetch_cells_from_ipfs,
-	rpc::{from_kate_cells, get_kate_proof},
+	rpc::get_kate_proof,
 	types::{Cell, ClientMsg},
 	util::layout_from_index,
 };
@@ -72,6 +72,7 @@ pub async fn run(
 		log::info!("Block {} available", block.number);
 		if let Err(error) = process_block(&ipfs, &rpc_url, app_id, &block).await {
 			log::error!("Cannot process block {}: {}", block.number, error);
+			continue;
 		}
 	}
 }
