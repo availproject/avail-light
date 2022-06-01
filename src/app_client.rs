@@ -6,6 +6,7 @@ use kate_recovery::com::app_specific_cells;
 
 use crate::{
 	data::fetch_cells_from_ipfs,
+	proof::verify_proof,
 	rpc::get_kate_proof,
 	types::{Cell, ClientMsg},
 	util::layout_from_index,
@@ -19,7 +20,16 @@ async fn process_block(
 ) -> Result<()> {
 	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 
-	match app_specific_cells(layout, &block.dimensions, app_id) {
+	fn to_cells(block_number: u64, positions: Vec<kate_recovery::com::Cell>) -> Vec<Cell> {
+		positions
+			.iter()
+			.map(|cell| Cell::position(block_number, cell.row, cell.col))
+			.collect::<Vec<_>>()
+	}
+
+	match app_specific_cells(layout, &block.dimensions, app_id)
+		.map(move |positions| to_cells(block.number, positions))
+	{
 		None => log::info!("No cells for app {} in block {}", app_id, block.number),
 		Some(positions) => {
 			log::info!(
@@ -29,13 +39,8 @@ async fn process_block(
 				block.number
 			);
 
-			let cells = positions
-				.iter()
-				.map(|cell| Cell::position(block.number, cell.row, cell.col))
-				.collect::<Vec<_>>();
-
 			let (ipfs_fetched, unfetched) =
-				fetch_cells_from_ipfs(ipfs, block.number, &cells).await?;
+				fetch_cells_from_ipfs(ipfs, block.number, &positions).await?;
 
 			log::info!(
 				"Number of cells fetched from IPFS for block {}: {}",
@@ -51,10 +56,29 @@ async fn process_block(
 				rpc_fetched.len()
 			);
 
-			let unfetched_count = positions.len() - ipfs_fetched.len() - rpc_fetched.len();
-			if unfetched_count > 0 {
-				return Err(anyhow!("Failed to fetch {} cells", unfetched_count));
+			let mut cells = vec![];
+			cells.extend(ipfs_fetched);
+			cells.extend(rpc_fetched);
+
+			if positions.len() > cells.len() {
+				return Err(anyhow!(
+					"Failed to fetch {} cells",
+					positions.len() - cells.len()
+				));
 			}
+
+			let count = verify_proof(
+				block.number,
+				block.dimensions.rows as u16,
+				block.dimensions.cols as u16,
+				cells.clone(),
+				block.commitment.clone(),
+			);
+			log::info!(
+				"Completed {} verification rounds for block {}",
+				count,
+				block.number
+			);
 		},
 	}
 	Ok(())
