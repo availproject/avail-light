@@ -8,10 +8,7 @@ use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
-use crate::{
-	data::{self, fetch_cells_from_ipfs},
-	rpc,
-};
+use crate::{data::fetch_cells_from_ipfs, rpc};
 
 pub async fn sync_block_headers(
 	url: String,
@@ -91,7 +88,7 @@ pub async fn sync_block_headers(
 					let commitment = block_body.header.extrinsics_root.commitment;
 					let block_num = block_body.header.number.clone();
 					// now this is in `u64`
-					let mut positions = rpc::generate_random_cells(max_rows, max_cols, block_num);
+					let positions = rpc::generate_random_cells(max_rows, max_cols, block_num);
 
 					let ipfs_fetch_result =
 						fetch_cells_from_ipfs(&ipfs, block_num, &positions).await;
