@@ -58,7 +58,7 @@ pub fn verify_proof(
 	let pool = threadpool::ThreadPool::new(cpus);
 	let (tx, rx) = channel::<bool>();
 	let jobs = cells.len();
-	let commitment = Arc::new(commitment.clone());
+	let commitment = Arc::new(commitment);
 
 	for cell in cells {
 		let _row = cell.row;
