@@ -3,6 +3,7 @@ extern crate ipfs_embed;
 extern crate libipld;
 
 use anyhow::{Context, Result};
+use futures::future::join_all;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId};
 
 use crate::types::Cell as DataCell;
@@ -40,7 +41,7 @@ pub async fn fetch_cells_from_ipfs(
 	positions: &Vec<DataCell>,
 ) -> Result<(Vec<DataCell>, Vec<DataCell>)> {
 	// TODO: Should we fetch peers before loop or for each cell?
-	let peers = ipfs.peers();
+	let peers = &ipfs.peers();
 	log::debug!("Number of known IPFS peers: {}", peers.len());
 
 	if peers.is_empty() {
@@ -50,9 +51,16 @@ pub async fn fetch_cells_from_ipfs(
 
 	let mut fetched = vec![];
 	let mut unfetched = vec![];
-	// TODO: Paralelize fetching
-	for position in positions {
-		match fetch_cell_from_ipfs(ipfs, peers.clone(), block_number, position).await {
+
+	let res = join_all(
+		positions
+			.iter()
+			.map(|position| fetch_cell_from_ipfs(ipfs, peers.clone(), block_number, position))
+			.collect::<Vec<_>>(),
+	)
+	.await;
+	for (cel, position) in res.into_iter().zip(positions) {
+		match cel {
 			Ok(cell) => {
 				log::debug!("Fetched cell {} from IPFS", position.reference());
 				fetched.push(cell);
@@ -65,7 +73,6 @@ pub async fn fetch_cells_from_ipfs(
 					error
 				);
 				unfetched.push(position.clone());
-				continue;
 			},
 		}
 	}
