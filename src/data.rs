@@ -13,10 +13,7 @@ use libipld::{
 	Ipld,
 };
 
-use crate::{
-	rpc,
-	types::{BaseCell, Cell as DataCell, DataMatrix, IpldBlock, L0Col, L1Row},
-};
+use crate::types::{BaseCell, Cell as DataCell, DataMatrix, IpldBlock, L0Col, L1Row};
 
 fn construct_cell(
 	row: u16,
@@ -534,89 +531,6 @@ pub async fn fetch_cells_from_ipfs(
 
 	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
 	Ok((fetched, unfetched))
-}
-
-pub async fn ipfs_priority_get_cells(
-	cells: &mut Vec<DataCell>,
-	ipfs: &Ipfs<DefaultParams>,
-	rpc_url: &String,
-	block_num: u64,
-) -> Result<()> {
-	// Try fetching the cells from IPFS first
-	for req_cell_data in cells.iter_mut() {
-		let peers = ipfs.peers();
-		log::info!("Number of known peers: {}", peers.len());
-		if peers.len() == 0 {
-			break;
-		}
-		// TODO: paralelize fetching
-		// Skip cells that return error when fetching from IPFS
-		log::info!(
-			"Requesting from IPFS: cell reference: {}.",
-			req_cell_data.reference()
-		);
-
-		let key = Key::from(req_cell_data.reference().as_bytes().to_vec());
-		let (block_cid, get_record_error): (Cid, _) = ipfs
-			.get_record(key, ipfs_embed::Quorum::One)
-			.await
-			.map(|record| record[0].record.value.to_vec())
-			.and_then(|cid_value| Cid::try_from(cid_value).context("Invalid CID value"))
-			.map(|cid| (cid, None))
-			.unwrap_or_else(|error| (Cid::default(), Some(error)));
-
-		if let Some(error) = get_record_error {
-			log::error!(
-				"Cannot get CID from record: {}. Cell reference: {}",
-				error,
-				req_cell_data.reference()
-			);
-			continue;
-		}
-
-		if let Err(error) = ipfs.fetch(&block_cid, peers).await.and_then(|block| {
-			// IPFS block data contains cell proof
-			req_cell_data.proof = block.data().to_vec();
-			req_cell_data.data = req_cell_data.proof[48..].to_vec();
-			Ok(())
-		}) {
-			log::error!(
-				"Error fetching data from IPFS: {}. Cell reference: {}",
-				error,
-				req_cell_data.reference()
-			);
-			continue;
-		}
-	}
-	let (fetched, unfetched): (Vec<_>, Vec<_>) = cells
-		.iter()
-		.cloned()
-		.partition(|cell| !cell.proof.is_empty());
-
-	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
-
-	// Retrieve remaining cell proofs via RPC call to node
-	// TODO: handle case if 1 or more cells are unavailable via RPC (retry mechanism, generate new cells, etc)
-	let mut remaining_cells = rpc::get_kate_proof(&rpc_url, block_num, unfetched).await?;
-	remaining_cells.iter_mut().for_each(move |cell| {
-		cell.data = cell.proof[48..].to_vec();
-	});
-
-	for cell_data in cells.iter_mut() {
-		// Skip cells with data retrieved from IPFS
-		if cell_data.data.len() != 0 {
-			continue;
-		}
-		// Complexity not an issue bcs of the small number of remaining cells
-		for remaining_cell in remaining_cells.iter().filter(|cell| {
-			cell_data.block == cell.block && cell_data.col == cell.col && cell_data.row == cell.row
-		}) {
-			cell_data.data = remaining_cell.data.clone();
-			cell_data.proof = remaining_cell.proof.clone();
-		}
-	}
-
-	return Ok(());
 }
 
 #[cfg(test)]

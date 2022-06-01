@@ -20,7 +20,7 @@ use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::{http::calculate_confidence, types::Mode};
+use crate::{data::fetch_cells_from_ipfs, http::calculate_confidence, types::Mode};
 
 mod app_client;
 mod client;
@@ -208,23 +208,36 @@ pub async fn do_main() -> Result<()> {
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 
-					let mut cells = rpc::generate_random_cells(max_rows, max_cols, num);
+					let positions = rpc::generate_random_cells(max_rows, max_cols, num);
 					log::info!(
 						"Random cells generated: {} from block: {}",
-						cells.len(),
+						positions.len(),
 						num
 					);
 
-					let ipfs_2 = ipfs.clone();
-					// TODO: error handling
-					if let Err(error) =
-						data::ipfs_priority_get_cells(&mut cells, &ipfs_2, &rpc_url, num).await
-					{
-						log::error!(
-							"Error retrieveing cells for verification for block {}: {}",
-							num,
-							error
-						);
+					let (ipfs_fetched, unfetched) =
+						fetch_cells_from_ipfs(&ipfs, num, &positions).await?;
+
+					log::info!(
+						"Number of cells fetched from IPFS for block {}: {}",
+						num,
+						ipfs_fetched.len()
+					);
+
+					let rpc_fetched = rpc::get_kate_proof(&rpc_url, num, unfetched).await?;
+
+					log::info!(
+						"Number of cells fetched from RPC for block {}: {}",
+						num,
+						rpc_fetched.len()
+					);
+
+					let mut cells = vec![];
+					cells.extend(ipfs_fetched);
+					cells.extend(rpc_fetched);
+
+					if positions.len() > cells.len() {
+						log::error!("Failed to fetch {} cells", positions.len() - cells.len());
 						continue;
 					}
 
