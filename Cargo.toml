@@ -46,6 +46,3 @@ codec = { package = "parity-scale-codec", version = "3.0.0", default-features = 
 proptest = "1.0.0"
 test-case = "1.2.3"
 
-[features]
-logs = []
-

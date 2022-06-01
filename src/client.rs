@@ -16,6 +16,8 @@ use ipfs_embed::{
 	DefaultParams as IPFSDefaultParams, Ipfs, Multiaddr, NetworkConfig, PeerId, StorageConfig,
 };
 
+use crate::types::Event;
+
 pub async fn make_client(
 	seed: u64,
 	port: u16,
@@ -54,7 +56,6 @@ pub async fn make_client(
 	Ok(ipfs)
 }
 
-#[cfg(feature = "logs")]
 pub async fn log_events(ipfs: Ipfs<IPFSDefaultParams>) {
 	let mut events = ipfs.swarm_events();
 	while let Some(event) = events.next().await {
@@ -75,7 +76,7 @@ pub async fn log_events(ipfs: Ipfs<IPFSDefaultParams>) {
 			ipfs_embed::Event::NewInfo(peer_id) => Event::NewInfo(peer_id),
 			_ => Event::Other, // TODO: Is there a purpose to handle those events?
 		};
-		log::info!("Received event: {}", event);
+		log::trace!("Received event: {}", event);
 	}
 }
 
