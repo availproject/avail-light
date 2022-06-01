@@ -379,6 +379,7 @@ pub struct ClientMsg {
 	pub number: u64,
 	pub dimensions: ExtendedMatrixDimensions,
 	pub lookup: AppDataIndex,
+	pub commitment: Vec<u8>,
 }
 
 impl From<Header> for ClientMsg {
@@ -392,6 +393,7 @@ impl From<Header> for ClientMsg {
 				cols: cols as usize,
 			},
 			lookup: header.app_data_lookup,
+			commitment: header.extrinsics_root.commitment,
 		}
 	}
 }
