@@ -37,11 +37,19 @@ async fn process_block(
 			let (ipfs_fetched, unfetched) =
 				fetch_cells_from_ipfs(ipfs, block.number, &cells).await?;
 
-			log::info!("Number of cells fetched from IPFS: {}", ipfs_fetched.len());
+			log::info!(
+				"Number of cells fetched from IPFS for block {}: {}",
+				block.number,
+				ipfs_fetched.len()
+			);
 
 			let rpc_fetched = get_kate_proof(rpc_url, block.number, unfetched).await?;
 
-			log::info!("Number of cells fetched from RPC: {}", rpc_fetched.len());
+			log::info!(
+				"Number of cells fetched from RPC for block {}: {}",
+				block.number,
+				rpc_fetched.len()
+			);
 
 			let unfetched_count = positions.len() - ipfs_fetched.len() - rpc_fetched.len();
 			if unfetched_count > 0 {
