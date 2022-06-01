@@ -308,6 +308,36 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	Ok(cells)
 }
 
+//rpc- only for checking the connecting to substrate node
+pub async fn get_chain(url: &str) -> Result<String> {
+	let payload: String =
+		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
+
+	let req = hyper::Request::builder()
+		.method(hyper::Method::POST)
+		.uri(url)
+		.header("Content-Type", "application/json")
+		.body(hyper::Body::from(payload))
+		.context("failed to build HTTP POST request object(get_chain)")?;
+
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.context("failed to build HTTP POST request object(get_chain)")?;
+
+	let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.context("failed to build HTTP POST request object(get_chain)")?;
+	let r: GetChainResponse = serde_json::from_slice(&body)
+		.context("failed to build HTTP POST request object(get_chain)")?;
+	Ok(r.result)
+}
+
 //parsing the urls given in the vector of urls
 pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
 	urls.iter()
@@ -333,29 +363,9 @@ pub async fn check_connection(
 pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	let mut rpc_url = String::new();
 	for x in full_node_rpc.iter() {
-		let url_ = x.parse::<hyper::Uri>().context("http url parse failed")?;
-		if is_secure(x) {
-			let https = HttpsConnector::new();
-			let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-			let res = match client.get(url_).await {
-				Ok(c) => c,
-				Err(_) => continue,
-			};
-			if res.status().is_success() {
-				rpc_url.push_str(x);
-				break;
-			}
-		} else {
-			let client = hyper::Client::new();
-			let _res = match client.get(url_).await {
-				Ok(c) => c,
-				Err(_) => continue,
-			};
-			//@TODO: need to find an alternative way for http part
-			if let Ok(_v) = get_chain_header(x).await {
-				rpc_url.push_str(x);
-				break;
-			}
+		if let Ok(_v) = get_chain(x).await {
+			rpc_url.push_str(x);
+			break;
 		}
 	}
 	Ok(rpc_url)

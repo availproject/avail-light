@@ -135,7 +135,7 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
 
-	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+	let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
 	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
 	let latest_block = block_header.number;
@@ -170,7 +170,6 @@ pub async fn do_main() -> Result<()> {
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
 					let header = params.result;
-
 					// now this is in `u64`
 					let num = header.number;
 
