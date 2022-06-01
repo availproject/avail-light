@@ -136,7 +136,6 @@ pub async fn do_main() -> Result<()> {
 	)
 	.await?;
 
-	#[cfg(feature = "logs")]
 	tokio::task::spawn(client::log_events(ipfs.clone()));
 
 	// inform invoker about self
