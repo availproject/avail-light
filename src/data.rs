@@ -49,9 +49,6 @@ pub async fn fetch_cells_from_ipfs(
 		return Ok((vec![], positions.to_vec()));
 	}
 
-	let mut fetched = vec![];
-	let mut unfetched = vec![];
-
 	let res = join_all(
 		positions
 			.iter()
@@ -59,23 +56,32 @@ pub async fn fetch_cells_from_ipfs(
 			.collect::<Vec<_>>(),
 	)
 	.await;
-	for (cel, position) in res.into_iter().zip(positions) {
-		match cel {
-			Ok(cell) => {
-				log::debug!("Fetched cell {} from IPFS", position.reference());
-				fetched.push(cell);
-			},
-			Err(error) => {
-				// Skip cells that returns error when fetching from IPFS
-				log::debug!(
-					"Error fetching cell {} from IPFS: {}",
-					position.reference(),
-					error
-				);
-				unfetched.push(position.clone());
-			},
-		}
-	}
+
+	let (fetched, unfetched): (Vec<_>, Vec<_>) = res
+		.into_iter()
+		.zip(positions)
+		.partition(|(res, _)| res.is_ok());
+
+	let fetched = fetched
+		.into_iter()
+		.map(|e| {
+			let cell = e.0.unwrap();
+			log::debug!("Fetched cell {} from IPFS", cell.reference());
+			cell
+		})
+		.collect::<Vec<_>>();
+
+	let unfetched = unfetched
+		.into_iter()
+		.map(|e| {
+			log::debug!(
+				"Error fetching cell {} from IPFS: {}",
+				e.1.reference(),
+				e.0.unwrap_err()
+			);
+			e.1.clone()
+		})
+		.collect::<Vec<_>>();
 
 	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
 	Ok((fetched, unfetched))
