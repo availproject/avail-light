@@ -316,6 +316,16 @@ pub struct Cell {
 }
 
 impl Cell {
+	pub fn position(block: u64, row: u16, col: u16) -> Self {
+		Cell {
+			block,
+			row,
+			col,
+			data: vec![],
+			proof: vec![],
+		}
+	}
+
 	/// Cell refrence in format `block_number:column_number:row_number`
 	pub fn reference(&self) -> String { format!("{}:{}:{}", self.block, self.col, self.row) }
 
