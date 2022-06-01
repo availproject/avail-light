@@ -8,7 +8,10 @@ use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
-use crate::{data, rpc};
+use crate::{
+	data::{self, fetch_cells_from_ipfs},
+	rpc,
+};
 
 pub async fn sync_block_headers(
 	url: String,
@@ -88,9 +91,41 @@ pub async fn sync_block_headers(
 					let commitment = block_body.header.extrinsics_root.commitment;
 					let block_num = block_body.header.number.clone();
 					// now this is in `u64`
-					let mut cells = rpc::generate_random_cells(max_rows, max_cols, block_num);
+					let mut positions = rpc::generate_random_cells(max_rows, max_cols, block_num);
 
-					data::ipfs_priority_get_cells(&mut cells, &ipfs, &url, block_num).await;
+					let ipfs_fetch_result =
+						fetch_cells_from_ipfs(&ipfs, block_num, &positions).await;
+					if ipfs_fetch_result.is_err() {
+						return;
+					}
+					let (ipfs_fetched, unfetched) = ipfs_fetch_result.unwrap();
+
+					log::info!(
+						"Number of cells fetched from IPFS for block {}: {}",
+						block_num,
+						ipfs_fetched.len()
+					);
+
+					let rpc_fetch_result = rpc::get_kate_proof(&url, block_num, unfetched).await;
+					if rpc_fetch_result.is_err() {
+						return;
+					}
+					let rpc_fetched = rpc_fetch_result.unwrap();
+
+					log::info!(
+						"Number of cells fetched from RPC for block {}: {}",
+						block_num,
+						rpc_fetched.len()
+					);
+
+					let mut cells = vec![];
+					cells.extend(ipfs_fetched);
+					cells.extend(rpc_fetched);
+
+					if positions.len() > cells.len() {
+						log::error!("Failed to fetch {} cells", positions.len() - cells.len());
+						return;
+					}
 
 					log::info!(
 						"Fetched {} cells of block {} for verification",
