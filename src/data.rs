@@ -5,7 +5,7 @@ extern crate libipld;
 use anyhow::{Context, Result};
 use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId, TempPin};
 
-use crate::types::{Cell as DataCell};
+use crate::types::Cell as DataCell;
 
 async fn fetch_cell_from_ipfs(
 	ipfs: &Ipfs<DefaultParams>,
