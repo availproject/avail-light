@@ -142,23 +142,21 @@ pub async fn do_main() -> Result<()> {
 	// inform invoker about self
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
-	// this one will spawn one thread for running ipfs client, while managing data discovery
-	// and reconstruction
-	let db_1 = db.clone();
-	let cfg_ = cfg.clone();
-	let ipfs_ = ipfs.clone();
-	// thread::spawn(move || {
-	// 	client::run_client(cfg_, db_1, block_rx, destroy_rx, cell_query_rx, ipfs_).unwrap();
-	// });
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
 		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
 	};
 
+	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+
 	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
-		tokio::task::spawn(app_client::run(app_id, block_rx));
+		tokio::task::spawn(app_client::run(
+			ipfs.clone(),
+			rpc_url.clone(),
+			app_id,
+			block_rx,
+		));
 	}
 
-	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 	let block_header = rpc::get_chain_header(&rpc_url).await?;
 
 	let latest_block = block_header.number;
