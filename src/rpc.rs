@@ -1,14 +1,9 @@
 extern crate futures;
 extern crate num_cpus;
 
-use std::{
-	collections::HashSet,
-	sync::{Arc, Mutex},
-	time::SystemTime,
-};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
-use futures::stream::{self, StreamExt};
 use hyper_tls::HttpsConnector;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -163,105 +158,6 @@ pub fn generate_kate_query_payload(block: u64, cells: &Vec<Cell>) -> String {
 	)
 }
 
-// Get proof of certain cell for given block, from full node
-pub async fn get_kate_query_proof_by_cell(
-	url: &str,
-	block: u64,
-	row: u16,
-	col: u16,
-) -> Result<Vec<u8>, String> {
-	let payload: String = format!(
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
-		block,
-		format!(r#"{{"row": {}, "col": {}}}"#, row, col)
-	);
-
-	match hyper::Request::builder()
-		.method(hyper::Method::POST)
-		.uri(url)
-		.header("Content-Type", "application/json")
-		.body(hyper::Body::from(payload))
-	{
-		Ok(req) => {
-			let resp = if is_secure(url) {
-				let https = HttpsConnector::new();
-				let client = hyper::Client::builder().build::<_, hyper::Body>(https);
-				match client.request(req).await {
-					Ok(resp) => Some(resp),
-					Err(_) => None,
-				}
-			} else {
-				let client = hyper::Client::new();
-				match client.request(req).await {
-					Ok(resp) => Some(resp),
-					Err(_) => None,
-				}
-			};
-
-			match resp {
-				Some(resp) => {
-					if let Ok(body) = hyper::body::to_bytes(resp.into_body()).await {
-						let r: BlockProofResponse = serde_json::from_slice(&body).unwrap();
-						Ok(r.result)
-					} else {
-						Err("failed to read HTTP POST response".to_owned())
-					}
-				},
-				None => Err("failed to send HTTP POST request".to_owned()),
-			}
-		},
-		Err(_) => Err("failed to build HTTP POST request object".to_owned()),
-	}
-}
-
-/// For a given block number, retrieves all cell contents by concurrently performing
-/// kate proof query RPC and finally returns back one vector of length M x N, when
-/// data matrix has M -many rows and N -many columns.
-///
-/// Each element of resulting vector either has cell content or has nothing ( represented as None )
-pub async fn get_cells(
-	url: &str,
-	msg: &ClientMsg,
-	cells: &[(usize, usize)],
-) -> Result<Vec<Option<Vec<u8>>>, String> {
-	let begin = SystemTime::now();
-
-	let store_size = msg.dimensions.rows * msg.dimensions.cols;
-	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; store_size]));
-
-	let store_0 = store.clone();
-	let cells_and_store = cells
-		.iter()
-		.map(move |(row, col)| (*row, *col, store_0.clone()));
-
-	stream::iter(cells_and_store)
-		.for_each_concurrent(num_cpus::get(), |(row, col, store)| async move {
-			let proof = get_kate_query_proof_by_cell(url, msg.number, row as u16, col as u16).await;
-
-			let mut handle = store.lock().unwrap();
-			handle[col * msg.dimensions.rows + row] = match proof {
-				Ok(v) => Some(v),
-				Err(e) => {
-					log::info!("error: {}", e);
-					None
-				},
-			}
-		})
-		.await;
-
-	log::info!(
-		"Received {} cells of block {}\t{:?}",
-		store_size,
-		msg.number,
-		begin.elapsed().unwrap()
-	);
-
-	Arc::try_unwrap(store)
-		.map_err(|_| "Failed to unwrap Arc".to_owned())
-		.map(|lock| lock.into_inner())
-		.and_then(|inner| inner.map_err(|_| "Failed to unwrap Mutex".to_owned()))
-}
-
 pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> Result<Vec<Cell>> {
 	let block = get_block_by_number(url, block_num).await?;
 
@@ -371,21 +267,4 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 		}
 	}
 	Ok(rpc_url)
-}
-
-fn from_kate_cell(block: u64, cell: &kate_recovery::com::Cell) -> Cell {
-	Cell {
-		block,
-		row: cell.row,
-		col: cell.col,
-		data: cell.data[48..].to_vec(),
-		proof: cell.data[..48].to_vec(),
-	}
-}
-
-pub fn from_kate_cells(block: u64, cells: &[kate_recovery::com::Cell]) -> Vec<Cell> {
-	cells
-		.iter()
-		.map(|cell| from_kate_cell(block, cell))
-		.collect::<Vec<Cell>>()
 }
