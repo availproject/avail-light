@@ -11,10 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Key, Multiaddr, PeerId, Record};
-// use kate_recovery::com::{
-// 	app_specific_column_cells, reconstruct_app_extrinsics, Cell, ExtendedMatrixDimensions,
-// };
+use ipfs_embed::{Multiaddr, PeerId, Record};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -105,8 +102,7 @@ pub async fn do_main() -> Result<()> {
 	//
 	// task_0: HTTP request handler ( query sender )
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
-	let (cell_query_tx, cell_query_rx) =
-		sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
+	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 
 	// this spawns one thread of execution which runs one http server
 	// for handling RPC
@@ -120,7 +116,7 @@ pub async fn do_main() -> Result<()> {
 	// ipfs backed application client
 	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 	let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
-	let (destroy_tx, destroy_rx) = sync_channel::<bool>(1);
+	let (destroy_tx, _) = sync_channel::<bool>(1);
 
 	let bootstrap_nodes = &cfg
 		.bootstraps
