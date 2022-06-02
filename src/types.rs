@@ -1,7 +1,7 @@
 extern crate ipfs_embed;
 
 use codec::{Decode, Encode};
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, Record};
 use kate_recovery::com::ExtendedMatrixDimensions;
 use libipld::{
 	multihash::{Code, MultihashDigest},
@@ -328,6 +328,10 @@ impl Cell {
 	// TODO: error handling
 	pub fn to_ipfs_block(self) -> IpfsBlock<DefaultParams> {
 		IpfsBlock::<DefaultParams>::new(self.cid(), self.proof).unwrap()
+	}
+
+	pub fn ipfs_record(&self) -> Record {
+		Record::new(self.reference().as_bytes().to_vec(), self.cid().to_bytes())
 	}
 }
 

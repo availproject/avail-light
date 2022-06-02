@@ -131,7 +131,11 @@ pub async fn sync_block_headers(
 					);
 
 					let count = crate::proof::verify_proof(
-						block_num, max_rows, max_cols, cells, commitment,
+						block_num,
+						max_rows,
+						max_cols,
+						cells.clone(),
+						commitment,
 					);
 					log::info!(
 						"Completed {} verification rounds for block {}\t{:?}",
@@ -149,6 +153,31 @@ pub async fn sync_block_headers(
 							count.to_be_bytes(),
 						)
 						.unwrap();
+
+					// Push the randomly selected cells to IPFS
+					for cell in cells {
+						if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
+							log::info!(
+								"Error pushing cell to IPFS: {}. Cell reference: {}",
+								error,
+								cell.reference()
+							);
+						}
+						// Add generated CID to DHT
+						if let Err(error) = ipfs
+							.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
+							.await
+						{
+							log::info!(
+								"Error inserting new record to DHT: {}. Cell reference: {}",
+								error,
+								cell.reference()
+							);
+						}
+					}
+					if let Err(error) = ipfs.flush().await {
+						log::info!("Error flushing data to disk: {}", error,);
+					};
 				},
 				Err(msg) => {
 					log::info!("error: {}", msg);
