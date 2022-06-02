@@ -79,6 +79,32 @@ async fn process_block(
 				count,
 				block.number
 			);
+
+			// TODO: If there are some invalid cells should we fail?
+
+			for cell in cells {
+				if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
+					log::info!(
+						"Error pushing cell to IPFS: {}. Cell reference: {}",
+						error,
+						cell.reference()
+					);
+				}
+				// Add generated CID to DHT
+				if let Err(error) = ipfs
+					.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
+					.await
+				{
+					log::info!(
+						"Error inserting new record to DHT: {}. Cell reference: {}",
+						error,
+						cell.reference()
+					);
+				}
+			}
+			if let Err(error) = ipfs.flush().await {
+				log::info!("Error flushin data do disk: {}", error,);
+			};
 		},
 	}
 	Ok(())
