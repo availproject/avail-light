@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{Multiaddr, PeerId, Record};
+use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -286,13 +286,7 @@ pub async fn do_main() -> Result<()> {
 						}
 						// Add generated CID to DHT
 						if let Err(error) = ipfs
-							.put_record(
-								Record::new(
-									cell.reference().as_bytes().to_vec(),
-									cell.cid().to_bytes(),
-								),
-								ipfs_embed::Quorum::One,
-							)
+							.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
 							.await
 						{
 							log::info!(
@@ -303,7 +297,7 @@ pub async fn do_main() -> Result<()> {
 						}
 					}
 					if let Err(error) = ipfs.flush().await {
-						log::info!("Error flushin data do disk: {}", error,);
+						log::info!("Error flushing data to disk: {}", error,);
 					};
 
 					// notify ipfs-based application client
