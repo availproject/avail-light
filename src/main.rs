@@ -82,6 +82,10 @@ pub async fn do_main() -> Result<()> {
 	block_cid_cf_opts.set_max_write_buffer_number(16);
 	let block_cid_cf_desp = ColumnFamilyDescriptor::new(consts::BLOCK_CID_CF, block_cid_cf_opts);
 
+	let mut app_data_cf_opts = Options::default();
+	app_data_cf_opts.set_max_write_buffer_number(16);
+	let app_data_cf_desp = ColumnFamilyDescriptor::new(consts::APP_DATA_CF, app_data_cf_opts);
+
 	let mut db_opts = Options::default();
 	db_opts.create_if_missing(true);
 	db_opts.create_missing_column_families(true);
@@ -91,6 +95,7 @@ pub async fn do_main() -> Result<()> {
 			confidence_cf_desp,
 			block_header_cf_desp,
 			block_cid_cf_desp,
+			app_data_cf_desp,
 		])
 		.context("Failed to open database")?,
 	);
@@ -146,6 +151,7 @@ pub async fn do_main() -> Result<()> {
 	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		tokio::task::spawn(app_client::run(
 			ipfs.clone(),
+			db.clone(),
 			rpc_url.clone(),
 			app_id,
 			block_rx,
