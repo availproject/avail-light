@@ -1,10 +1,12 @@
-use std::sync::mpsc::Receiver;
+use std::sync::{mpsc::Receiver, Arc};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
-use kate_recovery::com::app_specific_cells;
+use kate_recovery::com::{app_specific_cells, decode_app_extrinsics};
+use rocksdb::DB;
 
 use crate::{
+	consts::APP_DATA_CF,
 	data::fetch_cells_from_ipfs,
 	proof::verify_proof,
 	rpc::get_kate_proof,
@@ -14,6 +16,7 @@ use crate::{
 
 async fn process_block(
 	ipfs: &Ipfs<DefaultParams>,
+	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
 	block: &ClientMsg,
@@ -25,6 +28,17 @@ async fn process_block(
 			.iter()
 			.map(|cell| Cell::position(block_number, cell.row, cell.col))
 			.collect::<Vec<_>>()
+	}
+
+	fn from_cells(cells: Vec<Cell>) -> Vec<kate_recovery::com::Cell> {
+		cells
+			.iter()
+			.map(|cell| kate_recovery::com::Cell {
+				col: cell.col,
+				row: cell.row,
+				data: cell.data.clone(),
+			})
+			.collect()
 	}
 
 	match app_specific_cells(layout, &block.dimensions, app_id)
@@ -105,6 +119,27 @@ async fn process_block(
 			if let Err(error) = ipfs.flush().await {
 				log::info!("Error flushin data do disk: {}", error,);
 			};
+
+			let decoded =
+				decode_app_extrinsics(layout, &block.dimensions, from_cells(cells), app_id)?;
+
+			let key = format!("{}:{}", app_id, &block.number);
+
+			let cf_handle = db
+				.cf_handle(APP_DATA_CF)
+				.context("failed to get cf handle")?;
+
+			db.put_cf(
+				&cf_handle,
+				key.as_bytes(),
+				serde_json::to_string(&decoded)?.as_bytes(),
+			)
+			.context("failed to write application data")?;
+
+			log::info!(
+				"Stored {} data into database",
+				decoded.iter().map(|(_, data)| data.len()).sum::<usize>()
+			);
 		},
 	}
 	Ok(())
@@ -112,6 +147,7 @@ async fn process_block(
 
 pub async fn run(
 	ipfs: Ipfs<DefaultParams>,
+	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
@@ -120,7 +156,7 @@ pub async fn run(
 
 	for block in block_receive {
 		log::info!("Block {} available", block.number);
-		if let Err(error) = process_block(&ipfs, &rpc_url, app_id, &block).await {
+		if let Err(error) = process_block(&ipfs, db.clone(), &rpc_url, app_id, &block).await {
 			log::error!("Cannot process block {}: {}", block.number, error);
 			continue;
 		}
