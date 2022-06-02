@@ -117,7 +117,7 @@ pub async fn sync_block_headers(
 
 					let mut cells = vec![];
 					cells.extend(ipfs_fetched);
-					cells.extend(rpc_fetched);
+					cells.extend(rpc_fetched.clone());
 
 					if positions.len() > cells.len() {
 						log::error!("Failed to fetch {} cells", positions.len() - cells.len());
@@ -155,7 +155,7 @@ pub async fn sync_block_headers(
 						.unwrap();
 
 					// Push the randomly selected cells to IPFS
-					for cell in cells {
+					for cell in rpc_fetched {
 						if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
 							log::info!(
 								"Error pushing cell to IPFS: {}. Cell reference: {}",

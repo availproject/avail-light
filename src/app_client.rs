@@ -58,7 +58,7 @@ async fn process_block(
 
 			let mut cells = vec![];
 			cells.extend(ipfs_fetched);
-			cells.extend(rpc_fetched);
+			cells.extend(rpc_fetched.clone());
 
 			if positions.len() > cells.len() {
 				return Err(anyhow!(
@@ -82,7 +82,7 @@ async fn process_block(
 
 			// TODO: If there are some invalid cells should we fail?
 
-			for cell in cells {
+			for cell in rpc_fetched {
 				if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
 					log::info!(
 						"Error pushing cell to IPFS: {}. Cell reference: {}",
