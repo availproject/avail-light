@@ -1,5 +1,6 @@
 extern crate ipfs_embed;
 
+use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, StreamId};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -247,12 +248,22 @@ where
 	u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(serde::de::Error::custom)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Encode, Decode)]
 pub struct ExtrinsicsRoot {
-	pub cols: u16,
-	pub rows: u16,
-	pub hash: String,
+	pub hash: [u8; 32],
 	pub commitment: Vec<u8>,
+	pub rows: u16,
+	pub cols: u16,
+}
+
+impl<'de> Deserialize<'de> for ExtrinsicsRoot {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let encoded = sp_core::bytes::deserialize(deserializer)?;
+		Decode::decode(&mut &encoded[..]).map_err(|e| serde::de::Error::custom(e.to_string()))
+	}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
