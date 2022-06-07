@@ -22,7 +22,7 @@ pub async fn make_client(
 	seed: u64,
 	port: u16,
 	path: &str,
-	bootstrap_nodes: &Vec<(PeerId, Multiaddr)>,
+	bootstrap_nodes: &[(PeerId, Multiaddr)],
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
 	let sweep_interval = Duration::from_secs(600);
 	let path_buf = std::path::PathBuf::from_str(path).unwrap();
