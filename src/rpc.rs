@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
 use hyper_tls::HttpsConnector;
+use kate_recovery::com::Position;
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use tokio::net::TcpStream;
@@ -118,7 +119,7 @@ pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 	}
 }
 
-pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Cell> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16) -> Vec<Position> {
 	let max_cells = (max_rows as u32) * (max_cols as u32);
 	let count: u16 = if max_cells < 8 {
 		// Multiplication cannot overflow since result is less than 8
@@ -131,34 +132,30 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Ce
 	while (indices.len() as u16) < count {
 		let row = rng.gen::<u16>() % max_rows;
 		let col = rng.gen::<u16>() % max_cols;
-		indices.insert(MatrixCell { row, col });
+		indices.insert(Position { row, col });
 	}
 
-	let mut buf = Vec::new();
-	for index in indices {
-		buf.push(Cell {
-			block,
-			row: index.row,
-			col: index.col,
-			..Default::default()
-		});
-	}
-	buf
+	indices.into_iter().collect::<Vec<_>>()
 }
 
-pub fn generate_kate_query_payload(block: u64, cells: &Vec<Cell>) -> String {
-	let mut query = Vec::new();
-	for cell in cells {
-		query.push(format!(r#"{{"row": {}, "col": {}}}"#, cell.row, cell.col));
-	}
+pub fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
+	let query = positions
+		.iter()
+		.map(|position| format!(r#"{{"row": {}, "col": {}}}"#, position.row, position.col))
+		.collect::<Vec<_>>()
+		.join(", ");
+
 	format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
-		block,
-		query.join(", ")
+		block, query
 	)
 }
 
-pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> Result<Vec<Cell>> {
+pub async fn get_kate_proof(
+	url: &str,
+	block_num: u64,
+	positions: Vec<Position>,
+) -> Result<Vec<Cell>> {
 	let block = get_block_by_number(url, block_num).await?;
 
 	//tuple of values (id,index)
@@ -170,7 +167,7 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 		index_tuple
 	);
 
-	let payload = generate_kate_query_payload(block_num, &cells);
+	let payload = generate_kate_query_payload(block_num, &positions);
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
@@ -196,12 +193,18 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 	let proofs: BlockProofResponse = serde_json::from_slice(&body)
 		.context("failed to build HTTP POST request object(kate_proof)")?;
 
-	let proofs_by_cell = proofs.by_cell(cells.len());
+	let proofs_by_cell = proofs.by_cell(positions.len());
 
-	cells
-		.iter_mut()
+	let cells = positions
+		.iter()
 		.zip(proofs_by_cell)
-		.for_each(|(cell, proof)| cell.proof = proof.to_vec());
+		.map(|(position, proof)| Cell {
+			block: block_num,
+			position: position.clone(),
+			proof: proof.to_vec(),
+			data: proof[48..].to_vec(),
+		})
+		.collect::<Vec<_>>();
 
 	Ok(cells)
 }
@@ -209,7 +212,7 @@ pub async fn get_kate_proof(url: &str, block_num: u64, mut cells: Vec<Cell>) -> 
 //rpc- only for checking the connecting to substrate node
 pub async fn get_chain(url: &str) -> Result<String> {
 	let payload: String =
-		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#.to_string();
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
