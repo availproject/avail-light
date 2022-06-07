@@ -2,7 +2,7 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use anyhow::{anyhow, Context, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
-use kate_recovery::com::{app_specific_cells, decode_app_extrinsics};
+use kate_recovery::com::{app_specific_cells, decode_app_extrinsics, Position};
 use rocksdb::DB;
 
 use crate::{
@@ -14,19 +14,11 @@ use crate::{
 	util::layout_from_index,
 };
 
-fn to_cells(block_number: u64, positions: Vec<kate_recovery::com::Cell>) -> Vec<Cell> {
-	positions
-		.iter()
-		.map(|cell| Cell::position(block_number, cell.row, cell.col))
-		.collect::<Vec<_>>()
-}
-
 fn from_cells(cells: Vec<Cell>) -> Vec<kate_recovery::com::Cell> {
 	cells
 		.iter()
 		.map(|cell| kate_recovery::com::Cell {
-			col: cell.col,
-			row: cell.row,
+			position: cell.position.clone(),
 			data: cell.data.clone(),
 		})
 		.collect()
@@ -38,7 +30,7 @@ async fn process_block(
 	rpc_url: &str,
 	app_id: u32,
 	block: &ClientMsg,
-	positions: &Vec<Cell>,
+	positions: &Vec<Position>,
 ) -> Result<()> {
 	log::info!(
 		"Found {} cells for app {} in block {}",
@@ -105,7 +97,7 @@ async fn process_block(
 			log::info!(
 				"Error inserting new record to DHT: {}. Cell reference: {}",
 				error,
-				cell.reference()
+				cell.position.reference(block.number)
 			);
 		}
 	}
@@ -150,9 +142,7 @@ pub async fn run(
 		log::info!("Block {} available", block.number);
 		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 
-		match app_specific_cells(layout, &block.dimensions, app_id)
-			.map(move |positions| to_cells(block.number, positions))
-		{
+		match app_specific_cells(layout, &block.dimensions, app_id) {
 			None => log::info!("No cells for app {} in block {}", app_id, block.number),
 			Some(positions) => {
 				if let Err(error) =
