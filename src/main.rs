@@ -17,7 +17,11 @@ use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::{data::fetch_cells_from_ipfs, http::calculate_confidence, types::Mode};
+use crate::{
+	data::fetch_cells_from_ipfs,
+	http::calculate_confidence,
+	types::{cell_ipfs_record, cell_to_ipfs_block, Mode},
+};
 
 mod app_client;
 mod client;
@@ -283,22 +287,22 @@ pub async fn do_main() -> Result<()> {
 
 					// Push the randomly selected cells to IPFS
 					for cell in rpc_fetched {
-						if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
+						if let Err(error) = ipfs.insert(cell_to_ipfs_block(cell.clone())) {
 							log::info!(
 								"Error pushing cell to IPFS: {}. Cell reference: {}",
 								error,
-								cell.reference()
+								cell.reference(num)
 							);
 						}
 						// Add generated CID to DHT
 						if let Err(error) = ipfs
-							.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
+							.put_record(cell_ipfs_record(&cell, num), ipfs_embed::Quorum::One)
 							.await
 						{
 							log::info!(
 								"Error inserting new record to DHT: {}. Cell reference: {}",
 								error,
-								cell.reference()
+								cell.reference(num)
 							);
 						}
 					}
