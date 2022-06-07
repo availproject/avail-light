@@ -61,20 +61,20 @@ pub fn verify_proof(
 	let commitment = Arc::new(commitment);
 
 	for cell in cells {
-		let _row = cell.row;
-		let _col = cell.col;
+		let row = cell.position.row;
+		let col = cell.position.col;
 		let tx = tx.clone();
 		let commitment = commitment.clone();
 
 		pool.execute(move || {
 			tx.send(kc_verify_proof_wrapper(
 				block_num,
-				_row,
-				_col,
+				row,
+				col,
 				total_rows as usize,
 				total_cols as usize,
 				&cell.proof,
-				&commitment[_row as usize * 48..(_row as usize + 1) * 48],
+				&commitment[row as usize * 48..(row as usize + 1) * 48],
 			))
 			.unwrap();
 		});
