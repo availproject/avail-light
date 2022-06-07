@@ -2,7 +2,7 @@ extern crate threadpool;
 
 use std::sync::{mpsc::channel, Arc};
 
-use crate::types::Cell;
+use kate_recovery::com::Cell;
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
 // for a certain block
@@ -73,7 +73,7 @@ pub fn verify_proof(
 				col,
 				total_rows as usize,
 				total_cols as usize,
-				&cell.proof,
+				&cell.content,
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
 			))
 			.unwrap();
