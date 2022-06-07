@@ -5,9 +5,7 @@ extern crate libipld;
 use anyhow::{Context, Result};
 use futures::future::join_all;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId};
-use kate_recovery::com::Position;
-
-use crate::types::Cell;
+use kate_recovery::com::{Cell, Position};
 
 async fn fetch_cell_from_ipfs(
 	ipfs: &Ipfs<DefaultParams>,
@@ -26,11 +24,11 @@ async fn fetch_cell_from_ipfs(
 		.and_then(|value| Cid::try_from(value).context("Invalid CID value"))?;
 
 	log::trace!("Fetching IPFS block for CID {}", cid);
-	ipfs.fetch(&cid, peers).await.map(|block| Cell {
-		block: block_number,
-		position: position.clone(),
-		proof: block.data().to_vec(),
-		data: block.data()[48..].to_vec(),
+	ipfs.fetch(&cid, peers).await.and_then(|block| {
+		Ok(Cell {
+			position: position.clone(),
+			content: block.data().try_into()?,
+		})
 	})
 }
 
@@ -65,7 +63,7 @@ pub async fn fetch_cells_from_ipfs(
 		.into_iter()
 		.map(|e| {
 			let cell = e.0.unwrap();
-			log::debug!("Fetched cell {} from IPFS", cell.reference());
+			log::debug!("Fetched cell {} from IPFS", cell.reference(block_number));
 			cell
 		})
 		.collect::<Vec<_>>();
