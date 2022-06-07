@@ -2,7 +2,7 @@ extern crate ipfs_embed;
 
 use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, Record};
-use kate_recovery::com::ExtendedMatrixDimensions;
+use kate_recovery::com::{ExtendedMatrixDimensions, Position};
 use libipld::{
 	multihash::{Code, MultihashDigest},
 	IpldCodec,
@@ -309,25 +309,13 @@ impl BlockProofResponse {
 #[derive(Default, Debug, Clone)]
 pub struct Cell {
 	pub block: u64,
-	pub row: u16,
-	pub col: u16,
+	pub position: Position,
 	pub data: Vec<u8>,
 	pub proof: Vec<u8>,
 }
 
 impl Cell {
-	pub fn position(block: u64, row: u16, col: u16) -> Self {
-		Cell {
-			block,
-			row,
-			col,
-			data: vec![],
-			proof: vec![],
-		}
-	}
-
-	/// Cell refrence in format `block_number:column_number:row_number`
-	pub fn reference(&self) -> String { format!("{}:{}:{}", self.block, self.col, self.row) }
+	pub fn reference(&self) -> String { self.position.reference(self.block) }
 
 	pub fn hash(&self) -> Multihash { Code::Sha3_256.digest(&self.proof) }
 
@@ -343,12 +331,6 @@ impl Cell {
 	pub fn ipfs_record(&self) -> Record {
 		Record::new(self.reference().as_bytes().to_vec(), self.cid().to_bytes())
 	}
-}
-
-#[derive(Hash, Eq, PartialEq)]
-pub struct MatrixCell {
-	pub row: u16,
-	pub col: u16,
 }
 
 #[derive(Deserialize, Debug)]

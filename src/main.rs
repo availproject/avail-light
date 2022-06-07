@@ -210,7 +210,7 @@ pub async fn do_main() -> Result<()> {
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 
-					let positions = rpc::generate_random_cells(max_rows, max_cols, num);
+					let positions = rpc::generate_random_cells(max_rows, max_cols);
 					log::info!(
 						"Random cells generated: {} from block: {}",
 						positions.len(),

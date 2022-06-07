@@ -5,6 +5,7 @@ extern crate libipld;
 use anyhow::{Context, Result};
 use futures::future::join_all;
 use ipfs_embed::{Cid, DefaultParams, Ipfs, Key, PeerId};
+use kate_recovery::com::Position;
 
 use crate::types::Cell as DataCell;
 
@@ -12,11 +13,12 @@ async fn fetch_cell_from_ipfs(
 	ipfs: &Ipfs<DefaultParams>,
 	peers: Vec<PeerId>,
 	block_number: u64,
-	position: &DataCell,
+	position: &Position,
 ) -> Result<DataCell> {
-	let record_key = Key::from(position.reference().as_bytes().to_vec());
+	let reference = position.reference(block_number);
+	let record_key = Key::from(reference.as_bytes().to_vec());
 
-	log::trace!("Getting DHT record for reference {}", position.reference());
+	log::trace!("Getting DHT record for reference {}", reference);
 	let cid = ipfs
 		.get_record(record_key, ipfs_embed::Quorum::One)
 		.await
@@ -27,8 +29,7 @@ async fn fetch_cell_from_ipfs(
 	ipfs.fetch(&cid, peers).await.and_then(|block| {
 		Ok(DataCell {
 			block: block_number,
-			row: position.row,
-			col: position.col,
+			position: position.clone(),
 			proof: block.data().to_vec(),
 			data: block.data()[48..].to_vec(),
 		})
@@ -38,8 +39,8 @@ async fn fetch_cell_from_ipfs(
 pub async fn fetch_cells_from_ipfs(
 	ipfs: &Ipfs<DefaultParams>,
 	block_number: u64,
-	positions: &Vec<DataCell>,
-) -> Result<(Vec<DataCell>, Vec<DataCell>)> {
+	positions: &Vec<Position>,
+) -> Result<(Vec<DataCell>, Vec<Position>)> {
 	// TODO: Should we fetch peers before loop or for each cell?
 	let peers = &ipfs.peers();
 	log::debug!("Number of known IPFS peers: {}", peers.len());
@@ -73,13 +74,13 @@ pub async fn fetch_cells_from_ipfs(
 
 	let unfetched = unfetched
 		.into_iter()
-		.map(|e| {
+		.map(|(result, position)| {
 			log::debug!(
 				"Error fetching cell {} from IPFS: {}",
-				e.1.reference(),
-				e.0.unwrap_err()
+				position.reference(block_number),
+				result.unwrap_err()
 			);
-			e.1.clone()
+			position.clone()
 		})
 		.collect::<Vec<_>>();
 
