@@ -8,7 +8,11 @@ use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
-use crate::{data::fetch_cells_from_ipfs, rpc};
+use crate::{
+	data::fetch_cells_from_ipfs,
+	rpc,
+	types::{cell_ipfs_record, cell_to_ipfs_block},
+};
 
 pub async fn sync_block_headers(
 	url: String,
@@ -156,22 +160,22 @@ pub async fn sync_block_headers(
 
 					// Push the randomly selected cells to IPFS
 					for cell in rpc_fetched {
-						if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
+						if let Err(error) = ipfs.insert(cell_to_ipfs_block(cell.clone())) {
 							log::info!(
 								"Error pushing cell to IPFS: {}. Cell reference: {}",
 								error,
-								cell.reference()
+								cell.reference(block_num)
 							);
 						}
 						// Add generated CID to DHT
 						if let Err(error) = ipfs
-							.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
+							.put_record(cell_ipfs_record(&cell, block_num), ipfs_embed::Quorum::One)
 							.await
 						{
 							log::info!(
 								"Error inserting new record to DHT: {}. Cell reference: {}",
 								error,
-								cell.reference()
+								cell.reference(block_num)
 							);
 						}
 					}
