@@ -154,25 +154,6 @@ pub struct BlockCidPersistablePair {
 	pub self_computed: bool,
 }
 
-pub type IpldBlock = IpfsBlock<DefaultParams>;
-pub type BaseCell = IpldBlock;
-
-#[derive(Clone)]
-pub struct L0Col {
-	pub base_cells: Vec<BaseCell>,
-}
-
-#[derive(Clone)]
-pub struct L1Row {
-	pub l0_cols: Vec<L0Col>,
-}
-
-#[derive(Clone)]
-pub struct DataMatrix {
-	pub block_num: i128,
-	pub l1_row: L1Row,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct BlockHashResponse {
 	#[serde(flatten)]
