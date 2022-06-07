@@ -16,7 +16,6 @@ use hyper::{
 use num::{BigUint, FromPrimitive};
 use regex::Regex;
 use rocksdb::{BoundColumnFamily, DB};
-use tokio;
 
 use crate::types::CellContentQueryPayload;
 
