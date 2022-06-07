@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
 use hyper_tls::HttpsConnector;
-use kate_recovery::com::Position;
+use kate_recovery::com::{Cell, Position};
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use tokio::net::TcpStream;
@@ -198,11 +198,9 @@ pub async fn get_kate_proof(
 	let cells = positions
 		.iter()
 		.zip(proofs_by_cell)
-		.map(|(position, proof)| Cell {
-			block: block_num,
+		.map(|(position, &content)| Cell {
 			position: position.clone(),
-			proof: proof.to_vec(),
-			data: proof[48..].to_vec(),
+			content,
 		})
 		.collect::<Vec<_>>();
 
@@ -212,7 +210,7 @@ pub async fn get_kate_proof(
 //rpc- only for checking the connecting to substrate node
 pub async fn get_chain(url: &str) -> Result<String> {
 	let payload: String =
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#.to_string();
+		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)

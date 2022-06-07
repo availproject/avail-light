@@ -2,7 +2,7 @@ extern crate ipfs_embed;
 
 use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, Record};
-use kate_recovery::com::{ExtendedMatrixDimensions, Position};
+use kate_recovery::com::{Cell, ExtendedMatrixDimensions};
 use libipld::{
 	multihash::{Code, MultihashDigest},
 	IpldCodec,
@@ -271,37 +271,30 @@ pub struct BlockProofResponse {
 }
 
 impl BlockProofResponse {
-	pub fn by_cell(&self, cells_len: usize) -> impl Iterator<Item = &[u8]> {
+	pub fn by_cell(&self, cells_len: usize) -> impl Iterator<Item = &[u8; 80]> {
 		assert_eq!(CELL_WITH_PROOF_SIZE * cells_len, self.result.len());
-		self.result.chunks_exact(CELL_WITH_PROOF_SIZE)
+		self.result
+			.chunks_exact(CELL_WITH_PROOF_SIZE)
+			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"))
 	}
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct Cell {
-	pub block: u64,
-	pub position: Position,
-	pub data: Vec<u8>,
-	pub proof: Vec<u8>,
+pub fn cell_hash(cell: &Cell) -> Multihash { Code::Sha3_256.digest(&cell.content) }
+
+pub fn cell_cid(cell: &Cell) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), cell_hash(cell)) }
+
+// Block data isn't encoded
+// TODO: optimization - multiple cells inside a single block (per appID)
+// TODO: error handling
+pub fn cell_to_ipfs_block(cell: Cell) -> IpfsBlock<DefaultParams> {
+	IpfsBlock::<DefaultParams>::new(cell_cid(&cell), cell.content.to_vec()).unwrap()
 }
 
-impl Cell {
-	pub fn reference(&self) -> String { self.position.reference(self.block) }
-
-	pub fn hash(&self) -> Multihash { Code::Sha3_256.digest(&self.proof) }
-
-	pub fn cid(&self) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), self.hash()) }
-
-	// Block data isn't encoded
-	// TODO: optimization - multiple cells inside a single block (per appID)
-	// TODO: error handling
-	pub fn to_ipfs_block(self) -> IpfsBlock<DefaultParams> {
-		IpfsBlock::<DefaultParams>::new(self.cid(), self.proof).unwrap()
-	}
-
-	pub fn ipfs_record(&self) -> Record {
-		Record::new(self.reference().as_bytes().to_vec(), self.cid().to_bytes())
-	}
+pub fn cell_ipfs_record(cell: &Cell, block: u64) -> Record {
+	Record::new(
+		cell.reference(block).as_bytes().to_vec(),
+		cell_cid(cell).to_bytes(),
+	)
 }
 
 #[derive(Deserialize, Debug)]
