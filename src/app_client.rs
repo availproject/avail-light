@@ -2,7 +2,7 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use anyhow::{anyhow, Context, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
-use kate_recovery::com::{app_specific_cells, decode_app_extrinsics, Position};
+use kate_recovery::com::{app_specific_cells, decode_app_extrinsics, DataCell, Position};
 use rocksdb::DB;
 
 use crate::{
@@ -10,19 +10,9 @@ use crate::{
 	data::fetch_cells_from_ipfs,
 	proof::verify_proof,
 	rpc::get_kate_proof,
-	types::{Cell, ClientMsg},
+	types::{cell_ipfs_record, cell_to_ipfs_block, ClientMsg},
 	util::layout_from_index,
 };
-
-fn from_cells(cells: Vec<Cell>) -> Vec<kate_recovery::com::Cell> {
-	cells
-		.iter()
-		.map(|cell| kate_recovery::com::Cell {
-			position: cell.position.clone(),
-			data: cell.data.clone(),
-		})
-		.collect()
-}
 
 async fn process_block(
 	ipfs: &Ipfs<DefaultParams>,
@@ -82,22 +72,25 @@ async fn process_block(
 	// TODO: If there are some invalid cells should we fail?
 
 	for cell in rpc_fetched {
-		if let Err(error) = ipfs.insert(cell.clone().to_ipfs_block()) {
+		if let Err(error) = ipfs.insert(cell_to_ipfs_block(cell.clone())) {
 			log::info!(
 				"Error pushing cell to IPFS: {}. Cell reference: {}",
 				error,
-				cell.reference()
+				cell.reference(block.number)
 			);
 		}
 		// Add generated CID to DHT
 		if let Err(error) = ipfs
-			.put_record(cell.ipfs_record(), ipfs_embed::Quorum::One)
+			.put_record(
+				cell_ipfs_record(&cell, block.number),
+				ipfs_embed::Quorum::One,
+			)
 			.await
 		{
 			log::info!(
 				"Error inserting new record to DHT: {}. Cell reference: {}",
 				error,
-				cell.position.reference(block.number)
+				cell.reference(block.number)
 			);
 		}
 	}
@@ -106,7 +99,8 @@ async fn process_block(
 	};
 
 	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
-	let decoded = decode_app_extrinsics(layout, &block.dimensions, from_cells(cells), app_id)?;
+	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
+	let decoded = decode_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?;
 
 	let key = format!("{}:{}", app_id, &block.number);
 
