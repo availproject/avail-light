@@ -17,7 +17,6 @@ use structopt::StructOpt;
 use crate::types::Mode;
 
 mod app_client;
-mod client;
 mod consts;
 mod data;
 mod http;
@@ -127,7 +126,7 @@ pub async fn do_main() -> Result<()> {
 		.map(|(a, b)| (PeerId::from_str(a).expect("Valid peer id"), b.clone()))
 		.collect::<Vec<(PeerId, Multiaddr)>>();
 
-	let ipfs = client::make_client(
+	let ipfs = data::init_ipfs(
 		cfg.ipfs_seed,
 		cfg.ipfs_port,
 		&cfg.ipfs_path,
@@ -135,7 +134,7 @@ pub async fn do_main() -> Result<()> {
 	)
 	.await?;
 
-	tokio::task::spawn(client::log_events(ipfs.clone()));
+	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
 
 	// inform invoker about self
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
