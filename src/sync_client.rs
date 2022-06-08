@@ -14,7 +14,7 @@ use crate::{
 	types::{cell_ipfs_record, cell_to_ipfs_block},
 };
 
-pub async fn sync_block_headers(
+pub async fn run(
 	url: String,
 	start_block: u64,
 	end_block: u64,
