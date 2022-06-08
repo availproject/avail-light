@@ -13,7 +13,6 @@ use hyper::{
 	header::ACCESS_CONTROL_ALLOW_ORIGIN, service::Service, Body, Method, Request, Response, Server,
 	StatusCode,
 };
-use if_chain::if_chain;
 use num::{BigUint, FromPrimitive};
 use regex::Regex;
 use rocksdb::{BoundColumnFamily, DB};
@@ -56,18 +55,14 @@ impl Service<Request<Body>> for Handler {
 			}
 			Err("no match found !".to_owned())
 		}
-		fn match_block_url(url: &str) -> Result<u64, String> {
+		fn match_app_url(path: &str) -> Result<u64, String> {
 			let re = Regex::new(r"^(/v1/appdata/(\d{1,}))$").unwrap();
-			if_chain! {
-				if let Some(captures) = re.captures(url);
-				if let Some(block) = captures.get(2);
-				then{
+			if let Some(caps) = re.captures(path) {
+				if let Some(block) = caps.get(2) {
 					return Ok(block.as_str().parse::<u64>().unwrap());
 				}
-				else{
-					return Err("block parse failed".to_owned());
-				}
 			}
+			Err("no match found !".to_owned())
 		}
 
 		fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
@@ -98,8 +93,9 @@ impl Service<Request<Body>> for Handler {
 			cf_handle: Arc<BoundColumnFamily<'_>>,
 			app_id: u32,
 			block: u64,
-		) -> Result<(u32, Vec<Vec<u8>>), String> {
+		) -> Result<Vec<(u32, Vec<Vec<u8>>)>, String> {
 			let key = format!("{}:{}", app_id, block);
+			// let x =db.get_cf(&cf_handle, key.as_bytes()).unwrap().unwrap();
 			match db.get_cf(&cf_handle, key.as_bytes()) {
 				Ok(v) => match v {
 					Some(v) => Ok(serde_json::from_slice(&v).unwrap()),
@@ -158,18 +154,18 @@ impl Service<Request<Body>> for Handler {
 							)
 						},
 						"appdata" => {
-							let block = match_block_url(path).unwrap();
+							let block = match_app_url(path).unwrap();
 							let app_id = cfg.app_id.unwrap();
-							let (_count, data) = get_data(
+							println!("fetching data for app_id: {}", app_id);
+							let data = get_data(
 								db.clone(),
 								db.cf_handle(crate::consts::APP_DATA_CF).unwrap(),
 								app_id,
 								block,
 							)
 							.unwrap();
-							let data_str = serde_json::to_string(&data).unwrap();
 							mk_response(
-								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data_str)
+								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data)
 									.to_owned(),
 							)
 						},
@@ -182,40 +178,6 @@ impl Service<Request<Body>> for Handler {
 							Ok(not_found)
 						},
 					}
-					// if let Ok(block_num) = match_url(req.uri().path()) {
-					// 	let count = match get_confidence(
-					// 		db.clone(),
-					// 		db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
-					// 		block_num,
-					// 	) {
-					// 		Ok(count) => {
-					// 			log::info!("Confidence for block {} found in a store", block_num);
-					// 			count
-					// 		},
-					// 		Err(e) => {
-					// 			// if for some reason confidence is not found
-					// 			// in on disk database, client receives following response
-					// 			log::info!("error: {}", e);
-					// 			0
-					// 		},
-					// 	};
-					// 	let conf = calculate_confidence(count);
-					// 	let serialised_conf = serialised_confidence(block_num, conf);
-					// 	mk_response(
-					// 		format!(
-					// 			r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
-					// 			block_num, conf, serialised_conf
-					// 		)
-					// 		.to_owned(),
-					// 	)
-					// } else {
-					// 	let mut not_found = Response::default();
-					// 	*not_found.status_mut() = StatusCode::NOT_FOUND;
-					// 	not_found
-					// 		.headers_mut()
-					// 		.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
-					// 	Ok(not_found)
-					// }
 				},
 				_ => {
 					let mut not_found = Response::default();
