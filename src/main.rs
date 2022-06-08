@@ -24,7 +24,7 @@ mod http;
 mod light_client;
 mod proof;
 mod rpc;
-mod sync;
+mod sync_client;
 mod types;
 mod util;
 
@@ -162,7 +162,7 @@ pub async fn do_main() -> Result<()> {
 	// TODO: implement proper sync between bootstrap completion and starting the sync function
 	thread::sleep(time::Duration::from_secs(3));
 
-	tokio::task::spawn(sync::sync_block_headers(
+	tokio::task::spawn(sync_client::run(
 		rpc_url.clone(),
 		0,
 		latest_block,
