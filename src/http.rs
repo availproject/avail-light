@@ -13,11 +13,12 @@ use hyper::{
 	header::ACCESS_CONTROL_ALLOW_ORIGIN, service::Service, Body, Method, Request, Response, Server,
 	StatusCode,
 };
+use if_chain::if_chain;
 use num::{BigUint, FromPrimitive};
 use regex::Regex;
 use rocksdb::{BoundColumnFamily, DB};
 
-use crate::types::CellContentQueryPayload;
+use crate::types::{CellContentQueryPayload, RuntimeConfig};
 
 pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
 
@@ -33,6 +34,7 @@ pub fn serialised_confidence(block: u64, factor: f64) -> String {
 //service part of hyper
 struct Handler {
 	store: Arc<DB>,
+	cfg: RuntimeConfig,
 }
 
 impl Service<Request<Body>> for Handler {
@@ -53,6 +55,19 @@ impl Service<Request<Body>> for Handler {
 				}
 			}
 			Err("no match found !".to_owned())
+		}
+		fn match_block_url(url: &str) -> Result<u64, String> {
+			let re = Regex::new(r"^(/v1/appdata/(\d{1,}))$").unwrap();
+			if_chain! {
+				if let Some(captures) = re.captures(url);
+				if let Some(block) = captures.get(2);
+				then{
+					return Ok(block.as_str().parse::<u64>().unwrap());
+				}
+				else{
+					return Err("block parse failed".to_owned());
+				}
+			}
 		}
 
 		fn mk_response(s: String) -> Result<Response<Body>, hyper::Error> {
@@ -78,6 +93,22 @@ impl Service<Request<Body>> for Handler {
 			}
 		}
 
+		fn get_data(
+			db: Arc<DB>,
+			cf_handle: Arc<BoundColumnFamily<'_>>,
+			app_id: u32,
+			block: u64,
+		) -> Result<(u32, Vec<Vec<u8>>), String> {
+			let key = format!("{}:{}", app_id, block);
+			match db.get_cf(&cf_handle, key.as_bytes()) {
+				Ok(v) => match v {
+					Some(v) => Ok(serde_json::from_slice(&v).unwrap()),
+					None => Err("failed to find entry in data store".to_owned()),
+				},
+				Err(_) => Err("failed to find entry in data store".to_owned()),
+			}
+		}
+
 		let local_tm: DateTime<Local> = Local::now();
 		log::info!(
 			"⚡️ {} | {} | {}",
@@ -87,44 +118,104 @@ impl Service<Request<Body>> for Handler {
 		);
 
 		let db = self.store.clone();
+		let cfg = self.cfg.clone();
 
 		Box::pin(async move {
 			let res = match req.method() {
 				&Method::GET => {
-					if let Ok(block_num) = match_url(req.uri().path()) {
-						let count = match get_confidence(
-							db.clone(),
-							db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
-							block_num,
-						) {
-							Ok(count) => {
-								log::info!("Confidence for block {} found in a store", block_num);
-								count
-							},
-							Err(e) => {
-								// if for some reason confidence is not found
-								// in on disk database, client receives following response
-								log::info!("error: {}", e);
-								0
-							},
-						};
-						let conf = calculate_confidence(count);
-						let serialised_conf = serialised_confidence(block_num, conf);
-						mk_response(
-							format!(
-								r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
-								block_num, conf, serialised_conf
+					let path = req.uri().path();
+					let v: Vec<&str> = path.split('/').collect();
+					match v[2] {
+						"confidence" => {
+							let block_num = match_url(path).unwrap();
+							let count = match get_confidence(
+								db.clone(),
+								db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
+								block_num,
+							) {
+								Ok(count) => {
+									log::info!(
+										"Confidence for block {} found in a store",
+										block_num
+									);
+									count
+								},
+								Err(e) => {
+									// if for some reason confidence is not found
+									// in on disk database, client receives following response
+									log::info!("error: {}", e);
+									0
+								},
+							};
+							let confidence = calculate_confidence(count);
+							let serialised_conf = serialised_confidence(block_num, confidence);
+							mk_response(
+								format!(
+									r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
+									block_num, confidence, serialised_conf
+								)
+								.to_owned(),
 							)
-							.to_owned(),
-						)
-					} else {
-						let mut not_found = Response::default();
-						*not_found.status_mut() = StatusCode::NOT_FOUND;
-						not_found
-							.headers_mut()
-							.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
-						Ok(not_found)
+						},
+						"appdata" => {
+							let block = match_block_url(path).unwrap();
+							let app_id = cfg.app_id.unwrap();
+							let (_count, data) = get_data(
+								db.clone(),
+								db.cf_handle(crate::consts::APP_DATA_CF).unwrap(),
+								app_id,
+								block,
+							)
+							.unwrap();
+							let data_str = serde_json::to_string(&data).unwrap();
+							mk_response(
+								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data_str)
+									.to_owned(),
+							)
+						},
+						_ => {
+							let mut not_found = Response::default();
+							*not_found.status_mut() = StatusCode::NOT_FOUND;
+							not_found
+								.headers_mut()
+								.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+							Ok(not_found)
+						},
 					}
+					// if let Ok(block_num) = match_url(req.uri().path()) {
+					// 	let count = match get_confidence(
+					// 		db.clone(),
+					// 		db.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF).unwrap(),
+					// 		block_num,
+					// 	) {
+					// 		Ok(count) => {
+					// 			log::info!("Confidence for block {} found in a store", block_num);
+					// 			count
+					// 		},
+					// 		Err(e) => {
+					// 			// if for some reason confidence is not found
+					// 			// in on disk database, client receives following response
+					// 			log::info!("error: {}", e);
+					// 			0
+					// 		},
+					// 	};
+					// 	let conf = calculate_confidence(count);
+					// 	let serialised_conf = serialised_confidence(block_num, conf);
+					// 	mk_response(
+					// 		format!(
+					// 			r#"{{"block": {}, "confidence": {}, "serialisedConfidence": {}}}"#,
+					// 			block_num, conf, serialised_conf
+					// 		)
+					// 		.to_owned(),
+					// 	)
+					// } else {
+					// 	let mut not_found = Response::default();
+					// 	*not_found.status_mut() = StatusCode::NOT_FOUND;
+					// 	not_found
+					// 		.headers_mut()
+					// 		.insert(ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+					// 	Ok(not_found)
+					// }
 				},
 				_ => {
 					let mut not_found = Response::default();
@@ -142,6 +233,7 @@ impl Service<Request<Body>> for Handler {
 
 struct MakeHandler {
 	store: Arc<DB>,
+	cfg: RuntimeConfig,
 }
 
 impl<T> Service<T> for MakeHandler {
@@ -155,7 +247,8 @@ impl<T> Service<T> for MakeHandler {
 
 	fn call(&mut self, _: T) -> Self::Future {
 		let store = self.store.clone();
-		let fut = async move { Ok(Handler { store }) };
+		let cfg = self.cfg.clone();
+		let fut = async move { Ok(Handler { store, cfg }) };
 		Box::pin(fut)
 	}
 }
@@ -169,12 +262,13 @@ pub async fn run_server(
 	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
 		.parse()
 		.expect("Bad Http server host/ port, found in config file");
-	let server = Server::bind(&addr).serve(MakeHandler { store });
+	let cfg_clone = cfg.clone();
+	let server = Server::bind(&addr).serve(MakeHandler { store, cfg });
 
 	log::info!(
 		"RPC running on http://{}:{}",
-		cfg.http_server_host,
-		cfg.http_server_port
+		cfg_clone.http_server_host,
+		cfg_clone.http_server_port
 	);
 
 	server.await?;

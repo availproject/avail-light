@@ -316,6 +316,7 @@ dependencies = [
  "futures-util",
  "hyper",
  "hyper-tls",
+ "if_chain",
  "ipfs-embed",
  "kate-proof",
  "kate-recovery",
@@ -1718,6 +1719,12 @@ dependencies = [
  "system-configuration",
  "windows",
 ]
+
+[[package]]
+name = "if_chain"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb56e1aa765b4b4f3aadfab769793b7087bb03a4ea4920644a6d238e2df5b9ed"
 
 [[package]]
 name = "impl-codec"
