@@ -21,23 +21,20 @@ pub async fn sync_block_headers(
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 ) {
+	log::info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block)
 		.map(move |b| (b, url.clone(), header_store.clone(), ipfs.clone()));
 	let fut = stream::iter(blocks).for_each_concurrent(
 		num_cpus::get(), // number of logical CPUs available on machine
 		// run those many concurrent syncing lightweight tasks, not threads
 		|(block_num, url, store, ipfs)| async move {
-			match store.get_pinned_cf(
+			if let Ok(v) = store.get_pinned_cf(
 				&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
 				block_num.to_be_bytes(),
 			) {
-				Ok(v) => match v {
-					Some(_) => {
-						return;
-					},
-					None => {},
-				},
-				Err(_) => {},
+				if v.is_some() {
+					return;
+				}
 			};
 			// if block header look up fails, only then comes here for
 			// fetching and storing block header as part of (light weight)
@@ -69,19 +66,15 @@ pub async fn sync_block_headers(
 
 					// If it's found that this certain block is not verified
 					// then it'll be verified now
-					match store.get_pinned_cf(
+					if let Ok(v) = store.get_pinned_cf(
 						&store
 							.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
 							.unwrap(),
 						block_num.to_be_bytes(),
 					) {
-						Ok(v) => match v {
-							Some(_) => {
-								return;
-							},
-							None => {},
-						},
-						Err(_) => {},
+						if v.is_some() {
+							return;
+						}
 					};
 
 					let begin = SystemTime::now();
@@ -90,7 +83,7 @@ pub async fn sync_block_headers(
 					let max_rows = block_body.header.extrinsics_root.rows * 2;
 					let max_cols = block_body.header.extrinsics_root.cols;
 					let commitment = block_body.header.extrinsics_root.commitment;
-					let block_num = block_body.header.number.clone();
+					let block_num = block_body.header.number;
 					// now this is in `u64`
 					let positions = rpc::generate_random_cells(max_rows, max_cols);
 
