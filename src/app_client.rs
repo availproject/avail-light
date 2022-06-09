@@ -113,6 +113,7 @@ async fn process_block(
 		.cf_handle(APP_DATA_CF)
 		.context("failed to get cf handle")?;
 	println!("\ndecoded data{:?}", decoded);
+	println!("\n data {:?}", data);
 	println!(
 		"json data{:?}",
 		serde_json::to_string(&decoded).unwrap().as_bytes()

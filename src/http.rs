@@ -6,7 +6,6 @@ use std::{
 	sync::{mpsc::SyncSender, Arc},
 	task::{Context, Poll},
 };
-
 use ::futures::prelude::*;
 use chrono::{DateTime, Local};
 use hyper::{
@@ -93,7 +92,7 @@ impl Service<Request<Body>> for Handler {
 			cf_handle: Arc<BoundColumnFamily<'_>>,
 			app_id: u32,
 			block: u64,
-		) -> Result<Vec<(u32, Vec<Vec<u8>>)>, String> {
+		) -> Result<Vec<Vec<u8>>, String> {
 			let key = format!("{}:{}", app_id, block);
 			// let x =db.get_cf(&cf_handle, key.as_bytes()).unwrap().unwrap();
 			match db.get_cf(&cf_handle, key.as_bytes()) {
@@ -164,8 +163,18 @@ impl Service<Request<Body>> for Handler {
 								block,
 							)
 							.unwrap();
+							let data_hex_string = data
+								.iter()
+								.map(|e| {
+									e.iter().fold(String::new(), |mut acc, e| {
+										acc.push_str(format!("{:02x}", e).as_str());
+										acc
+									})
+								})
+								.collect::<Vec<_>>();
+							
 							mk_response(
-								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data)
+								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data_hex_string)
 									.to_owned(),
 							)
 						},
