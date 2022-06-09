@@ -100,7 +100,12 @@ async fn process_block(
 
 	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
+	// TODO: Return Result<Vec<Vec<u8>> instead
 	let decoded = decode_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?;
+	if decoded.len() != 1 {
+		return Ok(());
+	}
+	let data = &decoded[0].1;
 
 	let key = format!("{}:{}", app_id, &block.number);
 
@@ -111,14 +116,11 @@ async fn process_block(
 	db.put_cf(
 		&cf_handle,
 		key.as_bytes(),
-		serde_json::to_string(&decoded)?.as_bytes(),
+		serde_json::to_string(&data)?.as_bytes(),
 	)
 	.context("failed to write application data")?;
 
-	log::info!(
-		"Stored {} data into database",
-		decoded.iter().map(|(_, data)| data.len()).sum::<usize>()
-	);
+	log::info!("Stored {} data into database", data.len());
 
 	Ok(())
 }
