@@ -6,6 +6,7 @@ use std::{
 	sync::{mpsc::SyncSender, Arc},
 	task::{Context, Poll},
 };
+
 use ::futures::prelude::*;
 use chrono::{DateTime, Local};
 use hyper::{
@@ -156,13 +157,23 @@ impl Service<Request<Body>> for Handler {
 							let block = match_app_url(path).unwrap();
 							let app_id = cfg.app_id.unwrap();
 							println!("fetching data for app_id: {}", app_id);
-							let data = get_data(
+							let data = match get_data(
 								db.clone(),
 								db.cf_handle(crate::consts::APP_DATA_CF).unwrap(),
 								app_id,
 								block,
-							)
-							.unwrap();
+							) {
+								Ok(data) => {
+									log::info!("Data for block {} found in a store", block);
+									data
+								},
+								Err(e) => {
+									// if for some reason data is not found
+									// in on disk database, client receives following response
+									log::info!("error: {}", e);
+									vec![]
+								},
+							};
 							let data_hex_string = data
 								.iter()
 								.map(|e| {
@@ -172,10 +183,13 @@ impl Service<Request<Body>> for Handler {
 									})
 								})
 								.collect::<Vec<_>>();
-							
+
 							mk_response(
-								format!(r#"{{"block": {}, "app_data": {:?}}}"#, block, data_hex_string)
-									.to_owned(),
+								format!(
+									r#"{{"block": {}, "app_data": {:?}}}"#,
+									block, data_hex_string
+								)
+								.to_owned(),
 							)
 						},
 						_ => {
