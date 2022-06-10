@@ -45,9 +45,9 @@ ipfs_port = 37000
 ipfs_path = "avail_ipfs_store"
 
 # put full_node_rpc = https://devnet-avail.polygon.technology/ incase you are connecting to devnet
-full_node_rpc = "http://127.0.0.1:9933"
+full_node_rpc = ["http://127.0.0.1:9933"]
 # put full_node_ws = wss://devnet-avail.polygon.technology/ws incase you are connecting to devnet
-full_node_ws = "ws://127.0.0.1:9944"
+full_node_ws = ["ws://127.0.0.1:9944"]
 # None in case of default Light Client Mode
 app_id = 0
 
