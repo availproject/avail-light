@@ -23,6 +23,7 @@ pub async fn run(
 	ipfs: Ipfs<DefaultParams>,
 	rpc_url: String,
 	block_tx: SyncSender<ClientMsg>,
+	max_parallel_fetch_tasks: usize,
 ) -> Result<()> {
 	log::info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -71,7 +72,8 @@ pub async fn run(
 					);
 
 					let (ipfs_fetched, unfetched) =
-						fetch_cells_from_ipfs(&ipfs, num, &positions).await?;
+						fetch_cells_from_ipfs(&ipfs, num, &positions, max_parallel_fetch_tasks)
+							.await?;
 
 					log::info!(
 						"Number of cells fetched from IPFS for block {}: {}",
