@@ -19,6 +19,7 @@ pub async fn run(
 	end_block: u64,
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
+	max_parallel_fetch_tasks: usize,
 ) {
 	log::info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block)
@@ -86,8 +87,13 @@ pub async fn run(
 					// now this is in `u64`
 					let positions = rpc::generate_random_cells(max_rows, max_cols);
 
-					let ipfs_fetch_result =
-						fetch_cells_from_ipfs(&ipfs, block_num, &positions).await;
+					let ipfs_fetch_result = fetch_cells_from_ipfs(
+						&ipfs,
+						block_num,
+						&positions,
+						max_parallel_fetch_tasks,
+					)
+					.await;
 					if ipfs_fetch_result.is_err() {
 						return;
 					}

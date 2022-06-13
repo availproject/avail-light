@@ -27,6 +27,7 @@ async fn process_block(
 	block: &ClientMsg,
 	data_positions: &Vec<Position>,
 	column_positions: &[Position],
+	max_parallel_fetch_tasks: usize,
 ) -> Result<()> {
 	let block_number = block.number;
 
@@ -36,7 +37,7 @@ async fn process_block(
 	);
 
 	let (mut ipfs_cells, unfetched) =
-		fetch_cells_from_ipfs(ipfs, block.number, data_positions).await?;
+		fetch_cells_from_ipfs(ipfs, block.number, data_positions, max_parallel_fetch_tasks).await?;
 
 	log::info!(
 		"Fetched {count} cells of block {block_number} from IPFS",
@@ -55,8 +56,13 @@ async fn process_block(
 	if reconstruct {
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 		let column_positions = diff_positions(column_positions, &fetched);
-		let (mut column_ipfs_cells, unfetched) =
-			fetch_cells_from_ipfs(ipfs, block_number, &column_positions).await?;
+		let (mut column_ipfs_cells, unfetched) = fetch_cells_from_ipfs(
+			ipfs,
+			block_number,
+			&column_positions,
+			max_parallel_fetch_tasks,
+		)
+		.await?;
 
 		log::info!(
 			"Fetched {count} cells of block {block_number} from IPFS for reconstruction",
@@ -141,6 +147,7 @@ pub async fn run(
 	rpc_url: String,
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
+	max_parallel_fetch_tasks: usize,
 ) {
 	log::info!("Starting for app {app_id}...");
 
@@ -162,6 +169,7 @@ pub async fn run(
 					&block,
 					&data_positions,
 					&column_positions,
+					max_parallel_fetch_tasks,
 				)
 				.await
 				{

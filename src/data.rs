@@ -166,6 +166,7 @@ pub async fn fetch_cells_from_ipfs(
 	ipfs: &Ipfs<DefaultParams>,
 	block_number: u64,
 	positions: &Vec<Position>,
+	max_parallel_fetch_tasks: usize,
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	// TODO: Should we fetch peers before loop or for each cell?
 	let peers = &ipfs.peers();
@@ -176,15 +177,23 @@ pub async fn fetch_cells_from_ipfs(
 		return Ok((vec![], positions.to_vec()));
 	}
 
-	let res = join_all(
-		positions
-			.iter()
-			.map(|position| fetch_cell_from_ipfs(ipfs, peers.clone(), block_number, position))
-			.collect::<Vec<_>>(),
-	)
-	.await;
+	let chunked_positions = positions
+		.chunks(max_parallel_fetch_tasks)
+		.map(|positions| {
+			positions
+				.iter()
+				.map(|position| fetch_cell_from_ipfs(ipfs, peers.clone(), block_number, position))
+				.collect::<Vec<_>>()
+		})
+		.collect::<Vec<_>>();
 
-	let (fetched, unfetched): (Vec<_>, Vec<_>) = res
+	let mut results = Vec::<Result<Cell>>::with_capacity(positions.len());
+	for positions in chunked_positions {
+		let r = join_all(positions).await;
+		results.extend(r);
+	}
+
+	let (fetched, unfetched): (Vec<_>, Vec<_>) = results
 		.into_iter()
 		.zip(positions)
 		.partition(|(res, _)| res.is_ok());
