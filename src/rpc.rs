@@ -124,7 +124,9 @@ pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 }
 
 pub fn generate_random_cells(max_rows: u16, max_cols: u16, block: u64) -> Vec<Cell> {
-	let count: u16 = if max_rows * max_cols < 8 {
+	let max_cells = (max_rows as u32) * (max_cols as u32);
+	let count: u16 = if max_cells < 8 {
+		// Multiplication cannot overflow since result is less than 8
 		max_rows * max_cols
 	} else {
 		8
@@ -224,8 +226,8 @@ pub async fn get_cells(
 ) -> Result<Vec<Option<Vec<u8>>>, String> {
 	let begin = SystemTime::now();
 
-	let store_size = (msg.max_rows * msg.max_cols) as usize;
-	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; store_size]));
+	let max_cells = (msg.max_rows as usize) * (msg.max_cols as usize);
+	let store: Arc<Mutex<Vec<Option<Vec<u8>>>>> = Arc::new(Mutex::new(vec![None; max_cells]));
 
 	let store_0 = store.clone();
 	let cells_and_store = cells
@@ -237,7 +239,7 @@ pub async fn get_cells(
 			let proof = get_kate_query_proof_by_cell(url, msg.num, row as u16, col as u16).await;
 
 			let mut handle = store.lock().unwrap();
-			handle[col * msg.max_rows as usize + row] = match proof {
+			handle[col * (msg.max_rows as usize) + row] = match proof {
 				Ok(v) => Some(v),
 				Err(e) => {
 					log::info!("error: {}", e);
@@ -249,7 +251,7 @@ pub async fn get_cells(
 
 	log::info!(
 		"Received {} cells of block {}\t{:?}",
-		msg.max_cols * msg.max_rows,
+		max_cells,
 		msg.num,
 		begin.elapsed().unwrap()
 	);
