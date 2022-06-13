@@ -152,6 +152,7 @@ pub async fn do_main() -> Result<()> {
 			rpc_url.clone(),
 			app_id,
 			block_rx,
+			cfg.max_parallel_fetch_tasks,
 		));
 	}
 
@@ -167,9 +168,19 @@ pub async fn do_main() -> Result<()> {
 		latest_block,
 		db.clone(),
 		ipfs.clone(),
+		cfg.max_parallel_fetch_tasks,
 	));
 
-	if let Err(error) = light_client::run(cfg.full_node_ws, db, ipfs, rpc_url, block_tx).await {
+	if let Err(error) = light_client::run(
+		cfg.full_node_ws,
+		db,
+		ipfs,
+		rpc_url,
+		block_tx,
+		cfg.max_parallel_fetch_tasks,
+	)
+	.await
+	{
 		log::info!("Error running light client: {}", error);
 	}
 
