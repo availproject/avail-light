@@ -21,7 +21,8 @@ fn construct_cell(
 	row_count: u16,
 	cells: Arc<Vec<Option<Vec<u8>>>>,
 ) -> Result<BaseCell, String> {
-	cells[(col * row_count + row) as usize]
+	let cell_index = (col as usize) * (row_count as usize) + (row as usize);
+	cells[cell_index]
 		.as_ref()
 		.ok_or_else(|| "failed to construct cell due to unavailability of data".to_owned())
 		.and_then(|cell| {
