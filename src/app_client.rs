@@ -2,7 +2,10 @@ use std::sync::{mpsc::Receiver, Arc};
 
 use anyhow::{anyhow, Context, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
-use kate_recovery::com::{app_specific_cells, decode_app_extrinsics, DataCell, Position};
+use kate_recovery::com::{
+	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
+	reconstruct_app_extrinsics, DataCell, Position,
+};
 use rocksdb::DB;
 
 use crate::{
@@ -20,67 +23,98 @@ async fn process_block(
 	rpc_url: &str,
 	app_id: u32,
 	block: &ClientMsg,
-	positions: &Vec<Position>,
+	data_positions: &Vec<Position>,
+	column_positions: &Vec<Position>,
 ) -> Result<()> {
-	let positions_count = positions.len();
+	let data_positions_count = data_positions.len();
 	let block_number = block.number;
+	let dimensions = &block.dimensions;
 	let rows = block.dimensions.rows as u16;
 	let cols = block.dimensions.cols as u16;
 	let commitments = block.commitment.clone();
 
-	log::info!("Found {positions_count} cells for app {app_id} in block {block_number}");
+	log::info!("Found {data_positions_count} cells for app {app_id} in block {block_number}");
 
-	let (ipfs_cells, unfetched) = fetch_cells_from_ipfs(ipfs, block.number, positions).await?;
+	let (ipfs_cells, unfetched) = fetch_cells_from_ipfs(ipfs, block.number, data_positions).await?;
 
 	let ipfs_cells_count = ipfs_cells.len();
 	log::info!("Fetched {ipfs_cells_count} cells of block {block_number} from IPFS");
 
-	let rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
+	let mut rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
 
 	let rpc_cells_count = rpc_cells.len();
 	log::info!("Fetched {rpc_cells_count} cells of block {block_number} from RPC");
 
 	let cells = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 
-	let missing_cells_count = positions.len() - cells.len();
-	if missing_cells_count > 0 {
-		return Err(anyhow!("Failed to fetch {missing_cells_count} cells"));
+	let missing_cells_count = data_positions.len() - cells.len();
+	if missing_cells_count == 0 {
+		let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
+		log::info!("Completed {count} verification rounds for block {block_number}");
+
+		if count < cells.len() {
+			return Err(anyhow!("{} cells are not verified", cells.len() - count));
+		}
+
+		insert_into_ipfs(ipfs, block.number, rpc_cells).await;
+		log::info!("Cells inserted into IPFS for block {}", block.number);
+
+		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
+		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
+		// TODO: Return Result<Vec<Vec<u8>> instead
+		let decoded = decode_app_extrinsics(layout, dimensions, data_cells, app_id)?;
+		let data = decoded.into_iter().flat_map(|(_, v)| v).collect::<Vec<_>>();
+		let data_count = data.len();
+
+		store_data_in_db(db, app_id, block_number, data)?;
+		log::info!("Stored {data_count} data into database");
+	} else {
+		let diff_positions = column_positions
+			.iter()
+			.cloned()
+			.filter(|position| !cells.iter().any(|cell| cell.position.eq(position)))
+			.collect::<Vec<_>>();
+
+		let (ipfs_cells, unfetched) =
+			fetch_cells_from_ipfs(ipfs, block.number, &diff_positions).await?;
+
+		let ipfs_cells_count = ipfs_cells.len();
+		log::info!("Fetched {ipfs_cells_count} cells of block {block_number} from IPFS");
+
+		let mut column_rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
+
+		let column_rpc_cells_count = column_rpc_cells.len();
+		log::info!("Fetched {column_rpc_cells_count} cells of block {block_number} from RPC");
+
+		let cells = [
+			cells.as_slice(),
+			ipfs_cells.as_slice(),
+			column_rpc_cells.as_slice(),
+		]
+		.concat();
+
+		let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
+		log::info!("Completed {count} verification rounds for block {block_number}");
+
+		if count < cells.len() {
+			return Err(anyhow!("{} cells are not verified", cells.len() - count));
+		}
+
+		rpc_cells.append(&mut column_rpc_cells);
+		insert_into_ipfs(ipfs, block.number, rpc_cells).await;
+		log::info!("Cells inserted into IPFS for block {}", block.number);
+
+		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
+		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
+		// TODO: Return Result<Vec<Vec<u8>> instead
+		let decoded = reconstruct_app_extrinsics(layout, dimensions, data_cells, Some(app_id))?;
+		let data = decoded.into_iter().flat_map(|(_, v)| v).collect::<Vec<_>>();
+		let data_count = data.len();
+
+		store_data_in_db(db, app_id, block_number, data)?;
+		log::info!("Stored {data_count} data into database");
 	}
 
-	let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
-	log::info!("Completed {count} verification rounds for block {block_number}");
-
-	if count < cells.len() {
-		return Err(anyhow!("{} cells are not verified", cells.len() - count));
-	}
-
-	insert_into_ipfs(ipfs, block.number, rpc_cells).await;
-	log::info!("Cells inserted into IPFS for block {}", block.number);
-
-	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
-	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-	// TODO: Return Result<Vec<Vec<u8>> instead
-	let decoded = decode_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?;
-
-	if decoded.len() != 1 {
-		return Ok(());
-	}
-	let data = &decoded[0].1;
-
-	let key = format!("{}:{}", app_id, &block.number);
-
-	let cf_handle = db
-		.cf_handle(APP_DATA_CF)
-		.context("failed to get cf handle")?;
-
-	db.put_cf(
-		&cf_handle,
-		key.as_bytes(),
-		serde_json::to_string(&data)?.as_bytes(),
-	)
-	.context("failed to write application data")?;
-
-	log::info!("Stored {} data into database", data.len());
 	Ok(())
 }
 
@@ -97,16 +131,27 @@ pub async fn run(
 		log::info!("Block {} available", block.number);
 		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 
-		match app_specific_cells(layout, &block.dimensions, app_id) {
-			None => log::info!("No cells for app {} in block {}", app_id, block.number),
-			Some(positions) => {
-				if let Err(error) =
-					process_block(&ipfs, db.clone(), &rpc_url, app_id, &block, &positions).await
+		match (
+			app_specific_cells(layout, &block.dimensions, app_id),
+			app_specific_column_cells(layout, &block.dimensions, app_id),
+		) {
+			(Some(data_positions), Some(column_positions)) => {
+				if let Err(error) = process_block(
+					&ipfs,
+					db.clone(),
+					&rpc_url,
+					app_id,
+					&block,
+					&data_positions,
+					&column_positions,
+				)
+				.await
 				{
 					log::error!("Cannot process block {}: {}", block.number, error);
 					continue;
 				}
 			},
+			(_, _) => log::info!("No cells for app {} in block {}", app_id, block.number),
 		}
 	}
 }
