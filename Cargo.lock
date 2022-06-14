@@ -1885,7 +1885,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=3994c92#3994c92d6f6d453e18c0a9fca012e86697f5685f"
+source = "git+https://github.com/maticnetwork/avail.git?rev=f45a40e#f45a40e8ba63fd136f8f3c7b004ac8b6914b6210"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1900,7 +1900,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=3994c92#3994c92d6f6d453e18c0a9fca012e86697f5685f"
+source = "git+https://github.com/maticnetwork/avail.git?rev=f45a40e#f45a40e8ba63fd136f8f3c7b004ac8b6914b6210"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
