@@ -9,9 +9,8 @@ use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
 use crate::{
-	data::fetch_cells_from_ipfs,
+	data::{fetch_cells_from_ipfs, insert_into_ipfs},
 	rpc,
-	types::{cell_ipfs_record, cell_to_ipfs_block},
 };
 
 pub async fn run(
@@ -151,30 +150,8 @@ pub async fn run(
 						)
 						.unwrap();
 
-					// Push the randomly selected cells to IPFS
-					for cell in rpc_fetched {
-						if let Err(error) = ipfs.insert(cell_to_ipfs_block(cell.clone())) {
-							log::info!(
-								"Error pushing cell to IPFS: {}. Cell reference: {}",
-								error,
-								cell.reference(block_num)
-							);
-						}
-						// Add generated CID to DHT
-						if let Err(error) = ipfs
-							.put_record(cell_ipfs_record(&cell, block_num), ipfs_embed::Quorum::One)
-							.await
-						{
-							log::info!(
-								"Error inserting new record to DHT: {}. Cell reference: {}",
-								error,
-								cell.reference(block_num)
-							);
-						}
-					}
-					if let Err(error) = ipfs.flush().await {
-						log::info!("Error flushing data to disk: {}", error,);
-					};
+					insert_into_ipfs(&ipfs, block_num, rpc_fetched).await;
+					log::info!("Cells inserted into IPFS for block {block_num}");
 				},
 				Err(msg) => {
 					log::info!("error: {}", msg);

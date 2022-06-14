@@ -9,10 +9,15 @@ use async_std::stream::StreamExt;
 use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
-	Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig,
-	PeerId, StorageConfig,
+	Block, Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr,
+	NetworkConfig, PeerId, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
+use libipld::{
+	multihash::{Code, MultihashDigest},
+	IpldCodec,
+};
+use multihash::Multihash;
 
 use crate::types::Event;
 
@@ -108,6 +113,50 @@ async fn fetch_cell_from_ipfs(
 			content: block.data().try_into()?,
 		})
 	})
+}
+
+fn cell_hash(cell: &Cell) -> Multihash { Code::Sha3_256.digest(&cell.content) }
+
+fn cell_cid(cell: &Cell) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), cell_hash(cell)) }
+
+fn cell_to_ipfs_block(cell: Cell) -> Block<DefaultParams> {
+	Block::<DefaultParams>::new(cell_cid(&cell), cell.content.to_vec()).unwrap()
+}
+
+fn cell_ipfs_record(cell: &Cell, block: u64) -> Record {
+	Record::new(
+		cell.reference(block).as_bytes().to_vec(),
+		cell_cid(cell).to_bytes(),
+	)
+}
+
+/// Inserts cells into IPFS along with corresponding DHT records. At the end, block store is flushed.
+/// There is no rollback, and errors will be logged and skipped,
+/// which means that we cannot rely on error logs as alert mechanism.
+///
+/// # Arguments
+///
+/// * `ipfs` - Reference to IPFS node
+/// * `block` - Block number
+/// * `cells` - Matrix cells to store into IPFS
+pub async fn insert_into_ipfs(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
+	// TODO: Should we encode block data?
+	// TODO: Should we optimize by storing multiple cells into single block (per AppID)?
+	// TODO: Return error in case when there are not successful inserts or put?
+	for cell in cells {
+		let reference = cell.reference(block);
+		let ipfs_block = cell_to_ipfs_block(cell.clone());
+		if let Err(error) = ipfs.insert(ipfs_block) {
+			log::info!("Fail to insert cell {reference} into IPFS: {error}");
+		}
+		let dht_record = cell_ipfs_record(&cell, block);
+		if let Err(error) = ipfs.put_record(dht_record, ipfs_embed::Quorum::One).await {
+			log::info!("Fail to put record for cell {reference} to DHT: {error}");
+		}
+	}
+	if let Err(error) = ipfs.flush().await {
+		log::info!("Cannot flush IPFS data to disk: {error}");
+	};
 }
 
 pub async fn fetch_cells_from_ipfs(

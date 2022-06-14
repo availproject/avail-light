@@ -7,10 +7,10 @@ use rocksdb::DB;
 
 use crate::{
 	consts::APP_DATA_CF,
-	data::fetch_cells_from_ipfs,
+	data::{fetch_cells_from_ipfs, insert_into_ipfs},
 	proof::verify_proof,
 	rpc::get_kate_proof,
-	types::{cell_ipfs_record, cell_to_ipfs_block, ClientMsg},
+	types::ClientMsg,
 	util::layout_from_index,
 };
 
@@ -73,34 +73,8 @@ async fn process_block(
 		return Err(anyhow!("{} cells are not verified", cells.len() - count));
 	}
 
-	// TODO: If there are some invalid cells should we fail?
-
-	for cell in rpc_fetched {
-		if let Err(error) = ipfs.insert(cell_to_ipfs_block(cell.clone())) {
-			log::info!(
-				"Error pushing cell to IPFS: {}. Cell reference: {}",
-				error,
-				cell.reference(block.number)
-			);
-		}
-		// Add generated CID to DHT
-		if let Err(error) = ipfs
-			.put_record(
-				cell_ipfs_record(&cell, block.number),
-				ipfs_embed::Quorum::One,
-			)
-			.await
-		{
-			log::info!(
-				"Error inserting new record to DHT: {}. Cell reference: {}",
-				error,
-				cell.reference(block.number)
-			);
-		}
-	}
-	if let Err(error) = ipfs.flush().await {
-		log::info!("Error flushin data do disk: {}", error,);
-	};
+	insert_into_ipfs(ipfs, block.number, rpc_fetched).await;
+	log::info!("Cells inserted into IPFS for block {}", block.number);
 
 	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
