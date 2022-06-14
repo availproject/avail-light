@@ -116,7 +116,7 @@ pub async fn run(
 					db_3.put_cf(&cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
 						.context("failed to write confidence factor")?;
 
-					let conf = calculate_confidence(count);
+					let conf = calculate_confidence(count as u32);
 					log::info!("Confidence factor for block {}: {}", num, conf);
 
 					// push latest mined block's header into column family specified

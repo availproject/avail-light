@@ -69,6 +69,10 @@ async fn process_block(
 		block.number
 	);
 
+	if count < cells.len() {
+		return Err(anyhow!("{} cells are not verified", cells.len() - count));
+	}
+
 	// TODO: If there are some invalid cells should we fail?
 
 	for cell in rpc_fetched {

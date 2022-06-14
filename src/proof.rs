@@ -53,7 +53,7 @@ pub fn verify_proof(
 	total_cols: u16,
 	cells: Vec<Cell>,
 	commitment: Vec<u8>,
-) -> u32 {
+) -> usize {
 	let cpus = num_cpus::get();
 	let pool = threadpool::ThreadPool::new(cpus);
 	let (tx, rx) = channel::<bool>();
@@ -80,5 +80,5 @@ pub fn verify_proof(
 		});
 	}
 
-	rx.iter().take(jobs).filter(|&v| v).count() as u32
+	rx.iter().take(jobs).filter(|&v| v).count()
 }
