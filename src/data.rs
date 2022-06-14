@@ -2,7 +2,7 @@ extern crate anyhow;
 extern crate ipfs_embed;
 extern crate libipld;
 
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
@@ -18,8 +18,9 @@ use libipld::{
 	IpldCodec,
 };
 use multihash::Multihash;
+use rocksdb::DB;
 
-use crate::types::Event;
+use crate::{consts::APP_DATA_CF, types::Event};
 
 pub async fn init_ipfs(
 	seed: u64,
@@ -209,6 +210,25 @@ pub async fn fetch_cells_from_ipfs(
 
 	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
 	Ok((fetched, unfetched))
+}
+
+pub fn store_data_in_db(
+	db: Arc<DB>,
+	app_id: u32,
+	block_number: u64,
+	data: Vec<Vec<Vec<u8>>>,
+) -> Result<()> {
+	let key = format!("{app_id}:{block_number}");
+	let cf_handle = db
+		.cf_handle(APP_DATA_CF)
+		.context("failed to get cf handle")?;
+
+	db.put_cf(
+		&cf_handle,
+		key.as_bytes(),
+		serde_json::to_string(&data)?.as_bytes(),
+	)
+	.context("failed to write application data")
 }
 
 #[cfg(test)]
