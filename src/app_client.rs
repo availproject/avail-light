@@ -1,10 +1,13 @@
-use std::sync::{mpsc::Receiver, Arc};
+use std::{
+	collections::HashSet,
+	sync::{mpsc::Receiver, Arc},
+};
 
 use anyhow::{anyhow, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
-	reconstruct_app_extrinsics, DataCell, Position,
+	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
 use rocksdb::DB;
 
@@ -23,7 +26,7 @@ async fn process_block(
 	app_id: u32,
 	block: &ClientMsg,
 	data_positions: &Vec<Position>,
-	column_positions: &Vec<Position>,
+	column_positions: &[Position],
 ) -> Result<()> {
 	let data_positions_count = data_positions.len();
 	let block_number = block.number;
@@ -78,17 +81,16 @@ async fn process_block(
 		let ipfs_cells_count = ipfs_cells.len();
 		log::info!("Fetched {ipfs_cells_count} cells of block {block_number} from IPFS");
 
-		let mut column_rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
+		let mut cells = [cells.as_slice(), ipfs_cells.as_slice()].concat();
 
-		let column_rpc_cells_count = column_rpc_cells.len();
-		log::info!("Fetched {column_rpc_cells_count} cells of block {block_number} from RPC");
+		if !can_reconstruct(dimensions, column_positions, &cells) {
+			let column_rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
+			let column_rpc_cells_count = column_rpc_cells.len();
+			log::info!("Fetched {column_rpc_cells_count} cells of block {block_number} from RPC");
 
-		let cells = [
-			cells.as_slice(),
-			ipfs_cells.as_slice(),
-			column_rpc_cells.as_slice(),
-		]
-		.concat();
+			rpc_cells.extend(column_rpc_cells.clone());
+			cells.extend(column_rpc_cells);
+		}
 
 		let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
 		log::info!("Completed {count} verification rounds for block {block_number}");
@@ -97,7 +99,6 @@ async fn process_block(
 			return Err(anyhow!("{} cells are not verified", cells.len() - count));
 		}
 
-		rpc_cells.append(&mut column_rpc_cells);
 		insert_into_ipfs(ipfs, block.number, rpc_cells).await;
 		log::info!("Cells inserted into IPFS for block {}", block.number);
 
@@ -111,6 +112,20 @@ async fn process_block(
 	}
 
 	Ok(())
+}
+
+fn can_reconstruct(
+	dimensions: &ExtendedMatrixDimensions,
+	column_positions: &[Position],
+	cells: &[Cell],
+) -> bool {
+	let columns = column_positions.iter().map(|position| position.col);
+	HashSet::<u16>::from_iter(columns).iter().all(|&col| {
+		cells
+			.iter()
+			.filter(move |cell| cell.position.col == col)
+			.count() >= dimensions.rows / 2
+	})
 }
 
 pub async fn run(
