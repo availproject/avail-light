@@ -230,8 +230,3 @@ pub fn store_data_in_db(
 	)
 	.context("failed to write application data")
 }
-
-#[cfg(test)]
-mod tests {
-	// TODO
-}

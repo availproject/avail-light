@@ -1,6 +1,6 @@
 use std::sync::{mpsc::Receiver, Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
@@ -9,7 +9,6 @@ use kate_recovery::com::{
 use rocksdb::DB;
 
 use crate::{
-	consts::APP_DATA_CF,
 	data::{fetch_cells_from_ipfs, insert_into_ipfs, store_data_in_db},
 	proof::verify_proof,
 	rpc::get_kate_proof,
@@ -61,11 +60,9 @@ async fn process_block(
 
 		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-		// TODO: Return Result<Vec<Vec<u8>> instead
-		let decoded = decode_app_extrinsics(layout, dimensions, data_cells, app_id)?;
-		let data = decoded.into_iter().flat_map(|(_, v)| v).collect::<Vec<_>>();
-		let data_count = data.len();
+		let data = decode_app_extrinsics(layout, dimensions, data_cells, app_id)?;
 
+		let data_count = data.len();
 		store_data_in_db(db, app_id, block_number, data)?;
 		log::info!("Stored {data_count} data into database");
 	} else {
@@ -106,11 +103,9 @@ async fn process_block(
 
 		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-		// TODO: Return Result<Vec<Vec<u8>> instead
-		let decoded = reconstruct_app_extrinsics(layout, dimensions, data_cells, Some(app_id))?;
-		let data = decoded.into_iter().flat_map(|(_, v)| v).collect::<Vec<_>>();
-		let data_count = data.len();
+		let data = reconstruct_app_extrinsics(layout, dimensions, data_cells, app_id)?;
 
+		let data_count = data.len();
 		store_data_in_db(db, app_id, block_number, data)?;
 		log::info!("Stored {data_count} data into database");
 	}
