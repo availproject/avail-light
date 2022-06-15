@@ -10,14 +10,13 @@ use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
 	Block, Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr,
-	NetworkConfig, PeerId, Record, StorageConfig,
+	NetworkConfig, PeerId, Quorum, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
 use libipld::{
 	multihash::{Code, MultihashDigest},
 	IpldCodec,
 };
-use multihash::Multihash;
 use rocksdb::DB;
 
 use crate::{consts::APP_DATA_CF, types::Event};
@@ -102,7 +101,7 @@ async fn fetch_cell_from_ipfs(
 
 	log::trace!("Getting DHT record for reference {}", reference);
 	let cid = ipfs
-		.get_record(record_key, ipfs_embed::Quorum::One)
+		.get_record(record_key, Quorum::One)
 		.await
 		.map(|record| record[0].record.value.to_vec())
 		.and_then(|value| Cid::try_from(value).context("Invalid CID value"))?;
@@ -116,24 +115,32 @@ async fn fetch_cell_from_ipfs(
 	})
 }
 
-fn cell_hash(cell: &Cell) -> Multihash { Code::Sha3_256.digest(&cell.content) }
+struct IpfsCell(Cell);
 
-fn cell_cid(cell: &Cell) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), cell_hash(cell)) }
+impl IpfsCell {
+	fn reference(&self, block: u64) -> String { self.0.reference(block) }
 
-fn cell_to_ipfs_block(cell: Cell) -> Block<DefaultParams> {
-	Block::<DefaultParams>::new(cell_cid(&cell), cell.content.to_vec()).unwrap()
-}
+	fn cid(&self) -> Cid {
+		let hash = Code::Sha3_256.digest(&self.0.content);
+		Cid::new_v1(IpldCodec::Raw.into(), hash)
+	}
 
-fn cell_ipfs_record(cell: &Cell, block: u64) -> Record {
-	Record::new(
-		cell.reference(block).as_bytes().to_vec(),
-		cell_cid(cell).to_bytes(),
-	)
+	fn ipfs_block(&self) -> Block<DefaultParams> {
+		Block::<DefaultParams>::new(self.cid(), self.0.content.to_vec()).unwrap()
+	}
+
+	fn dht_record(&self, block: u64) -> Record {
+		Record::new(
+			self.0.reference(block).as_bytes().to_vec(),
+			self.cid().to_bytes(),
+		)
+	}
 }
 
 /// Inserts cells into IPFS along with corresponding DHT records. At the end, block store is flushed.
 /// There is no rollback, and errors will be logged and skipped,
 /// which means that we cannot rely on error logs as alert mechanism.
+/// NOTE: Block data is not encoded and storing block per cell could be optimal solution.
 ///
 /// # Arguments
 ///
@@ -141,17 +148,12 @@ fn cell_ipfs_record(cell: &Cell, block: u64) -> Record {
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into IPFS
 pub async fn insert_into_ipfs(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
-	// TODO: Should we encode block data?
-	// TODO: Should we optimize by storing multiple cells into single block (per AppID)?
-	// TODO: Return error in case when there are not successful inserts or put?
-	for cell in cells {
+	for cell in cells.into_iter().map(IpfsCell) {
 		let reference = cell.reference(block);
-		let ipfs_block = cell_to_ipfs_block(cell.clone());
-		if let Err(error) = ipfs.insert(ipfs_block) {
-			log::info!("Fail to insert cell {reference} into IPFS: {error}");
+		if let Err(error) = ipfs.insert(cell.ipfs_block()) {
+			log::info!("Fail to insert cell {reference} into IPFS: {error}",);
 		}
-		let dht_record = cell_ipfs_record(&cell, block);
-		if let Err(error) = ipfs.put_record(dht_record, ipfs_embed::Quorum::One).await {
+		if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
 			log::info!("Fail to put record for cell {reference} to DHT: {error}");
 		}
 	}
