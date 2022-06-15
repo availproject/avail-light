@@ -51,7 +51,7 @@ pub fn verify_proof(
 	block_num: u64,
 	total_rows: u16,
 	total_cols: u16,
-	cells: Vec<Cell>,
+	cells: &[Cell],
 	commitment: Vec<u8>,
 ) -> usize {
 	let cpus = num_cpus::get();
@@ -60,7 +60,7 @@ pub fn verify_proof(
 	let jobs = cells.len();
 	let commitment = Arc::new(commitment);
 
-	for cell in cells {
+	for cell in cells.iter().cloned() {
 		let row = cell.position.row;
 		let col = cell.position.col;
 		let tx = tx.clone();

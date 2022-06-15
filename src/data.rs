@@ -216,7 +216,7 @@ pub fn store_data_in_db(
 	db: Arc<DB>,
 	app_id: u32,
 	block_number: u64,
-	data: Vec<Vec<u8>>,
+	data: &Vec<Vec<u8>>,
 ) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
@@ -226,7 +226,7 @@ pub fn store_data_in_db(
 	db.put_cf(
 		&cf_handle,
 		key.as_bytes(),
-		serde_json::to_string(&data)?.as_bytes(),
+		serde_json::to_string(data)?.as_bytes(),
 	)
 	.context("failed to write application data")
 }

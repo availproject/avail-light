@@ -96,13 +96,8 @@ pub async fn run(
 						continue;
 					}
 
-					let count = proof::verify_proof(
-						num,
-						max_rows,
-						max_cols,
-						cells.clone(),
-						commitment.clone(),
-					);
+					let count =
+						proof::verify_proof(num, max_rows, max_cols, &cells, commitment.clone());
 					log::info!(
 						"Completed {} verification rounds for block {}\t{:?}",
 						count,

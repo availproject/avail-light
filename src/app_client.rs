@@ -28,89 +28,85 @@ async fn process_block(
 	data_positions: &Vec<Position>,
 	column_positions: &[Position],
 ) -> Result<()> {
-	let data_positions_count = data_positions.len();
 	let block_number = block.number;
-	let dimensions = &block.dimensions;
-	let rows = block.dimensions.rows as u16;
-	let cols = block.dimensions.cols as u16;
-	let commitments = block.commitment.clone();
 
-	log::info!("Found {data_positions_count} cells for app {app_id} in block {block_number}");
+	log::info!(
+		"Found {count} cells for app {app_id} in block {block_number}",
+		count = data_positions.len()
+	);
 
-	let (ipfs_cells, unfetched) = fetch_cells_from_ipfs(ipfs, block.number, data_positions).await?;
+	let (mut ipfs_cells, unfetched) =
+		fetch_cells_from_ipfs(ipfs, block.number, data_positions).await?;
 
-	let ipfs_cells_count = ipfs_cells.len();
-	log::info!("Fetched {ipfs_cells_count} cells of block {block_number} from IPFS");
+	log::info!(
+		"Fetched {count} cells of block {block_number} from IPFS",
+		count = ipfs_cells.len()
+	);
 
 	let mut rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
 
-	let rpc_cells_count = rpc_cells.len();
-	log::info!("Fetched {rpc_cells_count} cells of block {block_number} from RPC");
+	log::info!(
+		"Fetched {count} cells of block {block_number} from RPC",
+		count = rpc_cells.len()
+	);
+
+	let reconstruct = data_positions.len() > (ipfs_cells.len() + rpc_cells.len());
+
+	if reconstruct {
+		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
+		let column_positions = diff_positions(column_positions, &fetched);
+		let (mut column_ipfs_cells, unfetched) =
+			fetch_cells_from_ipfs(ipfs, block_number, &column_positions).await?;
+
+		log::info!(
+			"Fetched {count} cells of block {block_number} from IPFS for reconstruction",
+			count = column_ipfs_cells.len()
+		);
+
+		ipfs_cells.append(&mut column_ipfs_cells);
+		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
+		if !can_reconstruct(&block.dimensions, &column_positions, &fetched) {
+			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched).await?;
+
+			log::info!(
+				"Fetched {count} cells of block {block_number} from RPC for reconstruction",
+				count = column_rpc_cells.len()
+			);
+
+			rpc_cells.append(&mut column_rpc_cells);
+		}
+	};
 
 	let cells = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 
-	let missing_cells_count = data_positions.len() - cells.len();
-	if missing_cells_count == 0 {
-		let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
-		log::info!("Completed {count} verification rounds for block {block_number}");
+	let verified = verify_proof(
+		block_number,
+		block.dimensions.rows as u16,
+		block.dimensions.cols as u16,
+		&cells,
+		block.commitment.clone(),
+	);
 
-		if count < cells.len() {
-			return Err(anyhow!("{} cells are not verified", cells.len() - count));
-		}
+	log::info!("Completed {verified} verification rounds for block {block_number}");
 
-		insert_into_ipfs(ipfs, block.number, rpc_cells).await;
-		log::info!("Cells inserted into IPFS for block {}", block.number);
-
-		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
-		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-		let data = decode_app_extrinsics(layout, dimensions, data_cells, app_id)?;
-
-		let data_count = data.len();
-		store_data_in_db(db, app_id, block_number, data)?;
-		log::info!("Stored {data_count} data into database");
-	} else {
-		let diff_positions = column_positions
-			.iter()
-			.cloned()
-			.filter(|position| !cells.iter().any(|cell| cell.position.eq(position)))
-			.collect::<Vec<_>>();
-
-		let (ipfs_cells, unfetched) =
-			fetch_cells_from_ipfs(ipfs, block.number, &diff_positions).await?;
-
-		let ipfs_cells_count = ipfs_cells.len();
-		log::info!("Fetched {ipfs_cells_count} cells of block {block_number} from IPFS");
-
-		let mut cells = [cells.as_slice(), ipfs_cells.as_slice()].concat();
-
-		if !can_reconstruct(dimensions, column_positions, &cells) {
-			let column_rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
-			let column_rpc_cells_count = column_rpc_cells.len();
-			log::info!("Fetched {column_rpc_cells_count} cells of block {block_number} from RPC");
-
-			rpc_cells.extend(column_rpc_cells.clone());
-			cells.extend(column_rpc_cells);
-		}
-
-		let count = verify_proof(block_number, rows, cols, cells.clone(), commitments);
-		log::info!("Completed {count} verification rounds for block {block_number}");
-
-		if count < cells.len() {
-			return Err(anyhow!("{} cells are not verified", cells.len() - count));
-		}
-
-		insert_into_ipfs(ipfs, block.number, rpc_cells).await;
-		log::info!("Cells inserted into IPFS for block {}", block.number);
-
-		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
-		let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-		let data = reconstruct_app_extrinsics(layout, dimensions, data_cells, app_id)?;
-
-		let data_count = data.len();
-		store_data_in_db(db, app_id, block_number, data)?;
-		log::info!("Stored {data_count} data into database");
+	if cells.len() > verified {
+		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
 	}
 
+	insert_into_ipfs(ipfs, block.number, rpc_cells).await;
+
+	log::info!("Cells inserted into IPFS for block {block_number}");
+
+	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
+	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
+	let data = if reconstruct {
+		reconstruct_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?
+	} else {
+		decode_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?
+	};
+
+	store_data_in_db(db, app_id, block_number, &data)?;
+	log::info!("Stored {count} data into database", count = data.len());
 	Ok(())
 }
 
@@ -126,6 +122,14 @@ fn can_reconstruct(
 			.filter(move |cell| cell.position.col == col)
 			.count() >= dimensions.rows / 2
 	})
+}
+
+fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
+	positions
+		.iter()
+		.cloned()
+		.filter(|position| !cells.iter().any(|cell| cell.position.eq(position)))
+		.collect::<Vec<_>>()
 }
 
 pub async fn run(

@@ -127,11 +127,7 @@ pub async fn run(
 					);
 
 					let count = crate::proof::verify_proof(
-						block_num,
-						max_rows,
-						max_cols,
-						cells.clone(),
-						commitment,
+						block_num, max_rows, max_cols, &cells, commitment,
 					);
 					log::info!(
 						"Completed {} verification rounds for block {}\t{:?}",
