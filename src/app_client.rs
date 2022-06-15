@@ -64,8 +64,9 @@ async fn process_block(
 		);
 
 		ipfs_cells.append(&mut column_ipfs_cells);
+		let columns = columns(&column_positions);
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
-		if !can_reconstruct(&block.dimensions, &column_positions, &fetched) {
+		if !can_reconstruct(&block.dimensions, &columns, &fetched) {
 			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched).await?;
 
 			log::info!(
@@ -110,13 +111,15 @@ async fn process_block(
 	Ok(())
 }
 
-fn can_reconstruct(
-	dimensions: &ExtendedMatrixDimensions,
-	column_positions: &[Position],
-	cells: &[Cell],
-) -> bool {
-	let columns = column_positions.iter().map(|position| position.col);
-	HashSet::<u16>::from_iter(columns).iter().all(|&col| {
+fn columns(positions: &[Position]) -> Vec<u16> {
+	let columns = positions.iter().map(|position| position.col);
+	HashSet::<u16>::from_iter(columns)
+		.into_iter()
+		.collect::<Vec<u16>>()
+}
+
+fn can_reconstruct(dimensions: &ExtendedMatrixDimensions, columns: &[u16], cells: &[Cell]) -> bool {
+	columns.iter().all(|&col| {
 		cells
 			.iter()
 			.filter(move |cell| cell.position.col == col)
@@ -139,10 +142,11 @@ pub async fn run(
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
 ) {
-	log::info!("Starting for app {}...", app_id);
+	log::info!("Starting for app {app_id}...");
 
 	for block in block_receive {
-		log::info!("Block {} available", block.number);
+		let block_number = block.number;
+		log::info!("Block {block_number} available");
 		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 
 		match (
@@ -161,11 +165,75 @@ pub async fn run(
 				)
 				.await
 				{
-					log::error!("Cannot process block {}: {}", block.number, error);
+					log::error!("Cannot process block {block_number}: {error}");
 					continue;
 				}
 			},
-			(_, _) => log::info!("No cells for app {} in block {}", app_id, block.number),
+			(_, _) => log::info!("No cells for app {app_id} in block {block_number}"),
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
+
+	use super::{can_reconstruct, diff_positions};
+
+	fn position(row: u16, col: u16) -> Position { Position { row, col } }
+
+	fn empty_cell(row: u16, col: u16) -> Cell {
+		Cell {
+			position: Position { row, col },
+			content: [0u8; 80],
+		}
+	}
+
+	#[test]
+	fn test_can_reconstruct() {
+		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
+		let columns = vec![0, 1];
+		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
+		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(1, 0), empty_cell(0, 1)];
+		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(1, 0), empty_cell(1, 1)];
+		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(0, 0), empty_cell(1, 1)];
+		assert!(can_reconstruct(&dimensions, &columns, &cells));
+	}
+
+	#[test]
+	fn test_cannot_reconstruct() {
+		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
+		let columns = vec![0, 1];
+		let cells = vec![empty_cell(0, 0)];
+		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(0, 1)];
+		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(1, 0)];
+		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(1, 1)];
+		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		let cells = vec![empty_cell(0, 2), empty_cell(0, 3)];
+		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+	}
+
+	#[test]
+	fn test_diff_positions() {
+		let positions = vec![position(0, 0), position(1, 1)];
+		let cells = vec![empty_cell(0, 0), empty_cell(1, 1)];
+		assert_eq!(diff_positions(&positions, &cells).len(), 0);
+
+		let positions = vec![position(0, 0), position(1, 1)];
+		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
+		assert_eq!(diff_positions(&positions, &cells).len(), 1);
+		assert_eq!(diff_positions(&positions, &cells)[0], position(1, 1));
+
+		let positions = vec![position(0, 0), position(1, 1)];
+		let cells = vec![empty_cell(1, 0), empty_cell(0, 1)];
+		assert_eq!(diff_positions(&positions, &cells).len(), 2);
+		assert_eq!(diff_positions(&positions, &cells)[0], position(0, 0));
+		assert_eq!(diff_positions(&positions, &cells)[1], position(1, 1));
 	}
 }
