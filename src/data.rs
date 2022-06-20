@@ -2,19 +2,24 @@ extern crate anyhow;
 extern crate ipfs_embed;
 extern crate libipld;
 
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
 use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
-	Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig,
-	PeerId, StorageConfig,
+	Block, Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr,
+	NetworkConfig, PeerId, Quorum, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
+use libipld::{
+	multihash::{Code, MultihashDigest},
+	IpldCodec,
+};
+use rocksdb::DB;
 
-use crate::types::Event;
+use crate::{consts::APP_DATA_CF, types::Event};
 
 pub async fn init_ipfs(
 	seed: u64,
@@ -96,7 +101,7 @@ async fn fetch_cell_from_ipfs(
 
 	log::trace!("Getting DHT record for reference {}", reference);
 	let cid = ipfs
-		.get_record(record_key, ipfs_embed::Quorum::One)
+		.get_record(record_key, Quorum::One)
 		.await
 		.map(|record| record[0].record.value.to_vec())
 		.and_then(|value| Cid::try_from(value).context("Invalid CID value"))?;
@@ -108,6 +113,53 @@ async fn fetch_cell_from_ipfs(
 			content: block.data().try_into()?,
 		})
 	})
+}
+
+struct IpfsCell(Cell);
+
+impl IpfsCell {
+	fn reference(&self, block: u64) -> String { self.0.reference(block) }
+
+	fn cid(&self) -> Cid {
+		let hash = Code::Sha3_256.digest(&self.0.content);
+		Cid::new_v1(IpldCodec::Raw.into(), hash)
+	}
+
+	fn ipfs_block(&self) -> Block<DefaultParams> {
+		Block::<DefaultParams>::new(self.cid(), self.0.content.to_vec()).unwrap()
+	}
+
+	fn dht_record(&self, block: u64) -> Record {
+		Record::new(
+			self.0.reference(block).as_bytes().to_vec(),
+			self.cid().to_bytes(),
+		)
+	}
+}
+
+/// Inserts cells into IPFS along with corresponding DHT records. At the end, block store is flushed.
+/// There is no rollback, and errors will be logged and skipped,
+/// which means that we cannot rely on error logs as alert mechanism.
+/// NOTE: Block data is not encoded and storing block per cell could be optimal solution.
+///
+/// # Arguments
+///
+/// * `ipfs` - Reference to IPFS node
+/// * `block` - Block number
+/// * `cells` - Matrix cells to store into IPFS
+pub async fn insert_into_ipfs(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
+	for cell in cells.into_iter().map(IpfsCell) {
+		let reference = cell.reference(block);
+		if let Err(error) = ipfs.insert(cell.ipfs_block()) {
+			log::info!("Fail to insert cell {reference} into IPFS: {error}",);
+		}
+		if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
+			log::info!("Fail to put record for cell {reference} to DHT: {error}");
+		}
+	}
+	if let Err(error) = ipfs.flush().await {
+		log::info!("Cannot flush IPFS data to disk: {error}");
+	};
 }
 
 pub async fn fetch_cells_from_ipfs(
@@ -162,7 +214,21 @@ pub async fn fetch_cells_from_ipfs(
 	Ok((fetched, unfetched))
 }
 
-#[cfg(test)]
-mod tests {
-	// TODO
+pub fn store_data_in_db(
+	db: Arc<DB>,
+	app_id: u32,
+	block_number: u64,
+	data: &Vec<Vec<u8>>,
+) -> Result<()> {
+	let key = format!("{app_id}:{block_number}");
+	let cf_handle = db
+		.cf_handle(APP_DATA_CF)
+		.context("failed to get cf handle")?;
+
+	db.put_cf(
+		&cf_handle,
+		key.as_bytes(),
+		serde_json::to_string(data)?.as_bytes(),
+	)
+	.context("failed to write application data")
 }
