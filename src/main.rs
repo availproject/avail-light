@@ -25,7 +25,6 @@ mod proof;
 mod rpc;
 mod sync_client;
 mod types;
-mod util;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
