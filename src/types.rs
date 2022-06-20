@@ -1,7 +1,7 @@
 extern crate ipfs_embed;
 
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
-use kate_recovery::com::ExtendedMatrixDimensions;
+use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -241,12 +241,6 @@ pub struct ExtrinsicsRoot {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Digest {
 	logs: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AppDataIndex {
-	pub size: u32,
-	pub index: Vec<(u32, u32)>,
 }
 
 #[derive(Deserialize, Debug)]
