@@ -1,13 +1,8 @@
 extern crate ipfs_embed;
 
 use codec::{Decode, Encode};
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId, Record};
-use kate_recovery::com::{Cell, ExtendedMatrixDimensions};
-use libipld::{
-	multihash::{Code, MultihashDigest},
-	IpldCodec,
-};
-use multihash::Multihash;
+use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
+use kate_recovery::com::ExtendedMatrixDimensions;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -277,24 +272,6 @@ impl BlockProofResponse {
 			.chunks_exact(CELL_WITH_PROOF_SIZE)
 			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"))
 	}
-}
-
-pub fn cell_hash(cell: &Cell) -> Multihash { Code::Sha3_256.digest(&cell.content) }
-
-pub fn cell_cid(cell: &Cell) -> Cid { Cid::new_v1(IpldCodec::Raw.into(), cell_hash(cell)) }
-
-// Block data isn't encoded
-// TODO: optimization - multiple cells inside a single block (per appID)
-// TODO: error handling
-pub fn cell_to_ipfs_block(cell: Cell) -> IpfsBlock<DefaultParams> {
-	IpfsBlock::<DefaultParams>::new(cell_cid(&cell), cell.content.to_vec()).unwrap()
-}
-
-pub fn cell_ipfs_record(cell: &Cell, block: u64) -> Record {
-	Record::new(
-		cell.reference(block).as_bytes().to_vec(),
-		cell_cid(cell).to_bytes(),
-	)
 }
 
 #[derive(Deserialize, Debug)]
