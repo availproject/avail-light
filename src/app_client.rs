@@ -16,7 +16,6 @@ use crate::{
 	proof::verify_proof,
 	rpc::get_kate_proof,
 	types::ClientMsg,
-	util::layout_from_index,
 };
 
 async fn process_block(
@@ -104,12 +103,11 @@ async fn process_block(
 
 	log::info!("Cells inserted into IPFS for block {block_number}");
 
-	let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
 	let data = if reconstruct {
-		reconstruct_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?
+		reconstruct_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)?
 	} else {
-		decode_app_extrinsics(layout, &block.dimensions, data_cells, app_id)?
+		decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)?
 	};
 
 	store_data_in_db(db, app_id, block_number, &data)?;
@@ -154,11 +152,10 @@ pub async fn run(
 	for block in block_receive {
 		let block_number = block.number;
 		log::info!("Block {block_number} available");
-		let layout = &layout_from_index(&block.lookup.index, block.lookup.size);
 
 		match (
-			app_specific_cells(layout, &block.dimensions, app_id),
-			app_specific_column_cells(layout, &block.dimensions, app_id),
+			app_specific_cells(&block.lookup, &block.dimensions, app_id),
+			app_specific_column_cells(&block.lookup, &block.dimensions, app_id),
 		) {
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
