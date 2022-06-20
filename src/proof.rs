@@ -51,16 +51,16 @@ pub fn verify_proof(
 	block_num: u64,
 	total_rows: u16,
 	total_cols: u16,
-	cells: Vec<Cell>,
+	cells: &[Cell],
 	commitment: Vec<u8>,
-) -> u32 {
+) -> usize {
 	let cpus = num_cpus::get();
 	let pool = threadpool::ThreadPool::new(cpus);
 	let (tx, rx) = channel::<bool>();
 	let jobs = cells.len();
 	let commitment = Arc::new(commitment);
 
-	for cell in cells {
+	for cell in cells.iter().cloned() {
 		let row = cell.position.row;
 		let col = cell.position.col;
 		let tx = tx.clone();
@@ -80,5 +80,5 @@ pub fn verify_proof(
 		});
 	}
 
-	rx.iter().take(jobs).filter(|&v| v).count() as u32
+	rx.iter().take(jobs).filter(|&v| v).count()
 }
