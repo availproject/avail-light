@@ -110,7 +110,10 @@ pub async fn do_main() -> Result<()> {
 	let db_0 = db.clone();
 	let cfg_ = cfg.clone();
 	thread::spawn(move || {
-		http::run_server(db_0, cfg_, cell_query_tx).unwrap();
+		// TODO: Since run_server is async, does this error handling make sense?
+		if let Err(error) = http::run_server(db_0, cfg_, cell_query_tx) {
+			log::error!("Cannot run http server: {error}")
+		};
 	});
 
 	// communication channels being established for talking to
@@ -122,8 +125,8 @@ pub async fn do_main() -> Result<()> {
 	let bootstrap_nodes = &cfg
 		.bootstraps
 		.iter()
-		.map(|(a, b)| (PeerId::from_str(a).expect("Valid peer id"), b.clone()))
-		.collect::<Vec<(PeerId, Multiaddr)>>();
+		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
+		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()?;
 
 	let ipfs = data::init_ipfs(
 		cfg.ipfs_seed,
