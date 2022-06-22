@@ -1,7 +1,3 @@
-extern crate anyhow;
-extern crate ipfs_embed;
-extern crate libipld;
-
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
@@ -19,7 +15,10 @@ use libipld::{
 };
 use rocksdb::DB;
 
-use crate::{consts::APP_DATA_CF, types::Event};
+use crate::{
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	types::{Event, Header},
+};
 
 pub async fn init_ipfs(
 	seed: u64,
@@ -28,9 +27,9 @@ pub async fn init_ipfs(
 	bootstrap_nodes: &[(PeerId, Multiaddr)],
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
 	let sweep_interval = Duration::from_secs(600);
-	let path_buf = std::path::PathBuf::from_str(path).unwrap();
+	let path_buf = std::path::PathBuf::from_str(path)?;
 	let storage = StorageConfig::new(Some(path_buf), None, 10, sweep_interval);
-	let mut network = NetworkConfig::new(keypair(seed));
+	let mut network = NetworkConfig::new(keypair(seed)?);
 	network.mdns = None;
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
@@ -52,7 +51,7 @@ pub async fn init_ipfs(
 				}
 			})
 			.await
-			.expect("Connection established");
+			.context("connection not established")?;
 		ipfs.bootstrap(&[node]).await?;
 	}
 
@@ -83,11 +82,11 @@ pub async fn log_ipfs_events(ipfs: Ipfs<IPFSDefaultParams>) {
 	}
 }
 
-fn keypair(i: u64) -> Keypair {
+fn keypair(i: u64) -> Result<Keypair> {
 	let mut keypair = [0; 32];
 	keypair[..8].copy_from_slice(&i.to_be_bytes());
-	let secret = SecretKey::from_bytes(keypair).unwrap();
-	Keypair::from(secret)
+	let secret = SecretKey::from_bytes(keypair).context("Cannot create keypair")?;
+	Ok(Keypair::from(secret))
 }
 
 async fn fetch_cell_from_ipfs(
@@ -126,7 +125,8 @@ impl IpfsCell {
 	}
 
 	fn ipfs_block(&self) -> Block<DefaultParams> {
-		Block::<DefaultParams>::new(self.cid(), self.0.content.to_vec()).unwrap()
+		Block::<DefaultParams>::new(self.cid(), self.0.content.to_vec())
+			.expect("hash matches the data")
 	}
 
 	fn dht_record(&self, block: u64) -> Record {
@@ -198,28 +198,24 @@ pub async fn fetch_cells_from_ipfs(
 		.zip(positions)
 		.partition(|(res, _)| res.is_ok());
 
+	for (result, position) in fetched.iter().chain(unfetched.iter()) {
+		let reference = position.reference(block_number);
+		match result {
+			Ok(_) => log::debug!("Fetched cell {reference} from IPFS"),
+			Err(error) => log::debug!("Error fetching cell {reference} from IPFS: {error}"),
+		}
+	}
+
 	let fetched = fetched
 		.into_iter()
-		.map(|e| {
-			let cell = e.0.unwrap();
-			log::debug!("Fetched cell {} from IPFS", cell.reference(block_number));
-			cell
-		})
-		.collect::<Vec<_>>();
+		.map(|(result, _)| result)
+		.collect::<Result<Vec<_>>>()?;
 
 	let unfetched = unfetched
 		.into_iter()
-		.map(|(result, position)| {
-			log::debug!(
-				"Error fetching cell {} from IPFS: {}",
-				position.reference(block_number),
-				result.unwrap_err()
-			);
-			position.clone()
-		})
+		.map(|(_, position)| position.clone())
 		.collect::<Vec<_>>();
 
-	log::info!("Number of cells fetched from IPFS: {}", fetched.len());
 	Ok((fetched, unfetched))
 }
 
@@ -240,4 +236,46 @@ pub fn store_data_in_db(
 		serde_json::to_string(data)?.as_bytes(),
 	)
 	.context("failed to write application data")
+}
+
+pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
+	let handle = db
+		.cf_handle(BLOCK_HEADER_CF)
+		.context("failed to get cf handle")?;
+
+	db.get_pinned_cf(&handle, block_number.to_be_bytes())
+		.context("failed to get block header")
+		.map(|value| value.is_some())
+}
+
+pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header) -> Result<()> {
+	let handle = db
+		.cf_handle(BLOCK_HEADER_CF)
+		.context("failed to get cf handle")?;
+
+	db.put_cf(
+		&handle,
+		block_number.to_be_bytes(),
+		serde_json::to_string(header)?.as_bytes(),
+	)
+	.context("failed to write block header")
+}
+
+pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
+	let handle = db
+		.cf_handle(CONFIDENCE_FACTOR_CF)
+		.context("failed to get cf handle")?;
+
+	db.get_pinned_cf(&handle, block_number.to_be_bytes())
+		.context("failed to get confidence")
+		.map(|value| value.is_some())
+}
+
+pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: usize) -> Result<()> {
+	let handle = db
+		.cf_handle(CONFIDENCE_FACTOR_CF)
+		.context("failed to get cf handle")?;
+
+	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
+		.context("failed to write confidence")
 }

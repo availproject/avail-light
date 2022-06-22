@@ -24,24 +24,16 @@ fn kc_verify_proof_wrapper(
 			);
 			match &verification.status {
 				Ok(()) => {
-					log::trace!("Verified cell ({}, {}) of block {}", row, col, block_num);
+					log::trace!("Verified cell ({row}, {col}) of block {block_num}");
 				},
 				Err(verification_err) => {
-					log::error!("Verification error: {:?}", verification_err);
-					log::error!("Failed for cell ({}, {}) of block {}", row, col, block_num);
+					log::error!("Verification for cell ({row}, {col}) of block {block_num} failed: {verification_err}");
 				},
 			}
-
 			verification.status.is_ok()
 		},
 		Err(error) => {
-			log::error!(
-				"Failed for cell ({}, {}) of block {} with error {}",
-				row,
-				col,
-				block_num,
-				error
-			);
+			log::error!("Verify failed for cell ({row}, {col}) of block {block_num}: {error}");
 			false
 		},
 	}
@@ -67,7 +59,7 @@ pub fn verify_proof(
 		let commitment = commitment.clone();
 
 		pool.execute(move || {
-			tx.send(kc_verify_proof_wrapper(
+			if let Err(error) = tx.send(kc_verify_proof_wrapper(
 				block_num,
 				row,
 				col,
@@ -75,8 +67,9 @@ pub fn verify_proof(
 				total_cols as usize,
 				&cell.content,
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
-			))
-			.unwrap();
+			)) {
+				log::error!("Failed to send proof verified message: {error}");
+			};
 		});
 	}
 

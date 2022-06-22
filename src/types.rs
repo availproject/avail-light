@@ -1,5 +1,6 @@
 extern crate ipfs_embed;
 
+use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -69,51 +70,63 @@ impl std::str::FromStr for Event {
 		Ok(match parts.next() {
 			Some("<new-listener") => Self::NewListener,
 			Some("<new-listen-addr") => {
-				let addr = parts.next().unwrap().parse()?;
+				let addr = parts.next().context("new-listen-addr missing")?.parse()?;
 				Self::NewListenAddr(addr)
 			},
 			Some("<expired-listen-addr") => {
-				let addr = parts.next().unwrap().parse()?;
+				let addr = parts
+					.next()
+					.context("expired-listen-addr missing")?
+					.parse()?;
 				Self::ExpiredListenAddr(addr)
 			},
 			Some("<listener-closed") => Self::ListenerClosed,
 			Some("<new-external-addr") => {
-				let addr = parts.next().unwrap().parse()?;
+				let addr = parts.next().context("new-external-addr missing")?.parse()?;
 				Self::NewExternalAddr(addr)
 			},
 			Some("<expired-external-addr") => {
-				let addr = parts.next().unwrap().parse()?;
+				let addr = parts
+					.next()
+					.context("expired-external-addr missing")?
+					.parse()?;
 				Self::ExpiredExternalAddr(addr)
 			},
 			Some("<discovered") => {
-				let peer = parts.next().unwrap().parse()?;
+				let peer = parts.next().context("discovered peer missing")?.parse()?;
 				Self::Discovered(peer)
 			},
 			Some("<unreachable") => {
-				let peer = parts.next().unwrap().parse()?;
+				let peer = parts.next().context("unreachable peer missing")?.parse()?;
 				Self::Unreachable(peer)
 			},
 			Some("<connected") => {
-				let peer = parts.next().unwrap().parse()?;
+				let peer = parts.next().context("connected peer missing")?.parse()?;
 				Self::Connected(peer)
 			},
 			Some("<disconnected") => {
-				let peer = parts.next().unwrap().parse()?;
+				let peer = parts.next().context("disconnected peer missing")?.parse()?;
 				Self::Disconnected(peer)
 			},
 			Some("<subscribed") => {
-				let peer = parts.next().unwrap().parse()?;
-				let topic = parts.next().unwrap().to_string();
+				let peer = parts.next().context("subscribed peer missing")?.parse()?;
+				let topic = parts
+					.next()
+					.context("subscribed topic missing")?
+					.to_string();
 				Self::Subscribed(peer, topic)
 			},
 			Some("<unsubscribed") => {
-				let peer = parts.next().unwrap().parse()?;
-				let topic = parts.next().unwrap().to_string();
+				let peer = parts.next().context("unsubscribed peer missing")?.parse()?;
+				let topic = parts
+					.next()
+					.context("unsubscribed topic missing")?
+					.to_string();
 				Self::Unsubscribed(peer, topic)
 			},
 			Some("<block") => {
-				let cid = parts.next().unwrap().parse()?;
-				let str_data = parts.next().unwrap();
+				let cid = parts.next().context("block cid missing")?.parse()?;
+				let str_data = parts.next().context("str_data missing")?;
 				let mut data = Vec::with_capacity(str_data.len() / 2);
 				for chunk in str_data.as_bytes().chunks(2) {
 					let s = std::str::from_utf8(chunk)?;
@@ -126,7 +139,7 @@ impl std::str::FromStr for Event {
 			Some("<synced") => Self::Synced,
 			Some("<bootstrapped") => Self::Bootstrapped,
 			Some("<newinfo") => {
-				let peer = parts.next().unwrap().parse()?;
+				let peer = parts.next().context("newinfo missing")?.parse()?;
 				Self::NewInfo(peer)
 			},
 			_ => return Err(anyhow::anyhow!("invalid event `{}`", s)),

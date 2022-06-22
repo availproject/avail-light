@@ -10,8 +10,9 @@ use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::{
-	consts,
-	data::{fetch_cells_from_ipfs, insert_into_ipfs},
+	data::{
+		fetch_cells_from_ipfs, insert_into_ipfs, store_block_header_in_db, store_confidence_in_db,
+	},
 	http::calculate_confidence,
 	proof, rpc,
 	types::{self, ClientMsg},
@@ -36,14 +37,6 @@ pub async fn run(
 			.context("ws-message(chain_subscribeFinalizedHeads) send failed")?;
 
 		log::info!("Connected to Substrate Node");
-
-		let db_3 = db.clone();
-		let cf_handle_0 = db_3
-			.cf_handle(consts::CONFIDENCE_FACTOR_CF)
-			.context("failed to get cf handle")?;
-		let cf_handle_1 = db_3
-			.cf_handle(consts::BLOCK_HEADER_CF)
-			.context("failed to get cf handle")?;
 
 		while let Some(message) = read.next().await {
 			let data = message?.into_data();
@@ -110,8 +103,7 @@ pub async fn run(
 					);
 
 					// write confidence factor into on-disk database
-					db_3.put_cf(&cf_handle_0, num.to_be_bytes(), count.to_be_bytes())
-						.context("failed to write confidence factor")?;
+					store_confidence_in_db(db.clone(), num, count)?;
 
 					let conf = calculate_confidence(count as u32);
 					log::info!("Confidence factor for block {}: {}", num, conf);
@@ -124,12 +116,7 @@ pub async fn run(
 					// another competing thread, which syncs all block headers
 					// in range [0, LATEST], where LATEST = latest block number
 					// when this process started
-					db_3.put_cf(
-						&cf_handle_1,
-						num.to_be_bytes(),
-						serde_json::to_string(&header)?.as_bytes(),
-					)
-					.context("failed to write block header")?;
+					store_block_header_in_db(db.clone(), num, header)?;
 
 					insert_into_ipfs(&ipfs, num, rpc_fetched).await;
 					log::info!("Cells inserted into IPFS for block {num}");

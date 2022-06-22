@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use crate::types::*;
 
 fn is_secure(url: &str) -> bool {
-	let re = Regex::new(r"^https://.*").unwrap();
+	let re = Regex::new(r"^https://.*").expect("valid regex");
 	re.is_match(url)
 }
 
@@ -85,7 +85,7 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
 pub async fn get_chain_header(url: &str) -> Result<Header> {
-	let payload = format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader"}}"#,);
+	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader"}"#;
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
@@ -209,8 +209,7 @@ pub async fn get_kate_proof(
 
 //rpc- only for checking the connecting to substrate node
 pub async fn get_chain(url: &str) -> Result<String> {
-	let payload: String =
-		format!(r#"{{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}}"#);
+	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}"#;
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
