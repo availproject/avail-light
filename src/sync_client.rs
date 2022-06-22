@@ -4,14 +4,108 @@ extern crate rocksdb;
 
 use std::{sync::Arc, time::SystemTime};
 
+use anyhow::{anyhow, Result};
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 
 use crate::{
-	data::{fetch_cells_from_ipfs, insert_into_ipfs},
+	data::{
+		fetch_cells_from_ipfs, insert_into_ipfs, is_block_header_in_db, is_confidence_in_db,
+		store_block_header_in_db, store_confidence_in_db,
+	},
 	rpc,
 };
+
+async fn process_block(
+	url: String,
+	store: Arc<DB>,
+	block_num: u64,
+	ipfs: Ipfs<DefaultParams>,
+	max_parallel_fetch_tasks: usize,
+) -> Result<()> {
+	if is_block_header_in_db(store.clone(), block_num)? {
+		return Ok(());
+	};
+
+	// if block header look up fails, only then comes here for
+	// fetching and storing block header as part of (light weight)
+	// syncing process
+	let begin = SystemTime::now();
+
+	let block_body = rpc::get_block_by_number(&url, block_num).await?;
+
+	log::info!(
+		"Block {block_num} app index {:?}",
+		block_body.header.app_data_lookup.index
+	);
+
+	store_block_header_in_db(store.clone(), block_num, &block_body.header)?;
+
+	log::info!("Synced block header of {block_num}\t{:?}", begin.elapsed()?);
+
+	// If it's found that this certain block is not verified
+	// then it'll be verified now
+	if is_confidence_in_db(store.clone(), block_num)? {
+		return Ok(());
+	};
+
+	let begin = SystemTime::now();
+
+	// TODO: Setting max rows * 2 to match extended matrix dimensions
+	let max_rows = block_body.header.extrinsics_root.rows * 2;
+	let max_cols = block_body.header.extrinsics_root.cols;
+	let commitment = block_body.header.extrinsics_root.commitment;
+	let block_num = block_body.header.number;
+	// now this is in `u64`
+	let positions = rpc::generate_random_cells(max_rows, max_cols);
+
+	let (ipfs_fetched, unfetched) =
+		fetch_cells_from_ipfs(&ipfs, block_num, &positions, max_parallel_fetch_tasks).await?;
+
+	log::info!(
+		"Number of cells fetched from IPFS for block {}: {}",
+		block_num,
+		ipfs_fetched.len()
+	);
+
+	let rpc_fetched = rpc::get_kate_proof(&url, block_num, unfetched).await?;
+
+	log::info!(
+		"Number of cells fetched from RPC for block {}: {}",
+		block_num,
+		rpc_fetched.len()
+	);
+
+	let mut cells = vec![];
+	cells.extend(ipfs_fetched);
+	cells.extend(rpc_fetched.clone());
+	if positions.len() > cells.len() {
+		return Err(anyhow!(
+			"Failed to fetch {} cells",
+			positions.len() - cells.len()
+		));
+	}
+
+	log::info!(
+		"Fetched {} cells of block {} for verification",
+		cells.len(),
+		block_num
+	);
+
+	let count = crate::proof::verify_proof(block_num, max_rows, max_cols, &cells, commitment);
+
+	log::info!(
+		"Completed {count} verification rounds for block {block_num}\t{:?}",
+		begin.elapsed()?
+	);
+	// write confidence factor into on-disk database
+	store_confidence_in_db(store.clone(), block_num, count)?;
+
+	insert_into_ipfs(&ipfs, block_num, rpc_fetched).await;
+	log::info!("Cells inserted into IPFS for block {block_num}");
+	Ok(())
+}
 
 pub async fn run(
 	url: String,
@@ -28,137 +122,12 @@ pub async fn run(
 		num_cpus::get(), // number of logical CPUs available on machine
 		// run those many concurrent syncing lightweight tasks, not threads
 		|(block_num, url, store, ipfs)| async move {
-			if let Ok(v) = store.get_pinned_cf(
-				&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
-				block_num.to_be_bytes(),
-			) {
-				if v.is_some() {
-					return;
-				}
-			};
-			// if block header look up fails, only then comes here for
-			// fetching and storing block header as part of (light weight)
-			// syncing process
-			let begin = SystemTime::now();
-
-			match super::rpc::get_block_by_number(&url, block_num).await {
-				Ok(block_body) => {
-					log::info!(
-						"Block {} app index {:?}",
-						block_num,
-						block_body.header.app_data_lookup.index
-					);
-					store
-						.put_cf(
-							&store.cf_handle(crate::consts::BLOCK_HEADER_CF).unwrap(),
-							block_num.to_be_bytes(),
-							serde_json::to_string(&block_body.header)
-								.unwrap()
-								.as_bytes(),
-						)
-						.unwrap();
-
-					log::info!(
-						"Synced block header of {}\t{:?}",
-						block_num,
-						begin.elapsed().unwrap()
-					);
-
-					// If it's found that this certain block is not verified
-					// then it'll be verified now
-					if let Ok(v) = store.get_pinned_cf(
-						&store
-							.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-							.unwrap(),
-						block_num.to_be_bytes(),
-					) {
-						if v.is_some() {
-							return;
-						}
-					};
-
-					let begin = SystemTime::now();
-
-					// TODO: Setting max rows * 2 to match extended matrix dimensions
-					let max_rows = block_body.header.extrinsics_root.rows * 2;
-					let max_cols = block_body.header.extrinsics_root.cols;
-					let commitment = block_body.header.extrinsics_root.commitment;
-					let block_num = block_body.header.number;
-					// now this is in `u64`
-					let positions = rpc::generate_random_cells(max_rows, max_cols);
-
-					let ipfs_fetch_result = fetch_cells_from_ipfs(
-						&ipfs,
-						block_num,
-						&positions,
-						max_parallel_fetch_tasks,
-					)
-					.await;
-					if ipfs_fetch_result.is_err() {
-						return;
-					}
-					let (ipfs_fetched, unfetched) = ipfs_fetch_result.unwrap();
-
-					log::info!(
-						"Number of cells fetched from IPFS for block {}: {}",
-						block_num,
-						ipfs_fetched.len()
-					);
-
-					let rpc_fetch_result = rpc::get_kate_proof(&url, block_num, unfetched).await;
-					if rpc_fetch_result.is_err() {
-						return;
-					}
-					let rpc_fetched = rpc_fetch_result.unwrap();
-
-					log::info!(
-						"Number of cells fetched from RPC for block {}: {}",
-						block_num,
-						rpc_fetched.len()
-					);
-
-					let mut cells = vec![];
-					cells.extend(ipfs_fetched);
-					cells.extend(rpc_fetched.clone());
-
-					if positions.len() > cells.len() {
-						log::error!("Failed to fetch {} cells", positions.len() - cells.len());
-						return;
-					}
-
-					log::info!(
-						"Fetched {} cells of block {} for verification",
-						cells.len(),
-						block_num
-					);
-
-					let count = crate::proof::verify_proof(
-						block_num, max_rows, max_cols, &cells, commitment,
-					);
-					log::info!(
-						"Completed {} verification rounds for block {}\t{:?}",
-						count,
-						block_num,
-						begin.elapsed().unwrap()
-					);
-					// write confidence factor into on-disk database
-					store
-						.put_cf(
-							&store
-								.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-								.unwrap(),
-							block_num.to_be_bytes(),
-							count.to_be_bytes(),
-						)
-						.unwrap();
-
-					insert_into_ipfs(&ipfs, block_num, rpc_fetched).await;
-					log::info!("Cells inserted into IPFS for block {block_num}");
-				},
-				Err(msg) => {
-					log::info!("error: {}", msg);
-				},
-			};
+			// TODO: Should we handle unprocessed blocks differently?
+			if let Err(error) =
+				process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks).await
+			{
+				log::error!("Cannot process block {block_num}: {error}");
+			}
 		},
 	);
 	fut.await;
