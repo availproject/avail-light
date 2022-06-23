@@ -11,15 +11,17 @@
 
 ## Introduction
 
-Naive approach for building one AVAIL light client, which will do following
+`avail-light` is a data availability light client that can do the following:
 
-- Listen for newly mined blocks
-- As soon as new block is available, attempts to eventually gain confidence by asking for proof from full client _( via JSON RPC interface )_ for `N` many cells where cell is defined as `{row, col}` pair. The number of cells are randomly sampled to fetch the confidence eventually.
+* Listen for finalised blocks.
+* Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
+  > As soon as a finalised block is available, the light client attempts to gain confidence by asking for a proof from a full 
+  client via JSON-RPC.
 
 ### Modes of Operation
 
-1. **Light-client Mode**: The basic mode of operation and is always active in whichever mode is operational. If an `App_ID` is not provided, this mode will commence. The client on each header it receives will do random sampling using RPC calls. It gets random cells with proofs in return, which verifies and calculates the confidence.
-2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the client finds out the `cols` related to the provided `App_ID` using `app_data_lookup` in the header. The client then fetches 50% of cells from `cols`, verifies them, and uses them to decode and reconstruct the `app_extrinsics_data`. 
+1. **Light-client Mode**: The basic mode of operation and is always active in whichever mode is operational. If an `App_ID` is not provided, this mode will commence. The client on each header it receives will do random sampling using RPC calls. It gets the cells with proofs it asked for, which then verifies and calculates the confidence.
+2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the client finds out the `cols` related to the provided `App_ID` using `app_data_lookup` in the header. It then downloades the relevant cells and the data is reconstructed.  
 3. **Fat-Client Mode**: The client retrieves the entire extended matrix using IPFS (if available) or fetches via RPC calls. It verifies all the cells and computes the CID mapping for the IPFS Pinning. It then decodes the extended matrix and reconstructs the `app_specific_data` related to all `App_IDs`.
 
 ## Installation
