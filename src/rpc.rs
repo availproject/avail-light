@@ -29,7 +29,7 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("failed to build HTTP POST request object(get_blockhash)")?;
+		.context("Failed to build chain_getBlockHash request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -39,14 +39,15 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(get_blockhash)")?;
+	.context("Failed to send chain_getBlockHash request")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(get_blockhash)")?;
-	let r: BlockHashResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(get_blockhash)")?;
-	Ok(r.result)
+		.context("Failed to get chain_getBlockHash response")?;
+
+	serde_json::from_slice::<BlockHashResponse>(&body)
+		.map(|r| r.result)
+		.context("Failed to parse chain_getBlockHash response")
 }
 
 pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
@@ -60,7 +61,7 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("failed to build HTTP POST request object(get_block_byhash)")?;
+		.context("Failed to build chain_getBlock request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -70,14 +71,14 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(get_block_byhash)")?;
+	.context("Failed to send chain_getBlock response")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(get_block_byhash)")?;
-	let r: BlockResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(get_block_byhash)")?;
-	Ok(r.result.block)
+		.context("Failed to get chain_getBlock response")?;
+	serde_json::from_slice::<BlockResponse>(&body)
+		.map(|r| r.result.block)
+		.context("Failed to parse chain_getBlock response")
 }
 
 // RPC for obtaining header of latest block mined by network
@@ -92,7 +93,7 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
+		.context("Failed to build chain_getHeader request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -102,14 +103,15 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(get_chainHeader)")?;
+	.context("Failed to send chain_getHeader request")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
-	let r: BlockHeaderResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(get_chainHeader)")?;
-	Ok(r.result)
+		.context("Failed to get chain_getHeader response")?;
+
+	serde_json::from_slice::<BlockHeaderResponse>(&body)
+		.map(|r| r.result)
+		.context("Failed to parse chain_getHeader response")
 }
 
 pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
@@ -174,7 +176,7 @@ pub async fn get_kate_proof(
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload.clone()))
-		.context("failed to build HTTP POST request object(kate_proof)")?;
+		.context("Failed to build kate_queryProof request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -184,20 +186,18 @@ pub async fn get_kate_proof(
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(kate_proof)")?;
+	.context("Failed to send kate_queryProof request")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(kate_proof)")?;
+		.context("Failed to get kate_queryProof response")?;
 
-	let proofs: BlockProofResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(kate_proof)")?;
-
-	let proofs_by_cell = proofs.by_cell(positions.len());
+	let proofs: BlockProofResponse =
+		serde_json::from_slice(&body).context("Failed to parse kate_queryProof response")?;
 
 	let cells = positions
 		.iter()
-		.zip(proofs_by_cell)
+		.zip(proofs.by_cell(positions.len()))
 		.map(|(position, &content)| Cell {
 			position: position.clone(),
 			content,
@@ -216,7 +216,7 @@ pub async fn get_chain(url: &str) -> Result<String> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("failed to build HTTP POST request object(get_chain)")?;
+		.context("Failed to build system_chain request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -226,14 +226,15 @@ pub async fn get_chain(url: &str) -> Result<String> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("failed to build HTTP POST request object(get_chain)")?;
+	.context("Failed to send system_chain request")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("failed to build HTTP POST request object(get_chain)")?;
-	let r: GetChainResponse = serde_json::from_slice(&body)
-		.context("failed to build HTTP POST request object(get_chain)")?;
-	Ok(r.result)
+		.context("Failed to get system_chain response")?;
+
+	serde_json::from_slice::<GetChainResponse>(&body)
+		.context("Failed to parse system_chain response")
+		.map(|r| r.result)
 }
 
 //parsing the urls given in the vector of urls
@@ -259,12 +260,10 @@ pub async fn check_connection(
 
 //fn to check the rpc_url is secure or not and if it is working properly to return
 pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
-	let mut rpc_url = String::new();
-	for x in full_node_rpc.iter() {
-		if let Ok(_v) = get_chain(x).await {
-			rpc_url.push_str(x);
-			break;
+	for rpc_url in full_node_rpc {
+		if (get_chain(&rpc_url).await).is_ok() {
+			return Ok(rpc_url.to_string());
 		}
 	}
-	Ok(rpc_url)
+	Err(anyhow!("No valid node rpc found from given list"))
 }
