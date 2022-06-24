@@ -4,7 +4,7 @@ extern crate rocksdb;
 
 use std::{sync::Arc, time::SystemTime};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
@@ -24,7 +24,9 @@ async fn process_block(
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
 ) -> Result<()> {
-	if is_block_header_in_db(store.clone(), block_num)? {
+	if is_block_header_in_db(store.clone(), block_num)
+		.context("Failed to check if block header is in DB")?
+	{
 		return Ok(());
 	};
 
@@ -33,20 +35,25 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let block_body = rpc::get_block_by_number(&url, block_num).await?;
+	let block_body = rpc::get_block_by_number(&url, block_num)
+		.await
+		.context("Failed to get block {block_num} by block number")?;
 
 	log::info!(
 		"Block {block_num} app index {:?}",
 		block_body.header.app_data_lookup.index
 	);
 
-	store_block_header_in_db(store.clone(), block_num, &block_body.header)?;
+	store_block_header_in_db(store.clone(), block_num, &block_body.header)
+		.context("Failed to store block header in DB")?;
 
 	log::info!("Synced block header of {block_num}\t{:?}", begin.elapsed()?);
 
 	// If it's found that this certain block is not verified
 	// then it'll be verified now
-	if is_confidence_in_db(store.clone(), block_num)? {
+	if is_confidence_in_db(store.clone(), block_num)
+		.context("Failed to check if confidence is in DB")?
+	{
 		return Ok(());
 	};
 
@@ -61,7 +68,9 @@ async fn process_block(
 	let positions = rpc::generate_random_cells(max_rows, max_cols);
 
 	let (ipfs_fetched, unfetched) =
-		fetch_cells_from_ipfs(&ipfs, block_num, &positions, max_parallel_fetch_tasks).await?;
+		fetch_cells_from_ipfs(&ipfs, block_num, &positions, max_parallel_fetch_tasks)
+			.await
+			.context("Failed to fetch cells from IPFS")?;
 
 	log::info!(
 		"Number of cells fetched from IPFS for block {}: {}",
@@ -69,7 +78,9 @@ async fn process_block(
 		ipfs_fetched.len()
 	);
 
-	let rpc_fetched = rpc::get_kate_proof(&url, block_num, unfetched).await?;
+	let rpc_fetched = rpc::get_kate_proof(&url, block_num, unfetched)
+		.await
+		.context("Failed to fetch cells from node RPC")?;
 
 	log::info!(
 		"Number of cells fetched from RPC for block {}: {}",
@@ -100,7 +111,8 @@ async fn process_block(
 		begin.elapsed()?
 	);
 	// write confidence factor into on-disk database
-	store_confidence_in_db(store.clone(), block_num, count)?;
+	store_confidence_in_db(store.clone(), block_num, count as u32)
+		.context("Failed to store confidence in DB")?;
 
 	insert_into_ipfs(&ipfs, block_num, rpc_fetched).await;
 	log::info!("Cells inserted into IPFS for block {block_num}");
@@ -118,17 +130,18 @@ pub async fn run(
 	log::info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block)
 		.map(move |b| (b, url.clone(), header_store.clone(), ipfs.clone()));
-	let fut = stream::iter(blocks).for_each_concurrent(
-		num_cpus::get(), // number of logical CPUs available on machine
-		// run those many concurrent syncing lightweight tasks, not threads
-		|(block_num, url, store, ipfs)| async move {
-			// TODO: Should we handle unprocessed blocks differently?
-			if let Err(error) =
-				process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks).await
-			{
-				log::error!("Cannot process block {block_num}: {error}");
-			}
-		},
-	);
-	fut.await;
+	stream::iter(blocks)
+		.for_each_concurrent(
+			num_cpus::get(), // number of logical CPUs available on machine
+			// run those many concurrent syncing lightweight tasks, not threads
+			|(block_num, url, store, ipfs)| async move {
+				// TODO: Should we handle unprocessed blocks differently?
+				if let Err(error) =
+					process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks).await
+				{
+					log::error!("Cannot process block {block_num}: {error}");
+				}
+			},
+		)
+		.await;
 }
