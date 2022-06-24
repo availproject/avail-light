@@ -34,7 +34,7 @@ pub async fn run(
 		write
 			.send(Message::Text(BODY.to_string()))
 			.await
-			.context("ws-message(chain_subscribeFinalizedHeads) send failed")?;
+			.context("Failed to send ws-message (chain_subscribeFinalizedHeads)")?;
 
 		log::info!("Connected to Substrate Node");
 
@@ -66,7 +66,8 @@ pub async fn run(
 
 					let (ipfs_fetched, unfetched) =
 						fetch_cells_from_ipfs(&ipfs, num, &positions, max_parallel_fetch_tasks)
-							.await?;
+							.await
+							.context("Failed to fetch cells from IPFS")?;
 
 					log::info!(
 						"Number of cells fetched from IPFS for block {}: {}",
@@ -74,7 +75,9 @@ pub async fn run(
 						ipfs_fetched.len()
 					);
 
-					let rpc_fetched = rpc::get_kate_proof(&rpc_url, num, unfetched).await?;
+					let rpc_fetched = rpc::get_kate_proof(&rpc_url, num, unfetched)
+						.await
+						.context("Failed to fetch cells from node RPC")?;
 
 					log::info!(
 						"Number of cells fetched from RPC for block {}: {}",
@@ -94,16 +97,13 @@ pub async fn run(
 					let count =
 						proof::verify_proof(num, max_rows, max_cols, &cells, commitment.clone());
 					log::info!(
-						"Completed {} verification rounds for block {}\t{:?}",
-						count,
-						num,
-						begin
-							.elapsed()
-							.context("failed to get complete verification")?
+						"Completed {count} verification rounds for block {num}\t{:?}",
+						begin.elapsed()?
 					);
 
 					// write confidence factor into on-disk database
-					store_confidence_in_db(db.clone(), num, count)?;
+					store_confidence_in_db(db.clone(), num, count as u32)
+						.context("Failed to store confidence in DB")?;
 
 					let conf = calculate_confidence(count as u32);
 					log::info!("Confidence factor for block {}: {}", num, conf);
@@ -116,7 +116,8 @@ pub async fn run(
 					// another competing thread, which syncs all block headers
 					// in range [0, LATEST], where LATEST = latest block number
 					// when this process started
-					store_block_header_in_db(db.clone(), num, header)?;
+					store_block_header_in_db(db.clone(), num, header)
+						.context("Failed to store block header in DB")?;
 
 					insert_into_ipfs(&ipfs, num, rpc_fetched).await;
 					log::info!("Cells inserted into IPFS for block {num}");
@@ -125,7 +126,7 @@ pub async fn run(
 					// that newly mined block has been received
 					block_tx
 						.send(types::ClientMsg::from(params.header))
-						.context("failed to send block message")?;
+						.context("Failed to send block message")?;
 				},
 				Err(error) => log::info!("Misconstructed Header: {:?}", error),
 			}

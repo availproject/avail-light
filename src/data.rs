@@ -51,7 +51,7 @@ pub async fn init_ipfs(
 				}
 			})
 			.await
-			.context("connection not established")?;
+			.context("Connection is not established")?;
 		ipfs.bootstrap(&[node]).await?;
 	}
 
@@ -228,54 +228,54 @@ pub fn store_data_in_db(
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(APP_DATA_CF)
-		.context("failed to get cf handle")?;
+		.context("Failed to get cf handle")?;
 
 	db.put_cf(
 		&cf_handle,
 		key.as_bytes(),
 		serde_json::to_string(data)?.as_bytes(),
 	)
-	.context("failed to write application data")
+	.context("Failed to write application data")
 }
 
 pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
-		.context("failed to get cf handle")?;
+		.context("Failed to get cf handle")?;
 
 	db.get_pinned_cf(&handle, block_number.to_be_bytes())
-		.context("failed to get block header")
+		.context("Failed to get block header")
 		.map(|value| value.is_some())
 }
 
 pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header) -> Result<()> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
-		.context("failed to get cf handle")?;
+		.context("Failed to get cf handle")?;
 
 	db.put_cf(
 		&handle,
 		block_number.to_be_bytes(),
 		serde_json::to_string(header)?.as_bytes(),
 	)
-	.context("failed to write block header")
+	.context("Failed to write block header")
 }
 
 pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
-		.context("failed to get cf handle")?;
+		.context("Failed to get cf handle")?;
 
 	db.get_pinned_cf(&handle, block_number.to_be_bytes())
-		.context("failed to get confidence")
+		.context("Failed to get confidence")
 		.map(|value| value.is_some())
 }
 
-pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: usize) -> Result<()> {
+pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: u32) -> Result<()> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
-		.context("failed to get cf handle")?;
+		.context("Failed to get cf handle")?;
 
 	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
-		.context("failed to write confidence")
+		.context("Failed to write confidence")
 }

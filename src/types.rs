@@ -71,63 +71,63 @@ impl std::str::FromStr for Event {
 		Ok(match parts.next() {
 			Some("<new-listener") => Self::NewListener,
 			Some("<new-listen-addr") => {
-				let addr = parts.next().context("new-listen-addr missing")?.parse()?;
+				let addr = parts.next().context("Missing new-listen-addr")?.parse()?;
 				Self::NewListenAddr(addr)
 			},
 			Some("<expired-listen-addr") => {
 				let addr = parts
 					.next()
-					.context("expired-listen-addr missing")?
+					.context("Missing expired-listen-addr")?
 					.parse()?;
 				Self::ExpiredListenAddr(addr)
 			},
 			Some("<listener-closed") => Self::ListenerClosed,
 			Some("<new-external-addr") => {
-				let addr = parts.next().context("new-external-addr missing")?.parse()?;
+				let addr = parts.next().context("Missing new-external-addr")?.parse()?;
 				Self::NewExternalAddr(addr)
 			},
 			Some("<expired-external-addr") => {
 				let addr = parts
 					.next()
-					.context("expired-external-addr missing")?
+					.context("Missing expired-external-addr")?
 					.parse()?;
 				Self::ExpiredExternalAddr(addr)
 			},
 			Some("<discovered") => {
-				let peer = parts.next().context("discovered peer missing")?.parse()?;
+				let peer = parts.next().context("Missing discovered peer")?.parse()?;
 				Self::Discovered(peer)
 			},
 			Some("<unreachable") => {
-				let peer = parts.next().context("unreachable peer missing")?.parse()?;
+				let peer = parts.next().context("Missing unreachable peer")?.parse()?;
 				Self::Unreachable(peer)
 			},
 			Some("<connected") => {
-				let peer = parts.next().context("connected peer missing")?.parse()?;
+				let peer = parts.next().context("Missing connected peer")?.parse()?;
 				Self::Connected(peer)
 			},
 			Some("<disconnected") => {
-				let peer = parts.next().context("disconnected peer missing")?.parse()?;
+				let peer = parts.next().context("Missing disconnected peer")?.parse()?;
 				Self::Disconnected(peer)
 			},
 			Some("<subscribed") => {
-				let peer = parts.next().context("subscribed peer missing")?.parse()?;
+				let peer = parts.next().context("Missing subscribed peer")?.parse()?;
 				let topic = parts
 					.next()
-					.context("subscribed topic missing")?
+					.context("Missing subscribed topic")?
 					.to_string();
 				Self::Subscribed(peer, topic)
 			},
 			Some("<unsubscribed") => {
-				let peer = parts.next().context("unsubscribed peer missing")?.parse()?;
+				let peer = parts.next().context("Missing unsubscribed peer")?.parse()?;
 				let topic = parts
 					.next()
-					.context("unsubscribed topic missing")?
+					.context("Missing unsubscribed topic")?
 					.to_string();
 				Self::Unsubscribed(peer, topic)
 			},
 			Some("<block") => {
-				let cid = parts.next().context("block cid missing")?.parse()?;
-				let str_data = parts.next().context("str_data missing")?;
+				let cid = parts.next().context("Missing block cid")?.parse()?;
+				let str_data = parts.next().context("Missing str_data")?;
 				let mut data = Vec::with_capacity(str_data.len() / 2);
 				for chunk in str_data.as_bytes().chunks(2) {
 					let s = std::str::from_utf8(chunk)?;
@@ -140,10 +140,10 @@ impl std::str::FromStr for Event {
 			Some("<synced") => Self::Synced,
 			Some("<bootstrapped") => Self::Bootstrapped,
 			Some("<newinfo") => {
-				let peer = parts.next().context("newinfo missing")?.parse()?;
+				let peer = parts.next().context("Missing newinfo")?.parse()?;
 				Self::NewInfo(peer)
 			},
-			_ => return Err(anyhow::anyhow!("invalid event `{}`", s)),
+			_ => return Err(anyhow::anyhow!("Invalid event `{s}`")),
 		})
 	}
 }
