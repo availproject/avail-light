@@ -14,7 +14,10 @@ use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 
-use crate::types::Mode;
+use crate::{
+	consts::{APP_DATA_CF, BLOCK_CID_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	types::{Mode, RuntimeConfig},
+};
 
 mod app_client;
 mod consts;
@@ -43,18 +46,57 @@ struct CliOpts {
 	config: String,
 }
 
-pub async fn do_main() -> Result<()> {
-	let opts = CliOpts::from_args();
-	let cfg: types::RuntimeConfig = confy::load_path(opts.config)?;
+fn init_db(path: &str) -> Result<Arc<DB>> {
+	let mut confidence_cf_opts = Options::default();
+	confidence_cf_opts.set_max_write_buffer_number(16);
 
-	let (log_level, parse_error) = cfg
-		.log_level
+	let mut block_header_cf_opts = Options::default();
+	block_header_cf_opts.set_max_write_buffer_number(16);
+
+	let mut block_cid_cf_opts = Options::default();
+	block_cid_cf_opts.set_max_write_buffer_number(16);
+
+	let mut app_data_cf_opts = Options::default();
+	app_data_cf_opts.set_max_write_buffer_number(16);
+
+	let cf_opts = vec![
+		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
+		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
+		ColumnFamilyDescriptor::new(BLOCK_CID_CF, block_cid_cf_opts),
+		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
+	];
+
+	let mut db_opts = Options::default();
+	db_opts.create_if_missing(true);
+	db_opts.create_missing_column_families(true);
+
+	let db = DB::open_cf_descriptors(&db_opts, &path, cf_opts)?;
+	Ok(Arc::new(db))
+}
+
+fn parse_log_level(
+	log_level: &str,
+	default: log::LevelFilter,
+) -> (log::LevelFilter, Option<log::ParseLevelError>) {
+	log_level
 		.to_uppercase()
 		.parse::<log::LevelFilter>()
 		.map(|log_level| (log_level, None))
-		.unwrap_or_else(|parse_err| (log::LevelFilter::Info, Some(parse_err)));
+		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
+}
 
-	SimpleLogger::new().with_level(log_level).init()?;
+pub async fn do_main() -> Result<()> {
+	let opts = CliOpts::from_args();
+	let config_path = &opts.config;
+	let cfg: RuntimeConfig = confy::load_path(config_path)
+		.context(format!("Failed to load configuration from {config_path}"))?;
+
+	let (log_level, parse_error) = parse_log_level(&cfg.log_level, log::LevelFilter::Info);
+
+	SimpleLogger::new()
+		.with_level(log_level)
+		.init()
+		.context("Failed to init logger")?;
 
 	if let Some(error) = parse_error {
 		log::warn!("Using default log level: {}", error);
@@ -62,71 +104,36 @@ pub async fn do_main() -> Result<()> {
 
 	log::info!("Using {:?}", cfg);
 
-	// Prepare key value data store opening
-	// cf = column family
-	let mut confidence_cf_opts = Options::default();
-	confidence_cf_opts.set_max_write_buffer_number(16);
-	let confidence_cf_desp =
-		ColumnFamilyDescriptor::new(consts::CONFIDENCE_FACTOR_CF, confidence_cf_opts);
+	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 
-	let mut block_header_cf_opts = Options::default();
-	block_header_cf_opts.set_max_write_buffer_number(16);
-	let block_header_cf_desp =
-		ColumnFamilyDescriptor::new(consts::BLOCK_HEADER_CF, block_header_cf_opts);
-
-	let mut block_cid_cf_opts = Options::default();
-	block_cid_cf_opts.set_max_write_buffer_number(16);
-	let block_cid_cf_desp = ColumnFamilyDescriptor::new(consts::BLOCK_CID_CF, block_cid_cf_opts);
-
-	let mut app_data_cf_opts = Options::default();
-	app_data_cf_opts.set_max_write_buffer_number(16);
-	let app_data_cf_desp = ColumnFamilyDescriptor::new(consts::APP_DATA_CF, app_data_cf_opts);
-
-	let mut db_opts = Options::default();
-	db_opts.create_if_missing(true);
-	db_opts.create_missing_column_families(true);
-
-	let db = Arc::new(
-		DB::open_cf_descriptors(&db_opts, cfg.avail_path.clone(), vec![
-			confidence_cf_desp,
-			block_header_cf_desp,
-			block_cid_cf_desp,
-			app_data_cf_desp,
-		])
-		.context("Failed to open database")?,
-	);
 	// Have access to key value data store, now this can be safely used
 	// from multiple threads of execution
 
 	// This channel will be used for message based communication between
 	// two tasks
-	//
 	// task_0: HTTP request handler ( query sender )
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 
-	// this spawns one thread of execution which runs one http server
-	// for handling RPC
-	let db_0 = db.clone();
-	let cfg_ = cfg.clone();
-	thread::spawn(move || {
-		// TODO: Since run_server is async, does this error handling make sense?
-		if let Err(error) = http::run_server(db_0, cfg_, cell_query_tx) {
-			log::error!("Cannot run http server: {error}")
-		};
-	});
+	// this spawns tokio task which runs one http server for handling RPC
+	tokio::task::spawn(http::run_server(
+		db.clone(),
+		cfg.http_server_host.clone(),
+		cfg.http_server_port,
+		cell_query_tx,
+	));
 
 	// communication channels being established for talking to
 	// ipfs backed application client
 	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 	let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
-	let (destroy_tx, _) = sync_channel::<bool>(1);
 
 	let bootstrap_nodes = &cfg
 		.bootstraps
 		.iter()
 		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()?;
+		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
+		.context("Failed to parse bootstrap nodes")?;
 
 	let ipfs = data::init_ipfs(
 		cfg.ipfs_seed,
@@ -134,7 +141,8 @@ pub async fn do_main() -> Result<()> {
 		&cfg.ipfs_path,
 		bootstrap_nodes,
 	)
-	.await?;
+	.await
+	.context("Failed to init IPFS client")?;
 
 	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
 
@@ -142,10 +150,10 @@ pub async fn do_main() -> Result<()> {
 	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
 
 	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
-		log::info!("IPFS backed application client: {}\t{:?}", peer_id, addrs);
+		log::info!("IPFS backed application client: {peer_id}\t{addrs:?}");
 	};
 
-	let rpc_url = rpc::check_http(cfg.full_node_rpc.clone()).await?.clone();
+	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 
 	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		tokio::task::spawn(app_client::run(
@@ -158,7 +166,9 @@ pub async fn do_main() -> Result<()> {
 		));
 	}
 
-	let block_header = rpc::get_chain_header(&rpc_url).await?;
+	let block_header = rpc::get_chain_header(&rpc_url)
+		.await
+		.context(format!("Failed to get chain header from {rpc_url}"))?;
 	let latest_block = block_header.number;
 
 	// TODO: implement proper sync between bootstrap completion and starting the sync function
@@ -173,7 +183,8 @@ pub async fn do_main() -> Result<()> {
 		cfg.max_parallel_fetch_tasks,
 	));
 
-	if let Err(error) = light_client::run(
+	// Note: if light client fails to run, process exits
+	light_client::run(
 		cfg.full_node_ws,
 		db,
 		ipfs,
@@ -182,23 +193,13 @@ pub async fn do_main() -> Result<()> {
 		cfg.max_parallel_fetch_tasks,
 	)
 	.await
-	{
-		log::info!("Error running light client: {}", error);
-	}
-
-	// inform ipfs-backed application client running thread
-	// that it can kill self now, as process is going to die itself !
-	destroy_tx
-		.send(true)
-		.context("failed to send block to client")?;
-
-	Ok(())
+	.context("Failed to run light client")
 }
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
-	do_main().await.map_err(|e| {
-		log::error!("{:?}", e);
-		e
+	do_main().await.map_err(|error| {
+		log::error!("{error:?}");
+		error
 	})
 }

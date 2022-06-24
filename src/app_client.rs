@@ -3,7 +3,7 @@ use std::{
 	sync::{mpsc::Receiver, Arc},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
@@ -36,14 +36,18 @@ async fn process_block(
 	);
 
 	let (mut ipfs_cells, unfetched) =
-		fetch_cells_from_ipfs(ipfs, block.number, data_positions, max_parallel_fetch_tasks).await?;
+		fetch_cells_from_ipfs(ipfs, block.number, data_positions, max_parallel_fetch_tasks)
+			.await
+			.context("Failed to fetch data cells from IPFS")?;
 
 	log::info!(
 		"Fetched {count} cells of block {block_number} from IPFS",
 		count = ipfs_cells.len()
 	);
 
-	let mut rpc_cells = get_kate_proof(rpc_url, block.number, unfetched).await?;
+	let mut rpc_cells = get_kate_proof(rpc_url, block.number, unfetched)
+		.await
+		.context("Failed to fetch data cells from node RPC")?;
 
 	log::info!(
 		"Fetched {count} cells of block {block_number} from RPC",
@@ -61,7 +65,8 @@ async fn process_block(
 			&column_positions,
 			max_parallel_fetch_tasks,
 		)
-		.await?;
+		.await
+		.context("Failed to fetch column cells from IPFS")?;
 
 		log::info!(
 			"Fetched {count} cells of block {block_number} from IPFS for reconstruction",
@@ -72,7 +77,9 @@ async fn process_block(
 		let columns = columns(&column_positions);
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 		if !can_reconstruct(&block.dimensions, &columns, &fetched) {
-			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched).await?;
+			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched)
+				.await
+				.context("Failed to get column cells from node RPC")?;
 
 			log::info!(
 				"Fetched {count} cells of block {block_number} from RPC for reconstruction",
@@ -105,12 +112,15 @@ async fn process_block(
 
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
 	let data = if reconstruct {
-		reconstruct_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)?
+		reconstruct_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
+			.context("Failed to reconstruct app extrinsics")?
 	} else {
-		decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)?
+		decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
+			.context("Failed to decode app extrinsics")?
 	};
 
-	store_data_in_db(db, app_id, block_number, &data)?;
+	store_data_in_db(db, app_id, block_number, &data)
+		.context("Failed to store data into database")?;
 	log::info!("Stored {count} data into database", count = data.len());
 	Ok(())
 }

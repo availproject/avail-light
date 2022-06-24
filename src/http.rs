@@ -168,23 +168,22 @@ impl<T> Service<T> for MakeHandler {
 	}
 }
 
-#[tokio::main]
 pub async fn run_server(
 	store: Arc<DB>,
-	cfg: super::types::RuntimeConfig,
+	host: String,
+	port: u16,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let addr = format!("{}:{}", cfg.http_server_host, cfg.http_server_port)
-		.parse()
-		.map_err(|_| "Bad Http server host/ port, found in config file")?;
-	let server = Server::bind(&addr).serve(MakeHandler { store });
-
-	log::info!(
-		"RPC running on http://{}:{}",
-		cfg.http_server_host,
-		cfg.http_server_port
-	);
-
-	server.await?;
-	Ok(())
+) {
+	match format!("{host}:{port}").parse() {
+		Ok(addr) => {
+			let server = Server::bind(&addr).serve(MakeHandler { store });
+			log::info!("RPC running on http://{host}:{port}");
+			if let Err(error) = server.await {
+				log::error!("Error running server: {error}");
+			}
+		},
+		Err(error) => {
+			log::error!("Bad HTTP server host:port ({host}:{port}) found in config file: {error}");
+		},
+	}
 }
