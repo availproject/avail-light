@@ -28,11 +28,11 @@ pub async fn init_ipfs(
 	let mut network = NetworkConfig::new(keypair(seed)?);
 	network.mdns = None;
 	network.kad = Some(ipfs_embed::config::KadConfig {
-	               max_records: 24000000, // ~2hrs
-	               max_value_bytes: 100,
-	               max_providers_per_key: 1,
-	               max_provided_keys: 100000,
-	       });
+		max_records: 24000000, // ~2hrs
+		max_value_bytes: 100,
+		max_providers_per_key: 1,
+		max_provided_keys: 100000,
+	});
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
