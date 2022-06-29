@@ -11,7 +11,7 @@ use rocksdb::DB;
 
 use crate::{
 	data::{
-		fetch_cells_from_ipfs, insert_into_ipfs, is_block_header_in_db, is_confidence_in_db,
+		fetch_cells_from_dht, insert_into_dht, is_block_header_in_db, is_confidence_in_db,
 		store_block_header_in_db, store_confidence_in_db,
 	},
 	rpc,
@@ -68,12 +68,12 @@ async fn process_block(
 	let positions = rpc::generate_random_cells(max_rows, max_cols);
 
 	let (ipfs_fetched, unfetched) =
-		fetch_cells_from_ipfs(&ipfs, block_num, &positions, max_parallel_fetch_tasks)
+		fetch_cells_from_dht(&ipfs, block_num, &positions, max_parallel_fetch_tasks)
 			.await
-			.context("Failed to fetch cells from IPFS")?;
+			.context("Failed to fetch cells from DHT")?;
 
 	log::info!(
-		"Number of cells fetched from IPFS for block {}: {}",
+		"Number of cells fetched from DHT for block {}: {}",
 		block_num,
 		ipfs_fetched.len()
 	);
@@ -114,8 +114,8 @@ async fn process_block(
 	store_confidence_in_db(store.clone(), block_num, count as u32)
 		.context("Failed to store confidence in DB")?;
 
-	insert_into_ipfs(&ipfs, block_num, rpc_fetched).await;
-	log::info!("Cells inserted into IPFS for block {block_num}");
+	insert_into_dht(&ipfs, block_num, rpc_fetched).await;
+	log::info!("Cells inserted into DHT for block {block_num}");
 	Ok(())
 }
 

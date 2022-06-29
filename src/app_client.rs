@@ -12,7 +12,7 @@ use kate_recovery::com::{
 use rocksdb::DB;
 
 use crate::{
-	data::{fetch_cells_from_ipfs, insert_into_ipfs, store_data_in_db},
+	data::{fetch_cells_from_dht, insert_into_dht, store_data_in_db},
 	proof::verify_proof,
 	rpc::get_kate_proof,
 	types::ClientMsg,
@@ -36,7 +36,7 @@ async fn process_block(
 	);
 
 	let (mut ipfs_cells, unfetched) =
-		fetch_cells_from_ipfs(ipfs, block.number, data_positions, max_parallel_fetch_tasks)
+		fetch_cells_from_dht(ipfs, block.number, data_positions, max_parallel_fetch_tasks)
 			.await
 			.context("Failed to fetch data cells from IPFS")?;
 
@@ -59,7 +59,7 @@ async fn process_block(
 	if reconstruct {
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 		let column_positions = diff_positions(column_positions, &fetched);
-		let (mut column_ipfs_cells, unfetched) = fetch_cells_from_ipfs(
+		let (mut column_ipfs_cells, unfetched) = fetch_cells_from_dht(
 			ipfs,
 			block_number,
 			&column_positions,
@@ -106,7 +106,7 @@ async fn process_block(
 		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
 	}
 
-	insert_into_ipfs(ipfs, block.number, rpc_cells).await;
+	insert_into_dht(ipfs, block.number, rpc_cells).await;
 
 	log::info!("Cells inserted into IPFS for block {block_number}");
 
