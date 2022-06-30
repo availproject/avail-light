@@ -5,14 +5,10 @@ use async_std::stream::StreamExt;
 use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
-	Block, Cid, DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr,
-	NetworkConfig, PeerId, Quorum, Record, StorageConfig,
+	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
+	Quorum, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
-use libipld::{
-	multihash::{Code, MultihashDigest},
-	IpldCodec,
-};
 use rocksdb::DB;
 
 use crate::{
@@ -31,6 +27,12 @@ pub async fn init_ipfs(
 	let storage = StorageConfig::new(Some(path_buf), None, 10, sweep_interval);
 	let mut network = NetworkConfig::new(keypair(seed)?);
 	network.mdns = None;
+	network.kad = Some(ipfs_embed::config::KadConfig {
+		max_records: 24000000, // ~2hrs
+		max_value_bytes: 100,
+		max_providers_per_key: 1,
+		max_provided_keys: 100000,
+	});
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
@@ -89,9 +91,8 @@ fn keypair(i: u64) -> Result<Keypair> {
 	Ok(Keypair::from(secret))
 }
 
-async fn fetch_cell_from_ipfs(
+async fn fetch_cell_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
-	peers: Vec<PeerId>,
 	block_number: u64,
 	position: &Position,
 ) -> Result<Cell> {
@@ -99,19 +100,26 @@ async fn fetch_cell_from_ipfs(
 	let record_key = Key::from(reference.as_bytes().to_vec());
 
 	log::trace!("Getting DHT record for reference {}", reference);
-	let cid = ipfs
-		.get_record(record_key, Quorum::One)
+	// For now, we take only the first record from the list
+	ipfs.get_record(record_key, Quorum::One)
 		.await
-		.map(|record| record[0].record.value.to_vec())
-		.and_then(|value| Cid::try_from(value).context("Invalid CID value"))?;
-
-	log::trace!("Fetching IPFS block for CID {}", cid);
-	ipfs.fetch(&cid, peers).await.and_then(|block| {
-		Ok(Cell {
-			position: position.clone(),
-			content: block.data().try_into()?,
+		.and_then(|peer_records| {
+			peer_records
+				.get(0)
+				.cloned()
+				.context("Peer record not found")
 		})
-	})
+		.and_then(|peer_record| {
+			peer_record
+				.record
+				.value
+				.try_into()
+				.map_err(|_| anyhow::anyhow!("Cannot convert record into 80 bytes"))
+		})
+		.map(|record| Cell {
+			position: position.clone(),
+			content: record,
+		})
 }
 
 struct IpfsCell(Cell);
@@ -119,70 +127,47 @@ struct IpfsCell(Cell);
 impl IpfsCell {
 	fn reference(&self, block: u64) -> String { self.0.reference(block) }
 
-	fn cid(&self) -> Cid {
-		let hash = Code::Sha3_256.digest(&self.0.content);
-		Cid::new_v1(IpldCodec::Raw.into(), hash)
-	}
-
-	fn ipfs_block(&self) -> Block<DefaultParams> {
-		Block::<DefaultParams>::new(self.cid(), self.0.content.to_vec())
-			.expect("hash matches the data")
-	}
-
+	// TODO: Add TTL to all new records
 	fn dht_record(&self, block: u64) -> Record {
-		Record::new(
-			self.0.reference(block).as_bytes().to_vec(),
-			self.cid().to_bytes(),
-		)
+		Record {
+			key: self.0.reference(block).as_bytes().to_vec().into(),
+			value: self.0.content.to_vec(),
+			publisher: None,
+			expires: None,
+		}
 	}
 }
 
-/// Inserts cells into IPFS along with corresponding DHT records. At the end, block store is flushed.
+/// Inserts cells into the DHT.
 /// There is no rollback, and errors will be logged and skipped,
 /// which means that we cannot rely on error logs as alert mechanism.
-/// NOTE: Block data is not encoded and storing block per cell could be optimal solution.
 ///
 /// # Arguments
 ///
 /// * `ipfs` - Reference to IPFS node
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into IPFS
-pub async fn insert_into_ipfs(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
+pub async fn insert_into_dht(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
 	for cell in cells.into_iter().map(IpfsCell) {
 		let reference = cell.reference(block);
-		if let Err(error) = ipfs.insert(cell.ipfs_block()) {
-			log::info!("Fail to insert cell {reference} into IPFS: {error}",);
-		}
 		if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
 			log::info!("Fail to put record for cell {reference} to DHT: {error}");
 		}
 	}
-	if let Err(error) = ipfs.flush().await {
-		log::info!("Cannot flush IPFS data to disk: {error}");
-	};
 }
 
-pub async fn fetch_cells_from_ipfs(
+pub async fn fetch_cells_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
 	block_number: u64,
 	positions: &Vec<Position>,
 	max_parallel_fetch_tasks: usize,
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
-	// TODO: Should we fetch peers before loop or for each cell?
-	let peers = &ipfs.peers();
-	log::debug!("Number of known IPFS peers: {}", peers.len());
-
-	if peers.is_empty() {
-		log::info!("No known IPFS peers");
-		return Ok((vec![], positions.to_vec()));
-	}
-
 	let chunked_positions = positions
 		.chunks(max_parallel_fetch_tasks)
 		.map(|positions| {
 			positions
 				.iter()
-				.map(|position| fetch_cell_from_ipfs(ipfs, peers.clone(), block_number, position))
+				.map(|position| fetch_cell_from_dht(ipfs, block_number, position))
 				.collect::<Vec<_>>()
 		})
 		.collect::<Vec<_>>();
@@ -201,8 +186,8 @@ pub async fn fetch_cells_from_ipfs(
 	for (result, position) in fetched.iter().chain(unfetched.iter()) {
 		let reference = position.reference(block_number);
 		match result {
-			Ok(_) => log::debug!("Fetched cell {reference} from IPFS"),
-			Err(error) => log::debug!("Error fetching cell {reference} from IPFS: {error}"),
+			Ok(_) => log::debug!("Fetched cell {reference} from DHT"),
+			Err(error) => log::debug!("Error fetching cell {reference} from DHT: {error}"),
 		}
 	}
 
