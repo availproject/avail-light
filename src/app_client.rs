@@ -4,12 +4,15 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use codec::{Compact, Decode, Error as DecodeError, Input};
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
 use rocksdb::DB;
+use serde::{Deserialize, Deserializer, Serialize};
+use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
 
 use crate::{
 	data::{fetch_cells_from_dht, insert_into_dht, store_data_in_db},
@@ -119,7 +122,12 @@ async fn process_block(
 			.context("Failed to decode app extrinsics")?
 	};
 
-	store_data_in_db(db, app_id, block_number, &data)
+	let xts: Result<Vec<AvailExtrinsic>> = data
+		.iter()
+		.map(|raw| <_>::decode(&mut &raw[..]).context("Couldn't decode"))
+		.collect();
+
+	store_data_in_db(db, app_id, block_number, &xts?)
 		.context("Failed to store data into database")?;
 	log::info!("Stored {count} data into database", count = data.len());
 	Ok(())
@@ -186,6 +194,100 @@ pub async fn run(
 			},
 			(_, _) => log::info!("No cells for app {app_id} in block {block_number}"),
 		}
+	}
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct AvailExtrinsic {
+	pub app_id: u32,
+	pub signature: Option<MultiSignature>,
+	pub data: Vec<u8>,
+}
+
+pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
+
+#[derive(Decode)]
+pub struct Balance(#[codec(compact)] u128);
+
+#[derive(Decode)]
+pub struct Nonce(#[codec(compact)] u32);
+
+pub enum AvailMortality {
+	Immortal,
+	Mortal(u64, u64),
+}
+
+impl Decode for AvailMortality {
+	fn decode<I: Input>(input: &mut I) -> Result<Self, DecodeError> {
+		let first = input.read_byte()?;
+		if first == 0 {
+			Ok(Self::Immortal)
+		} else {
+			let encoded = first as u64 + ((input.read_byte()? as u64) << 8);
+			let period = 2 << (encoded % (1 << 4));
+			let quantize_factor = (period >> 12).max(1);
+			let phase = (encoded >> 4) * quantize_factor;
+			if period >= 4 && phase < period {
+				Ok(Self::Mortal(period, phase))
+			} else {
+				Err("Invalid period and phase".into())
+			}
+		}
+	}
+}
+
+const EXTRINSIC_VERSION: u8 = 4;
+impl Decode for AvailExtrinsic {
+	fn decode<I: Input>(input: &mut I) -> Result<AvailExtrinsic, DecodeError> {
+		// This is a little more complicated than usual since the binary format must be compatible
+		// with substrate's generic `Vec<u8>` type. Basically this just means accepting that there
+		// will be a prefix of vector length (we don't need
+		// to use this).
+		let _length_do_not_remove_me_see_above: Compact<u32> = Decode::decode(input)?;
+
+		let version = input.read_byte()?;
+
+		let is_signed = version & 0b1000_0000 != 0;
+		let version = version & 0b0111_1111;
+		if version != EXTRINSIC_VERSION {
+			return Err("Invalid transaction version".into());
+		}
+		let (app_id, signature) = if is_signed {
+			let _address = <MultiAddress<AccountId32, u32>>::decode(input)?;
+			let sig = MultiSignature::decode(input)?;
+			let extra = <AvailSignedExtra>::decode(input)?;
+			let app_id = extra.7;
+
+			(app_id, Some(sig))
+		} else {
+			return Err("Not signed".into());
+		};
+
+		let section: u8 = Decode::decode(input)?;
+		let method: u8 = Decode::decode(input)?;
+
+		let data: Vec<u8> = match (section, method) {
+			// TODO: Define these pairs as enums or better yet - make a dependency on substrate enums if possible
+			(29, 1) => Decode::decode(input)?,
+			_ => return Err("Not Avail Extrinsic".into()),
+		};
+
+		Ok(Self {
+			app_id,
+			signature,
+			data,
+		})
+	}
+}
+
+impl<'a> Deserialize<'a> for AvailExtrinsic {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'a>,
+	{
+		let r = sp_core::bytes::deserialize(deserializer)?;
+		Decode::decode(&mut &r[..])
+			.map_err(|e| serde::de::Error::custom(format!("Decode error: {}", e)))
 	}
 }
 

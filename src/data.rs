@@ -16,6 +16,7 @@ use kate_recovery::com::{Cell, Position};
 use rocksdb::DB;
 
 use crate::{
+	app_client::AvailExtrinsic,
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	types::{Event, Header},
 };
@@ -212,7 +213,7 @@ pub fn store_data_in_db(
 	db: Arc<DB>,
 	app_id: u32,
 	block_number: u64,
-	data: &Vec<Vec<u8>>,
+	data: &Vec<AvailExtrinsic>,
 ) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
