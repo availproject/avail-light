@@ -295,7 +295,7 @@ impl<'a> Deserialize<'a> for AvailExtrinsic {
 mod tests {
 	use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
 
-	use super::{can_reconstruct, diff_positions};
+	use super::{can_reconstruct, diff_positions, AvailExtrinsic};
 
 	fn position(row: u16, col: u16) -> Position { Position { row, col } }
 
@@ -352,5 +352,16 @@ mod tests {
 		assert_eq!(diff_positions(&positions, &cells).len(), 2);
 		assert_eq!(diff_positions(&positions, &cells)[0], position(0, 0));
 		assert_eq!(diff_positions(&positions, &cells)[1], position(1, 1));
+	}
+
+	#[test]
+	fn test_decode_xt() {
+		let xt= serde_json::to_string("0xe9018400de1113c5912fda9c77305cddd98e2b5ca156f260ff2ac329dde67110854f8f3901007a35bdd5ec15a69bcd37d648dafcf18693f158baca512be44f1dfc218048581ba527938763b9b5a16f915e29c101c8450a2dd04d795de704f496ce9c81038d00dd1900030000001d01306578616d706c652064617461").unwrap();
+		let x: AvailExtrinsic = serde_json::from_str(&xt).unwrap();
+		let id = x.app_id;
+		let data = String::from_utf8_lossy(x.data.as_slice());
+		assert_eq!(id, 3);
+		assert_eq!(data, "example data");
+		println!("id: {id}, data: {data}.");
 	}
 }
