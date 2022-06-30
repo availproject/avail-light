@@ -11,7 +11,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use crate::{
 	data::{
-		fetch_cells_from_ipfs, insert_into_ipfs, store_block_header_in_db, store_confidence_in_db,
+		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
 	proof, rpc,
@@ -65,12 +65,12 @@ pub async fn run(
 					);
 
 					let (ipfs_fetched, unfetched) =
-						fetch_cells_from_ipfs(&ipfs, num, &positions, max_parallel_fetch_tasks)
+						fetch_cells_from_dht(&ipfs, num, &positions, max_parallel_fetch_tasks)
 							.await
-							.context("Failed to fetch cells from IPFS")?;
+							.context("Failed to fetch cells from DHT")?;
 
 					log::info!(
-						"Number of cells fetched from IPFS for block {}: {}",
+						"Number of cells fetched from DHT for block {}: {}",
 						num,
 						ipfs_fetched.len()
 					);
@@ -119,7 +119,7 @@ pub async fn run(
 					store_block_header_in_db(db.clone(), num, header)
 						.context("Failed to store block header in DB")?;
 
-					insert_into_ipfs(&ipfs, num, rpc_fetched).await;
+					insert_into_dht(&ipfs, num, rpc_fetched).await;
 					log::info!("Cells inserted into IPFS for block {num}");
 
 					// notify ipfs-based application client
