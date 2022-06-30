@@ -100,14 +100,26 @@ async fn fetch_cell_from_dht(
 	let record_key = Key::from(reference.as_bytes().to_vec());
 
 	log::trace!("Getting DHT record for reference {}", reference);
-	ipfs.get_record(record_key, Quorum::One)
-		.await
-		.and_then(|peer_record| {
-			Ok(Cell {
-				position: position.clone(),
-				content: peer_record[0].record.value.clone().as_slice().try_into()?,
-			})
-		})
+	// For now, we take only the first record from the list
+    ipfs.get_record(record_key, Quorum::One)
+        .await
+        .and_then(|peer_records| {
+            peer_records
+                .get(0)
+                .cloned()
+                .context("Peer record not found")
+        })
+        .and_then(|peer_record| {
+            peer_record
+                .record
+                .value
+                .try_into()
+                .map_err(|_|anyhow::anyhow!("Cannot convert record into 80 bytes"))
+        })
+        .map(|record| Cell {
+            position: position.clone(),
+            content: record,
+        })
 }
 
 struct IpfsCell(Cell);
