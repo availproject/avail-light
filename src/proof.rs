@@ -17,11 +17,10 @@ fn kc_verify_proof_wrapper(
 ) -> bool {
 	match kate_proof::kc_verify_proof(col, proof, commitment, total_rows, total_cols) {
 		Ok(verification) => {
-			log::trace!(
-				"Public params ({}): hash: {}",
-				verification.public_params_len,
-				verification.public_params_hash
-			);
+			let public_params_hash =
+				hex::encode(sp_core::blake2_128(verification.public_params.as_slice()));
+			let public_params_len = hex::encode(verification.public_params.as_slice()).len();
+			log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 			match &verification.status {
 				Ok(()) => {
 					log::trace!("Verified cell ({row}, {col}) of block {block_num}");
