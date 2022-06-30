@@ -314,6 +314,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "futures-util",
+ "hex",
  "hyper",
  "hyper-tls",
  "ipfs-embed",
@@ -1885,22 +1886,20 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=6209791#6209791cd03d364094608c3dd4082c447131f7af"
+source = "git+https://github.com/maticnetwork/avail.git?rev=777255#7772553441c19ad15ad84dad0b131c91b4384515"
 dependencies = [
  "anyhow",
  "dusk-bytes",
  "dusk-plonk",
- "hex",
  "merlin 3.0.0",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
- "sp-core",
 ]
 
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=6209791#6209791cd03d364094608c3dd4082c447131f7af"
+source = "git+https://github.com/maticnetwork/avail.git?rev=777255#7772553441c19ad15ad84dad0b131c91b4384515"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
