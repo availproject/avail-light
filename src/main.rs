@@ -116,12 +116,7 @@ pub async fn do_main() -> Result<()> {
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 
 	// this spawns tokio task which runs one http server for handling RPC
-	tokio::task::spawn(http::run_server(
-		db.clone(),
-		cfg.http_server_host.clone(),
-		cfg.http_server_port,
-		cell_query_tx,
-	));
+	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), cell_query_tx));
 
 	// communication channels being established for talking to
 	// ipfs backed application client
