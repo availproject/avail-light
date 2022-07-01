@@ -184,11 +184,13 @@ pub async fn do_main() -> Result<()> {
 		ipfs.clone(),
 		cfg.max_parallel_fetch_tasks,
 		pp.clone(),
+		cfg.confidence,
 	));
 
 	// Note: if light client fails to run, process exits
 	light_client::run(
 		cfg.full_node_ws,
+		cfg.confidence,
 		db,
 		ipfs,
 		rpc_url,
