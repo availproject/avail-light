@@ -59,13 +59,8 @@ pub async fn run(
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
-
-					let cell_count: u32;
-					if confidence == 100f64 {
-						cell_count = -((1f64 - 99.9f64 / 100f64).log2()).ceil() as u32;
-					} else {
-						cell_count = -((1f64 - confidence / 100f64).log2()).ceil() as u32;
-					}
+					
+					let cell_count = rpc::cell_count_for_confidence(confidence);
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 					log::info!(
 						"Random cells generated: {} from block: {}",
@@ -148,4 +143,21 @@ pub async fn run(
 		}
 	}
 	Ok(())
+}
+
+
+#[cfg(test)]
+
+mod tests{
+	
+	use super::rpc::cell_count_for_confidence;
+
+	#[test]
+
+	fn test_cell_count_for_confidence(){
+		let count = 1;
+		assert_eq!(cell_count_for_confidence(60f64)>count, true);
+		assert_eq!(cell_count_for_confidence(100f64), (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32 );
+		assert_eq!(cell_count_for_confidence(49f64), (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32 );
+	}
 }
