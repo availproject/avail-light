@@ -1,4 +1,8 @@
-use std::{str::FromStr, sync::Arc, time::Duration, time::Instant};
+use std::{
+	str::FromStr,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
