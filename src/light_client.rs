@@ -120,7 +120,7 @@ pub async fn run(
 						.context("Failed to store block header in DB")?;
 
 					insert_into_dht(&ipfs, num, rpc_fetched).await;
-					log::info!("Cells inserted into IPFS for block {num}");
+					log::info!("Cells inserted into DHT for block {num}");
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
