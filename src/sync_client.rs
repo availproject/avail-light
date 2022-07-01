@@ -66,7 +66,7 @@ async fn process_block(
 	let commitment = block_body.header.extrinsics_root.commitment;
 	let block_num = block_body.header.number;
 	// now this is in `u64`
-	let cell_count = -((1f64 - confidence / 100f64).log2()).ceil() as u32;
+	let cell_count = rpc::cell_count_for_confidence(confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (ipfs_fetched, unfetched) =
