@@ -1,4 +1,8 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{
+	str::FromStr,
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
@@ -133,7 +137,7 @@ impl IpfsCell {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
 			value: self.0.content.to_vec(),
 			publisher: None,
-			expires: None,
+			expires: Instant::now().checked_add(Duration::from_secs(3600)),
 		}
 	}
 }
