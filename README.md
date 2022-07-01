@@ -11,7 +11,7 @@
 
 ## Introduction
 
-Naive approach for building one AVAIL light client, which will do following
+`avail-light` is a data availability light client that can do the following:
 
 * Listen for finalised blocks.
 * Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
@@ -46,9 +46,9 @@ ipfs_seed = 1
 ipfs_port = 37000
 ipfs_path = "avail_ipfs_store"
 
-# put full_node_rpc = https://devnet-avail.polygon.technology/ incase you are connecting to devnet
+# put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
 full_node_rpc = ["http://127.0.0.1:9933"]
-# put full_node_ws = wss://devnet-avail.polygon.technology/ws incase you are connecting to devnet
+# put full_node_ws = wss://testnet.polygonavail.net/ws incase you are connecting to devnet
 full_node_ws = ["ws://127.0.0.1:9944"]
 # None in case of default Light Client Mode
 app_id = 0
