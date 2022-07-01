@@ -121,13 +121,13 @@ pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 	}
 }
 
-pub fn generate_random_cells(max_rows: u16, max_cols: u16) -> Vec<Position> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> Vec<Position> {
 	let max_cells = (max_rows as u32) * (max_cols as u32);
-	let count: u16 = if max_cells < 8 {
+	let count: u16 = if max_cells < cell_count as u32 {
 		// Multiplication cannot overflow since result is less than 8
 		max_rows * max_cols
 	} else {
-		8
+		cell_count as u16
 	};
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
