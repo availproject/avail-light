@@ -62,7 +62,7 @@ pub async fn run(
 					if confidence == 100f64 {
 						cell_count = -((1f64 - 99.9f64 / 100f64).log2()).ceil() as u32;
 					} else {
-						cell_count = -((1f64 - confidence / 100f64).log2()).ceil() as u32;
+						cell_count = (-((1f64 - confidence / 100f64).log2())).ceil() as u32;
 					}
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 					log::info!(
