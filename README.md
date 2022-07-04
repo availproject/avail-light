@@ -13,12 +13,16 @@
 
 `avail-light` is a data availability light client that can do the following:
 
-* Listen for newly produced blocks.
+* Listen for finalised blocks.
 * Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
-  > As soon as a new block is available, the light client attempts to gain confidence by asking for a proof from a full 
+  > As soon as a finalised block is available, the light client attempts to gain confidence by asking for a proof from a full 
   client via JSON-RPC.
-* Batch processces blocks in reverse order (i.e. prioritizes the latest blocks) for lower numbered blocks where no confidence 
-  is yet gained.
+
+### Modes of Operation
+
+1. **Light-client Mode**: The basic mode of operation and is always active in whichever mode is operational. If an `App_ID` is not provided, this mode will commence. The client on each header it receives will do random sampling using RPC calls. It gets the cells with proofs it asked for, which then verifies and calculates the confidence.
+2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the client finds out the `cols` related to the provided `App_ID` using `app_data_lookup` in the header. It then downloades the relevant cells and the data is reconstructed.  
+3. **Fat-Client Mode**: The client retrieves the entire extended matrix using IPFS (if available) or fetches via RPC calls. It verifies all the cells and computes the CID mapping for the IPFS Pinning. It then decodes the extended matrix and reconstructs the `app_specific_data` related to all `App_IDs`.
 
 ## Installation
 
@@ -42,9 +46,13 @@ ipfs_seed = 1
 ipfs_port = 37000
 ipfs_path = "avail_ipfs_store"
 
-full_node_rpc = "http://127.0.0.1:9933"
-full_node_ws = "ws://127.0.0.1:9944"
+# put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
+full_node_rpc = ["http://127.0.0.1:9933"]
+# put full_node_ws = wss://testnet.polygonavail.net/ws incase you are connecting to devnet
+full_node_ws = ["ws://127.0.0.1:9944"]
+# None in case of default Light Client Mode
 app_id = 0
+
 confidence = 92.0
 avail_path = "avail_path"
 
