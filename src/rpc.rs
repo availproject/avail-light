@@ -273,10 +273,12 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	Err(anyhow!("No valid node rpc found from given list"))
 }
 
+/* @note: fn to take the number of cells needs to get equal to or greater than
+the percentage of confidence mentioned in config file */
+
 pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	let cell_count: u32;
 	if (confidence >= 100f64) || (confidence < 50.0) {
-		//in this default of 8 cells will be taken
 		log::debug!(
 			"confidence is {} invalid so taking default confidence of 99",
 			confidence
