@@ -125,7 +125,11 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> V
 	let max_cells = (max_rows as u32) * (max_cols as u32);
 	let count: u16 = if max_cells < cell_count as u32 {
 		// Multiplication cannot overflow since result is less than 8
-		log::debug!("Max cells count {} is lesser than cell_count {}", cell_count, max_cells);
+		log::debug!(
+			"Max cells count {} is lesser than cell_count {}",
+			cell_count,
+			max_cells
+		);
 		max_rows * max_cols
 	} else {
 		cell_count as u16
@@ -269,12 +273,15 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 	Err(anyhow!("No valid node rpc found from given list"))
 }
 
-pub fn cell_count_for_confidence(confidence:f64) -> u32{
-	let cell_count:u32;
+pub fn cell_count_for_confidence(confidence: f64) -> u32 {
+	let cell_count: u32;
 	if (confidence >= 100f64) || (confidence < 50.0) {
 		//in this default of 8 cells will be taken
-		log::debug!("confidence is {} invalid so taking default confidence of 99", confidence);
-		cell_count = (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32;
+		log::debug!(
+			"confidence is {} invalid so taking default confidence of 99",
+			confidence
+		);
+		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
 	} else {
 		cell_count = (-((1f64 - (confidence / 100f64)).log2())).ceil() as u32;
 	}
