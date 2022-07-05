@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
+use codec::Encode;
 use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
@@ -16,7 +17,6 @@ use kate_recovery::com::{Cell, Position};
 use rocksdb::DB;
 
 use crate::{
-	app_client::AvailExtrinsic,
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	types::{Event, Header},
 };
@@ -41,7 +41,7 @@ pub async fn init_ipfs(
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
-	_ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
+	let _ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
 
 	if !bootstrap_nodes.is_empty() {
 		ipfs.bootstrap(bootstrap_nodes).await?;
@@ -209,23 +209,23 @@ pub async fn fetch_cells_from_dht(
 	Ok((fetched, unfetched))
 }
 
-pub fn store_data_in_db(
-	db: Arc<DB>,
-	app_id: u32,
-	block_number: u64,
-	data: &Vec<AvailExtrinsic>,
-) -> Result<()> {
+pub fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(APP_DATA_CF)
 		.context("Failed to get cf handle")?;
 
-	db.put_cf(
-		&cf_handle,
-		key.as_bytes(),
-		serde_json::to_string(data)?.as_bytes(),
-	)
-	.context("Failed to write application data")
+	db.put_cf(&cf_handle, key.as_bytes(), data)
+		.context("Failed to write application data")
+}
+
+pub fn store_encoded_data_in_db<T: Encode>(
+	db: Arc<DB>,
+	app_id: u32,
+	block_number: u64,
+	data: &T,
+) -> Result<()> {
+	store_data_in_db(db, app_id, block_number, &data.encode())
 }
 
 pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
