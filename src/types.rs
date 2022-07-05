@@ -6,6 +6,8 @@ use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::app_client::AvailExtrinsic;
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
 	NewListener,
@@ -342,6 +344,7 @@ impl From<Header> for ClientMsg {
 	}
 }
 
+#[derive(Serialize, Clone)]
 pub enum Mode {
 	LightClient,
 	AppClient(u32),
@@ -393,6 +396,19 @@ impl Default for RuntimeConfig {
 			max_parallel_fetch_tasks: 8,
 		}
 	}
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfidenceResponse {
+	pub block: u64,
+	pub confidence: f64,
+	pub serialised_confidence: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExtrinsicsDataResponse {
+	pub block: u64,
+	pub extrinsics: Vec<AvailExtrinsic>,
 }
 
 /// This structure is used for encapsulating all things required for

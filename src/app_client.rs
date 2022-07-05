@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
 
 use crate::{
-	data::{fetch_cells_from_dht, insert_into_dht, store_data_in_db},
+	data::{fetch_cells_from_dht, insert_into_dht, store_encoded_data_in_db},
 	proof::verify_proof,
 	rpc::get_kate_proof,
 	types::ClientMsg,
@@ -125,12 +125,7 @@ async fn process_block(
 			.context("Failed to decode app extrinsics")?
 	};
 
-	let xts: Result<Vec<AvailExtrinsic>> = data
-		.iter()
-		.map(|raw| <_>::decode(&mut &raw[..]).context("Couldn't decode"))
-		.collect();
-
-	store_data_in_db(db, app_id, block_number, &xts?)
+	store_encoded_data_in_db(db, app_id, block_number, &data)
 		.context("Failed to store data into database")?;
 	log::info!("Stored {count} data into database", count = data.len());
 	Ok(())
