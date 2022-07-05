@@ -156,8 +156,19 @@ mod tests{
 
 	fn test_cell_count_for_confidence(){
 		let count = 1;
-		assert_eq!(cell_count_for_confidence(60f64)>count, true);
-		assert_eq!(cell_count_for_confidence(100f64), (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32 );
-		assert_eq!(cell_count_for_confidence(49f64), (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32 );
+		assert_eq!(cell_count_for_confidence(60f64) > count, true);
+		assert_eq!(
+			cell_count_for_confidence(100f64),
+			(-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32
+		);
+		assert_eq!(
+			cell_count_for_confidence(49f64),
+			(-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32
+		);
+		assert_eq!(
+			(cell_count_for_confidence(99.99999999)) < 10
+				&& (cell_count_for_confidence(99.99999999)) > 0,
+			true
+		);
 	}
 }
