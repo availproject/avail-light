@@ -9,6 +9,7 @@ authors = ["Polygon Avail Team"]
 [dependencies]
 kate-recovery = {git = "https://github.com/maticnetwork/avail.git", rev = "c34308c"}
 kate-proof = {git = "https://github.com/maticnetwork/avail.git", rev = "c34308c"}
+dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", branch = "v0.8.2-polygon-4" }
 tokio-tungstenite = { version = "0.16.1", features = ["native-tls"] }
 url = "2.2.2"
 tokio = { version = "1.2.0", features = ["full"] }

@@ -148,6 +148,8 @@ pub async fn do_main() -> Result<()> {
 		log::info!("IPFS backed application client: {peer_id}\t{addrs:?}");
 	};
 
+	let pp = kate_proof::testnet::public_params(1024);
+
 	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 
 	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
@@ -158,6 +160,7 @@ pub async fn do_main() -> Result<()> {
 			app_id,
 			block_rx,
 			cfg.max_parallel_fetch_tasks,
+			pp.clone(),
 		));
 	}
 
@@ -176,6 +179,7 @@ pub async fn do_main() -> Result<()> {
 		db.clone(),
 		ipfs.clone(),
 		cfg.max_parallel_fetch_tasks,
+		pp.clone(),
 	));
 
 	// Note: if light client fails to run, process exits
@@ -186,6 +190,7 @@ pub async fn do_main() -> Result<()> {
 		rpc_url,
 		block_tx,
 		cfg.max_parallel_fetch_tasks,
+		pp,
 	)
 	.await
 	.context("Failed to run light client")

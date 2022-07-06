@@ -326,6 +326,7 @@ dependencies = [
  "async-std",
  "chrono",
  "confy",
+ "dusk-plonk 0.8.2 (git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-4)",
  "ed25519-dalek",
  "futures",
  "futures-util",

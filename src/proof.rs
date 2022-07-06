@@ -2,6 +2,7 @@ extern crate threadpool;
 
 use std::sync::{mpsc::channel, Arc};
 
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::com::Cell;
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
@@ -14,8 +15,9 @@ fn kc_verify_proof_wrapper(
 	total_cols: usize,
 	proof: &[u8],
 	commitment: &[u8],
+	pp: PublicParameters,
 ) -> bool {
-	let pp = kate_proof::testnet::public_params(total_cols);
+	// let pp = kate_proof::testnet::public_params(total_cols);
 	match kate_proof::kc_verify_proof(col as u32, proof, commitment, total_rows, total_cols, &pp) {
 		// Ok(verification) => {
 		// 	let public_params_hash =
@@ -53,6 +55,7 @@ pub fn verify_proof(
 	total_cols: u16,
 	cells: &[Cell],
 	commitment: Vec<u8>,
+	pp: PublicParameters,
 ) -> usize {
 	let cpus = num_cpus::get();
 	let pool = threadpool::ThreadPool::new(cpus);
@@ -65,6 +68,7 @@ pub fn verify_proof(
 		let col = cell.position.col;
 		let tx = tx.clone();
 		let commitment = commitment.clone();
+		let params = pp.clone();
 
 		pool.execute(move || {
 			if let Err(error) = tx.send(kc_verify_proof_wrapper(
@@ -75,6 +79,7 @@ pub fn verify_proof(
 				total_cols as usize,
 				&cell.content,
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
+				params,
 			)) {
 				log::error!("Failed to send proof verified message: {error}");
 			};
