@@ -17,23 +17,7 @@ fn kc_verify_proof_wrapper(
 	commitment: &[u8],
 	pp: PublicParameters,
 ) -> bool {
-	// let pp = kate_proof::testnet::public_params(total_cols);
 	match kate_proof::kc_verify_proof(col as u32, proof, commitment, total_rows, total_cols, &pp) {
-		// Ok(verification) => {
-		// 	let public_params_hash =
-		// 		hex::encode(sp_core::blake2_128(verification.public_params.as_slice()));
-		// 	let public_params_len = hex::encode(verification.public_params.as_slice()).len();
-		// 	log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-		// 	match &verification.status {
-		// 		Ok(()) => {
-		// 			log::trace!("Verified cell ({row}, {col}) of block {block_num}");
-		// 		},
-		// 		Err(verification_err) => {
-		// 			log::error!("Verification for cell ({row}, {col}) of block {block_num} failed: {verification_err}");
-		// 		},
-		// 	}
-		// 	verification.status.is_ok()
-		// },
 		Ok(_) => {
 			let raw_pp = pp.to_raw_var_bytes();
 			let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
