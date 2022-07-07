@@ -11,7 +11,7 @@ use kate_recovery::com::{
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
 use rocksdb::DB;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
 
 use crate::{
@@ -202,7 +202,16 @@ pub async fn run(
 pub struct AvailExtrinsic {
 	pub app_id: u32,
 	pub signature: Option<MultiSignature>,
+	#[serde(serialize_with = "as_string")]
 	pub data: Vec<u8>,
+}
+
+fn as_string<S>(t: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+	S: Serializer,
+{
+	let s = std::str::from_utf8(t.as_slice()).map_err(serde::ser::Error::custom)?;
+	serializer.serialize_str(s)
 }
 
 pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
