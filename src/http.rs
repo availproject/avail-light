@@ -1,24 +1,36 @@
 extern crate rocksdb;
 
 use std::{
-	convert::TryInto,
 	net::SocketAddr,
 	str::FromStr,
 	sync::{mpsc::SyncSender, Arc},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
+use serde::{Deserialize, Serialize};
 use warp::{http::StatusCode, Filter};
 
 use crate::{
 	app_client::AvailExtrinsic,
-	types::{
-		CellContentQueryPayload, ConfidenceResponse, ExtrinsicsDataResponse, Mode, RuntimeConfig,
-	},
+	data::{get_confidence_from_db, get_decoded_data_from_db},
+	types::{CellContentQueryPayload, Mode, RuntimeConfig},
 };
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfidenceResponse {
+	pub block: u64,
+	pub confidence: f64,
+	pub serialised_confidence: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExtrinsicsDataResponse {
+	pub block: u64,
+	pub extrinsics: Vec<AvailExtrinsic>,
+}
 
 pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
 
@@ -29,74 +41,97 @@ pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	Some(shifted.to_str_radix(10))
 }
 
-fn confidence(block_num: u64, db: Arc<DB>) -> Result<ConfidenceResponse> {
-	fn get_confidence(db: Arc<DB>, block: u64) -> Result<u32> {
-		let cf_handle = db
-			.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
-			.context("Couldn't get column handle from db")?;
-
-		db.get_cf(&cf_handle, block.to_be_bytes())
-			.context("Couldn't get confidence in db")
-			.and_then(|found| found.context("Couldn't find confidence in db"))
-			.and_then(|confidence| {
-				confidence
-					.try_into()
-					.map_err(|_| anyhow!("Conversion failed"))
-					.context("Unable to convert confindence (wrong number of bytes)")
-			})
-			.map(u32::from_be_bytes)
-	}
-
-	let block = block_num;
-	get_confidence(db.clone(), block)
-		.context("Couldn't get confidence")
-		.map(move |count| {
-			let confidence = calculate_confidence(count);
-			let serialised_confidence = serialised_confidence(block, confidence);
-			ConfidenceResponse {
-				block,
-				confidence,
-				serialised_confidence,
-			}
-		})
+#[derive(Debug)]
+enum ClientResponse<T>
+where
+	T: Serialize,
+{
+	Normal(T),
+	NotFound,
+	Error(anyhow::Error),
 }
 
-fn appdata(block_num: u64, db: Arc<DB>, cfg: &RuntimeConfig) -> Result<ExtrinsicsDataResponse> {
-	fn get_data(db: Arc<DB>, app_id: u32, block: u64) -> Result<Vec<Vec<u8>>> {
-		let key = format!("{app_id}:{block}");
-		let cf_handle = db
-			.cf_handle(crate::consts::APP_DATA_CF)
-			.context("Couldn't get column handle from db")?;
-
-		db.get_cf(&cf_handle, key.as_bytes())
-			.context("Couldn't get app data in db")
-			.and_then(|found| found.context("Couldn't find app data in db"))
-			.and_then(|encoded_data| {
-				<_>::decode(&mut &encoded_data[..]).context("Couldn't scale decode raw data)")
+fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse> {
+	log::info!("Got request for confidence for block {block_num}");
+	let res = match get_confidence_from_db(db, block_num) {
+		Ok(Some(count)) => {
+			let confidence = calculate_confidence(count);
+			let serialised_confidence = serialised_confidence(block_num, confidence);
+			ClientResponse::Normal(ConfidenceResponse {
+				block: block_num,
+				confidence,
+				serialised_confidence,
 			})
+		},
+		Ok(None) => ClientResponse::NotFound,
+		Err(e) => ClientResponse::Error(e),
+	};
+	log::info!("Returning confidence: {res:?}");
+	res
+}
+
+fn appdata(
+	block_num: u64,
+	db: Arc<DB>,
+	cfg: &RuntimeConfig,
+) -> ClientResponse<ExtrinsicsDataResponse> {
+	fn decode_app_data_to_extrinsics(
+		data: Result<Option<Vec<Vec<u8>>>>,
+	) -> Result<Option<Vec<AvailExtrinsic>>> {
+		let xts = data.map(|e| {
+			e.map(|e| {
+				e.iter()
+					.enumerate()
+					.map(|(i, raw)| {
+						<_>::decode(&mut &raw[..])
+							.context(format!("Couldn't decode AvailExtrinsic num {i}"))
+					})
+					.collect::<Result<Vec<AvailExtrinsic>>>()
+			})
+		});
+		match xts {
+			Ok(Some(Ok(s))) => Ok(Some(s)),
+			Ok(Some(Err(e))) => Err(e),
+			Ok(None) => Ok(None),
+			Err(e) => Err(e),
+		}
 	}
+	log::info!("Got request for AppData for block {block_num}");
+	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
+		db,
+		cfg.app_id.unwrap(),
+		block_num,
+	)) {
+		Ok(Some(data)) => ClientResponse::Normal(ExtrinsicsDataResponse {
+			block: block_num,
+			extrinsics: data,
+		}),
 
-	let block = block_num;
-	let app_id = cfg.app_id.unwrap();
-	log::info!("fetching data for app_id: {app_id}");
-	get_data(db.clone(), app_id, block)
-		.context("Couldn't get app data from db")
-		.and_then(|data| {
-			let xts: Result<Vec<AvailExtrinsic>> = data
-				.iter()
-				.map(|raw| <_>::decode(&mut &raw[..]).context("Couldn't decode"))
-				.collect();
+		Ok(None) => ClientResponse::NotFound,
+		Err(e) => ClientResponse::Error(e),
+	};
+	log::info!("Returning AppData: {res:?}");
+	res
+}
 
-			let resp = xts.map(|e| {
-				let resp = ExtrinsicsDataResponse {
-					block,
-					extrinsics: e,
-				};
-				resp
-			});
-
-			resp.context("Couldn't decode extrinics")
-		})
+impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
+	fn into_response(self) -> warp::reply::Response {
+		match self {
+			ClientResponse::Normal(response) => {
+				warp::reply::with_status(warp::reply::json(&response), StatusCode::OK)
+					.into_response()
+			},
+			ClientResponse::NotFound => {
+				warp::reply::with_status(warp::reply::json(&"Not found"), StatusCode::NOT_FOUND)
+					.into_response()
+			},
+			ClientResponse::Error(e) => warp::reply::with_status(
+				warp::reply::json(&e.to_string()),
+				StatusCode::INTERNAL_SERVER_ERROR,
+			)
+			.into_response(),
+		}
+	}
 }
 
 pub async fn run_server(
@@ -111,26 +146,12 @@ pub async fn run_server(
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
 
 	let db = store.clone();
-	let get_confidence = warp::path!("v1" / "confidence" / u64).map(move |block_num| {
-		match confidence(block_num, db.clone()) {
-			Ok(v) => warp::reply::with_status(warp::reply::json(&v), StatusCode::OK),
-			Err(e) => warp::reply::with_status(
-				warp::reply::json(&e.to_string()),
-				StatusCode::INTERNAL_SERVER_ERROR,
-			),
-		}
-	});
+	let get_confidence = warp::path!("v1" / "confidence" / u64)
+		.map(move |block_num| confidence(block_num, db.clone()));
 
 	let db = store.clone();
-	let get_appdata = warp::path!("v1" / "appdata" / u64).map(move |block_num| {
-		match appdata(block_num, db.clone(), &cfg) {
-			Ok(v) => warp::reply::with_status(warp::reply::json(&v), StatusCode::OK),
-			Err(e) => warp::reply::with_status(
-				warp::reply::json(&e.to_string()),
-				StatusCode::INTERNAL_SERVER_ERROR,
-			),
-		}
-	});
+	let get_appdata = warp::path!("v1" / "appdata" / u64)
+		.map(move |block_num| appdata(block_num, db.clone(), &cfg));
 
 	let routes = warp::get().and(get_mode.or(get_confidence).or(get_appdata));
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
