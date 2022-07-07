@@ -18,13 +18,13 @@ fn kc_verify_proof_wrapper(
 	pp: PublicParameters,
 ) -> bool {
 	match kate_proof::kc_verify_proof(col as u32, proof, commitment, total_rows, total_cols, &pp) {
-		Ok(_) => {
+		Ok(ver) => {
 			let raw_pp = pp.to_raw_var_bytes();
 			let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 			let public_params_len = hex::encode(raw_pp).len();
 			log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 			log::trace!("Verified cell ({row}, {col}) of block {block_num}");
-			true
+			ver
 		},
 		Err(error) => {
 			log::error!("Verify failed for cell ({row}, {col}) of block {block_num}: {error}");
