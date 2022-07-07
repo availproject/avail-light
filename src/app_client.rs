@@ -127,7 +127,10 @@ async fn process_block(
 
 	store_encoded_data_in_db(db, app_id, block_number, &data)
 		.context("Failed to store data into database")?;
-	log::info!("Stored {count} data into database", count = data.len());
+	log::info!(
+		"Stored {count} bytes into database",
+		count = data.iter().fold(0usize, |acc, x| acc + x.len())
+	);
 	Ok(())
 }
 

@@ -4,9 +4,9 @@ use std::{
 	time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
-use codec::Encode;
+use codec::{Decode, Encode};
 use futures::future::join_all;
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
@@ -219,6 +219,16 @@ pub fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]
 		.context("Failed to write application data")
 }
 
+pub fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<Option<Vec<u8>>> {
+	let key = format!("{app_id}:{block_number}");
+	let cf_handle = db
+		.cf_handle(crate::consts::APP_DATA_CF)
+		.context("Couldn't get column handle from db")?;
+
+	db.get_cf(&cf_handle, key.as_bytes())
+		.context("Couldn't get app_data from db")
+}
+
 pub fn store_encoded_data_in_db<T: Encode>(
 	db: Arc<DB>,
 	app_id: u32,
@@ -226,6 +236,22 @@ pub fn store_encoded_data_in_db<T: Encode>(
 	data: &T,
 ) -> Result<()> {
 	store_data_in_db(db, app_id, block_number, &data.encode())
+}
+
+pub fn get_decoded_data_from_db<T: Decode>(
+	db: Arc<DB>,
+	app_id: u32,
+	block_number: u64,
+) -> Result<Option<T>> {
+	let res = get_data_from_db(db, app_id, block_number)
+		.map(|e| e.map(|v| <T>::decode(&mut &v[..]).context("Failed decoding the app data.")));
+
+	match res {
+		Ok(Some(Err(e))) => Err(e),
+		Ok(Some(Ok(s))) => Ok(Some(s)),
+		Ok(None) => Ok(None),
+		Err(e) => Err(e),
+	}
 }
 
 pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
@@ -259,6 +285,28 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 	db.get_pinned_cf(&handle, block_number.to_be_bytes())
 		.context("Failed to get confidence")
 		.map(|value| value.is_some())
+}
+
+pub fn get_confidence_from_db(db: Arc<DB>, block_number: u64) -> Result<Option<u32>> {
+	let cf_handle = db
+		.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
+		.context("Couldn't get column handle from db")?;
+
+	let res = db
+		.get_cf(&cf_handle, &block_number.to_be_bytes())
+		.context("Couldn't get confidence in db")?;
+	let res = res.map(|data| {
+		data.try_into()
+			.map_err(|_| anyhow!("Conversion failed"))
+			.context("Unable to convert confindence (wrong number of bytes)")
+			.map(u32::from_be_bytes)
+	});
+
+	match res {
+		Some(Ok(r)) => Ok(Some(r)),
+		None => Ok(None),
+		Some(Err(e)) => Err(e),
+	}
 }
 
 pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: u32) -> Result<()> {
