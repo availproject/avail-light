@@ -149,6 +149,10 @@ pub async fn do_main() -> Result<()> {
 	};
 
 	let pp = kate_proof::testnet::public_params(1024);
+	let raw_pp = pp.to_raw_var_bytes();
+	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
+	let public_params_len = hex::encode(raw_pp).len();
+	log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 
