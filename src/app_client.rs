@@ -48,15 +48,18 @@ async fn process_block(
 		count = ipfs_cells.len()
 	);
 
-	let mut rpc_cells = get_kate_proof(rpc_url, block.number, unfetched)
-		.await
-		.context("Failed to fetch data cells from node RPC")?;
+	let mut rpc_cells: Vec<Cell> = Vec::new();
+	for cell in unfetched.chunks(30) {
+		let mut query_cells = get_kate_proof(rpc_url, block.number, (*cell).to_vec())
+			.await
+			.context("Failed to fetch data cells from node RPC")?;
 
+		rpc_cells.append(&mut query_cells);
+	}
 	log::info!(
 		"Fetched {count} cells of block {block_number} from RPC",
 		count = rpc_cells.len()
 	);
-
 	let reconstruct = data_positions.len() > (ipfs_cells.len() + rpc_cells.len());
 
 	if reconstruct {
