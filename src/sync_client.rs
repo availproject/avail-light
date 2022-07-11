@@ -114,7 +114,7 @@ async fn process_block(
 	store_confidence_in_db(store.clone(), block_num, count as u32)
 		.context("Failed to store confidence in DB")?;
 
-	insert_into_dht(&ipfs, block_num, rpc_fetched).await;
+	insert_into_dht(&ipfs, block_num, rpc_fetched, max_parallel_fetch_tasks).await;
 	log::info!("Cells inserted into DHT for block {block_num}");
 	Ok(())
 }

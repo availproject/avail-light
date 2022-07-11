@@ -119,7 +119,7 @@ pub async fn run(
 					store_block_header_in_db(db.clone(), num, header)
 						.context("Failed to store block header in DB")?;
 
-					insert_into_dht(&ipfs, num, rpc_fetched).await;
+					insert_into_dht(&ipfs, num, rpc_fetched, max_parallel_fetch_tasks).await;
 					log::info!("Cells inserted into DHT for block {num}");
 
 					// notify ipfs-based application client
