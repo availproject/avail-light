@@ -210,8 +210,7 @@ fn as_string<S>(t: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
 	S: Serializer,
 {
-	let s = std::str::from_utf8(t.as_slice()).map_err(serde::ser::Error::custom)?;
-	serializer.serialize_str(s)
+	sp_core::bytes::serialize(t, serializer)
 }
 
 pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
