@@ -56,7 +56,9 @@ app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
 
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
+# IPFS bootstrap node info
+# bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
+# bootstraps = []
 
 # See https://docs.rs/log/0.4.14/log/enum.LevelFilter.html for possible log level values
 log_level = "INFO"
