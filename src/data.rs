@@ -169,17 +169,11 @@ pub async fn insert_into_dht(
 		|(cell, ipfs)| async move {
 			let reference = cell.reference(block);
 			if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
-				log::info!("Fail to put record for cell {reference} to DHT: {error}");
+				log::debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}
 		},
 	)
 	.await;
-	// for cell in cells.into_iter().map(IpfsCell) {
-	// 	let reference = cell.reference(block);
-	// 	if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
-	// 		log::info!("Fail to put record for cell {reference} to DHT: {error}");
-	// 	}
-	// }
 }
 
 pub async fn fetch_cells_from_dht(
