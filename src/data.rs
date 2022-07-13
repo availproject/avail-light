@@ -7,7 +7,10 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use codec::{Decode, Encode};
-use futures::future::join_all;
+use futures::{
+	future::join_all,
+	stream::{self},
+};
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
 	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
@@ -152,13 +155,25 @@ impl IpfsCell {
 /// * `ipfs` - Reference to IPFS node
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into IPFS
-pub async fn insert_into_dht(ipfs: &Ipfs<DefaultParams>, block: u64, cells: Vec<Cell>) {
-	for cell in cells.into_iter().map(IpfsCell) {
-		let reference = cell.reference(block);
-		if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
-			log::info!("Fail to put record for cell {reference} to DHT: {error}");
-		}
-	}
+pub async fn insert_into_dht(
+	ipfs: &Ipfs<DefaultParams>,
+	block: u64,
+	cells: Vec<Cell>,
+	max_parallel_fetch_tasks: usize,
+) {
+	let ipfs_cells: Vec<_> = cells.into_iter().map(IpfsCell).collect::<Vec<_>>();
+	let ipfs_cell_tuples = ipfs_cells.iter().map(move |b| (b, ipfs.clone()));
+	futures::StreamExt::for_each_concurrent(
+		stream::iter(ipfs_cell_tuples),
+		max_parallel_fetch_tasks,
+		|(cell, ipfs)| async move {
+			let reference = cell.reference(block);
+			if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
+				log::debug!("Fail to put record for cell {reference} to DHT: {error}");
+			}
+		},
+	)
+	.await;
 }
 
 pub async fn fetch_cells_from_dht(
