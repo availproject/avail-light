@@ -2,6 +2,7 @@ extern crate threadpool;
 
 use std::sync::{mpsc::channel, Arc};
 
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::com::Cell;
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
@@ -14,22 +15,12 @@ fn kc_verify_proof_wrapper(
 	total_cols: usize,
 	proof: &[u8],
 	commitment: &[u8],
+	pp: PublicParameters,
 ) -> bool {
-	match kate_proof::kc_verify_proof(col, proof, commitment, total_rows, total_cols) {
-		Ok(verification) => {
-			let public_params_hash =
-				hex::encode(sp_core::blake2_128(verification.public_params.as_slice()));
-			let public_params_len = hex::encode(verification.public_params.as_slice()).len();
-			log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-			match &verification.status {
-				Ok(()) => {
-					log::trace!("Verified cell ({row}, {col}) of block {block_num}");
-				},
-				Err(verification_err) => {
-					log::error!("Verification for cell ({row}, {col}) of block {block_num} failed: {verification_err}");
-				},
-			}
-			verification.status.is_ok()
+	match kate_proof::kc_verify_proof(col as u32, proof, commitment, total_rows, total_cols, &pp) {
+		Ok(ver) => {
+			log::trace!("Verified cell ({row}, {col}) of block {block_num}");
+			ver
 		},
 		Err(error) => {
 			log::error!("Verify failed for cell ({row}, {col}) of block {block_num}: {error}");
@@ -44,6 +35,7 @@ pub fn verify_proof(
 	total_cols: u16,
 	cells: &[Cell],
 	commitment: Vec<u8>,
+	pp: PublicParameters,
 ) -> usize {
 	let cpus = num_cpus::get();
 	let pool = threadpool::ThreadPool::new(cpus);
@@ -56,6 +48,7 @@ pub fn verify_proof(
 		let col = cell.position.col;
 		let tx = tx.clone();
 		let commitment = commitment.clone();
+		let params = pp.clone();
 
 		pool.execute(move || {
 			if let Err(error) = tx.send(kc_verify_proof_wrapper(
@@ -66,6 +59,7 @@ pub fn verify_proof(
 				total_cols as usize,
 				&cell.content,
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
+				params,
 			)) {
 				log::error!("Failed to send proof verified message: {error}");
 			};

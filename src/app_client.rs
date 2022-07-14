@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use codec::{Compact, Decode, Error as DecodeError, Input};
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
@@ -30,6 +31,7 @@ async fn process_block(
 	data_positions: &Vec<Position>,
 	column_positions: &[Position],
 	max_parallel_fetch_tasks: usize,
+	pp: PublicParameters,
 ) -> Result<()> {
 	let block_number = block.number;
 
@@ -104,6 +106,7 @@ async fn process_block(
 		block.dimensions.cols as u16,
 		&cells,
 		block.commitment.clone(),
+		pp,
 	);
 
 	log::info!("Completed {verified} verification rounds for block {block_number}");
@@ -165,6 +168,7 @@ pub async fn run(
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
 	max_parallel_fetch_tasks: usize,
+	pp: PublicParameters,
 ) {
 	log::info!("Starting for app {app_id}...");
 
@@ -186,6 +190,7 @@ pub async fn run(
 					&data_positions,
 					&column_positions,
 					max_parallel_fetch_tasks,
+					pp.clone(),
 				)
 				.await
 				{

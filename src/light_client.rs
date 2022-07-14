@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
@@ -25,6 +26,7 @@ pub async fn run(
 	rpc_url: String,
 	block_tx: SyncSender<ClientMsg>,
 	max_parallel_fetch_tasks: usize,
+	pp: PublicParameters,
 ) -> Result<()> {
 	log::info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -94,8 +96,14 @@ pub async fn run(
 						continue;
 					}
 
-					let count =
-						proof::verify_proof(num, max_rows, max_cols, &cells, commitment.clone());
+					let count = proof::verify_proof(
+						num,
+						max_rows,
+						max_cols,
+						&cells,
+						commitment.clone(),
+						pp.clone(),
+					);
 					log::info!(
 						"Completed {count} verification rounds for block {num}\t{:?}",
 						begin.elapsed()?

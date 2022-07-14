@@ -5,6 +5,7 @@ extern crate rocksdb;
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
+use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
@@ -23,6 +24,7 @@ async fn process_block(
 	block_num: u64,
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
+	pp: PublicParameters,
 ) -> Result<()> {
 	if is_block_header_in_db(store.clone(), block_num)
 		.context("Failed to check if block header is in DB")?
@@ -104,7 +106,7 @@ async fn process_block(
 		block_num
 	);
 
-	let count = crate::proof::verify_proof(block_num, max_rows, max_cols, &cells, commitment);
+	let count = crate::proof::verify_proof(block_num, max_rows, max_cols, &cells, commitment, pp);
 
 	log::info!(
 		"Completed {count} verification rounds for block {block_num}\t{:?}",
@@ -126,18 +128,26 @@ pub async fn run(
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
+	pp: PublicParameters,
 ) {
 	log::info!("Syncing block headers from 0 to {}", end_block);
-	let blocks = (start_block..=end_block)
-		.map(move |b| (b, url.clone(), header_store.clone(), ipfs.clone()));
+	let blocks = (start_block..=end_block).map(move |b| {
+		(
+			b,
+			url.clone(),
+			header_store.clone(),
+			ipfs.clone(),
+			pp.clone(),
+		)
+	});
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_num, url, store, ipfs)| async move {
+			|(block_num, url, store, ipfs, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks).await
+					process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks, pp).await
 				{
 					log::error!("Cannot process block {block_num}: {error}");
 				}

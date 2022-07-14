@@ -1,7 +1,6 @@
 extern crate ipfs_embed;
 
 use anyhow::Context;
-use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
