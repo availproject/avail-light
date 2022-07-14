@@ -326,7 +326,7 @@ dependencies = [
  "async-std",
  "chrono",
  "confy",
- "dusk-plonk 0.8.2 (git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-4)",
+ "dusk-plonk",
  "ed25519-dalek",
  "futures",
  "futures-util",
@@ -1127,22 +1127,6 @@ dependencies = [
  "dusk-bytes",
  "rand_core 0.6.3",
  "subtle",
-]
-
-[[package]]
-name = "dusk-plonk"
-version = "0.8.2"
-source = "git+https://github.com/maticnetwork/plonk.git?tag=v0.8.2-polygon-2#25df0c903b802c2b6df897a308ab6bbc50dfb1bd"
-dependencies = [
- "cfg-if 1.0.0",
- "dusk-bls12_381",
- "dusk-bytes",
- "dusk-jubjub",
- "hashbrown 0.9.1",
- "itertools 0.9.0",
- "merlin 3.0.0",
- "rand_core 0.6.3",
- "rayon",
 ]
 
 [[package]]
@@ -1977,11 +1961,11 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=5150d1c#5150d1cffd125e3a7e952e8d6930e59ce8f4c797"
+source = "git+https://github.com/maticnetwork/avail.git?branch=develop#570a47099f91ebe5a2e4785c7fe4ba5b895f607e"
 dependencies = [
  "anyhow",
  "dusk-bytes",
- "dusk-plonk 0.8.2 (git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-4)",
+ "dusk-plonk",
  "merlin 3.0.0",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -1990,10 +1974,10 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=5150d1c#5150d1cffd125e3a7e952e8d6930e59ce8f4c797"
+source = "git+https://github.com/maticnetwork/avail.git?branch=develop#570a47099f91ebe5a2e4785c7fe4ba5b895f607e"
 dependencies = [
  "dusk-bytes",
- "dusk-plonk 0.8.2 (git+https://github.com/maticnetwork/plonk.git?tag=v0.8.2-polygon-2)",
+ "dusk-plonk",
  "getrandom 0.2.7",
  "parity-scale-codec",
  "serde",
@@ -4989,7 +4973,7 @@ checksum = "511de3f85caf1c98983545490c3d09685fa8eb634e57eec22bb4db271f46cbd8"
 dependencies = [
  "futures-util",
  "log",
- "pin-project 1.0.10",
+ "pin-project 1.0.11",
  "tokio",
  "tungstenite 0.14.0",
 ]
@@ -5454,7 +5438,7 @@ dependencies = [
  "mime_guess",
  "multipart",
  "percent-encoding",
- "pin-project 1.0.10",
+ "pin-project 1.0.11",
  "scoped-tls",
  "serde",
  "serde_json",
