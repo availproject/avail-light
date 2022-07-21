@@ -1,5 +1,3 @@
-extern crate rocksdb;
-
 use std::{
 	net::SocketAddr,
 	str::FromStr,

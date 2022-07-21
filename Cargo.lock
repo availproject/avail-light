@@ -1132,7 +1132,7 @@ dependencies = [
 [[package]]
 name = "dusk-plonk"
 version = "0.8.2"
-source = "git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-4#a148675611a44861f8aab1f8148b34fa3c9374a1"
+source = "git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-5#08d6cacb994e898645b975a4f745c0c643a121ad"
 dependencies = [
  "cfg-if 1.0.0",
  "dusk-bls12_381",
@@ -1961,7 +1961,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=develop#570a47099f91ebe5a2e4785c7fe4ba5b895f607e"
+source = "git+https://github.com/maticnetwork/avail.git?rev=3c20cda#3c20cda0dccdfec51a99d554fdd8beaa2668fd44"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1974,7 +1974,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=develop#570a47099f91ebe5a2e4785c7fe4ba5b895f607e"
+source = "git+https://github.com/maticnetwork/avail.git?rev=3c20cda#3c20cda0dccdfec51a99d554fdd8beaa2668fd44"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
