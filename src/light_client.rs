@@ -59,7 +59,7 @@ pub async fn run(
 						log::error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
-					
+
 					let cell_count = rpc::cell_count_for_confidence(confidence);
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 					log::info!(
@@ -145,16 +145,15 @@ pub async fn run(
 	Ok(())
 }
 
-
 #[cfg(test)]
 
-mod tests{
-	
+mod tests {
+
 	use super::rpc::cell_count_for_confidence;
 
 	#[test]
 
-	fn test_cell_count_for_confidence(){
+	fn test_cell_count_for_confidence() {
 		let count = 1;
 		assert_eq!(cell_count_for_confidence(60f64) > count, true);
 		assert_eq!(

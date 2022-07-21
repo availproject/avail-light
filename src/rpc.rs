@@ -279,8 +279,11 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	let mut cell_count: u32;
 	if (confidence >= 100f64) || (confidence < 50.0) {
 		//in this default of 8 cells will be taken
-		log::debug!("confidence is {} invalid so taking default confidence of 99", confidence);
-		cell_count = (-((1f64 - (99f64/ 100f64)).log2())).ceil() as u32;
+		log::debug!(
+			"confidence is {} invalid so taking default confidence of 99",
+			confidence
+		);
+		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
 	} else {
 		cell_count = (-((1f64 - (confidence / 100f64)).log2())).ceil() as u32;
 	}
