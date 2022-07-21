@@ -1,7 +1,3 @@
-extern crate confy;
-extern crate rocksdb;
-extern crate structopt;
-
 use std::{
 	str::FromStr,
 	sync::{mpsc::sync_channel, Arc},

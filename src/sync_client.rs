@@ -1,7 +1,3 @@
-extern crate futures;
-extern crate num_cpus;
-extern crate rocksdb;
-
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};

@@ -1,6 +1,3 @@
-extern crate futures;
-extern crate num_cpus;
-
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
