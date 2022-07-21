@@ -53,6 +53,14 @@ pub async fn init_ipfs(
 		log::info!("No bootstrap nodes, DHT will be available after first peer connects");
 	}
 
+	let peer_id = ipfs.local_peer_id();
+	// In rare cases there are no listeners, performing safe get
+	if let Some(listener) = ipfs.listeners().get(0) {
+		log::info!("IPFS backed application client: {peer_id}\t{listener:?}");
+	} else {
+		log::info!("IPFS backed application client: {peer_id}");
+	}
+
 	Ok(ipfs)
 }
 
