@@ -121,7 +121,6 @@ pub async fn do_main() -> Result<()> {
 	// communication channels being established for talking to
 	// ipfs backed application client
 	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
-	let (self_info_tx, self_info_rx) = sync_channel::<(PeerId, Multiaddr)>(1);
 
 	let bootstrap_nodes = &cfg
 		.bootstraps
@@ -140,13 +139,6 @@ pub async fn do_main() -> Result<()> {
 	.context("Failed to init IPFS client")?;
 
 	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
-
-	// inform invoker about self
-	self_info_tx.send((ipfs.local_peer_id(), ipfs.listeners()[0].clone()))?;
-
-	if let Ok((peer_id, addrs)) = self_info_rx.recv() {
-		log::info!("IPFS backed application client: {peer_id}\t{addrs:?}");
-	};
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
