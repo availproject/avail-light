@@ -47,22 +47,10 @@ pub async fn init_ipfs(
 	let _ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
 
 	if !bootstrap_nodes.is_empty() {
+		log::info!("Bootstraping the DHT with bootstrap nodes...");
 		ipfs.bootstrap(bootstrap_nodes).await?;
 	} else {
-		// If client is the first one on the network, wait for the second client ConnectionEstablished event to use it as bootstrap
-		// DHT requires boostrap to complete in order to be able to insert new records
-		let node = ipfs
-			.swarm_events()
-			.find_map(|event| {
-				if let ipfs_embed::Event::ConnectionEstablished(peer_id, connected_point) = event {
-					Some((peer_id, connected_point.get_remote_address().clone()))
-				} else {
-					None
-				}
-			})
-			.await
-			.context("Connection is not established")?;
-		ipfs.bootstrap(&[node]).await?;
+		log::info!("No bootstrap nodes, DHT will be available after first peer connects");
 	}
 
 	Ok(ipfs)
