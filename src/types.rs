@@ -1,5 +1,3 @@
-extern crate ipfs_embed;
-
 use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};

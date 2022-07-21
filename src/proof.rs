@@ -1,5 +1,3 @@
-extern crate threadpool;
-
 use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;

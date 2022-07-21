@@ -1,6 +1,3 @@
-extern crate futures;
-extern crate num_cpus;
-
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
@@ -121,13 +118,17 @@ pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 	}
 }
 
-pub fn generate_random_cells(max_rows: u16, max_cols: u16) -> Vec<Position> {
+pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> Vec<Position> {
 	let max_cells = (max_rows as u32) * (max_cols as u32);
-	let count: u16 = if max_cells < 8 {
-		// Multiplication cannot overflow since result is less than 8
+	let count: u16 = if max_cells < cell_count as u32 {
+		log::debug!(
+			"Max cells count {} is lesser than cell_count {}",
+			cell_count,
+			max_cells
+		);
 		max_rows * max_cols
 	} else {
-		8
+		cell_count as u16
 	};
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
@@ -266,4 +267,29 @@ pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
 		}
 	}
 	Err(anyhow!("No valid node rpc found from given list"))
+}
+
+/* @note: fn to take the number of cells needs to get equal to or greater than
+the percentage of confidence mentioned in config file */
+
+pub fn cell_count_for_confidence(confidence: f64) -> u32 {
+	let mut cell_count: u32;
+	if (confidence >= 100f64) || (confidence < 50.0) {
+		//in this default of 8 cells will be taken
+		log::debug!(
+			"confidence is {} invalid so taking default confidence of 99",
+			confidence
+		);
+		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
+	} else {
+		cell_count = (-((1f64 - (confidence / 100f64)).log2())).ceil() as u32;
+	}
+	if cell_count == 0 || cell_count > 10 {
+		log::debug!(
+			"confidence is {} invalid so taking default confidence of 99",
+			confidence
+		);
+		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
+	}
+	cell_count
 }

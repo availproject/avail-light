@@ -1,7 +1,3 @@
-extern crate futures;
-extern crate num_cpus;
-extern crate rocksdb;
-
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
@@ -25,6 +21,7 @@ async fn process_block(
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
+	confidence: f64,
 ) -> Result<()> {
 	if is_block_header_in_db(store.clone(), block_num)
 		.context("Failed to check if block header is in DB")?
@@ -67,7 +64,8 @@ async fn process_block(
 	let commitment = block_body.header.extrinsics_root.commitment;
 	let block_num = block_body.header.number;
 	// now this is in `u64`
-	let positions = rpc::generate_random_cells(max_rows, max_cols);
+	let cell_count = rpc::cell_count_for_confidence(confidence);
+	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (ipfs_fetched, unfetched) =
 		fetch_cells_from_dht(&ipfs, block_num, &positions, max_parallel_fetch_tasks)
@@ -129,6 +127,7 @@ pub async fn run(
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
+	confidence: f64,
 ) {
 	log::info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block).map(move |b| {
@@ -146,8 +145,16 @@ pub async fn run(
 			// run those many concurrent syncing lightweight tasks, not threads
 			|(block_num, url, store, ipfs, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) =
-					process_block(url, store, block_num, ipfs, max_parallel_fetch_tasks, pp).await
+				if let Err(error) = process_block(
+					url,
+					store,
+					block_num,
+					ipfs,
+					max_parallel_fetch_tasks,
+					pp.clone(),
+					confidence,
+				)
+				.await
 				{
 					log::error!("Cannot process block {block_num}: {error}");
 				}
