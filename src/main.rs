@@ -1,9 +1,11 @@
 use std::{
+	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
 	sync::{mpsc::sync_channel, Arc},
 	thread, time,
 };
 
+use ::prometheus::Registry;
 use anyhow::{Context, Result};
 use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -24,6 +26,7 @@ mod consts;
 mod data;
 mod http;
 mod light_client;
+mod prometheus_handler;
 mod proof;
 mod rpc;
 mod sync_client;
@@ -113,7 +116,15 @@ pub async fn do_main() -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	info!("Using {:?}", cfg);
+	// Spawn Prometheus server
+	let registry = Registry::default();
+
+	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
+		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9520),
+		registry.clone(),
+	));
+
+	log::info!("Using {:?}", cfg);
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 
@@ -200,6 +211,7 @@ pub async fn do_main() -> Result<()> {
 		block_tx,
 		cfg.max_parallel_fetch_tasks,
 		pp,
+		registry,
 	)
 	.await
 	.context("Failed to run light client")

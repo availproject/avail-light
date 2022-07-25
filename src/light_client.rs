@@ -7,6 +7,10 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use prometheus::{
+	core::{AtomicF64, GenericCounter},
+	Registry,
+};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
@@ -16,7 +20,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	proof, rpc,
+	prometheus_handler, proof, rpc,
 	types::{self, ClientMsg},
 };
 
@@ -29,10 +33,18 @@ pub async fn run(
 	block_tx: SyncSender<ClientMsg>,
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
+	registry: Registry,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(full_node_ws)?;
+	// Register metrics
+	let block_counter = prometheus_handler::register(
+		prometheus::Counter::new("block_number", "Current block number")
+			.expect("Creates block number counter"),
+		&registry,
+	)
+	.expect("Registers block counter metric");
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
 		write
@@ -46,6 +58,7 @@ pub async fn run(
 			let data = message?.into_data();
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
+					block_counter.inc();
 					let header = &params.header;
 
 					// now this is in `u64`

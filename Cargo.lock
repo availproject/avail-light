@@ -342,6 +342,7 @@ dependencies = [
  "num",
  "num_cpus",
  "parity-scale-codec",
+ "prometheus",
  "proptest",
  "rand 0.8.5",
  "regex",
