@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use log::{error, info};
 use rocksdb::DB;
 
 use crate::{
@@ -38,7 +39,7 @@ async fn process_block(
 		.await
 		.context("Failed to get block {block_num} by block number")?;
 
-	log::info!(
+	info!(
 		"Block {block_num} app index {:?}",
 		block_body.header.app_data_lookup.index
 	);
@@ -46,7 +47,7 @@ async fn process_block(
 	store_block_header_in_db(store.clone(), block_num, &block_body.header)
 		.context("Failed to store block header in DB")?;
 
-	log::info!("Synced block header of {block_num}\t{:?}", begin.elapsed()?);
+	info!("Synced block header of {block_num}\t{:?}", begin.elapsed()?);
 
 	// If it's found that this certain block is not verified
 	// then it'll be verified now
@@ -72,7 +73,7 @@ async fn process_block(
 			.await
 			.context("Failed to fetch cells from DHT")?;
 
-	log::info!(
+	info!(
 		"Number of cells fetched from DHT for block {}: {}",
 		block_num,
 		ipfs_fetched.len()
@@ -82,7 +83,7 @@ async fn process_block(
 		.await
 		.context("Failed to fetch cells from node RPC")?;
 
-	log::info!(
+	info!(
 		"Number of cells fetched from RPC for block {}: {}",
 		block_num,
 		rpc_fetched.len()
@@ -98,7 +99,7 @@ async fn process_block(
 		));
 	}
 
-	log::info!(
+	info!(
 		"Fetched {} cells of block {} for verification",
 		cells.len(),
 		block_num
@@ -106,7 +107,7 @@ async fn process_block(
 
 	let count = crate::proof::verify_proof(block_num, max_rows, max_cols, &cells, commitment, pp);
 
-	log::info!(
+	info!(
 		"Completed {count} verification rounds for block {block_num}\t{:?}",
 		begin.elapsed()?
 	);
@@ -115,7 +116,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(&ipfs, block_num, rpc_fetched, max_parallel_fetch_tasks).await;
-	log::info!("Cells inserted into DHT for block {block_num}");
+	info!("Cells inserted into DHT for block {block_num}");
 	Ok(())
 }
 
@@ -129,7 +130,7 @@ pub async fn run(
 	pp: PublicParameters,
 	confidence: f64,
 ) {
-	log::info!("Syncing block headers from 0 to {}", end_block);
+	info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block).map(move |b| {
 		(
 			b,
@@ -156,7 +157,7 @@ pub async fn run(
 				)
 				.await
 				{
-					log::error!("Cannot process block {block_num}: {error}");
+					error!("Cannot process block {block_num}: {error}");
 				}
 			},
 		)

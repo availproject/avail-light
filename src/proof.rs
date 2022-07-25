@@ -2,6 +2,7 @@ use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::com::Cell;
+use log::{error, trace};
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
 // for a certain block
@@ -17,11 +18,11 @@ fn kc_verify_proof_wrapper(
 ) -> bool {
 	match kate_proof::kc_verify_proof(col as u32, proof, commitment, total_rows, total_cols, &pp) {
 		Ok(ver) => {
-			log::trace!("Verified cell ({row}, {col}) of block {block_num}");
+			trace!("Verified cell ({row}, {col}) of block {block_num}");
 			ver
 		},
 		Err(error) => {
-			log::error!("Verify failed for cell ({row}, {col}) of block {block_num}: {error}");
+			error!("Verify failed for cell ({row}, {col}) of block {block_num}: {error}");
 			false
 		},
 	}
@@ -59,7 +60,7 @@ pub fn verify_proof(
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
 				params,
 			)) {
-				log::error!("Failed to send proof verified message: {error}");
+				error!("Failed to send proof verified message: {error}");
 			};
 		});
 	}

@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use log::{error, info};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -29,7 +30,7 @@ pub async fn run(
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 ) -> Result<()> {
-	log::info!("Starting light client...");
+	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(full_node_ws)?;
 	while let Some(z) = rpc::check_connection(&urls).await {
@@ -39,7 +40,7 @@ pub async fn run(
 			.await
 			.context("Failed to send ws-message (chain_subscribeFinalizedHeads)")?;
 
-		log::info!("Connected to Substrate Node");
+		info!("Connected to Substrate Node");
 
 		while let Some(message) = read.next().await {
 			let data = message?.into_data();
@@ -56,13 +57,13 @@ pub async fn run(
 					let max_rows = header.extrinsics_root.rows * 2;
 					let max_cols = header.extrinsics_root.cols;
 					if max_cols < 3 {
-						log::error!("chunk size less than 3");
+						error!("chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 
 					let cell_count = rpc::cell_count_for_confidence(confidence);
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
-					log::info!(
+					info!(
 						"Random cells generated: {} from block: {}",
 						positions.len(),
 						num
@@ -73,7 +74,7 @@ pub async fn run(
 							.await
 							.context("Failed to fetch cells from DHT")?;
 
-					log::info!(
+					info!(
 						"Number of cells fetched from DHT for block {}: {}",
 						num,
 						ipfs_fetched.len()
@@ -83,7 +84,7 @@ pub async fn run(
 						.await
 						.context("Failed to fetch cells from node RPC")?;
 
-					log::info!(
+					info!(
 						"Number of cells fetched from RPC for block {}: {}",
 						num,
 						rpc_fetched.len()
@@ -94,7 +95,7 @@ pub async fn run(
 					cells.extend(rpc_fetched.clone());
 
 					if positions.len() > cells.len() {
-						log::error!("Failed to fetch {} cells", positions.len() - cells.len());
+						error!("Failed to fetch {} cells", positions.len() - cells.len());
 						continue;
 					}
 
@@ -106,7 +107,7 @@ pub async fn run(
 						commitment.clone(),
 						pp.clone(),
 					);
-					log::info!(
+					info!(
 						"Completed {count} verification rounds for block {num}\t{:?}",
 						begin.elapsed()?
 					);
@@ -116,7 +117,7 @@ pub async fn run(
 						.context("Failed to store confidence in DB")?;
 
 					let conf = calculate_confidence(count as u32);
-					log::info!("Confidence factor for block {}: {}", num, conf);
+					info!("Confidence factor for block {}: {}", num, conf);
 
 					// push latest mined block's header into column family specified
 					// for keeping block headers, to be used
@@ -130,7 +131,7 @@ pub async fn run(
 						.context("Failed to store block header in DB")?;
 
 					insert_into_dht(&ipfs, num, rpc_fetched, max_parallel_fetch_tasks).await;
-					log::info!("Cells inserted into DHT for block {num}");
+					info!("Cells inserted into DHT for block {num}");
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
@@ -138,7 +139,7 @@ pub async fn run(
 						.send(types::ClientMsg::from(params.header))
 						.context("Failed to send block message")?;
 				},
-				Err(error) => log::info!("Misconstructed Header: {:?}", error),
+				Err(error) => info!("Misconstructed Header: {:?}", error),
 			}
 		}
 	}

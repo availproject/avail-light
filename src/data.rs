@@ -17,6 +17,7 @@ use ipfs_embed::{
 	Quorum, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
+use log::{debug, info, trace};
 use rocksdb::DB;
 
 use crate::{
@@ -47,18 +48,18 @@ pub async fn init_ipfs(
 	let _ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
 
 	if !bootstrap_nodes.is_empty() {
-		log::info!("Bootstraping the DHT with bootstrap nodes...");
+		info!("Bootstraping the DHT with bootstrap nodes...");
 		ipfs.bootstrap(bootstrap_nodes).await?;
 	} else {
-		log::info!("No bootstrap nodes, DHT will be available after first peer connects");
+		info!("No bootstrap nodes, DHT will be available after first peer connects");
 	}
 
 	let peer_id = ipfs.local_peer_id();
 	// In rare cases there are no listeners, performing safe get
 	if let Some(listener) = ipfs.listeners().get(0) {
-		log::info!("IPFS backed application client: {peer_id}\t{listener:?}");
+		info!("IPFS backed application client: {peer_id}\t{listener:?}");
 	} else {
-		log::info!("IPFS backed application client: {peer_id}");
+		info!("IPFS backed application client: {peer_id}");
 	}
 
 	Ok(ipfs)
@@ -84,7 +85,7 @@ pub async fn log_ipfs_events(ipfs: Ipfs<IPFSDefaultParams>) {
 			ipfs_embed::Event::NewInfo(peer_id) => Event::NewInfo(peer_id),
 			_ => Event::Other, // TODO: Is there a purpose to handle those events?
 		};
-		log::trace!("Received event: {}", event);
+		trace!("Received event: {}", event);
 	}
 }
 
@@ -103,7 +104,7 @@ async fn fetch_cell_from_dht(
 	let reference = position.reference(block_number);
 	let record_key = Key::from(reference.as_bytes().to_vec());
 
-	log::trace!("Getting DHT record for reference {}", reference);
+	trace!("Getting DHT record for reference {}", reference);
 	// For now, we take only the first record from the list
 	ipfs.get_record(record_key, Quorum::One)
 		.await
@@ -165,7 +166,7 @@ pub async fn insert_into_dht(
 		|(cell, ipfs)| async move {
 			let reference = cell.reference(block);
 			if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
-				log::debug!("Fail to put record for cell {reference} to DHT: {error}");
+				debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}
 		},
 	)
@@ -202,8 +203,8 @@ pub async fn fetch_cells_from_dht(
 	for (result, position) in fetched.iter().chain(unfetched.iter()) {
 		let reference = position.reference(block_number);
 		match result {
-			Ok(_) => log::debug!("Fetched cell {reference} from DHT"),
-			Err(error) => log::debug!("Error fetching cell {reference} from DHT: {error}"),
+			Ok(_) => debug!("Fetched cell {reference} from DHT"),
+			Err(error) => debug!("Error fetching cell {reference} from DHT: {error}"),
 		}
 	}
 

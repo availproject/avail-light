@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use ipfs_embed::{Multiaddr, PeerId};
+use log::{error, info, trace, warn, LevelFilter, ParseLevelError};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -72,11 +73,11 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 
 fn parse_log_level(
 	log_level: &str,
-	default: log::LevelFilter,
-) -> (log::LevelFilter, Option<log::ParseLevelError>) {
+	default: LevelFilter,
+) -> (LevelFilter, Option<ParseLevelError>) {
 	log_level
 		.to_uppercase()
-		.parse::<log::LevelFilter>()
+		.parse::<LevelFilter>()
 		.map(|log_level| (log_level, None))
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
@@ -87,7 +88,7 @@ pub async fn do_main() -> Result<()> {
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
-	let (log_level, parse_error) = parse_log_level(&cfg.log_level, log::LevelFilter::Info);
+	let (log_level, parse_error) = parse_log_level(&cfg.log_level, LevelFilter::Info);
 
 	SimpleLogger::new()
 		.with_level(log_level)
@@ -95,10 +96,10 @@ pub async fn do_main() -> Result<()> {
 		.context("Failed to init logger")?;
 
 	if let Some(error) = parse_error {
-		log::warn!("Using default log level: {}", error);
+		warn!("Using default log level: {}", error);
 	}
 
-	log::info!("Using {:?}", cfg);
+	info!("Using {:?}", cfg);
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 
@@ -140,7 +141,7 @@ pub async fn do_main() -> Result<()> {
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
-	log::trace!("Public params ({public_params_len}): hash: {public_params_hash}");
+	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
 
@@ -193,7 +194,7 @@ pub async fn do_main() -> Result<()> {
 #[tokio::main]
 pub async fn main() -> Result<()> {
 	do_main().await.map_err(|error| {
-		log::error!("{error:?}");
+		error!("{error:?}");
 		error
 	})
 }
