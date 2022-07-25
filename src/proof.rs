@@ -2,7 +2,7 @@ use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::com::Cell;
-use log::{error, trace};
+use tracing::{error, trace};
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
 // for a certain block

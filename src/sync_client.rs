@@ -4,8 +4,8 @@ use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
-use log::{error, info};
 use rocksdb::DB;
+use tracing::{error, info};
 
 use crate::{
 	data::{

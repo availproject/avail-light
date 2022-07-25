@@ -6,10 +6,10 @@ use std::{
 
 use anyhow::{Context, Result};
 use ipfs_embed::{Multiaddr, PeerId};
-use log::{error, info, trace, warn, LevelFilter, ParseLevelError};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use simple_logger::SimpleLogger;
 use structopt::StructOpt;
+use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
+use tracing_subscriber::FmtSubscriber;
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_CID_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
@@ -71,13 +71,10 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	Ok(Arc::new(db))
 }
 
-fn parse_log_level(
-	log_level: &str,
-	default: LevelFilter,
-) -> (LevelFilter, Option<ParseLevelError>) {
+fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
 	log_level
 		.to_uppercase()
-		.parse::<LevelFilter>()
+		.parse::<Level>()
 		.map(|log_level| (log_level, None))
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
@@ -88,12 +85,10 @@ pub async fn do_main() -> Result<()> {
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
-	let (log_level, parse_error) = parse_log_level(&cfg.log_level, LevelFilter::Info);
+	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
-	SimpleLogger::new()
-		.with_level(log_level)
-		.init()
-		.context("Failed to init logger")?;
+	let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
+	tracing::subscriber::set_global_default(subscriber).expect("global default subscriber is set");
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
