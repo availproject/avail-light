@@ -9,7 +9,10 @@ use ipfs_embed::{Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{
+	fmt::format::{self, DefaultFields, Format, Full, Json},
+	FmtSubscriber,
+};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_CID_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
@@ -71,6 +74,17 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	Ok(Arc::new(db))
 }
 
+fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
+	FmtSubscriber::builder()
+		.with_max_level(log_level)
+		.event_format(format::json())
+		.finish()
+}
+
+fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
+	FmtSubscriber::builder().with_max_level(log_level).finish()
+}
+
 fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
 	log_level
 		.to_uppercase()
@@ -87,8 +101,13 @@ pub async fn do_main() -> Result<()> {
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
-	let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
-	tracing::subscriber::set_global_default(subscriber).expect("global default subscriber is set");
+	if cfg.log_format_json == Some(true) {
+		tracing::subscriber::set_global_default(json_subscriber(log_level))
+			.expect("global json subscriber is set")
+	} else {
+		tracing::subscriber::set_global_default(default_subscriber(log_level))
+			.expect("global default subscriber is set")
+	}
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);

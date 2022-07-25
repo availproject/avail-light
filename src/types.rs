@@ -359,6 +359,7 @@ pub struct RuntimeConfig {
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	pub avail_path: String,
 	pub log_level: String,
+	pub log_format_json: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
 }
 
@@ -378,6 +379,7 @@ impl Default for RuntimeConfig {
 			bootstraps: Vec::new(),
 			avail_path: format!("avail_light_client_{}", 1),
 			log_level: "INFO".to_owned(),
+			log_format_json: Some(false),
 			max_parallel_fetch_tasks: 8,
 		}
 	}
