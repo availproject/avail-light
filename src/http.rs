@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use codec::Decode;
+use log::info;
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -50,7 +51,7 @@ where
 }
 
 fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse> {
-	log::info!("Got request for confidence for block {block_num}");
+	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
@@ -64,7 +65,7 @@ fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse>
 		Ok(None) => ClientResponse::NotFound,
 		Err(e) => ClientResponse::Error(e),
 	};
-	log::info!("Returning confidence: {res:?}");
+	info!("Returning confidence: {res:?}");
 	res
 }
 
@@ -94,7 +95,7 @@ fn appdata(
 			Err(e) => Err(e),
 		}
 	}
-	log::info!("Got request for AppData for block {block_num}");
+	info!("Got request for AppData for block {block_num}");
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,
 		cfg.app_id.unwrap(),
@@ -108,7 +109,7 @@ fn appdata(
 		Ok(None) => ClientResponse::NotFound,
 		Err(e) => ClientResponse::Error(e),
 	};
-	log::info!("Returning AppData: {res:?}");
+	info!("Returning AppData: {res:?}");
 	res
 }
 
@@ -155,6 +156,6 @@ pub async fn run_server(
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
 		.unwrap();
-	log::info!("RPC running on http://{host}:{port}");
+	info!("RPC running on http://{host}:{port}");
 	warp::serve(routes).run(addr).await;
 }
