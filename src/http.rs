@@ -6,10 +6,10 @@ use std::{
 
 use anyhow::{Context, Result};
 use codec::Decode;
-use log::info;
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use warp::{http::StatusCode, Filter};
 
 use crate::{

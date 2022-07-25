@@ -3,11 +3,11 @@ use std::collections::HashSet;
 use anyhow::{anyhow, Context, Result};
 use hyper_tls::HttpsConnector;
 use kate_recovery::com::{Cell, Position};
-use log::{debug, info};
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tracing::{debug, info};
 
 use crate::types::*;
 
