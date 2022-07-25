@@ -11,6 +11,7 @@ use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
+use log::{error, info};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
@@ -35,7 +36,7 @@ async fn process_block(
 ) -> Result<()> {
 	let block_number = block.number;
 
-	log::info!(
+	info!(
 		"Found {count} cells for app {app_id} in block {block_number}",
 		count = data_positions.len()
 	);
@@ -45,7 +46,7 @@ async fn process_block(
 			.await
 			.context("Failed to fetch data cells from IPFS")?;
 
-	log::info!(
+	info!(
 		"Fetched {count} cells of block {block_number} from IPFS",
 		count = ipfs_cells.len()
 	);
@@ -58,7 +59,7 @@ async fn process_block(
 
 		rpc_cells.append(&mut query_cells);
 	}
-	log::info!(
+	info!(
 		"Fetched {count} cells of block {block_number} from RPC",
 		count = rpc_cells.len()
 	);
@@ -76,7 +77,7 @@ async fn process_block(
 		.await
 		.context("Failed to fetch column cells from IPFS")?;
 
-		log::info!(
+		info!(
 			"Fetched {count} cells of block {block_number} from IPFS for reconstruction",
 			count = column_ipfs_cells.len()
 		);
@@ -89,7 +90,7 @@ async fn process_block(
 				.await
 				.context("Failed to get column cells from node RPC")?;
 
-			log::info!(
+			info!(
 				"Fetched {count} cells of block {block_number} from RPC for reconstruction",
 				count = column_rpc_cells.len()
 			);
@@ -109,7 +110,7 @@ async fn process_block(
 		pp,
 	);
 
-	log::info!("Completed {verified} verification rounds for block {block_number}");
+	info!("Completed {verified} verification rounds for block {block_number}");
 
 	if cells.len() > verified {
 		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
@@ -117,7 +118,7 @@ async fn process_block(
 
 	insert_into_dht(ipfs, block.number, rpc_cells, max_parallel_fetch_tasks).await;
 
-	log::info!("Cells inserted into IPFS for block {block_number}");
+	info!("Cells inserted into IPFS for block {block_number}");
 
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
 	let data = if reconstruct {
@@ -130,7 +131,7 @@ async fn process_block(
 
 	store_encoded_data_in_db(db, app_id, block_number, &data)
 		.context("Failed to store data into database")?;
-	log::info!(
+	info!(
 		"Stored {count} bytes into database",
 		count = data.iter().fold(0usize, |acc, x| acc + x.len())
 	);
@@ -170,11 +171,11 @@ pub async fn run(
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 ) {
-	log::info!("Starting for app {app_id}...");
+	info!("Starting for app {app_id}...");
 
 	for block in block_receive {
 		let block_number = block.number;
-		log::info!("Block {block_number} available");
+		info!("Block {block_number} available");
 
 		match (
 			app_specific_cells(&block.lookup, &block.dimensions, app_id),
@@ -194,11 +195,11 @@ pub async fn run(
 				)
 				.await
 				{
-					log::error!("Cannot process block {block_number}: {error}");
+					error!("Cannot process block {block_number}: {error}");
 					continue;
 				}
 			},
-			(_, _) => log::info!("No cells for app {app_id} in block {block_number}"),
+			(_, _) => info!("No cells for app {app_id} in block {block_number}"),
 		}
 	}
 }
