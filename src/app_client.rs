@@ -11,10 +11,10 @@ use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
-use log::{error, info};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
+use tracing::{error, info};
 
 use crate::{
 	data::{fetch_cells_from_dht, insert_into_dht, store_encoded_data_in_db},

@@ -7,18 +7,15 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use codec::{Decode, Encode};
-use futures::{
-	future::join_all,
-	stream::{self},
-};
+use futures::{future::join_all, stream};
 use ipfs_embed::{
 	identity::ed25519::{Keypair, SecretKey},
 	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
 	Quorum, Record, StorageConfig,
 };
 use kate_recovery::com::{Cell, Position};
-use log::{debug, info, trace};
 use rocksdb::DB;
+use tracing::{debug, info, trace};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},

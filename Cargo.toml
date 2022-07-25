@@ -38,14 +38,14 @@ num_cpus = "1.13.0"
 structopt = "0.3.25"
 rocksdb = { version = "0.17.0", features = ["snappy", "multi-threaded-cf"] }
 threadpool = "1.8.1"
-log = "0.4"
-simple_logger = "2.1.0"
 sp-core = "6.0.0"
 sp-runtime = "6.0.0"
 codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "full", "bit-vec"] }
 scale-info = { version = "2.0.0", features = ["bit-vec"] }
 hex = "0.4"
 warp = "0.3.2"
+tracing = "0.1.35"
+tracing-subscriber = { version = "0.3.15" }
 
 [dev-dependencies]
 proptest = "1.0.0"
