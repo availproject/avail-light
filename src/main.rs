@@ -136,9 +136,15 @@ pub async fn do_main() -> Result<()> {
 	// task_0: HTTP request handler ( query sender )
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
+	let (block_sync_tx, block_sync_rx) = sync_channel::<u64>(1 << 4);
 
 	// this spawns tokio task which runs one http server for handling RPC
-	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), cell_query_tx));
+	tokio::task::spawn(http::run_server(
+		db.clone(),
+		cfg.clone(),
+		block_sync_rx,
+		cell_query_tx,
+	));
 
 	// communication channels being established for talking to
 	// ipfs backed application client

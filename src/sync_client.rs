@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::SystemTime};
+use std::{
+	sync::{mpsc::SyncSender, Arc},
+	time::SystemTime,
+};
 
 use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
@@ -155,6 +158,7 @@ pub async fn run(
 			url.clone(),
 			header_store.clone(),
 			ipfs.clone(),
+			send_data.clone(),
 			pp.clone(),
 		)
 	});
@@ -167,6 +171,7 @@ pub async fn run(
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
 					process_block(cfg_clone, url, store, block_number, ipfs, pp.clone()).await
+
 				{
 					error!(block_number, "Cannot process block: {error}");
 				}

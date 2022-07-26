@@ -1,10 +1,14 @@
 use std::{
 	net::SocketAddr,
 	str::FromStr,
-	sync::{mpsc::SyncSender, Arc},
+	sync::{
+		mpsc::{Receiver, SyncSender},
+		Arc,
+	},
 };
 
 use anyhow::{Context, Result};
+// use async_std::channel::Receiver;
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
@@ -40,6 +44,14 @@ pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
 	let shifted: BigUint = block_big << 32 | factor_big;
 	Some(shifted.to_str_radix(10))
+}
+
+fn syncdata(sync_rec: Receiver<u64>) -> Vec<u64> {
+	let mut vec: Vec<u64> = Vec::new();
+	for block in sync_rec {
+		vec.push(block);
+	}
+	vec
 }
 
 #[derive(Debug)]
@@ -138,13 +150,19 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
+	sync_data_rx: Receiver<u64>,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = cfg.http_server_port;
 
+	let num = syncdata(sync_data_rx);
+	let val = *(num.iter().max().context("no data available").unwrap());
+
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
+
+	let get_sync_block = warp::path!("v1" / "synced_block").map(move || warp::reply::json(&val));
 
 	let db = store.clone();
 	let get_confidence = warp::path!("v1" / "confidence" / u64)
@@ -154,7 +172,12 @@ pub async fn run_server(
 	let get_appdata = warp::path!("v1" / "appdata" / u64)
 		.map(move |block_num| appdata(block_num, db.clone(), &cfg));
 
-	let routes = warp::get().and(get_mode.or(get_confidence).or(get_appdata));
+	let routes = warp::get().and(
+		get_mode
+			.or(get_sync_block)
+			.or(get_confidence)
+			.or(get_appdata),
+	);
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
 		.unwrap();
