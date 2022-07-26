@@ -8,7 +8,6 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use prometheus::{
-	core::{AtomicF64, GenericCounter},
 	Registry,
 };
 use rocksdb::DB;

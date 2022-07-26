@@ -124,7 +124,7 @@ pub async fn do_main() -> Result<()> {
 		registry.clone(),
 	));
 
-	log::info!("Using {:?}", cfg);
+	info!("Using config: {:?}", cfg);
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 

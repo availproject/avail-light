@@ -17,6 +17,7 @@ pub use prometheus::{
 	Registry,
 };
 use prometheus::{core::Collector, Encoder, TextEncoder};
+use tracing::{info};
 
 pub fn register<T: Clone + Collector + 'static>(
 	metric: T,
@@ -33,7 +34,7 @@ async fn request_metrics(req: Request<Body>, registry: Registry) -> Result<Respo
 		let encoder = TextEncoder::new();
 		encoder
 			.encode(&metric_families, &mut buffer)
-			.context("Metric encoding error");
+			.context("Metric encoding error")?;
 
 		Response::builder()
 			.status(StatusCode::OK)
@@ -58,7 +59,7 @@ pub async fn init_prometheus_with_listener(
 		.map_err(|_| anyhow::anyhow!("Port already in use: {}", prometheus_addr))?;
 
 	let listener = hyper::server::conn::AddrIncoming::from_listener(listener)?;
-	log::info!("Prometheus exporter started at {}", listener.local_addr());
+	info!("Prometheus exporter started at {}", listener.local_addr());
 
 	let service = make_service_fn(move |_| {
 		let registry = registry.clone();
