@@ -18,13 +18,13 @@ use crate::{
 async fn process_block(
 	url: String,
 	store: Arc<DB>,
-	block_num: u64,
+	block_number: u64,
 	ipfs: Ipfs<DefaultParams>,
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 	confidence: f64,
 ) -> Result<()> {
-	if is_block_header_in_db(store.clone(), block_num)
+	if is_block_header_in_db(store.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
 	{
 		return Ok(());
@@ -35,23 +35,27 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let block_body = rpc::get_block_by_number(&url, block_num)
+	let block_body = rpc::get_block_by_number(&url, block_number)
 		.await
-		.context("Failed to get block {block_num} by block number")?;
+		.context("Failed to get block {block_number} by block number")?;
 
 	info!(
-		"Block {block_num} app index {:?}",
-		block_body.header.app_data_lookup.index
+		block_number,
+		"App index {:?}", block_body.header.app_data_lookup.index
 	);
 
-	store_block_header_in_db(store.clone(), block_num, &block_body.header)
+	store_block_header_in_db(store.clone(), block_number, &block_body.header)
 		.context("Failed to store block header in DB")?;
 
-	info!("Synced block header of {block_num}\t{:?}", begin.elapsed()?);
+	info!(
+		block_number,
+		"Synced block header: \t{:?}",
+		begin.elapsed()?
+	);
 
 	// If it's found that this certain block is not verified
 	// then it'll be verified now
-	if is_confidence_in_db(store.clone(), block_num)
+	if is_confidence_in_db(store.clone(), block_number)
 		.context("Failed to check if confidence is in DB")?
 	{
 		return Ok(());
@@ -63,29 +67,28 @@ async fn process_block(
 	let max_rows = block_body.header.extrinsics_root.rows * 2;
 	let max_cols = block_body.header.extrinsics_root.cols;
 	let commitment = block_body.header.extrinsics_root.commitment;
-	let block_num = block_body.header.number;
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (ipfs_fetched, unfetched) =
-		fetch_cells_from_dht(&ipfs, block_num, &positions, max_parallel_fetch_tasks)
+		fetch_cells_from_dht(&ipfs, block_number, &positions, max_parallel_fetch_tasks)
 			.await
 			.context("Failed to fetch cells from DHT")?;
 
 	info!(
-		"Number of cells fetched from DHT for block {}: {}",
-		block_num,
+		block_number,
+		"Number of cells fetched from DHT: {}",
 		ipfs_fetched.len()
 	);
 
-	let rpc_fetched = rpc::get_kate_proof(&url, block_num, unfetched)
+	let rpc_fetched = rpc::get_kate_proof(&url, block_number, unfetched)
 		.await
 		.context("Failed to fetch cells from node RPC")?;
 
 	info!(
-		"Number of cells fetched from RPC for block {}: {}",
-		block_num,
+		block_number,
+		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
 
@@ -100,23 +103,25 @@ async fn process_block(
 	}
 
 	info!(
-		"Fetched {} cells of block {} for verification",
-		cells.len(),
-		block_num
+		block_number,
+		"Fetched {} cells for verification",
+		cells.len()
 	);
 
-	let count = crate::proof::verify_proof(block_num, max_rows, max_cols, &cells, commitment, pp);
+	let count =
+		crate::proof::verify_proof(block_number, max_rows, max_cols, &cells, commitment, pp);
 
 	info!(
-		"Completed {count} verification rounds for block {block_num}\t{:?}",
+		block_number,
+		"Completed {count} verification rounds: \t{:?}",
 		begin.elapsed()?
 	);
 	// write confidence factor into on-disk database
-	store_confidence_in_db(store.clone(), block_num, count as u32)
+	store_confidence_in_db(store.clone(), block_number, count as u32)
 		.context("Failed to store confidence in DB")?;
 
-	insert_into_dht(&ipfs, block_num, rpc_fetched, max_parallel_fetch_tasks).await;
-	info!("Cells inserted into DHT for block {block_num}");
+	insert_into_dht(&ipfs, block_number, rpc_fetched, max_parallel_fetch_tasks).await;
+	info!(block_number, "Cells inserted into DHT");
 	Ok(())
 }
 
@@ -144,12 +149,12 @@ pub async fn run(
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_num, url, store, ipfs, pp)| async move {
+			|(block_number, url, store, ipfs, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) = process_block(
 					url,
 					store,
-					block_num,
+					block_number,
 					ipfs,
 					max_parallel_fetch_tasks,
 					pp.clone(),
@@ -157,7 +162,7 @@ pub async fn run(
 				)
 				.await
 				{
-					error!("Cannot process block {block_num}: {error}");
+					error!(block_number, "Cannot process block: {error}");
 				}
 			},
 		)

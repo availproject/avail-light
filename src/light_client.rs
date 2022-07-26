@@ -49,7 +49,7 @@ pub async fn run(
 					let header = &params.header;
 
 					// now this is in `u64`
-					let num = header.number;
+					let block_number = header.number;
 
 					let begin = SystemTime::now();
 
@@ -57,36 +57,36 @@ pub async fn run(
 					let max_rows = header.extrinsics_root.rows * 2;
 					let max_cols = header.extrinsics_root.cols;
 					if max_cols < 3 {
-						error!("chunk size less than 3");
+						error!(block_number, "chunk size less than 3");
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 
 					let cell_count = rpc::cell_count_for_confidence(confidence);
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
-					info!(
-						"Random cells generated: {} from block: {}",
-						positions.len(),
-						num
-					);
+					info!(block_number, "Random cells generated: {}", positions.len());
 
-					let (ipfs_fetched, unfetched) =
-						fetch_cells_from_dht(&ipfs, num, &positions, max_parallel_fetch_tasks)
-							.await
-							.context("Failed to fetch cells from DHT")?;
+					let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
+						&ipfs,
+						block_number,
+						&positions,
+						max_parallel_fetch_tasks,
+					)
+					.await
+					.context("Failed to fetch cells from DHT")?;
 
 					info!(
-						"Number of cells fetched from DHT for block {}: {}",
-						num,
+						block_number,
+						"Number of cells fetched from DHT: {}",
 						ipfs_fetched.len()
 					);
 
-					let rpc_fetched = rpc::get_kate_proof(&rpc_url, num, unfetched)
+					let rpc_fetched = rpc::get_kate_proof(&rpc_url, block_number, unfetched)
 						.await
 						.context("Failed to fetch cells from node RPC")?;
 
 					info!(
-						"Number of cells fetched from RPC for block {}: {}",
-						num,
+						block_number,
+						"Number of cells fetched from RPC: {}",
 						rpc_fetched.len()
 					);
 
@@ -95,12 +95,16 @@ pub async fn run(
 					cells.extend(rpc_fetched.clone());
 
 					if positions.len() > cells.len() {
-						error!("Failed to fetch {} cells", positions.len() - cells.len());
+						error!(
+							block_number,
+							"Failed to fetch {} cells",
+							positions.len() - cells.len()
+						);
 						continue;
 					}
 
 					let count = proof::verify_proof(
-						num,
+						block_number,
 						max_rows,
 						max_cols,
 						&cells,
@@ -108,16 +112,17 @@ pub async fn run(
 						pp.clone(),
 					);
 					info!(
-						"Completed {count} verification rounds for block {num}\t{:?}",
+						block_number,
+						"Completed {count} verification rounds in \t{:?}",
 						begin.elapsed()?
 					);
 
 					// write confidence factor into on-disk database
-					store_confidence_in_db(db.clone(), num, count as u32)
+					store_confidence_in_db(db.clone(), block_number, count as u32)
 						.context("Failed to store confidence in DB")?;
 
 					let conf = calculate_confidence(count as u32);
-					info!("Confidence factor for block {}: {}", num, conf);
+					info!(block_number, "Confidence factor: {}", conf);
 
 					// push latest mined block's header into column family specified
 					// for keeping block headers, to be used
@@ -127,11 +132,12 @@ pub async fn run(
 					// another competing thread, which syncs all block headers
 					// in range [0, LATEST], where LATEST = latest block number
 					// when this process started
-					store_block_header_in_db(db.clone(), num, header)
+					store_block_header_in_db(db.clone(), block_number, header)
 						.context("Failed to store block header in DB")?;
 
-					insert_into_dht(&ipfs, num, rpc_fetched, max_parallel_fetch_tasks).await;
-					info!("Cells inserted into DHT for block {num}");
+					insert_into_dht(&ipfs, block_number, rpc_fetched, max_parallel_fetch_tasks)
+						.await;
+					info!(block_number, "Cells inserted into DHT");
 
 					// notify ipfs-based application client
 					// that newly mined block has been received
@@ -147,13 +153,10 @@ pub async fn run(
 }
 
 #[cfg(test)]
-
 mod tests {
-
 	use super::rpc::cell_count_for_confidence;
 
 	#[test]
-
 	fn test_cell_count_for_confidence() {
 		let count = 1;
 		assert_eq!(cell_count_for_confidence(60f64) > count, true);

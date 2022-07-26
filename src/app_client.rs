@@ -37,7 +37,8 @@ async fn process_block(
 	let block_number = block.number;
 
 	info!(
-		"Found {count} cells for app {app_id} in block {block_number}",
+		block_number,
+		"Found {count} cells for app {app_id}",
 		count = data_positions.len()
 	);
 
@@ -47,7 +48,8 @@ async fn process_block(
 			.context("Failed to fetch data cells from IPFS")?;
 
 	info!(
-		"Fetched {count} cells of block {block_number} from IPFS",
+		block_number,
+		"Fetched {count} cells from IPFS",
 		count = ipfs_cells.len()
 	);
 
@@ -60,7 +62,8 @@ async fn process_block(
 		rpc_cells.append(&mut query_cells);
 	}
 	info!(
-		"Fetched {count} cells of block {block_number} from RPC",
+		block_number,
+		"Fetched {count} cells from RPC",
 		count = rpc_cells.len()
 	);
 	let reconstruct = data_positions.len() > (ipfs_cells.len() + rpc_cells.len());
@@ -78,7 +81,8 @@ async fn process_block(
 		.context("Failed to fetch column cells from IPFS")?;
 
 		info!(
-			"Fetched {count} cells of block {block_number} from IPFS for reconstruction",
+			block_number,
+			"Fetched {count} cells from IPFS for reconstruction",
 			count = column_ipfs_cells.len()
 		);
 
@@ -91,7 +95,8 @@ async fn process_block(
 				.context("Failed to get column cells from node RPC")?;
 
 			info!(
-				"Fetched {count} cells of block {block_number} from RPC for reconstruction",
+				block_number,
+				"Fetched {count} cells from RPC for reconstruction",
 				count = column_rpc_cells.len()
 			);
 
@@ -110,7 +115,7 @@ async fn process_block(
 		pp,
 	);
 
-	info!("Completed {verified} verification rounds for block {block_number}");
+	info!(block_number, "Completed {verified} verification rounds");
 
 	if cells.len() > verified {
 		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
@@ -118,7 +123,7 @@ async fn process_block(
 
 	insert_into_dht(ipfs, block.number, rpc_cells, max_parallel_fetch_tasks).await;
 
-	info!("Cells inserted into IPFS for block {block_number}");
+	info!(block_number, "Cells inserted into IPFS");
 
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
 	let data = if reconstruct {
@@ -132,6 +137,7 @@ async fn process_block(
 	store_encoded_data_in_db(db, app_id, block_number, &data)
 		.context("Failed to store data into database")?;
 	info!(
+		block_number,
 		"Stored {count} bytes into database",
 		count = data.iter().fold(0usize, |acc, x| acc + x.len())
 	);
@@ -175,7 +181,7 @@ pub async fn run(
 
 	for block in block_receive {
 		let block_number = block.number;
-		info!("Block {block_number} available");
+		info!(block_number, "Block available");
 
 		match (
 			app_specific_cells(&block.lookup, &block.dimensions, app_id),
@@ -195,11 +201,11 @@ pub async fn run(
 				)
 				.await
 				{
-					error!("Cannot process block {block_number}: {error}");
+					error!(block_number, "Cannot process block: {error}");
 					continue;
 				}
 			},
-			(_, _) => info!("No cells for app {app_id} in block {block_number}"),
+			(_, _) => info!(block_number, "No cells for app {app_id}"),
 		}
 	}
 }
