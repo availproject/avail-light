@@ -17,7 +17,7 @@ pub use prometheus::{
 	Registry,
 };
 use prometheus::{core::Collector, Encoder, TextEncoder};
-use tracing::{info};
+use tracing::info;
 
 pub fn register<T: Clone + Collector + 'static>(
 	metric: T,

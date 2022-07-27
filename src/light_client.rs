@@ -7,9 +7,7 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
-use prometheus::{
-	Registry,
-};
+use prometheus::Registry;
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
