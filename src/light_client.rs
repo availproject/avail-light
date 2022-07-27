@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use prometheus::Registry;
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
@@ -29,10 +30,20 @@ pub async fn run(
 	block_tx: SyncSender<ClientMsg>,
 	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
+	registry: Registry,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(full_node_ws)?;
+	// Register metrics
+	let block_counter = Box::new(prometheus::Counter::new(
+		"block_number",
+		"Current block number",
+	)?);
+	registry
+		.register(block_counter.clone())
+		.context("Failed to register block counter metric")?;
+
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
 		write
@@ -46,6 +57,7 @@ pub async fn run(
 			let data = message?.into_data();
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
+					block_counter.inc();
 					let header = &params.header;
 
 					// now this is in `u64`
