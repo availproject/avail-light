@@ -42,7 +42,7 @@ pub async fn run(
 	)?);
 	registry
 		.register(block_counter.clone())
-		.expect("Registers block counter metric");
+		.context("Failed to register block counter metric")?;
 
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
