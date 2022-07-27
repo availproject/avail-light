@@ -17,7 +17,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	prometheus_handler, proof, rpc,
+	proof, rpc,
 	types::{self, ClientMsg},
 };
 
@@ -36,12 +36,14 @@ pub async fn run(
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(full_node_ws)?;
 	// Register metrics
-	let block_counter = prometheus_handler::register(
-		prometheus::Counter::new("block_number", "Current block number")
-			.expect("Creates block number counter"),
-		&registry,
-	)
-	.expect("Registers block counter metric");
+	let block_counter = Box::new(prometheus::Counter::new(
+		"block_number",
+		"Current block number",
+	)?);
+	registry
+		.register(block_counter.clone())
+		.expect("Registers block counter metric");
+
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
 		write

@@ -116,6 +116,8 @@ pub async fn do_main() -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
+	info!("Using config: {:?}", cfg);
+
 	// Spawn Prometheus server
 	let registry = Registry::default();
 
@@ -123,8 +125,6 @@ pub async fn do_main() -> Result<()> {
 		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9520),
 		registry.clone(),
 	));
-
-	info!("Using config: {:?}", cfg);
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 
