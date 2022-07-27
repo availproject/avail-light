@@ -3,7 +3,7 @@ use std::{
 	str::FromStr,
 	sync::{
 		mpsc::{Receiver, SyncSender},
-		Arc,
+		Arc,Mutex,
 	},
 };
 
@@ -35,9 +35,12 @@ pub struct ExtrinsicsDataResponse {
 	pub extrinsics: Vec<AvailExtrinsic>,
 }
 
-pub fn calculate_confidence(count: u32) -> f64 {
-	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Status{
+	pub status: u64,
 }
+
+pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
 
 pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block)?;
@@ -48,9 +51,19 @@ pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 
 fn syncdata(sync_rec: Receiver<u64>) -> Vec<u64> {
 	let mut vec: Vec<u64> = Vec::new();
-	for block in sync_rec {
+	sync_rec.into_iter().for_each(|block| {
+		println!("Received synced block {}", block);
 		vec.push(block);
-	}
+	});
+	vec
+}
+
+fn latestdata(data_rec: &Receiver<u64>) -> Vec<u64> {
+	let mut vec: Vec<u64> = Vec::new();
+	data_rec.into_iter().for_each(|block| {
+		println!("Received synced block {}", block);
+		vec.push(block);
+	});
 	vec
 }
 
@@ -82,6 +95,17 @@ fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse>
 	info!("Returning confidence: {res:?}");
 	res
 }
+
+// fn test(latest_data_rx: Receiver<u64>) -> ClientResponse<Status> {
+// 	let data = match latest_data_rx.recv(){
+// 		Ok(data) => ClientResponse::Normal(Status {
+// 			status:data
+// 		}),
+// 		Err(e) => ClientResponse::Error(e),
+// 	};
+// 	log::info!("Returning AppData: {data:?}");
+// 	data
+// }
 
 fn appdata(
 	block_num: u64,
@@ -150,19 +174,45 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
-	sync_data_rx: Receiver<u64>,
+	latest_data_rx: Receiver<u64>,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
+	counter: Arc<Mutex<u64>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = cfg.http_server_port;
 
-	let num = syncdata(sync_data_rx);
-	let val = *(num.iter().max().context("no data available").unwrap());
+	// let num = syncdata(sync_data_rx);
+	// let val = *(num.iter().max().context("no data available").unwrap());
 
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
+	println!("tessting http");
+	// let get_sync_block = warp::path!("v1" / "synced_block").map(move || warp::reply::json(&val));
+	// let mut lat_num:Vec<u64> = Vec::new();
+	let mut value:u64 = 0;
+	let val = Arc::new(Mutex::new(value));
+	let clone_value = val.clone();
+	// thread::scope(|s| {
+	// 	let lock_clone = clone_value.lock().unwrap();
+	// 	// let num = latestdata(&latest_data_rx);
+	// 	// while num.is_empty() {
+	// 	// 	let lat_num = latestdata(&latest_data_rx);
+	// 	// 	value = *(lat_num.iter().max().context("no data available").unwrap());
+	// 	// }	
+	// 	s.spawn(|_|{	
+	// 		*lock_clone = (latest_data_rx.recv().unwrap());
+	// 	});
 
-	let get_sync_block = warp::path!("v1" / "synced_block").map(move || warp::reply::json(&val));
+	// }).unwrap();
+	let count = counter.clone();
+	let num = count.lock().unwrap();
+
+
+	// println!("value: {}", test(latest_data_rx));
+	// let value = handle.join().unwrap();
+
+	let get_latest_block =
+		warp::path!("v1" / "latest_block").map(move || warp::reply::json(&*num));
 
 	let db = store.clone();
 	let get_confidence = warp::path!("v1" / "confidence" / u64)
@@ -174,7 +224,8 @@ pub async fn run_server(
 
 	let routes = warp::get().and(
 		get_mode
-			.or(get_sync_block)
+			.or(get_latest_block)
+			// .or(get_sync_block)
 			.or(get_confidence)
 			.or(get_appdata),
 	);

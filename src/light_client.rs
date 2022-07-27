@@ -65,6 +65,7 @@ pub async fn run(
 	block_tx: SyncSender<ClientMsg>,
 	pp: PublicParameters,
 	registry: Registry,
+	counter: Arc<Mutex<u64>>,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
