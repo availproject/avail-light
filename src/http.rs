@@ -5,7 +5,6 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-// use async_std::channel::Receiver;
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rocksdb::DB;
@@ -54,14 +53,11 @@ where
 	Normal(T),
 	NotFound,
 	NotFinalized,
+	InProcess,
 	Error(anyhow::Error),
 }
 
-fn confidence(
-	block_num: u64,
-	db: Arc<DB>,
-	counter: Arc<Mutex<u64>>,
-) -> ClientResponse<ConfidenceResponse> {
+fn confidence(block_num: u64, db: Arc<DB>, counter: u64) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
@@ -74,8 +70,8 @@ fn confidence(
 			})
 		},
 		Ok(None) => {
-			let lock = counter.lock().unwrap();
-			if block_num < *lock {
+			// let lock = counter.lock().unwrap();
+			if block_num < counter {
 				return ClientResponse::NotFinalized;
 			} else {
 				return ClientResponse::NotFound;
@@ -102,10 +98,9 @@ fn appdata(
 	block_num: u64,
 	db: Arc<DB>,
 	cfg: &RuntimeConfig,
-	counter: Arc<Mutex<u64>>,
+	counter: u64,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
-	let lock = counter.lock().unwrap();
-	if block_num < *lock {
+	if block_num < counter {
 		return ClientResponse::NotFinalized;
 	}
 	fn decode_app_data_to_extrinsics(
@@ -140,13 +135,10 @@ fn appdata(
 			extrinsics: data,
 		}),
 
-		Ok(None) => {
-			let lock = counter.lock().unwrap();
-			if block_num < *lock {
-				return ClientResponse::NotFinalized;
-			} else {
-				return ClientResponse::NotFound;
-			}
+		Ok(None) => match counter {
+			lock if block_num < lock => ClientResponse::NotFinalized,
+			lock if block_num == lock => ClientResponse::InProcess,
+			_ => ClientResponse::NotFound,
 		},
 		Err(e) => ClientResponse::Error(e),
 	};
@@ -166,8 +158,13 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 					.into_response()
 			},
 			ClientResponse::NotFinalized => warp::reply::with_status(
-				warp::reply::json(&"Not finalised".to_owned()),
+				warp::reply::json(&"Not synced".to_owned()),
 				StatusCode::BAD_REQUEST,
+			)
+			.into_response(),
+			ClientResponse::InProcess => warp::reply::with_status(
+				warp::reply::json(&"Not synced".to_owned()),
+				StatusCode::UNAUTHORIZED,
 			)
 			.into_response(),
 			ClientResponse::Error(e) => warp::reply::with_status(
@@ -196,12 +193,16 @@ pub async fn run_server(
 		warp::path!("v1" / "latest_block").map(move || latest_block(counter.clone()));
 
 	let db = store.clone();
-	let get_confidence = warp::path!("v1" / "confidence" / u64)
-		.map(move |block_num| confidence(block_num, db.clone(), counter_clone.clone()));
+	let get_confidence = warp::path!("v1" / "confidence" / u64).map(move |block_num| {
+		let counter_lock = counter_clone.lock().unwrap();
+		confidence(block_num, db.clone(), *counter_lock)
+	});
 
 	let db = store.clone();
-	let get_appdata = warp::path!("v1" / "appdata" / u64)
-		.map(move |block_num| appdata(block_num, db.clone(), &cfg, counter_clone1.clone()));
+	let get_appdata = warp::path!("v1" / "appdata" / u64).map(move |block_num| {
+		let counter_lock = counter_clone1.lock().unwrap();
+		appdata(block_num, db.clone(), &cfg, *counter_lock)
+	});
 
 	let routes = warp::get().and(
 		get_mode
