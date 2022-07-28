@@ -1,10 +1,7 @@
 use std::{
 	net::SocketAddr,
 	str::FromStr,
-	sync::{
-		mpsc::{Receiver, SyncSender},
-		Arc,Mutex,
-	},
+	sync::{mpsc::SyncSender, Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
@@ -36,8 +33,8 @@ pub struct ExtrinsicsDataResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Status{
-	pub status: u64,
+pub struct LatestBlockResponse {
+	pub latest_block: u64,
 }
 
 pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
@@ -49,24 +46,6 @@ pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	Some(shifted.to_str_radix(10))
 }
 
-fn syncdata(sync_rec: Receiver<u64>) -> Vec<u64> {
-	let mut vec: Vec<u64> = Vec::new();
-	sync_rec.into_iter().for_each(|block| {
-		println!("Received synced block {}", block);
-		vec.push(block);
-	});
-	vec
-}
-
-fn latestdata(data_rec: &Receiver<u64>) -> Vec<u64> {
-	let mut vec: Vec<u64> = Vec::new();
-	data_rec.into_iter().for_each(|block| {
-		println!("Received synced block {}", block);
-		vec.push(block);
-	});
-	vec
-}
-
 #[derive(Debug)]
 enum ClientResponse<T>
 where
@@ -74,10 +53,15 @@ where
 {
 	Normal(T),
 	NotFound,
+	NotFinalized,
 	Error(anyhow::Error),
 }
 
-fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse> {
+fn confidence(
+	block_num: u64,
+	db: Arc<DB>,
+	counter: Arc<Mutex<u64>>,
+) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
@@ -89,29 +73,41 @@ fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse>
 				serialised_confidence,
 			})
 		},
-		Ok(None) => ClientResponse::NotFound,
+		Ok(None) => {
+			let lock = counter.lock().unwrap();
+			if block_num < *lock {
+				return ClientResponse::NotFinalized;
+			} else {
+				return ClientResponse::NotFound;
+			}
+		},
 		Err(e) => ClientResponse::Error(e),
 	};
 	info!("Returning confidence: {res:?}");
 	res
 }
 
-// fn test(latest_data_rx: Receiver<u64>) -> ClientResponse<Status> {
-// 	let data = match latest_data_rx.recv(){
-// 		Ok(data) => ClientResponse::Normal(Status {
-// 			status:data
-// 		}),
-// 		Err(e) => ClientResponse::Error(e),
-// 	};
-// 	log::info!("Returning AppData: {data:?}");
-// 	data
-// }
+fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse> {
+	info!("Got request for latest block");
+	let res = match counter.lock() {
+		Ok(counter) => ClientResponse::Normal(LatestBlockResponse {
+			latest_block: *counter,
+		}),
+		Err(_) => ClientResponse::NotFound,
+	};
+	res
+}
 
 fn appdata(
 	block_num: u64,
 	db: Arc<DB>,
 	cfg: &RuntimeConfig,
+	counter: Arc<Mutex<u64>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
+	let lock = counter.lock().unwrap();
+	if block_num < *lock {
+		return ClientResponse::NotFinalized;
+	}
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
 	) -> Result<Option<Vec<AvailExtrinsic>>> {
@@ -144,7 +140,14 @@ fn appdata(
 			extrinsics: data,
 		}),
 
-		Ok(None) => ClientResponse::NotFound,
+		Ok(None) => {
+			let lock = counter.lock().unwrap();
+			if block_num < *lock {
+				return ClientResponse::NotFinalized;
+			} else {
+				return ClientResponse::NotFound;
+			}
+		},
 		Err(e) => ClientResponse::Error(e),
 	};
 	info!("Returning AppData: {res:?}");
@@ -162,6 +165,11 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 				warp::reply::with_status(warp::reply::json(&"Not found"), StatusCode::NOT_FOUND)
 					.into_response()
 			},
+			ClientResponse::NotFinalized => warp::reply::with_status(
+				warp::reply::json(&"Not finalised".to_owned()),
+				StatusCode::BAD_REQUEST,
+			)
+			.into_response(),
 			ClientResponse::Error(e) => warp::reply::with_status(
 				warp::reply::json(&e.to_string()),
 				StatusCode::INTERNAL_SERVER_ERROR,
@@ -174,58 +182,30 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
-	latest_data_rx: Receiver<u64>,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
 	counter: Arc<Mutex<u64>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = cfg.http_server_port;
 
-	// let num = syncdata(sync_data_rx);
-	// let val = *(num.iter().max().context("no data available").unwrap());
-
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
-	println!("tessting http");
-	// let get_sync_block = warp::path!("v1" / "synced_block").map(move || warp::reply::json(&val));
-	// let mut lat_num:Vec<u64> = Vec::new();
-	let mut value:u64 = 0;
-	let val = Arc::new(Mutex::new(value));
-	let clone_value = val.clone();
-	// thread::scope(|s| {
-	// 	let lock_clone = clone_value.lock().unwrap();
-	// 	// let num = latestdata(&latest_data_rx);
-	// 	// while num.is_empty() {
-	// 	// 	let lat_num = latestdata(&latest_data_rx);
-	// 	// 	value = *(lat_num.iter().max().context("no data available").unwrap());
-	// 	// }	
-	// 	s.spawn(|_|{	
-	// 		*lock_clone = (latest_data_rx.recv().unwrap());
-	// 	});
-
-	// }).unwrap();
-	let count = counter.clone();
-	let num = count.lock().unwrap();
-
-
-	// println!("value: {}", test(latest_data_rx));
-	// let value = handle.join().unwrap();
-
+	let counter_clone = counter.clone();
+	let counter_clone1 = counter.clone();
 	let get_latest_block =
-		warp::path!("v1" / "latest_block").map(move || warp::reply::json(&*num));
+		warp::path!("v1" / "latest_block").map(move || latest_block(counter.clone()));
 
 	let db = store.clone();
 	let get_confidence = warp::path!("v1" / "confidence" / u64)
-		.map(move |block_num| confidence(block_num, db.clone()));
+		.map(move |block_num| confidence(block_num, db.clone(), counter_clone.clone()));
 
 	let db = store.clone();
 	let get_appdata = warp::path!("v1" / "appdata" / u64)
-		.map(move |block_num| appdata(block_num, db.clone(), &cfg));
+		.map(move |block_num| appdata(block_num, db.clone(), &cfg, counter_clone1.clone()));
 
 	let routes = warp::get().and(
 		get_mode
 			.or(get_latest_block)
-			// .or(get_sync_block)
 			.or(get_confidence)
 			.or(get_appdata),
 	);

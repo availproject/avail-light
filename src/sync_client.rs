@@ -1,7 +1,4 @@
-use std::{
-	sync::{mpsc::SyncSender, Arc},
-	time::SystemTime,
-};
+use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
@@ -158,7 +155,6 @@ pub async fn run(
 			url.clone(),
 			header_store.clone(),
 			ipfs.clone(),
-			send_data.clone(),
 			pp.clone(),
 		)
 	});
