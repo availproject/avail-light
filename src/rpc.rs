@@ -238,7 +238,7 @@ pub async fn get_chain(url: &str) -> Result<String> {
 }
 
 //parsing the urls given in the vector of urls
-pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
+pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
 	urls.iter()
 		.map(|url| url::Url::parse(url))
 		.map(|r| r.map_err(|parse_error| anyhow!("Cannot parse URL: {}", parse_error)))
@@ -259,9 +259,9 @@ pub async fn check_connection(
 }
 
 //fn to check the rpc_url is secure or not and if it is working properly to return
-pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
+pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
 	for rpc_url in full_node_rpc {
-		if (get_chain(&rpc_url).await).is_ok() {
+		if (get_chain(rpc_url).await).is_ok() {
 			return Ok(rpc_url.to_string());
 		}
 	}

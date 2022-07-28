@@ -18,23 +18,21 @@ use crate::{
 	},
 	http::calculate_confidence,
 	proof, rpc,
-	types::{self, ClientMsg},
+	types::{self, ClientMsg, LightClientConfig},
 };
 
 pub async fn run(
-	full_node_ws: Vec<String>,
-	confidence: f64,
+	cfg: LightClientConfig,
 	db: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	rpc_url: String,
 	block_tx: SyncSender<ClientMsg>,
-	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 	registry: Registry,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
-	let urls = rpc::parse_urls(full_node_ws)?;
+	let urls = rpc::parse_urls(&cfg.full_node_ws)?;
 	// Register metrics
 	let block_counter = Box::new(prometheus::Counter::new(
 		"block_number",
@@ -73,7 +71,7 @@ pub async fn run(
 					}
 					let commitment = header.extrinsics_root.commitment.clone();
 
-					let cell_count = rpc::cell_count_for_confidence(confidence);
+					let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 					let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 					info!(block_number, "Random cells generated: {}", positions.len());
 
@@ -81,7 +79,7 @@ pub async fn run(
 						&ipfs,
 						block_number,
 						&positions,
-						max_parallel_fetch_tasks,
+						cfg.max_parallel_fetch_tasks,
 					)
 					.await
 					.context("Failed to fetch cells from DHT")?;
@@ -92,9 +90,13 @@ pub async fn run(
 						ipfs_fetched.len()
 					);
 
-					let rpc_fetched = rpc::get_kate_proof(&rpc_url, block_number, unfetched)
-						.await
-						.context("Failed to fetch cells from node RPC")?;
+					let rpc_fetched = if cfg.disable_rpc {
+						vec![]
+					} else {
+						rpc::get_kate_proof(&rpc_url, block_number, unfetched)
+							.await
+							.context("Failed to fetch cells from node RPC")?
+					};
 
 					info!(
 						block_number,
@@ -147,8 +149,13 @@ pub async fn run(
 					store_block_header_in_db(db.clone(), block_number, header)
 						.context("Failed to store block header in DB")?;
 
-					insert_into_dht(&ipfs, block_number, rpc_fetched, max_parallel_fetch_tasks)
-						.await;
+					insert_into_dht(
+						&ipfs,
+						block_number,
+						rpc_fetched,
+						cfg.max_parallel_fetch_tasks,
+					)
+					.await;
 					info!(block_number, "Cells inserted into DHT");
 
 					// notify ipfs-based application client

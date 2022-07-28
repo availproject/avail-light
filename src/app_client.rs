@@ -20,10 +20,11 @@ use crate::{
 	data::{fetch_cells_from_dht, insert_into_dht, store_encoded_data_in_db},
 	proof::verify_proof,
 	rpc::get_kate_proof,
-	types::ClientMsg,
+	types::{AppClientConfig, ClientMsg},
 };
 
 async fn process_block(
+	cfg: &AppClientConfig,
 	ipfs: &Ipfs<DefaultParams>,
 	db: Arc<DB>,
 	rpc_url: &str,
@@ -31,7 +32,6 @@ async fn process_block(
 	block: &ClientMsg,
 	data_positions: &Vec<Position>,
 	column_positions: &[Position],
-	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 ) -> Result<()> {
 	let block_number = block.number;
@@ -42,24 +42,30 @@ async fn process_block(
 		count = data_positions.len()
 	);
 
-	let (mut ipfs_cells, unfetched) =
-		fetch_cells_from_dht(ipfs, block.number, data_positions, max_parallel_fetch_tasks)
-			.await
-			.context("Failed to fetch data cells from IPFS")?;
+	let (mut ipfs_cells, unfetched) = fetch_cells_from_dht(
+		ipfs,
+		block.number,
+		data_positions,
+		cfg.max_parallel_fetch_tasks,
+	)
+	.await
+	.context("Failed to fetch data cells from DHT")?;
 
 	info!(
 		block_number,
-		"Fetched {count} cells from IPFS",
+		"Fetched {count} cells from DHT",
 		count = ipfs_cells.len()
 	);
 
 	let mut rpc_cells: Vec<Cell> = Vec::new();
-	for cell in unfetched.chunks(30) {
-		let mut query_cells = get_kate_proof(rpc_url, block.number, (*cell).to_vec())
-			.await
-			.context("Failed to fetch data cells from node RPC")?;
+	if !cfg.disable_rpc {
+		for cell in unfetched.chunks(30) {
+			let mut query_cells = get_kate_proof(rpc_url, block.number, (*cell).to_vec())
+				.await
+				.context("Failed to fetch data cells from node RPC")?;
 
-		rpc_cells.append(&mut query_cells);
+			rpc_cells.append(&mut query_cells);
+		}
 	}
 	info!(
 		block_number,
@@ -75,7 +81,7 @@ async fn process_block(
 			ipfs,
 			block_number,
 			&column_positions,
-			max_parallel_fetch_tasks,
+			cfg.max_parallel_fetch_tasks,
 		)
 		.await
 		.context("Failed to fetch column cells from IPFS")?;
@@ -89,7 +95,7 @@ async fn process_block(
 		ipfs_cells.append(&mut column_ipfs_cells);
 		let columns = columns(&column_positions);
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
-		if !can_reconstruct(&block.dimensions, &columns, &fetched) {
+		if !can_reconstruct(&block.dimensions, &columns, &fetched) && !cfg.disable_rpc {
 			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched)
 				.await
 				.context("Failed to get column cells from node RPC")?;
@@ -121,7 +127,7 @@ async fn process_block(
 		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
 	}
 
-	insert_into_dht(ipfs, block.number, rpc_cells, max_parallel_fetch_tasks).await;
+	insert_into_dht(ipfs, block.number, rpc_cells, cfg.max_parallel_fetch_tasks).await;
 
 	info!(block_number, "Cells inserted into IPFS");
 
@@ -169,12 +175,12 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 }
 
 pub async fn run(
+	cfg: AppClientConfig,
 	ipfs: Ipfs<DefaultParams>,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
-	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
 ) {
 	info!("Starting for app {app_id}...");
@@ -189,6 +195,7 @@ pub async fn run(
 		) {
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
+					&cfg,
 					&ipfs,
 					db.clone(),
 					&rpc_url,
@@ -196,7 +203,6 @@ pub async fn run(
 					&block,
 					&data_positions,
 					&column_positions,
-					max_parallel_fetch_tasks,
 					pp.clone(),
 				)
 				.await

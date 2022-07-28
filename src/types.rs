@@ -345,6 +345,7 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
+/// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
 	pub http_server_host: String,
@@ -360,7 +361,59 @@ pub struct RuntimeConfig {
 	pub avail_path: String,
 	pub log_level: String,
 	pub log_format_json: Option<bool>,
+	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
+	pub disable_rpc: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
+}
+
+pub struct LightClientConfig {
+	pub full_node_ws: Vec<String>,
+	pub confidence: f64,
+	pub disable_rpc: bool,
+	pub max_parallel_fetch_tasks: usize,
+}
+
+impl From<&RuntimeConfig> for LightClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		LightClientConfig {
+			full_node_ws: val.full_node_ws.clone(),
+			confidence: val.confidence,
+			disable_rpc: val.disable_rpc == Some(true),
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+		}
+	}
+}
+
+pub struct SyncClientConfig {
+	pub confidence: f64,
+	pub disable_rpc: bool,
+	pub max_parallel_fetch_tasks: usize,
+}
+
+impl From<&RuntimeConfig> for SyncClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		SyncClientConfig {
+			confidence: val.confidence,
+			disable_rpc: val.disable_rpc == Some(true),
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+		}
+	}
+}
+
+pub struct AppClientConfig {
+	pub full_node_ws: Vec<String>,
+	pub disable_rpc: bool,
+	pub max_parallel_fetch_tasks: usize,
+}
+
+impl From<&RuntimeConfig> for AppClientConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		AppClientConfig {
+			full_node_ws: val.full_node_ws.clone(),
+			disable_rpc: val.disable_rpc == Some(true),
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+		}
+	}
 }
 
 impl Default for RuntimeConfig {
@@ -380,6 +433,7 @@ impl Default for RuntimeConfig {
 			avail_path: format!("avail_light_client_{}", 1),
 			log_level: "INFO".to_owned(),
 			log_format_json: Some(false),
+			disable_rpc: Some(false),
 			max_parallel_fetch_tasks: 8,
 		}
 	}
