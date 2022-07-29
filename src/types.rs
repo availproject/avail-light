@@ -418,6 +418,7 @@ pub struct LightClientConfig {
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
 	pub block_processing_delay: Option<u32>,
+	pub block_matrix_partition: Option<Partition>,
 }
 
 impl From<&RuntimeConfig> for LightClientConfig {
@@ -428,6 +429,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			disable_rpc: val.disable_rpc == Some(true),
 			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
 			block_processing_delay: val.block_processing_delay,
+			block_matrix_partition: val.block_matrix_partition.clone(),
 		}
 	}
 }
