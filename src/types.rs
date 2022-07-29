@@ -345,6 +345,46 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Partition {
+	pub number: u8,
+	pub fraction: u8,
+}
+
+mod block_matrix_partition_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+
+	use super::Partition;
+
+	pub fn serialize<S>(partition: &Option<Partition>, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		match partition {
+			Some(partition) => {
+				let Partition { fraction, number } = partition;
+				let s = format!("{number}/{fraction}");
+				serializer.serialize_str(&s)
+			},
+			None => serializer.serialize_none(),
+		}
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Partition>, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let s = String::deserialize(deserializer)?;
+		let parts = s.split('/').collect::<Vec<_>>();
+		if parts.len() != 2 {
+			return Err(serde::de::Error::custom(format!("Invalid value {s}")));
+		}
+		let number = parts[0].parse::<u8>().map_err(serde::de::Error::custom)?;
+		let fraction = parts[1].parse::<u8>().map_err(serde::de::Error::custom)?;
+		Ok(Some(Partition { number, fraction }))
+	}
+}
+
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
@@ -366,6 +406,10 @@ pub struct RuntimeConfig {
 	pub max_parallel_fetch_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives
 	pub block_processing_delay: Option<u32>,
+	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
+	#[serde(default)]
+	#[serde(with = "block_matrix_partition_format")]
+	pub block_matrix_partition: Option<Partition>,
 }
 
 pub struct LightClientConfig {
@@ -440,6 +484,7 @@ impl Default for RuntimeConfig {
 			disable_rpc: Some(false),
 			max_parallel_fetch_tasks: 8,
 			block_processing_delay: None,
+			block_matrix_partition: None,
 		}
 	}
 }
