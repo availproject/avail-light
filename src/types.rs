@@ -364,6 +364,8 @@ pub struct RuntimeConfig {
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
 	pub disable_rpc: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
+	/// Number of blocks to postpone block processing after block finalized message arrives
+	pub block_processing_blocks_delay: Option<u8>,
 }
 
 pub struct LightClientConfig {
@@ -371,6 +373,7 @@ pub struct LightClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
+	pub block_processing_blocks_delay: Option<u8>,
 }
 
 impl From<&RuntimeConfig> for LightClientConfig {
@@ -380,6 +383,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
 			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			block_processing_blocks_delay: val.block_processing_blocks_delay,
 		}
 	}
 }
@@ -435,6 +439,7 @@ impl Default for RuntimeConfig {
 			log_format_json: Some(false),
 			disable_rpc: Some(false),
 			max_parallel_fetch_tasks: 8,
+			block_processing_blocks_delay: None,
 		}
 	}
 }

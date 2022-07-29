@@ -58,8 +58,18 @@ pub async fn run(
 					block_counter.inc();
 					let header = &params.header;
 
+					let blocks_delay = cfg.block_processing_blocks_delay.unwrap_or(0);
+					if blocks_delay as u64 > header.number {
+						info!("Skipping to delay block processing");
+						continue;
+					}
+
 					// now this is in `u64`
-					let block_number = header.number;
+					let block_number = header.number - blocks_delay as u64;
+					info!(
+						block_number,
+						"Latest block: {},  processing {}...", header.number, block_number
+					);
 
 					let begin = SystemTime::now();
 
