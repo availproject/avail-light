@@ -36,6 +36,12 @@ pub struct LatestBlockResponse {
 	pub latest_block: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Status {
+	pub block_num: u64,
+	confidence: f64,
+	pub app_id: Option<u32>,
+}
 pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
 
 pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
@@ -83,6 +89,24 @@ fn confidence(block_num: u64, db: Arc<DB>, counter: u64) -> ClientResponse<Confi
 	res
 }
 
+fn status(cfg: &RuntimeConfig, counter: u64, db: Arc<DB>) -> ClientResponse<Status> {
+	let res = match get_confidence_from_db(db, counter) {
+		Ok(Some(count)) => {
+			let confidence = calculate_confidence(count);
+			ClientResponse::Normal(Status {
+				block_num: counter,
+				confidence,
+				app_id: cfg.app_id,
+			})
+		},
+		Ok(None) => ClientResponse::NotFound,
+
+		Err(e) => ClientResponse::Error(e),
+	};
+	info!("Returning status: {res:?}");
+	res
+}
+
 fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
 	let res = match counter.lock() {
@@ -97,7 +121,7 @@ fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse>
 fn appdata(
 	block_num: u64,
 	db: Arc<DB>,
-	cfg: &RuntimeConfig,
+	cfg: RuntimeConfig,
 	counter: u64,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	if block_num < counter {
@@ -187,28 +211,40 @@ pub async fn run_server(
 
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
+	
 	let counter_clone = counter.clone();
-	let counter_clone1 = counter.clone();
 	let get_latest_block =
-		warp::path!("v1" / "latest_block").map(move || latest_block(counter.clone()));
+		warp::path!("v1" / "latest_block").map(move || latest_block(counter_clone.clone()));
 
+	let counter_confidence = counter.clone();
 	let db = store.clone();
 	let get_confidence = warp::path!("v1" / "confidence" / u64).map(move |block_num| {
-		let counter_lock = counter_clone.lock().unwrap();
+		let counter_lock = counter_confidence.lock().unwrap();
 		confidence(block_num, db.clone(), *counter_lock)
 	});
 
 	let db = store.clone();
+	let cfg1 = cfg.clone();
+	let counter_appdata = counter.clone();
 	let get_appdata = warp::path!("v1" / "appdata" / u64).map(move |block_num| {
-		let counter_lock = counter_clone1.lock().unwrap();
-		appdata(block_num, db.clone(), &cfg, *counter_lock)
+		let counter_lock = counter_appdata.lock().unwrap();
+		appdata(block_num, db.clone(), cfg1.clone(), *counter_lock)
+	});
+
+	let cfg = cfg.clone();
+	let db = store.clone();
+	let counter_status = counter.clone();
+	let get_status = warp::path!("v1" / "status" ).map(move || {
+		let counter_lock = counter_status.lock().unwrap();
+		status(&cfg, *counter_lock, db.clone())
 	});
 
 	let routes = warp::get().and(
 		get_mode
 			.or(get_latest_block)
 			.or(get_confidence)
-			.or(get_appdata),
+			.or(get_appdata)
+			.or(get_status),
 	);
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
