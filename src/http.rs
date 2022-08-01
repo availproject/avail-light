@@ -211,7 +211,7 @@ pub async fn run_server(
 
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
-	
+
 	let counter_clone = counter.clone();
 	let get_latest_block =
 		warp::path!("v1" / "latest_block").map(move || latest_block(counter_clone.clone()));
@@ -234,7 +234,7 @@ pub async fn run_server(
 	let cfg = cfg.clone();
 	let db = store.clone();
 	let counter_status = counter.clone();
-	let get_status = warp::path!("v1" / "status" ).map(move || {
+	let get_status = warp::path!("v1" / "status").map(move || {
 		let counter_lock = counter_status.lock().unwrap();
 		status(&cfg, *counter_lock, db.clone())
 	});
