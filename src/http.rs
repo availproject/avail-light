@@ -124,9 +124,6 @@ fn appdata(
 	cfg: RuntimeConfig,
 	counter: u64,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
-	if block_num < counter {
-		return ClientResponse::NotFinalized;
-	}
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
 	) -> Result<Option<Vec<AvailExtrinsic>>> {
@@ -160,7 +157,6 @@ fn appdata(
 		}),
 
 		Ok(None) => match counter {
-			lock if block_num < lock => ClientResponse::NotFinalized,
 			lock if block_num == lock => ClientResponse::InProcess,
 			_ => ClientResponse::NotFound,
 		},
@@ -187,7 +183,7 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 			)
 			.into_response(),
 			ClientResponse::InProcess => warp::reply::with_status(
-				warp::reply::json(&"Not synced".to_owned()),
+				warp::reply::json(&"Processing block".to_owned()),
 				StatusCode::UNAUTHORIZED,
 			)
 			.into_response(),
