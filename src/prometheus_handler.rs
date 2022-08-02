@@ -16,8 +16,13 @@ pub use prometheus::{
 	exponential_buckets, Error as PrometheusError, Histogram, HistogramOpts, HistogramVec, Opts,
 	Registry,
 };
-use prometheus::{Encoder, TextEncoder};
+use prometheus::{core::Collector, Encoder, TextEncoder};
 use tracing::info;
+
+pub fn register<T: Clone + Collector + 'static>(metric: T, registry: &Registry) -> Result<T> {
+	registry.register(Box::new(metric.clone()))?;
+	Ok(metric)
+}
 
 async fn request_metrics(req: Request<Body>, registry: Registry) -> Result<Response<Body>> {
 	if req.uri().path() == "/metrics" {
