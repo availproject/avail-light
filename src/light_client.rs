@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
-use prometheus::Registry;
+use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
@@ -17,9 +17,42 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	proof, rpc,
+	prometheus_handler, proof, rpc,
 	types::{self, ClientMsg},
 };
+
+struct LCMetrics {
+	block_counter: Counter,
+	dht_fetched: Gauge,
+	node_rpc_fetched: Gauge,
+	block_confidence: Gauge,
+}
+
+impl LCMetrics {
+	fn register(registry: &Registry) -> Result<Self> {
+		Ok(Self {
+			block_counter: prometheus_handler::register(
+				prometheus::Counter::new("block_number", "Current block number")?,
+				registry,
+			)?,
+			dht_fetched: prometheus_handler::register(
+				prometheus::Gauge::new("ipfs_fetched", "Number of cells fetched from DHT")?,
+				registry,
+			)?,
+			node_rpc_fetched: prometheus_handler::register(
+				prometheus::Gauge::new(
+					"node_rpc_fetched",
+					"Number of cells fetched via RPC call to node",
+				)?,
+				registry,
+			)?,
+			block_confidence: prometheus_handler::register(
+				prometheus::Gauge::new("block_confidence", "Block confidence of current block")?,
+				registry,
+			)?,
+		})
+	}
+}
 
 pub async fn run(
 	full_node_ws: Vec<String>,
@@ -36,13 +69,7 @@ pub async fn run(
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(full_node_ws)?;
 	// Register metrics
-	let block_counter = Box::new(prometheus::Counter::new(
-		"block_number",
-		"Current block number",
-	)?);
-	registry
-		.register(block_counter.clone())
-		.context("Failed to register block counter metric")?;
+	let metrics = LCMetrics::register(&registry)?;
 
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
@@ -57,7 +84,7 @@ pub async fn run(
 			let data = message?.into_data();
 			match serde_json::from_slice(&data) {
 				Ok(types::Response { params, .. }) => {
-					block_counter.inc();
+					metrics.block_counter.inc();
 					let header = &params.header;
 
 					// now this is in `u64`
@@ -91,6 +118,7 @@ pub async fn run(
 						"Number of cells fetched from DHT: {}",
 						ipfs_fetched.len()
 					);
+					metrics.dht_fetched.set(ipfs_fetched.len() as f64);
 
 					let rpc_fetched = rpc::get_kate_proof(&rpc_url, block_number, unfetched)
 						.await
@@ -101,6 +129,8 @@ pub async fn run(
 						"Number of cells fetched from RPC: {}",
 						rpc_fetched.len()
 					);
+
+					metrics.node_rpc_fetched.set(rpc_fetched.len() as f64);
 
 					let mut cells = vec![];
 					cells.extend(ipfs_fetched);
@@ -135,6 +165,7 @@ pub async fn run(
 
 					let conf = calculate_confidence(count as u32);
 					info!(block_number, "Confidence factor: {}", conf);
+					metrics.block_confidence.set(conf);
 
 					// push latest mined block's header into column family specified
 					// for keeping block headers, to be used
