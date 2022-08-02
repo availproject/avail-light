@@ -132,7 +132,7 @@ pub async fn run(
 				ipfs_fetched.len()
 			);
 
-			let rpc_fetched = if cfg.disable_rpc {
+			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
 			} else {
 				rpc::get_kate_proof(&rpc_url, block_number, unfetched)
@@ -191,6 +191,30 @@ pub async fn run(
 			store_block_header_in_db(db.clone(), block_number, header)
 				.context("Failed to store block header in DB")?;
 
+			if let Some(partition) = &cfg.block_matrix_partition {
+				let positions = rpc::generate_partition_cells(partition, max_rows, max_cols);
+				info!(
+					block_number,
+					"Fetching partition ({}/{}) from RPC", partition.number, partition.fraction
+				);
+				for cells in positions.chunks(30) {
+					let partition_fetched =
+						rpc::get_kate_proof(&rpc_url, block_number, cells.to_vec())
+							.await
+							.context("Failed to fetch cells from node RPC")?;
+					let partition_fetched_filtered = partition_fetched
+						.into_iter()
+						.filter(|cell| {
+							!rpc_fetched
+								.iter()
+								.any(move |rpc_cell| rpc_cell.position.eq(&cell.position))
+						})
+						.collect::<Vec<_>>();
+					rpc_fetched.extend(partition_fetched_filtered.clone());
+				}
+			}
+
+			let rpc_fetched_len = rpc_fetched.len();
 			insert_into_dht(
 				&ipfs,
 				block_number,
@@ -198,7 +222,7 @@ pub async fn run(
 				cfg.max_parallel_fetch_tasks,
 			)
 			.await;
-			info!(block_number, "Cells inserted into DHT");
+			info!(block_number, "{rpc_fetched_len} cells inserted into DHT");
 
 			// notify ipfs-based application client
 			// that newly mined block has been received
