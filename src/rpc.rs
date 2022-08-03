@@ -141,6 +141,25 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> V
 	indices.into_iter().collect::<Vec<_>>()
 }
 
+pub fn generate_partition_cells(
+	partition: &Partition,
+	max_rows: u16,
+	max_cols: u16,
+) -> Vec<Position> {
+	let max_cells = (max_rows as u32) * (max_cols as u32);
+	let size = (max_cells as f64 / partition.fraction as f64).ceil() as u32;
+	let first_cell = size * (partition.number - 1) as u32;
+	let last_cell = size * (partition.number as u32);
+
+	(first_cell..last_cell)
+		.map(|cell| {
+			let col: u16 = cell as u16 / max_rows;
+			let row = cell as u16 % max_rows;
+			Position { row, col }
+		})
+		.collect::<Vec<_>>()
+}
+
 pub fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
 	let query = positions
 		.iter()
@@ -238,7 +257,7 @@ pub async fn get_chain(url: &str) -> Result<String> {
 }
 
 //parsing the urls given in the vector of urls
-pub fn parse_urls(urls: Vec<String>) -> Result<Vec<url::Url>> {
+pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
 	urls.iter()
 		.map(|url| url::Url::parse(url))
 		.map(|r| r.map_err(|parse_error| anyhow!("Cannot parse URL: {}", parse_error)))
@@ -259,9 +278,9 @@ pub async fn check_connection(
 }
 
 //fn to check the rpc_url is secure or not and if it is working properly to return
-pub async fn check_http(full_node_rpc: Vec<String>) -> Result<String> {
+pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
 	for rpc_url in full_node_rpc {
-		if (get_chain(&rpc_url).await).is_ok() {
+		if (get_chain(rpc_url).await).is_ok() {
 			return Ok(rpc_url.to_string());
 		}
 	}
