@@ -13,16 +13,16 @@ use crate::{
 		store_block_header_in_db, store_confidence_in_db,
 	},
 	rpc,
+	types::SyncClientConfig,
 };
 
 async fn process_block(
+	cfg: &SyncClientConfig,
 	url: String,
 	store: Arc<DB>,
 	block_number: u64,
 	ipfs: Ipfs<DefaultParams>,
-	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
-	confidence: f64,
 ) -> Result<()> {
 	if is_block_header_in_db(store.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
@@ -68,13 +68,17 @@ async fn process_block(
 	let max_cols = block_body.header.extrinsics_root.cols;
 	let commitment = block_body.header.extrinsics_root.commitment;
 	// now this is in `u64`
-	let cell_count = rpc::cell_count_for_confidence(confidence);
+	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
-	let (ipfs_fetched, unfetched) =
-		fetch_cells_from_dht(&ipfs, block_number, &positions, max_parallel_fetch_tasks)
-			.await
-			.context("Failed to fetch cells from DHT")?;
+	let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
+		&ipfs,
+		block_number,
+		&positions,
+		cfg.max_parallel_fetch_tasks,
+	)
+	.await
+	.context("Failed to fetch cells from DHT")?;
 
 	info!(
 		block_number,
@@ -82,9 +86,13 @@ async fn process_block(
 		ipfs_fetched.len()
 	);
 
-	let rpc_fetched = rpc::get_kate_proof(&url, block_number, unfetched)
-		.await
-		.context("Failed to fetch cells from node RPC")?;
+	let rpc_fetched = if cfg.disable_rpc {
+		vec![]
+	} else {
+		rpc::get_kate_proof(&url, block_number, unfetched)
+			.await
+			.context("Failed to fetch cells from node RPC")?
+	};
 
 	info!(
 		block_number,
@@ -120,20 +128,25 @@ async fn process_block(
 	store_confidence_in_db(store.clone(), block_number, count as u32)
 		.context("Failed to store confidence in DB")?;
 
-	insert_into_dht(&ipfs, block_number, rpc_fetched, max_parallel_fetch_tasks).await;
+	insert_into_dht(
+		&ipfs,
+		block_number,
+		rpc_fetched,
+		cfg.max_parallel_fetch_tasks,
+	)
+	.await;
 	info!(block_number, "Cells inserted into DHT");
 	Ok(())
 }
 
 pub async fn run(
+	cfg: SyncClientConfig,
 	url: String,
 	start_block: u64,
 	end_block: u64,
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
-	max_parallel_fetch_tasks: usize,
 	pp: PublicParameters,
-	confidence: f64,
 ) {
 	info!("Syncing block headers from 0 to {}", end_block);
 	let blocks = (start_block..=end_block).map(move |b| {
@@ -145,22 +158,15 @@ pub async fn run(
 			pp.clone(),
 		)
 	});
+	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
 			|(block_number, url, store, ipfs, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) = process_block(
-					url,
-					store,
-					block_number,
-					ipfs,
-					max_parallel_fetch_tasks,
-					pp.clone(),
-					confidence,
-				)
-				.await
+				if let Err(error) =
+					process_block(cfg_clone, url, store, block_number, ipfs, pp.clone()).await
 				{
 					error!(block_number, "Cannot process block: {error}");
 				}

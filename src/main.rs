@@ -168,16 +168,16 @@ pub async fn do_main() -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let rpc_url = rpc::check_http(cfg.full_node_rpc).await?.clone();
+	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
 
 	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		tokio::task::spawn(app_client::run(
+			(&cfg).into(),
 			ipfs.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,
 			block_rx,
-			cfg.max_parallel_fetch_tasks,
 			pp.clone(),
 		));
 	}
@@ -191,30 +191,19 @@ pub async fn do_main() -> Result<()> {
 	thread::sleep(time::Duration::from_secs(3));
 
 	tokio::task::spawn(sync_client::run(
+		(&cfg).into(),
 		rpc_url.clone(),
 		0,
 		latest_block,
 		db.clone(),
 		ipfs.clone(),
-		cfg.max_parallel_fetch_tasks,
 		pp.clone(),
-		cfg.confidence,
 	));
 
 	// Note: if light client fails to run, process exits
-	light_client::run(
-		cfg.full_node_ws,
-		cfg.confidence,
-		db,
-		ipfs,
-		rpc_url,
-		block_tx,
-		cfg.max_parallel_fetch_tasks,
-		pp,
-		registry,
-	)
-	.await
-	.context("Failed to run light client")
+	light_client::run((&cfg).into(), db, ipfs, rpc_url, block_tx, pp, registry)
+		.await
+		.context("Failed to run light client")
 }
 
 #[tokio::main]
