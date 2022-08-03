@@ -20,7 +20,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	proof, rpc, prometheus_handler, 
+	prometheus_handler, proof, rpc,
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
 
