@@ -96,10 +96,13 @@ pub async fn run(
 					.and_then(|data| serde_json::from_slice(&data).context("Fail to decode data"))
 					.map(|types::Response { params, .. }| (params.header.number, params))
 					.map(|(block_number, params)| {
-						(block_number, BlockAvailableMsg {
-							params,
-							received_at: Instant::now(),
-						})
+						(
+							block_number,
+							BlockAvailableMsg {
+								params,
+								received_at: Instant::now(),
+							},
+						)
 					})
 					.and_then(|(block_number, message)| {
 						info!(block_number, "Received finalized block header");

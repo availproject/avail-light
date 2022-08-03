@@ -127,7 +127,9 @@ async fn fetch_cell_from_dht(
 struct IpfsCell(Cell);
 
 impl IpfsCell {
-	fn reference(&self, block: u64) -> String { self.0.reference(block) }
+	fn reference(&self, block: u64) -> String {
+		self.0.reference(block)
+	}
 
 	// TODO: Add TTL to all new records
 	fn dht_record(&self, block: u64) -> Record {
