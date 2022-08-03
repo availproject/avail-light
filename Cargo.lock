@@ -1100,9 +1100,9 @@ dependencies = [
 
 [[package]]
 name = "dusk-bytes"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4422ec33d6a528cc35d889a75f79e58101a9bc73522f34bb3405a36bedc90f8a"
+checksum = "f4aae12696d965c95ce5b79bc5612575e8aeac958c9e037b74ffa9e73e1cd8c7"
 dependencies = [
  "derive-hex",
 ]
