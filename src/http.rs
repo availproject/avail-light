@@ -31,7 +31,9 @@ pub struct ExtrinsicsDataResponse {
 	pub extrinsics: Vec<AvailExtrinsic>,
 }
 
-pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
+pub fn calculate_confidence(count: u32) -> f64 {
+	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
+}
 
 pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block)?;

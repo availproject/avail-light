@@ -324,7 +324,9 @@ mod tests {
 
 	use super::{can_reconstruct, diff_positions, AvailExtrinsic};
 
-	fn position(row: u16, col: u16) -> Position { Position { row, col } }
+	fn position(row: u16, col: u16) -> Position {
+		Position { row, col }
+	}
 
 	fn empty_cell(row: u16, col: u16) -> Cell {
 		Cell {
