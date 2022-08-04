@@ -1,7 +1,7 @@
 use std::{
 	net::SocketAddr,
 	str::FromStr,
-	sync::{mpsc::SyncSender, Arc},
+	sync::{mpsc::SyncSender, Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
@@ -31,6 +31,17 @@ pub struct ExtrinsicsDataResponse {
 	pub extrinsics: Vec<AvailExtrinsic>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LatestBlockResponse {
+	pub latest_block: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Status {
+	pub block_num: u64,
+	confidence: f64,
+	pub app_id: Option<u32>,
+}
 pub fn calculate_confidence(count: u32) -> f64 {
 	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
 }
@@ -49,10 +60,12 @@ where
 {
 	Normal(T),
 	NotFound,
+	NotFinalized,
+	InProcess,
 	Error(anyhow::Error),
 }
 
-fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse> {
+fn confidence(block_num: u64, db: Arc<DB>, counter: u64) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
@@ -64,17 +77,54 @@ fn confidence(block_num: u64, db: Arc<DB>) -> ClientResponse<ConfidenceResponse>
 				serialised_confidence,
 			})
 		},
-		Ok(None) => ClientResponse::NotFound,
+		Ok(None) => {
+			// let lock = counter.lock().unwrap();
+			if block_num < counter {
+				return ClientResponse::NotFinalized;
+			} else {
+				return ClientResponse::NotFound;
+			}
+		},
 		Err(e) => ClientResponse::Error(e),
 	};
 	info!("Returning confidence: {res:?}");
 	res
 }
 
+fn status(cfg: &RuntimeConfig, counter: u64, db: Arc<DB>) -> ClientResponse<Status> {
+	let res = match get_confidence_from_db(db, counter) {
+		Ok(Some(count)) => {
+			let confidence = calculate_confidence(count);
+			ClientResponse::Normal(Status {
+				block_num: counter,
+				confidence,
+				app_id: cfg.app_id,
+			})
+		},
+		Ok(None) => ClientResponse::NotFound,
+
+		Err(e) => ClientResponse::Error(e),
+	};
+	info!("Returning status: {res:?}");
+	res
+}
+
+fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse> {
+	info!("Got request for latest block");
+	let res = match counter.lock() {
+		Ok(counter) => ClientResponse::Normal(LatestBlockResponse {
+			latest_block: *counter,
+		}),
+		Err(_) => ClientResponse::NotFound,
+	};
+	res
+}
+
 fn appdata(
 	block_num: u64,
 	db: Arc<DB>,
-	cfg: &RuntimeConfig,
+	cfg: RuntimeConfig,
+	counter: u64,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
@@ -100,7 +150,10 @@ fn appdata(
 	info!("Got request for AppData for block {block_num}");
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,
-		cfg.app_id.unwrap(),
+		match cfg.app_id {
+			Some(app_id) => app_id,
+			None => 0u32,
+		},
 		block_num,
 	)) {
 		Ok(Some(data)) => ClientResponse::Normal(ExtrinsicsDataResponse {
@@ -108,7 +161,10 @@ fn appdata(
 			extrinsics: data,
 		}),
 
-		Ok(None) => ClientResponse::NotFound,
+		Ok(None) => match counter {
+			lock if block_num == lock => ClientResponse::InProcess,
+			_ => ClientResponse::NotFound,
+		},
 		Err(e) => ClientResponse::Error(e),
 	};
 	info!("Returning AppData: {res:?}");
@@ -126,6 +182,16 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 				warp::reply::with_status(warp::reply::json(&"Not found"), StatusCode::NOT_FOUND)
 					.into_response()
 			},
+			ClientResponse::NotFinalized => warp::reply::with_status(
+				warp::reply::json(&"Not synced".to_owned()),
+				StatusCode::BAD_REQUEST,
+			)
+			.into_response(),
+			ClientResponse::InProcess => warp::reply::with_status(
+				warp::reply::json(&"Processing block".to_owned()),
+				StatusCode::UNAUTHORIZED,
+			)
+			.into_response(),
 			ClientResponse::Error(e) => warp::reply::with_status(
 				warp::reply::json(&e.to_string()),
 				StatusCode::INTERNAL_SERVER_ERROR,
@@ -139,6 +205,7 @@ pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
+	counter: Arc<Mutex<u64>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = cfg.http_server_port;
@@ -146,15 +213,40 @@ pub async fn run_server(
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
 
+	let counter_clone = counter.clone();
+	let get_latest_block =
+		warp::path!("v1" / "latest_block").map(move || latest_block(counter_clone.clone()));
+
+	let counter_confidence = counter.clone();
 	let db = store.clone();
-	let get_confidence = warp::path!("v1" / "confidence" / u64)
-		.map(move |block_num| confidence(block_num, db.clone()));
+	let get_confidence = warp::path!("v1" / "confidence" / u64).map(move |block_num| {
+		let counter_lock = counter_confidence.lock().unwrap();
+		confidence(block_num, db.clone(), *counter_lock)
+	});
 
 	let db = store.clone();
-	let get_appdata = warp::path!("v1" / "appdata" / u64)
-		.map(move |block_num| appdata(block_num, db.clone(), &cfg));
+	let cfg1 = cfg.clone();
+	let counter_appdata = counter.clone();
+	let get_appdata = warp::path!("v1" / "appdata" / u64).map(move |block_num| {
+		let counter_lock = counter_appdata.lock().unwrap();
+		appdata(block_num, db.clone(), cfg1.clone(), *counter_lock)
+	});
 
-	let routes = warp::get().and(get_mode.or(get_confidence).or(get_appdata));
+	let cfg = cfg.clone();
+	let db = store.clone();
+	let counter_status = counter.clone();
+	let get_status = warp::path!("v1" / "status").map(move || {
+		let counter_lock = counter_status.lock().unwrap();
+		status(&cfg, *counter_lock, db.clone())
+	});
+
+	let routes = warp::get().and(
+		get_mode
+			.or(get_latest_block)
+			.or(get_confidence)
+			.or(get_appdata)
+			.or(get_status),
+	);
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
 		.unwrap();

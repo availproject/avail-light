@@ -1,7 +1,7 @@
 use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
-	sync::{mpsc::sync_channel, Arc},
+	sync::{mpsc::sync_channel, Arc, Mutex},
 	thread, time,
 };
 
@@ -136,9 +136,14 @@ pub async fn do_main() -> Result<()> {
 	// task_0: HTTP request handler ( query sender )
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
-
 	// this spawns tokio task which runs one http server for handling RPC
-	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), cell_query_tx));
+	let counter = Arc::new(Mutex::new(0u64));
+	tokio::task::spawn(http::run_server(
+		db.clone(),
+		cfg.clone(),
+		cell_query_tx,
+		counter.clone(),
+	));
 
 	// communication channels being established for talking to
 	// ipfs backed application client
@@ -201,9 +206,18 @@ pub async fn do_main() -> Result<()> {
 	));
 
 	// Note: if light client fails to run, process exits
-	light_client::run((&cfg).into(), db, ipfs, rpc_url, block_tx, pp, registry)
-		.await
-		.context("Failed to run light client")
+	light_client::run(
+		(&cfg).into(),
+		db,
+		ipfs,
+		rpc_url,
+		block_tx,
+		pp,
+		registry,
+		counter.clone(),
+	)
+	.await
+	.context("Failed to run light client")
 }
 
 #[tokio::main]

@@ -1,7 +1,7 @@
 use std::{
 	sync::{
 		mpsc::{sync_channel, SyncSender},
-		Arc,
+		Arc, Mutex,
 	},
 	time::{Duration, Instant, SystemTime},
 };
@@ -65,6 +65,7 @@ pub async fn run(
 	block_tx: SyncSender<ClientMsg>,
 	pp: PublicParameters,
 	registry: Registry,
+	counter: Arc<Mutex<u64>>,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -208,6 +209,8 @@ pub async fn run(
 			// write confidence factor into on-disk database
 			store_confidence_in_db(db.clone(), block_number, count as u32)
 				.context("Failed to store confidence in DB")?;
+			let mut lock = counter.lock().unwrap();
+			*lock = block_number;
 
 			let conf = calculate_confidence(count as u32);
 			info!(block_number, "Confidence factor: {}", conf);
