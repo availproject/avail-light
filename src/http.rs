@@ -42,7 +42,9 @@ pub struct Status {
 	confidence: f64,
 	pub app_id: Option<u32>,
 }
-pub fn calculate_confidence(count: u32) -> f64 { 100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64) }
+pub fn calculate_confidence(count: u32) -> f64 {
+	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
+}
 
 pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block)?;
@@ -148,7 +150,10 @@ fn appdata(
 	info!("Got request for AppData for block {block_num}");
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,
-		cfg.app_id.unwrap(),
+		match cfg.app_id {
+			Some(app_id) => app_id,
+			None => 0u32,
+		},
 		block_num,
 	)) {
 		Ok(Some(data)) => ClientResponse::Normal(ExtrinsicsDataResponse {

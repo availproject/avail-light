@@ -206,9 +206,18 @@ pub async fn do_main() -> Result<()> {
 	));
 
 	// Note: if light client fails to run, process exits
-	light_client::run((&cfg).into(), db, ipfs, rpc_url, block_tx, pp, registry,counter.clone())
-		.await
-		.context("Failed to run light client")
+	light_client::run(
+		(&cfg).into(),
+		db,
+		ipfs,
+		rpc_url,
+		block_tx,
+		pp,
+		registry,
+		counter.clone(),
+	)
+	.await
+	.context("Failed to run light client")
 }
 
 #[tokio::main]

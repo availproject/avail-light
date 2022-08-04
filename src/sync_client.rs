@@ -167,7 +167,6 @@ pub async fn run(
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
 					process_block(cfg_clone, url, store, block_number, ipfs, pp.clone()).await
-
 				{
 					error!(block_number, "Cannot process block: {error}");
 				}
