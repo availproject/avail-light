@@ -206,29 +206,31 @@ pub async fn run(
 				continue;
 			}
 
-			let count = proof::verify_proof(
-				block_number,
-				max_rows,
-				max_cols,
-				&cells,
-				commitment.clone(),
-				pp.clone(),
-			);
-			info!(
-				block_number,
-				"Completed {count} verification rounds in \t{:?}",
-				begin.elapsed()?
-			);
+			if !cfg.disable_proof_verification {
+				let count = proof::verify_proof(
+					block_number,
+					max_rows,
+					max_cols,
+					&cells,
+					commitment.clone(),
+					pp.clone(),
+				);
+				info!(
+					block_number,
+					"Completed {count} verification rounds in \t{:?}",
+					begin.elapsed()?
+				);
 
-			// write confidence factor into on-disk database
-			store_confidence_in_db(db.clone(), block_number, count as u32)
-				.context("Failed to store confidence in DB")?;
-			let mut lock = counter.lock().unwrap();
-			*lock = block_number;
+				// write confidence factor into on-disk database
+				store_confidence_in_db(db.clone(), block_number, count as u32)
+					.context("Failed to store confidence in DB")?;
+				let mut lock = counter.lock().unwrap();
+				*lock = block_number;
 
-			let conf = calculate_confidence(count as u32);
-			info!(block_number, "Confidence factor: {}", conf);
-			metrics.block_confidence.set(conf);
+				let conf = calculate_confidence(count as u32);
+				info!(block_number, "Confidence factor: {}", conf);
+				metrics.block_confidence.set(conf);
+			}
 
 			// push latest mined block's header into column family specified
 			// for keeping block headers, to be used
