@@ -385,13 +385,63 @@ mod block_matrix_partition_format {
 	}
 }
 
+mod port_range_format {
+	use serde::{self, Deserialize, Deserializer, Serializer};
+
+	pub fn serialize<S>(port_range: &(u16, u16), serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		if port_range.1 == 0 || port_range.1 <= port_range.0 {
+			let s = format!("{port}", port = port_range.0);
+			serializer.serialize_str(&s)
+		} else {
+			let s = format!(
+				"{port1}-{port2}",
+				port1 = port_range.0,
+				port2 = port_range.1
+			);
+			serializer.serialize_str(&s)
+		}
+	}
+
+	pub fn deserialize<'de, D>(deserializer: D) -> Result<(u16, u16), D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let s = String::deserialize(deserializer)?;
+		let parts = s.split('-').collect::<Vec<_>>();
+		let res = match parts.len() {
+			1 => {
+				let port = parts[0].parse::<u16>().map_err(serde::de::Error::custom)?;
+				Ok((port, 0))
+			},
+			2 => {
+				let port1 = parts[0].parse::<u16>().map_err(serde::de::Error::custom)?;
+				let port2 = parts[1].parse::<u16>().map_err(serde::de::Error::custom)?;
+				if port2 > port1 {
+					Ok((port1, port2))
+				} else {
+					Err(serde::de::Error::custom(format!("Invalid value {s}")))
+				}
+			},
+			_ => Err(serde::de::Error::custom(format!("Invalid value {s}"))),
+		};
+		res
+	}
+}
+
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
 	pub http_server_host: String,
-	pub http_server_port: u16,
+	#[serde(default)]
+	#[serde(with = "port_range_format")]
+	pub http_server_port: (u16, u16),
 	pub ipfs_seed: u64,
-	pub ipfs_port: u16,
+	#[serde(default)]
+	#[serde(with = "port_range_format")]
+	pub ipfs_port: (u16, u16),
 	pub ipfs_path: String,
 	pub full_node_rpc: Vec<String>,
 	pub full_node_ws: Vec<String>,
@@ -474,13 +524,12 @@ impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
-			http_server_port: 7000,
+			http_server_port: (7000, 0),
 			ipfs_seed: 1,
-			ipfs_port: 37000,
+			ipfs_port: (37000, 0),
 			ipfs_path: format!("avail_ipfs_node_{}", 1),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
-
 			app_id: None,
 			confidence: 92.0,
 			bootstraps: Vec::new(),

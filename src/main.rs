@@ -8,6 +8,7 @@ use std::{
 use ::prometheus::Registry;
 use anyhow::{Context, Result};
 use ipfs_embed::{Multiaddr, PeerId};
+use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
@@ -163,14 +164,17 @@ pub async fn do_main() -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	let ipfs = data::init_ipfs(
-		cfg.ipfs_seed,
-		cfg.ipfs_port,
-		&cfg.ipfs_path,
-		bootstrap_nodes,
-	)
-	.await
-	.context("Failed to init IPFS client")?;
+	let port = if cfg.ipfs_port.1 > 0 {
+		let port: u16 = thread_rng().gen_range(cfg.ipfs_port.0..=cfg.ipfs_port.1);
+		info!("Using random port: {port}");
+		port
+	} else {
+		cfg.ipfs_port.0
+	};
+
+	let ipfs = data::init_ipfs(cfg.ipfs_seed, port, &cfg.ipfs_path, bootstrap_nodes)
+		.await
+		.context("Failed to init IPFS client")?;
 
 	ipfs.register_metrics(&registry)
 		.context("Failed to initialize IPFS Prometheus")?;
