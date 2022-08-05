@@ -7,6 +7,7 @@ use std::{
 use anyhow::{Context, Result};
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
+use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -208,7 +209,13 @@ pub async fn run_server(
 	counter: Arc<Mutex<u64>>,
 ) {
 	let host = cfg.http_server_host.clone();
-	let port = cfg.http_server_port;
+	let port = if cfg.http_server_port.1 > 0 {
+		let port: u16 = thread_rng().gen_range(cfg.http_server_port.0..=cfg.http_server_port.1);
+		info!("Using random http server port: {port}");
+		port
+	} else {
+		cfg.http_server_port.0
+	};
 
 	let get_mode =
 		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
@@ -247,6 +254,7 @@ pub async fn run_server(
 			.or(get_appdata)
 			.or(get_status),
 	);
+
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
 		.unwrap();
