@@ -32,7 +32,7 @@ pub async fn init_ipfs(
 	let path_buf = std::path::PathBuf::from_str(path)?;
 	let storage = StorageConfig::new(Some(path_buf), None, 10, sweep_interval);
 	let mut network = NetworkConfig::new(keypair(seed)?);
-	network.mdns = None;
+	network.port_reuse = false;
 	network.kad = Some(ipfs_embed::config::KadConfig {
 		max_records: 24000000, // ~2hrs
 		max_value_bytes: 100,
