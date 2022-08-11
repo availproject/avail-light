@@ -25,7 +25,8 @@ use crate::{
 };
 
 struct LCMetrics {
-	block_counter: Counter,
+	session_block_counter: Counter,
+	total_block_number: Gauge,
 	dht_fetched: Gauge,
 	node_rpc_fetched: Gauge,
 	block_confidence: Gauge,
@@ -34,8 +35,18 @@ struct LCMetrics {
 impl LCMetrics {
 	fn register(registry: &Registry) -> Result<Self> {
 		Ok(Self {
-			block_counter: prometheus_handler::register(
-				prometheus::Counter::new("block_number", "Current block number")?,
+			session_block_counter: prometheus_handler::register(
+				prometheus::Counter::new(
+					"session_block_number",
+					"Number of blocks processed by the light client since (re)start",
+				)?,
+				registry,
+			)?,
+			total_block_number: prometheus_handler::register(
+				prometheus::Gauge::new(
+					"total_block_number",
+					"Current block number (as received from Avail header)",
+				)?,
 				registry,
 			)?,
 			dht_fetched: prometheus_handler::register(
@@ -123,7 +134,10 @@ pub async fn run(
 				};
 			}
 
-			metrics.block_counter.inc();
+			metrics.session_block_counter.inc();
+			metrics
+				.total_block_number
+				.set(message.params.header.number as f64);
 			let header = &message.params.header;
 
 			// now this is in `u64`
