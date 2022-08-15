@@ -121,8 +121,15 @@ pub async fn do_main() -> Result<()> {
 	// Spawn Prometheus server
 	let registry = Registry::default();
 
+	let prometheus_port: u16;
+
+	match cfg.prometheus_port {
+		Some(port) => prometheus_port = port,
+		None => prometheus_port = 9520,
+	}
+
 	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
-		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9520),
+		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), prometheus_port),
 		registry.clone(),
 	));
 
@@ -164,6 +171,9 @@ pub async fn do_main() -> Result<()> {
 	)
 	.await
 	.context("Failed to init IPFS client")?;
+
+	ipfs.register_metrics(&registry)
+		.context("Failed to initialize IPFS Prometheus")?;
 
 	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
 
