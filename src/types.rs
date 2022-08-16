@@ -376,13 +376,20 @@ mod block_matrix_partition_format {
 		D: Deserializer<'de>,
 	{
 		let s = String::deserialize(deserializer)?;
+		if s.is_empty() || s.to_ascii_lowercase().contains("none") {
+			return Ok(None);
+		}
 		let parts = s.split('/').collect::<Vec<_>>();
 		if parts.len() != 2 {
 			return Err(serde::de::Error::custom(format!("Invalid value {s}")));
 		}
 		let number = parts[0].parse::<u8>().map_err(serde::de::Error::custom)?;
 		let fraction = parts[1].parse::<u8>().map_err(serde::de::Error::custom)?;
-		Ok(Some(Partition { number, fraction }))
+		if number != 0 {
+			Ok(Some(Partition { number, fraction }))
+		} else {
+			Ok(None)
+		}
 	}
 }
 
