@@ -217,15 +217,17 @@ pub async fn do_main() -> Result<()> {
 	// TODO: implement proper sync between bootstrap completion and starting the sync function
 	thread::sleep(time::Duration::from_secs(3));
 
-	tokio::task::spawn(sync_client::run(
-		(&cfg).into(),
-		rpc_url.clone(),
-		0,
-		latest_block,
-		db.clone(),
-		ipfs.clone(),
-		pp.clone(),
-	));
+	if cfg.disable_client_sync != Some(true) {
+		tokio::task::spawn(sync_client::run(
+			(&cfg).into(),
+			rpc_url.clone(),
+			0,
+			latest_block,
+			db.clone(),
+			ipfs.clone(),
+			pp.clone(),
+		));
+	}
 
 	// Note: if light client fails to run, process exits
 	light_client::run(

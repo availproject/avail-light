@@ -464,6 +464,7 @@ pub struct RuntimeConfig {
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
 	pub disable_rpc: Option<bool>,
 	pub disable_proof_verification: Option<bool>,
+	pub disable_client_sync: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives
 	pub block_processing_delay: Option<u32>,
@@ -549,6 +550,7 @@ impl Default for RuntimeConfig {
 			prometheus_port: Some(9520),
 			disable_rpc: Some(false),
 			disable_proof_verification: Some(false),
+			disable_client_sync: Some(false),
 			max_parallel_fetch_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
