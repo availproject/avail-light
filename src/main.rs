@@ -221,7 +221,6 @@ pub async fn do_main() -> Result<()> {
 		tokio::task::spawn(sync_client::run(
 			(&cfg).into(),
 			rpc_url.clone(),
-			0,
 			latest_block,
 			db.clone(),
 			ipfs.clone(),

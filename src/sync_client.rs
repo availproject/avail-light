@@ -16,6 +16,12 @@ use crate::{
 	types::SyncClientConfig,
 };
 
+fn start_block(depth: Option<u64>, latest_block: u64) -> u64 {
+	depth
+		.map(|value| latest_block.saturating_sub(value))
+		.unwrap_or(0)
+}
+
 async fn process_block(
 	cfg: &SyncClientConfig,
 	url: String,
@@ -142,13 +148,13 @@ async fn process_block(
 pub async fn run(
 	cfg: SyncClientConfig,
 	url: String,
-	start_block: u64,
 	end_block: u64,
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
 ) {
-	info!("Syncing block headers from 0 to {}", end_block);
+	let start_block = start_block(cfg.sync_blocks_depth, end_block);
+	info!("Syncing block headers from {start_block} to {end_block}");
 	let blocks = (start_block..=end_block).map(move |b| {
 		(
 			b,
@@ -173,4 +179,21 @@ pub async fn run(
 			},
 		)
 		.await;
+}
+
+#[cfg(test)]
+mod tests {
+	use super::start_block;
+
+	#[test]
+	fn sync_blocks_depth() {
+		assert_eq!(start_block(None, 100), 0);
+		assert_eq!(start_block(Some(33), 100), 67);
+		assert_eq!(start_block(Some(100), 100), 0);
+		assert_eq!(start_block(Some(200), 100), 0);
+		assert_eq!(start_block(Some(50), 250), 200);
+		assert_eq!(start_block(Some(100), 250), 150);
+		assert_eq!(start_block(Some(200), 250), 50);
+		assert_eq!(start_block(Some(400), 250), 0);
+	}
 }
