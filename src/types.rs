@@ -263,20 +263,48 @@ pub struct JsonRPCHeader {
 	_id: u32,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct BlockProofResponse {
+#[derive(Deserialize)]
+struct QueryProofErrorData {
+	code: i32,
+	message: String,
+}
+
+#[derive(Deserialize)]
+pub struct QueryProofError {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	error: QueryProofErrorData,
+}
+
+impl QueryProofError {
+	pub fn message(&self) -> String {
+		let code = &self.error.code;
+		let message = &self.error.message;
+		format!("Query proof failed with code {code}: {message}")
+	}
+}
+
+#[derive(Deserialize)]
+pub struct QueryProofResult {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
 	pub result: Vec<u8>,
 }
 
-impl BlockProofResponse {
+impl QueryProofResult {
 	pub fn by_cell(&self, cells_len: usize) -> impl Iterator<Item = &[u8; 80]> {
 		assert_eq!(CELL_WITH_PROOF_SIZE * cells_len, self.result.len());
 		self.result
 			.chunks_exact(CELL_WITH_PROOF_SIZE)
 			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"))
 	}
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum QueryProofResponse {
+	Proofs(QueryProofResult),
+	Error(QueryProofError),
 }
 
 #[derive(Deserialize, Debug)]

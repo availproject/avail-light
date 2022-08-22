@@ -168,7 +168,7 @@ pub async fn run(
 				if let Err(error) =
 					process_block(cfg_clone, url, store, block_number, ipfs, pp.clone()).await
 				{
-					error!(block_number, "Cannot process block: {error}");
+					error!(block_number, "Cannot process block: {error:#}");
 				}
 			},
 		)
