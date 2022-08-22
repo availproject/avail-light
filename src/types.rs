@@ -500,6 +500,8 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
+	/// How many blocks behind latest block to sync. Default behavor is to sync all blocks
+	pub sync_blocks_depth: Option<u64>,
 }
 
 pub struct LightClientConfig {
@@ -530,6 +532,7 @@ pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
+	pub sync_blocks_depth: Option<u64>,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -538,6 +541,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
 			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			sync_blocks_depth: val.sync_blocks_depth,
 		}
 	}
 }
@@ -582,6 +586,7 @@ impl Default for RuntimeConfig {
 			max_parallel_fetch_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
+			sync_blocks_depth: None,
 		}
 	}
 }
