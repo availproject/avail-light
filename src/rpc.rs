@@ -211,19 +211,20 @@ pub async fn get_kate_proof(
 		.await
 		.context("Failed to get kate_queryProof response")?;
 
-	let proofs: BlockProofResponse =
+	let response: QueryProofResponse =
 		serde_json::from_slice(&body).context("Failed to parse kate_queryProof response")?;
 
-	let cells = positions
-		.iter()
-		.zip(proofs.by_cell(positions.len()))
-		.map(|(position, &content)| Cell {
-			position: position.clone(),
-			content,
-		})
-		.collect::<Vec<_>>();
-
-	Ok(cells)
+	match response {
+		QueryProofResponse::Proofs(proofs) => Ok(positions
+			.iter()
+			.zip(proofs.by_cell(positions.len()))
+			.map(|(position, &content)| Cell {
+				position: position.clone(),
+				content,
+			})
+			.collect::<Vec<_>>()),
+		QueryProofResponse::Error(error) => Err(anyhow!(error.message())),
+	}
 }
 
 //rpc- only for checking the connecting to substrate node
