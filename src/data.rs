@@ -9,6 +9,7 @@ use async_std::stream::StreamExt;
 use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
 use ipfs_embed::{
+	config::PingConfig,
 	identity::ed25519::{Keypair, SecretKey},
 	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
 	Quorum, Record, StorageConfig,
@@ -39,6 +40,8 @@ pub async fn init_ipfs(
 		max_providers_per_key: 1,
 		max_provided_keys: 100000,
 	});
+
+	network.ping = Some(PingConfig::new().with_keep_alive(true));
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
