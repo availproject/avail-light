@@ -157,10 +157,10 @@ pub async fn do_main() -> Result<()> {
 	// ipfs backed application client
 	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 
-	let bootstrap_nodes = &cfg
+	let bootstrap_nodes = cfg
 		.bootstraps
 		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
+		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 

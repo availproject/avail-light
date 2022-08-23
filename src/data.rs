@@ -27,7 +27,7 @@ pub async fn init_ipfs(
 	seed: u64,
 	port: u16,
 	path: &str,
-	bootstrap_nodes: &[(PeerId, Multiaddr)],
+	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 ) -> anyhow::Result<Ipfs<IPFSDefaultParams>> {
 	let sweep_interval = Duration::from_secs(600);
 	let path_buf = std::path::PathBuf::from_str(path)?;
@@ -47,12 +47,22 @@ pub async fn init_ipfs(
 
 	let _ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
 
-	if !bootstrap_nodes.is_empty() {
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		ipfs.bootstrap(bootstrap_nodes).await?;
-	} else {
-		info!("No bootstrap nodes, DHT will be available after first peer connects");
+	let mut nodes = bootstrap_nodes;
+	if nodes.is_empty() {
+		info!("No bootstrap nodes, waiting for first peer to connect...");
+		// If client is the first one on the network,
+		// wait for the second client ConnectionEstablished event to use it as bootstrap.
+		// DHT requires bootstrap to complete in order to be able to insert new records.
+		let node = ipfs
+			.swarm_events()
+			.find_map(find_connection_established)
+			.await
+			.context("Connection is not established")?;
+		nodes = vec![node];
 	}
+
+	info!("Bootstraping the DHT with bootstrap nodes...");
+	ipfs.bootstrap(&nodes).await?;
 
 	let peer_id = ipfs.local_peer_id();
 	// In rare cases there are no listeners, performing safe get
@@ -63,6 +73,14 @@ pub async fn init_ipfs(
 	}
 
 	Ok(ipfs)
+}
+
+fn find_connection_established(event: ipfs_embed::Event) -> Option<(PeerId, Multiaddr)> {
+	if let ipfs_embed::Event::ConnectionEstablished(peer_id, connected_point) = event {
+		Some((peer_id, connected_point.get_remote_address().clone()))
+	} else {
+		None
+	}
 }
 
 pub async fn log_ipfs_events(ipfs: Ipfs<IPFSDefaultParams>) {
