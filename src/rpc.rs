@@ -5,6 +5,7 @@ use hyper_tls::HttpsConnector;
 use kate_recovery::com::{Cell, Position};
 use rand::{thread_rng, Rng};
 use regex::Regex;
+use std::num::ParseIntError;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, info};
@@ -311,4 +312,12 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
 	}
 	cell_count
+}
+
+pub fn integer_part(repr: &str) -> Result<u64, ParseIntError> {
+	let value = match repr.parse() {
+		Ok(v) => v,
+		Err(e) => return Err(e),
+	};
+	Ok(value)
 }

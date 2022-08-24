@@ -1,7 +1,6 @@
 use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
-use rand::{thread_rng, Rng};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -474,8 +473,7 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
-	pub ipfs_seed_randomize: bool,
-	pub ipfs_seed: u64,
+	pub ipfs_seed: Option<String>,
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub ipfs_port: (u16, u16),
@@ -565,8 +563,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			ipfs_port: (37000, 0),
-			ipfs_seed: thread_rng().gen(),
-			ipfs_seed_randomize: false,
+			ipfs_seed: None,
 			ipfs_path: format!("avail_ipfs_node_{}", 1),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
