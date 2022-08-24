@@ -173,11 +173,23 @@ pub async fn do_main() -> Result<()> {
 	};
 	let seed = match cfg.ipfs_seed.clone() {
 		Some(seed) => {
-			let x = rpc::integer_part(&seed).unwrap();
-			x
+			if seed == "random" {
+				let x = thread_rng().gen();
+				x
+			} else {
+				let x = match rpc::integer_part(&seed) {
+					Ok(x) => x,
+					Err(e) => {
+						error!("Failed to parse seed: {}", e);
+						return Err(e.into());
+					},
+				};
+				x
+			}
 		},
 		None => thread_rng().gen(),
 	};
+	println!("💁 Seed: {}\n", seed);
 	let ipfs = data::init_ipfs(seed, port, &cfg.ipfs_path, bootstrap_nodes)
 		.await
 		.context("Failed to init IPFS client")?;
