@@ -153,10 +153,6 @@ pub async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	// communication channels being established for talking to
-	// ipfs backed application client
-	let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
-
 	let bootstrap_nodes = cfg
 		.bootstraps
 		.iter()
@@ -193,7 +189,10 @@ pub async fn do_main() -> Result<()> {
 
 	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
 
-	if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+		// communication channels being established for talking to
+		// ipfs backed application client
+		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
 			ipfs.clone(),
@@ -203,7 +202,10 @@ pub async fn do_main() -> Result<()> {
 			block_rx,
 			pp.clone(),
 		));
-	}
+		Some(block_tx)
+	} else {
+		None
+	};
 
 	let block_header = rpc::get_chain_header(&rpc_url)
 		.await

@@ -73,7 +73,7 @@ pub async fn run(
 	db: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	rpc_url: String,
-	block_tx: SyncSender<ClientMsg>,
+	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
 	registry: Registry,
 	counter: Arc<Mutex<u64>>,
@@ -278,9 +278,11 @@ pub async fn run(
 
 			// notify ipfs-based application client
 			// that newly mined block has been received
-			block_tx
-				.send(types::ClientMsg::from(message.params.header))
-				.context("Failed to send block message")?;
+			if let Some(ref channel) = block_tx {
+				channel
+					.send(types::ClientMsg::from(message.params.header))
+					.context("Failed to send block message")?;
+			}
 		}
 	}
 	Ok(())
