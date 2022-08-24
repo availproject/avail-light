@@ -473,7 +473,7 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
-	pub ipfs_seed: Option<String>,
+	pub ipfs_seed: Option<u64>,
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub ipfs_port: (u16, u16),
@@ -563,6 +563,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			ipfs_port: (37000, 0),
+			//0  is used to random configuration of seed
 			ipfs_seed: None,
 			ipfs_path: format!("avail_ipfs_node_{}", 1),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],

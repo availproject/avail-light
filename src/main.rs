@@ -171,18 +171,15 @@ pub async fn do_main() -> Result<()> {
 	} else {
 		cfg.ipfs_port.0
 	};
-	let seed = match cfg.ipfs_seed.clone() {
+	let seed = match cfg.ipfs_seed {
 		Some(seed) => {
-			if seed == "random" {
+			//0  is used to random configuration of seed
+			if seed == 0 {
+				info!("Using random seed");
 				thread_rng().gen()
 			} else {
-				match rpc::integer_part(&seed) {
-					Ok(x) => x,
-					Err(e) => {
-						error!("Failed to parse seed: {}", e);
-						return Err(e.into());
-					},
-				}
+				info!("Using seed: {seed}");
+				seed
 			}
 		},
 		None => thread_rng().gen(),
