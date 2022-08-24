@@ -492,7 +492,6 @@ pub struct RuntimeConfig {
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
 	pub disable_rpc: Option<bool>,
 	pub disable_proof_verification: Option<bool>,
-	pub disable_client_sync: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives
 	pub block_processing_delay: Option<u32>,
@@ -500,7 +499,7 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
-	/// How many blocks behind latest block to sync. Default behavor is to sync all blocks
+	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled.
 	pub sync_blocks_depth: Option<u64>,
 }
 
@@ -532,7 +531,6 @@ pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
-	pub sync_blocks_depth: Option<u64>,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -541,7 +539,6 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
 			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
-			sync_blocks_depth: val.sync_blocks_depth,
 		}
 	}
 }
@@ -582,7 +579,6 @@ impl Default for RuntimeConfig {
 			prometheus_port: Some(9520),
 			disable_rpc: Some(false),
 			disable_proof_verification: Some(false),
-			disable_client_sync: Some(false),
 			max_parallel_fetch_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,

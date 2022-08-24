@@ -5,7 +5,7 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
 	data::{
@@ -15,12 +15,6 @@ use crate::{
 	rpc,
 	types::SyncClientConfig,
 };
-
-fn start_block(depth: Option<u64>, latest_block: u64) -> u64 {
-	depth
-		.map(|value| latest_block.saturating_sub(value))
-		.unwrap_or(0)
-}
 
 async fn process_block(
 	cfg: &SyncClientConfig,
@@ -149,11 +143,15 @@ pub async fn run(
 	cfg: SyncClientConfig,
 	url: String,
 	end_block: u64,
+	sync_blocks_depth: u64,
 	header_store: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
 ) {
-	let start_block = start_block(cfg.sync_blocks_depth, end_block);
+	if sync_blocks_depth >= 250 {
+		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
+	}
+	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
 	let blocks = (start_block..=end_block).map(move |b| {
 		(
@@ -179,21 +177,4 @@ pub async fn run(
 			},
 		)
 		.await;
-}
-
-#[cfg(test)]
-mod tests {
-	use super::start_block;
-
-	#[test]
-	fn sync_blocks_depth() {
-		assert_eq!(start_block(None, 100), 0);
-		assert_eq!(start_block(Some(33), 100), 67);
-		assert_eq!(start_block(Some(100), 100), 0);
-		assert_eq!(start_block(Some(200), 100), 0);
-		assert_eq!(start_block(Some(50), 250), 200);
-		assert_eq!(start_block(Some(100), 250), 150);
-		assert_eq!(start_block(Some(200), 250), 50);
-		assert_eq!(start_block(Some(400), 250), 0);
-	}
 }
