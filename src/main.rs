@@ -174,17 +174,15 @@ pub async fn do_main() -> Result<()> {
 	let seed = match cfg.ipfs_seed.clone() {
 		Some(seed) => {
 			if seed == "random" {
-				let x = thread_rng().gen();
-				x
+				thread_rng().gen()
 			} else {
-				let x = match rpc::integer_part(&seed) {
+				match rpc::integer_part(&seed) {
 					Ok(x) => x,
 					Err(e) => {
 						error!("Failed to parse seed: {}", e);
 						return Err(e.into());
 					},
-				};
-				x
+				}
 			}
 		},
 		None => thread_rng().gen(),
