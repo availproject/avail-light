@@ -217,11 +217,13 @@ pub async fn do_main() -> Result<()> {
 	// TODO: implement proper sync between bootstrap completion and starting the sync function
 	thread::sleep(time::Duration::from_secs(3));
 
-	if cfg.disable_client_sync != Some(true) {
+	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
+	if sync_block_depth > 0 {
 		tokio::task::spawn(sync_client::run(
 			(&cfg).into(),
 			rpc_url.clone(),
 			latest_block,
+			sync_block_depth,
 			db.clone(),
 			ipfs.clone(),
 			pp.clone(),
