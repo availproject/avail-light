@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
 use prometheus::{Counter, Gauge, Registry};
@@ -20,7 +21,8 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	prometheus_handler, proof, rpc,
+	prometheus_handler, proof,
+	rpc::{self, MAX_CELLS_PER_RPC},
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
 
@@ -249,20 +251,36 @@ pub async fn run(
 					block_number,
 					"Fetching partition ({}/{}) from RPC", partition.number, partition.fraction
 				);
-				for cells in positions.chunks(30) {
-					let partition_fetched =
-						rpc::get_kate_proof(&rpc_url, block_number, cells.to_vec())
-							.await
-							.context("Failed to fetch cells from node RPC")?;
-					let partition_fetched_filtered = partition_fetched
+
+				let rpc_cells = positions.chunks(MAX_CELLS_PER_RPC).collect::<Vec<_>>();
+				for batch in rpc_cells
+					.chunks(cfg.query_proof_rpc_parallel_tasks)
+					.map(|e| {
+						join_all(
+							e.iter()
+								.map(|n| rpc::get_kate_proof(&rpc_url, block_number, n.to_vec()))
+								.collect::<Vec<_>>(),
+						)
+					}) {
+					for partition_fetched in batch
+						.await
 						.into_iter()
-						.filter(|cell| {
-							!rpc_fetched
-								.iter()
-								.any(move |rpc_cell| rpc_cell.position.eq(&cell.position))
+						.enumerate()
+						.map(|(i, e)| {
+							e.context(format!("Failed to fetch cells from node RPC at batch {i}"))
 						})
-						.collect::<Vec<_>>();
-					rpc_fetched.extend(partition_fetched_filtered.clone());
+						.collect::<Vec<_>>()
+					{
+						let partition_fetched_filtered = partition_fetched?
+							.into_iter()
+							.filter(|cell| {
+								!rpc_fetched
+									.iter()
+									.any(move |rpc_cell| rpc_cell.position.eq(&cell.position))
+							})
+							.collect::<Vec<_>>();
+						rpc_fetched.extend(partition_fetched_filtered.clone());
+					}
 				}
 			}
 

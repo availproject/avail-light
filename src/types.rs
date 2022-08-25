@@ -492,6 +492,8 @@ pub struct RuntimeConfig {
 	pub disable_rpc: Option<bool>,
 	pub disable_proof_verification: Option<bool>,
 	pub max_parallel_fetch_tasks: usize,
+	/// Number of concurrent queries for cell fetching
+	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
@@ -507,6 +509,7 @@ pub struct LightClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
+	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Option<u32>,
 	pub block_matrix_partition: Option<Partition>,
 	pub disable_proof_verification: bool,
@@ -519,6 +522,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
 			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: val.block_processing_delay,
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification == Some(true),
@@ -578,6 +582,7 @@ impl Default for RuntimeConfig {
 			disable_rpc: Some(false),
 			disable_proof_verification: Some(false),
 			max_parallel_fetch_tasks: 8,
+			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
