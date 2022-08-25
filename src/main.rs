@@ -172,19 +172,10 @@ pub async fn do_main() -> Result<()> {
 		cfg.ipfs_port.0
 	};
 	let seed = match cfg.ipfs_seed {
-		Some(seed) => {
-			//0  is used to random configuration of seed
-			if seed == 0 {
-				info!("Using random seed");
-				thread_rng().gen()
-			} else {
-				info!("Using seed: {seed}");
-				seed
-			}
-		},
 		None => thread_rng().gen(),
+		Some(0) => thread_rng().gen(),
+		Some(value) => value,
 	};
-	println!("💁 Seed: {}\n", seed);
 	let ipfs = data::init_ipfs(seed, port, &cfg.ipfs_path, bootstrap_nodes)
 		.await
 		.context("Failed to init IPFS client")?;
