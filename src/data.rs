@@ -45,7 +45,7 @@ pub async fn init_ipfs(
 
 	let ipfs = Ipfs::<IPFSDefaultParams>::new(ipfs_embed::Config { storage, network }).await?;
 
-	let _ = ipfs.listen_on(format!("/ip4/127.0.0.1/tcp/{}", port).parse()?)?;
+	let _ = ipfs.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
 	let mut nodes = bootstrap_nodes;
 	if nodes.is_empty() {
