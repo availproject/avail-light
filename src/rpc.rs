@@ -11,8 +11,6 @@ use tracing::{debug, info};
 
 use crate::types::*;
 
-pub const MAX_CELLS_PER_RPC: usize = 30;
-
 fn is_secure(url: &str) -> bool {
 	let re = Regex::new(r"^https://.*").expect("valid regex");
 	re.is_match(url)

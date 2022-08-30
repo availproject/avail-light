@@ -21,8 +21,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	prometheus_handler, proof,
-	rpc::{self, MAX_CELLS_PER_RPC},
+	prometheus_handler, proof, rpc,
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
 
@@ -252,7 +251,7 @@ pub async fn run(
 					"Fetching partition ({}/{}) from RPC", partition.number, partition.fraction
 				);
 
-				let rpc_cells = positions.chunks(MAX_CELLS_PER_RPC).collect::<Vec<_>>();
+				let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
 				for batch in rpc_cells
 					.chunks(cfg.query_proof_rpc_parallel_tasks)
 					.map(|e| {

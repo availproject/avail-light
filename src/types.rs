@@ -502,6 +502,8 @@ pub struct RuntimeConfig {
 	pub block_matrix_partition: Option<Partition>,
 	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled.
 	pub sync_blocks_depth: Option<u64>,
+	/// Maximumm number of cells per request for proof queries
+	pub max_cells_per_rpc: Option<usize>,
 }
 
 pub struct LightClientConfig {
@@ -513,6 +515,7 @@ pub struct LightClientConfig {
 	pub block_processing_delay: Option<u32>,
 	pub block_matrix_partition: Option<Partition>,
 	pub disable_proof_verification: bool,
+	pub max_cells_per_rpc: usize,
 }
 
 impl From<&RuntimeConfig> for LightClientConfig {
@@ -526,6 +529,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			block_processing_delay: val.block_processing_delay,
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification == Some(true),
+			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(32),
 		}
 	}
 }
@@ -586,6 +590,7 @@ impl Default for RuntimeConfig {
 			block_processing_delay: None,
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
+			max_cells_per_rpc: Some(30),
 		}
 	}
 }
