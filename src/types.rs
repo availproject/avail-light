@@ -469,30 +469,45 @@ mod port_range_format {
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
+	/// Light client HTTP server host name, default is 127.0.0.1
 	pub http_server_host: String,
+	/// Light client HTTP server port, default is 7000
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
 	/// Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
 	pub ipfs_seed: Option<u64>,
+	/// IPFS service port, default is 37000
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub ipfs_port: (u16, u16),
+	/// File system path where IPFS service stores data, default is avail_ipfs_node_1
 	pub ipfs_path: String,
+	/// RPC endpoint of a full node for proof queries, etc. Default is http://127.0.0.1:9933
 	pub full_node_rpc: Vec<String>,
+	/// WebSocket endpoint of full node for subscribing to latest header, etc. Default is ws://127.0.0.1:9944
 	pub full_node_ws: Vec<String>,
+	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started. Default is none.
 	pub app_id: Option<u32>,
+	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence. Default is 92.0.
 	pub confidence: f64,
+	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap. Default is empty.
 	pub bootstraps: Vec<(String, Multiaddr)>,
+	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
+	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values.
 	pub log_level: String,
+	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used. Default is none.
 	pub log_format_json: Option<bool>,
+	/// Prometheus service port, used for emmiting metrics to prometheus server.
 	pub prometheus_port: Option<u16>,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
 	pub disable_rpc: Option<bool>,
+	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. Default is none.
 	pub disable_proof_verification: Option<bool>,
+	/// Maximum number of parallel tasks spawned, when fetching from DHT.
 	pub max_parallel_fetch_tasks: usize,
-	/// Number of concurrent queries for cell fetching
+	/// Number of parallel queries for cell fetching via RPC from node.
 	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives
 	pub block_processing_delay: Option<u32>,
@@ -502,7 +517,7 @@ pub struct RuntimeConfig {
 	pub block_matrix_partition: Option<Partition>,
 	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled.
 	pub sync_blocks_depth: Option<u64>,
-	/// Maximumm number of cells per request for proof queries
+	/// Maximum number of cells per request for proof queries
 	pub max_cells_per_rpc: Option<usize>,
 }
 
