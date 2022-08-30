@@ -151,10 +151,7 @@ fn appdata(
 	info!("Got request for AppData for block {block_num}");
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,
-		match cfg.app_id {
-			Some(app_id) => app_id,
-			None => 0u32,
-		},
+		cfg.app_id.unwrap_or(0u32),
 		block_num,
 	)) {
 		Ok(Some(data)) => ClientResponse::Normal(ExtrinsicsDataResponse {
