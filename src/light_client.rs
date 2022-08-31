@@ -289,6 +289,7 @@ pub async fn run(
 				block_number,
 				rpc_fetched,
 				cfg.max_parallel_fetch_tasks,
+				cfg.ttl,
 			)
 			.await;
 			info!(block_number, "{rpc_fetched_len} cells inserted into DHT");
