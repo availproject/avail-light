@@ -466,6 +466,18 @@ mod port_range_format {
 	}
 }
 
+fn default_max_parallel_fetch_tasks() -> usize {
+	4096
+}
+
+fn default_query_proof_rpc_parallel_tasks() -> usize {
+	8
+}
+
+fn default_false() -> bool {
+	false
+}
+
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
@@ -498,17 +510,22 @@ pub struct RuntimeConfig {
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	pub log_level: String,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
-	pub log_format_json: Option<bool>,
+	#[serde(default = "default_false")]
+	pub log_format_json: bool,
 	/// Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
 	pub prometheus_port: Option<u16>,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
-	pub disable_rpc: Option<bool>,
+	#[serde(default = "default_false")]
+	pub disable_rpc: bool,
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
-	pub disable_proof_verification: Option<bool>,
+	#[serde(default = "default_false")]
+	pub disable_proof_verification: bool,
 	/// Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
-	pub max_parallel_fetch_tasks: Option<usize>,
+	#[serde(default = "default_max_parallel_fetch_tasks")]
+	pub max_parallel_fetch_tasks: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
-	pub query_proof_rpc_parallel_tasks: Option<usize>,
+	#[serde(default = "default_query_proof_rpc_parallel_tasks")]
+	pub query_proof_rpc_parallel_tasks: usize,
 	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0)
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
@@ -541,12 +558,12 @@ impl From<&RuntimeConfig> for LightClientConfig {
 		LightClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
-			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
-			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks.unwrap_or(8),
+			disable_rpc: val.disable_rpc,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: val.block_processing_delay,
 			block_matrix_partition: val.block_matrix_partition.clone(),
-			disable_proof_verification: val.disable_proof_verification == Some(true),
+			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 			ttl: val.ttl.unwrap_or(3600),
 		}
@@ -564,8 +581,8 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		SyncClientConfig {
 			confidence: val.confidence,
-			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
+			disable_rpc: val.disable_rpc,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
 			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
@@ -582,8 +599,8 @@ impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
-			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
+			disable_rpc: val.disable_rpc,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
 			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
@@ -604,12 +621,12 @@ impl Default for RuntimeConfig {
 			bootstraps: Vec::new(),
 			avail_path: format!("avail_light_client_{}", 1),
 			log_level: "INFO".to_owned(),
-			log_format_json: Some(false),
+			log_format_json: false,
 			prometheus_port: Some(9520),
-			disable_rpc: Some(false),
-			disable_proof_verification: Some(false),
-			max_parallel_fetch_tasks: Some(4096),
-			query_proof_rpc_parallel_tasks: Some(8),
+			disable_rpc: false,
+			disable_proof_verification: false,
+			max_parallel_fetch_tasks: 4096,
+			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
 			sync_blocks_depth: None,

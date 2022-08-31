@@ -105,7 +105,7 @@ pub async fn do_main() -> Result<()> {
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
-	if cfg.log_format_json == Some(true) {
+	if cfg.log_format_json {
 		tracing::subscriber::set_global_default(json_subscriber(log_level))
 			.expect("global json subscriber is set")
 	} else {
