@@ -7,7 +7,7 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::types::*;
 
@@ -183,7 +183,7 @@ pub async fn get_kate_proof(
 	//tuple of values (id,index)
 	let index_tuple = block.header.app_data_lookup.index.clone();
 
-	info!(
+	debug!(
 		"Getting kate proof block {}, apps index {:?}",
 		block_num, index_tuple
 	);
