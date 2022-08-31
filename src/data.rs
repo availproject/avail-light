@@ -152,7 +152,6 @@ impl IpfsCell {
 		self.0.reference(block)
 	}
 
-	// TODO: Add TTL to all new records
 	fn dht_record(&self, block: u64, ttl: u64) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
