@@ -469,56 +469,58 @@ mod port_range_format {
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
-	/// Light client HTTP server host name, default is 127.0.0.1
+	/// Light client HTTP server host name (default: 127.0.0.1)
 	pub http_server_host: String,
-	/// Light client HTTP server port, default is 7000
+	/// Light client HTTP server port (default: 7000).
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
 	/// Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
 	pub ipfs_seed: Option<u64>,
-	/// IPFS service port, default is 37000
+	/// IPFS service port range (port, range) (default: 37000).
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub ipfs_port: (u16, u16),
-	/// File system path where IPFS service stores data, default is avail_ipfs_node_1
+	/// File system path where IPFS service stores data (default: avail_ipfs_node_1)
 	pub ipfs_path: String,
-	/// RPC endpoint of a full node for proof queries, etc. Default is http://127.0.0.1:9933
+	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
-	/// WebSocket endpoint of full node for subscribing to latest header, etc. Default is ws://127.0.0.1:9944
+	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
-	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started. Default is none.
+	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
-	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence. Default is 92.0.
+	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
-	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap. Default is empty.
+	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
-	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values.
+	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	pub log_level: String,
-	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used. Default is none.
+	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: Option<bool>,
-	/// Prometheus service port, used for emmiting metrics to prometheus server.
+	/// Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
 	pub prometheus_port: Option<u16>,
-	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT
+	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
 	pub disable_rpc: Option<bool>,
-	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. Default is none.
+	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 	pub disable_proof_verification: Option<bool>,
-	/// Maximum number of parallel tasks spawned, when fetching from DHT.
-	pub max_parallel_fetch_tasks: usize,
-	/// Number of parallel queries for cell fetching via RPC from node.
-	pub query_proof_rpc_parallel_tasks: usize,
-	/// Number of seconds to postpone block processing after block finalized message arrives
+	/// Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
+	pub max_parallel_fetch_tasks: Option<usize>,
+	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
+	pub query_proof_rpc_parallel_tasks: Option<usize>,
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0)
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
 	#[serde(default)]
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
-	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled.
+	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
 	pub sync_blocks_depth: Option<u64>,
-	/// Maximum number of cells per request for proof queries
+	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
+	/// Time-to-live for DHT entries in seconds (default: 3600).
+	pub ttl: Option<u64>,
 }
 
 pub struct LightClientConfig {
@@ -531,6 +533,7 @@ pub struct LightClientConfig {
 	pub block_matrix_partition: Option<Partition>,
 	pub disable_proof_verification: bool,
 	pub max_cells_per_rpc: usize,
+	pub ttl: u64,
 }
 
 impl From<&RuntimeConfig> for LightClientConfig {
@@ -539,12 +542,13 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
-			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
+			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks.unwrap_or(8),
 			block_processing_delay: val.block_processing_delay,
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification == Some(true),
-			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(32),
+			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
+			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
 }
@@ -553,6 +557,7 @@ pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
+	pub ttl: u64,
 }
 
 impl From<&RuntimeConfig> for SyncClientConfig {
@@ -560,7 +565,8 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 		SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
+			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
 }
@@ -569,6 +575,7 @@ pub struct AppClientConfig {
 	pub full_node_ws: Vec<String>,
 	pub disable_rpc: bool,
 	pub max_parallel_fetch_tasks: usize,
+	pub ttl: u64,
 }
 
 impl From<&RuntimeConfig> for AppClientConfig {
@@ -576,7 +583,8 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		AppClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			disable_rpc: val.disable_rpc == Some(true),
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks.unwrap_or(4096),
+			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
 }
@@ -600,12 +608,13 @@ impl Default for RuntimeConfig {
 			prometheus_port: Some(9520),
 			disable_rpc: Some(false),
 			disable_proof_verification: Some(false),
-			max_parallel_fetch_tasks: 8,
-			query_proof_rpc_parallel_tasks: 8,
+			max_parallel_fetch_tasks: Some(4096),
+			query_proof_rpc_parallel_tasks: Some(8),
 			block_processing_delay: None,
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
+			ttl: Some(3600),
 		}
 	}
 }

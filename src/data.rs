@@ -153,12 +153,12 @@ impl IpfsCell {
 	}
 
 	// TODO: Add TTL to all new records
-	fn dht_record(&self, block: u64) -> Record {
+	fn dht_record(&self, block: u64, ttl: u64) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
 			value: self.0.content.to_vec(),
 			publisher: None,
-			expires: Instant::now().checked_add(Duration::from_secs(3600)),
+			expires: Instant::now().checked_add(Duration::from_secs(ttl)),
 		}
 	}
 }
@@ -177,6 +177,7 @@ pub async fn insert_into_dht(
 	block: u64,
 	cells: Vec<Cell>,
 	max_parallel_fetch_tasks: usize,
+	ttl: u64,
 ) {
 	let ipfs_cells: Vec<_> = cells.into_iter().map(IpfsCell).collect::<Vec<_>>();
 	let ipfs_cell_tuples = ipfs_cells.iter().map(move |b| (b, ipfs.clone()));
@@ -185,7 +186,10 @@ pub async fn insert_into_dht(
 		max_parallel_fetch_tasks,
 		|(cell, ipfs)| async move {
 			let reference = cell.reference(block);
-			if let Err(error) = ipfs.put_record(cell.dht_record(block), Quorum::One).await {
+			if let Err(error) = ipfs
+				.put_record(cell.dht_record(block, ttl), Quorum::One)
+				.await
+			{
 				debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}
 		},
