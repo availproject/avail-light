@@ -31,6 +31,8 @@ struct LCMetrics {
 	dht_fetched: Gauge,
 	node_rpc_fetched: Gauge,
 	block_confidence: Gauge,
+	rpc_call_duration: Gauge,
+	dht_put_duration: Gauge,
 }
 
 impl LCMetrics {
@@ -63,6 +65,20 @@ impl LCMetrics {
 			)?,
 			block_confidence: prometheus_handler::register(
 				prometheus::Gauge::new("block_confidence", "Block confidence of current block")?,
+				registry,
+			)?,
+			rpc_call_duration: prometheus_handler::register(
+				prometheus::Gauge::new(
+					"rpc_call_duration",
+					"Time needed to retrieve all cells via RPC for current block (in seconds)",
+				)?,
+				registry,
+			)?,
+			dht_put_duration: prometheus_handler::register(
+				prometheus::Gauge::new(
+					"dht_put_duration",
+					"Time needed to perform DHT PUT operation for current block (in seconds",
+				)?,
 				registry,
 			)?,
 		})
@@ -244,6 +260,7 @@ pub async fn run(
 			store_block_header_in_db(db.clone(), block_number, header)
 				.context("Failed to store block header in DB")?;
 
+			let mut begin = SystemTime::now();
 			if let Some(partition) = &cfg.block_matrix_partition {
 				let positions = rpc::generate_partition_cells(partition, max_rows, max_cols);
 				info!(
@@ -282,7 +299,16 @@ pub async fn run(
 					}
 				}
 			}
+			let partition_time_elapsed = begin.elapsed()?;
+			info!(
+				block_number,
+				"Partion cells received. Time elapsed: \t{:?}", partition_time_elapsed
+			);
+			metrics
+				.rpc_call_duration
+				.set(partition_time_elapsed.as_secs_f64());
 
+			begin = SystemTime::now();
 			let rpc_fetched_len = rpc_fetched.len();
 			insert_into_dht(
 				&ipfs,
@@ -292,7 +318,16 @@ pub async fn run(
 				cfg.ttl,
 			)
 			.await;
-			info!(block_number, "{rpc_fetched_len} cells inserted into DHT");
+
+			let dht_put_time_elapsed = begin.elapsed()?;
+			info!(
+				block_number,
+				"{rpc_fetched_len} cells inserted into DHT. Time elapsed: \t{:?}",
+				dht_put_time_elapsed
+			);
+			metrics
+				.dht_put_duration
+				.set(dht_put_time_elapsed.as_secs_f64());
 
 			// notify ipfs-based application client
 			// that newly mined block has been received
