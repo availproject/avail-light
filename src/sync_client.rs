@@ -133,6 +133,7 @@ async fn process_block(
 		block_number,
 		rpc_fetched,
 		cfg.max_parallel_fetch_tasks,
+		cfg.ttl,
 	)
 	.await;
 	info!(block_number, "Cells inserted into DHT");

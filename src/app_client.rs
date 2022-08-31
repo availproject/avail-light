@@ -127,7 +127,14 @@ async fn process_block(
 		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
 	}
 
-	insert_into_dht(ipfs, block.number, rpc_cells, cfg.max_parallel_fetch_tasks).await;
+	insert_into_dht(
+		ipfs,
+		block.number,
+		rpc_cells,
+		cfg.max_parallel_fetch_tasks,
+		cfg.ttl,
+	)
+	.await;
 
 	info!(block_number, "Cells inserted into IPFS");
 
