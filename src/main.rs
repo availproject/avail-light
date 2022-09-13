@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,

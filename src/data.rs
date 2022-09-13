@@ -1,3 +1,5 @@
+//! Persistence to DHT and RocksDB.
+
 use std::{
 	str::FromStr,
 	sync::Arc,

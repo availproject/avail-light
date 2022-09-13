@@ -1,3 +1,5 @@
+//! Light client sampling and verification for blocks before latest finalized.
+
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};

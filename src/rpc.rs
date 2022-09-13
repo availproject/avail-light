@@ -1,3 +1,5 @@
+//! RPC communication with avail node.
+
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};

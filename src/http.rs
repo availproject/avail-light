@@ -1,3 +1,5 @@
+//! HTTP server for confidence and data retrieval.
+
 use std::{
 	net::SocketAddr,
 	str::FromStr,

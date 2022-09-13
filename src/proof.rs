@@ -1,3 +1,5 @@
+//! Parallelized proof verification.
+
 use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;

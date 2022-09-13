@@ -1,3 +1,5 @@
+//! Prometheus exporter.
+
 use std::net::SocketAddr;
 
 use anyhow::{Context, Error, Result};

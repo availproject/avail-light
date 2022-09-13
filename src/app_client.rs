@@ -1,3 +1,5 @@
+//! Application client for data fetching and reconstruction.
+
 use std::{
 	collections::HashSet,
 	sync::{mpsc::Receiver, Arc},
