@@ -1,3 +1,23 @@
+//! Light client for data availability sampling and verification.
+//!
+//! Sampling and verification are prerequisites for application client, so [`run`] function should be on main thread and exit in case of failures.
+//!
+//! # Flow
+//!
+//! * Connect to the Avail node WebSocket stream and start listening to finalized headers
+//! * Generate random cells for random data sampling (8 cells currently)
+//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Verify proof using the received cells
+//! * Calculate block confidence and store it in RocksDB
+//! * Insert cells to to DHT for remote fetch
+//! * Notify the consumer (app client) a new block has been verified
+//!
+//! # Notes
+//!
+//! In case delay is configured, block processing is delayed for configured time.  
+//! In case RPC is disabled, RPC calls will be skipped.  
+//! In case partition is configured, block partition is fetched and inserted into DHT.
+
 use std::{
 	sync::{
 		mpsc::{sync_channel, SyncSender},
@@ -25,6 +45,7 @@ use crate::{
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
 
+/// Defines prometheus metrics for light client.
 struct LCMetrics {
 	session_block_counter: Counter,
 	total_block_number: Gauge,
@@ -85,6 +106,18 @@ impl LCMetrics {
 	}
 }
 
+/// Runs light client.
+///
+/// # Arguments
+///
+/// * `cfg` - Light client configuration
+/// * `db` - Database to store confidence and block header
+/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `block_tx` - Channel used to send header of verified block
+/// * `pp` - Public parameters (i.e. SRS) needed for proof verification
+/// * `registry` - Prometheus metrics registry
+/// * `counter` - Processed block mutex counter
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
