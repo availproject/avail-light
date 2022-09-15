@@ -95,7 +95,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-pub async fn do_main() -> Result<()> {
+async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
 	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)

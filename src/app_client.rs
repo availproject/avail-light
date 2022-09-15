@@ -253,6 +253,7 @@ pub async fn run(
 	}
 }
 
+/// Struct used to decode avail extrinsic
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct AvailExtrinsic {
 	pub app_id: u32,
@@ -268,14 +269,18 @@ where
 	sp_core::bytes::serialize(t, serializer)
 }
 
+/// Type used to decode signed extra in avail extrinsic
 pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
 
+/// Struct used to decode balance in signed extra
 #[derive(Decode)]
 pub struct Balance(#[codec(compact)] u128);
 
+/// Struct used to decode nonce in signed extra
 #[derive(Decode)]
 pub struct Nonce(#[codec(compact)] u32);
 
+/// Struct used to decode mortaliy in signed extra
 pub enum AvailMortality {
 	Immortal,
 	Mortal(u64, u64),

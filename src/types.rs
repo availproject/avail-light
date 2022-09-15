@@ -1,10 +1,11 @@
 //! Shared light client structs and enums.
 
 use anyhow::Context;
-use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
+use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// IPFS events wrapper
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
 	NewListener,
@@ -147,21 +148,7 @@ impl std::str::FromStr for Event {
 	}
 }
 
-#[derive(Clone)]
-pub struct BlockCidPair {
-	pub cid: Cid,            // cid of some certain block number's data matrix
-	pub self_computed: bool, // is this CID computed by this process ?
-}
-
-// Same as above struct, just that it can be easily JSON serialised
-// and deserialised, so it's easy to push it into on-disk data store
-// where block <-> cid mapping is maintained
-#[derive(Clone, Serialize, Deserialize)]
-pub struct BlockCidPersistablePair {
-	pub cid: String,
-	pub self_computed: bool,
-}
-
+/// Response of RPC get block hash
 #[derive(Deserialize, Debug)]
 pub struct BlockHashResponse {
 	#[serde(flatten)]
@@ -169,6 +156,7 @@ pub struct BlockHashResponse {
 	pub result: String,
 }
 
+/// Response of RPC get chain
 #[derive(Deserialize, Debug)]
 pub struct GetChainResponse {
 	#[serde(flatten)]
@@ -176,6 +164,7 @@ pub struct GetChainResponse {
 	pub result: String,
 }
 
+/// Response of RPC get block
 #[derive(Deserialize, Debug)]
 pub struct BlockResponse {
 	#[serde(flatten)]
@@ -183,6 +172,7 @@ pub struct BlockResponse {
 	pub result: RPCResult,
 }
 
+/// Response of RPC get block header
 #[derive(Deserialize, Debug)]
 pub struct BlockHeaderResponse {
 	#[serde(flatten)]
@@ -190,6 +180,7 @@ pub struct BlockHeaderResponse {
 	pub result: Header,
 }
 
+/// Result in RPC response of get block
 #[derive(Deserialize, Debug)]
 pub struct RPCResult {
 	pub block: Block,
@@ -197,12 +188,14 @@ pub struct RPCResult {
 	pub justification: String,
 }
 
+/// Result of get block call
 #[derive(Deserialize, Debug, Clone)]
 pub struct Block {
 	pub extrinsics: Vec<Extrinsic>,
 	pub header: Header,
 }
 
+/// Extrinsics in result of get block call
 #[derive(Debug, Clone)]
 pub struct Extrinsic {
 	pub data: Vec<u8>,
@@ -219,6 +212,7 @@ impl<'a> Deserialize<'a> for Extrinsic {
 	}
 }
 
+/// Block header
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Header {
 	#[serde(deserialize_with = "deserialize_u64_from_hex")]
@@ -243,6 +237,7 @@ where
 	u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(serde::de::Error::custom)
 }
 
+/// Root of extrinsics in header
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtrinsicsRoot {
 	pub cols: u16,
@@ -252,12 +247,12 @@ pub struct ExtrinsicsRoot {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Digest {
+struct Digest {
 	logs: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct JsonRPCHeader {
+struct JsonRPCHeader {
 	#[serde(rename = "jsonrpc")]
 	_jsonrpc: String,
 	#[serde(rename = "id")]
@@ -270,6 +265,7 @@ struct QueryProofErrorData {
 	message: String,
 }
 
+/// Query proof error
 #[derive(Deserialize)]
 pub struct QueryProofError {
 	#[serde(flatten)]
@@ -285,6 +281,7 @@ impl QueryProofError {
 	}
 }
 
+/// Query proof result
 #[derive(Deserialize)]
 pub struct QueryProofResult {
 	#[serde(flatten)]
@@ -301,6 +298,7 @@ impl QueryProofResult {
 	}
 }
 
+/// Response of RPC query proof
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum QueryProofResponse {
@@ -308,6 +306,7 @@ pub enum QueryProofResponse {
 	Error(QueryProofError),
 }
 
+/// Result of subscription to header
 #[derive(Deserialize, Debug)]
 pub struct QueryResult {
 	#[serde(rename = "result")]
@@ -316,6 +315,7 @@ pub struct QueryResult {
 	_subscription: String,
 }
 
+/// Response of subscription to header
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct Response {
@@ -336,6 +336,7 @@ pub struct SubscriptionResponse {
 	pub subscription_id: String,
 }
 
+/// Light to app client channel message struct
 pub struct ClientMsg {
 	pub number: u64,
 	pub dimensions: ExtendedMatrixDimensions,
@@ -359,6 +360,10 @@ impl From<Header> for ClientMsg {
 	}
 }
 
+/// Client mode
+///
+/// * `LightClient` - light client is running
+/// * `AppClient` - app client is running alongside the light client
 #[derive(Serialize, Clone)]
 pub enum Mode {
 	LightClient,
@@ -375,6 +380,7 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
+/// Block partition assigned to light client
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Partition {
 	pub number: u8,
@@ -542,6 +548,7 @@ pub struct RuntimeConfig {
 	pub ttl: Option<u64>,
 }
 
+/// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
 	pub full_node_ws: Vec<String>,
 	pub confidence: f64,
@@ -572,6 +579,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 	}
 }
 
+/// Sync client configuration (see [RuntimeConfig] for details)
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
@@ -590,6 +598,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 	}
 }
 
+/// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
 	pub full_node_ws: Vec<String>,
 	pub disable_rpc: bool,
@@ -640,7 +649,6 @@ impl Default for RuntimeConfig {
 
 /// This structure is used for encapsulating all things required for
 /// querying IPFS client for cell content
-
 /// A specific block number is required
 /// In that block row and column numbers are required
 /// Finally one channel is also passed which will be used

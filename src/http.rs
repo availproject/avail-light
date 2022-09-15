@@ -1,4 +1,12 @@
 //! HTTP server for confidence and data retrieval.
+//!
+//! # Endpoints
+//!
+//! * `/v1/mode` - returns client mode (light or light+app client)
+//! * `/v1/status` - returns status of a latest processed block
+//! * `/v1/latest_block` - returns latest processed block
+//! * `/v1/confidence/{block_number}` - returns calculated confidence for a given block number
+//! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use std::{
 	net::SocketAddr,
@@ -22,34 +30,36 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ConfidenceResponse {
+struct ConfidenceResponse {
 	pub block: u64,
 	pub confidence: f64,
 	pub serialised_confidence: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ExtrinsicsDataResponse {
+struct ExtrinsicsDataResponse {
 	pub block: u64,
 	pub extrinsics: Vec<AvailExtrinsic>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LatestBlockResponse {
+struct LatestBlockResponse {
 	pub latest_block: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Status {
+struct Status {
 	pub block_num: u64,
 	confidence: f64,
 	pub app_id: Option<u32>,
 }
+
+/// Calculates confidence from given number of verified cells
 pub fn calculate_confidence(count: u32) -> f64 {
 	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
 }
 
-pub fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
+fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block)?;
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
 	let shifted: BigUint = block_big << 32 | factor_big;
@@ -201,6 +211,7 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 	}
 }
 
+/// Runs HTTP server
 pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,

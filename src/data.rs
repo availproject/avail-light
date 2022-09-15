@@ -246,7 +246,7 @@ pub async fn fetch_cells_from_dht(
 	Ok((fetched, unfetched))
 }
 
-pub fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]) -> Result<()> {
+fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(APP_DATA_CF)
@@ -256,7 +256,7 @@ pub fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]
 		.context("Failed to write application data")
 }
 
-pub fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<Option<Vec<u8>>> {
+fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<Option<Vec<u8>>> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(crate::consts::APP_DATA_CF)
@@ -266,6 +266,7 @@ pub fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<O
 		.context("Couldn't get app_data from db")
 }
 
+/// Encodes and stores app data into database under the `app_id:block_number` key
 pub fn store_encoded_data_in_db<T: Encode>(
 	db: Arc<DB>,
 	app_id: u32,
@@ -275,6 +276,7 @@ pub fn store_encoded_data_in_db<T: Encode>(
 	store_data_in_db(db, app_id, block_number, &data.encode())
 }
 
+/// Gets and decodes app data from database for the `app_id:block_number` key
 pub fn get_decoded_data_from_db<T: Decode>(
 	db: Arc<DB>,
 	app_id: u32,
@@ -291,6 +293,7 @@ pub fn get_decoded_data_from_db<T: Decode>(
 	}
 }
 
+/// Checks if block header for given block number is in database
 pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
@@ -301,6 +304,7 @@ pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 		.map(|value| value.is_some())
 }
 
+/// Stores block header into database under the given block number key
 pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header) -> Result<()> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
@@ -314,6 +318,7 @@ pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header)
 	.context("Failed to write block header")
 }
 
+/// Checks if confidence factor for given block number is in database
 pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
@@ -324,6 +329,7 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 		.map(|value| value.is_some())
 }
 
+/// Gets confidence factor from database for given block number
 pub fn get_confidence_from_db(db: Arc<DB>, block_number: u64) -> Result<Option<u32>> {
 	let cf_handle = db
 		.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
@@ -346,6 +352,7 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u64) -> Result<Option<u
 	}
 }
 
+/// Stores confidence factor into database under the given block number key
 pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: u32) -> Result<()> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
