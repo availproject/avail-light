@@ -20,7 +20,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-	consts::{APP_DATA_CF, BLOCK_CID_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	types::{Mode, RuntimeConfig},
 };
 
@@ -59,16 +59,12 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut block_header_cf_opts = Options::default();
 	block_header_cf_opts.set_max_write_buffer_number(16);
 
-	let mut block_cid_cf_opts = Options::default();
-	block_cid_cf_opts.set_max_write_buffer_number(16);
-
 	let mut app_data_cf_opts = Options::default();
 	app_data_cf_opts.set_max_write_buffer_number(16);
 
 	let cf_opts = vec![
 		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
 		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_CID_CF, block_cid_cf_opts),
 		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
 	];
 
