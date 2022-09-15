@@ -114,7 +114,7 @@ Result:
 }
 ```
 
->  `serialisedConfidence` is calculated as: 
+> `serialisedConfidence` is calculated as:
 > `blockNumber << 32 | int32(confidence * 10 ** 7)`, where confidence is represented out of 10 ** 9.
 
 
@@ -154,25 +154,33 @@ We are using [grcov](https://github.com/mozilla/grcov) to aggregate code coverag
 
 To install grcov, run:
 
-	$> cargo install grcov
+```bash
+cargo install grcov
+```
 
 Source code coverage data is generated when running tests with:
 
-	$> env RUSTFLAGS="-C instrument-coverage" \
-		LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
-		cargo test
+```bash
+env RUSTFLAGS="-C instrument-coverage" \
+	LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
+	cargo test
+```
 
 To generate the report, run:
 
-	$> grcov . -s . \
-		--binary-path ./target/debug/ \
-		-t html \
-		--branch \
-		--ignore-not-existing -o \
-		./target/debug/coverage/
+```bash
+grcov . -s . \
+	--binary-path ./target/debug/ \
+	-t html \
+	--branch \
+	--ignore-not-existing -o \
+	./target/debug/coverage/
+```
 
 To clean up generate coverage information files, run:
 
-	$> find . -name \*.profraw -type f -exec rm -f {} +
+```bash
+find . -name \*.profraw -type f -exec rm -f {} +
+```
 
 Open `index.html` from the `./target/debug/coverage/` folder to review coverage data.
