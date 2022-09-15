@@ -40,10 +40,10 @@ touch config.yaml
 
 ```yaml
 http_server_host = "127.0.0.1"
-http_server_port = 7000
+http_server_port = "7000"
 
 ipfs_seed = 1
-ipfs_port = 37000
+ipfs_port = "37000"
 ipfs_path = "avail_ipfs_store"
 
 # put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
