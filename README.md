@@ -7,7 +7,7 @@
 
 [![Build status](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/maticnetwork/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/maticnetwork/avail-light)
 
-![demo](./img/prod_demo.png)
+![demo](./img/lc.png)
 
 ## Introduction
 
@@ -22,8 +22,8 @@
 
 1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms.
 
-    1. DHT - client first tries to retrieve cells via Kademlia
-	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells
+    1. DHT - client first tries to retrieve cells via Kademlia.
+	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells.
 
 	Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
 
@@ -91,6 +91,10 @@ Now, run the client:
 ```bash
 cargo run -- -c config.yaml  
 ```
+
+## Notes
+
+- When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully. 
 
 ## Usage
 
