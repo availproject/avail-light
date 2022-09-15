@@ -14,16 +14,16 @@
 `avail-light` is a data availability light client with the following functionalities:
 
 * Listening on the Avail network for finalized blocks
-* Calculating confidence for a number of *cells* (`N`) in a matrix, where *cell* is defined as a `{row, col}` pair.
-* Random sampling and proof verification of a predetermined number of cells on each new block. `N` depends on the percentage of certainty the light client wants to achieve.
+* Random sampling and proof verification of a predetermined number of cells (`{row, col}` pairs) on each new block. After successful block verification, confidence is calculated for a number of *cells* (`N`) in a matrix, with `N` depending on the percentage of certainty the light client wants to achieve.
 * Data reconstruction through application client (WIP).
+* HTTP endpoints exposing relevant data, both from the light and application clients
 
 ### Modes of Operation
 
-1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms.
+1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms:
 
     1. DHT - client first tries to retrieve cells via Kademlia.
-	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells.
+	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded.
 
 	Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
 
@@ -40,12 +40,37 @@ Start by cloning this repo in your local setup:
 git clone git@github.com:maticnetwork/avail-light.git
 ```
 
-Create one yaml configuration file in the root of the project & put following content (config example for a fat client):
+Create one yaml configuration file in the root of the project & put following content. Config example is for a bootstrap client, detailed config specs can be found bellow.
 
 ```bash
 touch config.yaml
 ```
 
+```yaml
+log_level = "info"
+http_server_host = "127.0.0.1"
+http_server_port = "7001"
+
+ipfs_seed = 1
+ipfs_port = "37001"
+ipfs_path = "avail_ipfs_store"
+
+full_node_rpc = ["http://127.0.0.1:9933"]
+full_node_ws = ["ws://127.0.0.1:9944"]
+app_id = 0
+confidence = 92.0
+avail_path = "avail_path"
+prometheus_port = 9521
+bootstraps = []
+```
+
+Now, run the client:
+
+```bash
+cargo run -- -c config.yaml  
+```
+
+## Config reference
 ```yaml
 log_level = "info"
 # Light client HTTP server host name (default: 127.0.0.1)
@@ -59,6 +84,8 @@ ipfs_seed = 2
 ipfs_port = "37001"
 # File system path where IPFS service stores data (default: avail_ipfs_node_1)
 ipfs_path = "avail_ipfs_store"
+# Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
 
 # RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 full_node_rpc = ["http://127.0.0.1:9933"]
@@ -72,29 +99,37 @@ confidence = 92.0
 avail_path = "avail_path"
 # Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
 prometheus_port = 9521
+# If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
+log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
 block_matrix_partition = "1/20"
 # Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 disable_proof_verification = true
+# Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
+disable_rpc = false
 # Number of parallel queries for cell fetching via RPC from node (default: 8).
 query_proof_rpc_parallel_tasks = 300
 # Maximum number of cells per request for proof queries (default: 30).
 max_cells_per_rpc = 1024
 # Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
 max_parallel_fetch_tasks = 1024
-# Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-bootstraps = [["/ip4/127.0.0.1/tcp/39000"]]
-```
-
-Now, run the client:
-
-```bash
-cargo run -- -c config.yaml  
+# Number of seconds to postpone block processing after block finalized message arrives (default: 0).
+block_processing_delay = 5
+# How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
+sync_blocks_depth = 250
+# Time-to-live for DHT entries in seconds (default: 3600).
+ttl = 1800
 ```
 
 ## Notes
 
 - When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully. 
+- Immediately after starting a fresh light client, block sync is executed to a block depth set in the `sync_blocks_depth` config parameter. The sync client is using both the DHT and RPC for that purpose.
+- In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
+- `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
+- Prometheus is used for exposing detailed metrics about the light client
+
+
 
 ## Usage
 
