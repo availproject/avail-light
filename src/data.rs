@@ -25,6 +25,7 @@ use crate::{
 	types::{Event, Header},
 };
 
+/// Inits IPFS by bootstraping DHT with bootstrap node or waiting for first peer to connect
 pub async fn init_ipfs(
 	seed: u64,
 	port: u16,
@@ -85,6 +86,7 @@ fn find_connection_established(event: ipfs_embed::Event) -> Option<(PeerId, Mult
 	}
 }
 
+/// Logs IPFS events
 pub async fn log_ipfs_events(ipfs: Ipfs<IPFSDefaultParams>) {
 	let mut events = ipfs.swarm_events();
 	while let Some(event) = events.next().await {
@@ -173,6 +175,8 @@ impl IpfsCell {
 /// * `ipfs` - Reference to IPFS node
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into IPFS
+/// * `max_parallel_fetch_tasks` - Number of cells to fetch in parallel
+/// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
 	ipfs: &Ipfs<DefaultParams>,
 	block: u64,
@@ -198,6 +202,15 @@ pub async fn insert_into_dht(
 	.await;
 }
 
+/// Fetches cells from DHT.
+/// Returns fetched cells and unfetched positions (so we can try RPC fetch).
+///
+/// # Arguments
+///
+/// * `ipfs` - Reference to IPFS node
+/// * `block_number` - Block number
+/// * `positions` - Cell positions to fetch
+/// * `max_parallel_fetch_tasks` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
 	block_number: u64,

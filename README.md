@@ -165,13 +165,13 @@ Result:
 {"block":386,"extrinsics":[{"app_id":1,"signature":{"Sr25519":"be86221cc07a461537570637d75a0569c2210286e85c693e3b31d94211b1ef1eaf451b13072066f745f70801ad6af0dcdf2e42b7bf77be2dc6709196b4d45889"},"data":"0x313537626233643536653339356537393237633664"}]}
 ```
 
-Return the Mode of the Light Client
+Returns the Mode of the Light Client
 
 ```bash
-curl -s localhost:7000/v1/Mode
+curl -s localhost:7000/v1/mode
 ```
 
-Return the status of a latest block 
+Returns the status of a latest block
 
 ```bash
 curl -s localhost:7000/v1/status
