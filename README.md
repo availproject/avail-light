@@ -29,7 +29,7 @@
 
 2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the application client (part ot the light client) downloads all the relevant app data, reconstructs it and persists it locally. Reconstructed data is then available to accessed via an HTTP endpoint. (WIP)
 
-3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation. 
+3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation. 
 **IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct. 
 
 ## Installation
@@ -49,10 +49,10 @@ touch config.yaml
 ```yaml
 log_level = "info"
 http_server_host = "127.0.0.1"
-http_server_port = "7001"
+http_server_port = "7000"
 
 ipfs_seed = 1
-ipfs_port = "37001"
+ipfs_port = "37000"
 ipfs_path = "avail_ipfs_store"
 
 full_node_rpc = ["http://127.0.0.1:9933"]
@@ -60,7 +60,7 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-prometheus_port = 9521
+prometheus_port = 9520
 bootstraps = []
 ```
 
@@ -76,16 +76,16 @@ log_level = "info"
 # Light client HTTP server host name (default: 127.0.0.1)
 http_server_host = "127.0.0.1"
 # Light client HTTP server port (default: 7000).
-http_server_port = "7001"
+http_server_port = "7000"
 
 # Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
 ipfs_seed = 2
 # IPFS service port range (port, range) (default: 37000).
-ipfs_port = "37001"
+ipfs_port = "37000"
 # File system path where IPFS service stores data (default: avail_ipfs_node_1)
 ipfs_path = "avail_ipfs_store"
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 
 # RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 full_node_rpc = ["http://127.0.0.1:9933"]
@@ -98,7 +98,7 @@ confidence = 92.0
 # File system path where RocksDB used by light client, stores its data.
 avail_path = "avail_path"
 # Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
-prometheus_port = 9521
+prometheus_port = 9520
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
