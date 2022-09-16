@@ -54,16 +54,13 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let block_body = rpc::get_block_by_number(&rpc_url, block_number)
+	let header = rpc::get_header_by_block_number(&rpc_url, block_number)
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
-	info!(
-		block_number,
-		"App index {:?}", block_body.header.app_data_lookup.index
-	);
+	info!(block_number, "App index {:?}", header.app_data_lookup.index);
 
-	store_block_header_in_db(db.clone(), block_number, &block_body.header)
+	store_block_header_in_db(db.clone(), block_number, &header)
 		.context("Failed to store block header in DB")?;
 
 	info!(
@@ -83,9 +80,9 @@ async fn process_block(
 	let begin = SystemTime::now();
 
 	// TODO: Setting max rows * 2 to match extended matrix dimensions
-	let max_rows = block_body.header.extrinsics_root.rows * 2;
-	let max_cols = block_body.header.extrinsics_root.cols;
-	let commitment = block_body.header.extrinsics_root.commitment;
+	let max_rows = header.extrinsics_root.rows * 2;
+	let max_cols = header.extrinsics_root.cols;
+	let commitment = header.extrinsics_root.commitment;
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
