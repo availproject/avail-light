@@ -1,3 +1,20 @@
+//! Light (sync) client sampling and verification for blocks before latest finalized.
+//!
+//! Fetches and verifies previous blocks up to configured sync depth.
+//!
+//! # Flow
+//!
+//! * For each block, fetches block header from RPC and stores it into database
+//! * Generate random cells for random data sampling
+//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Verify proof using the received cells
+//! * Calculate block confidence and store it in RocksDB
+//! * Insert cells to to DHT for remote fetch
+//!
+//! # Notes
+//!
+//! In case RPC is disabled, RPC calls will be skipped.  
+
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
@@ -18,15 +35,17 @@ use crate::{
 
 async fn process_block(
 	cfg: &SyncClientConfig,
-	url: String,
-	store: Arc<DB>,
+	rpc_url: String,
+	db: Arc<DB>,
 	block_number: u64,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
 ) -> Result<()> {
-	if is_block_header_in_db(store.clone(), block_number)
+	if is_block_header_in_db(db.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
 	{
+		// TODO: If block header storing fails, that block will be skipped upon restart
+		// Better option would be to check for confidence
 		return Ok(());
 	};
 
@@ -35,7 +54,7 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let block_body = rpc::get_block_by_number(&url, block_number)
+	let block_body = rpc::get_block_by_number(&rpc_url, block_number)
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
@@ -44,7 +63,7 @@ async fn process_block(
 		"App index {:?}", block_body.header.app_data_lookup.index
 	);
 
-	store_block_header_in_db(store.clone(), block_number, &block_body.header)
+	store_block_header_in_db(db.clone(), block_number, &block_body.header)
 		.context("Failed to store block header in DB")?;
 
 	info!(
@@ -55,7 +74,7 @@ async fn process_block(
 
 	// If it's found that this certain block is not verified
 	// then it'll be verified now
-	if is_confidence_in_db(store.clone(), block_number)
+	if is_confidence_in_db(db.clone(), block_number)
 		.context("Failed to check if confidence is in DB")?
 	{
 		return Ok(());
@@ -89,7 +108,7 @@ async fn process_block(
 	let rpc_fetched = if cfg.disable_rpc {
 		vec![]
 	} else {
-		rpc::get_kate_proof(&url, block_number, unfetched)
+		rpc::get_kate_proof(&rpc_url, block_number, unfetched)
 			.await
 			.context("Failed to fetch cells from node RPC")?
 	};
@@ -125,7 +144,7 @@ async fn process_block(
 		begin.elapsed()?
 	);
 	// write confidence factor into on-disk database
-	store_confidence_in_db(store.clone(), block_number, count as u32)
+	store_confidence_in_db(db.clone(), block_number, count as u32)
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
@@ -140,12 +159,23 @@ async fn process_block(
 	Ok(())
 }
 
+/// Runs sync client.
+///
+/// # Arguments
+///
+/// * `cfg` - sync client configuration
+/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `end_block` - Latest block to sync
+/// * `sync_blocks_depth` - How many blocks in past to sync
+/// * `db` - Database to store confidence and block header
+/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
-	url: String,
+	rpc_url: String,
 	end_block: u64,
 	sync_blocks_depth: u64,
-	header_store: Arc<DB>,
+	db: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
 ) {
@@ -154,24 +184,17 @@ pub async fn run(
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block).map(move |b| {
-		(
-			b,
-			url.clone(),
-			header_store.clone(),
-			ipfs.clone(),
-			pp.clone(),
-		)
-	});
+	let blocks = (start_block..=end_block)
+		.map(move |b| (b, rpc_url.clone(), db.clone(), ipfs.clone(), pp.clone()));
 	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, url, store, ipfs, pp)| async move {
+			|(block_number, rpc_url, store, ipfs, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(cfg_clone, url, store, block_number, ipfs, pp.clone()).await
+					process_block(cfg_clone, rpc_url, store, block_number, ipfs, pp.clone()).await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}

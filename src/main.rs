@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
@@ -18,7 +20,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-	consts::{APP_DATA_CF, BLOCK_CID_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	types::{Mode, RuntimeConfig},
 };
 
@@ -57,16 +59,12 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut block_header_cf_opts = Options::default();
 	block_header_cf_opts.set_max_write_buffer_number(16);
 
-	let mut block_cid_cf_opts = Options::default();
-	block_cid_cf_opts.set_max_write_buffer_number(16);
-
 	let mut app_data_cf_opts = Options::default();
 	app_data_cf_opts.set_max_write_buffer_number(16);
 
 	let cf_opts = vec![
 		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
 		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_CID_CF, block_cid_cf_opts),
 		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
 	];
 
@@ -97,7 +95,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-pub async fn do_main() -> Result<()> {
+async fn do_main() -> Result<()> {
 	let opts = CliOpts::from_args();
 	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
@@ -122,12 +120,7 @@ pub async fn do_main() -> Result<()> {
 	// Spawn Prometheus server
 	let registry = Registry::default();
 
-	let prometheus_port: u16;
-
-	match cfg.prometheus_port {
-		Some(port) => prometheus_port = port,
-		None => prometheus_port = 9520,
-	}
+	let prometheus_port = cfg.prometheus_port.unwrap_or(9520);
 
 	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
 		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), prometheus_port),

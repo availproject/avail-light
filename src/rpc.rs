@@ -1,3 +1,5 @@
+//! RPC communication with avail node.
+
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
@@ -16,7 +18,7 @@ fn is_secure(url: &str) -> bool {
 	re.is_match(url)
 }
 
-pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
+async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 	let payload = format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
 		block
@@ -48,7 +50,7 @@ pub async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		.context("Failed to parse chain_getBlockHash response")
 }
 
-pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
+async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 	let payload = format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#,
 		hash
@@ -79,8 +81,7 @@ pub async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		.context("Failed to parse chain_getBlock response")
 }
 
-// RPC for obtaining header of latest block mined by network
-//
+/// RPC for obtaining header of latest block mined by network
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
 pub async fn get_chain_header(url: &str) -> Result<Header> {
@@ -112,6 +113,7 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		.context("Failed to parse chain_getHeader response")
 }
 
+/// Gets block by block number
 pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 	match get_blockhash(url, block).await {
 		Ok(hash) => get_block_by_hash(url, hash).await,
@@ -119,6 +121,7 @@ pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
 	}
 }
 
+/// Generates random cell positions for sampling
 pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> Vec<Position> {
 	let max_cells = (max_rows as u32) * (max_cols as u32);
 	let count: u16 = if max_cells < cell_count as u32 {
@@ -141,6 +144,7 @@ pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> V
 	indices.into_iter().collect::<Vec<_>>()
 }
 
+/// Generates cell positions for given block partition
 pub fn generate_partition_cells(
 	partition: &Partition,
 	max_rows: u16,
@@ -160,7 +164,7 @@ pub fn generate_partition_cells(
 		.collect::<Vec<_>>()
 }
 
-pub fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
+fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
 	let query = positions
 		.iter()
 		.map(|position| format!(r#"{{"row": {}, "col": {}}}"#, position.row, position.col))
@@ -173,6 +177,7 @@ pub fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String
 	)
 }
 
+/// RPC to get proofs for given positions of block
 pub async fn get_kate_proof(
 	url: &str,
 	block_num: u64,
@@ -227,8 +232,8 @@ pub async fn get_kate_proof(
 	}
 }
 
-//rpc- only for checking the connecting to substrate node
-pub async fn get_chain(url: &str) -> Result<String> {
+// RPC to check connection to substrate node
+async fn get_chain(url: &str) -> Result<String> {
 	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}"#;
 
 	let req = hyper::Request::builder()
@@ -257,7 +262,7 @@ pub async fn get_chain(url: &str) -> Result<String> {
 		.map(|r| r.result)
 }
 
-//parsing the urls given in the vector of urls
+/// Parsing the urls given in the vector of urls
 pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
 	urls.iter()
 		.map(|url| url::Url::parse(url))
@@ -265,7 +270,7 @@ pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
 		.collect::<Result<Vec<_>>>()
 }
 
-//fn to check the ws url is working properly and return it
+/// Checks the WS urls and returns first working
 pub async fn check_connection(
 	full_node_ws: &[url::Url],
 ) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
@@ -278,7 +283,7 @@ pub async fn check_connection(
 	None
 }
 
-//fn to check the rpc_url is secure or not and if it is working properly to return
+/// Checks if the rpc_url is secure or not and if it is working properly to return
 pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
 	for rpc_url in full_node_rpc {
 		if (get_chain(rpc_url).await).is_ok() {
@@ -291,6 +296,7 @@ pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
 /* @note: fn to take the number of cells needs to get equal to or greater than
 the percentage of confidence mentioned in config file */
 
+/// Callculates number of cells required to achieve given confidence
 pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	let mut cell_count: u32;
 	if (confidence >= 100f64) || (confidence < 50.0) {

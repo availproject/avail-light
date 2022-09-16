@@ -7,22 +7,30 @@
 
 [![Build status](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/maticnetwork/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/maticnetwork/avail-light)
 
-![demo](./img/prod_demo.png)
+![demo](./img/lc.png)
 
 ## Introduction
 
-`avail-light` is a data availability light client that can do the following:
+`avail-light` is a data availability light client with the following functionalities:
 
-* Listen for finalised blocks.
-* Gain confidence for `N` *cells*, where *cell* is defined as a `{row, col}` pair.
-  > As soon as a finalised block is available, the light client attempts to gain confidence by asking for a proof from a full 
-  client via JSON-RPC.
+* Listening on the Avail network for finalized blocks
+* Random sampling and proof verification of a predetermined number of cells (`{row, col}` pairs) on each new block. After successful block verification, confidence is calculated for a number of *cells* (`N`) in a matrix, with `N` depending on the percentage of certainty the light client wants to achieve.
+* Data reconstruction through application client (WIP).
+* HTTP endpoints exposing relevant data, both from the light and application clients
 
 ### Modes of Operation
 
-1. **Light-client Mode**: The basic mode of operation and is always active in whichever mode is operational. If an `App_ID` is not provided, this mode will commence. The client on each header it receives will do random sampling using RPC calls. It gets the cells with proofs it asked for, which then verifies and calculates the confidence.
-2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the client finds out the `cols` related to the provided `App_ID` using `app_data_lookup` in the header. It then downloades the relevant cells and the data is reconstructed.  
-3. **Fat-Client Mode**: The client retrieves the entire extended matrix using IPFS (if available) or fetches via RPC calls. It verifies all the cells and computes the CID mapping for the IPFS Pinning. It then decodes the extended matrix and reconstructs the `app_specific_data` related to all `App_IDs`.
+1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms:
+
+    1. DHT - client first tries to retrieve cells via Kademlia.
+	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded.
+
+	Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
+
+2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the application client (part ot the light client) downloads all the relevant app data, reconstructs it and persists it locally. Reconstructed data is then available to accessed via an HTTP endpoint. (WIP)
+
+3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation. 
+**IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct. 
 
 ## Installation
 
@@ -32,34 +40,28 @@ Start by cloning this repo in your local setup:
 git clone git@github.com:maticnetwork/avail-light.git
 ```
 
-Create one yaml configuration file in the root of the project & put following content:
+Create one yaml configuration file in the root of the project & put following content. Config example is for a bootstrap client, detailed config specs can be found bellow.
 
 ```bash
 touch config.yaml
 ```
 
 ```yaml
+log_level = "info"
 http_server_host = "127.0.0.1"
-http_server_port = 7000
+http_server_port = "7000"
 
 ipfs_seed = 1
-ipfs_port = 37000
+ipfs_port = "37000"
 ipfs_path = "avail_ipfs_store"
 
-# put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
 full_node_rpc = ["http://127.0.0.1:9933"]
-# put full_node_ws = wss://testnet.polygonavail.net/ws incase you are connecting to devnet
 full_node_ws = ["ws://127.0.0.1:9944"]
-# None in case of default Light Client Mode
 app_id = 0
-
 confidence = 92.0
 avail_path = "avail_path"
-
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/39000"]]
-
-# See https://docs.rs/log/0.4.14/log/enum.LevelFilter.html for possible log level values
-log_level = "INFO"
+prometheus_port = 9520
+bootstraps = []
 ```
 
 Now, run the client:
@@ -67,6 +69,67 @@ Now, run the client:
 ```bash
 cargo run -- -c config.yaml  
 ```
+
+## Config reference
+```yaml
+log_level = "info"
+# Light client HTTP server host name (default: 127.0.0.1)
+http_server_host = "127.0.0.1"
+# Light client HTTP server port (default: 7000).
+http_server_port = "7000"
+
+# Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
+ipfs_seed = 2
+# IPFS service port range (port, range) (default: 37000).
+ipfs_port = "37000"
+# File system path where IPFS service stores data (default: avail_ipfs_node_1)
+ipfs_path = "avail_ipfs_store"
+# Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
+
+# RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
+full_node_rpc = ["http://127.0.0.1:9933"]
+# WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
+full_node_ws = ["ws://127.0.0.1:9944"]
+# ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
+app_id = 0
+# Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
+confidence = 92.0
+# File system path where RocksDB used by light client, stores its data.
+avail_path = "avail_path"
+# Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
+prometheus_port = 9520
+# If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
+log_format_json = true
+# Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
+block_matrix_partition = "1/20"
+# Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
+disable_proof_verification = true
+# Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
+disable_rpc = false
+# Number of parallel queries for cell fetching via RPC from node (default: 8).
+query_proof_rpc_parallel_tasks = 300
+# Maximum number of cells per request for proof queries (default: 30).
+max_cells_per_rpc = 1024
+# Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
+max_parallel_fetch_tasks = 1024
+# Number of seconds to postpone block processing after block finalized message arrives (default: 0).
+block_processing_delay = 5
+# How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
+sync_blocks_depth = 250
+# Time-to-live for DHT entries in seconds (default: 3600).
+ttl = 1800
+```
+
+## Notes
+
+- When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully. 
+- Immediately after starting a fresh light client, block sync is executed to a block depth set in the `sync_blocks_depth` config parameter. The sync client is using both the DHT and RPC for that purpose.
+- In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
+- `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
+- Prometheus is used for exposing detailed metrics about the light client
+
+
 
 ## Usage
 
@@ -86,7 +149,7 @@ Result:
 }
 ```
 
->  `serialisedConfidence` is calculated as: 
+> `serialisedConfidence` is calculated as:
 > `blockNumber << 32 | int32(confidence * 10 ** 7)`, where confidence is represented out of 10 ** 9.
 
 
@@ -102,13 +165,13 @@ Result:
 {"block":386,"extrinsics":[{"app_id":1,"signature":{"Sr25519":"be86221cc07a461537570637d75a0569c2210286e85c693e3b31d94211b1ef1eaf451b13072066f745f70801ad6af0dcdf2e42b7bf77be2dc6709196b4d45889"},"data":"0x313537626233643536653339356537393237633664"}]}
 ```
 
-Return the Mode of the Light Client
+Returns the Mode of the Light Client
 
 ```bash
-curl -s localhost:7000/v1/Mode
+curl -s localhost:7000/v1/mode
 ```
 
-Return the status of a latest block 
+Returns the status of a latest block
 
 ```bash
 curl -s localhost:7000/v1/status
@@ -126,25 +189,33 @@ We are using [grcov](https://github.com/mozilla/grcov) to aggregate code coverag
 
 To install grcov, run:
 
-	$> cargo install grcov
+```bash
+cargo install grcov
+```
 
 Source code coverage data is generated when running tests with:
 
-	$> env RUSTFLAGS="-C instrument-coverage" \
-		LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
-		cargo test
+```bash
+env RUSTFLAGS="-C instrument-coverage" \
+	LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
+	cargo test
+```
 
 To generate the report, run:
 
-	$> grcov . -s . \
-		--binary-path ./target/debug/ \
-		-t html \
-		--branch \
-		--ignore-not-existing -o \
-		./target/debug/coverage/
+```bash
+grcov . -s . \
+	--binary-path ./target/debug/ \
+	-t html \
+	--branch \
+	--ignore-not-existing -o \
+	./target/debug/coverage/
+```
 
 To clean up generate coverage information files, run:
 
-	$> find . -name \*.profraw -type f -exec rm -f {} +
+```bash
+find . -name \*.profraw -type f -exec rm -f {} +
+```
 
 Open `index.html` from the `./target/debug/coverage/` folder to review coverage data.

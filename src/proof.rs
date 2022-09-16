@@ -1,3 +1,5 @@
+//! Parallelized proof verification
+
 use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
@@ -28,6 +30,7 @@ fn kc_verify_proof_wrapper(
 	}
 }
 
+/// Verifies proofs for given block, cells and commitments
 pub fn verify_proof(
 	block_num: u64,
 	total_rows: u16,

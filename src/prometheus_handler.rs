@@ -1,3 +1,5 @@
+//! Prometheus exporter.
+
 use std::net::SocketAddr;
 
 use anyhow::{Context, Error, Result};
@@ -7,18 +9,11 @@ use hyper::{
 	service::{make_service_fn, service_fn},
 	Body, Request, Response,
 };
-pub use prometheus::{
-	self,
-	core::{
-		AtomicF64 as F64, AtomicI64 as I64, AtomicU64 as U64, GenericCounter as Counter,
-		GenericCounterVec as CounterVec, GenericGauge as Gauge, GenericGaugeVec as GaugeVec,
-	},
-	exponential_buckets, Error as PrometheusError, Histogram, HistogramOpts, HistogramVec, Opts,
-	Registry,
-};
+use prometheus::{self, Registry};
 use prometheus::{core::Collector, Encoder, TextEncoder};
 use tracing::info;
 
+/// Registers metric to registry
 pub fn register<T: Clone + Collector + 'static>(metric: T, registry: &Registry) -> Result<T> {
 	registry.register(Box::new(metric.clone()))?;
 	Ok(metric)
@@ -46,7 +41,7 @@ async fn request_metrics(req: Request<Body>, registry: Registry) -> Result<Respo
 	}
 }
 
-/// Init prometheus using the given listener.
+/// Inits prometheus using the given listener
 pub async fn init_prometheus_with_listener(
 	prometheus_addr: SocketAddr,
 	registry: Registry,

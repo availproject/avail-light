@@ -1,3 +1,22 @@
+//! Application client for data fetching and reconstruction.
+//!
+//! App client is enabled when app_id is configured and greater than 0 in avail-light configuration. [`Light client`](super::light_client) triggers application client if block is verified with high enough confidence. Currently [`run`] function is separate task and doesn't block main thread.
+//!
+//! # Flow
+//!
+//! * Download app specific data cells from DHT
+//! * Download missing app specific data cells from the full node
+//! * If some cells are still missing
+//!     * Download related columns from IPFS (excluding downloaded cells)
+//!     * If reconstruction with downloaded cells is not possible, download related columns from full node (excluding downloaded cells)
+//! * Verify downloaded data cells
+//! * Insert cells downloaded from full node into DHT
+//! * Decode (or reconstruct if app specific data cells are missing), and store it into local database under the `app_id:block_number` key
+//!
+//! # Notes
+//!
+//! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
+
 use std::{
 	collections::HashSet,
 	sync::{mpsc::Receiver, Arc},
@@ -181,6 +200,17 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 		.collect::<Vec<_>>()
 }
 
+/// Runs application client.
+///
+/// # Arguments
+///
+/// * `cfg` - Application client configuration
+/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `db` - Database to store data inot DB
+/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `app_id` - Application ID
+/// * `block_receive` - Channel used to receive header of verified block
+/// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: AppClientConfig,
 	ipfs: Ipfs<DefaultParams>,
@@ -223,6 +253,7 @@ pub async fn run(
 	}
 }
 
+/// Struct used to decode avail extrinsic
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct AvailExtrinsic {
 	pub app_id: u32,
@@ -238,14 +269,18 @@ where
 	sp_core::bytes::serialize(t, serializer)
 }
 
+/// Type used to decode signed extra in avail extrinsic
 pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
 
+/// Struct used to decode balance in signed extra
 #[derive(Decode)]
 pub struct Balance(#[codec(compact)] u128);
 
+/// Struct used to decode nonce in signed extra
 #[derive(Decode)]
 pub struct Nonce(#[codec(compact)] u32);
 
+/// Struct used to decode mortaliy in signed extra
 pub enum AvailMortality {
 	Immortal,
 	Mortal(u64, u64),
