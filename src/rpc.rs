@@ -18,7 +18,7 @@ fn is_secure(url: &str) -> bool {
 	re.is_match(url)
 }
 
-async fn get_blockhash(url: &str, block: u64) -> Result<String> {
+async fn get_block_hash(url: &str, block: u64) -> Result<String> {
 	let payload = format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
 		block
@@ -50,9 +50,9 @@ async fn get_blockhash(url: &str, block: u64) -> Result<String> {
 		.context("Failed to parse chain_getBlockHash response")
 }
 
-async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
+async fn get_header_by_hash(url: &str, hash: String) -> Result<Header> {
 	let payload = format!(
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlock", "params": ["{}"]}}"#,
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader", "params": ["{}"]}}"#,
 		hash
 	);
 
@@ -61,7 +61,7 @@ async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("Failed to build chain_getBlock request")?;
+		.context("Failed to build chain_getHeader request")?;
 
 	let resp = if is_secure(url) {
 		let https = HttpsConnector::new();
@@ -71,14 +71,15 @@ async fn get_block_by_hash(url: &str, hash: String) -> Result<Block> {
 		let client = hyper::Client::new();
 		client.request(req).await
 	}
-	.context("Failed to send chain_getBlock response")?;
+	.context("Failed to send chain_getHeader response")?;
 
 	let body = hyper::body::to_bytes(resp.into_body())
 		.await
-		.context("Failed to get chain_getBlock response")?;
-	serde_json::from_slice::<BlockResponse>(&body)
-		.map(|r| r.result.block)
-		.context("Failed to parse chain_getBlock response")
+		.context("Failed to get chain_getHeader response")?;
+
+	serde_json::from_slice::<BlockHeaderResponse>(&body)
+		.map(|r| r.result)
+		.context("Failed to parse chain_getHeader response")
 }
 
 /// RPC for obtaining header of latest block mined by network
@@ -113,12 +114,10 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 		.context("Failed to parse chain_getHeader response")
 }
 
-/// Gets block by block number
-pub async fn get_block_by_number(url: &str, block: u64) -> Result<Block> {
-	match get_blockhash(url, block).await {
-		Ok(hash) => get_block_by_hash(url, hash).await,
-		Err(msg) => Err(msg),
-	}
+/// Gets header by block number
+pub async fn get_header_by_block_number(url: &str, block: u64) -> Result<Header> {
+	let hash = get_block_hash(url, block).await?;
+	get_header_by_hash(url, hash).await
 }
 
 /// Generates random cell positions for sampling
@@ -183,16 +182,6 @@ pub async fn get_kate_proof(
 	block_num: u64,
 	positions: Vec<Position>,
 ) -> Result<Vec<Cell>> {
-	let block = get_block_by_number(url, block_num).await?;
-
-	//tuple of values (id,index)
-	let index_tuple = block.header.app_data_lookup.index.clone();
-
-	debug!(
-		"Getting kate proof block {}, apps index {:?}",
-		block_num, index_tuple
-	);
-
 	let payload = generate_kate_query_payload(block_num, &positions);
 
 	let req = hyper::Request::builder()

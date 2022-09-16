@@ -164,52 +164,12 @@ pub struct GetChainResponse {
 	pub result: String,
 }
 
-/// Response of RPC get block
-#[derive(Deserialize, Debug)]
-pub struct BlockResponse {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: RPCResult,
-}
-
 /// Response of RPC get block header
 #[derive(Deserialize, Debug)]
 pub struct BlockHeaderResponse {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
 	pub result: Header,
-}
-
-/// Result in RPC response of get block
-#[derive(Deserialize, Debug)]
-pub struct RPCResult {
-	pub block: Block,
-	#[serde(skip_deserializing)]
-	pub justification: String,
-}
-
-/// Result of get block call
-#[derive(Deserialize, Debug, Clone)]
-pub struct Block {
-	pub extrinsics: Vec<Extrinsic>,
-	pub header: Header,
-}
-
-/// Extrinsics in result of get block call
-#[derive(Debug, Clone)]
-pub struct Extrinsic {
-	pub data: Vec<u8>,
-}
-
-impl<'a> Deserialize<'a> for Extrinsic {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'a>,
-	{
-		Ok(Self {
-			data: sp_core::bytes::deserialize(deserializer)?,
-		})
-	}
 }
 
 /// Block header

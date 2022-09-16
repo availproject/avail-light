@@ -335,7 +335,7 @@ pub async fn run(
 			let partition_time_elapsed = begin.elapsed()?;
 			info!(
 				block_number,
-				"Partion cells received. Time elapsed: \t{:?}", partition_time_elapsed
+				"Partition cells received. Time elapsed: \t{:?}", partition_time_elapsed
 			);
 			metrics
 				.rpc_call_duration
