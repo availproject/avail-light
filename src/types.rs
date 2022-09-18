@@ -248,7 +248,7 @@ pub struct ExtrinsicsRoot {
 	pub hash: String,
 	pub commitment: Vec<u8>,
 	#[serde(rename = "dataRoot")]
-	pub data_root: [u8;32],
+	pub data_root: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
