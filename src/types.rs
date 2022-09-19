@@ -2,6 +2,7 @@ use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, Cid, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
+use sp_core::H256;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Event {
@@ -248,7 +249,7 @@ pub struct ExtrinsicsRoot {
 	pub hash: String,
 	pub commitment: Vec<u8>,
 	#[serde(rename = "dataRoot")]
-	pub data_root: [u8; 32],
+	pub data_root: H256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
