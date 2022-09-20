@@ -175,20 +175,20 @@ impl IpfsCell {
 /// * `ipfs` - Reference to IPFS node
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into IPFS
-/// * `max_parallel_fetch_tasks` - Number of cells to fetch in parallel
+/// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
 	ipfs: &Ipfs<DefaultParams>,
 	block: u64,
 	cells: Vec<Cell>,
-	max_parallel_fetch_tasks: usize,
+	dht_parallelization_limit: usize,
 	ttl: u64,
 ) {
 	let ipfs_cells: Vec<_> = cells.into_iter().map(IpfsCell).collect::<Vec<_>>();
 	let ipfs_cell_tuples = ipfs_cells.iter().map(move |b| (b, ipfs.clone()));
 	futures::StreamExt::for_each_concurrent(
 		stream::iter(ipfs_cell_tuples),
-		max_parallel_fetch_tasks,
+		dht_parallelization_limit,
 		|(cell, ipfs)| async move {
 			let reference = cell.reference(block);
 			if let Err(error) = ipfs
@@ -210,15 +210,15 @@ pub async fn insert_into_dht(
 /// * `ipfs` - Reference to IPFS node
 /// * `block_number` - Block number
 /// * `positions` - Cell positions to fetch
-/// * `max_parallel_fetch_tasks` - Number of cells to fetch in parallel
+/// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
 	block_number: u64,
 	positions: &Vec<Position>,
-	max_parallel_fetch_tasks: usize,
+	dht_parallelization_limit: usize,
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	let chunked_positions = positions
-		.chunks(max_parallel_fetch_tasks)
+		.chunks(dht_parallelization_limit)
 		.map(|positions| {
 			positions
 				.iter()
