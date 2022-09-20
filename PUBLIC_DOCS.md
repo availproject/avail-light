@@ -6,10 +6,22 @@ Return the Mode of the Light Client
 curl -s localhost:7000/v1/mode
 ```
 
+Result:
+
+```json
+"LightClient"
+```
+
 Returns the latest block 
 
 ```bash
 curl -s localhost:7000/v1/latest_block
+```
+
+Result:
+
+```json
+{"latest_block":5}
 ```
 
 Given a block number (as _(hexa-)_ decimal number), return confidence obtained by the light client for this block:
@@ -48,4 +60,10 @@ Return the status of a latest block
 
 ```bash
 curl -s localhost:7000/v1/status
+```
+
+Result:
+
+```json
+{"block_num":2,"confidence":93.75,"app_id":0}%  
 ```
