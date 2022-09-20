@@ -111,8 +111,8 @@ disable_rpc = false
 query_proof_rpc_parallel_tasks = 300
 # Maximum number of cells per request for proof queries (default: 30).
 max_cells_per_rpc = 1024
-# Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
-max_parallel_fetch_tasks = 1024
+# Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 800).
+dht_parallelization_limit = 1024
 # Number of seconds to postpone block processing after block finalized message arrives (default: 0).
 block_processing_delay = 5
 # How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).

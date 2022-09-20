@@ -434,8 +434,8 @@ mod port_range_format {
 	}
 }
 
-fn default_max_parallel_fetch_tasks() -> usize {
-	4096
+fn default_dht_parallelization_limit() -> usize {
+	800
 }
 
 fn default_query_proof_rpc_parallel_tasks() -> usize {
@@ -480,7 +480,7 @@ pub struct RuntimeConfig {
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	#[serde(default = "default_false")]
 	pub log_format_json: bool,
-	/// Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
+	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
 	pub prometheus_port: Option<u16>,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
 	#[serde(default = "default_false")]
@@ -488,9 +488,9 @@ pub struct RuntimeConfig {
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 	#[serde(default = "default_false")]
 	pub disable_proof_verification: bool,
-	/// Maximum number of parallel tasks spawned, when fetching from DHT (default: 4096).
-	#[serde(default = "default_max_parallel_fetch_tasks")]
-	pub max_parallel_fetch_tasks: usize,
+	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 800).
+	#[serde(default = "default_dht_parallelization_limit")]
+	pub dht_parallelization_limit: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	#[serde(default = "default_query_proof_rpc_parallel_tasks")]
 	pub query_proof_rpc_parallel_tasks: usize,
@@ -513,7 +513,7 @@ pub struct LightClientConfig {
 	pub full_node_ws: Vec<String>,
 	pub confidence: f64,
 	pub disable_rpc: bool,
-	pub max_parallel_fetch_tasks: usize,
+	pub dht_parallelization_limit: usize,
 	pub query_proof_rpc_parallel_tasks: usize,
 	pub block_processing_delay: Option<u32>,
 	pub block_matrix_partition: Option<Partition>,
@@ -528,7 +528,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			dht_parallelization_limit: val.dht_parallelization_limit,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: val.block_processing_delay,
 			block_matrix_partition: val.block_matrix_partition.clone(),
@@ -543,7 +543,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
-	pub max_parallel_fetch_tasks: usize,
+	pub dht_parallelization_limit: usize,
 	pub ttl: u64,
 }
 
@@ -552,7 +552,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 		SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			dht_parallelization_limit: val.dht_parallelization_limit,
 			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
@@ -562,7 +562,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 pub struct AppClientConfig {
 	pub full_node_ws: Vec<String>,
 	pub disable_rpc: bool,
-	pub max_parallel_fetch_tasks: usize,
+	pub dht_parallelization_limit: usize,
 	pub ttl: u64,
 }
 
@@ -571,7 +571,7 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		AppClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			disable_rpc: val.disable_rpc,
-			max_parallel_fetch_tasks: val.max_parallel_fetch_tasks,
+			dht_parallelization_limit: val.dht_parallelization_limit,
 			ttl: val.ttl.unwrap_or(3600),
 		}
 	}
@@ -596,7 +596,7 @@ impl Default for RuntimeConfig {
 			prometheus_port: Some(9520),
 			disable_rpc: false,
 			disable_proof_verification: false,
-			max_parallel_fetch_tasks: 4096,
+			dht_parallelization_limit: 800,
 			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,

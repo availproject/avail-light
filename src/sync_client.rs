@@ -91,7 +91,7 @@ async fn process_block(
 		&ipfs,
 		block_number,
 		&positions,
-		cfg.max_parallel_fetch_tasks,
+		cfg.dht_parallelization_limit,
 	)
 	.await
 	.context("Failed to fetch cells from DHT")?;
@@ -148,7 +148,7 @@ async fn process_block(
 		&ipfs,
 		block_number,
 		rpc_fetched,
-		cfg.max_parallel_fetch_tasks,
+		cfg.dht_parallelization_limit,
 		cfg.ttl,
 	)
 	.await;
