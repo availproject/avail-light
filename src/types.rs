@@ -488,7 +488,7 @@ pub struct RuntimeConfig {
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 	#[serde(default = "default_false")]
 	pub disable_proof_verification: bool,
-	/// Maximum number of parallel tasks spawned, when fetching from DHT (default: 800).
+	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 800).
 	#[serde(default = "default_dht_parallelization_limit")]
 	pub dht_parallelization_limit: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
