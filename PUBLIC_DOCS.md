@@ -44,7 +44,7 @@ Sample Result:
 > `blockNumber << 32 | int32(confidence * 10 ** 7)`, where confidence is represented out of 10 ** 9.
 
 
-Given a block number (as _(hexa-)_ decimal number), return the content of the data if specified in config in hex string format
+Returns the data if specified in config in hexademical string format, needs a block number (as _(hexa-)_ decimal number)
 
 ```bash
 curl -s localhost:7000/v1/appdata/ <block-number>
