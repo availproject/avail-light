@@ -194,8 +194,9 @@ pub async fn run(
 			let block_number = header.number;
 			info!(
 				block_number,
+				"block_delay" = message.received_at.elapsed().as_secs(),
 				"Processing finalized block (delayed for {} seconds)",
-				message.received_at.elapsed().as_secs()
+				message.received_at.elapsed().as_secs(),
 			);
 
 			let begin = SystemTime::now();
@@ -210,7 +211,12 @@ pub async fn run(
 
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 			let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
-			info!(block_number, "Random cells generated: {}", positions.len());
+			info!(
+				block_number,
+				"cells_requested" = positions.len(),
+				"Random cells generated: {}",
+				positions.len()
+			);
 
 			let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
 				&ipfs,
@@ -223,6 +229,7 @@ pub async fn run(
 
 			info!(
 				block_number,
+				"cells_from_dht" = ipfs_fetched.len(),
 				"Number of cells fetched from DHT: {}",
 				ipfs_fetched.len()
 			);
@@ -238,6 +245,7 @@ pub async fn run(
 
 			info!(
 				block_number,
+				"cells_from_rpc" = rpc_fetched.len(),
 				"Number of cells fetched from RPC: {}",
 				rpc_fetched.len()
 			);
@@ -278,7 +286,12 @@ pub async fn run(
 				*lock = block_number;
 
 				let conf = calculate_confidence(count as u32);
-				info!(block_number, "Confidence factor: {}", conf);
+				info!(
+					block_number,
+					"confidence" = conf,
+					"Confidence factor: {}",
+					conf
+				);
 				metrics.block_confidence.set(conf);
 			}
 
@@ -298,7 +311,10 @@ pub async fn run(
 				let positions = rpc::generate_partition_cells(partition, max_rows, max_cols);
 				info!(
 					block_number,
-					"Fetching partition ({}/{}) from RPC", partition.number, partition.fraction
+					"partition_cells_requested" = positions.len(),
+					"Fetching partition ({}/{}) from RPC",
+					partition.number,
+					partition.fraction
 				);
 
 				let rpc_cells = positions.chunks(cfg.max_cells_per_rpc).collect::<Vec<_>>();
@@ -333,16 +349,20 @@ pub async fn run(
 				}
 			}
 			let partition_time_elapsed = begin.elapsed()?;
+			let rpc_fetched_len = rpc_fetched.len();
 			info!(
 				block_number,
-				"Partition cells received. Time elapsed: \t{:?}", partition_time_elapsed
+				"partition_retrieve_time_elapsed" = partition_time_elapsed.as_secs_f64(),
+				"partition_cells_fetched" = rpc_fetched_len,
+				"Partition cells received. Time elapsed: \t{:?}",
+				partition_time_elapsed
 			);
 			metrics
 				.rpc_call_duration
 				.set(partition_time_elapsed.as_secs_f64());
 
 			begin = SystemTime::now();
-			let rpc_fetched_len = rpc_fetched.len();
+
 			insert_into_dht(
 				&ipfs,
 				block_number,
@@ -355,6 +375,7 @@ pub async fn run(
 			let dht_put_time_elapsed = begin.elapsed()?;
 			info!(
 				block_number,
+				"partition_dht_insert_time_elapsed" = dht_put_time_elapsed.as_secs_f64(),
 				"{rpc_fetched_len} cells inserted into DHT. Time elapsed: \t{:?}",
 				dht_put_time_elapsed
 			);
