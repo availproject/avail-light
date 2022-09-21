@@ -4,6 +4,7 @@ use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
+use sp_core::H256;
 
 /// IPFS events wrapper
 #[derive(Debug, Eq, PartialEq)]
@@ -204,6 +205,8 @@ pub struct ExtrinsicsRoot {
 	pub rows: u16,
 	pub hash: String,
 	pub commitment: Vec<u8>,
+	#[serde(rename = "dataRoot")]
+	pub data_root: H256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
