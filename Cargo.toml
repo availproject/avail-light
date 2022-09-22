@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Polygon Avail Team"]
 
