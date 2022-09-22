@@ -320,7 +320,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avail-light"
-version = "2.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "async-std",
@@ -1951,7 +1951,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=062d946#062d9467c6d17ed6e2bdea3993f670914aaf90e6"
+source = "git+https://github.com/maticnetwork/avail.git?tag=v1.1.0#062d9467c6d17ed6e2bdea3993f670914aaf90e6"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -1964,7 +1964,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?rev=062d946#062d9467c6d17ed6e2bdea3993f670914aaf90e6"
+source = "git+https://github.com/maticnetwork/avail.git?tag=v1.1.0#062d9467c6d17ed6e2bdea3993f670914aaf90e6"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
