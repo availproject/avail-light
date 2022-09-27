@@ -256,14 +256,20 @@ pub async fn run_server(
 		let counter_lock = counter_status.lock().unwrap();
 		status(&cfg, *counter_lock, db.clone())
 	});
+	let cors = warp::cors()
+		.allow_any_origin()
+		.allow_header("content-type")
+		.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-	let routes = warp::get().and(
+	let route = warp::get().and(
 		get_mode
 			.or(get_latest_block)
 			.or(get_confidence)
 			.or(get_appdata)
 			.or(get_status),
 	);
+
+	let routes = route.with(cors);
 
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
