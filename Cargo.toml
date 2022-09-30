@@ -52,3 +52,6 @@ prometheus = { version = "0.13.0", default-features = false }
 proptest = "1.0.0"
 test-case = "1.2.3"
 
+[features]
+vendored = ["openssl-sys/vendored"]
+
