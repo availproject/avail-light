@@ -34,7 +34,7 @@ jobs:
             source "$HOME/.cargo/env"
             rustup target add aarch64-unknown-linux-gnu
             sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config
-            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' PKG_CONFIG_ALLOW_CROSS=1 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --release --target=aarch64-unknown-linux-gnu -p avail-light           
+            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --release --target=aarch64-unknown-linux-gnu -p avail-light           
             mv target/aarch64-unknown-linux-gnu/release/avail-light target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64
             pushd target/aarch64-unknown-linux-gnu/release/
             tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
