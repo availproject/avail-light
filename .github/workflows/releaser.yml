@@ -1,11 +1,6 @@
 name: Releaser
 on:
   push:
-    branches-ignore:
-      - '**'
-    tags:
-      - 'v*.*.*'
-      - 'v*.*.*-*'
 
 jobs:
 
@@ -39,7 +34,7 @@ jobs:
             source "$HOME/.cargo/env"
             rustup target add aarch64-unknown-linux-gnu
             sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev
-            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --release --target=aarch64-unknown-linux-gnu -p avail-light           
+            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --release --target=aarch64-unknown-linux-gnu -p avail-light           
             mv target/aarch64-unknown-linux-gnu/release/avail-light target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64
             pushd target/aarch64-unknown-linux-gnu/release/
             tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
@@ -50,27 +45,27 @@ jobs:
              path: target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64.tar.gz
 
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
-  binary_publish:
-    needs: [binary_linux_amd64, binary_linux_aarch64]
-    runs-on: ubuntu-latest
-    steps:
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-amd64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-aarch64-binary
-         - name: Prepare
-           id: prepare
-           run: |
-               TAG=${GITHUB_REF#refs/tags/}
-               echo ::set-output name=tag_name::${TAG}
-         - name: publish binaries
-           uses: svenstaro/upload-release-action@v2
-           with:
-             repo_token: ${{ secrets.PAT_TOKEN }}
-             file: /home/runner/work/avail-light/avail-light/avail-light*
-             release_name: ${{ steps.prepare.outputs.tag_name }}
-             tag: ${{ steps.prepare.outputs.tag_name }}
-             overwrite: true
-             file_glob: true
+  # binary_publish:
+  #   needs: [binary_linux_amd64, binary_linux_aarch64]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-linux-amd64-binary
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-linux-aarch64-binary
+  #        - name: Prepare
+  #          id: prepare
+  #          run: |
+  #              TAG=${GITHUB_REF#refs/tags/}
+  #              echo ::set-output name=tag_name::${TAG}
+  #        - name: publish binaries
+  #          uses: svenstaro/upload-release-action@v2
+  #          with:
+  #            repo_token: ${{ secrets.PAT_TOKEN }}
+  #            file: /home/runner/work/avail-light/avail-light/avail-light*
+  #            release_name: ${{ steps.prepare.outputs.tag_name }}
+  #            tag: ${{ steps.prepare.outputs.tag_name }}
+  #            overwrite: true
+  #            file_glob: true
