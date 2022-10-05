@@ -327,7 +327,7 @@ dependencies = [
  "avail-subxt",
  "chrono",
  "confy",
- "dusk-plonk",
+ "dusk-plonk 0.12.0",
  "ed25519-dalek",
  "futures",
  "futures-util",
@@ -1156,6 +1156,19 @@ checksum = "c6053ff46b5639ceb91756a85a4c8914668393a03170efd79c8884a529d80656"
 
 [[package]]
 name = "dusk-bls12_381"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22aa3d0bb1f8a54723a33b056022b2f71eca929a86e2e03653f18b9dff0b1b8"
+dependencies = [
+ "byteorder",
+ "dusk-bytes",
+ "rand_core 0.6.3",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
+name = "dusk-bls12_381"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41fc81248ab76f1739dd4241ea2e7037a4d4cb0bd170443a7049e13b0e09acd6"
@@ -1178,14 +1191,42 @@ dependencies = [
 
 [[package]]
 name = "dusk-jubjub"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f842f5a6811741a236f46d4b7cd9da8a21e435e3395b4c3878681e0bb8e38d6f"
+dependencies = [
+ "dusk-bls12_381 0.8.0",
+ "dusk-bytes",
+ "rand_core 0.6.3",
+ "subtle",
+]
+
+[[package]]
+name = "dusk-jubjub"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c228f2adec5255faf67fe6d106caa093a6c2ef798dca42019b684716528250ff"
 dependencies = [
- "dusk-bls12_381",
+ "dusk-bls12_381 0.11.2",
  "dusk-bytes",
  "rand_core 0.6.3",
  "subtle",
+]
+
+[[package]]
+name = "dusk-plonk"
+version = "0.8.2"
+source = "git+https://github.com/maticnetwork/plonk.git?branch=v0.8.2-polygon-5#df2eb98b7cd6958159b527891708c376c895f5b4"
+dependencies = [
+ "cfg-if 1.0.0",
+ "dusk-bls12_381 0.8.0",
+ "dusk-bytes",
+ "dusk-jubjub 0.10.1",
+ "hashbrown 0.9.1",
+ "itertools 0.9.0",
+ "merlin 3.0.0",
+ "rand_core 0.6.3",
+ "rayon",
 ]
 
 [[package]]
@@ -1194,9 +1235,9 @@ version = "0.12.0"
 source = "git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-1#d8cdbd1787405ecceb494b9d1438254b1c1de53b"
 dependencies = [
  "cfg-if 1.0.0",
- "dusk-bls12_381",
+ "dusk-bls12_381 0.11.2",
  "dusk-bytes",
- "dusk-jubjub",
+ "dusk-jubjub 0.12.1",
  "hashbrown 0.9.1",
  "itertools 0.9.0",
  "merlin 3.0.0",
@@ -2142,11 +2183,11 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?branch=luka/fix-block-number-type-on-recovery#c35e1546972079cd63ead0942849eb7ff39083a2"
+source = "git+https://github.com/maticnetwork/avail.git?rev=f603538#f60353884aa9beaf0e7549e3663a928d01f619ac"
 dependencies = [
  "anyhow",
  "dusk-bytes",
- "dusk-plonk",
+ "dusk-plonk 0.8.2",
  "merlin 3.0.0",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -2154,11 +2195,11 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.1.2"
-source = "git+https://github.com/maticnetwork/avail-core.git?branch=luka/fix-block-number-type-on-recovery#c35e1546972079cd63ead0942849eb7ff39083a2"
+version = "0.1.0"
+source = "git+https://github.com/maticnetwork/avail.git?rev=f603538#f60353884aa9beaf0e7549e3663a928d01f619ac"
 dependencies = [
  "dusk-bytes",
- "dusk-plonk",
+ "dusk-plonk 0.8.2",
  "getrandom 0.2.7",
  "parity-scale-codec",
  "serde",

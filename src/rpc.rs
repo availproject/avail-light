@@ -12,7 +12,7 @@ use regex::Regex;
 use sp_core::H256;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::types::*;
 
@@ -179,6 +179,41 @@ fn generate_kate_query_payload(block_hash: H256, positions: &[Position]) -> Stri
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [[{}], "{:?}"]}}"#,
 		query, block_hash
 	)
+}
+
+pub async fn get_kate_block(url: &str, block: u64) -> Result<Vec<Option<Vec<u8>>>> {
+	let payload = format!(
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryBlock", "params": [{}]}}"#,
+		block
+	);
+
+	let request = hyper::Request::builder()
+		.method(hyper::Method::POST)
+		.uri(url)
+		.header("Content-Type", "application/json")
+		.body(hyper::Body::from(payload))
+		.context("Failed to build kate_queryBlock request")?;
+
+	let response = if is_secure(url) {
+		let client = hyper::Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+		client.request(request).await
+	} else {
+		hyper::Client::new().request(request).await
+	}
+	.context("Failed to send kate_queryProof request")?;
+
+	let body = hyper::body::to_bytes(response.into_body())
+		.await
+		.context("Failed to get kate_queryBlock response")?;
+
+	info!("QueryBlockResponse: {:?}", body);
+	let response: QueryBlockResponse =
+		serde_json::from_slice(&body).context("Failed to parse kate_queryBlock response")?;
+
+	match response {
+		QueryBlockResponse::Block(rows) => Ok(rows.result),
+		QueryBlockResponse::Error(error) => Err(anyhow!(error.message())),
+	}
 }
 
 /// RPC to get proofs for given positions of block
