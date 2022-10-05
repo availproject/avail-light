@@ -17,18 +17,15 @@
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 
-use std::{
-	collections::HashSet,
-	sync::{mpsc::Receiver, Arc},
-};
+use std::sync::{mpsc::Receiver, Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use ipfs_embed::{DefaultParams, Ipfs};
+
 use kate_recovery::com::{
-	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
-	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
+	app_specific_rows, decode_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
+	CHUNK_SIZE,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -36,151 +33,68 @@ use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
 use tracing::{error, info};
 
 use crate::{
-	data::{fetch_cells_from_dht, insert_into_dht, store_encoded_data_in_db},
-	proof::verify_proof,
-	rpc::get_kate_proof,
+	data::store_encoded_data_in_db,
+	rpc::get_kate_block,
 	types::{AppClientConfig, ClientMsg},
 };
 
+fn data_cells_from_rows(rows: Vec<Option<Vec<u8>>>) -> Result<Vec<DataCell>> {
+	Ok(rows
+		.into_iter()
+		.enumerate()
+		.filter_map(|(row, column_cells)| column_cells.map(|cells| (row, cells)))
+		.map(|(row, column_cells)| {
+			column_cells
+				.chunks_exact(CHUNK_SIZE)
+				.enumerate()
+				.map(move |(col, data)| {
+					Ok(DataCell {
+						position: Position {
+							row: row as u16,
+							col: col as u16,
+						},
+						data: data.try_into()?,
+					})
+				})
+				.collect::<Result<Vec<DataCell>>>()
+		})
+		.collect::<Result<Vec<Vec<DataCell>>, _>>()?
+		.into_iter()
+		.flatten()
+		.collect::<Vec<_>>())
+}
+
 async fn process_block(
-	cfg: &AppClientConfig,
-	ipfs: &Ipfs<DefaultParams>,
 	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
 	block: &ClientMsg,
-	data_positions: &Vec<Position>,
-	column_positions: &[Position],
 	pp: PublicParameters,
 ) -> Result<()> {
 	let block_number = block.number;
+	let commitments = &block.commitment;
+	let cols_num = block.dimensions.cols;
 
-	info!(
-		block_number,
-		"Found {count} cells for app {app_id}",
-		count = data_positions.len()
-	);
+	info!(block_number, "Found data for app {app_id}",);
 
-	let (mut ipfs_cells, unfetched) = fetch_cells_from_dht(
-		ipfs,
-		block.number,
-		data_positions,
-		cfg.dht_parallelization_limit,
-	)
-	.await
-	.context("Failed to fetch data cells from DHT")?;
+	let rows = get_kate_block(rpc_url, block.number).await?;
+	let verification = kate_recovery::commitments::verify(&pp, commitments, cols_num, &rows)?;
+	info!("Block {block_number} verified: {verification}");
+	if verification {
+		let data_cells = data_cells_from_rows(rows)?;
+		let data = decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
+			.context("Failed to decode app extrinsics")?;
 
-	info!(
-		block_number,
-		"Fetched {count} cells from DHT",
-		count = ipfs_cells.len()
-	);
-
-	let mut rpc_cells: Vec<Cell> = Vec::new();
-	if !cfg.disable_rpc {
-		for cell in unfetched.chunks(30) {
-			let mut query_cells = get_kate_proof(rpc_url, block.number, (*cell).to_vec())
-				.await
-				.context("Failed to fetch data cells from node RPC")?;
-
-			rpc_cells.append(&mut query_cells);
-		}
-	}
-	info!(
-		block_number,
-		"Fetched {count} cells from RPC",
-		count = rpc_cells.len()
-	);
-	let reconstruct = data_positions.len() > (ipfs_cells.len() + rpc_cells.len());
-
-	if reconstruct {
-		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
-		let column_positions = diff_positions(column_positions, &fetched);
-		let (mut column_ipfs_cells, unfetched) = fetch_cells_from_dht(
-			ipfs,
-			block_number,
-			&column_positions,
-			cfg.dht_parallelization_limit,
-		)
-		.await
-		.context("Failed to fetch column cells from IPFS")?;
-
+		store_encoded_data_in_db(db, app_id, block_number, &data)
+			.context("Failed to store data into database")?;
 		info!(
 			block_number,
-			"Fetched {count} cells from IPFS for reconstruction",
-			count = column_ipfs_cells.len()
+			"Stored {count} bytes into database",
+			count = data.iter().fold(0usize, |acc, x| acc + x.len())
 		);
-
-		ipfs_cells.append(&mut column_ipfs_cells);
-		let columns = columns(&column_positions);
-		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
-		if !can_reconstruct(&block.dimensions, &columns, &fetched) && !cfg.disable_rpc {
-			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched)
-				.await
-				.context("Failed to get column cells from node RPC")?;
-
-			info!(
-				block_number,
-				"Fetched {count} cells from RPC for reconstruction",
-				count = column_rpc_cells.len()
-			);
-
-			rpc_cells.append(&mut column_rpc_cells);
-		}
-	};
-
-	let cells = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
-
-	let verified = verify_proof(
-		block_number,
-		block.dimensions.rows as u16,
-		block.dimensions.cols as u16,
-		&cells,
-		block.commitment.clone(),
-		pp,
-	);
-
-	info!(block_number, "Completed {verified} verification rounds");
-
-	if cells.len() > verified {
-		return Err(anyhow!("{} cells are not verified", cells.len() - verified));
 	}
 
-	insert_into_dht(
-		ipfs,
-		block.number,
-		rpc_cells,
-		cfg.dht_parallelization_limit,
-		cfg.ttl,
-	)
-	.await;
-
-	info!(block_number, "Cells inserted into IPFS");
-
-	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
-	let data = if reconstruct {
-		reconstruct_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
-			.context("Failed to reconstruct app extrinsics")?
-	} else {
-		decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
-			.context("Failed to decode app extrinsics")?
-	};
-
-	store_encoded_data_in_db(db, app_id, block_number, &data)
-		.context("Failed to store data into database")?;
-	info!(
-		block_number,
-		"Stored {count} bytes into database",
-		count = data.iter().fold(0usize, |acc, x| acc + x.len())
-	);
 	Ok(())
-}
-
-fn columns(positions: &[Position]) -> Vec<u16> {
-	let columns = positions.iter().map(|position| position.col);
-	HashSet::<u16>::from_iter(columns)
-		.into_iter()
-		.collect::<Vec<u16>>()
 }
 
 fn can_reconstruct(dimensions: &ExtendedMatrixDimensions, columns: &[u16], cells: &[Cell]) -> bool {
@@ -205,15 +119,13 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// # Arguments
 ///
 /// * `cfg` - Application client configuration
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
 /// * `db` - Database to store data inot DB
 /// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
 /// * `app_id` - Application ID
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
-	cfg: AppClientConfig,
-	ipfs: Ipfs<DefaultParams>,
+	_cfg: AppClientConfig,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
@@ -226,29 +138,15 @@ pub async fn run(
 		let block_number = block.number;
 		info!(block_number, "Block available");
 
-		match (
-			app_specific_cells(&block.lookup, &block.dimensions, app_id),
-			app_specific_column_cells(&block.lookup, &block.dimensions, app_id),
-		) {
-			(Some(data_positions), Some(column_positions)) => {
-				if let Err(error) = process_block(
-					&cfg,
-					&ipfs,
-					db.clone(),
-					&rpc_url,
-					app_id,
-					&block,
-					&data_positions,
-					&column_positions,
-					pp.clone(),
-				)
-				.await
-				{
-					error!(block_number, "Cannot process block: {error}");
-					continue;
-				}
-			},
-			(_, _) => info!(block_number, "No cells for app {app_id}"),
+		if !app_specific_rows(&block.lookup, &block.dimensions, app_id).is_empty() {
+			if let Err(error) =
+				process_block(db.clone(), &rpc_url, app_id, &block, pp.clone()).await
+			{
+				error!(block_number, "Cannot process block: {error}");
+				continue;
+			}
+		} else {
+			info!(block_number, "No cells for app {app_id}");
 		}
 	}
 }

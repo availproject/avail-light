@@ -223,20 +223,20 @@ struct JsonRPCHeader {
 }
 
 #[derive(Deserialize)]
-struct QueryProofErrorData {
+struct QueryErrorData {
 	code: i32,
 	message: String,
 }
 
 /// Query proof error
 #[derive(Deserialize)]
-pub struct QueryProofError {
+pub struct QueryError {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
-	error: QueryProofErrorData,
+	error: QueryErrorData,
 }
 
-impl QueryProofError {
+impl QueryError {
 	pub fn message(&self) -> String {
 		let code = &self.error.code;
 		let message = &self.error.message;
@@ -266,7 +266,23 @@ impl QueryProofResult {
 #[serde(untagged)]
 pub enum QueryProofResponse {
 	Proofs(QueryProofResult),
-	Error(QueryProofError),
+	Error(QueryError),
+}
+
+/// Query block result
+#[derive(Deserialize)]
+pub struct QueryBlockResult {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	pub result: Vec<Option<Vec<u8>>>,
+}
+
+/// Response of RPC query block
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum QueryBlockResponse {
+	Block(QueryBlockResult),
+	Error(QueryError),
 }
 
 /// Result of subscription to header
@@ -337,7 +353,7 @@ impl From<Option<u32>> for Mode {
 	fn from(app_id: Option<u32>) -> Self {
 		match app_id {
 			None => Mode::LightClient,
-			Some(0) => Mode::LightClient,
+			// Some(0) => Mode::LightClient,
 			Some(app_id) => Mode::AppClient(app_id),
 		}
 	}
@@ -562,21 +578,11 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 }
 
 /// App client configuration (see [RuntimeConfig] for details)
-pub struct AppClientConfig {
-	pub full_node_ws: Vec<String>,
-	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
-	pub ttl: u64,
-}
+pub struct AppClientConfig {}
 
 impl From<&RuntimeConfig> for AppClientConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		AppClientConfig {
-			full_node_ws: val.full_node_ws.clone(),
-			disable_rpc: val.disable_rpc,
-			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.ttl.unwrap_or(3600),
-		}
+	fn from(_val: &RuntimeConfig) -> Self {
+		AppClientConfig {}
 	}
 }
 

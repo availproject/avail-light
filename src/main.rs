@@ -188,7 +188,6 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			ipfs.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,
