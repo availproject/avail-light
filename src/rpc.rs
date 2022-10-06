@@ -9,7 +9,7 @@ use rand::{thread_rng, Rng};
 use regex::Regex;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::types::*;
 
@@ -201,7 +201,6 @@ pub async fn get_kate_block(url: &str, block: u64) -> Result<Vec<Option<Vec<u8>>
 		.await
 		.context("Failed to get kate_queryBlock response")?;
 
-	info!("QueryBlockResponse: {:?}", body);
 	let response: QueryBlockResponse =
 		serde_json::from_slice(&body).context("Failed to parse kate_queryBlock response")?;
 

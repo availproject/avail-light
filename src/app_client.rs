@@ -24,8 +24,7 @@ use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 
 use kate_recovery::com::{
-	app_specific_rows, decode_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
-	CHUNK_SIZE,
+	app_specific_rows, decode_app_extrinsics, DataCell, Position, CHUNK_SIZE,
 };
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -38,26 +37,30 @@ use crate::{
 	types::{AppClientConfig, ClientMsg},
 };
 
+fn new_data_cell(row: usize, col: usize, data: &[u8]) -> Result<DataCell> {
+	Ok(DataCell {
+		position: Position {
+			row: row.try_into()?,
+			col: col.try_into()?,
+		},
+		data: data.try_into()?,
+	})
+}
+
+fn data_cells_from_row(row: usize, row_data: &[u8]) -> Result<Vec<DataCell>> {
+	row_data
+		.chunks_exact(CHUNK_SIZE)
+		.enumerate()
+		.map(move |(col, data)| new_data_cell(row, col, data))
+		.collect::<Result<Vec<DataCell>>>()
+}
+
 fn data_cells_from_rows(rows: Vec<Option<Vec<u8>>>) -> Result<Vec<DataCell>> {
 	Ok(rows
 		.into_iter()
-		.enumerate()
-		.filter_map(|(row, column_cells)| column_cells.map(|cells| (row, cells)))
-		.map(|(row, column_cells)| {
-			column_cells
-				.chunks_exact(CHUNK_SIZE)
-				.enumerate()
-				.map(move |(col, data)| {
-					Ok(DataCell {
-						position: Position {
-							row: row as u16,
-							col: col as u16,
-						},
-						data: data.try_into()?,
-					})
-				})
-				.collect::<Result<Vec<DataCell>>>()
-		})
+		.enumerate() // Add row indexes
+		.filter_map(|(row, row_data)| row_data.map(|data| (row, data))) // Remove None rows
+		.map(|(row, data)| data_cells_from_row(row, &data))
 		.collect::<Result<Vec<Vec<DataCell>>, _>>()?
 		.into_iter()
 		.flatten()
@@ -78,15 +81,21 @@ async fn process_block(
 	info!(block_number, "Found data for app {app_id}",);
 
 	let rows = get_kate_block(rpc_url, block.number).await?;
-	let verification = kate_recovery::commitments::verify(&pp, commitments, cols_num, &rows)?;
-	info!("Block {block_number} verified: {verification}");
-	if verification {
-		let data_cells = data_cells_from_rows(rows)?;
+	let is_verified =
+		kate_recovery::commitments::verify_equality(&pp, commitments, cols_num, &rows)?;
+
+	info!(block_number, "Block verified: {is_verified}");
+
+	if is_verified {
+		let data_cells = data_cells_from_rows(rows)
+			.context("Failed to create data cells from rows got from RPC")?;
+
 		let data = decode_app_extrinsics(&block.lookup, &block.dimensions, data_cells, app_id)
 			.context("Failed to decode app extrinsics")?;
 
 		store_encoded_data_in_db(db, app_id, block_number, &data)
 			.context("Failed to store data into database")?;
+
 		info!(
 			block_number,
 			"Stored {count} bytes into database",
@@ -95,23 +104,6 @@ async fn process_block(
 	}
 
 	Ok(())
-}
-
-fn can_reconstruct(dimensions: &ExtendedMatrixDimensions, columns: &[u16], cells: &[Cell]) -> bool {
-	columns.iter().all(|&col| {
-		cells
-			.iter()
-			.filter(move |cell| cell.position.col == col)
-			.count() >= dimensions.rows / 2
-	})
-}
-
-fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
-	positions
-		.iter()
-		.cloned()
-		.filter(|position| !cells.iter().any(|cell| cell.position.eq(position)))
-		.collect::<Vec<_>>()
 }
 
 /// Runs application client.
@@ -136,17 +128,16 @@ pub async fn run(
 
 	for block in block_receive {
 		let block_number = block.number;
+
 		info!(block_number, "Block available");
 
-		if !app_specific_rows(&block.lookup, &block.dimensions, app_id).is_empty() {
-			if let Err(error) =
-				process_block(db.clone(), &rpc_url, app_id, &block, pp.clone()).await
-			{
-				error!(block_number, "Cannot process block: {error}");
-				continue;
-			}
-		} else {
+		if app_specific_rows(&block.lookup, &block.dimensions, app_id).is_empty() {
 			info!(block_number, "No cells for app {app_id}");
+			continue;
+		}
+
+		if let Err(error) = process_block(db.clone(), &rpc_url, app_id, &block, pp.clone()).await {
+			error!(block_number, "Cannot process block: {error}");
 		}
 	}
 }
@@ -260,68 +251,8 @@ impl<'a> Deserialize<'a> for AvailExtrinsic {
 
 #[cfg(test)]
 mod tests {
-	use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
 
-	use super::{can_reconstruct, diff_positions, AvailExtrinsic};
-
-	fn position(row: u16, col: u16) -> Position {
-		Position { row, col }
-	}
-
-	fn empty_cell(row: u16, col: u16) -> Cell {
-		Cell {
-			position: Position { row, col },
-			content: [0u8; 80],
-		}
-	}
-
-	#[test]
-	fn test_can_reconstruct() {
-		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
-		let columns = vec![0, 1];
-		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(1, 0), empty_cell(0, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(1, 0), empty_cell(1, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(0, 0), empty_cell(1, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
-	}
-
-	#[test]
-	fn test_cannot_reconstruct() {
-		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
-		let columns = vec![0, 1];
-		let cells = vec![empty_cell(0, 0)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(0, 1)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(1, 0)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(1, 1)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
-		let cells = vec![empty_cell(0, 2), empty_cell(0, 3)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
-	}
-
-	#[test]
-	fn test_diff_positions() {
-		let positions = vec![position(0, 0), position(1, 1)];
-		let cells = vec![empty_cell(0, 0), empty_cell(1, 1)];
-		assert_eq!(diff_positions(&positions, &cells).len(), 0);
-
-		let positions = vec![position(0, 0), position(1, 1)];
-		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
-		assert_eq!(diff_positions(&positions, &cells).len(), 1);
-		assert_eq!(diff_positions(&positions, &cells)[0], position(1, 1));
-
-		let positions = vec![position(0, 0), position(1, 1)];
-		let cells = vec![empty_cell(1, 0), empty_cell(0, 1)];
-		assert_eq!(diff_positions(&positions, &cells).len(), 2);
-		assert_eq!(diff_positions(&positions, &cells)[0], position(0, 0));
-		assert_eq!(diff_positions(&positions, &cells)[1], position(1, 1));
-	}
+	use super::AvailExtrinsic;
 
 	#[test]
 	fn test_decode_xt() {
