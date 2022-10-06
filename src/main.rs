@@ -34,6 +34,7 @@ mod proof;
 mod rpc;
 mod sync_client;
 mod types;
+mod utils;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
