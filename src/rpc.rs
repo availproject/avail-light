@@ -222,8 +222,8 @@ pub async fn get_kate_proof(
 }
 
 // RPC to check connection to substrate node
-async fn get_chain(url: &str) -> Result<String> {
-	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "system_chain", "params": []}"#;
+pub async fn get_chain(url: &str) -> Result<String> {
+	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "system_version", "params": []}"#;
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)
@@ -246,8 +246,38 @@ async fn get_chain(url: &str) -> Result<String> {
 		.await
 		.context("Failed to get system_chain response")?;
 
-	serde_json::from_slice::<GetChainResponse>(&body)
+	serde_json::from_slice::<SystemVersionResponse>(&body)
 		.context("Failed to parse system_chain response")
+		.map(|r| r.result)
+}
+
+pub async fn get_runtime_version(url: &str) -> Result<RuntimeVersionResult> {
+	let payload =
+		r#"{"id": 1, "jsonrpc": "2.0", "method": "chain_getRuntimeVersion", "params": []}"#;
+
+	let req = hyper::Request::builder()
+		.method(hyper::Method::POST)
+		.uri(url)
+		.header("Content-Type", "application/json")
+		.body(hyper::Body::from(payload))
+		.context("Failed to build system_chain request")?;
+
+	let resp = if is_secure(url) {
+		let https = HttpsConnector::new();
+		let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+		client.request(req).await
+	} else {
+		let client = hyper::Client::new();
+		client.request(req).await
+	}
+	.context("Failed to send system_chain request")?;
+
+	let body = hyper::body::to_bytes(resp.into_body())
+		.await
+		.context("Failed to get system_chain response")?;
+
+	serde_json::from_slice::<RuntimeVersionResponse>(&body)
+		.context("Failed to parse chain_getRuntimeVersion response")
 		.map(|r| r.result)
 }
 
