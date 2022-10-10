@@ -337,3 +337,16 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	}
 	cell_count
 }
+
+pub async fn check_version(url: &str) -> Result<bool> {
+	let version = get_chain(url).await?;
+	let runtime_version = get_runtime_version(url).await?;
+	if version != "1.1.0"
+		|| runtime_version.spec_version != 5
+		|| runtime_version.spec_name != "data-avail"
+	{
+		return Err(anyhow!("Invalid version"));
+	} else {
+		return Ok(true);
+	}
+}

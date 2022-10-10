@@ -1,0 +1,21 @@
+http_server_host = "127.0.0.1"
+http_server_port = "7001"
+
+ipfs_seed = 2
+ipfs_port = "37001"
+ipfs_path = "avail_ipfs_store_2"
+
+# put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
+full_node_rpc = ["https://devnet01.dataavailability.link:28545/"]
+# put full_node_ws = wss://testnet.polygonavail.net/ws incase you are connecting to devnet
+full_node_ws = ["wss://devnet01.dataavailability.link:28546/"]
+# None in case of default Light Client Mode
+app_id = 1
+
+confidence = 92.0
+avail_path = "avail_path_2"
+
+bootstraps = []
+
+# See https://docs.rs/log/0.4.14/log/enum.LevelFilter.html for possible log level values
+log_level = "INFO"
