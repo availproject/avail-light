@@ -182,13 +182,16 @@ async fn do_main() -> Result<()> {
 
 	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
 
-	match rpc::check_version(&rpc_url).await {
-		Ok(v) => v,
-		Err(e) => {
-			error!("Failed to get version from full node: {e}");
-			return Err(e.into());
-		},
-	};
+	let version = rpc::get_chain(&rpc_url).await?;
+	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
+	if version != "1.1.0"
+		|| runtime_version.spec_version != 5
+		|| runtime_version.spec_name != "data-avail"
+	{
+		return Err(anyhow::anyhow!(
+			"Full node is not compatible with this version of data-avail"
+		));
+	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
