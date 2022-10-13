@@ -9,7 +9,7 @@ use std::{
 
 use ::prometheus::Registry;
 use anyhow::{Context, Result};
-use ipfs_embed::{Multiaddr, PeerId};
+use libp2p::{metrics::Metrics, Multiaddr, PeerId};
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
@@ -119,7 +119,6 @@ async fn do_main() -> Result<()> {
 
 	// Spawn Prometheus server
 	let registry = Registry::default();
-
 	let prometheus_port = cfg.prometheus_port.unwrap_or(9520);
 
 	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
@@ -135,7 +134,7 @@ async fn do_main() -> Result<()> {
 	// This channel will be used for message based communication between
 	// two tasks
 	// task_0: HTTP request handler ( query sender )
-	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
+	// task_1: DHT client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	// this spawns tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u64));
@@ -153,26 +152,29 @@ async fn do_main() -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	let port = if cfg.ipfs_port.1 > 0 {
-		let port: u16 = thread_rng().gen_range(cfg.ipfs_port.0..=cfg.ipfs_port.1);
+	let port = if cfg.libp2p_port.1 > 0 {
+		let port: u16 = thread_rng().gen_range(cfg.libp2p_port.0..=cfg.libp2p_port.1);
 		info!("Using random port: {port}");
 		port
 	} else {
-		cfg.ipfs_port.0
+		cfg.libp2p_port.0
 	};
-	let seed = match cfg.ipfs_seed {
+	let seed = match cfg.libp2p_seed {
 		None => thread_rng().gen(),
 		Some(0) => thread_rng().gen(),
 		Some(value) => value,
 	};
-	let ipfs = data::init_ipfs(seed, port, &cfg.ipfs_path, bootstrap_nodes)
-		.await
-		.context("Failed to init IPFS client")?;
+	let swarm = data::init_swarm(
+		seed,
+		port,
+		bootstrap_nodes,
+		data::get_psk(&cfg.libp2p_psk_path),
+	)
+	.await
+	.context("Failed to init Libp2p swarm")?;
 
-	ipfs.register_metrics(&registry)
-		.context("Failed to initialize IPFS Prometheus")?;
-
-	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
+	// attach metrics to prometheus registry
+	let metrics = Metrics::new(&mut registry);
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
@@ -184,11 +186,11 @@ async fn do_main() -> Result<()> {
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
-		// ipfs backed application client
+		// libp2p backed application client
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			ipfs.clone(),
+			swarm.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,
@@ -216,7 +218,7 @@ async fn do_main() -> Result<()> {
 			latest_block,
 			sync_block_depth,
 			db.clone(),
-			ipfs.clone(),
+			swarm.clone(),
 			pp.clone(),
 		));
 	}
@@ -225,7 +227,7 @@ async fn do_main() -> Result<()> {
 	light_client::run(
 		(&cfg).into(),
 		db,
-		ipfs,
+		swarm,
 		rpc_url,
 		block_tx,
 		pp,

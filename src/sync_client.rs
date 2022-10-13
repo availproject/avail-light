@@ -6,7 +6,7 @@
 //!
 //! * For each block, fetches block header from RPC and stores it into database
 //! * Generate random cells for random data sampling
-//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Retrieve cell proofs from a) DHT and/or b) via RPC call from the node, in that order
 //! * Verify proof using the received cells
 //! * Calculate block confidence and store it in RocksDB
 //! * Insert cells to to DHT for remote fetch
@@ -20,7 +20,6 @@ use std::{sync::Arc, time::SystemTime};
 use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
-use ipfs_embed::{DefaultParams, Ipfs};
 use rocksdb::DB;
 use tracing::{error, info, warn};
 
@@ -38,7 +37,7 @@ async fn process_block(
 	rpc_url: String,
 	db: Arc<DB>,
 	block_number: u64,
-	ipfs: Ipfs<DefaultParams>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	pp: PublicParameters,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
@@ -87,8 +86,8 @@ async fn process_block(
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
-	let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
-		&ipfs,
+	let (dht_fetched, unfetched) = fetch_cells_from_dht(
+		&swarm,
 		block_number,
 		&positions,
 		cfg.dht_parallelization_limit,
@@ -99,7 +98,7 @@ async fn process_block(
 	info!(
 		block_number,
 		"Number of cells fetched from DHT: {}",
-		ipfs_fetched.len()
+		dht_fetched.len()
 	);
 
 	let rpc_fetched = if cfg.disable_rpc {
@@ -117,7 +116,7 @@ async fn process_block(
 	);
 
 	let mut cells = vec![];
-	cells.extend(ipfs_fetched);
+	cells.extend(dht_fetched);
 	cells.extend(rpc_fetched.clone());
 	if positions.len() > cells.len() {
 		return Err(anyhow!(
@@ -145,7 +144,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
-		&ipfs,
+		&swarm,
 		block_number,
 		rpc_fetched,
 		cfg.dht_parallelization_limit,
@@ -165,7 +164,7 @@ async fn process_block(
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
 /// * `db` - Database to store confidence and block header
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `swarm` - Reference to Libp2p swarm component
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
@@ -173,7 +172,7 @@ pub async fn run(
 	end_block: u64,
 	sync_blocks_depth: u64,
 	db: Arc<DB>,
-	ipfs: Ipfs<DefaultParams>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	pp: PublicParameters,
 ) {
 	if sync_blocks_depth >= 250 {
@@ -182,16 +181,16 @@ pub async fn run(
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
 	let blocks = (start_block..=end_block)
-		.map(move |b| (b, rpc_url.clone(), db.clone(), ipfs.clone(), pp.clone()));
+		.map(move |b| (b, rpc_url.clone(), db.clone(), swarm.clone(), pp.clone()));
 	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_url, store, ipfs, pp)| async move {
+			|(block_number, rpc_url, store, swarm, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(cfg_clone, rpc_url, store, block_number, ipfs, pp.clone()).await
+					process_block(cfg_clone, rpc_url, store, block_number, swarm, pp.clone()).await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}

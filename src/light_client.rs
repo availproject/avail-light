@@ -6,7 +6,7 @@
 //!
 //! * Connect to the Avail node WebSocket stream and start listening to finalized headers
 //! * Generate random cells for random data sampling (8 cells currently)
-//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Retrieve cell proofs from a) DHT and/or b) via RPC call from the node, in that order
 //! * Verify proof using the received cells
 //! * Calculate block confidence and store it in RocksDB
 //! * Insert cells to to DHT for remote fetch
@@ -30,7 +30,6 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{DefaultParams, Ipfs};
 use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -74,7 +73,7 @@ impl LCMetrics {
 				registry,
 			)?,
 			dht_fetched: prometheus_handler::register(
-				prometheus::Gauge::new("ipfs_fetched", "Number of cells fetched from DHT")?,
+				prometheus::Gauge::new("dht_fetched", "Number of cells fetched from DHT")?,
 				registry,
 			)?,
 			node_rpc_fetched: prometheus_handler::register(
@@ -112,7 +111,7 @@ impl LCMetrics {
 ///
 /// * `cfg` - Light client configuration
 /// * `db` - Database to store confidence and block header
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `swarm` - Reference to Libp2p swarm component
 /// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
@@ -121,7 +120,7 @@ impl LCMetrics {
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
-	ipfs: Ipfs<DefaultParams>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
@@ -218,8 +217,8 @@ pub async fn run(
 				positions.len()
 			);
 
-			let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
-				&ipfs,
+			let (cells_fetched, unfetched) = fetch_cells_from_dht(
+				&swarm,
 				block_number,
 				&positions,
 				cfg.dht_parallelization_limit,
@@ -229,11 +228,11 @@ pub async fn run(
 
 			info!(
 				block_number,
-				"cells_from_dht" = ipfs_fetched.len(),
+				"cells_from_dht" = cells_fetched.len(),
 				"Number of cells fetched from DHT: {}",
-				ipfs_fetched.len()
+				cells_fetched.len()
 			);
-			metrics.dht_fetched.set(ipfs_fetched.len() as f64);
+			metrics.dht_fetched.set(cells_fetched.len() as f64);
 
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
@@ -252,7 +251,7 @@ pub async fn run(
 			metrics.node_rpc_fetched.set(rpc_fetched.len() as f64);
 
 			let mut cells = vec![];
-			cells.extend(ipfs_fetched);
+			cells.extend(cells_fetched);
 			cells.extend(rpc_fetched.clone());
 
 			if positions.len() > cells.len() {
@@ -297,7 +296,7 @@ pub async fn run(
 
 			// push latest mined block's header into column family specified
 			// for keeping block headers, to be used
-			// later for verifying IPFS stored data
+			// later for verifying DHT stored data
 			//
 			// @note this same data store is also written to in
 			// another competing thread, which syncs all block headers
@@ -364,7 +363,7 @@ pub async fn run(
 			begin = SystemTime::now();
 
 			insert_into_dht(
-				&ipfs,
+				&swarm,
 				block_number,
 				rpc_fetched,
 				cfg.dht_parallelization_limit,
@@ -383,7 +382,7 @@ pub async fn run(
 				.dht_put_duration
 				.set(dht_put_time_elapsed.as_secs_f64());
 
-			// notify ipfs-based application client
+			// notify dht-based application client
 			// that newly mined block has been received
 			if let Some(ref channel) = block_tx {
 				channel

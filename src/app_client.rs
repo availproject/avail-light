@@ -7,7 +7,7 @@
 //! * Download app specific data cells from DHT
 //! * Download missing app specific data cells from the full node
 //! * If some cells are still missing
-//!     * Download related columns from IPFS (excluding downloaded cells)
+//!     * Download related columns from DHT (excluding downloaded cells)
 //!     * If reconstruction with downloaded cells is not possible, download related columns from full node (excluding downloaded cells)
 //! * Verify downloaded data cells
 //! * Insert cells downloaded from full node into DHT
@@ -25,7 +25,6 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
@@ -44,7 +43,7 @@ use crate::{
 
 async fn process_block(
 	cfg: &AppClientConfig,
-	ipfs: &Ipfs<DefaultParams>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
@@ -61,8 +60,8 @@ async fn process_block(
 		count = data_positions.len()
 	);
 
-	let (mut ipfs_cells, unfetched) = fetch_cells_from_dht(
-		ipfs,
+	let (mut dht_cells, unfetched) = fetch_cells_from_dht(
+		swarm,
 		block.number,
 		data_positions,
 		cfg.dht_parallelization_limit,
@@ -73,7 +72,7 @@ async fn process_block(
 	info!(
 		block_number,
 		"Fetched {count} cells from DHT",
-		count = ipfs_cells.len()
+		count = dht_cells.len()
 	);
 
 	let mut rpc_cells: Vec<Cell> = Vec::new();
@@ -91,29 +90,29 @@ async fn process_block(
 		"Fetched {count} cells from RPC",
 		count = rpc_cells.len()
 	);
-	let reconstruct = data_positions.len() > (ipfs_cells.len() + rpc_cells.len());
+	let reconstruct = data_positions.len() > (dht_cells.len() + rpc_cells.len());
 
 	if reconstruct {
-		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
+		let fetched = [dht_cells.as_slice(), rpc_cells.as_slice()].concat();
 		let column_positions = diff_positions(column_positions, &fetched);
-		let (mut column_ipfs_cells, unfetched) = fetch_cells_from_dht(
-			ipfs,
+		let (mut column_dht_cells, unfetched) = fetch_cells_from_dht(
+			swarm,
 			block_number,
 			&column_positions,
 			cfg.dht_parallelization_limit,
 		)
 		.await
-		.context("Failed to fetch column cells from IPFS")?;
+		.context("Failed to fetch column cells from DHT")?;
 
 		info!(
 			block_number,
-			"Fetched {count} cells from IPFS for reconstruction",
-			count = column_ipfs_cells.len()
+			"Fetched {count} cells from DHT for reconstruction",
+			count = column_dht_cells.len()
 		);
 
-		ipfs_cells.append(&mut column_ipfs_cells);
+		dht_cells.append(&mut column_dht_cells);
 		let columns = columns(&column_positions);
-		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
+		let fetched = [dht_cells.as_slice(), rpc_cells.as_slice()].concat();
 		if !can_reconstruct(&block.dimensions, &columns, &fetched) && !cfg.disable_rpc {
 			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched)
 				.await
@@ -129,7 +128,7 @@ async fn process_block(
 		}
 	};
 
-	let cells = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
+	let cells = [dht_cells.as_slice(), rpc_cells.as_slice()].concat();
 
 	let verified = verify_proof(
 		block_number,
@@ -147,7 +146,7 @@ async fn process_block(
 	}
 
 	insert_into_dht(
-		ipfs,
+		swarm,
 		block.number,
 		rpc_cells,
 		cfg.dht_parallelization_limit,
@@ -155,7 +154,7 @@ async fn process_block(
 	)
 	.await;
 
-	info!(block_number, "Cells inserted into IPFS");
+	info!(block_number, "Cells inserted into DHT");
 
 	let data_cells = cells.into_iter().map(DataCell::from).collect::<Vec<_>>();
 	let data = if reconstruct {
@@ -205,7 +204,7 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// # Arguments
 ///
 /// * `cfg` - Application client configuration
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `swarm` - Reference to Libp2p swarm component
 /// * `db` - Database to store data inot DB
 /// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
 /// * `app_id` - Application ID
@@ -213,7 +212,7 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: AppClientConfig,
-	ipfs: Ipfs<DefaultParams>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
@@ -233,7 +232,7 @@ pub async fn run(
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
 					&cfg,
-					&ipfs,
+					&swarm,
 					db.clone(),
 					&rpc_url,
 					app_id,

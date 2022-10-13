@@ -1,153 +1,16 @@
 //! Shared light client structs and enums.
 
+use std::path::Path;
+
 use anyhow::Context;
 use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
 use sp_core::H256;
 
-/// IPFS events wrapper
-#[derive(Debug, Eq, PartialEq)]
-pub enum Event {
-	NewListener,
-	NewListenAddr(Multiaddr),
-	ExpiredListenAddr(Multiaddr),
-	ListenerClosed,
-	NewExternalAddr(Multiaddr),
-	ExpiredExternalAddr(Multiaddr),
-	Discovered(PeerId),
-	Unreachable(PeerId),
-	Connected(PeerId),
-	Disconnected(PeerId),
-	Subscribed(PeerId, String),
-	Unsubscribed(PeerId, String),
-	Block(IpfsBlock<DefaultParams>),
-	Flushed,
-	Synced,
-	Bootstrapped,
-	NewInfo(PeerId),
-	Other,
-}
-
-impl std::fmt::Display for Event {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		match self {
-			Self::NewListener => write!(f, "<new-listener")?,
-			Self::NewListenAddr(addr) => write!(f, "<new-listen-addr {}", addr)?,
-			Self::ExpiredListenAddr(addr) => write!(f, "<expired-listen-addr {}", addr)?,
-			Self::ListenerClosed => write!(f, "<listener-closed")?,
-			Self::NewExternalAddr(addr) => write!(f, "<new-external-addr {}", addr)?,
-			Self::ExpiredExternalAddr(addr) => write!(f, "<expired-external-addr {}", addr)?,
-			Self::Discovered(peer) => write!(f, "<discovered {}", peer)?,
-			Self::Unreachable(peer) => write!(f, "<unreachable {}", peer)?,
-			Self::Connected(peer) => write!(f, "<connected {}", peer)?,
-			Self::Disconnected(peer) => write!(f, "<disconnected {}", peer)?,
-			Self::Subscribed(peer, topic) => write!(f, "<subscribed {} {}", peer, topic)?,
-			Self::Unsubscribed(peer, topic) => write!(f, "<unsubscribed {} {}", peer, topic)?,
-			Self::Block(block) => {
-				write!(f, "<block {} ", block.cid())?;
-				for byte in block.data() {
-					write!(f, "{:02x}", byte)?;
-				}
-			},
-			Self::Flushed => write!(f, "<flushed")?,
-			Self::Synced => write!(f, "<synced")?,
-			Self::Bootstrapped => write!(f, "<bootstrapped")?,
-			Self::NewInfo(peer) => write!(f, "<newinfo {}", peer)?,
-			Self::Other => write!(f, "<other")?,
-		}
-		Ok(())
-	}
-}
-
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
-
-impl std::str::FromStr for Event {
-	type Err = anyhow::Error;
-
-	fn from_str(s: &str) -> anyhow::Result<Self> {
-		let mut parts = s.split_whitespace();
-		Ok(match parts.next() {
-			Some("<new-listener") => Self::NewListener,
-			Some("<new-listen-addr") => {
-				let addr = parts.next().context("Missing new-listen-addr")?.parse()?;
-				Self::NewListenAddr(addr)
-			},
-			Some("<expired-listen-addr") => {
-				let addr = parts
-					.next()
-					.context("Missing expired-listen-addr")?
-					.parse()?;
-				Self::ExpiredListenAddr(addr)
-			},
-			Some("<listener-closed") => Self::ListenerClosed,
-			Some("<new-external-addr") => {
-				let addr = parts.next().context("Missing new-external-addr")?.parse()?;
-				Self::NewExternalAddr(addr)
-			},
-			Some("<expired-external-addr") => {
-				let addr = parts
-					.next()
-					.context("Missing expired-external-addr")?
-					.parse()?;
-				Self::ExpiredExternalAddr(addr)
-			},
-			Some("<discovered") => {
-				let peer = parts.next().context("Missing discovered peer")?.parse()?;
-				Self::Discovered(peer)
-			},
-			Some("<unreachable") => {
-				let peer = parts.next().context("Missing unreachable peer")?.parse()?;
-				Self::Unreachable(peer)
-			},
-			Some("<connected") => {
-				let peer = parts.next().context("Missing connected peer")?.parse()?;
-				Self::Connected(peer)
-			},
-			Some("<disconnected") => {
-				let peer = parts.next().context("Missing disconnected peer")?.parse()?;
-				Self::Disconnected(peer)
-			},
-			Some("<subscribed") => {
-				let peer = parts.next().context("Missing subscribed peer")?.parse()?;
-				let topic = parts
-					.next()
-					.context("Missing subscribed topic")?
-					.to_string();
-				Self::Subscribed(peer, topic)
-			},
-			Some("<unsubscribed") => {
-				let peer = parts.next().context("Missing unsubscribed peer")?.parse()?;
-				let topic = parts
-					.next()
-					.context("Missing unsubscribed topic")?
-					.to_string();
-				Self::Unsubscribed(peer, topic)
-			},
-			Some("<block") => {
-				let cid = parts.next().context("Missing block cid")?.parse()?;
-				let str_data = parts.next().context("Missing str_data")?;
-				let mut data = Vec::with_capacity(str_data.len() / 2);
-				for chunk in str_data.as_bytes().chunks(2) {
-					let s = std::str::from_utf8(chunk)?;
-					data.push(u8::from_str_radix(s, 16)?);
-				}
-				let block = IpfsBlock::new(cid, data)?;
-				Self::Block(block)
-			},
-			Some("<flushed") => Self::Flushed,
-			Some("<synced") => Self::Synced,
-			Some("<bootstrapped") => Self::Bootstrapped,
-			Some("<newinfo") => {
-				let peer = parts.next().context("Missing newinfo")?.parse()?;
-				Self::NewInfo(peer)
-			},
-			_ => return Err(anyhow::anyhow!("Invalid event `{s}`")),
-		})
-	}
-}
 
 /// Response of RPC get block hash
 #[derive(Deserialize, Debug)]
@@ -458,16 +321,16 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
-	/// Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
-	pub ipfs_seed: Option<u64>,
-	/// IPFS service port range (port, range) (default: 37000).
+	/// Seed for Libp2p keypair. If not set, or seed is 0, random seed is generated
+	pub libp2p_seed: Option<u64>,
+	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
-	pub ipfs_port: (u16, u16),
-	/// File system path where IPFS service stores data (default: avail_ipfs_node_1)
-	pub ipfs_path: String,
+	pub libp2p_port: (u16, u16),
 	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
+	/// File system path where psk key is stored
+	pub libp2p_psk_path: Path,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -585,9 +448,9 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
-			ipfs_port: (37000, 0),
-			ipfs_seed: None,
-			ipfs_path: format!("avail_ipfs_node_{}", 1),
+			libp2p_port: (37000, 0),
+			libp2p_seed: None,
+			libp2p_psk_path: Path::new("./avail/psk"),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
