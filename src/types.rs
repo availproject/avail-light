@@ -299,6 +299,46 @@ pub struct SubscriptionResponse {
 	pub subscription_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RuntimeVersionResponse {
+	jsonrpc: String,
+	pub result: RuntimeVersionResult,
+	id: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RuntimeVersionResult {
+	apis: Vec<(String, u32)>,
+	#[serde(rename = "authoringVersion")]
+	authoring_version: u32,
+	#[serde(rename = "implName")]
+	impl_name: String,
+	#[serde(rename = "implVersion")]
+	pub impl_version: u32,
+	#[serde(rename = "specName")]
+	pub spec_name: String,
+	#[serde(rename = "specVersion")]
+	pub spec_version: u32,
+	#[serde(rename = "transactionVersion")]
+	transaction_version: u32,
+}
+#[derive(Deserialize, Debug)]
+pub struct SystemVersionResponse {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	#[serde(deserialize_with = "deserialise_from_string")]
+	pub result: String,
+}
+
+fn deserialise_from_string<'de, D>(d: D) -> Result<String, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let mut val = String::deserialize(d)?;
+	val.truncate(5);
+	Ok(val)
+}
+
 /// Light to app client channel message struct
 pub struct ClientMsg {
 	pub number: u64,
