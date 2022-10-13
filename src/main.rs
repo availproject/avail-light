@@ -182,7 +182,7 @@ async fn do_main() -> Result<()> {
 
 	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
 
-	let version = rpc::get_chain(&rpc_url).await?;
+	let version = rpc::get_system_version(&rpc_url).await?;
 	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
 	if version != "1.1.0"
 		|| runtime_version.spec_version != 5

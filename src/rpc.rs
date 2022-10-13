@@ -222,7 +222,7 @@ pub async fn get_kate_proof(
 }
 
 // RPC to check connection to substrate node
-pub async fn get_chain(url: &str) -> Result<String> {
+pub async fn get_system_version(url: &str) -> Result<String> {
 	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "system_version", "params": []}"#;
 
 	let req = hyper::Request::builder()
@@ -305,7 +305,7 @@ pub async fn check_connection(
 /// Checks if the rpc_url is secure or not and if it is working properly to return
 pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
 	for rpc_url in full_node_rpc {
-		if (get_chain(rpc_url).await).is_ok() {
+		if (get_system_version(rpc_url).await).is_ok() {
 			return Ok(rpc_url.to_string());
 		}
 	}
