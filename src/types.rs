@@ -1,10 +1,7 @@
 //! Shared light client structs and enums.
 
-use std::path::Path;
-
-use anyhow::Context;
-use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
+use libp2p::Multiaddr;
 use serde::{Deserialize, Deserializer, Serialize};
 use sp_core::H256;
 
@@ -330,7 +327,7 @@ pub struct RuntimeConfig {
 	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
 	/// File system path where psk key is stored
-	pub libp2p_psk_path: Path,
+	pub libp2p_psk_path: String,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -450,7 +447,7 @@ impl Default for RuntimeConfig {
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
 			libp2p_seed: None,
-			libp2p_psk_path: Path::new("./avail/psk"),
+			libp2p_psk_path: "./avail/psk".to_owned(),
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,

@@ -20,6 +20,10 @@ use std::{sync::Arc, time::SystemTime};
 use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
+use libp2p::{
+	kad::{store::MemoryStore, Kademlia},
+	Swarm,
+};
 use rocksdb::DB;
 use tracing::{error, info, warn};
 

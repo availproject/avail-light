@@ -25,11 +25,11 @@ futures = { version = "0.3.15", default-features = false, features = ["std", "th
 chrono = "0.4.19"
 libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor"] }
 multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
-libp2p = { version = "0.48.0", features = ["metrics", "tcp-tokio"]}
+libp2p = { version = "0.48.0", features = ["default", "metrics", "tcp-tokio"]}
 anyhow = "1.0.41"
 tempdir = "0.3.7"
 ed25519-dalek = "1.0.1"
-async-std = { version = "1.9.0", features = ["attributes"] }
+async-std = { version = "1.12.0", features = ["attributes"] }
 confy = "0.4.0"
 num_cpus = "1.13.0"
 structopt = "0.3.25"

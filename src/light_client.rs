@@ -30,6 +30,10 @@ use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
+use libp2p::{
+	kad::{store::MemoryStore, Kademlia},
+	Swarm,
+};
 use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -120,7 +124,7 @@ impl LCMetrics {
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	swarm: &mut Swarm<Kademlia<MemoryStore>>,
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
@@ -363,7 +367,7 @@ pub async fn run(
 			begin = SystemTime::now();
 
 			insert_into_dht(
-				&swarm,
+				swarm,
 				block_number,
 				rpc_fetched,
 				cfg.dht_parallelization_limit,

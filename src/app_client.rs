@@ -29,6 +29,10 @@ use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
+use libp2p::{
+	kad::{store::MemoryStore, Kademlia},
+	Swarm,
+};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};

@@ -3,13 +3,11 @@
 use std::{
 	fs,
 	path::Path,
-	str::FromStr,
 	sync::Arc,
 	time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context, Result};
-use async_std::stream::StreamExt;
 use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
 
@@ -21,13 +19,17 @@ use libp2p::{
 		transport,
 		upgrade::{SelectUpgrade, Version},
 	},
-	identity,
+	identity::{
+		ed25519::{Keypair as ed25519Key, SecretKey},
+		Keypair,
+	},
 	kad::{
+		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaConfig,
+		Kademlia, KademliaConfig, Quorum, Record,
 	},
 	mplex::MplexConfig,
-	noise::{self, NoiseConfig, NoiseConfig, X25519Spec},
+	noise::{self, NoiseConfig, X25519Spec},
 	pnet::{PnetConfig, PreSharedKey},
 	swarm::SwarmBuilder,
 	tcp::{GenTcpConfig, TokioTcpTransport},
@@ -43,21 +45,21 @@ use crate::{
 };
 
 fn setup_transport(
-	key_pair: identity::Keypair,
+	key_pair: Keypair,
 	psk: Option<PreSharedKey>,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
 	let dh_keys = noise::Keypair::<X25519Spec>::new()
-		.into_authentic(&id_keys)
-		.expect("Signing libp2p-noise static DH keypair failed.");
+		.into_authentic(&key_pair)
+		.unwrap();
 	let noise_cfg = NoiseConfig::xx(dh_keys).into_authenticated();
 
 	let base_transport =
 		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(false));
 	let maybe_encrypted = match psk {
-		Some(psk) => {
-			base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket))
-		},
-		None => base_transport,
+		Some(psk) => EitherTransport::Left(
+			base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
+		),
+		None => EitherTransport::Right(base_transport),
 	};
 
 	maybe_encrypted
@@ -72,7 +74,8 @@ fn setup_transport(
 }
 
 /// Read the pre-shared key file from the given directory
-pub fn get_psk(path: &Path) -> std::io::Result<Option<String>> {
+pub fn get_psk(location: &String) -> std::io::Result<Option<String>> {
+	let path = Path::new(location);
 	let swarm_key_file = path.join("swarm.key");
 	match fs::read_to_string(swarm_key_file) {
 		Ok(text) => Ok(Some(text)),
@@ -89,8 +92,7 @@ pub fn init_swarm(
 ) -> anyhow::Result<Swarm<Kademlia<MemoryStore>>> {
 	// create peer id
 	let keypair = keypair(seed)?;
-	let local_public_key = identity::PublicKey::Ed25519(keypair.public());
-	let local_peer_id = PeerId::from(local_public_key);
+	let local_peer_id = PeerId::from(keypair.public());
 	info!("Local peer id: {:?}", local_peer_id);
 
 	// create transport
@@ -112,13 +114,15 @@ pub fn init_swarm(
 		// add configured boot nodes
 		if !bootstrap_nodes.is_empty() {
 			for peer in bootstrap_nodes {
-				behaviour.add_address(&mut peer.0, peer.1)
+				behaviour.add_address(&mut peer.0, peer.1);
 			}
 		}
 
 		SwarmBuilder::new(transport, behaviour, local_peer_id)
 			// connection background tasks are spawned onto the tokio runtime
-			.executor(Box::new(|fut| tokio::spawn(fut)))
+			.executor(Box::new(|fut| {
+				tokio::spawn(fut);
+			}))
 			.build()
 	};
 	// listen on all interfaces and whatever port the OS assigns
@@ -131,7 +135,7 @@ fn keypair(i: u64) -> Result<Keypair> {
 	let mut keypair = [0; 32];
 	keypair[..8].copy_from_slice(&i.to_be_bytes());
 	let secret = SecretKey::from_bytes(keypair).context("Cannot create keypair")?;
-	Ok(Keypair::from(secret))
+	Ok(Keypair::Ed25519(ed25519Key::from(secret)))
 }
 
 async fn fetch_cell_from_dht(
@@ -196,7 +200,7 @@ impl DHTCell {
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	swarm: &mut Swarm<Kademlia<MemoryStore>>,
 	block: u64,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
@@ -212,7 +216,6 @@ pub async fn insert_into_dht(
 			if let Err(error) = swarm
 				.behaviour_mut()
 				.put_record(cell.dht_record(block, ttl), Quorum::One)
-				.await
 			{
 				debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}

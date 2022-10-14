@@ -9,7 +9,8 @@ use std::{
 
 use ::prometheus::Registry;
 use anyhow::{Context, Result};
-use libp2p::{metrics::Metrics, Multiaddr, PeerId};
+use async_std::stream::StreamExt;
+use libp2p::{metrics::Metrics, pnet::PreSharedKey, swarm, Multiaddr, PeerId};
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
@@ -164,17 +165,12 @@ async fn do_main() -> Result<()> {
 		Some(0) => thread_rng().gen(),
 		Some(value) => value,
 	};
-	let swarm = data::init_swarm(
-		seed,
-		port,
-		bootstrap_nodes,
-		data::get_psk(&cfg.libp2p_psk_path),
-	)
-	.await
-	.context("Failed to init Libp2p swarm")?;
 
-	// attach metrics to prometheus registry
-	let metrics = Metrics::new(&mut registry);
+	let psk: Option<PreSharedKey> = data::get_psk(&cfg.libp2p_psk_path)?
+		.map(|text| PreSharedKey::from_str(&text))
+		.transpose()?;
+	let swarm = data::init_swarm(seed, port, bootstrap_nodes, psk)
+		.context("Failed to init Libp2p swarm")?;
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
@@ -190,7 +186,7 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			swarm.clone(),
+			&swarm,
 			db.clone(),
 			rpc_url.clone(),
 			app_id,
@@ -218,7 +214,7 @@ async fn do_main() -> Result<()> {
 			latest_block,
 			sync_block_depth,
 			db.clone(),
-			swarm.clone(),
+			swarm.by_ref(),
 			pp.clone(),
 		));
 	}
@@ -227,7 +223,7 @@ async fn do_main() -> Result<()> {
 	light_client::run(
 		(&cfg).into(),
 		db,
-		swarm,
+		swarm.by_ref(),
 		rpc_url,
 		block_tx,
 		pp,
