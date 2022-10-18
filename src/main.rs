@@ -10,7 +10,7 @@ use std::{
 use ::prometheus::Registry;
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
-use libp2p::{metrics::Metrics, pnet::PreSharedKey, swarm, Multiaddr, PeerId};
+use libp2p::{pnet::PreSharedKey, Multiaddr, PeerId};
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
@@ -186,7 +186,7 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			&swarm,
+			swarm.by_ref(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,

@@ -1,6 +1,7 @@
 //! Persistence to DHT and RocksDB.
 
 use std::{
+	borrow::BorrowMut,
 	fs,
 	path::Path,
 	sync::Arc,
@@ -26,7 +27,7 @@ use libp2p::{
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaConfig, Quorum, Record,
+		Kademlia, KademliaConfig, QueryId, Quorum, Record,
 	},
 	mplex::MplexConfig,
 	noise::{self, NoiseConfig, X25519Spec},
@@ -200,7 +201,7 @@ impl DHTCell {
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
-	swarm: &mut Swarm<Kademlia<MemoryStore>>,
+	swarm: &Swarm<Kademlia<MemoryStore>>,
 	block: u64,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
@@ -211,9 +212,10 @@ pub async fn insert_into_dht(
 	futures::StreamExt::for_each_concurrent(
 		stream::iter(cell_tuples),
 		dht_parallelization_limit,
-		|(cell, swarm)| async move {
+		|(cell, mut swarm)| async move {
 			let reference = cell.reference(block);
 			if let Err(error) = swarm
+				.borrow_mut()
 				.behaviour_mut()
 				.put_record(cell.dht_record(block, ttl), Quorum::One)
 			{

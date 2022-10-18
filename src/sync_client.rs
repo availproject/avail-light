@@ -91,7 +91,7 @@ async fn process_block(
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (dht_fetched, unfetched) = fetch_cells_from_dht(
-		&swarm,
+		swarm,
 		block_number,
 		&positions,
 		cfg.dht_parallelization_limit,
@@ -148,7 +148,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
-		&swarm,
+		swarm,
 		block_number,
 		rpc_fetched,
 		cfg.dht_parallelization_limit,
@@ -184,8 +184,8 @@ pub async fn run(
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block)
-		.map(move |b| (b, rpc_url.clone(), db.clone(), swarm.clone(), pp.clone()));
+	let blocks =
+		(start_block..=end_block).map(move |b| (b, rpc_url.clone(), db.clone(), swarm, pp.clone()));
 	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(

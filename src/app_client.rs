@@ -47,7 +47,7 @@ use crate::{
 
 async fn process_block(
 	cfg: &AppClientConfig,
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	swarm: &mut Swarm<Kademlia<MemoryStore>>,
 	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
@@ -216,7 +216,7 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: AppClientConfig,
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	swarm: &mut Swarm<Kademlia<MemoryStore>>,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
@@ -236,7 +236,7 @@ pub async fn run(
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
 					&cfg,
-					&swarm,
+					swarm,
 					db.clone(),
 					&rpc_url,
 					app_id,
