@@ -23,9 +23,7 @@ use anyhow::{Context, Result};
 use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 
-use kate_recovery::com::{
-	app_specific_rows, decode_app_extrinsics, DataCell, Position, CHUNK_SIZE,
-};
+use kate_recovery::com::{decode_app_extrinsics, DataCell, Position, CHUNK_SIZE};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
@@ -33,7 +31,7 @@ use tracing::{error, info};
 
 use crate::{
 	data::store_encoded_data_in_db,
-	rpc::get_kate_block,
+	rpc::get_kate_app_data,
 	types::{AppClientConfig, ClientMsg},
 };
 
@@ -78,9 +76,10 @@ async fn process_block(
 	let commitments = &block.commitment;
 	let cols_num = block.dimensions.cols;
 
-	info!(block_number, "Found data for app {app_id}",);
+	let rows = get_kate_app_data(rpc_url, block.number, app_id).await?;
+	let rows_count = rows.iter().filter(|&o| Option::is_some(o)).count();
+	info!(block_number, "Found {rows_count} rows for app {app_id}");
 
-	let rows = get_kate_block(rpc_url, block.number).await?;
 	let is_verified =
 		kate_recovery::commitments::verify_equality(&pp, commitments, cols_num, &rows)?;
 
@@ -131,7 +130,17 @@ pub async fn run(
 
 		info!(block_number, "Block available");
 
-		if app_specific_rows(&block.lookup, &block.dimensions, app_id).is_empty() {
+		if block.dimensions.cols == 0 {
+			continue;
+		}
+
+		if block
+			.lookup
+			.index
+			.iter()
+			.filter(|&(id, _)| id == &app_id)
+			.count() == 0
+		{
 			info!(block_number, "No cells for app {app_id}");
 			continue;
 		}

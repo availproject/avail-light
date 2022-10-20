@@ -181,10 +181,10 @@ fn generate_kate_query_payload(block_hash: H256, positions: &[Position]) -> Stri
 	)
 }
 
-pub async fn get_kate_block(url: &str, block: u64) -> Result<Vec<Option<Vec<u8>>>> {
+pub async fn get_kate_app_data(url: &str, block: u64, app_id: u32) -> Result<Vec<Option<Vec<u8>>>> {
 	let payload = format!(
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryBlock", "params": [{}]}}"#,
-		block
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryAppData", "params": [{}, {}]}}"#,
+		block, app_id
 	);
 
 	let request = hyper::Request::builder()
@@ -192,7 +192,7 @@ pub async fn get_kate_block(url: &str, block: u64) -> Result<Vec<Option<Vec<u8>>
 		.uri(url)
 		.header("Content-Type", "application/json")
 		.body(hyper::Body::from(payload))
-		.context("Failed to build kate_queryBlock request")?;
+		.context("Failed to build kate_queryAppData request")?;
 
 	let response = if is_secure(url) {
 		let client = hyper::Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
@@ -200,14 +200,14 @@ pub async fn get_kate_block(url: &str, block: u64) -> Result<Vec<Option<Vec<u8>>
 	} else {
 		hyper::Client::new().request(request).await
 	}
-	.context("Failed to send kate_queryProof request")?;
+	.context("Failed to send kate_queryAppData request")?;
 
 	let body = hyper::body::to_bytes(response.into_body())
 		.await
-		.context("Failed to get kate_queryBlock response")?;
+		.context("Failed to get kate_queryAppData response")?;
 
 	let response: QueryBlockResponse =
-		serde_json::from_slice(&body).context("Failed to parse kate_queryBlock response")?;
+		serde_json::from_slice(&body).context("Failed to parse kate_queryAppData response")?;
 
 	match response {
 		QueryBlockResponse::Block(rows) => Ok(rows.result),
