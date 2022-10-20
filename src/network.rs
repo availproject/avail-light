@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use thiserror::Error;
@@ -86,20 +86,24 @@ impl P2P {
 	}
 }
 
-struct NetworkService(Arc<Mutex<P2P>>);
+pub struct NetworkService(Arc<Mutex<P2P>>);
 
 impl NetworkService {
 	pub fn init(
 		seed: u64,
 		port: u16,
 		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
-		psk: Option<PreSharedKey>,
+		psk_path: &String,
 	) -> Result<Self> {
 		// create peer id
 		let keypair = keypair(seed)?;
 		let local_peer_id = PeerId::from(keypair.public());
 		info!("Local peer id: {:?}", local_peer_id);
 
+		// try to get psk
+		let psk: Option<PreSharedKey> = get_psk(psk_path)?
+			.map(|text| PreSharedKey::from_str(&text))
+			.transpose()?;
 		// create transport
 		let transport = setup_transport(keypair, psk);
 
@@ -158,7 +162,9 @@ impl NetworkService {
 	}
 }
 
-fn get_psk(path: &Path) -> std::io::Result<Option<String>> {
+/// Read the pre-shared key file from the given directory
+fn get_psk(location: &String) -> std::io::Result<Option<String>> {
+	let path = Path::new(location);
 	let swarm_key_file = path.join("swarm.key");
 	match fs::read_to_string(swarm_key_file) {
 		Ok(text) => Ok(Some(text)),
