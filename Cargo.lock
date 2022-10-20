@@ -375,6 +375,7 @@ dependencies = [
  "structopt",
  "tempdir",
  "test-case",
+ "thiserror",
  "threadpool",
  "tokio",
  "tokio-tungstenite 0.16.1",
