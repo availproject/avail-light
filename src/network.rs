@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, path::Path, str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use thiserror::Error;
@@ -86,7 +86,7 @@ impl P2P {
 	}
 }
 
-pub struct NetworkService(Arc<Mutex<P2P>>);
+pub struct NetworkService(Mutex<P2P>);
 
 impl NetworkService {
 	pub fn init(
@@ -108,8 +108,8 @@ impl NetworkService {
 		let transport = setup_transport(keypair, psk);
 
 		// create swarm that manages peers and events
-		let swarm = {
-			let kad_cfg = KademliaConfig::default();
+		let mut swarm = {
+			let mut kad_cfg = KademliaConfig::default();
 			kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
 			let store_cfg = MemoryStoreConfig {
 				max_records: 24000000, // ~2hrs
@@ -118,12 +118,12 @@ impl NetworkService {
 				max_provided_keys: 100000,
 			};
 			let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
-			let behaviour = Kademlia::with_config(local_peer_id, kad_store, kad_cfg);
+			let mut behaviour = Kademlia::with_config(local_peer_id, kad_store, kad_cfg);
 
 			// add configured boot nodes
 			if !bootstrap_nodes.is_empty() {
 				for peer in bootstrap_nodes {
-					behaviour.add_address(&mut peer.0, peer.1);
+					behaviour.add_address(&peer.0, peer.1);
 				}
 			}
 
@@ -137,14 +137,14 @@ impl NetworkService {
 		// listen on all interfaces and whatever port the OS assigns
 		swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
-		Ok(NetworkService(Arc::new(Mutex::new(P2P {
+		Ok(NetworkService(Mutex::new(P2P {
 			swarm,
 			kad_queries: HashMap::default(),
 			bootstrap_complete: false,
-		}))))
+		})))
 	}
 
-	pub async fn get_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
+	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
 		let rx = {
 			let mut p2p = self.0.lock().await;
 			p2p.kad_query_get_record(key, quorum)
@@ -152,7 +152,7 @@ impl NetworkService {
 		Ok(rx.await??)
 	}
 
-	pub async fn put_record(&self, record: Record, quorum: Quorum) -> Result<()> {
+	pub async fn put_kad_record(&self, record: Record, quorum: Quorum) -> Result<()> {
 		let rx = {
 			let mut p2p = self.0.lock().await;
 			p2p.kad_query_put_record(record, quorum)
