@@ -18,7 +18,7 @@ use libp2p::{
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaConfig, PeerRecord, QueryId, Quorum, Record,
+		Kademlia, KademliaConfig, KademliaEvent, PeerRecord, QueryId, Quorum, Record,
 	},
 	mplex::MplexConfig,
 	noise::{self, NoiseConfig, X25519Spec},
@@ -26,7 +26,7 @@ use libp2p::{
 	swarm::SwarmBuilder,
 	tcp::{GenTcpConfig, TokioTcpTransport},
 	yamux::YamuxConfig,
-	Multiaddr, PeerId, Swarm, Transport,
+	Multiaddr, NetworkBehaviour, PeerId, Swarm, Transport,
 };
 use tracing::log::info;
 
@@ -46,8 +46,25 @@ enum QueryChannel {
 	PutRecord(oneshot::Sender<Result<()>>),
 }
 
+#[derive(NetworkBehaviour)]
+#[behaviour(out_event = "ComposedEvent")]
+struct ComposedBehaviour {
+	kademlia: Kademlia<MemoryStore>,
+}
+
+#[derive(Debug)]
+enum ComposedEvent {
+	Kademlia(KademliaEvent),
+}
+
+impl From<KademliaEvent> for ComposedEvent {
+	fn from(event: KademliaEvent) -> Self {
+		ComposedEvent::Kademlia(event)
+	}
+}
+
 struct P2P {
-	swarm: Swarm<Kademlia<MemoryStore>>,
+	swarm: Swarm<ComposedBehaviour>,
 	kad_queries: HashMap<QueryId, QueryChannel>,
 	bootstrap_complete: bool,
 }
@@ -56,8 +73,7 @@ impl P2P {
 	fn kad_query_get_record(&mut self, key: Key, quorum: Quorum) -> GetRecordChannel {
 		let (tx, rx) = oneshot::channel();
 		if self.bootstrap_complete {
-			let kad = self.swarm.behaviour_mut();
-			let id = kad.get_record(key, quorum);
+			let id = self.swarm.behaviour_mut().kademlia.get_record(key, quorum);
 			self.kad_queries
 				.insert(id.into(), QueryChannel::GetRecord(tx));
 		} else {
@@ -69,8 +85,12 @@ impl P2P {
 	fn kad_query_put_record(&mut self, record: Record, quorum: Quorum) -> PutRecordChannel {
 		let (tx, rx) = oneshot::channel();
 		if self.bootstrap_complete {
-			let kad = self.swarm.behaviour_mut();
-			match kad.put_record(record, quorum) {
+			match self
+				.swarm
+				.behaviour_mut()
+				.kademlia
+				.put_record(record, quorum)
+			{
 				Ok(id) => {
 					self.kad_queries
 						.insert(id.into(), QueryChannel::PutRecord(tx));
@@ -118,12 +138,14 @@ impl NetworkService {
 				max_provided_keys: 100000,
 			};
 			let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
-			let mut behaviour = Kademlia::with_config(local_peer_id, kad_store, kad_cfg);
+			let mut behaviour = ComposedBehaviour {
+				kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
+			};
 
 			// add configured boot nodes
 			if !bootstrap_nodes.is_empty() {
 				for peer in bootstrap_nodes {
-					behaviour.add_address(&peer.0, peer.1);
+					behaviour.kademlia.add_address(&peer.0, peer.1);
 				}
 			}
 
