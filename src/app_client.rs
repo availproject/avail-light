@@ -29,10 +29,6 @@ use kate_recovery::com::{
 	app_specific_cells, app_specific_column_cells, decode_app_extrinsics,
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
-use libp2p::{
-	kad::{store::MemoryStore, Kademlia},
-	Swarm,
-};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
@@ -40,6 +36,7 @@ use tracing::{error, info};
 
 use crate::{
 	data::{fetch_cells_from_dht, insert_into_dht, store_encoded_data_in_db},
+	network::NetworkService,
 	proof::verify_proof,
 	rpc::get_kate_proof,
 	types::{AppClientConfig, ClientMsg},
@@ -47,7 +44,7 @@ use crate::{
 
 async fn process_block(
 	cfg: &AppClientConfig,
-	swarm: &mut Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
@@ -65,7 +62,7 @@ async fn process_block(
 	);
 
 	let (mut dht_cells, unfetched) = fetch_cells_from_dht(
-		swarm,
+		net_svc.clone(),
 		block.number,
 		data_positions,
 		cfg.dht_parallelization_limit,
@@ -100,7 +97,7 @@ async fn process_block(
 		let fetched = [dht_cells.as_slice(), rpc_cells.as_slice()].concat();
 		let column_positions = diff_positions(column_positions, &fetched);
 		let (mut column_dht_cells, unfetched) = fetch_cells_from_dht(
-			swarm,
+			net_svc.clone(),
 			block_number,
 			&column_positions,
 			cfg.dht_parallelization_limit,
@@ -150,7 +147,7 @@ async fn process_block(
 	}
 
 	insert_into_dht(
-		swarm,
+		net_svc,
 		block.number,
 		rpc_cells,
 		cfg.dht_parallelization_limit,
@@ -216,7 +213,7 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: AppClientConfig,
-	swarm: &mut Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
@@ -236,7 +233,7 @@ pub async fn run(
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
 					&cfg,
-					swarm,
+					net_svc.clone(),
 					db.clone(),
 					&rpc_url,
 					app_id,

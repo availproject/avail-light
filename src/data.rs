@@ -1,9 +1,6 @@
 //! Persistence to DHT and RocksDB.
 
 use std::{
-	borrow::BorrowMut,
-	fs,
-	path::Path,
 	sync::Arc,
 	time::{Duration, Instant},
 };
@@ -13,134 +10,18 @@ use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
 
 use kate_recovery::com::{Cell, Position};
-use libp2p::{
-	core::{
-		either::EitherTransport,
-		muxing::StreamMuxerBox,
-		transport,
-		upgrade::{SelectUpgrade, Version},
-	},
-	identity::{
-		ed25519::{Keypair as ed25519Key, SecretKey},
-		Keypair,
-	},
-	kad::{
-		record::Key,
-		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaConfig, QueryId, Quorum, Record,
-	},
-	mplex::MplexConfig,
-	noise::{self, NoiseConfig, X25519Spec},
-	pnet::{PnetConfig, PreSharedKey},
-	swarm::SwarmBuilder,
-	tcp::{GenTcpConfig, TokioTcpTransport},
-	yamux::YamuxConfig,
-	Multiaddr, PeerId, Swarm, Transport,
-};
+use libp2p::kad::{record::Key, Quorum, Record};
 use rocksdb::DB;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	network::NetworkService,
 	types::Header,
 };
 
-fn setup_transport(
-	key_pair: Keypair,
-	psk: Option<PreSharedKey>,
-) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
-	let dh_keys = noise::Keypair::<X25519Spec>::new()
-		.into_authentic(&key_pair)
-		.unwrap();
-	let noise_cfg = NoiseConfig::xx(dh_keys).into_authenticated();
-
-	let base_transport =
-		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(false));
-	let maybe_encrypted = match psk {
-		Some(psk) => EitherTransport::Left(
-			base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
-		),
-		None => EitherTransport::Right(base_transport),
-	};
-
-	maybe_encrypted
-		.upgrade(Version::V1)
-		.authenticate(noise_cfg)
-		.multiplex(SelectUpgrade::new(
-			YamuxConfig::default(),
-			MplexConfig::new(),
-		))
-		.timeout(Duration::from_secs(20))
-		.boxed()
-}
-
-/// Read the pre-shared key file from the given directory
-pub fn get_psk(location: &String) -> std::io::Result<Option<String>> {
-	let path = Path::new(location);
-	let swarm_key_file = path.join("swarm.key");
-	match fs::read_to_string(swarm_key_file) {
-		Ok(text) => Ok(Some(text)),
-		Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-		Err(e) => Err(e),
-	}
-}
-
-pub fn init_swarm(
-	seed: u64,
-	port: u16,
-	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
-	psk: Option<PreSharedKey>,
-) -> anyhow::Result<Swarm<Kademlia<MemoryStore>>> {
-	// create peer id
-	let keypair = keypair(seed)?;
-	let local_peer_id = PeerId::from(keypair.public());
-	info!("Local peer id: {:?}", local_peer_id);
-
-	// create transport
-	let transport = setup_transport(keypair, psk);
-
-	// create swarm that manages peers and events
-	let swarm = {
-		let kad_cfg = KademliaConfig::default();
-		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
-		let store_cfg = MemoryStoreConfig {
-			max_records: 24000000, // ~2hrs
-			max_value_bytes: 100,
-			max_providers_per_key: 1,
-			max_provided_keys: 100000,
-		};
-		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
-		let behaviour = Kademlia::with_config(local_peer_id, kad_store, kad_cfg);
-
-		// add configured boot nodes
-		if !bootstrap_nodes.is_empty() {
-			for peer in bootstrap_nodes {
-				behaviour.add_address(&mut peer.0, peer.1);
-			}
-		}
-
-		SwarmBuilder::new(transport, behaviour, local_peer_id)
-			// connection background tasks are spawned onto the tokio runtime
-			.executor(Box::new(|fut| {
-				tokio::spawn(fut);
-			}))
-			.build()
-	};
-	// listen on all interfaces and whatever port the OS assigns
-	swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
-
-	Ok(swarm)
-}
-
-fn keypair(i: u64) -> Result<Keypair> {
-	let mut keypair = [0; 32];
-	keypair[..8].copy_from_slice(&i.to_be_bytes());
-	let secret = SecretKey::from_bytes(keypair).context("Cannot create keypair")?;
-	Ok(Keypair::Ed25519(ed25519Key::from(secret)))
-}
-
 async fn fetch_cell_from_dht(
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	block_number: u64,
 	position: &Position,
 ) -> Result<Cell> {
@@ -149,9 +30,8 @@ async fn fetch_cell_from_dht(
 
 	trace!("Getting DHT record for reference {}", reference);
 	// For now, we take only the first record from the list
-	swarm
-		.behaviour_mut()
-		.get_record(record_key, Quorum::One)
+	net_svc
+		.get_kad_record(record_key, Quorum::One)
 		.await
 		.and_then(|peer_records| {
 			peer_records
@@ -201,23 +81,23 @@ impl DHTCell {
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	block: u64,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 ) {
 	let cells: Vec<_> = cells.into_iter().map(DHTCell).collect::<Vec<_>>();
-	let cell_tuples = cells.iter().map(move |b| (b, swarm.clone()));
+	let cell_tuples = cells.iter().map(move |b| (b, net_svc.clone()));
+
 	futures::StreamExt::for_each_concurrent(
 		stream::iter(cell_tuples),
 		dht_parallelization_limit,
-		|(cell, mut swarm)| async move {
+		|(cell, net_svc)| async move {
 			let reference = cell.reference(block);
-			if let Err(error) = swarm
-				.borrow_mut()
-				.behaviour_mut()
-				.put_record(cell.dht_record(block, ttl), Quorum::One)
+			if let Err(error) = net_svc
+				.put_kad_record(cell.dht_record(block, ttl), Quorum::One)
+				.await
 			{
 				debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}
@@ -236,7 +116,7 @@ pub async fn insert_into_dht(
 /// * `positions` - Cell positions to fetch
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	block_number: u64,
 	positions: &Vec<Position>,
 	dht_parallelization_limit: usize,
@@ -246,7 +126,7 @@ pub async fn fetch_cells_from_dht(
 		.map(|positions| {
 			positions
 				.iter()
-				.map(|position| fetch_cell_from_dht(swarm, block_number, position))
+				.map(|position| fetch_cell_from_dht(net_svc.clone(), block_number, position))
 				.collect::<Vec<_>>()
 		})
 		.collect::<Vec<_>>();

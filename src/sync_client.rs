@@ -20,10 +20,7 @@ use std::{sync::Arc, time::SystemTime};
 use anyhow::{anyhow, Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
-use libp2p::{
-	kad::{store::MemoryStore, Kademlia},
-	Swarm,
-};
+
 use rocksdb::DB;
 use tracing::{error, info, warn};
 
@@ -32,6 +29,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, is_block_header_in_db, is_confidence_in_db,
 		store_block_header_in_db, store_confidence_in_db,
 	},
+	network::NetworkService,
 	rpc,
 	types::SyncClientConfig,
 };
@@ -41,7 +39,7 @@ async fn process_block(
 	rpc_url: String,
 	db: Arc<DB>,
 	block_number: u64,
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	pp: PublicParameters,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
@@ -91,7 +89,7 @@ async fn process_block(
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (dht_fetched, unfetched) = fetch_cells_from_dht(
-		swarm,
+		net_svc.clone(),
 		block_number,
 		&positions,
 		cfg.dht_parallelization_limit,
@@ -148,7 +146,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
-		swarm,
+		net_svc,
 		block_number,
 		rpc_fetched,
 		cfg.dht_parallelization_limit,
@@ -176,7 +174,7 @@ pub async fn run(
 	end_block: u64,
 	sync_blocks_depth: u64,
 	db: Arc<DB>,
-	swarm: &Swarm<Kademlia<MemoryStore>>,
+	net_svc: Arc<NetworkService>,
 	pp: PublicParameters,
 ) {
 	if sync_blocks_depth >= 250 {
@@ -184,17 +182,18 @@ pub async fn run(
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks =
-		(start_block..=end_block).map(move |b| (b, rpc_url.clone(), db.clone(), swarm, pp.clone()));
+	let blocks = (start_block..=end_block)
+		.map(move |b| (b, rpc_url.clone(), db.clone(), net_svc.clone(), pp.clone()));
 	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_url, store, swarm, pp)| async move {
+			|(block_number, rpc_url, store, net_svc, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(cfg_clone, rpc_url, store, block_number, swarm, pp.clone()).await
+					process_block(cfg_clone, rpc_url, store, block_number, net_svc, pp.clone())
+						.await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}
