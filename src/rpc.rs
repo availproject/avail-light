@@ -6,13 +6,16 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::DaHeader;
 use codec::Decode;
 use hyper_tls::HttpsConnector;
-use kate_recovery::com::{Cell, Position};
+use kate_recovery::{
+	data::Cell,
+	matrix::{Dimensions, Position},
+};
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use sp_core::H256;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing::debug;
+use tracing::{debug, instrument};
 
 use crate::types::*;
 
@@ -126,46 +129,23 @@ pub async fn get_header_by_block_number(url: &str, block: u32) -> Result<(DaHead
 }
 
 /// Generates random cell positions for sampling
-pub fn generate_random_cells(max_rows: u16, max_cols: u16, cell_count: u32) -> Vec<Position> {
-	let max_cells = (max_rows as u32) * (max_cols as u32);
-	let count: u16 = if max_cells < cell_count as u32 {
-		debug!(
-			"Max cells count {} is lesser than cell_count {}",
-			cell_count, max_cells
-		);
-		max_rows * max_cols
+pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Position> {
+	let max_cells = dimensions.extended_size();
+	let count = if max_cells < cell_count {
+		debug!("Max cells count {max_cells} is lesser than cell_count {cell_count}");
+		max_cells
 	} else {
-		cell_count as u16
+		cell_count
 	};
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
-	while (indices.len() as u16) < count {
-		let row = rng.gen::<u16>() % max_rows;
-		let col = rng.gen::<u16>() % max_cols;
+	while (indices.len() as u16) < count as u16 {
+		let row = rng.gen::<u32>() % dimensions.extended_rows();
+		let col = rng.gen::<u16>() % dimensions.cols;
 		indices.insert(Position { row, col });
 	}
 
 	indices.into_iter().collect::<Vec<_>>()
-}
-
-/// Generates cell positions for given block partition
-pub fn generate_partition_cells(
-	partition: &Partition,
-	max_rows: u16,
-	max_cols: u16,
-) -> Vec<Position> {
-	let max_cells = (max_rows as u32) * (max_cols as u32);
-	let size = (max_cells as f64 / partition.fraction as f64).ceil() as u32;
-	let first_cell = size * (partition.number - 1) as u32;
-	let last_cell = size * (partition.number as u32);
-
-	(first_cell..last_cell)
-		.map(|cell| {
-			let col: u16 = cell as u16 / max_rows;
-			let row = cell as u16 % max_rows;
-			Position { row, col }
-		})
-		.collect::<Vec<_>>()
 }
 
 fn generate_kate_query_payload(block_hash: H256, positions: &[Position]) -> String {
@@ -181,10 +161,15 @@ fn generate_kate_query_payload(block_hash: H256, positions: &[Position]) -> Stri
 	)
 }
 
-pub async fn get_kate_app_data(url: &str, block: u64, app_id: u32) -> Result<Vec<Option<Vec<u8>>>> {
+#[instrument(skip_all, level = "trace")]
+pub async fn get_kate_app_data(
+	url: &str,
+	block_hash: H256,
+	app_id: u32,
+) -> Result<Vec<Option<Vec<u8>>>> {
 	let payload = format!(
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryAppData", "params": [{}, {}]}}"#,
-		block, app_id
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryAppData", "params": [{}, "{:?}"]}}"#,
+		app_id, block_hash
 	);
 
 	let request = hyper::Request::builder()
@@ -206,12 +191,12 @@ pub async fn get_kate_app_data(url: &str, block: u64, app_id: u32) -> Result<Vec
 		.await
 		.context("Failed to get kate_queryAppData response")?;
 
-	let response: QueryBlockResponse =
+	let response: QueryAppDataResponse =
 		serde_json::from_slice(&body).context("Failed to parse kate_queryAppData response")?;
 
 	match response {
-		QueryBlockResponse::Block(rows) => Ok(rows.result),
-		QueryBlockResponse::Error(error) => Err(anyhow!(error.message())),
+		QueryAppDataResponse::Block(rows) => Ok(rows.result),
+		QueryAppDataResponse::Error(error) => Err(anyhow!(error.message())),
 	}
 }
 

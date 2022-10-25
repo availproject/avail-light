@@ -17,7 +17,7 @@ use ipfs_embed::{
 	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
 	Quorum, Record, StorageConfig,
 };
-use kate_recovery::com::{Cell, Position};
+use kate_recovery::{data::Cell, matrix::Position};
 use rocksdb::DB;
 use tracing::{debug, info, trace};
 

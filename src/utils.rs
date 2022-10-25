@@ -1,14 +1,18 @@
-use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
+use kate_recovery::{
+	data::Cell,
+	matrix::{Dimensions, Position},
+};
 
 // TODO: Remove unused functions if not needed after next iteration
 
 #[allow(dead_code)]
-fn can_reconstruct(dimensions: &ExtendedMatrixDimensions, columns: &[u16], cells: &[Cell]) -> bool {
+fn can_reconstruct(dimensions: &Dimensions, columns: &[u16], cells: &[Cell]) -> bool {
 	columns.iter().all(|&col| {
 		cells
 			.iter()
 			.filter(move |cell| cell.position.col == col)
-			.count() >= dimensions.rows / 2
+			.count() as u16
+			>= dimensions.rows
 	})
 }
 
@@ -24,13 +28,16 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 #[cfg(test)]
 mod tests {
 	use super::{can_reconstruct, diff_positions};
-	use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
+	use kate_recovery::{
+		data::Cell,
+		matrix::{Dimensions, Position},
+	};
 
-	fn position(row: u16, col: u16) -> Position {
+	fn position(row: u32, col: u16) -> Position {
 		Position { row, col }
 	}
 
-	fn empty_cell(row: u16, col: u16) -> Cell {
+	fn empty_cell(row: u32, col: u16) -> Cell {
 		Cell {
 			position: Position { row, col },
 			content: [0u8; 80],
@@ -39,7 +46,7 @@ mod tests {
 
 	#[test]
 	fn test_can_reconstruct() {
-		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
+		let dimensions = Dimensions { rows: 1, cols: 4 };
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
 		assert!(can_reconstruct(&dimensions, &columns, &cells));
@@ -53,7 +60,7 @@ mod tests {
 
 	#[test]
 	fn test_cannot_reconstruct() {
-		let dimensions = ExtendedMatrixDimensions { rows: 2, cols: 4 };
+		let dimensions = Dimensions { rows: 1, cols: 4 };
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0)];
 		assert!(!can_reconstruct(&dimensions, &columns, &cells));

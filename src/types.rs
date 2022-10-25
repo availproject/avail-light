@@ -4,7 +4,8 @@ use anyhow::Context;
 use avail_subxt::{DaHeader, DaHeaderExtensionVersion, KateCommitment};
 use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
-use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
+use kate_recovery::matrix::Dimensions;
+use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use serde::{Deserialize, Deserializer, Serialize};
 use sp_core::{blake2_256, H256};
 
@@ -217,7 +218,7 @@ impl QueryError {
 	pub fn message(&self) -> String {
 		let code = &self.error.code;
 		let message = &self.error.message;
-		format!("Query proof failed with code {code}: {message}")
+		format!("Query failed with code {code}: {message}")
 	}
 }
 
@@ -248,7 +249,7 @@ pub enum QueryProofResponse {
 
 /// Query block result
 #[derive(Deserialize)]
-pub struct QueryBlockResult {
+pub struct QueryAppDataResult {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
 	pub result: Vec<Option<Vec<u8>>>,
@@ -257,8 +258,8 @@ pub struct QueryBlockResult {
 /// Response of RPC query block
 #[derive(Deserialize)]
 #[serde(untagged)]
-pub enum QueryBlockResponse {
-	Block(QueryBlockResult),
+pub enum QueryAppDataResponse {
+	Block(QueryAppDataResult),
 	Error(QueryError),
 }
 
@@ -336,7 +337,7 @@ where
 pub struct ClientMsg {
 	pub header_hash: H256,
 	pub block_num: u32,
-	pub dimensions: ExtendedMatrixDimensions,
+	pub dimensions: Dimensions,
 	pub lookup: AppDataIndex,
 	pub commitment: Vec<u8>,
 }
@@ -350,10 +351,7 @@ impl From<DaHeader> for ClientMsg {
 		ClientMsg {
 			header_hash: hash,
 			block_num: header.number,
-			dimensions: ExtendedMatrixDimensions {
-				rows: (rows * 2) as usize,
-				cols: cols as usize,
-			},
+			dimensions: Dimensions { rows, cols },
 			lookup: AppDataIndex {
 				size: xt.app_lookup.size,
 				index: xt
@@ -388,17 +386,9 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
-/// Block partition assigned to light client
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Partition {
-	pub number: u8,
-	pub fraction: u8,
-}
-
 mod block_matrix_partition_format {
+	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
-
-	use super::Partition;
 
 	pub fn serialize<S>(partition: &Option<Partition>, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -654,7 +644,7 @@ impl Default for RuntimeConfig {
 /// resolve query
 #[derive(Clone)]
 pub struct CellContentQueryPayload {
-	pub block: u64,
+	pub block: u32,
 	pub row: u16,
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,

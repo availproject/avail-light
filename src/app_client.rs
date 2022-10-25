@@ -23,11 +23,13 @@ use anyhow::{Context, Result};
 use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 
-use kate_recovery::com::{decode_app_extrinsics, DataCell, Position, CHUNK_SIZE};
+use kate_recovery::{
+	com::decode_app_extrinsics, config::CHUNK_SIZE, data::DataCell, matrix::Position,
+};
 use rocksdb::DB;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
@@ -65,6 +67,7 @@ fn data_cells_from_rows(rows: Vec<Option<Vec<u8>>>) -> Result<Vec<DataCell>> {
 		.collect::<Vec<_>>())
 }
 
+#[instrument(skip_all, fields(block = block.block_num), level = "trace")]
 async fn process_block(
 	db: Arc<DB>,
 	rpc_url: &str,
@@ -72,11 +75,11 @@ async fn process_block(
 	block: &ClientMsg,
 	pp: PublicParameters,
 ) -> Result<()> {
-	let block_number = block.number;
+	let block_number = block.block_num;
 	let commitments = &block.commitment;
-	let cols_num = block.dimensions.cols;
+	let cols_num = block.dimensions.cols as usize;
 
-	let rows = get_kate_app_data(rpc_url, block.number, app_id).await?;
+	let rows = get_kate_app_data(rpc_url, block.header_hash, app_id).await?;
 	let rows_count = rows.iter().filter(|&o| Option::is_some(o)).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
 

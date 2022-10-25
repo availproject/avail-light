@@ -85,7 +85,10 @@ fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json
 }
 
 fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
-	FmtSubscriber::builder().with_max_level(log_level).finish()
+	FmtSubscriber::builder()
+		.with_max_level(log_level)
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
 }
 
 fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
