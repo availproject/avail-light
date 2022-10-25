@@ -1,6 +1,7 @@
-use std::{collections::HashMap, fs, path::Path, str::FromStr, time::Duration};
+use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use thiserror::Error;
 use tokio::sync::{oneshot, Mutex};
 
@@ -18,12 +19,13 @@ use libp2p::{
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaConfig, KademliaEvent, PeerRecord, QueryId, Quorum, Record,
+		GetRecordOk, Kademlia, KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk, QueryId,
+		QueryResult, Quorum, Record,
 	},
 	mplex::MplexConfig,
 	noise::{self, NoiseConfig, X25519Spec},
 	pnet::{PnetConfig, PreSharedKey},
-	swarm::SwarmBuilder,
+	swarm::{SwarmBuilder, SwarmEvent},
 	tcp::{GenTcpConfig, TokioTcpTransport},
 	yamux::YamuxConfig,
 	Multiaddr, NetworkBehaviour, PeerId, Swarm, Transport,
@@ -37,6 +39,14 @@ pub struct NotBootstrapped;
 #[derive(Debug, Error)]
 #[error("{0:?}")]
 pub struct KadStoreError(pub libp2p::kad::record::store::Error);
+
+#[derive(Debug, Error)]
+#[error("{0:?}")]
+pub struct KadPutRecordError(pub libp2p::kad::PutRecordError);
+
+#[derive(Debug, Error)]
+#[error("{0:?}")]
+pub struct KadGetRecordError(pub libp2p::kad::GetRecordError);
 
 type GetRecordChannel = oneshot::Receiver<Result<Vec<PeerRecord>>>;
 type PutRecordChannel = oneshot::Receiver<Result<()>>;
@@ -104,9 +114,57 @@ impl P2P {
 		}
 		rx
 	}
+
+	fn handle_event(&mut self, event: SwarmEvent<ComposedEvent, std::io::Error>) {
+		match event {
+			SwarmEvent::NewListenAddr { address, .. } => {
+				println!("Listening on {:?}", address);
+			},
+			SwarmEvent::Behaviour(ComposedEvent::Kademlia(event)) => match event {
+				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
+					QueryResult::GetRecord(result) => match result {
+						Ok(GetRecordOk { records, .. }) => {
+							if let Some(QueryChannel::GetRecord(ch)) =
+								self.kad_queries.remove(&id.into())
+							{
+								ch.send(Ok(records)).ok();
+							}
+						},
+						Err(err) => {
+							if let Some(QueryChannel::GetRecord(ch)) =
+								self.kad_queries.remove(&id.into())
+							{
+								ch.send(Err(KadGetRecordError(err).into())).ok();
+							}
+						},
+					},
+					QueryResult::PutRecord(result) => match result {
+						Ok(PutRecordOk { .. }) => {
+							if let Some(QueryChannel::PutRecord(ch)) =
+								self.kad_queries.remove(&id.into())
+							{
+								ch.send(Ok(())).ok();
+							}
+						},
+						Err(err) => {
+							if let Some(QueryChannel::PutRecord(ch)) =
+								self.kad_queries.remove(&id.into())
+							{
+								ch.send(Err(KadPutRecordError(err).into())).ok();
+							}
+						},
+					},
+					_ => {},
+				},
+				_ => {},
+			},
+			_ => {},
+		}
+	}
 }
 
-pub struct NetworkService(Mutex<P2P>);
+#[derive(Clone)]
+pub struct NetworkService(Arc<Mutex<P2P>>);
 
 impl NetworkService {
 	pub fn init(
@@ -159,11 +217,11 @@ impl NetworkService {
 		// listen on all interfaces and whatever port the OS assigns
 		swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
-		Ok(NetworkService(Mutex::new(P2P {
+		Ok(NetworkService(Arc::new(Mutex::new(P2P {
 			swarm,
 			kad_queries: HashMap::default(),
 			bootstrap_complete: false,
-		})))
+		}))))
 	}
 
 	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
@@ -181,6 +239,18 @@ impl NetworkService {
 		};
 		rx.await??;
 		Ok(())
+	}
+
+	pub async fn event_loop(self) {
+		loop {
+			let mut p2p = self.0.lock().await;
+			let event = p2p
+				.swarm
+				.next()
+				.await
+				.expect("Swarm stream needs to be infinite.");
+			p2p.handle_event(event)
+		}
 	}
 }
 

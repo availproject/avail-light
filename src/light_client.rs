@@ -122,7 +122,7 @@ impl LCMetrics {
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
-	net_svc: Arc<NetworkService>,
+	net_svc: NetworkService,
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
@@ -220,7 +220,7 @@ pub async fn run(
 			);
 
 			let (cells_fetched, unfetched) = fetch_cells_from_dht(
-				net_svc.clone(),
+				&net_svc,
 				block_number,
 				&positions,
 				cfg.dht_parallelization_limit,
@@ -365,7 +365,7 @@ pub async fn run(
 			begin = SystemTime::now();
 
 			insert_into_dht(
-				net_svc.clone(),
+				&net_svc,
 				block_number,
 				rpc_fetched,
 				cfg.dht_parallelization_limit,

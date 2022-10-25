@@ -44,7 +44,7 @@ use crate::{
 
 async fn process_block(
 	cfg: &AppClientConfig,
-	net_svc: Arc<NetworkService>,
+	net_svc: &NetworkService,
 	db: Arc<DB>,
 	rpc_url: &str,
 	app_id: u32,
@@ -62,7 +62,7 @@ async fn process_block(
 	);
 
 	let (mut dht_cells, unfetched) = fetch_cells_from_dht(
-		net_svc.clone(),
+		net_svc,
 		block.number,
 		data_positions,
 		cfg.dht_parallelization_limit,
@@ -97,7 +97,7 @@ async fn process_block(
 		let fetched = [dht_cells.as_slice(), rpc_cells.as_slice()].concat();
 		let column_positions = diff_positions(column_positions, &fetched);
 		let (mut column_dht_cells, unfetched) = fetch_cells_from_dht(
-			net_svc.clone(),
+			net_svc,
 			block_number,
 			&column_positions,
 			cfg.dht_parallelization_limit,
@@ -213,7 +213,7 @@ fn diff_positions(positions: &[Position], cells: &[Cell]) -> Vec<Position> {
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: AppClientConfig,
-	net_svc: Arc<NetworkService>,
+	net_svc: NetworkService,
 	db: Arc<DB>,
 	rpc_url: String,
 	app_id: u32,
@@ -233,7 +233,7 @@ pub async fn run(
 			(Some(data_positions), Some(column_positions)) => {
 				if let Err(error) = process_block(
 					&cfg,
-					net_svc.clone(),
+					&net_svc,
 					db.clone(),
 					&rpc_url,
 					app_id,

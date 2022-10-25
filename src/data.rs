@@ -21,7 +21,7 @@ use crate::{
 };
 
 async fn fetch_cell_from_dht(
-	net_svc: Arc<NetworkService>,
+	net_svc: &NetworkService,
 	block_number: u64,
 	position: &Position,
 ) -> Result<Cell> {
@@ -81,7 +81,7 @@ impl DHTCell {
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
-	net_svc: Arc<NetworkService>,
+	net_svc: &NetworkService,
 	block: u64,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
@@ -116,7 +116,7 @@ pub async fn insert_into_dht(
 /// * `positions` - Cell positions to fetch
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
-	net_svc: Arc<NetworkService>,
+	net_svc: &NetworkService,
 	block_number: u64,
 	positions: &Vec<Position>,
 	dht_parallelization_limit: usize,
@@ -126,7 +126,7 @@ pub async fn fetch_cells_from_dht(
 		.map(|positions| {
 			positions
 				.iter()
-				.map(|position| fetch_cell_from_dht(net_svc.clone(), block_number, position))
+				.map(|position| fetch_cell_from_dht(net_svc, block_number, position))
 				.collect::<Vec<_>>()
 		})
 		.collect::<Vec<_>>();

@@ -39,7 +39,7 @@ async fn process_block(
 	rpc_url: String,
 	db: Arc<DB>,
 	block_number: u64,
-	net_svc: Arc<NetworkService>,
+	net_svc: NetworkService,
 	pp: PublicParameters,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
@@ -89,7 +89,7 @@ async fn process_block(
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
 
 	let (dht_fetched, unfetched) = fetch_cells_from_dht(
-		net_svc.clone(),
+		&net_svc,
 		block_number,
 		&positions,
 		cfg.dht_parallelization_limit,
@@ -146,7 +146,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
-		net_svc,
+		&net_svc,
 		block_number,
 		rpc_fetched,
 		cfg.dht_parallelization_limit,
@@ -174,7 +174,7 @@ pub async fn run(
 	end_block: u64,
 	sync_blocks_depth: u64,
 	db: Arc<DB>,
-	net_svc: Arc<NetworkService>,
+	net_svc: NetworkService,
 	pp: PublicParameters,
 ) {
 	if sync_blocks_depth >= 250 {
