@@ -214,14 +214,31 @@ impl NetworkService {
 				}))
 				.build()
 		};
+
 		// listen on all interfaces and whatever port the OS assigns
 		swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
-		Ok(NetworkService(Arc::new(Mutex::new(P2P {
+		let p2p = Arc::new(Mutex::new(P2P {
 			swarm,
 			kad_queries: HashMap::default(),
 			bootstrap_complete: false,
-		}))))
+		}));
+		let p2p_clone = p2p.clone();
+
+		// Start the background Swarm event loop
+		tokio::task::spawn(async move {
+			loop {
+				let mut p2p = p2p.lock().await;
+				let event = p2p
+					.swarm
+					.next()
+					.await
+					.expect("Swarm stream needs to be infinite.");
+				p2p.handle_event(event)
+			}
+		});
+
+		Ok(NetworkService(p2p_clone))
 	}
 
 	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
@@ -239,18 +256,6 @@ impl NetworkService {
 		};
 		rx.await??;
 		Ok(())
-	}
-
-	pub async fn event_loop(self) {
-		loop {
-			let mut p2p = self.0.lock().await;
-			let event = p2p
-				.swarm
-				.next()
-				.await
-				.expect("Swarm stream needs to be infinite.");
-			p2p.handle_event(event)
-		}
 	}
 }
 

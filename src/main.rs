@@ -170,9 +170,6 @@ async fn do_main() -> Result<()> {
 	let net_svc = NetworkService::init(seed, port, bootstrap_nodes, &cfg.libp2p_psk_path)
 		.context("Failed to init Network Service")?;
 
-	// Start the background Swarm event loop
-	tokio::task::spawn(net_svc.clone().event_loop());
-
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
