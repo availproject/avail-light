@@ -153,7 +153,7 @@ async fn do_main() -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	let (mut network_client, network_event_loop) =
+	let (mut network_client, network_events, network_event_loop) =
 		network::init(cfg.libp2p_seed, bootstrap_nodes, &cfg.libp2p_psk_path)
 			.context("Failed to init Network Service")?;
 	// Spawn the network task for it to run in the background

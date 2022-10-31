@@ -378,6 +378,7 @@ dependencies = [
  "thiserror",
  "threadpool",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite 0.16.1",
  "tracing",
  "tracing-subscriber 0.3.16",

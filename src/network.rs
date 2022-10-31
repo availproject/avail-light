@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use tokio::sync::{mpsc, oneshot};
 
 use libp2p::{
@@ -16,6 +16,7 @@ use libp2p::{
 		muxing::StreamMuxerBox,
 		transport,
 		upgrade::{SelectUpgrade, Version},
+		ConnectedPoint,
 	},
 	identity::{self, ed25519, Keypair},
 	kad::{
@@ -33,6 +34,7 @@ use libp2p::{
 	yamux::YamuxConfig,
 	Multiaddr, NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm, Transport,
 };
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::log::info;
 
 #[derive(Debug)]
@@ -142,35 +144,49 @@ enum Command {
 }
 
 #[derive(LibP2PBehaviour)]
-#[behaviour(out_event = "NetworkEvent")]
+#[behaviour(out_event = "BehaviourEvent")]
 struct NetworkBehaviour {
 	kademlia: Kademlia<MemoryStore>,
 }
 
 #[derive(Debug)]
-enum NetworkEvent {
+enum BehaviourEvent {
 	Kademlia(KademliaEvent),
 }
 
-impl From<KademliaEvent> for NetworkEvent {
+impl From<KademliaEvent> for BehaviourEvent {
 	fn from(event: KademliaEvent) -> Self {
-		NetworkEvent::Kademlia(event)
+		BehaviourEvent::Kademlia(event)
 	}
 }
 
 pub struct EventLoop {
 	swarm: Swarm<NetworkBehaviour>,
 	command_receiver: mpsc::Receiver<Command>,
+	event_sender: mpsc::Sender<Event>,
 	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 }
 
+#[derive(Debug)]
+pub enum Event {
+	ConnectionEstablished {
+		peer_id: PeerId,
+		endpoint: ConnectedPoint,
+	},
+}
+
 impl EventLoop {
-	fn new(swarm: Swarm<NetworkBehaviour>, command_receiver: mpsc::Receiver<Command>) -> Self {
+	fn new(
+		swarm: Swarm<NetworkBehaviour>,
+		command_receiver: mpsc::Receiver<Command>,
+		event_sender: mpsc::Sender<Event>,
+	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
+			event_sender,
 			pending_dials: Default::default(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
@@ -189,9 +205,9 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<NetworkEvent, std::io::Error>) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, std::io::Error>) {
 		match event {
-			SwarmEvent::Behaviour(NetworkEvent::Kademlia(event)) => match event {
+			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => match event {
 				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
 					QueryResult::GetRecord(result) => match result {
 						Ok(GetRecordOk { records, .. }) => {
@@ -244,6 +260,12 @@ impl EventLoop {
 						let _ = sender.send(Ok(()));
 					}
 				}
+				// this event is of interest,
+				// pass event to output event stream
+				self.event_sender
+					.send(Event::ConnectionEstablished { peer_id, endpoint })
+					.await
+					.expect("Event receiver not to be dropped.");
 			},
 			SwarmEvent::OutgoingConnectionError { peer_id, error } => {
 				if let Some(peer_id) = peer_id {
@@ -328,7 +350,7 @@ pub fn init(
 	seed: Option<u8>,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 	psk_path: &String,
-) -> Result<(Client, EventLoop)> {
+) -> Result<(Client, impl Stream<Item = Event>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
 		Some(seed) => {
@@ -351,7 +373,7 @@ pub fn init(
 	let transport = setup_transport(id_keys, psk);
 
 	// create swarm that manages peers and events
-	let mut swarm = {
+	let swarm = {
 		let mut kad_cfg = KademliaConfig::default();
 		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
 		let store_cfg = MemoryStoreConfig {
@@ -383,12 +405,14 @@ pub fn init(
 	};
 
 	let (command_sender, command_receiver) = mpsc::channel(0);
+	let (event_sender, event_receiver) = mpsc::channel(0);
 
 	Ok((
 		Client {
 			sender: command_sender,
 		},
-		EventLoop::new(swarm, command_receiver),
+		ReceiverStream::new(event_receiver),
+		EventLoop::new(swarm, command_receiver, event_sender),
 	))
 }
 
