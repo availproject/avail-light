@@ -153,6 +153,13 @@ async fn do_main() -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
+	let (mut network_client, network_event_loop) =
+		network::init(cfg.libp2p_seed, bootstrap_nodes, &cfg.libp2p_psk_path)
+			.context("Failed to init Network Service")?;
+	// Spawn the network task for it to run in the background
+	tokio::spawn(network_event_loop.run());
+
+	// Start listening on provided port
 	let port = if cfg.libp2p_port.1 > 0 {
 		let port: u16 = thread_rng().gen_range(cfg.libp2p_port.0..=cfg.libp2p_port.1);
 		info!("Using random port: {port}");
@@ -160,12 +167,10 @@ async fn do_main() -> Result<()> {
 	} else {
 		cfg.libp2p_port.0
 	};
-
-	let (network_client, network_event_loop) =
-		network::init(cfg.libp2p_seed, port, bootstrap_nodes, &cfg.libp2p_psk_path)
-			.context("Failed to init Network Service")?;
-
-	tokio::spawn(network_event_loop.run());
+	network_client
+		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
+		.await
+		.expect("Listening not to fail.");
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();

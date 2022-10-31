@@ -326,7 +326,6 @@ impl EventLoop {
 
 pub fn init(
 	seed: Option<u8>,
-	port: u16,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 	psk_path: &String,
 ) -> Result<(Client, EventLoop)> {
