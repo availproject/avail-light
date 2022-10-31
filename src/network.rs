@@ -22,8 +22,8 @@ use libp2p::{
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		GetRecordOk, Kademlia, KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk, QueryId,
-		QueryResult, Quorum, Record,
+		BootstrapOk, GetRecordOk, Kademlia, KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk,
+		QueryId, QueryResult, Quorum, Record,
 	},
 	mplex::MplexConfig,
 	multiaddr::Protocol,
@@ -41,6 +41,7 @@ use tracing::log::info;
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<Vec<PeerRecord>>>),
 	PutRecord(oneshot::Sender<Result<()>>),
+	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
 #[derive(Clone)]
@@ -49,7 +50,7 @@ pub struct Client {
 }
 
 impl Client {
-	pub async fn start_listening(&mut self, addr: Multiaddr) -> Result<(), anyhow::Error> {
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
 		self.sender
 			.send(Command::StartListening { addr, sender })
@@ -83,6 +84,20 @@ impl Client {
 				peer_addr,
 				sender,
 			})
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
+	}
+
+	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+		let (sender, receiver) = oneshot::channel();
+		for (peer, addr) in nodes {
+			self.add_address(peer, addr.clone()).await?;
+			self.dial(peer, addr).await?;
+		}
+
+		self.sender
+			.send(Command::Bootstrap { sender })
 			.await
 			.expect("Command receiver should not be dropped.");
 		receiver.await.expect("Sender not to be dropped.")
@@ -129,6 +144,9 @@ enum Command {
 	Dial {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
+		sender: oneshot::Sender<Result<()>>,
+	},
+	Bootstrap {
 		sender: oneshot::Sender<Result<()>>,
 	},
 	GetKadRecord {
@@ -241,6 +259,22 @@ impl EventLoop {
 							}
 						},
 					},
+					QueryResult::Bootstrap(result) => match result {
+						Ok(BootstrapOk { .. }) => {
+							if let Some(QueryChannel::Bootstrap(ch)) =
+								self.pending_kad_queries.remove(&id.into())
+							{
+								ch.send(Ok(())).ok();
+							}
+						},
+						Err(err) => {
+							if let Some(QueryChannel::Bootstrap(ch)) =
+								self.pending_kad_queries.remove(&id.into())
+							{
+								ch.send(Err(err.into())).ok();
+							}
+						},
+					},
 					_ => {},
 				},
 				_ => {},
@@ -319,6 +353,17 @@ impl EventLoop {
 					todo!("Implement logic for peer thats already beeing dialed.");
 				}
 			},
+			Command::Bootstrap { sender } => {
+				let query_id = self
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.bootstrap()
+					.expect("DHT not to be empty");
+
+				self.pending_kad_queries
+					.insert(query_id, QueryChannel::Bootstrap(sender));
+			},
 			Command::GetKadRecord {
 				key,
 				quorum,
@@ -339,6 +384,7 @@ impl EventLoop {
 					.kademlia
 					.put_record(record, quorum)
 					.expect("No put error.");
+
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::PutRecord(sender));
 			},
@@ -348,7 +394,6 @@ impl EventLoop {
 
 pub fn init(
 	seed: Option<u8>,
-	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 	psk_path: &String,
 ) -> Result<(Client, impl Stream<Item = Event>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
@@ -383,16 +428,9 @@ pub fn init(
 			max_provided_keys: 100000,
 		};
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
-		let mut behaviour = NetworkBehaviour {
+		let behaviour = NetworkBehaviour {
 			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
 		};
-
-		// add configured boot nodes
-		if !bootstrap_nodes.is_empty() {
-			for peer in bootstrap_nodes {
-				behaviour.kademlia.add_address(&peer.0, peer.1);
-			}
-		}
 
 		// Build the Swarm, connecting the lower transport logic with the
 		// higher layer network behaviour logic

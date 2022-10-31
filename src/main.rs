@@ -9,6 +9,7 @@ use std::{
 
 use ::prometheus::Registry;
 use anyhow::{Context, Result};
+use async_std::stream::StreamExt;
 use libp2p::{Multiaddr, PeerId};
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -146,15 +147,8 @@ async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
-
-	let (mut network_client, network_events, network_event_loop) =
-		network::init(cfg.libp2p_seed, bootstrap_nodes, &cfg.libp2p_psk_path)
+	let (network_client, mut network_events, network_event_loop) =
+		network::init(cfg.libp2p_seed, &cfg.libp2p_psk_path)
 			.context("Failed to init Network Service")?;
 	// Spawn the network task for it to run in the background
 	tokio::spawn(network_event_loop.run());
@@ -171,6 +165,34 @@ async fn do_main() -> Result<()> {
 		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
 		.await
 		.expect("Listening not to fail.");
+
+	// Check if bootstrap nodes were provided
+	let mut bootstrap_nodes = cfg
+		.bootstraps
+		.iter()
+		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
+		.context("Failed to parse bootstrap nodes")?;
+
+	// If the client is the first one on the network, and no bootstrap nodes
+	// were provided, then wait for the second client to establish connection and use it as bootstrap.
+	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
+	if bootstrap_nodes.is_empty() {
+		info!("No bootstrap nodes, waiting for first peer to connect...");
+		let node = network_events
+			.find_map(|e| match e {
+				network::Event::ConnectionEstablished { peer_id, endpoint } => {
+					Some((peer_id, endpoint.get_remote_address().clone()))
+				},
+			})
+			// hang in there, until someone dials us
+			.await
+			.context("Connection is not established")?;
+		bootstrap_nodes = vec![node];
+	}
+	// Now that we have something to bootstrap with, just do it
+	info!("Bootstraping the DHT with bootstrap nodes...");
+	network_client.bootstrap(bootstrap_nodes).await?;
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
