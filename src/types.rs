@@ -319,7 +319,7 @@ pub struct RuntimeConfig {
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
 	/// Seed for Libp2p keypair. If not set, or seed is 0, random seed is generated
-	pub libp2p_seed: Option<u64>,
+	pub libp2p_seed: Option<u8>,
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(default)]
 	#[serde(with = "port_range_format")]

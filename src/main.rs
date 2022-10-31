@@ -21,7 +21,6 @@ use tracing_subscriber::{
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
-	network::NetworkService,
 	types::{Mode, RuntimeConfig},
 };
 
@@ -161,14 +160,12 @@ async fn do_main() -> Result<()> {
 	} else {
 		cfg.libp2p_port.0
 	};
-	let seed = match cfg.libp2p_seed {
-		None => thread_rng().gen(),
-		Some(0) => thread_rng().gen(),
-		Some(value) => value,
-	};
 
-	let net_svc = NetworkService::init(seed, port, bootstrap_nodes, &cfg.libp2p_psk_path)
-		.context("Failed to init Network Service")?;
+	let (network_client, network_event_loop) =
+		network::init(cfg.libp2p_seed, port, bootstrap_nodes, &cfg.libp2p_psk_path)
+			.context("Failed to init Network Service")?;
+
+	tokio::spawn(network_event_loop.run());
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
@@ -184,7 +181,7 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			net_svc.clone(),
+			network_client.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,
@@ -212,7 +209,7 @@ async fn do_main() -> Result<()> {
 			latest_block,
 			sync_block_depth,
 			db.clone(),
-			net_svc.clone(),
+			network_client.clone(),
 			pp.clone(),
 		));
 	}
@@ -221,7 +218,7 @@ async fn do_main() -> Result<()> {
 	light_client::run(
 		(&cfg).into(),
 		db,
-		net_svc,
+		network_client,
 		rpc_url,
 		block_tx,
 		pp,

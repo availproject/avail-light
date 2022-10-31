@@ -42,11 +42,11 @@ enum QueryChannel {
 }
 
 #[derive(Clone)]
-pub struct Commander {
+pub struct Client {
 	sender: mpsc::Sender<Command>,
 }
 
-impl Commander {
+impl Client {
 	pub async fn start_listening(&mut self, addr: Multiaddr) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
 		self.sender
@@ -57,7 +57,7 @@ impl Commander {
 	}
 
 	pub async fn add_address(
-		&mut self,
+		&self,
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
 	) -> Result<(), anyhow::Error> {
@@ -73,7 +73,7 @@ impl Commander {
 		receiver.await.expect("Sender not to be dropped.")
 	}
 
-	pub async fn dial(&mut self, peer_id: PeerId, peer_addr: Multiaddr) {
+	pub async fn dial(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
 		self.sender
 			.send(Command::Dial {
@@ -83,7 +83,33 @@ impl Commander {
 			})
 			.await
 			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
+	}
+
+	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
+		let (sender, receiver) = oneshot::channel();
+		self.sender
+			.send(Command::GetKadRecord {
+				key,
+				quorum,
+				sender,
+			})
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
+	}
+
+	pub async fn put_kad_record(&self, record: Record, quorum: Quorum) -> Result<()> {
+		let (sender, receiver) = oneshot::channel();
+		self.sender
+			.send(Command::PutKadRecord {
+				record,
+				quorum,
+				sender,
+			})
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
 	}
 }
 
@@ -154,13 +180,16 @@ impl EventLoop {
 	pub async fn run(mut self) {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => {},
-				command = self.command_receiver.recv() => {},
+				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
+				command = self.command_receiver.recv() => match command {
+					Some(c) => self.handle_command(c).await,
+					None => return ,
+				},
 			}
 		}
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<NetworkEvent, anyhow::Error>) {
+	async fn handle_event(&mut self, event: SwarmEvent<NetworkEvent, std::io::Error>) {
 		match event {
 			SwarmEvent::Behaviour(NetworkEvent::Kademlia(event)) => match event {
 				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
@@ -300,7 +329,7 @@ pub fn init(
 	port: u16,
 	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
 	psk_path: &String,
-) -> Result<(Commander, EventLoop)> {
+) -> Result<(Client, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
 		Some(seed) => {
@@ -357,7 +386,7 @@ pub fn init(
 	let (command_sender, command_receiver) = mpsc::channel(0);
 
 	Ok((
-		Commander {
+		Client {
 			sender: command_sender,
 		},
 		EventLoop::new(swarm, command_receiver),

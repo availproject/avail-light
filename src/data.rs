@@ -16,12 +16,12 @@ use tracing::{debug, trace};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
-	network::NetworkService,
+	network::Client,
 	types::Header,
 };
 
 async fn fetch_cell_from_dht(
-	net_svc: &NetworkService,
+	network_client: &Client,
 	block_number: u64,
 	position: &Position,
 ) -> Result<Cell> {
@@ -30,7 +30,7 @@ async fn fetch_cell_from_dht(
 
 	trace!("Getting DHT record for reference {}", reference);
 	// For now, we take only the first record from the list
-	net_svc
+	network_client
 		.get_kad_record(record_key, Quorum::One)
 		.await
 		.and_then(|peer_records| {
@@ -81,21 +81,21 @@ impl DHTCell {
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
-	net_svc: &NetworkService,
+	network_client: &Client,
 	block: u64,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 ) {
 	let cells: Vec<_> = cells.into_iter().map(DHTCell).collect::<Vec<_>>();
-	let cell_tuples = cells.iter().map(move |b| (b, net_svc.clone()));
+	let cell_tuples = cells.iter().map(move |b| (b, network_client.clone()));
 
 	futures::StreamExt::for_each_concurrent(
 		stream::iter(cell_tuples),
 		dht_parallelization_limit,
-		|(cell, net_svc)| async move {
+		|(cell, network_client)| async move {
 			let reference = cell.reference(block);
-			if let Err(error) = net_svc
+			if let Err(error) = network_client
 				.put_kad_record(cell.dht_record(block, ttl), Quorum::One)
 				.await
 			{
@@ -116,7 +116,7 @@ pub async fn insert_into_dht(
 /// * `positions` - Cell positions to fetch
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
-	net_svc: &NetworkService,
+	network_client: &Client,
 	block_number: u64,
 	positions: &Vec<Position>,
 	dht_parallelization_limit: usize,
@@ -126,7 +126,7 @@ pub async fn fetch_cells_from_dht(
 		.map(|positions| {
 			positions
 				.iter()
-				.map(|position| fetch_cell_from_dht(net_svc, block_number, position))
+				.map(|position| fetch_cell_from_dht(network_client, block_number, position))
 				.collect::<Vec<_>>()
 		})
 		.collect::<Vec<_>>();

@@ -41,7 +41,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	network::NetworkService,
+	network::Client,
 	prometheus_handler, proof, rpc,
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
@@ -122,7 +122,7 @@ impl LCMetrics {
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
-	net_svc: NetworkService,
+	network_client: Client,
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
@@ -220,7 +220,7 @@ pub async fn run(
 			);
 
 			let (cells_fetched, unfetched) = fetch_cells_from_dht(
-				&net_svc,
+				&network_client,
 				block_number,
 				&positions,
 				cfg.dht_parallelization_limit,
@@ -365,7 +365,7 @@ pub async fn run(
 			begin = SystemTime::now();
 
 			insert_into_dht(
-				&net_svc,
+				&network_client,
 				block_number,
 				rpc_fetched,
 				cfg.dht_parallelization_limit,
