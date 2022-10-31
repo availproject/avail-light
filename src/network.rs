@@ -1,9 +1,14 @@
-use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{
+	collections::{hash_map, HashMap},
+	fs,
+	path::Path,
+	str::FromStr,
+	time::Duration,
+};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::StreamExt;
-use thiserror::Error;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot};
 
 use libp2p::{
 	core::{
@@ -12,10 +17,7 @@ use libp2p::{
 		transport,
 		upgrade::{SelectUpgrade, Version},
 	},
-	identity::{
-		ed25519::{Keypair as ed25519Key, SecretKey},
-		Keypair,
-	},
+	identity::{self, ed25519, Keypair},
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
@@ -23,134 +25,174 @@ use libp2p::{
 		QueryResult, Quorum, Record,
 	},
 	mplex::MplexConfig,
+	multiaddr::Protocol,
 	noise::{self, NoiseConfig, X25519Spec},
 	pnet::{PnetConfig, PreSharedKey},
 	swarm::{SwarmBuilder, SwarmEvent},
 	tcp::{GenTcpConfig, TokioTcpTransport},
 	yamux::YamuxConfig,
-	Multiaddr, NetworkBehaviour, PeerId, Swarm, Transport,
+	Multiaddr, NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm, Transport,
 };
 use tracing::log::info;
 
-#[derive(Debug, Error)]
-#[error("Trying to use kad before bootstrap completed successfully.")]
-pub struct NotBootstrapped;
-
-#[derive(Debug, Error)]
-#[error("{0:?}")]
-pub struct KadStoreError(pub libp2p::kad::record::store::Error);
-
-#[derive(Debug, Error)]
-#[error("{0:?}")]
-pub struct KadPutRecordError(pub libp2p::kad::PutRecordError);
-
-#[derive(Debug, Error)]
-#[error("{0:?}")]
-pub struct KadGetRecordError(pub libp2p::kad::GetRecordError);
-
-type GetRecordChannel = oneshot::Receiver<Result<Vec<PeerRecord>>>;
-type PutRecordChannel = oneshot::Receiver<Result<()>>;
-
+#[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<Vec<PeerRecord>>>),
 	PutRecord(oneshot::Sender<Result<()>>),
 }
 
-#[derive(NetworkBehaviour)]
-#[behaviour(out_event = "ComposedEvent")]
-struct ComposedBehaviour {
+#[derive(Clone)]
+pub struct Commander {
+	sender: mpsc::Sender<Command>,
+}
+
+impl Commander {
+	pub async fn start_listening(&mut self, addr: Multiaddr) -> Result<(), anyhow::Error> {
+		let (sender, receiver) = oneshot::channel();
+		self.sender
+			.send(Command::StartListening { addr, sender })
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
+	}
+
+	pub async fn add_address(
+		&mut self,
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+	) -> Result<(), anyhow::Error> {
+		let (sender, receiver) = oneshot::channel();
+		self.sender
+			.send(Command::AddAddress {
+				peer_id,
+				peer_addr,
+				sender,
+			})
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.")
+	}
+
+	pub async fn dial(&mut self, peer_id: PeerId, peer_addr: Multiaddr) {
+		let (sender, receiver) = oneshot::channel();
+		self.sender
+			.send(Command::Dial {
+				peer_id,
+				peer_addr,
+				sender,
+			})
+			.await
+			.expect("Command receiver should not be dropped.");
+		receiver.await.expect("Sender not to be dropped.");
+	}
+}
+
+#[derive(Debug)]
+enum Command {
+	StartListening {
+		addr: Multiaddr,
+		sender: oneshot::Sender<Result<()>>,
+	},
+	AddAddress {
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+		sender: oneshot::Sender<Result<()>>,
+	},
+	Dial {
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+		sender: oneshot::Sender<Result<()>>,
+	},
+	GetKadRecord {
+		key: Key,
+		quorum: Quorum,
+		sender: oneshot::Sender<Result<Vec<PeerRecord>>>,
+	},
+	PutKadRecord {
+		record: Record,
+		quorum: Quorum,
+		sender: oneshot::Sender<Result<()>>,
+	},
+}
+
+#[derive(LibP2PBehaviour)]
+#[behaviour(out_event = "NetworkEvent")]
+struct NetworkBehaviour {
 	kademlia: Kademlia<MemoryStore>,
 }
 
 #[derive(Debug)]
-enum ComposedEvent {
+enum NetworkEvent {
 	Kademlia(KademliaEvent),
 }
 
-impl From<KademliaEvent> for ComposedEvent {
+impl From<KademliaEvent> for NetworkEvent {
 	fn from(event: KademliaEvent) -> Self {
-		ComposedEvent::Kademlia(event)
+		NetworkEvent::Kademlia(event)
 	}
 }
 
-struct P2P {
-	swarm: Swarm<ComposedBehaviour>,
-	kad_queries: HashMap<QueryId, QueryChannel>,
-	bootstrap_complete: bool,
+pub struct EventLoop {
+	swarm: Swarm<NetworkBehaviour>,
+	command_receiver: mpsc::Receiver<Command>,
+	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
+	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 }
 
-impl P2P {
-	fn kad_query_get_record(&mut self, key: Key, quorum: Quorum) -> GetRecordChannel {
-		let (tx, rx) = oneshot::channel();
-		if self.bootstrap_complete {
-			let id = self.swarm.behaviour_mut().kademlia.get_record(key, quorum);
-			self.kad_queries
-				.insert(id.into(), QueryChannel::GetRecord(tx));
-		} else {
-			tx.send(Err(NotBootstrapped.into())).ok();
+impl EventLoop {
+	fn new(swarm: Swarm<NetworkBehaviour>, command_receiver: mpsc::Receiver<Command>) -> Self {
+		Self {
+			swarm,
+			command_receiver,
+			pending_dials: Default::default(),
+			pending_kad_queries: Default::default(),
+			pending_kad_routing: Default::default(),
 		}
-		rx
 	}
 
-	fn kad_query_put_record(&mut self, record: Record, quorum: Quorum) -> PutRecordChannel {
-		let (tx, rx) = oneshot::channel();
-		if self.bootstrap_complete {
-			match self
-				.swarm
-				.behaviour_mut()
-				.kademlia
-				.put_record(record, quorum)
-			{
-				Ok(id) => {
-					self.kad_queries
-						.insert(id.into(), QueryChannel::PutRecord(tx));
-				},
-				Err(err) => {
-					tx.send(Err(KadStoreError(err).into())).ok();
-				},
+	pub async fn run(mut self) {
+		loop {
+			tokio::select! {
+				event = self.swarm.next() => {},
+				command = self.command_receiver.recv() => {},
 			}
-		} else {
-			tx.send(Err(NotBootstrapped.into())).ok();
 		}
-		rx
 	}
 
-	fn handle_event(&mut self, event: SwarmEvent<ComposedEvent, std::io::Error>) {
+	async fn handle_event(&mut self, event: SwarmEvent<NetworkEvent, anyhow::Error>) {
 		match event {
-			SwarmEvent::NewListenAddr { address, .. } => {
-				println!("Listening on {:?}", address);
-			},
-			SwarmEvent::Behaviour(ComposedEvent::Kademlia(event)) => match event {
+			SwarmEvent::Behaviour(NetworkEvent::Kademlia(event)) => match event {
 				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
 					QueryResult::GetRecord(result) => match result {
 						Ok(GetRecordOk { records, .. }) => {
 							if let Some(QueryChannel::GetRecord(ch)) =
-								self.kad_queries.remove(&id.into())
+								self.pending_kad_queries.remove(&id.into())
 							{
 								ch.send(Ok(records)).ok();
 							}
 						},
 						Err(err) => {
 							if let Some(QueryChannel::GetRecord(ch)) =
-								self.kad_queries.remove(&id.into())
+								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Err(KadGetRecordError(err).into())).ok();
+								ch.send(Err(err.into())).ok();
 							}
 						},
 					},
 					QueryResult::PutRecord(result) => match result {
 						Ok(PutRecordOk { .. }) => {
 							if let Some(QueryChannel::PutRecord(ch)) =
-								self.kad_queries.remove(&id.into())
+								self.pending_kad_queries.remove(&id.into())
 							{
 								ch.send(Ok(())).ok();
 							}
 						},
 						Err(err) => {
 							if let Some(QueryChannel::PutRecord(ch)) =
-								self.kad_queries.remove(&id.into())
+								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Err(KadPutRecordError(err).into())).ok();
+								ch.send(Err(err.into())).ok();
 							}
 						},
 					},
@@ -158,115 +200,178 @@ impl P2P {
 				},
 				_ => {},
 			},
+			SwarmEvent::NewListenAddr { address, .. } => {
+				let local_peer_id = *self.swarm.local_peer_id();
+				println!(
+					"Local node is listening on {:?}",
+					address.with(Protocol::P2p(local_peer_id.into()))
+				);
+			},
+			SwarmEvent::ConnectionEstablished {
+				peer_id, endpoint, ..
+			} => {
+				if endpoint.is_dialer() {
+					if let Some(sender) = self.pending_dials.remove(&peer_id) {
+						let _ = sender.send(Ok(()));
+					}
+				}
+			},
+			SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+				if let Some(peer_id) = peer_id {
+					if let Some(sender) = self.pending_dials.remove(&peer_id) {
+						_ = sender.send(Err(error.into()));
+					}
+				}
+			},
+			SwarmEvent::Dialing(peer_id) => println!("Dialing {}", peer_id),
 			_ => {},
+		}
+	}
+
+	async fn handle_command(&mut self, command: Command) {
+		match command {
+			Command::StartListening { addr, sender } => {
+				_ = match self.swarm.listen_on(addr) {
+					Ok(_) => sender.send(Ok(())),
+					Err(e) => sender.send(Err(e.into())),
+				}
+			},
+			Command::AddAddress {
+				peer_id,
+				peer_addr,
+				sender,
+			} => {
+				self.swarm
+					.behaviour_mut()
+					.kademlia
+					.add_address(&peer_id, peer_addr.clone());
+				self.pending_kad_routing.insert(peer_id, sender);
+			},
+			Command::Dial {
+				peer_id,
+				peer_addr,
+				sender,
+			} => {
+				if let hash_map::Entry::Vacant(e) = self.pending_dials.entry(peer_id) {
+					match self
+						.swarm
+						.dial(peer_addr.with(Protocol::P2p(peer_id.into())))
+					{
+						Ok(()) => {
+							e.insert(sender);
+						},
+						Err(e) => {
+							_ = sender.send(Err(e.into()));
+						},
+					}
+				} else {
+					todo!("Implement logic for peer thats already beeing dialed.");
+				}
+			},
+			Command::GetKadRecord {
+				key,
+				quorum,
+				sender,
+			} => {
+				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key, quorum);
+				self.pending_kad_queries
+					.insert(query_id, QueryChannel::GetRecord(sender));
+			},
+			Command::PutKadRecord {
+				record,
+				quorum,
+				sender,
+			} => {
+				let query_id = self
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.put_record(record, quorum)
+					.expect("No put error.");
+				self.pending_kad_queries
+					.insert(query_id, QueryChannel::PutRecord(sender));
+			},
 		}
 	}
 }
 
-#[derive(Clone)]
-pub struct NetworkService(Arc<Mutex<P2P>>);
+pub fn init(
+	seed: Option<u8>,
+	port: u16,
+	bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
+	psk_path: &String,
+) -> Result<(Commander, EventLoop)> {
+	// Create a public/private key pair, either based on a seed or random
+	let id_keys = match seed {
+		Some(seed) => {
+			let mut bytes = [0u8; 32];
+			bytes[0] = seed;
+			let secret_key = ed25519::SecretKey::from_bytes(&mut bytes)
+				.expect("Error should only appear if length is wrong.");
+			identity::Keypair::Ed25519(secret_key.into())
+		},
+		None => identity::Keypair::generate_ed25519(),
+	};
+	let local_peer_id = id_keys.public().to_peer_id();
+	info!("Local peer id: {:?}", local_peer_id);
 
-impl NetworkService {
-	pub fn init(
-		seed: u64,
-		port: u16,
-		bootstrap_nodes: Vec<(PeerId, Multiaddr)>,
-		psk_path: &String,
-	) -> Result<Self> {
-		// create peer id
-		let keypair = keypair(seed)?;
-		let local_peer_id = PeerId::from(keypair.public());
-		info!("Local peer id: {:?}", local_peer_id);
+	// try to get psk
+	let psk: Option<PreSharedKey> = get_psk(psk_path)?
+		.map(|text| PreSharedKey::from_str(&text))
+		.transpose()?;
+	// create transport
+	let transport = setup_transport(id_keys, psk);
 
-		// try to get psk
-		let psk: Option<PreSharedKey> = get_psk(psk_path)?
-			.map(|text| PreSharedKey::from_str(&text))
-			.transpose()?;
-		// create transport
-		let transport = setup_transport(keypair, psk);
+	// create swarm that manages peers and events
+	let mut swarm = {
+		let mut kad_cfg = KademliaConfig::default();
+		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
+		let store_cfg = MemoryStoreConfig {
+			max_records: 24000000, // ~2hrs
+			max_value_bytes: 100,
+			max_providers_per_key: 1,
+			max_provided_keys: 100000,
+		};
+		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
+		let mut behaviour = NetworkBehaviour {
+			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
+		};
 
-		// create swarm that manages peers and events
-		let mut swarm = {
-			let mut kad_cfg = KademliaConfig::default();
-			kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
-			let store_cfg = MemoryStoreConfig {
-				max_records: 24000000, // ~2hrs
-				max_value_bytes: 100,
-				max_providers_per_key: 1,
-				max_provided_keys: 100000,
-			};
-			let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
-			let mut behaviour = ComposedBehaviour {
-				kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
-			};
-
-			// add configured boot nodes
-			if !bootstrap_nodes.is_empty() {
-				for peer in bootstrap_nodes {
-					behaviour.kademlia.add_address(&peer.0, peer.1);
-				}
+		// add configured boot nodes
+		if !bootstrap_nodes.is_empty() {
+			for peer in bootstrap_nodes {
+				behaviour.kademlia.add_address(&peer.0, peer.1);
 			}
+		}
 
-			SwarmBuilder::new(transport, behaviour, local_peer_id)
-				// connection background tasks are spawned onto the tokio runtime
-				.executor(Box::new(|fut| {
-					tokio::spawn(fut);
-				}))
-				.build()
-		};
+		// Build the Swarm, connecting the lower transport logic with the
+		// higher layer network behaviour logic
+		SwarmBuilder::new(transport, behaviour, local_peer_id)
+			// connection background tasks are spawned onto the tokio runtime
+			.executor(Box::new(|fut| {
+				tokio::spawn(fut);
+			}))
+			.build()
+	};
 
-		// listen on all interfaces and whatever port the OS assigns
-		swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
+	let (command_sender, command_receiver) = mpsc::channel(0);
 
-		let p2p = Arc::new(Mutex::new(P2P {
-			swarm,
-			kad_queries: HashMap::default(),
-			bootstrap_complete: false,
-		}));
-		let p2p_clone = p2p.clone();
-
-		// Start the background Swarm event loop
-		tokio::task::spawn(async move {
-			loop {
-				let mut p2p = p2p.lock().await;
-				let event = p2p
-					.swarm
-					.next()
-					.await
-					.expect("Swarm stream needs to be infinite.");
-				p2p.handle_event(event)
-			}
-		});
-
-		Ok(NetworkService(p2p_clone))
-	}
-
-	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
-		let rx = {
-			let mut p2p = self.0.lock().await;
-			p2p.kad_query_get_record(key, quorum)
-		};
-		Ok(rx.await??)
-	}
-
-	pub async fn put_kad_record(&self, record: Record, quorum: Quorum) -> Result<()> {
-		let rx = {
-			let mut p2p = self.0.lock().await;
-			p2p.kad_query_put_record(record, quorum)
-		};
-		rx.await??;
-		Ok(())
-	}
+	Ok((
+		Commander {
+			sender: command_sender,
+		},
+		EventLoop::new(swarm, command_receiver),
+	))
 }
 
 /// Read the pre-shared key file from the given directory
-fn get_psk(location: &String) -> std::io::Result<Option<String>> {
+fn get_psk(location: &String) -> Result<Option<String>> {
 	let path = Path::new(location);
 	let swarm_key_file = path.join("swarm.key");
 	match fs::read_to_string(swarm_key_file) {
 		Ok(text) => Ok(Some(text)),
 		Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-		Err(e) => Err(e),
+		Err(e) => Err(e.into()),
 	}
 }
 
@@ -297,11 +402,4 @@ fn setup_transport(
 		))
 		.timeout(Duration::from_secs(20))
 		.boxed()
-}
-
-fn keypair(i: u64) -> Result<Keypair> {
-	let mut keypair = [0; 32];
-	keypair[..8].copy_from_slice(&i.to_be_bytes());
-	let secret = SecretKey::from_bytes(keypair).context("Cannot create keypair")?;
-	Ok(Keypair::Ed25519(ed25519Key::from(secret)))
 }
