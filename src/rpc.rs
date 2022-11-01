@@ -3,10 +3,13 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
+use avail_subxt::DaHeader;
+use codec::Decode;
 use hyper_tls::HttpsConnector;
 use kate_recovery::com::{Cell, Position};
 use rand::{thread_rng, Rng};
 use regex::Regex;
+use sp_core::H256;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tracing::debug;
@@ -18,7 +21,7 @@ fn is_secure(url: &str) -> bool {
 	re.is_match(url)
 }
 
-async fn get_block_hash(url: &str, block: u64) -> Result<String> {
+async fn get_block_hash(url: &str, block: u32) -> Result<String> {
 	let payload = format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getBlockHash", "params": [{}]}}"#,
 		block
@@ -50,7 +53,7 @@ async fn get_block_hash(url: &str, block: u64) -> Result<String> {
 		.context("Failed to parse chain_getBlockHash response")
 }
 
-async fn get_header_by_hash(url: &str, hash: String) -> Result<Header> {
+async fn get_header_by_hash(url: &str, hash: &str) -> Result<DaHeader> {
 	let payload = format!(
 		r#"{{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader", "params": ["{}"]}}"#,
 		hash
@@ -85,7 +88,7 @@ async fn get_header_by_hash(url: &str, hash: String) -> Result<Header> {
 /// RPC for obtaining header of latest block mined by network
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
-pub async fn get_chain_header(url: &str) -> Result<Header> {
+pub async fn get_chain_header(url: &str) -> Result<DaHeader> {
 	let payload = r#"{"id": 1, "jsonrpc": "2.0", "method": "chain_getHeader"}"#;
 
 	let req = hyper::Request::builder()
@@ -115,9 +118,11 @@ pub async fn get_chain_header(url: &str) -> Result<Header> {
 }
 
 /// Gets header by block number
-pub async fn get_header_by_block_number(url: &str, block: u64) -> Result<Header> {
+pub async fn get_header_by_block_number(url: &str, block: u32) -> Result<(DaHeader, H256)> {
 	let hash = get_block_hash(url, block).await?;
-	get_header_by_hash(url, hash).await
+	let v = sp_core::bytes::from_hex(&hash).context("Wrong hash format")?;
+	let h: H256 = Decode::decode(&mut v.as_slice()).context("Cannot decode hash")?;
+	get_header_by_hash(url, hash.as_str()).await.map(|e| (e, h))
 }
 
 /// Generates random cell positions for sampling
@@ -163,7 +168,7 @@ pub fn generate_partition_cells(
 		.collect::<Vec<_>>()
 }
 
-fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
+fn generate_kate_query_payload(block_hash: H256, positions: &[Position]) -> String {
 	let query = positions
 		.iter()
 		.map(|position| format!(r#"{{"row": {}, "col": {}}}"#, position.row, position.col))
@@ -171,18 +176,18 @@ fn generate_kate_query_payload(block: u64, positions: &[Position]) -> String {
 		.join(", ");
 
 	format!(
-		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [{}, [{}]]}}"#,
-		block, query
+		r#"{{"id": 1, "jsonrpc": "2.0", "method": "kate_queryProof", "params": [[{}], "{:?}"]}}"#,
+		query, block_hash
 	)
 }
 
 /// RPC to get proofs for given positions of block
 pub async fn get_kate_proof(
 	url: &str,
-	block_num: u64,
+	block_hash: H256,
 	positions: Vec<Position>,
 ) -> Result<Vec<Cell>> {
-	let payload = generate_kate_query_payload(block_num, &positions);
+	let payload = generate_kate_query_payload(block_hash, &positions);
 
 	let req = hyper::Request::builder()
 		.method(hyper::Method::POST)

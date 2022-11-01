@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
+use avail_subxt::DaHeader;
 use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
 use ipfs_embed::{
@@ -22,7 +23,7 @@ use tracing::{debug, info, trace};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
-	types::{Event, Header},
+	types::Event,
 };
 
 /// Inits IPFS by bootstraping DHT with bootstrap node or waiting for first peer to connect
@@ -120,7 +121,7 @@ fn keypair(i: u64) -> Result<Keypair> {
 
 async fn fetch_cell_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
-	block_number: u64,
+	block_number: u32,
 	position: &Position,
 ) -> Result<Cell> {
 	let reference = position.reference(block_number);
@@ -152,11 +153,11 @@ async fn fetch_cell_from_dht(
 struct IpfsCell(Cell);
 
 impl IpfsCell {
-	fn reference(&self, block: u64) -> String {
+	fn reference(&self, block: u32) -> String {
 		self.0.reference(block)
 	}
 
-	fn dht_record(&self, block: u64, ttl: u64) -> Record {
+	fn dht_record(&self, block: u32, ttl: u64) -> Record {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
 			value: self.0.content.to_vec(),
@@ -179,7 +180,7 @@ impl IpfsCell {
 /// * `ttl` - Cell time to live in DHT (in seconds)
 pub async fn insert_into_dht(
 	ipfs: &Ipfs<DefaultParams>,
-	block: u64,
+	block: u32,
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
@@ -213,7 +214,7 @@ pub async fn insert_into_dht(
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
 pub async fn fetch_cells_from_dht(
 	ipfs: &Ipfs<DefaultParams>,
-	block_number: u64,
+	block_number: u32,
 	positions: &Vec<Position>,
 	dht_parallelization_limit: usize,
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
@@ -259,7 +260,7 @@ pub async fn fetch_cells_from_dht(
 	Ok((fetched, unfetched))
 }
 
-fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]) -> Result<()> {
+fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u32, data: &[u8]) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(APP_DATA_CF)
@@ -269,7 +270,7 @@ fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u64, data: &[u8]) ->
 		.context("Failed to write application data")
 }
 
-fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<Option<Vec<u8>>> {
+fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Option<Vec<u8>>> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
 		.cf_handle(crate::consts::APP_DATA_CF)
@@ -283,7 +284,7 @@ fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u64) -> Result<Optio
 pub fn store_encoded_data_in_db<T: Encode>(
 	db: Arc<DB>,
 	app_id: u32,
-	block_number: u64,
+	block_number: u32,
 	data: &T,
 ) -> Result<()> {
 	store_data_in_db(db, app_id, block_number, &data.encode())
@@ -293,7 +294,7 @@ pub fn store_encoded_data_in_db<T: Encode>(
 pub fn get_decoded_data_from_db<T: Decode>(
 	db: Arc<DB>,
 	app_id: u32,
-	block_number: u64,
+	block_number: u32,
 ) -> Result<Option<T>> {
 	let res = get_data_from_db(db, app_id, block_number)
 		.map(|e| e.map(|v| <T>::decode(&mut &v[..]).context("Failed decoding the app data.")));
@@ -307,7 +308,7 @@ pub fn get_decoded_data_from_db<T: Decode>(
 }
 
 /// Checks if block header for given block number is in database
-pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
+pub fn is_block_header_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
 		.context("Failed to get cf handle")?;
@@ -318,7 +319,7 @@ pub fn is_block_header_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 }
 
 /// Stores block header into database under the given block number key
-pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header) -> Result<()> {
+pub fn store_block_header_in_db(db: Arc<DB>, block_number: u32, header: &DaHeader) -> Result<()> {
 	let handle = db
 		.cf_handle(BLOCK_HEADER_CF)
 		.context("Failed to get cf handle")?;
@@ -332,7 +333,7 @@ pub fn store_block_header_in_db(db: Arc<DB>, block_number: u64, header: &Header)
 }
 
 /// Checks if confidence factor for given block number is in database
-pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
+pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
 		.context("Failed to get cf handle")?;
@@ -343,7 +344,7 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u64) -> Result<bool> {
 }
 
 /// Gets confidence factor from database for given block number
-pub fn get_confidence_from_db(db: Arc<DB>, block_number: u64) -> Result<Option<u32>> {
+pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u32>> {
 	let cf_handle = db
 		.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
 		.context("Couldn't get column handle from db")?;
@@ -366,7 +367,7 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u64) -> Result<Option<u
 }
 
 /// Stores confidence factor into database under the given block number key
-pub fn store_confidence_in_db(db: Arc<DB>, block_number: u64, count: u32) -> Result<()> {
+pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Result<()> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
 		.context("Failed to get cf handle")?;

@@ -53,17 +53,17 @@ async fn process_block(
 	column_positions: &[Position],
 	pp: PublicParameters,
 ) -> Result<()> {
-	let block_number = block.number;
-
+	let block_hash = block.header_hash;
+	let block_number = block.block_num;
 	info!(
-		block_number,
+		block.block_num,
 		"Found {count} cells for app {app_id}",
 		count = data_positions.len()
 	);
 
 	let (mut ipfs_cells, unfetched) = fetch_cells_from_dht(
 		ipfs,
-		block.number,
+		block.block_num,
 		data_positions,
 		cfg.dht_parallelization_limit,
 	)
@@ -79,7 +79,7 @@ async fn process_block(
 	let mut rpc_cells: Vec<Cell> = Vec::new();
 	if !cfg.disable_rpc {
 		for cell in unfetched.chunks(30) {
-			let mut query_cells = get_kate_proof(rpc_url, block.number, (*cell).to_vec())
+			let mut query_cells = get_kate_proof(rpc_url, block_hash, (*cell).to_vec())
 				.await
 				.context("Failed to fetch data cells from node RPC")?;
 
@@ -115,7 +115,7 @@ async fn process_block(
 		let columns = columns(&column_positions);
 		let fetched = [ipfs_cells.as_slice(), rpc_cells.as_slice()].concat();
 		if !can_reconstruct(&block.dimensions, &columns, &fetched) && !cfg.disable_rpc {
-			let mut column_rpc_cells = get_kate_proof(rpc_url, block_number, unfetched)
+			let mut column_rpc_cells = get_kate_proof(rpc_url, block_hash, unfetched)
 				.await
 				.context("Failed to get column cells from node RPC")?;
 
@@ -148,7 +148,7 @@ async fn process_block(
 
 	insert_into_dht(
 		ipfs,
-		block.number,
+		block_number,
 		rpc_cells,
 		cfg.dht_parallelization_limit,
 		cfg.ttl,
@@ -223,7 +223,7 @@ pub async fn run(
 	info!("Starting for app {app_id}...");
 
 	for block in block_receive {
-		let block_number = block.number;
+		let block_number = block.block_num;
 		info!(block_number, "Block available");
 
 		match (
