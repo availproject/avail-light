@@ -138,7 +138,7 @@ async fn do_main() -> Result<()> {
 	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	// this spawns tokio task which runs one http server for handling RPC
-	let counter = Arc::new(Mutex::new(0u64));
+	let counter = Arc::new(Mutex::new(0u32));
 	tokio::task::spawn(http::run_server(
 		db.clone(),
 		cfg.clone(),
@@ -184,7 +184,9 @@ async fn do_main() -> Result<()> {
 
 	let version = rpc::get_system_version(&rpc_url).await?;
 	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
-	if version != "1.1.0"
+
+	info!("Reported version: {version}, runtime version: {runtime_version:?}");
+	if version != "1.0.0"
 		|| runtime_version.spec_version != 5
 		|| runtime_version.spec_name != "data-avail"
 	{

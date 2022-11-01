@@ -1,10 +1,12 @@
 //! Shared light client structs and enums.
 
 use anyhow::Context;
+use avail_subxt::{DaHeader, DaHeaderExtensionVersion, KateCommitment};
+use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use serde::{Deserialize, Deserializer, Serialize};
-use sp_core::H256;
+use sp_core::{blake2_256, H256};
 
 /// IPFS events wrapper
 #[derive(Debug, Eq, PartialEq)]
@@ -170,36 +172,11 @@ pub struct GetChainResponse {
 pub struct BlockHeaderResponse {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
-	pub result: Header,
-}
-
-/// Block header
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Header {
-	#[serde(deserialize_with = "deserialize_u64_from_hex")]
-	pub number: u64,
-	#[serde(rename = "extrinsicsRoot")]
-	pub extrinsics_root: ExtrinsicsRoot,
-	#[serde(rename = "parentHash")]
-	parent_hash: String,
-	#[serde(rename = "stateRoot")]
-	state_root: String,
-	digest: Digest,
-	#[serde(rename = "appDataLookup")]
-	pub app_data_lookup: AppDataIndex,
-}
-
-/// Deserializes an hexademial string representation (like "0x12") directly into a `u64`.
-fn deserialize_u64_from_hex<'de, D>(d: D) -> Result<u64, D::Error>
-where
-	D: Deserializer<'de>,
-{
-	let hex = String::deserialize(d)?;
-	u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(serde::de::Error::custom)
+	pub result: DaHeader,
 }
 
 /// Root of extrinsics in header
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Decode)]
 pub struct ExtrinsicsRoot {
 	pub cols: u16,
 	pub rows: u16,
@@ -273,7 +250,7 @@ pub enum QueryProofResponse {
 #[derive(Deserialize, Debug)]
 pub struct QueryResult {
 	#[serde(rename = "result")]
-	pub header: Header,
+	pub header: DaHeader,
 	#[serde(rename = "subscription")]
 	_subscription: String,
 }
@@ -341,24 +318,36 @@ where
 
 /// Light to app client channel message struct
 pub struct ClientMsg {
-	pub number: u64,
+	pub header_hash: H256,
+	pub block_num: u32,
 	pub dimensions: ExtendedMatrixDimensions,
 	pub lookup: AppDataIndex,
 	pub commitment: Vec<u8>,
 }
 
-impl From<Header> for ClientMsg {
-	fn from(header: Header) -> Self {
-		let ExtrinsicsRoot { rows, cols, .. } = header.extrinsics_root;
+impl From<DaHeader> for ClientMsg {
+	fn from(header: DaHeader) -> Self {
+		let hash: H256 = Encode::using_encoded(&header, |e| blake2_256(e)).into();
+		let DaHeaderExtensionVersion::V1(xt) = header.extension;
+		let KateCommitment { rows, cols, .. } = xt.commitment;
 
 		ClientMsg {
-			number: header.number,
+			header_hash: hash,
+			block_num: header.number,
 			dimensions: ExtendedMatrixDimensions {
 				rows: (rows * 2) as usize,
 				cols: cols as usize,
 			},
-			lookup: header.app_data_lookup,
-			commitment: header.extrinsics_root.commitment,
+			lookup: AppDataIndex {
+				size: xt.app_lookup.size,
+				index: xt
+					.app_lookup
+					.index
+					.into_iter()
+					.map(|e| (e.app_id.0, e.start))
+					.collect(),
+			},
+			commitment: xt.commitment.commitment,
 		}
 	}
 }
@@ -544,7 +533,7 @@ pub struct RuntimeConfig {
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
 	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
-	pub sync_blocks_depth: Option<u64>,
+	pub sync_blocks_depth: Option<u32>,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
 	/// Time-to-live for DHT entries in seconds (default: 3600).
