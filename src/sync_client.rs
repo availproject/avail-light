@@ -18,6 +18,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
+use avail_subxt::DaHeaderExtensionVersion;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
@@ -37,7 +38,7 @@ async fn process_block(
 	cfg: &SyncClientConfig,
 	rpc_url: String,
 	db: Arc<DB>,
-	block_number: u64,
+	block_number: u32,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
 ) -> Result<()> {
@@ -54,11 +55,13 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let header = rpc::get_header_by_block_number(&rpc_url, block_number)
+	let (header, header_hash) = rpc::get_header_by_block_number(&rpc_url, block_number)
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
-	info!(block_number, "App index {:?}", header.app_data_lookup.index);
+	let DaHeaderExtensionVersion::V1(xt) = &header.extension;
+
+	info!(block_number, "App index {:?}", xt.app_lookup.index);
 
 	store_block_header_in_db(db.clone(), block_number, &header)
 		.context("Failed to store block header in DB")?;
@@ -80,9 +83,9 @@ async fn process_block(
 	let begin = SystemTime::now();
 
 	// TODO: Setting max rows * 2 to match extended matrix dimensions
-	let max_rows = header.extrinsics_root.rows * 2;
-	let max_cols = header.extrinsics_root.cols;
-	let commitment = header.extrinsics_root.commitment;
+	let max_rows = xt.commitment.rows * 2;
+	let max_cols = xt.commitment.cols;
+	let commitment = xt.commitment.commitment.clone();
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
@@ -105,7 +108,7 @@ async fn process_block(
 	let rpc_fetched = if cfg.disable_rpc {
 		vec![]
 	} else {
-		rpc::get_kate_proof(&rpc_url, block_number, unfetched)
+		rpc::get_kate_proof(&rpc_url, header_hash, unfetched)
 			.await
 			.context("Failed to fetch cells from node RPC")?
 	};
@@ -170,8 +173,8 @@ async fn process_block(
 pub async fn run(
 	cfg: SyncClientConfig,
 	rpc_url: String,
-	end_block: u64,
-	sync_blocks_depth: u64,
+	end_block: u32,
+	sync_blocks_depth: u32,
 	db: Arc<DB>,
 	ipfs: Ipfs<DefaultParams>,
 	pp: PublicParameters,
