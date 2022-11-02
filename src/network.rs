@@ -226,6 +226,11 @@ impl EventLoop {
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, std::io::Error>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => match event {
+				KademliaEvent::RoutingUpdated { peer, .. } => {
+					if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
+						ch.send(Ok(())).ok();
+					}
+				},
 				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
 					QueryResult::GetRecord(result) => match result {
 						Ok(GetRecordOk { records, .. }) => {
@@ -290,8 +295,8 @@ impl EventLoop {
 				peer_id, endpoint, ..
 			} => {
 				if endpoint.is_dialer() {
-					if let Some(sender) = self.pending_dials.remove(&peer_id) {
-						let _ = sender.send(Ok(()));
+					if let Some(ch) = self.pending_dials.remove(&peer_id) {
+						let _ = ch.send(Ok(()));
 					}
 				}
 				// this event is of interest,
@@ -303,8 +308,8 @@ impl EventLoop {
 			},
 			SwarmEvent::OutgoingConnectionError { peer_id, error } => {
 				if let Some(peer_id) = peer_id {
-					if let Some(sender) = self.pending_dials.remove(&peer_id) {
-						_ = sender.send(Err(error.into()));
+					if let Some(ch) = self.pending_dials.remove(&peer_id) {
+						_ = ch.send(Err(error.into()));
 					}
 				}
 			},
