@@ -27,7 +27,7 @@ use libp2p::{
 	},
 	mplex::MplexConfig,
 	multiaddr::Protocol,
-	noise::{self, NoiseConfig, X25519Spec},
+	noise::NoiseAuthenticated,
 	pnet::{PnetConfig, PreSharedKey},
 	swarm::{SwarmBuilder, SwarmEvent},
 	tcp::{GenTcpConfig, TokioTcpTransport},
@@ -474,10 +474,7 @@ fn setup_transport(
 	key_pair: Keypair,
 	psk: Option<PreSharedKey>,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
-	let dh_keys = noise::Keypair::<X25519Spec>::new()
-		.into_authentic(&key_pair)
-		.unwrap();
-	let noise_cfg = NoiseConfig::xx(dh_keys).into_authenticated();
+	let noise = NoiseAuthenticated::xx(&key_pair).unwrap();
 
 	let base_transport =
 		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(false));
@@ -490,7 +487,7 @@ fn setup_transport(
 
 	maybe_encrypted
 		.upgrade(Version::V1)
-		.authenticate(noise_cfg)
+		.authenticate(noise)
 		.multiplex(SelectUpgrade::new(
 			YamuxConfig::default(),
 			MplexConfig::new(),
