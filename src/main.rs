@@ -189,10 +189,12 @@ async fn do_main() -> Result<()> {
 			.await
 			.context("Connection is not established")?;
 		bootstrap_nodes = vec![node];
+		network_client.bootstrap(bootstrap_nodes, true).await?;
+	} else {
+		// Now that we have something to bootstrap with, just do it
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		network_client.bootstrap(bootstrap_nodes, false).await?;
 	}
-	// Now that we have something to bootstrap with, just do it
-	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client.bootstrap(bootstrap_nodes).await?;
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();

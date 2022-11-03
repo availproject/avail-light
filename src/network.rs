@@ -35,7 +35,7 @@ use libp2p::{
 	Multiaddr, NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm, Transport,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::log::info;
+use tracing::info;
 
 #[derive(Debug)]
 enum QueryChannel {
@@ -89,11 +89,19 @@ impl Client {
 		receiver.await.expect("Sender not to be dropped.")
 	}
 
-	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+	pub async fn bootstrap(
+		&self,
+		nodes: Vec<(PeerId, Multiaddr)>,
+		is_bootstrap: bool,
+	) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
-			self.dial(peer, addr).await?;
+			// Bootstrap clients dialing back the first peer that connects to them produces an error
+			// TODO: find the cause of the error
+			if !is_bootstrap {
+				self.dial(peer, addr).await?;
+			}
 		}
 
 		self.sender
@@ -286,7 +294,7 @@ impl EventLoop {
 			},
 			SwarmEvent::NewListenAddr { address, .. } => {
 				let local_peer_id = *self.swarm.local_peer_id();
-				println!(
+				info!(
 					"Local node is listening on {:?}",
 					address.with(Protocol::P2p(local_peer_id.into()))
 				);
@@ -313,7 +321,7 @@ impl EventLoop {
 					}
 				}
 			},
-			SwarmEvent::Dialing(peer_id) => println!("Dialing {}", peer_id),
+			SwarmEvent::Dialing(peer_id) => info!("Dialing {}", peer_id),
 			_ => {},
 		}
 	}
@@ -447,8 +455,8 @@ pub fn init(
 			.build()
 	};
 
-	let (command_sender, command_receiver) = mpsc::channel(0);
-	let (event_sender, event_receiver) = mpsc::channel(0);
+	let (command_sender, command_receiver) = mpsc::channel(10000);
+	let (event_sender, event_receiver) = mpsc::channel(10000);
 
 	Ok((
 		Client {
