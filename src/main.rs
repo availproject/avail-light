@@ -182,18 +182,22 @@ async fn do_main() -> Result<()> {
 		let node = network_events
 			.find_map(|e| match e {
 				network::Event::ConnectionEstablished { peer_id, endpoint } => {
-					Some((peer_id, endpoint.get_remote_address().clone()))
+					if endpoint.is_listener() {
+						Some((peer_id, endpoint.get_remote_address().clone()))
+					} else {
+						None
+					}
 				},
 			})
 			// hang in there, until someone dials us
 			.await
 			.context("Connection is not established")?;
 		bootstrap_nodes = vec![node];
-		network_client.bootstrap(bootstrap_nodes, true).await?;
+		network_client.bootstrap(bootstrap_nodes).await?;
 	} else {
 		// Now that we have something to bootstrap with, just do it
 		info!("Bootstraping the DHT with bootstrap nodes...");
-		network_client.bootstrap(bootstrap_nodes, false).await?;
+		network_client.bootstrap(bootstrap_nodes).await?;
 	}
 
 	let pp = kate_proof::testnet::public_params(1024);

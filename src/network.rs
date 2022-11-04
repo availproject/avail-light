@@ -89,19 +89,13 @@ impl Client {
 		receiver.await.expect("Sender not to be dropped.")
 	}
 
-	pub async fn bootstrap(
-		&self,
-		nodes: Vec<(PeerId, Multiaddr)>,
-		is_bootstrap: bool,
-	) -> Result<()> {
+	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
 			// Bootstrap clients dialing back the first peer that connects to them produces an error
 			// TODO: find the cause of the error
-			if !is_bootstrap {
-				self.dial(peer, addr).await?;
-			}
+			self.dial(peer, addr).await?;
 		}
 
 		self.sender
@@ -350,6 +344,15 @@ impl EventLoop {
 				peer_addr,
 				sender,
 			} => {
+				// Check if peer is not already connected
+				// Dialing connected peers could happen during
+				// the bootstrap of the first peer in the network
+				if self.swarm.is_connected(&peer_id) {
+					// just skip this dial, pretend all is fine
+					_ = sender.send(Ok(())).ok();
+					return;
+				}
+
 				if let hash_map::Entry::Vacant(e) = self.pending_dials.entry(peer_id) {
 					match self
 						.swarm
