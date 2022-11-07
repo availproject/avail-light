@@ -6,7 +6,7 @@ use std::{
 	time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::{Stream, StreamExt};
 use tokio::sync::{mpsc, oneshot};
 
@@ -418,7 +418,7 @@ pub fn init(
 			let mut bytes = [0u8; 32];
 			bytes[0] = seed;
 			let secret_key = ed25519::SecretKey::from_bytes(&mut bytes)
-				.expect("Error should only appear if length is wrong.");
+				.context("Error should only appear if length is wrong.")?;
 			identity::Keypair::Ed25519(secret_key.into())
 		},
 		None => identity::Keypair::generate_ed25519(),
