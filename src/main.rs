@@ -164,7 +164,7 @@ async fn do_main() -> Result<()> {
 	network_client
 		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
 		.await
-		.expect("Listening not to fail.");
+		.context("Listening not to fail.")?;
 
 	// Check if bootstrap nodes were provided
 	let mut bootstrap_nodes = cfg
