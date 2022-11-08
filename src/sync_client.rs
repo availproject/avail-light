@@ -18,7 +18,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
-use avail_subxt::DaHeaderExtensionVersion;
+use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
@@ -59,7 +59,7 @@ async fn process_block(
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
-	let DaHeaderExtensionVersion::V1(xt) = &header.extension;
+	let HeaderExtension::V1(xt) = &header.extension;
 
 	info!(block_number, "App index {:?}", xt.app_lookup.index);
 

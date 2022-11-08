@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
-use avail_subxt::DaHeader;
+use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use hyper_tls::HttpsConnector;
 use kate_recovery::com::{Cell, Position};

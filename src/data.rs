@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
-use avail_subxt::DaHeader;
+use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
 use ipfs_embed::{
