@@ -55,8 +55,8 @@ impl Client {
 		self.sender
 			.send(Command::StartListening { addr, sender })
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn add_address(
@@ -72,8 +72,8 @@ impl Client {
 				sender,
 			})
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn dial(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
@@ -85,8 +85,8 @@ impl Client {
 				sender,
 			})
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
@@ -101,8 +101,8 @@ impl Client {
 		self.sender
 			.send(Command::Bootstrap { sender })
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
@@ -114,8 +114,8 @@ impl Client {
 				sender,
 			})
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn put_kad_record(&self, record: Record, quorum: Quorum) -> Result<()> {
@@ -127,8 +127,8 @@ impl Client {
 				sender,
 			})
 			.await
-			.expect("Command receiver should not be dropped.");
-		receiver.await.expect("Sender not to be dropped.")
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 }
 
