@@ -230,7 +230,7 @@ impl EventLoop {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => match event {
 				KademliaEvent::RoutingUpdated { peer, .. } => {
 					if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
-						ch.send(Ok(())).ok();
+						_ = ch.send(Ok(()));
 					}
 				},
 				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
@@ -239,14 +239,14 @@ impl EventLoop {
 							if let Some(QueryChannel::GetRecord(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Ok(records)).ok();
+								_ = ch.send(Ok(records));
 							}
 						},
 						Err(err) => {
 							if let Some(QueryChannel::GetRecord(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Err(err.into())).ok();
+								_ = ch.send(Err(err.into()));
 							}
 						},
 					},
@@ -255,14 +255,14 @@ impl EventLoop {
 							if let Some(QueryChannel::PutRecord(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Ok(())).ok();
+								_ = ch.send(Ok(()));
 							}
 						},
 						Err(err) => {
 							if let Some(QueryChannel::PutRecord(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Err(err.into())).ok();
+								_ = ch.send(Err(err.into()));
 							}
 						},
 					},
@@ -271,14 +271,14 @@ impl EventLoop {
 							if let Some(QueryChannel::Bootstrap(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Ok(())).ok();
+								_ = ch.send(Ok(()));
 							}
 						},
 						Err(err) => {
 							if let Some(QueryChannel::Bootstrap(ch)) =
 								self.pending_kad_queries.remove(&id.into())
 							{
-								ch.send(Err(err.into())).ok();
+								_ = ch.send(Err(err.into()));
 							}
 						},
 					},
@@ -349,7 +349,7 @@ impl EventLoop {
 				// the bootstrap of the first peer in the network
 				if self.swarm.is_connected(&peer_id) {
 					// just skip this dial, pretend all is fine
-					_ = sender.send(Ok(())).ok();
+					_ = sender.send(Ok(()));
 					return;
 				}
 
