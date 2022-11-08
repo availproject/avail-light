@@ -27,7 +27,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use avail_subxt::DaHeaderExtensionVersion;
+use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
@@ -210,7 +210,7 @@ pub async fn run(
 
 			let begin = SystemTime::now();
 
-			let DaHeaderExtensionVersion::V1(xt) = &header.extension;
+			let HeaderExtension::V1(xt) = &header.extension;
 			// TODO: Setting max rows * 2 to match extended matrix dimensions
 			let max_rows = xt.commitment.rows * 2;
 			let max_cols = xt.commitment.cols;

@@ -1,7 +1,9 @@
 //! Shared light client structs and enums.
 
 use anyhow::Context;
-use avail_subxt::{DaHeader, DaHeaderExtensionVersion, KateCommitment};
+use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
+use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
+use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
@@ -328,7 +330,7 @@ pub struct ClientMsg {
 impl From<DaHeader> for ClientMsg {
 	fn from(header: DaHeader) -> Self {
 		let hash: H256 = Encode::using_encoded(&header, |e| blake2_256(e)).into();
-		let DaHeaderExtensionVersion::V1(xt) = header.extension;
+		let HeaderExtension::V1(xt) = header.extension;
 		let KateCommitment { rows, cols, .. } = xt.commitment;
 
 		ClientMsg {
