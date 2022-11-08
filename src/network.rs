@@ -213,13 +213,13 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self) {
+	pub async fn run(mut self) -> Result<()> {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
+				event = self.swarm.next() => self.handle_event(event.context("Swarm stream should be infinite")?).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
-					None => return ,
+					None => (),
 				},
 			}
 		}
