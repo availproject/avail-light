@@ -213,10 +213,10 @@ impl EventLoop {
 		}
 	}
 
-	pub async fn run(mut self) -> Result<()> {
+	pub async fn run(mut self) {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.context("Swarm stream should be infinite")?).await,
+				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					None => (),
@@ -353,17 +353,14 @@ impl EventLoop {
 					return;
 				}
 
-				if let hash_map::Entry::Vacant(e) = self.pending_dials.entry(peer_id) {
-					match self
+				if let hash_map::Entry::Vacant(entry) = self.pending_dials.entry(peer_id) {
+					if let Err(err) = self
 						.swarm
 						.dial(peer_addr.with(Protocol::P2p(peer_id.into())))
 					{
-						Ok(()) => {
-							e.insert(sender);
-						},
-						Err(e) => {
-							_ = sender.send(Err(e.into()));
-						},
+						_ = sender.send(Err(err.into()));
+					} else {
+						entry.insert(sender);
 					}
 				} else {
 					todo!("Implement logic for peer thats already beeing dialed.");

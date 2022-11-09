@@ -52,3 +52,9 @@ openssl = { version = "0.10", features = ["vendored"] }
 proptest = "1.0.0"
 test-case = "1.2.3"
 
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
