@@ -470,8 +470,7 @@ pub fn init(
 /// Read the pre-shared key file from the given directory
 fn get_psk(location: &String) -> Result<Option<String>> {
 	let path = Path::new(location);
-	let swarm_key_file = path.join("swarm.key");
-	match fs::read_to_string(swarm_key_file) {
+	match fs::read_to_string(path) {
 		Ok(text) => Ok(Some(text)),
 		Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
 		Err(e) => Err(e.into()),
