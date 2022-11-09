@@ -149,7 +149,7 @@ async fn do_main() -> Result<()> {
 	let bootstrap_nodes = cfg
 		.bootstraps
 		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 

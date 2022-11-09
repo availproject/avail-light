@@ -18,7 +18,6 @@
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 
 use anyhow::{anyhow, Context, Result};
-use codec::{Compact, Decode, Error as DecodeError, Input};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::com::{
@@ -26,8 +25,6 @@ use kate_recovery::com::{
 	reconstruct_app_extrinsics, Cell, DataCell, ExtendedMatrixDimensions, Position,
 };
 use rocksdb::DB;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use sp_runtime::{AccountId32, MultiAddress, MultiSignature};
 use std::{
 	collections::HashSet,
 	sync::{mpsc::Receiver, Arc},
@@ -253,119 +250,11 @@ pub async fn run(
 		}
 	}
 }
-
-/// Struct used to decode avail extrinsic
-#[derive(Serialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct AvailExtrinsic {
-	pub app_id: u32,
-	pub signature: Option<MultiSignature>,
-	#[serde(serialize_with = "as_string")]
-	pub data: Vec<u8>,
-}
-
-fn as_string<S>(t: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-where
-	S: Serializer,
-{
-	sp_core::bytes::serialize(t, serializer)
-}
-
-/// Type used to decode signed extra in avail extrinsic
-pub type AvailSignedExtra = ((), (), (), AvailMortality, Nonce, (), Balance, u32);
-
-/// Struct used to decode balance in signed extra
-#[derive(Decode)]
-pub struct Balance(#[codec(compact)] u128);
-
-/// Struct used to decode nonce in signed extra
-#[derive(Decode)]
-pub struct Nonce(#[codec(compact)] u32);
-
-/// Struct used to decode mortaliy in signed extra
-pub enum AvailMortality {
-	Immortal,
-	Mortal(u64, u64),
-}
-
-impl Decode for AvailMortality {
-	fn decode<I: Input>(input: &mut I) -> Result<Self, DecodeError> {
-		let first = input.read_byte()?;
-		if first == 0 {
-			Ok(Self::Immortal)
-		} else {
-			let encoded = first as u64 + ((input.read_byte()? as u64) << 8);
-			let period = 2 << (encoded % (1 << 4));
-			let quantize_factor = (period >> 12).max(1);
-			let phase = (encoded >> 4) * quantize_factor;
-			if period >= 4 && phase < period {
-				Ok(Self::Mortal(period, phase))
-			} else {
-				Err("Invalid period and phase".into())
-			}
-		}
-	}
-}
-
-const EXTRINSIC_VERSION: u8 = 4;
-impl Decode for AvailExtrinsic {
-	fn decode<I: Input>(input: &mut I) -> Result<AvailExtrinsic, DecodeError> {
-		// This is a little more complicated than usual since the binary format must be compatible
-		// with substrate's generic `Vec<u8>` type. Basically this just means accepting that there
-		// will be a prefix of vector length (we don't need
-		// to use this).
-		let _length_do_not_remove_me_see_above: Compact<u32> = Decode::decode(input)?;
-
-		let version = input.read_byte()?;
-
-		let is_signed = version & 0b1000_0000 != 0;
-		let version = version & 0b0111_1111;
-		if version != EXTRINSIC_VERSION {
-			return Err("Invalid transaction version".into());
-		}
-		let (app_id, signature) = if is_signed {
-			let _address = <MultiAddress<AccountId32, u32>>::decode(input)?;
-			let sig = MultiSignature::decode(input)?;
-			let extra = <AvailSignedExtra>::decode(input)?;
-			let app_id = extra.7;
-
-			(app_id, Some(sig))
-		} else {
-			return Err("Not signed".into());
-		};
-
-		let section: u8 = Decode::decode(input)?;
-		let method: u8 = Decode::decode(input)?;
-
-		let data: Vec<u8> = match (section, method) {
-			// TODO: Define these pairs as enums or better yet - make a dependency on substrate enums if possible
-			(29, 1) => Decode::decode(input)?,
-			_ => return Err("Not Avail Extrinsic".into()),
-		};
-
-		Ok(Self {
-			app_id,
-			signature,
-			data,
-		})
-	}
-}
-
-impl<'a> Deserialize<'a> for AvailExtrinsic {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'a>,
-	{
-		let r = sp_core::bytes::deserialize(deserializer)?;
-		Decode::decode(&mut &r[..])
-			.map_err(|e| serde::de::Error::custom(format!("Decode error: {}", e)))
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use kate_recovery::com::{Cell, ExtendedMatrixDimensions, Position};
 
-	use super::{can_reconstruct, diff_positions, AvailExtrinsic};
+	use super::{can_reconstruct, diff_positions};
 
 	fn position(row: u16, col: u16) -> Position {
 		Position { row, col }
@@ -424,16 +313,5 @@ mod tests {
 		assert_eq!(diff_positions(&positions, &cells).len(), 2);
 		assert_eq!(diff_positions(&positions, &cells)[0], position(0, 0));
 		assert_eq!(diff_positions(&positions, &cells)[1], position(1, 1));
-	}
-
-	#[test]
-	fn test_decode_xt() {
-		let xt= serde_json::to_string("0xe9018400de1113c5912fda9c77305cddd98e2b5ca156f260ff2ac329dde67110854f8f3901007a35bdd5ec15a69bcd37d648dafcf18693f158baca512be44f1dfc218048581ba527938763b9b5a16f915e29c101c8450a2dd04d795de704f496ce9c81038d00dd1900030000001d01306578616d706c652064617461").unwrap();
-		let x: AvailExtrinsic = serde_json::from_str(&xt).unwrap();
-		let id = x.app_id;
-		let data = String::from_utf8_lossy(x.data.as_slice());
-		assert_eq!(id, 3);
-		assert_eq!(data, "example data");
-		println!("id: {id}, data: {data}.");
 	}
 }
