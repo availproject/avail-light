@@ -147,9 +147,12 @@ async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	let (network_client, mut network_events, network_event_loop) =
-		network::init(cfg.libp2p_seed, &cfg.libp2p_psk_path)
-			.context("Failed to init Network Service")?;
+	let (network_client, mut network_events, network_event_loop) = network::init(
+		cfg.libp2p_seed,
+		&cfg.libp2p_psk_path,
+		cfg.libp2p_tcp_port_reuse,
+	)
+	.context("Failed to init Network Service")?;
 	// Spawn the network task for it to run in the background
 	tokio::spawn(network_event_loop.run());
 

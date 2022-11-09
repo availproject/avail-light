@@ -408,6 +408,7 @@ impl EventLoop {
 pub fn init(
 	seed: Option<u8>,
 	psk_path: &String,
+	port_reuse: bool,
 ) -> Result<(Client, impl Stream<Item = Event>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
@@ -428,7 +429,7 @@ pub fn init(
 		.map(|text| PreSharedKey::from_str(&text))
 		.transpose()?;
 	// create transport
-	let transport = setup_transport(id_keys, psk);
+	let transport = setup_transport(id_keys, psk, port_reuse);
 
 	// create swarm that manages peers and events
 	let swarm = {
@@ -480,11 +481,12 @@ fn get_psk(location: &String) -> Result<Option<String>> {
 fn setup_transport(
 	key_pair: Keypair,
 	psk: Option<PreSharedKey>,
+	port_reuse: bool,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
 	let noise = NoiseAuthenticated::xx(&key_pair).unwrap();
 
 	let base_transport =
-		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(false));
+		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(port_reuse));
 	let maybe_encrypted = match psk {
 		Some(psk) => EitherTransport::Left(
 			base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),

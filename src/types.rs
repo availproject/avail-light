@@ -328,6 +328,8 @@ pub struct RuntimeConfig {
 	pub full_node_rpc: Vec<String>,
 	/// File system path where psk key is stored
 	pub libp2p_psk_path: String,
+	// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
+	pub libp2p_tcp_port_reuse: bool,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -448,6 +450,7 @@ impl Default for RuntimeConfig {
 			libp2p_port: (37000, 0),
 			libp2p_seed: None,
 			libp2p_psk_path: "./avail/psk".to_owned(),
+			libp2p_tcp_port_reuse: false,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
