@@ -353,7 +353,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sp-core",
- "sp-runtime",
  "structopt",
  "tempdir",
  "test-case",

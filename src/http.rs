@@ -15,6 +15,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use avail_subxt::primitives::AppUncheckedExtrinsic;
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
@@ -24,7 +25,6 @@ use tracing::info;
 use warp::{http::StatusCode, Filter};
 
 use crate::{
-	app_client::AvailExtrinsic,
 	data::{get_confidence_from_db, get_decoded_data_from_db},
 	types::{CellContentQueryPayload, Mode, RuntimeConfig},
 };
@@ -39,7 +39,7 @@ struct ConfidenceResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ExtrinsicsDataResponse {
 	pub block: u32,
-	pub extrinsics: Vec<AvailExtrinsic>,
+	pub extrinsics: Vec<AppUncheckedExtrinsic>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -141,7 +141,7 @@ fn appdata(
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
-	) -> Result<Option<Vec<AvailExtrinsic>>> {
+	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
 		let xts = data.map(|e| {
 			e.map(|e| {
 				e.iter()
@@ -150,7 +150,7 @@ fn appdata(
 						<_>::decode(&mut &raw[..])
 							.context(format!("Couldn't decode AvailExtrinsic num {i}"))
 					})
-					.collect::<Result<Vec<AvailExtrinsic>>>()
+					.collect::<Result<Vec<_>>>()
 			})
 		});
 		match xts {
