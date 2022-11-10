@@ -34,6 +34,7 @@ mod proof;
 mod rpc;
 mod sync_client;
 mod types;
+mod utils;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -84,7 +85,10 @@ fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json
 }
 
 fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
-	FmtSubscriber::builder().with_max_level(log_level).finish()
+	FmtSubscriber::builder()
+		.with_max_level(log_level)
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
 }
 
 fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
@@ -201,7 +205,6 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			ipfs.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,

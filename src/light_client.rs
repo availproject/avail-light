@@ -33,6 +33,7 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use kate_recovery::matrix::{Dimensions, Position};
 use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
@@ -211,16 +212,18 @@ pub async fn run(
 			let begin = SystemTime::now();
 
 			let HeaderExtension::V1(xt) = &header.extension;
-			// TODO: Setting max rows * 2 to match extended matrix dimensions
-			let max_rows = xt.commitment.rows * 2;
-			let max_cols = xt.commitment.cols;
-			if max_cols < 3 {
+			let dimensions = Dimensions {
+				rows: xt.commitment.rows,
+				cols: xt.commitment.cols,
+			};
+
+			if dimensions.cols < 3 {
 				error!(block_number, "chunk size less than 3");
 			}
 			let commitment = xt.commitment.commitment.clone();
 
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-			let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
+			let positions = rpc::generate_random_cells(&dimensions, cell_count);
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
@@ -277,8 +280,7 @@ pub async fn run(
 			if !cfg.disable_proof_verification {
 				let count = proof::verify_proof(
 					block_number,
-					max_rows,
-					max_cols,
+					&dimensions,
 					&cells,
 					commitment.clone(),
 					pp.clone(),
@@ -318,7 +320,9 @@ pub async fn run(
 
 			let mut begin = SystemTime::now();
 			if let Some(partition) = &cfg.block_matrix_partition {
-				let positions = rpc::generate_partition_cells(partition, max_rows, max_cols);
+				let positions: Vec<Position> = dimensions
+					.iter_extended_partition_positions(partition)
+					.collect();
 				info!(
 					block_number,
 					"partition_cells_requested" = positions.len(),

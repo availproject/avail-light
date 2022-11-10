@@ -2267,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.2.3#2ec9d12467b55812e6c69b51e1546f5bc943e9c4"
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-16#f96a27a874530169568c04d2f3e5b84697c41850"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -2279,8 +2279,8 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.2.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.2.3#2ec9d12467b55812e6c69b51e1546f5bc943e9c4"
+version = "0.3.0"
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-16#f96a27a874530169568c04d2f3e5b84697c41850"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
@@ -5746,8 +5746,8 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
- "rand 0.8.5",
+ "cfg-if 0.1.10",
+ "rand 0.4.6",
  "static_assertions",
 ]
 
