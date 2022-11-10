@@ -22,6 +22,7 @@ use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExt
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use ipfs_embed::{DefaultParams, Ipfs};
+use kate_recovery::matrix::Dimensions;
 use rocksdb::DB;
 use tracing::{error, info, warn};
 
@@ -82,13 +83,14 @@ async fn process_block(
 
 	let begin = SystemTime::now();
 
-	// TODO: Setting max rows * 2 to match extended matrix dimensions
-	let max_rows = xt.commitment.rows * 2;
-	let max_cols = xt.commitment.cols;
+	let dimensions = Dimensions {
+		rows: xt.commitment.rows,
+		cols: xt.commitment.cols,
+	};
 	let commitment = xt.commitment.commitment.clone();
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
+	let positions = rpc::generate_random_cells(&dimensions, cell_count);
 
 	let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
 		&ipfs,
@@ -135,8 +137,7 @@ async fn process_block(
 		cells.len()
 	);
 
-	let count =
-		crate::proof::verify_proof(block_number, max_rows, max_cols, &cells, commitment, pp);
+	let count = crate::proof::verify_proof(block_number, &dimensions, &cells, commitment, pp);
 
 	info!(
 		block_number,

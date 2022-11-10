@@ -3,14 +3,14 @@
 use std::sync::{mpsc::channel, Arc};
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use kate_recovery::com::Cell;
+use kate_recovery::{data::Cell, matrix::Dimensions};
 use tracing::{error, trace};
 
 // Just a wrapper function, to be used when spawning threads for verifying proofs
 // for a certain block
 fn kc_verify_proof_wrapper(
 	block_num: u32,
-	row: u16,
+	row: u32,
 	col: u16,
 	total_rows: usize,
 	total_cols: usize,
@@ -33,8 +33,7 @@ fn kc_verify_proof_wrapper(
 /// Verifies proofs for given block, cells and commitments
 pub fn verify_proof(
 	block_num: u32,
-	total_rows: u16,
-	total_cols: u16,
+	dimensions: &Dimensions,
 	cells: &[Cell],
 	commitment: Vec<u8>,
 	pp: PublicParameters,
@@ -44,6 +43,8 @@ pub fn verify_proof(
 	let (tx, rx) = channel::<bool>();
 	let jobs = cells.len();
 	let commitment = Arc::new(commitment);
+	let rows = dimensions.extended_rows() as usize;
+	let cols = dimensions.cols as usize;
 
 	for cell in cells.iter().cloned() {
 		let row = cell.position.row;
@@ -57,8 +58,8 @@ pub fn verify_proof(
 				block_num,
 				row,
 				col,
-				total_rows as usize,
-				total_cols as usize,
+				rows,
+				cols,
 				&cell.content,
 				&commitment[row as usize * 48..(row as usize + 1) * 48],
 				params,
