@@ -7,8 +7,8 @@ authors = ["Polygon Avail Team"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kate-recovery = { git = "https://github.com/maticnetwork/avail-core.git", branch = "AV-16" }
-kate-proof = { git = "https://github.com/maticnetwork/avail-core.git", branch = "AV-16" }
+kate-recovery = { git = "https://github.com/maticnetwork/avail-core.git", rev = "c943ce5" }
+kate-proof = { git = "https://github.com/maticnetwork/avail-core.git", rev = "c943ce5" }
 avail-subxt = { git = "https://github.com/maticnetwork/avail.git", rev = "b3cd06e" }
 dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", tag = "v0.12.0-polygon-1"  }
 tokio-tungstenite = { version = "0.16.1", features = ["native-tls"] }
