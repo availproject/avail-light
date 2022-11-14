@@ -78,8 +78,14 @@ async fn process_block(
 	let rows_count = rows.iter().filter(|&o| Option::is_some(o)).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
 
-	let is_verified =
-		kate_recovery::commitments::verify_equality(&pp, commitments, &rows, &block.lookup, &block.dimensions, app_id)?;
+	let is_verified = kate_recovery::commitments::verify_equality(
+		&pp,
+		commitments,
+		&rows,
+		&block.lookup,
+		&block.dimensions,
+		app_id,
+	)?;
 
 	info!(block_number, "Block verified: {is_verified}");
 
