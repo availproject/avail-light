@@ -73,14 +73,19 @@ async fn process_block(
 ) -> Result<()> {
 	let block_number = block.block_num;
 	let commitments = &block.commitment;
-	let cols_num = block.dimensions.cols as usize;
 
 	let rows = get_kate_app_data(rpc_url, block.header_hash, app_id).await?;
 	let rows_count = rows.iter().filter(|&o| Option::is_some(o)).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
 
-	let is_verified =
-		kate_recovery::commitments::verify_equality(&pp, commitments, cols_num, &rows)?;
+	let is_verified = kate_recovery::commitments::verify_equality(
+		&pp,
+		commitments,
+		&rows,
+		&block.lookup,
+		&block.dimensions,
+		app_id,
+	)?;
 
 	info!(block_number, "Block verified: {is_verified}");
 
