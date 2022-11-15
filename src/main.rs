@@ -152,6 +152,7 @@ async fn do_main() -> Result<()> {
 	let (network_client, mut network_events, network_event_loop) = network::init(
 		cfg.libp2p_seed,
 		&cfg.libp2p_psk_path,
+		libp2p_metrics,
 		cfg.libp2p_tcp_port_reuse,
 	)
 	.context("Failed to init Network Service")?;
