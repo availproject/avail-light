@@ -362,7 +362,7 @@ dependencies = [
  "num_cpus",
  "openssl",
  "parity-scale-codec",
- "prometheus",
+ "prometheus-client",
  "proptest",
  "rand 0.8.5",
  "regex",
@@ -3781,24 +3781,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "prometheus"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45c8babc29389186697fe5a2a4859d697825496b83db5d0b65271cdc0488e88c"
-dependencies = [
- "cfg-if 1.0.0",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot 0.12.1",
- "thiserror",
-]
-
-[[package]]
 name = "prometheus-client"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c473049631c233933d6286c88bbb7be30e62ec534cf99a9ae0079211f7fa603"
+checksum = "83cd1b99916654a69008fd66b4f9397fbe08e6e51dfe23d4417acf5d3b8cb87c"
 dependencies = [
  "dtoa",
  "itoa",
