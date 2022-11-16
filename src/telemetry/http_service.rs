@@ -4,6 +4,7 @@ use std::{
 	task::{Context, Poll},
 };
 
+use anyhow::{Error, Result};
 use futures::Future;
 use hyper::{service::Service, Body, Method, Request, Response, StatusCode};
 use prometheus_client::{encoding::text::encode, registry::Registry};
@@ -19,30 +20,35 @@ impl MetricService {
 		Arc::clone(&self.reg)
 	}
 
-	fn respond_with_metrics(&mut self) -> Response<Body> {
+	fn respond_with_metrics(&mut self) -> Result<Response<Body>> {
 		let mut encoded: Vec<u8> = Vec::new();
-		let reg = self.get_reg();
+		let reg_mutex = self.get_reg();
 
-		encode(&mut encoded, &reg.lock().unwrap()).unwrap();
+		let reg = match reg_mutex.lock() {
+			Ok(reg) => reg,
+			Err(_) => return Err(Error::msg("Could not acquire lock on Prometheus Registry")),
+		};
+
+		encode(&mut encoded, &reg)?;
 		let metrics_content_type = "application/openmetrics-text;charset=utf-8;version=1.0.0";
-		Response::builder()
+		let res = Response::builder()
 			.status(StatusCode::OK)
 			.header(hyper::header::CONTENT_TYPE, metrics_content_type)
-			.body(Body::from(encoded))
-			.unwrap()
+			.body(Body::from(encoded))?;
+		Ok(res)
 	}
 
-	fn respond_with_404_not_found(&mut self) -> Response<Body> {
-		Response::builder()
+	fn respond_with_404_not_found(&mut self) -> Result<Response<Body>> {
+		let res = Response::builder()
 			.status(StatusCode::NOT_FOUND)
-			.body(Body::from("Not found. Try localhost:[port]/metrics"))
-			.unwrap()
+			.body(Body::from("Not found. Try localhost:[port]/metrics"))?;
+		Ok(res)
 	}
 }
 
 impl Service<Request<Body>> for MetricService {
 	type Response = Response<Body>;
-	type Error = hyper::Error;
+	type Error = anyhow::Error;
 	type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
 	fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -58,7 +64,10 @@ impl Service<Request<Body>> for MetricService {
 			self.respond_with_404_not_found()
 		};
 
-		Box::pin(async { Ok(resp) })
+		match resp {
+			Ok(res) => return Box::pin(async { Ok(res) }),
+			Err(err) => return Box::pin(async { Err(err) }),
+		}
 	}
 }
 
