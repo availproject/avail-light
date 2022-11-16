@@ -7,10 +7,10 @@ use std::{
 	thread, time,
 };
 
-use ::prometheus::Registry;
 use anyhow::{Context, Result};
 use async_std::stream::StreamExt;
-use libp2p::{Multiaddr, PeerId};
+use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
+use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
@@ -31,10 +31,10 @@ mod data;
 mod http;
 mod light_client;
 mod network;
-mod prometheus_handler;
 mod proof;
 mod rpc;
 mod sync_client;
+mod telemetry;
 mod types;
 
 #[derive(StructOpt, Debug)]
@@ -120,12 +120,14 @@ async fn do_main() -> Result<()> {
 	info!("Using config: {:?}", cfg);
 
 	// Spawn Prometheus server
-	let registry = Registry::default();
+	let mut metric_registry = Registry::default();
+	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
+	let lc_metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 	let prometheus_port = cfg.prometheus_port.unwrap_or(9520);
 
-	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
+	tokio::task::spawn(telemetry::http_server(
 		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), prometheus_port),
-		registry.clone(),
+		metric_registry,
 	));
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
@@ -150,6 +152,7 @@ async fn do_main() -> Result<()> {
 	let (network_client, mut network_events, network_event_loop) = network::init(
 		cfg.libp2p_seed,
 		&cfg.libp2p_psk_path,
+		libp2p_metrics,
 		cfg.libp2p_tcp_port_reuse,
 	)
 	.context("Failed to init Network Service")?;
@@ -258,7 +261,7 @@ async fn do_main() -> Result<()> {
 		rpc_url,
 		block_tx,
 		pp,
-		registry,
+		lc_metrics,
 		counter.clone(),
 	)
 	.await

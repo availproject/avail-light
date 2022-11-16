@@ -25,6 +25,7 @@ use libp2p::{
 		BootstrapOk, GetRecordOk, Kademlia, KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk,
 		QueryId, QueryResult, Quorum, Record,
 	},
+	metrics::{Metrics, Recorder},
 	mplex::MplexConfig,
 	multiaddr::Protocol,
 	noise::NoiseAuthenticated,
@@ -187,6 +188,7 @@ pub struct EventLoop {
 	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	metrics: Metrics,
 }
 
 #[derive(Debug)]
@@ -202,6 +204,7 @@ impl EventLoop {
 		swarm: Swarm<NetworkBehaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		event_sender: mpsc::Sender<Event>,
+		metrics: Metrics,
 	) -> Self {
 		Self {
 			swarm,
@@ -210,6 +213,7 @@ impl EventLoop {
 			pending_dials: Default::default(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
+			metrics,
 		}
 	}
 
@@ -227,96 +231,108 @@ impl EventLoop {
 
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, std::io::Error>) {
 		match event {
-			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => match event {
-				KademliaEvent::RoutingUpdated { peer, .. } => {
-					if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
-						_ = ch.send(Ok(()));
-					}
-				},
-				KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
-					QueryResult::GetRecord(result) => match result {
-						Ok(GetRecordOk { records, .. }) => {
-							if let Some(QueryChannel::GetRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Ok(records));
-							}
-						},
-						Err(err) => {
-							if let Some(QueryChannel::GetRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Err(err.into()));
-							}
-						},
+			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
+				// record KAD Behaviour events
+				self.metrics.record(&event);
+
+				match event {
+					KademliaEvent::RoutingUpdated { peer, .. } => {
+						if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
+							_ = ch.send(Ok(()));
+						}
 					},
-					QueryResult::PutRecord(result) => match result {
-						Ok(PutRecordOk { .. }) => {
-							if let Some(QueryChannel::PutRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Ok(()));
-							}
+					KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
+						QueryResult::GetRecord(result) => match result {
+							Ok(GetRecordOk { records, .. }) => {
+								if let Some(QueryChannel::GetRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Ok(records));
+								}
+							},
+							Err(err) => {
+								if let Some(QueryChannel::GetRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Err(err.into()));
+								}
+							},
 						},
-						Err(err) => {
-							if let Some(QueryChannel::PutRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Err(err.into()));
-							}
+						QueryResult::PutRecord(result) => match result {
+							Ok(PutRecordOk { .. }) => {
+								if let Some(QueryChannel::PutRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Ok(()));
+								}
+							},
+							Err(err) => {
+								if let Some(QueryChannel::PutRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Err(err.into()));
+								}
+							},
 						},
-					},
-					QueryResult::Bootstrap(result) => match result {
-						Ok(BootstrapOk { .. }) => {
-							if let Some(QueryChannel::Bootstrap(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Ok(()));
-							}
+						QueryResult::Bootstrap(result) => match result {
+							Ok(BootstrapOk { .. }) => {
+								if let Some(QueryChannel::Bootstrap(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Ok(()));
+								}
+							},
+							Err(err) => {
+								if let Some(QueryChannel::Bootstrap(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Err(err.into()));
+								}
+							},
 						},
-						Err(err) => {
-							if let Some(QueryChannel::Bootstrap(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								_ = ch.send(Err(err.into()));
-							}
-						},
+						_ => {},
 					},
 					_ => {},
-				},
-				_ => {},
-			},
-			SwarmEvent::NewListenAddr { address, .. } => {
-				let local_peer_id = *self.swarm.local_peer_id();
-				info!(
-					"Local node is listening on {:?}",
-					address.with(Protocol::P2p(local_peer_id.into()))
-				);
-			},
-			SwarmEvent::ConnectionEstablished {
-				peer_id, endpoint, ..
-			} => {
-				if endpoint.is_dialer() {
-					if let Some(ch) = self.pending_dials.remove(&peer_id) {
-						let _ = ch.send(Ok(()));
-					}
-				}
-				// this event is of interest,
-				// pass event to output event stream
-				self.event_sender
-					.send(Event::ConnectionEstablished { peer_id, endpoint })
-					.await
-					.expect("Event receiver not to be dropped.");
-			},
-			SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-				if let Some(peer_id) = peer_id {
-					if let Some(ch) = self.pending_dials.remove(&peer_id) {
-						_ = ch.send(Err(error.into()));
-					}
 				}
 			},
-			SwarmEvent::Dialing(peer_id) => info!("Dialing {}", peer_id),
-			_ => {},
+			swarm_event => {
+				// record Swarm events
+				self.metrics.record(&swarm_event);
+
+				match swarm_event {
+					SwarmEvent::NewListenAddr { address, .. } => {
+						let local_peer_id = *self.swarm.local_peer_id();
+						info!(
+							"Local node is listening on {:?}",
+							address.with(Protocol::P2p(local_peer_id.into()))
+						);
+					},
+					SwarmEvent::ConnectionEstablished {
+						peer_id, endpoint, ..
+					} => {
+						if endpoint.is_dialer() {
+							if let Some(ch) = self.pending_dials.remove(&peer_id) {
+								let _ = ch.send(Ok(()));
+							}
+						}
+						// this event is of interest,
+						// pass event to output event stream
+						self.event_sender
+							.send(Event::ConnectionEstablished { peer_id, endpoint })
+							.await
+							.expect("Event receiver not to be dropped.");
+					},
+					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+						if let Some(peer_id) = peer_id {
+							if let Some(ch) = self.pending_dials.remove(&peer_id) {
+								_ = ch.send(Err(error.into()));
+							}
+						}
+					},
+					SwarmEvent::Dialing(peer_id) => info!("Dialing {}", peer_id),
+					_ => {},
+				}
+			},
 		}
 	}
 
@@ -408,6 +424,7 @@ impl EventLoop {
 pub fn init(
 	seed: Option<u8>,
 	psk_path: &String,
+	metrics: Metrics,
 	port_reuse: bool,
 ) -> Result<(Client, impl Stream<Item = Event>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
@@ -464,7 +481,7 @@ pub fn init(
 			sender: command_sender,
 		},
 		ReceiverStream::new(event_receiver),
-		EventLoop::new(swarm, command_receiver, event_sender),
+		EventLoop::new(swarm, command_receiver, event_sender, metrics),
 	))
 }
 

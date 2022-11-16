@@ -31,7 +31,6 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
 
-use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
@@ -42,70 +41,10 @@ use crate::{
 	},
 	http::calculate_confidence,
 	network::Client,
-	prometheus_handler, proof, rpc,
+	proof, rpc,
+	telemetry::metrics::{MetricEvent, Metrics},
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
-
-/// Defines prometheus metrics for light client.
-struct LCMetrics {
-	session_block_counter: Counter,
-	total_block_number: Gauge,
-	dht_fetched: Gauge,
-	node_rpc_fetched: Gauge,
-	block_confidence: Gauge,
-	rpc_call_duration: Gauge,
-	dht_put_duration: Gauge,
-}
-
-impl LCMetrics {
-	fn register(registry: &Registry) -> Result<Self> {
-		Ok(Self {
-			session_block_counter: prometheus_handler::register(
-				prometheus::Counter::new(
-					"session_block_number",
-					"Number of blocks processed by the light client since (re)start",
-				)?,
-				registry,
-			)?,
-			total_block_number: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"total_block_number",
-					"Current block number (as received from Avail header)",
-				)?,
-				registry,
-			)?,
-			dht_fetched: prometheus_handler::register(
-				prometheus::Gauge::new("dht_fetched", "Number of cells fetched from DHT")?,
-				registry,
-			)?,
-			node_rpc_fetched: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"node_rpc_fetched",
-					"Number of cells fetched via RPC call to node",
-				)?,
-				registry,
-			)?,
-			block_confidence: prometheus_handler::register(
-				prometheus::Gauge::new("block_confidence", "Block confidence of current block")?,
-				registry,
-			)?,
-			rpc_call_duration: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"rpc_call_duration",
-					"Time needed to retrieve all cells via RPC for current block (in seconds)",
-				)?,
-				registry,
-			)?,
-			dht_put_duration: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"dht_put_duration",
-					"Time needed to perform DHT PUT operation for current block (in seconds",
-				)?,
-				registry,
-			)?,
-		})
-	}
-}
 
 /// Runs light client.
 ///
@@ -126,14 +65,12 @@ pub async fn run(
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
-	registry: Registry,
+	metrics: Metrics,
 	counter: Arc<Mutex<u64>>,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(&cfg.full_node_ws)?;
-	// Register metrics
-	let metrics = LCMetrics::register(&registry)?;
 
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
@@ -185,10 +122,9 @@ pub async fn run(
 				};
 			}
 
-			metrics.session_block_counter.inc();
-			metrics
-				.total_block_number
-				.set(message.params.header.number as f64);
+			metrics.record(MetricEvent::SessionBlockCounter);
+			metrics.record(MetricEvent::TotalBlockNumber(message.params.header.number));
+
 			let header = &message.params.header;
 
 			// now this is in `u64`
@@ -234,7 +170,7 @@ pub async fn run(
 				"Number of cells fetched from DHT: {}",
 				cells_fetched.len()
 			);
-			metrics.dht_fetched.set(cells_fetched.len() as f64);
+			metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as u64));
 
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
@@ -250,7 +186,7 @@ pub async fn run(
 				"Number of cells fetched from RPC: {}",
 				rpc_fetched.len()
 			);
-			metrics.node_rpc_fetched.set(rpc_fetched.len() as f64);
+			metrics.record(MetricEvent::NodeRPCFetched(rpc_fetched.len() as u64));
 
 			let mut cells = vec![];
 			cells.extend(cells_fetched);
@@ -293,7 +229,7 @@ pub async fn run(
 					"Confidence factor: {}",
 					conf
 				);
-				metrics.block_confidence.set(conf);
+				metrics.record(MetricEvent::BlockConfidence(conf));
 			}
 
 			// push latest mined block's header into column family specified
@@ -358,9 +294,9 @@ pub async fn run(
 				"Partition cells received. Time elapsed: \t{:?}",
 				partition_time_elapsed
 			);
-			metrics
-				.rpc_call_duration
-				.set(partition_time_elapsed.as_secs_f64());
+			metrics.record(MetricEvent::RPCCallDuration(
+				partition_time_elapsed.as_secs_f64(),
+			));
 
 			begin = SystemTime::now();
 
@@ -380,9 +316,10 @@ pub async fn run(
 				"{rpc_fetched_len} cells inserted into DHT. Time elapsed: \t{:?}",
 				dht_put_time_elapsed
 			);
-			metrics
-				.dht_put_duration
-				.set(dht_put_time_elapsed.as_secs_f64());
+
+			metrics.record(MetricEvent::DHTPutDuration(
+				dht_put_time_elapsed.as_secs_f64(),
+			));
 
 			// notify dht-based application client
 			// that newly mined block has been received
