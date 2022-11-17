@@ -393,13 +393,6 @@ impl EventLoop {
 					} => {
 						trace!("Connection closed. PeerID: {:?}. Endpoint: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint, num_established, cause);
 					},
-					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-						trace!(
-							"Outgoing connection error: {:?}. PeerId: {:?}",
-							error,
-							peer_id
-						);
-					},
 					SwarmEvent::IncomingConnection {
 						local_addr,
 						send_back_addr,
@@ -441,6 +434,11 @@ impl EventLoop {
 							.expect("Event receiver not to be dropped.");
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+						trace!(
+							"Outgoing connection error: {:?}. PeerId: {:?}",
+							error,
+							peer_id
+						);
 						if let Some(peer_id) = peer_id {
 							if let Some(ch) = self.pending_dials.remove(&peer_id) {
 								_ = ch.send(Err(error.into()));
