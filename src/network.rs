@@ -12,18 +12,19 @@ use tokio::sync::{mpsc, oneshot};
 
 use libp2p::{
 	core::{
-		either::EitherTransport,
+		either::{EitherError, EitherTransport},
 		muxing::StreamMuxerBox,
 		transport,
 		upgrade::{SelectUpgrade, Version},
 		ConnectedPoint,
 	},
+	identify,
 	identity::{self, ed25519, Keypair},
 	kad::{
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
-		BootstrapOk, GetRecordOk, Kademlia, KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk,
-		QueryId, QueryResult, Quorum, Record,
+		BootstrapOk, GetRecordOk, InboundRequest, Kademlia, KademliaConfig, KademliaEvent,
+		PeerRecord, PutRecordOk, QueryId, QueryResult, Quorum, Record,
 	},
 	metrics::{Metrics, Recorder},
 	mplex::MplexConfig,
@@ -36,7 +37,7 @@ use libp2p::{
 	Multiaddr, NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm, Transport,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::info;
+use tracing::{debug, info, trace};
 
 #[derive(Debug)]
 enum QueryChannel {
@@ -168,16 +169,24 @@ enum Command {
 #[behaviour(out_event = "BehaviourEvent")]
 struct NetworkBehaviour {
 	kademlia: Kademlia<MemoryStore>,
+	identify: identify::Behaviour,
 }
 
 #[derive(Debug)]
 enum BehaviourEvent {
 	Kademlia(KademliaEvent),
+	Identify(libp2p::identify::Event),
 }
 
 impl From<KademliaEvent> for BehaviourEvent {
 	fn from(event: KademliaEvent) -> Self {
 		BehaviourEvent::Kademlia(event)
+	}
+}
+
+impl From<identify::Event> for BehaviourEvent {
+	fn from(event: identify::Event) -> Self {
+		BehaviourEvent::Identify(event)
 	}
 }
 
@@ -229,16 +238,50 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, std::io::Error>) {
+	async fn handle_event(
+		&mut self,
+		event: SwarmEvent<BehaviourEvent, EitherError<std::io::Error, std::io::Error>>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
 				self.metrics.record(&event);
 
 				match event {
-					KademliaEvent::RoutingUpdated { peer, .. } => {
+					KademliaEvent::RoutingUpdated {
+						peer,
+						is_new_peer,
+						addresses,
+						old_peer,
+						..
+					} => {
+						debug!("Routing updated. Peer: {:?}. is_new_peer: {:?}. Addresses: {:?}. Old peer: {:?}", peer, is_new_peer, addresses, old_peer);
 						if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
 							_ = ch.send(Ok(()));
+						}
+					},
+					KademliaEvent::RoutablePeer { peer, address } => {
+						debug!("RoutablePeer. Peer: {:?}.  Address: {:?}", peer, address);
+					},
+					KademliaEvent::UnroutablePeer { peer } => {
+						debug!("UnroutablePeer. Peer: {:?}", peer);
+					},
+					KademliaEvent::PendingRoutablePeer { peer, address } => {
+						debug!(
+							"Pending routablePeer. Peer: {:?}.  Address: {:?}",
+							peer, address
+						);
+					},
+					KademliaEvent::InboundRequest { request } => {
+						trace!("Inbound request: {:?}", request);
+						if let InboundRequest::PutRecord { source, record, .. } = request {
+							if let Some(block_ref) = record {
+								trace!(
+									"Inbound PUT request record key: {:?}. Source: {:?}",
+									block_ref.key,
+									source
+								);
+							}
 						}
 					},
 					KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
@@ -275,7 +318,14 @@ impl EventLoop {
 							},
 						},
 						QueryResult::Bootstrap(result) => match result {
-							Ok(BootstrapOk { .. }) => {
+							Ok(BootstrapOk {
+								peer,
+								num_remaining,
+							}) => {
+								debug!(
+									"BootstrapOK event. PeerID: {:?}. Num remaining: {:?}.",
+									peer, num_remaining
+								);
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
@@ -283,6 +333,7 @@ impl EventLoop {
 								}
 							},
 							Err(err) => {
+								debug!("Bootstrap error event. Error: {:?}.", err);
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
@@ -292,8 +343,35 @@ impl EventLoop {
 						},
 						_ => {},
 					},
-					_ => {},
 				}
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => match event {
+				identify::Event::Received { peer_id, info } => {
+					debug!(
+						"Identify Received event. PeerId: {:?}. Info: {:?}",
+						peer_id, info
+					);
+					let addr = info
+						.listen_addrs
+						.get(0)
+						.expect("unable to get first listen address of a peer");
+					self.swarm
+						.behaviour_mut()
+						.kademlia
+						.add_address(&peer_id, addr.to_owned());
+				},
+				identify::Event::Sent { peer_id } => {
+					debug!("Identify Sent event. PeerId: {:?}", peer_id);
+				},
+				identify::Event::Pushed { peer_id } => {
+					debug!("Identify Pushed event. PeerId: {:?}", peer_id);
+				},
+				identify::Event::Error { peer_id, error } => {
+					debug!(
+						"Identify Error event. PeerId: {:?}. Error: {:?}",
+						peer_id, error
+					);
+				},
 			},
 			swarm_event => {
 				// record Swarm events
@@ -307,9 +385,49 @@ impl EventLoop {
 							address.with(Protocol::P2p(local_peer_id.into()))
 						);
 					},
+					SwarmEvent::ConnectionClosed {
+						peer_id,
+						endpoint,
+						num_established,
+						cause,
+					} => {
+						trace!("Connection closed. PeerID: {:?}. Endpoint: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint, num_established, cause);
+					},
+					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+						trace!(
+							"Outgoing connection error: {:?}. PeerId: {:?}",
+							error,
+							peer_id
+						);
+					},
+					SwarmEvent::IncomingConnection {
+						local_addr,
+						send_back_addr,
+					} => {
+						trace!(
+							"Incoming connection from address: {:?}. Local address: {:?}",
+							send_back_addr,
+							local_addr
+						);
+					},
+					SwarmEvent::IncomingConnectionError {
+						local_addr,
+						send_back_addr,
+						error,
+					} => {
+						trace!(
+							"Incoming connection error from address: {:?}. Local address: {:?}. Error: {:?}",
+							send_back_addr, local_addr, error
+						)
+					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id, endpoint, ..
 					} => {
+						trace!(
+							"Connection established. PeerID: {:?}. Endpoint: {:?}.",
+							peer_id,
+							endpoint
+						);
 						if endpoint.is_dialer() {
 							if let Some(ch) = self.pending_dials.remove(&peer_id) {
 								let _ = ch.send(Ok(()));
@@ -379,7 +497,8 @@ impl EventLoop {
 						entry.insert(sender);
 					}
 				} else {
-					todo!("Implement logic for peer thats already beeing dialed.");
+					// TODO: Implement logic for peer thats already beeing dialed
+					debug!("Trying to redial peer: {:?}", peer_id);
 				}
 			},
 			Command::Bootstrap { sender } => {
@@ -446,7 +565,7 @@ pub fn init(
 		.map(|text| PreSharedKey::from_str(&text))
 		.transpose()?;
 	// create transport
-	let transport = setup_transport(id_keys, psk, port_reuse);
+	let transport = setup_transport(&id_keys, psk, port_reuse);
 
 	// create swarm that manages peers and events
 	let swarm = {
@@ -461,6 +580,10 @@ pub fn init(
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let behaviour = NetworkBehaviour {
 			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
+			identify: identify::Behaviour::new(identify::Config::new(
+				"/avail_kad/id/1.0.0".to_string(),
+				id_keys.public(),
+			)),
 		};
 
 		// Build the Swarm, connecting the lower transport logic with the
@@ -496,7 +619,7 @@ fn get_psk(location: &String) -> Result<Option<String>> {
 }
 
 fn setup_transport(
-	key_pair: Keypair,
+	key_pair: &Keypair,
 	psk: Option<PreSharedKey>,
 	port_reuse: bool,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
