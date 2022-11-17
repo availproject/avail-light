@@ -565,7 +565,7 @@ pub fn init(
 		.map(|text| PreSharedKey::from_str(&text))
 		.transpose()?;
 	// create transport
-	let transport = setup_transport(id_keys.clone(), psk, port_reuse);
+	let transport = setup_transport(&id_keys, psk, port_reuse);
 
 	// create swarm that manages peers and events
 	let swarm = {
@@ -619,7 +619,7 @@ fn get_psk(location: &String) -> Result<Option<String>> {
 }
 
 fn setup_transport(
-	key_pair: Keypair,
+	key_pair: &Keypair,
 	psk: Option<PreSharedKey>,
 	port_reuse: bool,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
