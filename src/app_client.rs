@@ -4,14 +4,9 @@
 //!
 //! # Flow
 //!
-//! * Download app specific data cells from DHT
-//! * Download missing app specific data cells from the full node
-//! * If some cells are still missing
-//!     * Download related columns from IPFS (excluding downloaded cells)
-//!     * If reconstruction with downloaded cells is not possible, download related columns from full node (excluding downloaded cells)
-//! * Verify downloaded data cells
-//! * Insert cells downloaded from full node into DHT
-//! * Decode (or reconstruct if app specific data cells are missing), and store it into local database under the `app_id:block_number` key
+//! Get app data rows from node
+//! Verify commitment equality for each row
+//! Decode app data and store it into local database under the `app_id:block_number` key
 //!
 //! # Notes
 //!
