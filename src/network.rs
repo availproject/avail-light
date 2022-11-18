@@ -403,20 +403,17 @@ impl EventLoop {
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
 				MdnsEvent::Discovered(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
+						debug!(
+							"MDNS got peer with ID: {:#?} and Address: {:#?}",
+							peer_id, multiaddr
+						);
 						self.swarm
 							.behaviour_mut()
 							.kademlia
 							.add_address(&peer_id, multiaddr);
 					}
 				},
-				MdnsEvent::Expired(addrs_list) => {
-					for (peer_id, multiaddr) in addrs_list {
-						self.swarm
-							.behaviour_mut()
-							.kademlia
-							.remove_address(&peer_id, &multiaddr);
-					}
-				},
+				_ => (),
 			},
 			swarm_event => {
 				// record Swarm events
