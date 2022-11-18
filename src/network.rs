@@ -490,7 +490,7 @@ impl EventLoop {
 							}
 						}
 					},
-					SwarmEvent::Dialing(peer_id) => info!("Dialing {}", peer_id),
+					SwarmEvent::Dialing(peer_id) => debug!("Dialing {}", peer_id),
 					_ => {},
 				}
 			},
