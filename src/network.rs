@@ -18,9 +18,10 @@ use libp2p::{
 		upgrade::{SelectUpgrade, Version},
 		ConnectedPoint,
 	},
-	identify,
+	identify::{self, Event as IdentifyEvent, Info},
 	identity::{self, ed25519, Keypair},
 	kad::{
+		protocol,
 		record::Key,
 		store::{MemoryStore, MemoryStoreConfig},
 		BootstrapOk, GetRecordOk, InboundRequest, Kademlia, KademliaConfig, KademliaEvent,
@@ -175,7 +176,7 @@ struct NetworkBehaviour {
 #[derive(Debug)]
 enum BehaviourEvent {
 	Kademlia(KademliaEvent),
-	Identify(libp2p::identify::Event),
+	Identify(IdentifyEvent),
 }
 
 impl From<KademliaEvent> for BehaviourEvent {
@@ -184,8 +185,8 @@ impl From<KademliaEvent> for BehaviourEvent {
 	}
 }
 
-impl From<identify::Event> for BehaviourEvent {
-	fn from(event: identify::Event) -> Self {
+impl From<IdentifyEvent> for BehaviourEvent {
+	fn from(event: IdentifyEvent) -> Self {
 		BehaviourEvent::Identify(event)
 	}
 }
@@ -346,27 +347,38 @@ impl EventLoop {
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => match event {
-				identify::Event::Received { peer_id, info } => {
+				IdentifyEvent::Received {
+					peer_id,
+					info: Info {
+						listen_addrs,
+						protocols,
+						..
+					},
+				} => {
 					debug!(
-						"Identify Received event. PeerId: {:?}. Info: {:?}",
-						peer_id, info
+						"Identify Received event. PeerId: {:?}. Listen address: {:?}",
+						peer_id, listen_addrs
 					);
-					let addr = info
-						.listen_addrs
-						.get(0)
-						.expect("unable to get first listen address of a peer");
-					self.swarm
-						.behaviour_mut()
-						.kademlia
-						.add_address(&peer_id, addr.to_owned());
+
+					if protocols
+						.iter()
+						.any(|p| p.as_bytes() == protocol::DEFAULT_PROTO_NAME)
+					{
+						for addr in listen_addrs {
+							self.swarm
+								.behaviour_mut()
+								.kademlia
+								.add_address(&peer_id, addr);
+						}
+					}
 				},
-				identify::Event::Sent { peer_id } => {
+				IdentifyEvent::Sent { peer_id } => {
 					debug!("Identify Sent event. PeerId: {:?}", peer_id);
 				},
-				identify::Event::Pushed { peer_id } => {
+				IdentifyEvent::Pushed { peer_id } => {
 					debug!("Identify Pushed event. PeerId: {:?}", peer_id);
 				},
-				identify::Event::Error { peer_id, error } => {
+				IdentifyEvent::Error { peer_id, error } => {
 					debug!(
 						"Identify Error event. PeerId: {:?}. Error: {:?}",
 						peer_id, error
@@ -392,13 +404,6 @@ impl EventLoop {
 						cause,
 					} => {
 						trace!("Connection closed. PeerID: {:?}. Endpoint: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint, num_established, cause);
-					},
-					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-						trace!(
-							"Outgoing connection error: {:?}. PeerId: {:?}",
-							error,
-							peer_id
-						);
 					},
 					SwarmEvent::IncomingConnection {
 						local_addr,
@@ -441,6 +446,11 @@ impl EventLoop {
 							.expect("Event receiver not to be dropped.");
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+						trace!(
+							"Outgoing connection error: {:?}. PeerId: {:?}",
+							error,
+							peer_id
+						);
 						if let Some(peer_id) = peer_id {
 							if let Some(ch) = self.pending_dials.remove(&peer_id) {
 								_ = ch.send(Err(error.into()));
@@ -557,7 +567,7 @@ pub fn init(
 		},
 		None => identity::Keypair::generate_ed25519(),
 	};
-	let local_peer_id = id_keys.public().to_peer_id();
+	let local_peer_id = PeerId::from(id_keys.public());
 	info!("Local peer id: {:?}", local_peer_id);
 
 	// try to get psk
