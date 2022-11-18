@@ -27,6 +27,7 @@ use libp2p::{
 		BootstrapOk, GetRecordOk, InboundRequest, Kademlia, KademliaConfig, KademliaEvent,
 		PeerRecord, PutRecordOk, QueryId, QueryResult, Quorum, Record,
 	},
+	mdns::{MdnsConfig, MdnsEvent, TokioMdns},
 	metrics::{Metrics, Recorder},
 	mplex::MplexConfig,
 	multiaddr::Protocol,
@@ -96,8 +97,6 @@ impl Client {
 		let (sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
-			// Bootstrap clients dialing back the first peer that connects to them produces an error
-			// TODO: find the cause of the error
 			self.dial(peer, addr).await?;
 		}
 
@@ -171,12 +170,14 @@ enum Command {
 struct NetworkBehaviour {
 	kademlia: Kademlia<MemoryStore>,
 	identify: identify::Behaviour,
+	mdns: TokioMdns,
 }
 
 #[derive(Debug)]
 enum BehaviourEvent {
 	Kademlia(KademliaEvent),
 	Identify(IdentifyEvent),
+	Mdns(MdnsEvent),
 }
 
 impl From<KademliaEvent> for BehaviourEvent {
@@ -188,6 +189,12 @@ impl From<KademliaEvent> for BehaviourEvent {
 impl From<IdentifyEvent> for BehaviourEvent {
 	fn from(event: IdentifyEvent) -> Self {
 		BehaviourEvent::Identify(event)
+	}
+}
+
+impl From<MdnsEvent> for BehaviourEvent {
+	fn from(event: MdnsEvent) -> Self {
+		BehaviourEvent::Mdns(event)
 	}
 }
 
@@ -241,7 +248,10 @@ impl EventLoop {
 
 	async fn handle_event(
 		&mut self,
-		event: SwarmEvent<BehaviourEvent, EitherError<std::io::Error, std::io::Error>>,
+		event: SwarmEvent<
+			BehaviourEvent,
+			EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
+		>,
 	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
@@ -346,43 +356,66 @@ impl EventLoop {
 					},
 				}
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => match event {
-				IdentifyEvent::Received {
-					peer_id,
-					info: Info {
-						listen_addrs,
-						protocols,
-						..
-					},
-				} => {
-					debug!(
-						"Identify Received event. PeerId: {:?}. Listen address: {:?}",
-						peer_id, listen_addrs
-					);
+			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
+				// record Indetify Behaviour events
+				self.metrics.record(&event);
 
-					if protocols
-						.iter()
-						.any(|p| p.as_bytes() == protocol::DEFAULT_PROTO_NAME)
-					{
-						for addr in listen_addrs {
-							self.swarm
-								.behaviour_mut()
-								.kademlia
-								.add_address(&peer_id, addr);
+				match event {
+					IdentifyEvent::Received {
+						peer_id,
+						info: Info {
+							listen_addrs,
+							protocols,
+							..
+						},
+					} => {
+						debug!(
+							"Identify Received event. PeerId: {:?}. Listen address: {:?}",
+							peer_id, listen_addrs
+						);
+
+						if protocols
+							.iter()
+							.any(|p| p.as_bytes() == protocol::DEFAULT_PROTO_NAME)
+						{
+							for addr in listen_addrs {
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.add_address(&peer_id, addr);
+							}
 						}
+					},
+					IdentifyEvent::Sent { peer_id } => {
+						debug!("Identify Sent event. PeerId: {:?}", peer_id);
+					},
+					IdentifyEvent::Pushed { peer_id } => {
+						debug!("Identify Pushed event. PeerId: {:?}", peer_id);
+					},
+					IdentifyEvent::Error { peer_id, error } => {
+						debug!(
+							"Identify Error event. PeerId: {:?}. Error: {:?}",
+							peer_id, error
+						);
+					},
+				}
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
+				MdnsEvent::Discovered(addrs_list) => {
+					for (peer_id, multiaddr) in addrs_list {
+						self.swarm
+							.behaviour_mut()
+							.kademlia
+							.add_address(&peer_id, multiaddr);
 					}
 				},
-				IdentifyEvent::Sent { peer_id } => {
-					debug!("Identify Sent event. PeerId: {:?}", peer_id);
-				},
-				IdentifyEvent::Pushed { peer_id } => {
-					debug!("Identify Pushed event. PeerId: {:?}", peer_id);
-				},
-				IdentifyEvent::Error { peer_id, error } => {
-					debug!(
-						"Identify Error event. PeerId: {:?}. Error: {:?}",
-						peer_id, error
-					);
+				MdnsEvent::Expired(addrs_list) => {
+					for (peer_id, multiaddr) in addrs_list {
+						self.swarm
+							.behaviour_mut()
+							.kademlia
+							.remove_address(&peer_id, &multiaddr);
+					}
 				},
 			},
 			swarm_event => {
@@ -594,6 +627,7 @@ pub fn init(
 				"/avail_kad/id/1.0.0".to_string(),
 				id_keys.public(),
 			)),
+			mdns: TokioMdns::new(MdnsConfig::default())?,
 		};
 
 		// Build the Swarm, connecting the lower transport logic with the
