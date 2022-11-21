@@ -7,9 +7,10 @@ use std::{
 	thread, time,
 };
 
-use ::prometheus::Registry;
 use anyhow::{Context, Result};
-use ipfs_embed::{Multiaddr, PeerId};
+use async_std::stream::StreamExt;
+use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
+use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
@@ -29,10 +30,11 @@ mod consts;
 mod data;
 mod http;
 mod light_client;
-mod prometheus_handler;
+mod network;
 mod proof;
 mod rpc;
 mod sync_client;
+mod telemetry;
 mod types;
 mod utils;
 
@@ -122,13 +124,14 @@ async fn do_main() -> Result<()> {
 	info!("Using config: {:?}", cfg);
 
 	// Spawn Prometheus server
-	let registry = Registry::default();
-
+	let mut metric_registry = Registry::default();
+	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
+	let lc_metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 	let prometheus_port = cfg.prometheus_port.unwrap_or(9520);
 
-	tokio::task::spawn(prometheus_handler::init_prometheus_with_listener(
+	tokio::task::spawn(telemetry::http_server(
 		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), prometheus_port),
-		registry.clone(),
+		metric_registry,
 	));
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
@@ -139,7 +142,7 @@ async fn do_main() -> Result<()> {
 	// This channel will be used for message based communication between
 	// two tasks
 	// task_0: HTTP request handler ( query sender )
-	// task_1: IPFS client ( query receiver & hopefully successfully resolver )
+	// task_1: DHT client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	// this spawns tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
@@ -150,33 +153,62 @@ async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
+	let (network_client, mut network_events, network_event_loop) = network::init(
+		cfg.libp2p_seed,
+		&cfg.libp2p_psk_path,
+		libp2p_metrics,
+		cfg.libp2p_tcp_port_reuse,
+	)
+	.context("Failed to init Network Service")?;
+	// Spawn the network task for it to run in the background
+	tokio::spawn(network_event_loop.run());
 
-	let port = if cfg.ipfs_port.1 > 0 {
-		let port: u16 = thread_rng().gen_range(cfg.ipfs_port.0..=cfg.ipfs_port.1);
+	// Start listening on provided port
+	let port = if cfg.libp2p_port.1 > 0 {
+		let port: u16 = thread_rng().gen_range(cfg.libp2p_port.0..=cfg.libp2p_port.1);
 		info!("Using random port: {port}");
 		port
 	} else {
-		cfg.ipfs_port.0
+		cfg.libp2p_port.0
 	};
-	let seed = match cfg.ipfs_seed {
-		None => thread_rng().gen(),
-		Some(0) => thread_rng().gen(),
-		Some(value) => value,
-	};
-	let ipfs = data::init_ipfs(seed, port, &cfg.ipfs_path, bootstrap_nodes)
+	network_client
+		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
 		.await
-		.context("Failed to init IPFS client")?;
+		.context("Listening not to fail.")?;
 
-	ipfs.register_metrics(&registry)
-		.context("Failed to initialize IPFS Prometheus")?;
+	// Check if bootstrap nodes were provided
+	let mut bootstrap_nodes = cfg
+		.bootstraps
+		.iter()
+		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
+		.context("Failed to parse bootstrap nodes")?;
 
-	tokio::task::spawn(data::log_ipfs_events(ipfs.clone()));
+	// If the client is the first one on the network, and no bootstrap nodes
+	// were provided, then wait for the second client to establish connection and use it as bootstrap.
+	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
+	if bootstrap_nodes.is_empty() {
+		info!("No bootstrap nodes, waiting for first peer to connect...");
+		let node = network_events
+			.find_map(|e| match e {
+				network::Event::ConnectionEstablished { peer_id, endpoint } => {
+					if endpoint.is_listener() {
+						Some((peer_id, endpoint.get_remote_address().clone()))
+					} else {
+						None
+					}
+				},
+			})
+			// hang in there, until someone dials us
+			.await
+			.context("Connection is not established")?;
+		bootstrap_nodes = vec![node];
+		network_client.bootstrap(bootstrap_nodes).await?;
+	} else {
+		// Now that we have something to bootstrap with, just do it
+		info!("Bootstraping the DHT with bootstrap nodes...");
+		network_client.bootstrap(bootstrap_nodes).await?;
+	}
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
@@ -195,13 +227,15 @@ async fn do_main() -> Result<()> {
 		|| runtime_version.spec_name != "data-avail"
 	{
 		return Err(anyhow::anyhow!(
-			"Full node is not compatible with this version of data-avail"
+			"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
+			version,
+			runtime_version.spec_version,
 		));
 	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
-		// ipfs backed application client
+		// libp2p backed application client
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
@@ -232,7 +266,7 @@ async fn do_main() -> Result<()> {
 			latest_block,
 			sync_block_depth,
 			db.clone(),
-			ipfs.clone(),
+			network_client.clone(),
 			pp.clone(),
 		));
 	}
@@ -241,11 +275,11 @@ async fn do_main() -> Result<()> {
 	light_client::run(
 		(&cfg).into(),
 		db,
-		ipfs,
+		network_client,
 		rpc_url,
 		block_tx,
 		pp,
-		registry,
+		lc_metrics,
 		counter.clone(),
 	)
 	.await

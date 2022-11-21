@@ -51,9 +51,8 @@ log_level = "info"
 http_server_host = "127.0.0.1"
 http_server_port = "7000"
 
-ipfs_seed = 1
-ipfs_port = "37000"
-ipfs_path = "avail_ipfs_store"
+libp2p_seed = 1
+libp2p_port = "37000"
 
 full_node_rpc = ["http://127.0.0.1:9933"]
 full_node_ws = ["ws://127.0.0.1:9944"]
@@ -78,12 +77,10 @@ http_server_host = "127.0.0.1"
 # Light client HTTP server port (default: 7000).
 http_server_port = "7000"
 
-# Seed for IPFS keypair. If not set, or seed is 0, random seed is generated
-ipfs_seed = 2
-# IPFS service port range (port, range) (default: 37000).
-ipfs_port = "37000"
-# File system path where IPFS service stores data (default: avail_ipfs_node_1)
-ipfs_path = "avail_ipfs_store"
+# Seed for Libp2p keypair. If not set, or seed is 0, random seed is generated
+libp2p_seed = 2
+# Libp2p service port range (port, range) (default: 37000).
+libp2p_port = "37000"
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 

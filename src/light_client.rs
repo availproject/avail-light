@@ -6,7 +6,7 @@
 //!
 //! * Connect to the Avail node WebSocket stream and start listening to finalized headers
 //! * Generate random cells for random data sampling (8 cells currently)
-//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Retrieve cell proofs from a) DHT and/or b) via RPC call from the node, in that order
 //! * Verify proof using the received cells
 //! * Calculate block confidence and store it in RocksDB
 //! * Insert cells to to DHT for remote fetch
@@ -32,9 +32,7 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::matrix::{Dimensions, Position};
-use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -45,70 +43,11 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
 	},
 	http::calculate_confidence,
-	prometheus_handler, proof, rpc,
+	network::Client,
+	proof, rpc,
+	telemetry::metrics::{MetricEvent, Metrics},
 	types::{self, ClientMsg, LightClientConfig, QueryResult},
 };
-
-/// Defines prometheus metrics for light client.
-struct LCMetrics {
-	session_block_counter: Counter,
-	total_block_number: Gauge,
-	dht_fetched: Gauge,
-	node_rpc_fetched: Gauge,
-	block_confidence: Gauge,
-	rpc_call_duration: Gauge,
-	dht_put_duration: Gauge,
-}
-
-impl LCMetrics {
-	fn register(registry: &Registry) -> Result<Self> {
-		Ok(Self {
-			session_block_counter: prometheus_handler::register(
-				prometheus::Counter::new(
-					"session_block_number",
-					"Number of blocks processed by the light client since (re)start",
-				)?,
-				registry,
-			)?,
-			total_block_number: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"total_block_number",
-					"Current block number (as received from Avail header)",
-				)?,
-				registry,
-			)?,
-			dht_fetched: prometheus_handler::register(
-				prometheus::Gauge::new("ipfs_fetched", "Number of cells fetched from DHT")?,
-				registry,
-			)?,
-			node_rpc_fetched: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"node_rpc_fetched",
-					"Number of cells fetched via RPC call to node",
-				)?,
-				registry,
-			)?,
-			block_confidence: prometheus_handler::register(
-				prometheus::Gauge::new("block_confidence", "Block confidence of current block")?,
-				registry,
-			)?,
-			rpc_call_duration: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"rpc_call_duration",
-					"Time needed to retrieve all cells via RPC for current block (in seconds)",
-				)?,
-				registry,
-			)?,
-			dht_put_duration: prometheus_handler::register(
-				prometheus::Gauge::new(
-					"dht_put_duration",
-					"Time needed to perform DHT PUT operation for current block (in seconds",
-				)?,
-				registry,
-			)?,
-		})
-	}
-}
 
 /// Runs light client.
 ///
@@ -116,7 +55,7 @@ impl LCMetrics {
 ///
 /// * `cfg` - Light client configuration
 /// * `db` - Database to store confidence and block header
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
@@ -125,18 +64,16 @@ impl LCMetrics {
 pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
-	ipfs: Ipfs<DefaultParams>,
+	network_client: Client,
 	rpc_url: String,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
-	registry: Registry,
+	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(&cfg.full_node_ws)?;
-	// Register metrics
-	let metrics = LCMetrics::register(&registry)?;
 
 	while let Some(z) = rpc::check_connection(&urls).await {
 		let (mut write, mut read) = z.split();
@@ -194,10 +131,9 @@ pub async fn run(
 				};
 			}
 
-			metrics.session_block_counter.inc();
-			metrics
-				.total_block_number
-				.set(message.params.header.number as f64);
+			metrics.record(MetricEvent::SessionBlockCounter);
+			metrics.record(MetricEvent::TotalBlockNumber(message.params.header.number));
+
 			let header = &message.params.header;
 
 			let header_hash = message.hash;
@@ -231,8 +167,8 @@ pub async fn run(
 				positions.len()
 			);
 
-			let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
-				&ipfs,
+			let (cells_fetched, unfetched) = fetch_cells_from_dht(
+				&network_client,
 				block_number,
 				&positions,
 				cfg.dht_parallelization_limit,
@@ -242,11 +178,11 @@ pub async fn run(
 
 			info!(
 				block_number,
-				"cells_from_dht" = ipfs_fetched.len(),
+				"cells_from_dht" = cells_fetched.len(),
 				"Number of cells fetched from DHT: {}",
-				ipfs_fetched.len()
+				cells_fetched.len()
 			);
-			metrics.dht_fetched.set(ipfs_fetched.len() as f64);
+			metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as u64));
 
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
@@ -262,10 +198,10 @@ pub async fn run(
 				"Number of cells fetched from RPC: {}",
 				rpc_fetched.len()
 			);
-			metrics.node_rpc_fetched.set(rpc_fetched.len() as f64);
+			metrics.record(MetricEvent::NodeRPCFetched(rpc_fetched.len() as u64));
 
 			let mut cells = vec![];
-			cells.extend(ipfs_fetched);
+			cells.extend(cells_fetched);
 			cells.extend(rpc_fetched.clone());
 
 			if positions.len() > cells.len() {
@@ -304,12 +240,12 @@ pub async fn run(
 					"Confidence factor: {}",
 					conf
 				);
-				metrics.block_confidence.set(conf);
+				metrics.record(MetricEvent::BlockConfidence(conf));
 			}
 
 			// push latest mined block's header into column family specified
 			// for keeping block headers, to be used
-			// later for verifying IPFS stored data
+			// later for verifying DHT stored data
 			//
 			// @note this same data store is also written to in
 			// another competing thread, which syncs all block headers
@@ -371,14 +307,14 @@ pub async fn run(
 				"Partition cells received. Time elapsed: \t{:?}",
 				partition_time_elapsed
 			);
-			metrics
-				.rpc_call_duration
-				.set(partition_time_elapsed.as_secs_f64());
+			metrics.record(MetricEvent::RPCCallDuration(
+				partition_time_elapsed.as_secs_f64(),
+			));
 
 			begin = SystemTime::now();
 
 			insert_into_dht(
-				&ipfs,
+				&network_client,
 				block_number,
 				rpc_fetched,
 				cfg.dht_parallelization_limit,
@@ -393,11 +329,12 @@ pub async fn run(
 				"{rpc_fetched_len} cells inserted into DHT. Time elapsed: \t{:?}",
 				dht_put_time_elapsed
 			);
-			metrics
-				.dht_put_duration
-				.set(dht_put_time_elapsed.as_secs_f64());
 
-			// notify ipfs-based application client
+			metrics.record(MetricEvent::DHTPutDuration(
+				dht_put_time_elapsed.as_secs_f64(),
+			));
+
+			// notify dht-based application client
 			// that newly mined block has been received
 			if let Some(ref channel) = block_tx {
 				channel

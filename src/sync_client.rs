@@ -6,7 +6,7 @@
 //!
 //! * For each block, fetches block header from RPC and stores it into database
 //! * Generate random cells for random data sampling
-//! * Retrieve cell proofs from a) IPFS and/or b) via RPC call from the node, in that order
+//! * Retrieve cell proofs from a) DHT and/or b) via RPC call from the node, in that order
 //! * Verify proof using the received cells
 //! * Calculate block confidence and store it in RocksDB
 //! * Insert cells to to DHT for remote fetch
@@ -21,7 +21,6 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
-use ipfs_embed::{DefaultParams, Ipfs};
 use kate_recovery::matrix::Dimensions;
 use rocksdb::DB;
 use tracing::{error, info, warn};
@@ -31,6 +30,7 @@ use crate::{
 		fetch_cells_from_dht, insert_into_dht, is_block_header_in_db, is_confidence_in_db,
 		store_block_header_in_db, store_confidence_in_db,
 	},
+	network::Client,
 	rpc,
 	types::SyncClientConfig,
 };
@@ -40,7 +40,7 @@ async fn process_block(
 	rpc_url: String,
 	db: Arc<DB>,
 	block_number: u32,
-	ipfs: Ipfs<DefaultParams>,
+	network_client: Client,
 	pp: PublicParameters,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
@@ -92,8 +92,8 @@ async fn process_block(
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(&dimensions, cell_count);
 
-	let (ipfs_fetched, unfetched) = fetch_cells_from_dht(
-		&ipfs,
+	let (dht_fetched, unfetched) = fetch_cells_from_dht(
+		&network_client,
 		block_number,
 		&positions,
 		cfg.dht_parallelization_limit,
@@ -104,7 +104,7 @@ async fn process_block(
 	info!(
 		block_number,
 		"Number of cells fetched from DHT: {}",
-		ipfs_fetched.len()
+		dht_fetched.len()
 	);
 
 	let rpc_fetched = if cfg.disable_rpc {
@@ -122,7 +122,7 @@ async fn process_block(
 	);
 
 	let mut cells = vec![];
-	cells.extend(ipfs_fetched);
+	cells.extend(dht_fetched);
 	cells.extend(rpc_fetched.clone());
 	if positions.len() > cells.len() {
 		return Err(anyhow!(
@@ -149,7 +149,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	insert_into_dht(
-		&ipfs,
+		&network_client,
 		block_number,
 		rpc_fetched,
 		cfg.dht_parallelization_limit,
@@ -169,7 +169,7 @@ async fn process_block(
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
 /// * `db` - Database to store confidence and block header
-/// * `ipfs` - IPFS instance to fetch and insert cells into DHT
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
@@ -177,7 +177,7 @@ pub async fn run(
 	end_block: u32,
 	sync_blocks_depth: u32,
 	db: Arc<DB>,
-	ipfs: Ipfs<DefaultParams>,
+	network_client: Client,
 	pp: PublicParameters,
 ) {
 	if sync_blocks_depth >= 250 {
@@ -185,17 +185,25 @@ pub async fn run(
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block)
-		.map(move |b| (b, rpc_url.clone(), db.clone(), ipfs.clone(), pp.clone()));
+	let blocks = (start_block..=end_block).map(move |b| {
+		(
+			b,
+			rpc_url.clone(),
+			db.clone(),
+			network_client.clone(),
+			pp.clone(),
+		)
+	});
 	let cfg_clone = &cfg;
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_url, store, ipfs, pp)| async move {
+			|(block_number, rpc_url, store, net_svc, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(cfg_clone, rpc_url, store, block_number, ipfs, pp.clone()).await
+					process_block(cfg_clone, rpc_url, store, block_number, net_svc, pp.clone())
+						.await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}

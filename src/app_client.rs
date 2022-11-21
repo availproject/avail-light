@@ -14,7 +14,6 @@
 
 use anyhow::{Context, Result};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-
 use kate_recovery::{
 	com::decode_app_extrinsics, config::CHUNK_SIZE, data::DataCell, matrix::Position,
 };
@@ -100,7 +99,6 @@ async fn process_block(
 			count = data.iter().fold(0usize, |acc, x| acc + x.len())
 		);
 	}
-
 	Ok(())
 }
 
