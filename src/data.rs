@@ -74,7 +74,7 @@ impl DHTCell {
 ///
 /// # Arguments
 ///
-/// * `swarm` - Reference to Libp2p swarm component
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `block` - Block number
 /// * `cells` - Matrix cells to store into DHT
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel
@@ -110,7 +110,7 @@ pub async fn insert_into_dht(
 ///
 /// # Arguments
 ///
-/// * `swarm` - Reference to Libp2p swarm component
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `block_number` - Block number
 /// * `positions` - Cell positions to fetch
 /// * `dht_parallelization_limit` - Number of cells to fetch in parallel

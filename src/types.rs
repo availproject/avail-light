@@ -367,6 +367,7 @@ pub struct RuntimeConfig {
 	#[serde(default = "default_libp2p_psk_path")]
 	pub libp2p_psk_path: String,
 	// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
+	#[serde(default = "default_false")]
 	pub libp2p_tcp_port_reuse: bool,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,

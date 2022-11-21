@@ -55,7 +55,7 @@ use crate::{
 ///
 /// * `cfg` - Light client configuration
 /// * `db` - Database to store confidence and block header
-/// * `swarm` - Reference to Libp2p swarm component
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification

@@ -169,7 +169,7 @@ async fn process_block(
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
 /// * `db` - Database to store confidence and block header
-/// * `swarm` - Reference to Libp2p swarm component
+/// * `network_client` - Reference to a libp2p custom network client
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
