@@ -364,6 +364,7 @@ pub struct RuntimeConfig {
 	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
 	/// File system path where psk key is stored
+	#[serde(default = "default_libp2p_psk_path")]
 	pub libp2p_psk_path: String,
 	// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
 	pub libp2p_tcp_port_reuse: bool,
@@ -476,7 +477,7 @@ impl Default for RuntimeConfig {
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
 			libp2p_seed: None,
-			libp2p_psk_path: "./avail/psk".to_owned(),
+			libp2p_psk_path: default_libp2p_psk_path(),
 			libp2p_tcp_port_reuse: false,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
@@ -513,4 +514,8 @@ pub struct CellContentQueryPayload {
 	pub row: u16,
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
+}
+
+fn default_libp2p_psk_path() -> String {
+	"./avail/psk".to_owned()
 }
