@@ -33,7 +33,6 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
 use kate_recovery::matrix::{Dimensions, Position};
-use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
 use tokio_tungstenite::tungstenite::protocol::Message;

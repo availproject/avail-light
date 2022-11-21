@@ -22,7 +22,6 @@ use std::sync::{mpsc::Receiver, Arc};
 use tracing::{error, info, instrument};
 
 use crate::{
-	network::Client,
 	data::store_encoded_data_in_db,
 	rpc::get_kate_app_data,
 	types::{AppClientConfig, ClientMsg},

@@ -1,14 +1,12 @@
 //! Shared light client structs and enums.
 
-use libp2p::Multiaddr;
-use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
-use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
 use kate_recovery::matrix::Dimensions;
 use kate_recovery::{index::AppDataIndex, matrix::Partition};
+use libp2p::Multiaddr;
 use serde::{Deserialize, Deserializer, Serialize};
 use sp_core::{blake2_256, H256};
 

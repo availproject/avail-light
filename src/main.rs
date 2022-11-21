@@ -227,7 +227,9 @@ async fn do_main() -> Result<()> {
 		|| runtime_version.spec_name != "data-avail"
 	{
 		return Err(anyhow::anyhow!(
-			"Full node is not compatible with this version of data-avail"
+			"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
+			version,
+			runtime_version.spec_version,
 		));
 	}
 
@@ -237,7 +239,6 @@ async fn do_main() -> Result<()> {
 		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
-			network_client.clone(),
 			db.clone(),
 			rpc_url.clone(),
 			app_id,

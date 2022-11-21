@@ -18,7 +18,7 @@ pub struct Metrics {
 
 pub enum MetricEvent {
 	SessionBlockCounter,
-	TotalBlockNumber(u64),
+	TotalBlockNumber(u32),
 	DHTFetched(u64),
 	NodeRPCFetched(u64),
 	BlockConfidence(f64),
@@ -96,7 +96,7 @@ impl Metrics {
 				self.session_block_counter.inc();
 			},
 			MetricEvent::TotalBlockNumber(num) => {
-				self.total_block_number.set(num);
+				self.total_block_number.set(num.into());
 			},
 			MetricEvent::DHTFetched(num) => {
 				self.dht_fetched.set(num);

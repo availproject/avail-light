@@ -6,27 +6,17 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
-use codec::{Decode, Encode};
-use futures::{future::join_all, stream};
-use libp2p::kad::{record::Key, Quorum, Record};
-use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use futures::{future::join_all, stream};
-use ipfs_embed::{
-	config::PingConfig,
-	identity::ed25519::{Keypair, SecretKey},
-	DefaultParams, DefaultParams as IPFSDefaultParams, Ipfs, Key, Multiaddr, NetworkConfig, PeerId,
-	Quorum, Record, StorageConfig,
-};
 use kate_recovery::{data::Cell, matrix::Position};
+use libp2p::kad::{record::Key, Quorum, Record};
 use rocksdb::DB;
 use tracing::{debug, trace};
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	network::Client,
-	types::Event,
 };
 
 async fn fetch_cell_from_dht(
