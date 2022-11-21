@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+
       - uses: actions/checkout@v2
 
         # A repository can have up to 10GB of caches.
@@ -36,9 +39,6 @@ jobs:
             toolchain: nightly-2022-03-10
             components: rustfmt, clippy, llvm-tools-preview
             profile: minimal
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v1
 
       - name: Check code formatting
         uses: actions-rs/cargo@v1
