@@ -1,9 +1,16 @@
 //! Shared light client structs and enums.
 
-use kate_recovery::com::{AppDataIndex, ExtendedMatrixDimensions};
 use libp2p::Multiaddr;
+use anyhow::Context;
+use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
+use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
+use avail_subxt::primitives::Header as DaHeader;
+use codec::{Decode, Encode};
+use ipfs_embed::{Block as IpfsBlock, DefaultParams, Multiaddr, PeerId};
+use kate_recovery::matrix::Dimensions;
+use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use serde::{Deserialize, Deserializer, Serialize};
-use sp_core::H256;
+use sp_core::{blake2_256, H256};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -30,36 +37,11 @@ pub struct GetChainResponse {
 pub struct BlockHeaderResponse {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
-	pub result: Header,
-}
-
-/// Block header
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Header {
-	#[serde(deserialize_with = "deserialize_u64_from_hex")]
-	pub number: u64,
-	#[serde(rename = "extrinsicsRoot")]
-	pub extrinsics_root: ExtrinsicsRoot,
-	#[serde(rename = "parentHash")]
-	parent_hash: String,
-	#[serde(rename = "stateRoot")]
-	state_root: String,
-	digest: Digest,
-	#[serde(rename = "appDataLookup")]
-	pub app_data_lookup: AppDataIndex,
-}
-
-/// Deserializes an hexademial string representation (like "0x12") directly into a `u64`.
-fn deserialize_u64_from_hex<'de, D>(d: D) -> Result<u64, D::Error>
-where
-	D: Deserializer<'de>,
-{
-	let hex = String::deserialize(d)?;
-	u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(serde::de::Error::custom)
+	pub result: DaHeader,
 }
 
 /// Root of extrinsics in header
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Decode)]
 pub struct ExtrinsicsRoot {
 	pub cols: u16,
 	pub rows: u16,
@@ -83,24 +65,24 @@ struct JsonRPCHeader {
 }
 
 #[derive(Deserialize)]
-struct QueryProofErrorData {
+struct QueryErrorData {
 	code: i32,
 	message: String,
 }
 
 /// Query proof error
 #[derive(Deserialize)]
-pub struct QueryProofError {
+pub struct QueryError {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
-	error: QueryProofErrorData,
+	error: QueryErrorData,
 }
 
-impl QueryProofError {
+impl QueryError {
 	pub fn message(&self) -> String {
 		let code = &self.error.code;
 		let message = &self.error.message;
-		format!("Query proof failed with code {code}: {message}")
+		format!("Query failed with code {code}: {message}")
 	}
 }
 
@@ -126,14 +108,30 @@ impl QueryProofResult {
 #[serde(untagged)]
 pub enum QueryProofResponse {
 	Proofs(QueryProofResult),
-	Error(QueryProofError),
+	Error(QueryError),
+}
+
+/// Query block result
+#[derive(Deserialize)]
+pub struct QueryAppDataResult {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	pub result: Vec<Option<Vec<u8>>>,
+}
+
+/// Response of RPC query block
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum QueryAppDataResponse {
+	Block(QueryAppDataResult),
+	Error(QueryError),
 }
 
 /// Result of subscription to header
 #[derive(Deserialize, Debug)]
 pub struct QueryResult {
 	#[serde(rename = "result")]
-	pub header: Header,
+	pub header: DaHeader,
 	#[serde(rename = "subscription")]
 	_subscription: String,
 }
@@ -159,26 +157,75 @@ pub struct SubscriptionResponse {
 	pub subscription_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RuntimeVersionResponse {
+	jsonrpc: String,
+	pub result: RuntimeVersionResult,
+	id: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RuntimeVersionResult {
+	apis: Vec<(String, u32)>,
+	#[serde(rename = "authoringVersion")]
+	authoring_version: u32,
+	#[serde(rename = "implName")]
+	impl_name: String,
+	#[serde(rename = "implVersion")]
+	pub impl_version: u32,
+	#[serde(rename = "specName")]
+	pub spec_name: String,
+	#[serde(rename = "specVersion")]
+	pub spec_version: u32,
+	#[serde(rename = "transactionVersion")]
+	transaction_version: u32,
+}
+#[derive(Deserialize, Debug)]
+pub struct SystemVersionResponse {
+	#[serde(flatten)]
+	_jsonrpcheader: JsonRPCHeader,
+	#[serde(deserialize_with = "deserialise_from_string")]
+	pub result: String,
+}
+
+fn deserialise_from_string<'de, D>(d: D) -> Result<String, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let mut val = String::deserialize(d)?;
+	val.truncate(5);
+	Ok(val)
+}
+
 /// Light to app client channel message struct
 pub struct ClientMsg {
-	pub number: u64,
-	pub dimensions: ExtendedMatrixDimensions,
+	pub header_hash: H256,
+	pub block_num: u32,
+	pub dimensions: Dimensions,
 	pub lookup: AppDataIndex,
 	pub commitment: Vec<u8>,
 }
 
-impl From<Header> for ClientMsg {
-	fn from(header: Header) -> Self {
-		let ExtrinsicsRoot { rows, cols, .. } = header.extrinsics_root;
+impl From<DaHeader> for ClientMsg {
+	fn from(header: DaHeader) -> Self {
+		let hash: H256 = Encode::using_encoded(&header, |e| blake2_256(e)).into();
+		let HeaderExtension::V1(xt) = header.extension;
+		let KateCommitment { rows, cols, .. } = xt.commitment;
 
 		ClientMsg {
-			number: header.number,
-			dimensions: ExtendedMatrixDimensions {
-				rows: (rows * 2) as usize,
-				cols: cols as usize,
+			header_hash: hash,
+			block_num: header.number,
+			dimensions: Dimensions { rows, cols },
+			lookup: AppDataIndex {
+				size: xt.app_lookup.size,
+				index: xt
+					.app_lookup
+					.index
+					.into_iter()
+					.map(|e| (e.app_id.0, e.start))
+					.collect(),
 			},
-			lookup: header.app_data_lookup,
-			commitment: header.extrinsics_root.commitment,
+			commitment: xt.commitment.commitment,
 		}
 	}
 }
@@ -203,17 +250,9 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
-/// Block partition assigned to light client
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Partition {
-	pub number: u8,
-	pub fraction: u8,
-}
-
 mod block_matrix_partition_format {
+	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
-
-	use super::Partition;
 
 	pub fn serialize<S>(partition: &Option<Partition>, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -366,7 +405,7 @@ pub struct RuntimeConfig {
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
 	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
-	pub sync_blocks_depth: Option<u64>,
+	pub sync_blocks_depth: Option<u32>,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
 	/// Time-to-live for DHT entries in seconds (default: 3600).
@@ -424,21 +463,11 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 }
 
 /// App client configuration (see [RuntimeConfig] for details)
-pub struct AppClientConfig {
-	pub full_node_ws: Vec<String>,
-	pub disable_rpc: bool,
-	pub dht_parallelization_limit: usize,
-	pub ttl: u64,
-}
+pub struct AppClientConfig {}
 
 impl From<&RuntimeConfig> for AppClientConfig {
-	fn from(val: &RuntimeConfig) -> Self {
-		AppClientConfig {
-			full_node_ws: val.full_node_ws.clone(),
-			disable_rpc: val.disable_rpc,
-			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.ttl.unwrap_or(3600),
-		}
+	fn from(_val: &RuntimeConfig) -> Self {
+		AppClientConfig {}
 	}
 }
 
@@ -482,7 +511,7 @@ impl Default for RuntimeConfig {
 /// resolve query
 #[derive(Clone)]
 pub struct CellContentQueryPayload {
-	pub block: u64,
+	pub block: u32,
 	pub row: u16,
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,

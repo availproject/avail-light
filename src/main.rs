@@ -36,6 +36,7 @@ mod rpc;
 mod sync_client;
 mod telemetry;
 mod types;
+mod utils;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -86,7 +87,10 @@ fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json
 }
 
 fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
-	FmtSubscriber::builder().with_max_level(log_level).finish()
+	FmtSubscriber::builder()
+		.with_max_level(log_level)
+		.with_span_events(format::FmtSpan::CLOSE)
+		.finish()
 }
 
 fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevelError>) {
@@ -141,7 +145,7 @@ async fn do_main() -> Result<()> {
 	// task_1: DHT client ( query receiver & hopefully successfully resolver )
 	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	// this spawns tokio task which runs one http server for handling RPC
-	let counter = Arc::new(Mutex::new(0u64));
+	let counter = Arc::new(Mutex::new(0u32));
 	tokio::task::spawn(http::run_server(
 		db.clone(),
 		cfg.clone(),
@@ -213,6 +217,19 @@ async fn do_main() -> Result<()> {
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
 	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
+
+	let version = rpc::get_system_version(&rpc_url).await?;
+	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
+
+	info!("Reported version: {version}, runtime version: {runtime_version:?}");
+	if version != "1.4.0"
+		|| runtime_version.spec_version != 7
+		|| runtime_version.spec_name != "data-avail"
+	{
+		return Err(anyhow::anyhow!(
+			"Full node is not compatible with this version of data-avail"
+		));
+	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to

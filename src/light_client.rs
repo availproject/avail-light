@@ -27,11 +27,15 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
+use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-
+use kate_recovery::matrix::{Dimensions, Position};
+use prometheus::{Counter, Gauge, Registry};
 use rocksdb::DB;
+use sp_core::{blake2_256, H256};
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
 
@@ -66,7 +70,7 @@ pub async fn run(
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
 	metrics: Metrics,
-	counter: Arc<Mutex<u64>>,
+	counter: Arc<Mutex<u32>>,
 ) -> Result<()> {
 	info!("Starting light client...");
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
@@ -83,6 +87,7 @@ pub async fn run(
 
 		struct BlockAvailableMsg {
 			params: QueryResult,
+			hash: H256,
 			received_at: Instant,
 		}
 
@@ -94,12 +99,17 @@ pub async fn run(
 					.context("Failed to read web socket message")
 					.map(|data| data.into_data())
 					.and_then(|data| serde_json::from_slice(&data).context("Fail to decode data"))
-					.map(|types::Response { params, .. }| (params.header.number, params))
-					.map(|(block_number, params)| {
+					.map(|types::Response { params, .. }| {
+						let calculated_hash: H256 =
+							Encode::using_encoded(&params.header, |e| blake2_256(e)).into();
+						(params.header.number, params, calculated_hash)
+					})
+					.map(|(block_number, params, hash)| {
 						(
 							block_number,
 							BlockAvailableMsg {
 								params,
+								hash,
 								received_at: Instant::now(),
 							},
 						)
@@ -127,7 +137,7 @@ pub async fn run(
 
 			let header = &message.params.header;
 
-			// now this is in `u64`
+			let header_hash = message.hash;
 			let block_number = header.number;
 			info!(
 				block_number,
@@ -138,16 +148,19 @@ pub async fn run(
 
 			let begin = SystemTime::now();
 
-			// TODO: Setting max rows * 2 to match extended matrix dimensions
-			let max_rows = header.extrinsics_root.rows * 2;
-			let max_cols = header.extrinsics_root.cols;
-			if max_cols < 3 {
+			let HeaderExtension::V1(xt) = &header.extension;
+			let dimensions = Dimensions {
+				rows: xt.commitment.rows,
+				cols: xt.commitment.cols,
+			};
+
+			if dimensions.cols < 3 {
 				error!(block_number, "chunk size less than 3");
 			}
-			let commitment = header.extrinsics_root.commitment.clone();
+			let commitment = xt.commitment.commitment.clone();
 
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-			let positions = rpc::generate_random_cells(max_rows, max_cols, cell_count);
+			let positions = rpc::generate_random_cells(&dimensions, cell_count);
 			info!(
 				block_number,
 				"cells_requested" = positions.len(),
@@ -175,7 +188,7 @@ pub async fn run(
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
 			} else {
-				rpc::get_kate_proof(&rpc_url, block_number, unfetched)
+				rpc::get_kate_proof(&rpc_url, header_hash, unfetched)
 					.await
 					.context("Failed to fetch cells from node RPC")?
 			};
@@ -204,8 +217,7 @@ pub async fn run(
 			if !cfg.disable_proof_verification {
 				let count = proof::verify_proof(
 					block_number,
-					max_rows,
-					max_cols,
+					&dimensions,
 					&cells,
 					commitment.clone(),
 					pp.clone(),
@@ -245,7 +257,9 @@ pub async fn run(
 
 			let mut begin = SystemTime::now();
 			if let Some(partition) = &cfg.block_matrix_partition {
-				let positions = rpc::generate_partition_cells(partition, max_rows, max_cols);
+				let positions: Vec<Position> = dimensions
+					.iter_extended_partition_positions(partition)
+					.collect();
 				info!(
 					block_number,
 					"partition_cells_requested" = positions.len(),
@@ -260,7 +274,7 @@ pub async fn run(
 					.map(|e| {
 						join_all(
 							e.iter()
-								.map(|n| rpc::get_kate_proof(&rpc_url, block_number, n.to_vec()))
+								.map(|n| rpc::get_kate_proof(&rpc_url, header_hash, n.to_vec()))
 								.collect::<Vec<_>>(),
 						)
 					}) {

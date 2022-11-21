@@ -15,6 +15,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use avail_subxt::primitives::AppUncheckedExtrinsic;
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
@@ -24,32 +25,31 @@ use tracing::info;
 use warp::{http::StatusCode, Filter};
 
 use crate::{
-	app_client::AvailExtrinsic,
 	data::{get_confidence_from_db, get_decoded_data_from_db},
 	types::{CellContentQueryPayload, Mode, RuntimeConfig},
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ConfidenceResponse {
-	pub block: u64,
+	pub block: u32,
 	pub confidence: f64,
 	pub serialised_confidence: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ExtrinsicsDataResponse {
-	pub block: u64,
-	pub extrinsics: Vec<AvailExtrinsic>,
+	pub block: u32,
+	pub extrinsics: Vec<AppUncheckedExtrinsic>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct LatestBlockResponse {
-	pub latest_block: u64,
+	pub latest_block: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Status {
-	pub block_num: u64,
+	pub block_num: u32,
 	confidence: f64,
 	pub app_id: Option<u32>,
 }
@@ -59,8 +59,8 @@ pub fn calculate_confidence(count: u32) -> f64 {
 	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
 }
 
-fn serialised_confidence(block: u64, factor: f64) -> Option<String> {
-	let block_big: BigUint = FromPrimitive::from_u64(block)?;
+fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
+	let block_big: BigUint = FromPrimitive::from_u64(block as u64)?;
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
 	let shifted: BigUint = block_big << 32 | factor_big;
 	Some(shifted.to_str_radix(10))
@@ -78,7 +78,7 @@ where
 	Error(anyhow::Error),
 }
 
-fn confidence(block_num: u64, db: Arc<DB>, counter: u64) -> ClientResponse<ConfidenceResponse> {
+fn confidence(block_num: u32, db: Arc<DB>, counter: u32) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
@@ -104,7 +104,7 @@ fn confidence(block_num: u64, db: Arc<DB>, counter: u64) -> ClientResponse<Confi
 	res
 }
 
-fn status(cfg: &RuntimeConfig, counter: u64, db: Arc<DB>) -> ClientResponse<Status> {
+fn status(cfg: &RuntimeConfig, counter: u32, db: Arc<DB>) -> ClientResponse<Status> {
 	let res = match get_confidence_from_db(db, counter) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
@@ -122,7 +122,7 @@ fn status(cfg: &RuntimeConfig, counter: u64, db: Arc<DB>) -> ClientResponse<Stat
 	res
 }
 
-fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse> {
+fn latest_block(counter: Arc<Mutex<u32>>) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
 	let res = match counter.lock() {
 		Ok(counter) => ClientResponse::Normal(LatestBlockResponse {
@@ -134,14 +134,14 @@ fn latest_block(counter: Arc<Mutex<u64>>) -> ClientResponse<LatestBlockResponse>
 }
 
 fn appdata(
-	block_num: u64,
+	block_num: u32,
 	db: Arc<DB>,
 	cfg: RuntimeConfig,
-	counter: u64,
+	counter: u32,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
-	) -> Result<Option<Vec<AvailExtrinsic>>> {
+	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
 		let xts = data.map(|e| {
 			e.map(|e| {
 				e.iter()
@@ -150,7 +150,7 @@ fn appdata(
 						<_>::decode(&mut &raw[..])
 							.context(format!("Couldn't decode AvailExtrinsic num {i}"))
 					})
-					.collect::<Result<Vec<AvailExtrinsic>>>()
+					.collect::<Result<Vec<_>>>()
 			})
 		});
 		match xts {
@@ -216,7 +216,7 @@ pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
 	_cell_query_tx: SyncSender<CellContentQueryPayload>,
-	counter: Arc<Mutex<u64>>,
+	counter: Arc<Mutex<u32>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
@@ -236,7 +236,7 @@ pub async fn run_server(
 
 	let counter_confidence = counter.clone();
 	let db = store.clone();
-	let get_confidence = warp::path!("v1" / "confidence" / u64).map(move |block_num| {
+	let get_confidence = warp::path!("v1" / "confidence" / u32).map(move |block_num| {
 		let counter_lock = counter_confidence.lock().unwrap();
 		confidence(block_num, db.clone(), *counter_lock)
 	});
@@ -244,7 +244,7 @@ pub async fn run_server(
 	let db = store.clone();
 	let cfg1 = cfg.clone();
 	let counter_appdata = counter.clone();
-	let get_appdata = warp::path!("v1" / "appdata" / u64).map(move |block_num| {
+	let get_appdata = warp::path!("v1" / "appdata" / u32).map(move |block_num| {
 		let counter_lock = counter_appdata.lock().unwrap();
 		appdata(block_num, db.clone(), cfg1.clone(), *counter_lock)
 	});
