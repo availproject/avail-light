@@ -37,6 +37,9 @@ jobs:
             components: rustfmt, clippy, llvm-tools-preview
             profile: minimal
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+
       - name: Check code formatting
         uses: actions-rs/cargo@v1
         with:
