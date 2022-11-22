@@ -348,7 +348,7 @@ dependencies = [
  "avail-subxt",
  "chrono",
  "confy",
- "dusk-plonk",
+ "dusk-plonk 0.12.0 (git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-1)",
  "ed25519-dalek",
  "futures",
  "futures-util",
@@ -1310,6 +1310,22 @@ dependencies = [
  "dusk-bytes",
  "rand_core 0.6.4",
  "subtle",
+]
+
+[[package]]
+name = "dusk-plonk"
+version = "0.12.0"
+source = "git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-2#6ada57a82b6e3a92a677b9f6263f9f3c9b501b23"
+dependencies = [
+ "cfg-if 1.0.0",
+ "dusk-bls12_381",
+ "dusk-bytes",
+ "dusk-jubjub",
+ "hashbrown 0.9.1",
+ "itertools 0.9.0",
+ "merlin 3.0.0",
+ "rand_core 0.6.4",
+ "rayon",
 ]
 
 [[package]]
@@ -2433,7 +2449,7 @@ source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.5.1#f536c60c
 dependencies = [
  "anyhow",
  "dusk-bytes",
- "dusk-plonk",
+ "dusk-plonk 0.12.0 (git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-2)",
  "merlin 3.0.0",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -2442,16 +2458,21 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 <<<<<<< HEAD
+<<<<<<< HEAD
 version = "0.5.0"
 source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.5.1#f536c60c21279f62c8d6e47894f446c22889a030"
 =======
 version = "0.4.0"
 source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-50#b39c48b338a1a63f96c61cef6addb5c006abf1ef"
 >>>>>>> 96397bc (Update to latest avail-core.)
+=======
+version = "0.5.0"
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-50#c234b8f1c8f238ab1c88a21864753c801b5e8be8"
+>>>>>>> 0fae523 (Fetch missing rows from DHT.)
 dependencies = [
  "derive_more",
  "dusk-bytes",
- "dusk-plonk",
+ "dusk-plonk 0.12.0 (git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-2)",
  "getrandom 0.2.8",
  "parity-scale-codec",
  "serde",
