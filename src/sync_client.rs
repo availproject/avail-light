@@ -83,9 +83,13 @@ async fn process_block(
 
 	let begin = SystemTime::now();
 
-	let dimensions = Dimensions {
-		rows: xt.commitment.rows,
-		cols: xt.commitment.cols,
+	let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols);
+	let Some(dimensions) = dimensions else {
+		error!(block_number, "invalid dimensions");
+		return Err(anyhow!(
+			"invalid dimensions: {}x{}",
+			xt.commitment.rows, xt.commitment.cols
+		));
 	};
 	let commitment = xt.commitment.commitment.clone();
 	// now this is in `u64`
