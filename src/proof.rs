@@ -44,7 +44,7 @@ pub fn verify_proof(
 	let jobs = cells.len();
 	let commitment = Arc::new(commitment);
 	let rows = dimensions.extended_rows() as usize;
-	let cols = dimensions.cols as usize;
+	let cols = dimensions.cols() as usize;
 
 	for cell in cells.iter().cloned() {
 		let row = cell.position.row;

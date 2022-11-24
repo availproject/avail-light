@@ -131,17 +131,17 @@ pub async fn get_header_by_block_number(url: &str, block: u32) -> Result<(DaHead
 /// Generates random cell positions for sampling
 pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Position> {
 	let max_cells = dimensions.extended_size();
-	let count = if max_cells < cell_count {
+	let count = if max_cells < cell_count.into() {
 		debug!("Max cells count {max_cells} is lesser than cell_count {cell_count}");
 		max_cells
 	} else {
-		cell_count
+		cell_count.into()
 	};
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
 	while (indices.len() as u16) < count as u16 {
 		let row = rng.gen::<u32>() % dimensions.extended_rows();
-		let col = rng.gen::<u16>() % dimensions.cols;
+		let col = rng.gen::<u16>() % dimensions.cols();
 		indices.insert(Position { row, col });
 	}
 

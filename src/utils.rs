@@ -12,7 +12,7 @@ fn can_reconstruct(dimensions: &Dimensions, columns: &[u16], cells: &[Cell]) -> 
 			.iter()
 			.filter(move |cell| cell.position.col == col)
 			.count() as u16
-			>= dimensions.rows
+			>= dimensions.rows()
 	})
 }
 
@@ -46,7 +46,7 @@ mod tests {
 
 	#[test]
 	fn test_can_reconstruct() {
-		let dimensions = Dimensions { rows: 1, cols: 4 };
+		let dimensions = Dimensions::new(1, 4).unwrap();
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
 		assert!(can_reconstruct(&dimensions, &columns, &cells));
@@ -60,7 +60,7 @@ mod tests {
 
 	#[test]
 	fn test_cannot_reconstruct() {
-		let dimensions = Dimensions { rows: 1, cols: 4 };
+		let dimensions = Dimensions::new(1, 4).unwrap();
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0)];
 		assert!(!can_reconstruct(&dimensions, &columns, &cells));

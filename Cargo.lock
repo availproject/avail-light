@@ -1315,7 +1315,7 @@ dependencies = [
 [[package]]
 name = "dusk-plonk"
 version = "0.12.0"
-source = "git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-1#d8cdbd1787405ecceb494b9d1438254b1c1de53b"
+source = "git+https://github.com/maticnetwork/plonk.git?tag=v0.12.0-polygon-2#6ada57a82b6e3a92a677b9f6263f9f3c9b501b23"
 dependencies = [
  "cfg-if 1.0.0",
  "dusk-bls12_381",
@@ -2429,7 +2429,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.3.0#0025bb53b4190d5920ad351253ed75e078c3c833"
+source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.5.0#2163dc881ed9b090f06c622f3797b69d89726be3"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -2441,9 +2441,10 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.3.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.3.0#0025bb53b4190d5920ad351253ed75e078c3c833"
+version = "0.4.0"
+source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.5.0#2163dc881ed9b090f06c622f3797b69d89726be3"
 dependencies = [
+ "derive_more",
  "dusk-bytes",
  "dusk-plonk",
  "getrandom 0.2.8",

@@ -148,12 +148,13 @@ pub async fn run(
 			let begin = SystemTime::now();
 
 			let HeaderExtension::V1(xt) = &header.extension;
-			let dimensions = Dimensions {
-				rows: xt.commitment.rows,
-				cols: xt.commitment.cols,
+			let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols);
+			let Some(dimensions) = dimensions else {
+				error!(block_number, "invalid dimensions");
+				continue;
 			};
 
-			if dimensions.cols < 3 {
+			if dimensions.cols() < 3 {
 				error!(block_number, "chunk size less than 3");
 			}
 			let commitment = xt.commitment.commitment.clone();
@@ -345,7 +346,7 @@ pub async fn run(
 			// that newly mined block has been received
 			if let Some(ref channel) = block_tx {
 				channel
-					.send(types::ClientMsg::from(message.params.header))
+					.send(types::ClientMsg::try_from(message.params.header)?)
 					.context("Failed to send block message")?;
 			}
 		}

@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use anyhow::{Context, Result};
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
@@ -204,16 +205,18 @@ pub struct ClientMsg {
 	pub commitment: Vec<u8>,
 }
 
-impl From<DaHeader> for ClientMsg {
-	fn from(header: DaHeader) -> Self {
+impl TryFrom<DaHeader> for ClientMsg {
+	type Error = anyhow::Error;
+	fn try_from(header: DaHeader) -> Result<Self> {
 		let hash: H256 = Encode::using_encoded(&header, |e| blake2_256(e)).into();
 		let HeaderExtension::V1(xt) = header.extension;
 		let KateCommitment { rows, cols, .. } = xt.commitment;
+		let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
 
-		ClientMsg {
+		Ok(ClientMsg {
 			header_hash: hash,
 			block_num: header.number,
-			dimensions: Dimensions { rows, cols },
+			dimensions,
 			lookup: AppDataIndex {
 				size: xt.app_lookup.size,
 				index: xt
@@ -224,7 +227,7 @@ impl From<DaHeader> for ClientMsg {
 					.collect(),
 			},
 			commitment: xt.commitment.commitment,
-		}
+		})
 	}
 }
 

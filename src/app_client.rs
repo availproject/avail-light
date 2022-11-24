@@ -127,7 +127,7 @@ pub async fn run(
 
 		info!(block_number, "Block available");
 
-		if block.dimensions.cols == 0 {
+		if block.dimensions.cols() == 0 {
 			continue;
 		}
 
