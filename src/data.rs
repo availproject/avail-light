@@ -116,7 +116,7 @@ pub async fn insert_into_dht(
 	.await;
 
 	let counter = failure_counter.lock().unwrap();
-	(1 - (counter.to_owned() / cells.len())) as f32
+	(1.0 - (counter.to_owned() as f32 / cells.len() as f32)) as f32
 }
 
 /// Fetches cells from DHT.
