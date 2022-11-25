@@ -15,10 +15,12 @@ use libp2p::{
 		either::{EitherError, EitherTransport},
 		muxing::StreamMuxerBox,
 		transport,
-		upgrade::{SelectUpgrade, Version},
+		upgrade::Version,
 		ConnectedPoint,
 	},
-	identify::{self, Event as IdentifyEvent, Info},
+	identify::{
+		Behaviour as IdentifyBehaviour, Config as IdentifyConfig, Event as IdentifyEvent, Info,
+	},
 	identity::{self, ed25519, Keypair},
 	kad::{
 		protocol,
@@ -29,11 +31,13 @@ use libp2p::{
 	},
 	mdns::{MdnsConfig, MdnsEvent, TokioMdns},
 	metrics::{Metrics, Recorder},
-	mplex::MplexConfig,
 	multiaddr::Protocol,
 	noise::NoiseAuthenticated,
+	ping::{self, Behaviour as PingBehaviour, Config as PingConfig, Event as PingEvent},
 	pnet::{PnetConfig, PreSharedKey},
-	swarm::{SwarmBuilder, SwarmEvent},
+	swarm::{
+		keep_alive::Behaviour as KeepAliveBehaviour, ConnectionError, SwarmBuilder, SwarmEvent,
+	},
 	tcp::{GenTcpConfig, TokioTcpTransport},
 	yamux::YamuxConfig,
 	Multiaddr, NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm, Transport,
@@ -169,8 +173,10 @@ enum Command {
 #[behaviour(out_event = "BehaviourEvent")]
 struct NetworkBehaviour {
 	kademlia: Kademlia<MemoryStore>,
-	identify: identify::Behaviour,
+	identify: IdentifyBehaviour,
 	mdns: TokioMdns,
+	ping: PingBehaviour,
+	keep_alive: KeepAliveBehaviour,
 }
 
 #[derive(Debug)]
@@ -178,6 +184,8 @@ enum BehaviourEvent {
 	Kademlia(KademliaEvent),
 	Identify(IdentifyEvent),
 	Mdns(MdnsEvent),
+	Ping(PingEvent),
+	Void,
 }
 
 impl From<KademliaEvent> for BehaviourEvent {
@@ -195,6 +203,18 @@ impl From<IdentifyEvent> for BehaviourEvent {
 impl From<MdnsEvent> for BehaviourEvent {
 	fn from(event: MdnsEvent) -> Self {
 		BehaviourEvent::Mdns(event)
+	}
+}
+
+impl From<PingEvent> for BehaviourEvent {
+	fn from(event: PingEvent) -> Self {
+		BehaviourEvent::Ping(event)
+	}
+}
+
+impl From<void::Void> for BehaviourEvent {
+	fn from(_: void::Void) -> Self {
+		BehaviourEvent::Void
 	}
 }
 
@@ -250,7 +270,13 @@ impl EventLoop {
 		&mut self,
 		event: SwarmEvent<
 			BehaviourEvent,
-			EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
+			EitherError<
+				EitherError<
+					EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
+					ping::Failure,
+				>,
+				void::Void,
+			>,
 		>,
 	) {
 		match event {
@@ -620,11 +646,13 @@ pub fn init(
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let behaviour = NetworkBehaviour {
 			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
-			identify: identify::Behaviour::new(identify::Config::new(
+			identify: IdentifyBehaviour::new(IdentifyConfig::new(
 				"/avail_kad/id/1.0.0".to_string(),
 				id_keys.public(),
 			)),
 			mdns: TokioMdns::new(MdnsConfig::default())?,
+			ping: PingBehaviour::new(PingConfig::new()),
+			keep_alive: KeepAliveBehaviour::default(),
 		};
 
 		// Build the Swarm, connecting the lower transport logic with the
@@ -678,10 +706,7 @@ fn setup_transport(
 	maybe_encrypted
 		.upgrade(Version::V1)
 		.authenticate(noise)
-		.multiplex(SelectUpgrade::new(
-			YamuxConfig::default(),
-			MplexConfig::new(),
-		))
+		.multiplex(YamuxConfig::default())
 		.timeout(Duration::from_secs(20))
 		.boxed()
 }
