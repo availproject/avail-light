@@ -1,10 +1,4 @@
-use std::{
-	collections::{hash_map, HashMap},
-	fs,
-	path::Path,
-	str::FromStr,
-	time::Duration,
-};
+use std::{collections::HashMap, fs, path::Path, str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use futures::{Stream, StreamExt};
@@ -84,24 +78,10 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	pub async fn dial(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (sender, receiver) = oneshot::channel();
-		self.sender
-			.send(Command::Dial {
-				peer_id,
-				peer_addr,
-				sender,
-			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
-	}
-
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
-			self.dial(peer, addr).await?;
 		}
 
 		self.sender
@@ -145,11 +125,6 @@ enum Command {
 		sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
-	},
-	Dial {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
 		sender: oneshot::Sender<Result<()>>,
@@ -222,7 +197,6 @@ pub struct EventLoop {
 	swarm: Swarm<NetworkBehaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	event_sender: mpsc::Sender<Event>,
-	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	metrics: Metrics,
@@ -247,7 +221,6 @@ impl EventLoop {
 			swarm,
 			command_receiver,
 			event_sender,
-			pending_dials: Default::default(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			metrics,
@@ -515,11 +488,7 @@ impl EventLoop {
 							peer_id,
 							endpoint
 						);
-						if endpoint.is_dialer() {
-							if let Some(ch) = self.pending_dials.remove(&peer_id) {
-								let _ = ch.send(Ok(()));
-							}
-						}
+
 						// this event is of interest,
 						// pass event to output event stream
 						self.event_sender
@@ -533,11 +502,6 @@ impl EventLoop {
 							error,
 							peer_id
 						);
-						if let Some(peer_id) = peer_id {
-							if let Some(ch) = self.pending_dials.remove(&peer_id) {
-								_ = ch.send(Err(error.into()));
-							}
-						}
 					},
 					SwarmEvent::Dialing(peer_id) => debug!("Dialing {}", peer_id),
 					_ => {},
@@ -564,34 +528,6 @@ impl EventLoop {
 					.kademlia
 					.add_address(&peer_id, peer_addr.clone());
 				self.pending_kad_routing.insert(peer_id, sender);
-			},
-			Command::Dial {
-				peer_id,
-				peer_addr,
-				sender,
-			} => {
-				// Check if peer is not already connected
-				// Dialing connected peers could happen during
-				// the bootstrap of the first peer in the network
-				if self.swarm.is_connected(&peer_id) {
-					// just skip this dial, pretend all is fine
-					_ = sender.send(Ok(()));
-					return;
-				}
-
-				if let hash_map::Entry::Vacant(entry) = self.pending_dials.entry(peer_id) {
-					if let Err(err) = self
-						.swarm
-						.dial(peer_addr.with(Protocol::P2p(peer_id.into())))
-					{
-						_ = sender.send(Err(err.into()));
-					} else {
-						entry.insert(sender);
-					}
-				} else {
-					// TODO: Implement logic for peer thats already beeing dialed
-					debug!("Trying to redial peer: {:?}", peer_id);
-				}
 			},
 			Command::Bootstrap { sender } => {
 				let query_id = self
