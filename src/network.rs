@@ -439,7 +439,21 @@ impl EventLoop {
 							.add_address(&peer_id, multiaddr);
 					}
 				},
-				_ => (),
+				MdnsEvent::Expired(addrs_list) => {
+					for (peer_id, multiaddr) in addrs_list {
+						debug!(
+							"MDNS got expired peer with ID: {:#?} and Address: {:#?}",
+							peer_id, multiaddr
+						);
+
+						if !self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
+							self.swarm
+								.behaviour_mut()
+								.kademlia
+								.remove_address(&peer_id, &multiaddr);
+						}
+					}
+				},
 			},
 			swarm_event => {
 				// record Swarm events
@@ -459,7 +473,19 @@ impl EventLoop {
 						num_established,
 						cause,
 					} => {
-						trace!("Connection closed. PeerID: {:?}. Endpoint: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint, num_established, cause);
+						trace!("Connection closed. PeerID: {:?}. Address: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint.get_remote_address(), num_established, cause);
+
+						if let Some(cause) = cause {
+							match cause {
+								// remove peer with failed connection
+								ConnectionError::IO(_) | ConnectionError::Handler(_) => {
+									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
+								},
+								// ignore Keep alive timeout error
+								// and allow redials for this type of error
+								_ => {},
+							}
+						}
 					},
 					SwarmEvent::IncomingConnection {
 						local_addr,
