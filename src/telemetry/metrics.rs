@@ -14,6 +14,7 @@ pub struct Metrics {
 	block_confidence: Gauge<f64, AtomicU64>,
 	rpc_call_duration: Gauge<f64, AtomicU64>,
 	dht_put_duration: Gauge<f64, AtomicU64>,
+	dht_put_success: Gauge<f64, AtomicU64>,
 }
 
 pub enum MetricEvent {
@@ -24,6 +25,7 @@ pub enum MetricEvent {
 	BlockConfidence(f64),
 	RPCCallDuration(f64),
 	DHTPutDuration(f64),
+	DHTPutSuccess(f64),
 }
 
 impl Metrics {
@@ -75,8 +77,15 @@ impl Metrics {
 		let dht_put_duration = Gauge::default();
 		sub_reg.register(
 			"dht_put_duration",
-			"Time needed to perform DHT PUT operation for current block (in seconds",
+			"Time needed to perform DHT PUT operation for current block (in seconds)",
 			Box::new(dht_put_duration.clone()),
+		);
+
+		let dht_put_success = Gauge::default();
+		sub_reg.register(
+			"dht_put_sucess_rate",
+			"Success rate of the DHT PUT operation",
+			Box::new(dht_put_success.clone()),
 		);
 
 		Self {
@@ -87,6 +96,7 @@ impl Metrics {
 			block_confidence,
 			rpc_call_duration,
 			dht_put_duration,
+			dht_put_success,
 		}
 	}
 
@@ -112,6 +122,9 @@ impl Metrics {
 			},
 			MetricEvent::DHTPutDuration(num) => {
 				self.dht_put_duration.set(num);
+			},
+			MetricEvent::DHTPutSuccess(num) => {
+				self.dht_put_success.set(num);
 			},
 		}
 	}

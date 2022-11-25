@@ -313,7 +313,7 @@ pub async fn run(
 
 			begin = SystemTime::now();
 
-			insert_into_dht(
+			let dht_insert_success_rate = insert_into_dht(
 				&network_client,
 				block_number,
 				rpc_fetched,
@@ -321,6 +321,13 @@ pub async fn run(
 				cfg.ttl,
 			)
 			.await;
+
+			info!(
+				block_number,
+				"DHT PUT operation success rate: {}", dht_insert_success_rate
+			);
+
+			metrics.record(MetricEvent::DHTPutSuccess(dht_insert_success_rate as f64));
 
 			let dht_put_time_elapsed = begin.elapsed()?;
 			info!(
