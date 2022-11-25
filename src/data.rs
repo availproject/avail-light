@@ -1,7 +1,7 @@
 //! Persistence to DHT and RocksDB.
 
 use std::{
-	sync::Arc,
+	sync::{Arc, Mutex},
 	time::{Duration, Instant},
 };
 
@@ -71,6 +71,8 @@ impl DHTCell {
 /// Inserts cells into the DHT.
 /// There is no rollback, and errors will be logged and skipped,
 /// which means that we cannot rely on error logs as alert mechanism.
+/// Returns the success rate of the PUT operations measured by dividing
+/// the number of returned errors with the total number of input cells
 ///
 /// # Arguments
 ///
@@ -85,24 +87,36 @@ pub async fn insert_into_dht(
 	cells: Vec<Cell>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
-) {
+) -> f32 {
+	if cells.len() == 0 {
+		return 0.0;
+	}
+
 	let cells: Vec<_> = cells.into_iter().map(DHTCell).collect::<Vec<_>>();
-	let cell_tuples = cells.iter().map(move |b| (b, network_client.clone()));
+	let failure_counter: &Arc<Mutex<usize>> = &Arc::new(Mutex::new(0));
+	let cell_tuples = cells
+		.iter()
+		.map(move |b| (b, network_client.clone(), failure_counter.clone()));
 
 	futures::StreamExt::for_each_concurrent(
 		stream::iter(cell_tuples),
 		dht_parallelization_limit,
-		|(cell, network_client)| async move {
+		|(cell, network_client, failure_counter)| async move {
 			let reference = cell.reference(block);
 			if let Err(error) = network_client
 				.put_kad_record(cell.dht_record(block, ttl), Quorum::One)
 				.await
 			{
+				let mut counter = failure_counter.lock().unwrap();
+				*counter += 1;
 				debug!("Fail to put record for cell {reference} to DHT: {error}");
 			}
 		},
 	)
 	.await;
+
+	let counter = failure_counter.lock().unwrap();
+	(1 - (counter.to_owned() / cells.len())) as f32
 }
 
 /// Fetches cells from DHT.
