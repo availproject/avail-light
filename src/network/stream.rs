@@ -2,6 +2,7 @@ use libp2p::{core::ConnectedPoint, PeerId};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 
+// Event enum encodes all used network event variants
 #[derive(Debug, Clone)]
 pub enum Event {
 	ConnectionEstablished {
@@ -27,6 +28,8 @@ impl SwarmEvents {
 	}
 }
 
+// Structure that is used as an output
+// for all network events that are of interest
 #[derive(Default)]
 pub struct NetworkEvents {
 	swarm: Mutex<SwarmEvents>,
@@ -37,11 +40,16 @@ impl NetworkEvents {
 		Self::default()
 	}
 
+	// Stream function creates a new stream of network
+	// events and registers a new channal for sending events
 	pub async fn stream(&self) -> ReceiverStream<Event> {
 		let mut swarm = self.swarm.lock().await;
 		swarm.stream()
 	}
 
+	// Notify function is used to send network event to all listeners
+	// through all send channals that are able to send, otherwise channal is
+	// discarded
 	pub async fn notify(&self, event: Event) {
 		let mut swarm = self.swarm.lock().await;
 		swarm.notify(event);
