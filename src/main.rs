@@ -153,13 +153,14 @@ async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	let (network_client, mut network_events, network_event_loop) = network::init(
+	let (network_client, network_events, network_event_loop) = network::init(
 		cfg.libp2p_seed,
 		&cfg.libp2p_psk_path,
 		libp2p_metrics,
 		cfg.libp2p_tcp_port_reuse,
 	)
 	.context("Failed to init Network Service")?;
+
 	// Spawn the network task for it to run in the background
 	tokio::spawn(network_event_loop.run());
 
@@ -190,6 +191,8 @@ async fn do_main() -> Result<()> {
 	if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
 		let node = network_events
+			.stream()
+			.await
 			.find_map(|e| match e {
 				network::Event::ConnectionEstablished { peer_id, endpoint } => {
 					if endpoint.is_listener() {
