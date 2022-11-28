@@ -17,13 +17,11 @@ impl EventStream {
 	fn stream(&mut self) -> ReceiverStream<Event> {
 		let (tx, rx) = mpsc::channel(1000);
 		self.senders.push(tx);
-		print!("NOVO: {:#?}", self.senders.len());
 		ReceiverStream::new(rx)
 	}
 
 	fn notify(&mut self, event: Event) {
 		self.senders.retain(|tx| tx.try_send(event.clone()).is_ok());
-		print!("PREOSTALO: {:#?}", self.senders.len());
 	}
 }
 
