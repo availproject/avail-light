@@ -9,6 +9,8 @@ pub enum Event {
 		endpoint: ConnectedPoint,
 	},
 }
+
+#[derive(Default)]
 struct SwarmEvents {
 	senders: Vec<mpsc::Sender<Event>>,
 }
@@ -25,17 +27,14 @@ impl SwarmEvents {
 	}
 }
 
+#[derive(Default)]
 pub struct NetworkEvents {
 	swarm: Mutex<SwarmEvents>,
 }
 
 impl NetworkEvents {
 	pub fn new() -> Self {
-		Self {
-			swarm: Mutex::new(SwarmEvents {
-				senders: Default::default(),
-			}),
-		}
+		Self::default()
 	}
 
 	pub async fn stream(&self) -> ReceiverStream<Event> {
