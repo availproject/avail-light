@@ -41,24 +41,10 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	pub async fn dial(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (sender, receiver) = oneshot::channel();
-		self.sender
-			.send(Command::Dial {
-				peer_id,
-				peer_addr,
-				sender,
-			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
-	}
-
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
-			self.dial(peer, addr).await?;
 		}
 
 		self.sender
@@ -102,11 +88,6 @@ pub enum Command {
 		sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
-	},
-	Dial {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
 		sender: oneshot::Sender<Result<()>>,
