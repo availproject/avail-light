@@ -1,8 +1,15 @@
-use std::{collections::HashMap, fs, path::Path, str::FromStr, time::Duration};
+use std::{
+	collections::{hash_map, HashMap},
+	fs,
+	path::Path,
+	str::FromStr,
+	sync::Arc,
+	time::Duration,
+};
 
 use anyhow::{Context, Result};
-use futures::{Stream, StreamExt};
-use tokio::sync::{mpsc, oneshot};
+use futures::StreamExt;
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use libp2p::{
 	core::{
@@ -181,46 +188,69 @@ impl From<MdnsEvent> for BehaviourEvent {
 	}
 }
 
-impl From<PingEvent> for BehaviourEvent {
-	fn from(event: PingEvent) -> Self {
-		BehaviourEvent::Ping(event)
-	}
-}
-
-impl From<void::Void> for BehaviourEvent {
-	fn from(_: void::Void) -> Self {
-		BehaviourEvent::Void
-	}
-}
-
-pub struct EventLoop {
-	swarm: Swarm<NetworkBehaviour>,
-	command_receiver: mpsc::Receiver<Command>,
-	event_sender: mpsc::Sender<Event>,
-	pending_kad_queries: HashMap<QueryId, QueryChannel>,
-	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	metrics: Metrics,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Event {
 	ConnectionEstablished {
 		peer_id: PeerId,
 		endpoint: ConnectedPoint,
 	},
 }
+struct EventStream {
+	senders: Vec<mpsc::Sender<Event>>,
+}
+
+impl EventStream {
+	fn stream(&mut self) -> ReceiverStream<Event> {
+		let (tx, rx) = mpsc::channel(1000);
+		self.senders.push(tx);
+		print!("NOVO: {:#?}", self.senders.len());
+		ReceiverStream::new(rx)
+	}
+
+	fn notify(&mut self, event: Event) {
+		self.senders.retain(|tx| tx.try_send(event.clone()).is_ok());
+		print!("PREOSTALO: {:#?}", self.senders.len());
+	}
+}
+
+pub struct NetworkStream {
+	stream: Mutex<EventStream>,
+}
+
+impl NetworkStream {
+	pub async fn stream(&self) -> ReceiverStream<Event> {
+		let mut stream = self.stream.lock().await;
+		stream.stream()
+	}
+
+	async fn notify(&self, event: Event) {
+		let mut stream = self.stream.lock().await;
+		stream.notify(event);
+	}
+}
+
+pub struct EventLoop {
+	swarm: Swarm<NetworkBehaviour>,
+	command_receiver: mpsc::Receiver<Command>,
+	network_events: Arc<NetworkStream>,
+	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
+	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	metrics: Metrics,
+}
 
 impl EventLoop {
 	fn new(
 		swarm: Swarm<NetworkBehaviour>,
 		command_receiver: mpsc::Receiver<Command>,
-		event_sender: mpsc::Sender<Event>,
 		metrics: Metrics,
+		network_stream: Arc<NetworkStream>,
 	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
-			event_sender,
+			network_events: network_stream,
+			pending_dials: Default::default(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			metrics,
@@ -460,13 +490,15 @@ impl EventLoop {
 						trace!(
 							"Connection established. PeerID: {peer_id:?}. Endpoint: {endpoint:?}."
 						);
-
-						// this event is of interest,
-						// pass event to output event stream
-						self.event_sender
-							.send(Event::ConnectionEstablished { peer_id, endpoint })
-							.await
-							.expect("Event receiver not to be dropped.");
+						if endpoint.is_dialer() {
+							if let Some(ch) = self.pending_dials.remove(&peer_id) {
+								let _ = ch.send(Ok(()));
+							}
+						}
+						// this event is of a particular interest for our first node in the network
+						self.network_events
+							.notify(Event::ConnectionEstablished { peer_id, endpoint })
+							.await;
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
 						trace!("Outgoing connection error: {error:?}. PeerId: {peer_id:?}");
@@ -541,7 +573,7 @@ pub fn init(
 	psk_path: &String,
 	metrics: Metrics,
 	port_reuse: bool,
-) -> Result<(Client, impl Stream<Item = Event>, EventLoop)> {
+) -> Result<(Client, Arc<NetworkStream>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
 		Some(seed) => {
@@ -596,14 +628,18 @@ pub fn init(
 	};
 
 	let (command_sender, command_receiver) = mpsc::channel(10000);
-	let (event_sender, event_receiver) = mpsc::channel(10000);
+	let network_stream = Arc::new(NetworkStream {
+		stream: Mutex::new(EventStream {
+			senders: Default::default(),
+		}),
+	});
 
 	Ok((
 		Client {
 			sender: command_sender,
 		},
-		ReceiverStream::new(event_receiver),
-		EventLoop::new(swarm, command_receiver, event_sender, metrics),
+		network_stream.clone(),
+		EventLoop::new(swarm, command_receiver, metrics, network_stream),
 	))
 }
 
