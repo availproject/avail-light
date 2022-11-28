@@ -8,7 +8,7 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
 use super::client::Command;
-use super::stream::{Event, NetworkStream};
+use super::stream::{Event, NetworkEvents};
 
 use libp2p::{
 	core::either::EitherError,
@@ -84,7 +84,7 @@ impl From<MdnsEvent> for BehaviourEvent {
 pub struct EventLoop {
 	swarm: Swarm<NetworkBehaviour>,
 	command_receiver: mpsc::Receiver<Command>,
-	network_stream: Arc<NetworkStream>,
+	network_events: Arc<NetworkEvents>,
 	pending_dials: HashMap<PeerId, oneshot::Sender<Result<(), anyhow::Error>>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
@@ -96,12 +96,12 @@ impl EventLoop {
 		swarm: Swarm<NetworkBehaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
-		network_stream: Arc<NetworkStream>,
+		network_events: Arc<NetworkEvents>,
 	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
-			network_stream,
+			network_events,
 			pending_dials: Default::default(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
@@ -344,7 +344,7 @@ impl EventLoop {
 							}
 						}
 						// this event is of a particular interest for our first node in the network
-						self.network_stream
+						self.network_events
 							.notify(Event::ConnectionEstablished { peer_id, endpoint })
 							.await;
 					},

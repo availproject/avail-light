@@ -9,11 +9,11 @@ pub enum Event {
 		endpoint: ConnectedPoint,
 	},
 }
-struct EventStream {
+struct SwarmEvents {
 	senders: Vec<mpsc::Sender<Event>>,
 }
 
-impl EventStream {
+impl SwarmEvents {
 	fn stream(&mut self) -> ReceiverStream<Event> {
 		let (tx, rx) = mpsc::channel(1000);
 		self.senders.push(tx);
@@ -25,26 +25,26 @@ impl EventStream {
 	}
 }
 
-pub struct NetworkStream {
-	stream: Mutex<EventStream>,
+pub struct NetworkEvents {
+	swarm: Mutex<SwarmEvents>,
 }
 
-impl NetworkStream {
+impl NetworkEvents {
 	pub fn new() -> Self {
 		Self {
-			stream: Mutex::new(EventStream {
+			swarm: Mutex::new(SwarmEvents {
 				senders: Default::default(),
 			}),
 		}
 	}
 
 	pub async fn stream(&self) -> ReceiverStream<Event> {
-		let mut stream = self.stream.lock().await;
-		stream.stream()
+		let mut swarm = self.swarm.lock().await;
+		swarm.stream()
 	}
 
 	pub async fn notify(&self, event: Event) {
-		let mut stream = self.stream.lock().await;
-		stream.notify(event);
+		let mut swarm = self.swarm.lock().await;
+		swarm.notify(event);
 	}
 }

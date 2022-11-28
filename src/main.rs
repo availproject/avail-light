@@ -153,7 +153,7 @@ async fn do_main() -> Result<()> {
 		counter.clone(),
 	));
 
-	let (network_client, network_stream, network_event_loop) = network::init(
+	let (network_client, network_events, network_event_loop) = network::init(
 		cfg.libp2p_seed,
 		&cfg.libp2p_psk_path,
 		libp2p_metrics,
@@ -190,7 +190,7 @@ async fn do_main() -> Result<()> {
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
 	if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
-		let node = network_stream
+		let node = network_events
 			.stream()
 			.await
 			.find_map(|e| match e {

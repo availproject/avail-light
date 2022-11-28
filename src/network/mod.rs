@@ -7,7 +7,7 @@ use std::{fs, path::Path, str::FromStr, sync::Arc, time::Duration};
 pub use client::Client;
 use event_loop::{EventLoop, NetworkBehaviour};
 pub use stream::Event;
-use stream::NetworkStream;
+use stream::NetworkEvents;
 
 use anyhow::{Context, Result};
 use libp2p::{
@@ -40,7 +40,7 @@ pub fn init(
 	psk_path: &String,
 	metrics: Metrics,
 	port_reuse: bool,
-) -> Result<(Client, Arc<NetworkStream>, EventLoop)> {
+) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
 		Some(seed) => {
@@ -89,12 +89,12 @@ pub fn init(
 	};
 
 	let (command_sender, command_receiver) = mpsc::channel(10000);
-	let network_stream = Arc::new(NetworkStream::new());
+	let network_events = Arc::new(NetworkEvents::new());
 
 	Ok((
 		Client::new(command_sender),
-		network_stream.clone(),
-		EventLoop::new(swarm, command_receiver, metrics, network_stream),
+		network_events.clone(),
+		EventLoop::new(swarm, command_receiver, metrics, network_events),
 	))
 }
 
