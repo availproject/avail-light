@@ -271,25 +271,21 @@ impl EventLoop {
 						}
 					},
 					KademliaEvent::RoutablePeer { peer, address } => {
-						debug!("RoutablePeer. Peer: {:?}.  Address: {:?}", peer, address);
+						debug!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
 					KademliaEvent::UnroutablePeer { peer } => {
-						debug!("UnroutablePeer. Peer: {:?}", peer);
+						debug!("UnroutablePeer. Peer: {peer:?}");
 					},
 					KademliaEvent::PendingRoutablePeer { peer, address } => {
-						debug!(
-							"Pending routablePeer. Peer: {:?}.  Address: {:?}",
-							peer, address
-						);
+						debug!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord { source, record, .. } = request {
 							if let Some(block_ref) = record {
 								trace!(
-									"Inbound PUT request record key: {:?}. Source: {:?}",
+									"Inbound PUT request record key: {:?}. Source: {source:?}",
 									block_ref.key,
-									source
 								);
 							}
 						}
@@ -332,10 +328,7 @@ impl EventLoop {
 								peer,
 								num_remaining,
 							}) => {
-								debug!(
-									"BootstrapOK event. PeerID: {:?}. Num remaining: {:?}.",
-									peer, num_remaining
-								);
+								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
@@ -343,7 +336,7 @@ impl EventLoop {
 								}
 							},
 							Err(err) => {
-								debug!("Bootstrap error event. Error: {:?}.", err);
+								debug!("Bootstrap error event. Error: {err:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
@@ -368,10 +361,7 @@ impl EventLoop {
 							..
 						},
 					} => {
-						debug!(
-							"Identify Received event. PeerId: {:?}. Listen address: {:?}",
-							peer_id, listen_addrs
-						);
+						debug!("Identify Received event. PeerId: {peer_id:?}. Listen address: {listen_addrs:?}");
 
 						if protocols
 							.iter()
@@ -386,26 +376,20 @@ impl EventLoop {
 						}
 					},
 					IdentifyEvent::Sent { peer_id } => {
-						debug!("Identify Sent event. PeerId: {:?}", peer_id);
+						debug!("Identify Sent event. PeerId: {peer_id:?}");
 					},
 					IdentifyEvent::Pushed { peer_id } => {
-						debug!("Identify Pushed event. PeerId: {:?}", peer_id);
+						debug!("Identify Pushed event. PeerId: {peer_id:?}");
 					},
 					IdentifyEvent::Error { peer_id, error } => {
-						debug!(
-							"Identify Error event. PeerId: {:?}. Error: {:?}",
-							peer_id, error
-						);
+						debug!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 					},
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
 				MdnsEvent::Discovered(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
-						debug!(
-							"MDNS got peer with ID: {:#?} and Address: {:#?}",
-							peer_id, multiaddr
-						);
+						debug!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 						self.swarm
 							.behaviour_mut()
 							.kademlia
@@ -414,10 +398,7 @@ impl EventLoop {
 				},
 				MdnsEvent::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
-						debug!(
-							"MDNS got expired peer with ID: {:#?} and Address: {:#?}",
-							peer_id, multiaddr
-						);
+						debug!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 
 						if !self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
 							self.swarm
@@ -446,7 +427,7 @@ impl EventLoop {
 						num_established,
 						cause,
 					} => {
-						trace!("Connection closed. PeerID: {:?}. Address: {:?}. Num establ: {:?}. Cause: {:?}", peer_id, endpoint.get_remote_address(), num_established, cause);
+						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num establ: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
 						if let Some(cause) = cause {
 							match cause {
@@ -464,29 +445,20 @@ impl EventLoop {
 						local_addr,
 						send_back_addr,
 					} => {
-						trace!(
-							"Incoming connection from address: {:?}. Local address: {:?}",
-							send_back_addr,
-							local_addr
-						);
+						trace!("Incoming connection from address: {send_back_addr:?}. Local address: {local_addr:?}");
 					},
 					SwarmEvent::IncomingConnectionError {
 						local_addr,
 						send_back_addr,
 						error,
 					} => {
-						trace!(
-							"Incoming connection error from address: {:?}. Local address: {:?}. Error: {:?}",
-							send_back_addr, local_addr, error
-						)
+						trace!("Incoming connection error from address: {send_back_addr:?}. Local address: {local_addr:?}. Error: {error:?}.")
 					},
 					SwarmEvent::ConnectionEstablished {
 						peer_id, endpoint, ..
 					} => {
 						trace!(
-							"Connection established. PeerID: {:?}. Endpoint: {:?}.",
-							peer_id,
-							endpoint
+							"Connection established. PeerID: {peer_id:?}. Endpoint: {endpoint:?}."
 						);
 
 						// this event is of interest,
@@ -497,11 +469,7 @@ impl EventLoop {
 							.expect("Event receiver not to be dropped.");
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-						trace!(
-							"Outgoing connection error: {:?}. PeerId: {:?}",
-							error,
-							peer_id
-						);
+						trace!("Outgoing connection error: {error:?}. PeerId: {peer_id:?}");
 					},
 					SwarmEvent::Dialing(peer_id) => debug!("Dialing {}", peer_id),
 					_ => {},
