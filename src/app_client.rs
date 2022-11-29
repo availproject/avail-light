@@ -84,8 +84,15 @@ async fn process_block(
 	let rows_count = rows.iter().filter(|row| row.is_some()).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
 
-	let (verified_rows, missing_rows) =
-		commitments::verify_equality(&pp, &commitments, &rows, &lookup, &dimensions, app_id)?;
+	let (verified_rows, missing_rows) = commitments::verify_equality(
+		&pp,
+		&commitments,
+		&rows,
+		&lookup,
+		&dimensions,
+		app_id,
+		thresh,
+	)?;
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
 
@@ -191,10 +198,8 @@ pub async fn run(
 			app_id,
 			&block,
 			pp.clone(),
-<<<<<<< HEAD
 			thresh,
-=======
->>>>>>> 0fae523 (Fetch missing rows from DHT.)
+			thresh,
 		)
 		.await
 		{
