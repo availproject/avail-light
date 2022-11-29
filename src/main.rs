@@ -210,6 +210,7 @@ async fn do_main() -> Result<()> {
 	};
 
 	// wait here for bootstrap to finish
+	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
 
 	let pp = kate_proof::testnet::public_params(1024);
