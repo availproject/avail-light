@@ -21,7 +21,7 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
-use kate_recovery::matrix::Dimensions;
+use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
 use tracing::{error, info, warn};
 
@@ -31,7 +31,7 @@ use crate::{
 		store_block_header_in_db, store_confidence_in_db,
 	},
 	network::Client,
-	rpc,
+	proof, rpc,
 	types::SyncClientConfig,
 };
 
@@ -85,7 +85,9 @@ async fn process_block(
 
 	let dimensions =
 		Dimensions::new(xt.commitment.rows, xt.commitment.cols).context("Invalid dimensions")?;
-	let commitment = xt.commitment.commitment.clone();
+
+	let commitments = commitments::from_slice(&xt.commitment.commitment)?;
+
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(&dimensions, cell_count);
@@ -135,7 +137,7 @@ async fn process_block(
 		cells.len()
 	);
 
-	let count = crate::proof::verify_proof(block_number, &dimensions, &cells, commitment, pp);
+	let count = proof::verify(block_number, &dimensions, &cells, &commitments, &pp);
 
 	info!(
 		block_number,
