@@ -243,6 +243,7 @@ async fn do_main() -> Result<()> {
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
 			db.clone(),
+			network_client.clone(),
 			rpc_url.clone(),
 			app_id,
 			block_rx,

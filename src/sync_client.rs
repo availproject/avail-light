@@ -83,14 +83,8 @@ async fn process_block(
 
 	let begin = SystemTime::now();
 
-	let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols);
-	let Some(dimensions) = dimensions else {
-		error!(block_number, "invalid dimensions");
-		return Err(anyhow!(
-			"invalid dimensions: {}x{}",
-			xt.commitment.rows, xt.commitment.cols
-		));
-	};
+	let dimensions =
+		Dimensions::new(xt.commitment.rows, xt.commitment.cols).context("Invalid dimensions")?;
 	let commitment = xt.commitment.commitment.clone();
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
