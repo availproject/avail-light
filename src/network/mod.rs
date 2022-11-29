@@ -11,12 +11,7 @@ use stream::NetworkEvents;
 
 use anyhow::{Context, Result};
 use libp2p::{
-	core::{
-		either::EitherTransport,
-		muxing::StreamMuxerBox,
-		transport,
-		upgrade::{SelectUpgrade, Version},
-	},
+	core::{either::EitherTransport, muxing::StreamMuxerBox, transport, upgrade::Version},
 	identify,
 	identity::{self, ed25519, Keypair},
 	kad::{
@@ -24,7 +19,6 @@ use libp2p::{
 		KademliaConfig,
 	},
 	metrics::Metrics,
-	mplex::MplexConfig,
 	noise::NoiseAuthenticated,
 	pnet::{PnetConfig, PreSharedKey},
 	swarm::SwarmBuilder,
@@ -127,10 +121,7 @@ fn setup_transport(
 	maybe_encrypted
 		.upgrade(Version::V1)
 		.authenticate(noise)
-		.multiplex(SelectUpgrade::new(
-			YamuxConfig::default(),
-			MplexConfig::new(),
-		))
+		.multiplex(YamuxConfig::default())
 		.timeout(Duration::from_secs(20))
 		.boxed()
 }
