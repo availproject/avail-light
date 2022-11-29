@@ -4,7 +4,6 @@ use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
 	sync::{mpsc::sync_channel, Arc, Mutex},
-	thread, time,
 };
 
 use anyhow::{Context, Result};
@@ -178,7 +177,7 @@ async fn do_main() -> Result<()> {
 		.context("Listening not to fail.")?;
 
 	// Check if bootstrap nodes were provided
-	let mut bootstrap_nodes = cfg
+	let bootstrap_nodes = cfg
 		.bootstraps
 		.iter()
 		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
@@ -188,7 +187,7 @@ async fn do_main() -> Result<()> {
 	// If the client is the first one on the network, and no bootstrap nodes
 	// were provided, then wait for the second client to establish connection and use it as bootstrap.
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
-	if bootstrap_nodes.is_empty() {
+	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
 		let node = network_events
 			.stream()
@@ -205,13 +204,13 @@ async fn do_main() -> Result<()> {
 			// hang in there, until someone dials us
 			.await
 			.context("Connection is not established")?;
-		bootstrap_nodes = vec![node];
-		network_client.bootstrap(bootstrap_nodes).await?;
+		vec![node]
 	} else {
-		// Now that we have something to bootstrap with, just do it
-		info!("Bootstraping the DHT with bootstrap nodes...");
-		network_client.bootstrap(bootstrap_nodes).await?;
-	}
+		bootstrap_nodes
+	};
+
+	// wait here for bootstrap to finish
+	network_client.bootstrap(bootstrap_nodes).await?;
 
 	let pp = kate_proof::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
@@ -257,9 +256,6 @@ async fn do_main() -> Result<()> {
 		.await
 		.context(format!("Failed to get chain header from {rpc_url}"))?;
 	let latest_block = block_header.number;
-
-	// TODO: implement proper sync between bootstrap completion and starting the sync function
-	thread::sleep(time::Duration::from_secs(3));
 
 	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
 	if sync_block_depth > 0 {

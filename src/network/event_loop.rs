@@ -226,15 +226,17 @@ impl EventLoop {
 								peer,
 								num_remaining,
 							}) => {
-								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
-								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id.into())
-								{
-									_ = ch.send(Ok(()));
+								trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
+								if num_remaining == 0 {
+									if let Some(QueryChannel::Bootstrap(ch)) =
+										self.pending_kad_queries.remove(&id.into())
+									{
+										_ = ch.send(Ok(()));
+									}
 								}
 							},
 							Err(err) => {
-								debug!("Bootstrap error event. Error: {err:?}.");
+								trace!("Bootstrap error event. Error: {err:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
