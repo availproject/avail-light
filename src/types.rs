@@ -1,6 +1,6 @@
 //! Shared light client structs and enums.
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
@@ -207,16 +207,15 @@ pub struct ClientMsg {
 
 impl TryFrom<DaHeader> for ClientMsg {
 	type Error = anyhow::Error;
-	fn try_from(header: DaHeader) -> Result<Self> {
-		let hash: H256 = Encode::using_encoded(&header, |e| blake2_256(e)).into();
+	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
+		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let HeaderExtension::V1(xt) = header.extension;
 		let KateCommitment { rows, cols, .. } = xt.commitment;
-		let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
 
 		Ok(ClientMsg {
 			header_hash: hash,
 			block_num: header.number,
-			dimensions,
+			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,
 			lookup: AppDataIndex {
 				size: xt.app_lookup.size,
 				index: xt
@@ -466,11 +465,15 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 }
 
 /// App client configuration (see [RuntimeConfig] for details)
-pub struct AppClientConfig {}
+pub struct AppClientConfig {
+	pub dht_parallelization_limit: usize,
+}
 
 impl From<&RuntimeConfig> for AppClientConfig {
-	fn from(_val: &RuntimeConfig) -> Self {
-		AppClientConfig {}
+	fn from(val: &RuntimeConfig) -> Self {
+		AppClientConfig {
+			dht_parallelization_limit: val.dht_parallelization_limit,
+		}
 	}
 }
 

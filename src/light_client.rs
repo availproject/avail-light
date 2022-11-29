@@ -148,14 +148,11 @@ pub async fn run(
 			let begin = SystemTime::now();
 
 			let HeaderExtension::V1(xt) = &header.extension;
-			let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols);
-			let Some(dimensions) = dimensions else {
-				error!(block_number, "invalid dimensions");
-				continue;
-			};
+			let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols)
+				.context("Invalid dimensions")?;
 
-			if dimensions.cols() < 3 {
-				error!(block_number, "chunk size less than 3");
+			if !(dimensions.cols() > 2) {
+				error!(block_number, "more than 2 columns is required");
 			}
 			let commitment = xt.commitment.commitment.clone();
 
