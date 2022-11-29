@@ -32,7 +32,10 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-use kate_recovery::matrix::{Dimensions, Position};
+use kate_recovery::{
+	commitments,
+	matrix::{Dimensions, Position},
+};
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -154,7 +157,8 @@ pub async fn run(
 			if !(dimensions.cols() > 2) {
 				error!(block_number, "more than 2 columns is required");
 			}
-			let commitment = xt.commitment.commitment.clone();
+
+			let commitments = commitments::from_slice(&xt.commitment.commitment)?;
 
 			let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 			let positions = rpc::generate_random_cells(&dimensions, cell_count);
@@ -212,13 +216,7 @@ pub async fn run(
 			}
 
 			if !cfg.disable_proof_verification {
-				let count = proof::verify_proof(
-					block_number,
-					&dimensions,
-					&cells,
-					commitment.clone(),
-					pp.clone(),
-				);
+				let count = proof::verify(block_number, &dimensions, &cells, &commitments, &pp);
 				info!(
 					block_number,
 					"Completed {count} verification rounds in \t{:?}",

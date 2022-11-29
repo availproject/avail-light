@@ -76,7 +76,7 @@ async fn process_block(
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = &block.dimensions;
-	let commitments = &block.commitment;
+	let commitments = &block.commitments;
 
 	let mut rows = get_kate_app_data(rpc_url, block.header_hash, app_id).await?;
 
@@ -84,7 +84,7 @@ async fn process_block(
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
 
 	let (verified_rows, missing_rows) =
-		commitments::verify_equality(&pp, &commitments, &rows, &lookup, &dimensions, app_id)?;
+		commitments::verify_equality(&pp, commitments, &rows, lookup, dimensions, app_id)?;
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
 
@@ -103,8 +103,7 @@ async fn process_block(
 
 		let unfetched_count = unfetched.len();
 		if unfetched_count == 0 {
-			let verified =
-				proof::verify_proof(block_number, &dimensions, &fetched, commitments.clone(), pp);
+			let verified = proof::verify(block_number, dimensions, &fetched, &commitments, &pp);
 
 			let unverified = fetched.len() - verified;
 			if unverified == 0 {

@@ -213,7 +213,7 @@ async fn do_main() -> Result<()> {
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
 
-	let pp = kate_proof::testnet::public_params(1024);
+	let pp = kate_recovery::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();

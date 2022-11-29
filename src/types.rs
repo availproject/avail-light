@@ -5,6 +5,7 @@ use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExt
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
+use kate_recovery::commitments;
 use kate_recovery::matrix::Dimensions;
 use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use libp2p::Multiaddr;
@@ -202,7 +203,7 @@ pub struct ClientMsg {
 	pub block_num: u32,
 	pub dimensions: Dimensions,
 	pub lookup: AppDataIndex,
-	pub commitment: Vec<u8>,
+	pub commitments: Vec<[u8; 48]>,
 }
 
 impl TryFrom<DaHeader> for ClientMsg {
@@ -225,7 +226,7 @@ impl TryFrom<DaHeader> for ClientMsg {
 					.map(|e| (e.app_id.0, e.start))
 					.collect(),
 			},
-			commitment: xt.commitment.commitment,
+			commitments: commitments::from_slice(&xt.commitment.commitment)?,
 		})
 	}
 }
