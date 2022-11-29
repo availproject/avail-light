@@ -412,6 +412,8 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Time-to-live for DHT entries in seconds (default: 3600).
 	pub ttl: Option<u64>,
+	/// Threshold for the number of cells fetched from DHT,
+	pub threshold: usize,
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -504,6 +506,7 @@ impl Default for RuntimeConfig {
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
 			ttl: Some(3600),
+			threshold: 5000,
 		}
 	}
 }

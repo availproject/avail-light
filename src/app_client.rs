@@ -72,6 +72,7 @@ async fn process_block(
 	app_id: u32,
 	block: &ClientMsg,
 	pp: PublicParameters,
+	thresh: usize,
 ) -> Result<()> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
@@ -87,6 +88,10 @@ async fn process_block(
 		commitments::verify_equality(&pp, &commitments, &rows, &lookup, &dimensions, app_id)?;
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
+
+	if missing_rows.len() * dimensions.cols() as usize > thresh {
+		return Err(anyhow::anyhow!("Too many cells are missing"));
+	}
 
 	let mut have_missing = !missing_rows.is_empty();
 
@@ -158,6 +163,7 @@ pub async fn run(
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
 	pp: PublicParameters,
+	thresh: usize,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -189,6 +195,7 @@ pub async fn run(
 			app_id,
 			&block,
 			pp.clone(),
+			thresh,
 		)
 		.await
 		{

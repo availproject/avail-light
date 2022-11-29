@@ -248,6 +248,7 @@ async fn do_main() -> Result<()> {
 			app_id,
 			block_rx,
 			pp.clone(),
+			cfg.threshold,
 		));
 		Some(block_tx)
 	} else {
