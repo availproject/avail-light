@@ -2445,7 +2445,7 @@ dependencies = [
 [[package]]
 name = "kate-proof"
 version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.5.1#f536c60c21279f62c8d6e47894f446c22889a030"
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-82#8cb9c5b0608d6f1733c8b60a7d0488ef6a3fcd55"
 dependencies = [
  "anyhow",
  "dusk-bytes",
@@ -2467,8 +2467,12 @@ source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-50#b39c48
 >>>>>>> 96397bc (Update to latest avail-core.)
 =======
 version = "0.5.0"
+<<<<<<< HEAD
 source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-50#c234b8f1c8f238ab1c88a21864753c801b5e8be8"
 >>>>>>> 0fae523 (Fetch missing rows from DHT.)
+=======
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-82#8cb9c5b0608d6f1733c8b60a7d0488ef6a3fcd55"
+>>>>>>> 78c1bac (add threshold)
 dependencies = [
  "derive_more",
  "dusk-bytes",
