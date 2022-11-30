@@ -469,12 +469,14 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 /// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
 	pub dht_parallelization_limit: usize,
+	pub threshold: usize,
 }
 
 impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
 			dht_parallelization_limit: val.dht_parallelization_limit,
+			threshold: val.threshold,
 		}
 	}
 }
