@@ -72,7 +72,6 @@ async fn process_block(
 	app_id: u32,
 	block: &ClientMsg,
 	pp: PublicParameters,
-	thresh: usize,
 ) -> Result<()> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
@@ -89,7 +88,7 @@ async fn process_block(
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
 
-	if missing_rows.len() * dimensions.cols() as usize > thresh {
+	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
 		return Err(anyhow::anyhow!("Too many cells are missing"));
 	}
 
@@ -163,7 +162,6 @@ pub async fn run(
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
 	pp: PublicParameters,
-	thresh: usize,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -195,7 +193,6 @@ pub async fn run(
 			app_id,
 			&block,
 			pp.clone(),
-			thresh,
 		)
 		.await
 		{
