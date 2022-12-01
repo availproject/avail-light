@@ -347,6 +347,9 @@ fn default_query_proof_rpc_parallel_tasks() -> usize {
 fn default_false() -> bool {
 	false
 }
+fn default_threshold() -> usize{
+	5000
+}
 
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -413,6 +416,7 @@ pub struct RuntimeConfig {
 	/// Time-to-live for DHT entries in seconds (default: 3600).
 	pub ttl: Option<u64>,
 	/// Threshold for the number of cells fetched from DHT,
+	#[serde(default = "default_threshold")]
 	pub threshold: usize,
 }
 
