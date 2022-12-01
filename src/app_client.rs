@@ -88,6 +88,10 @@ async fn process_block(
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
 
+	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
+		return Err(anyhow::anyhow!("Too many cells are missing"));
+	}
+
 	let mut have_missing = !missing_rows.is_empty();
 
 	if have_missing {

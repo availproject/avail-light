@@ -347,6 +347,9 @@ fn default_query_proof_rpc_parallel_tasks() -> usize {
 fn default_false() -> bool {
 	false
 }
+fn default_threshold() -> usize {
+	5000
+}
 
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -412,6 +415,9 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Time-to-live for DHT entries in seconds (default: 3600).
 	pub ttl: Option<u64>,
+	/// Threshold for the number of cells fetched from DHT,
+	#[serde(default = "default_threshold")]
+	pub threshold: usize,
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -467,12 +473,14 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 /// App client configuration (see [RuntimeConfig] for details)
 pub struct AppClientConfig {
 	pub dht_parallelization_limit: usize,
+	pub threshold: usize,
 }
 
 impl From<&RuntimeConfig> for AppClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		AppClientConfig {
 			dht_parallelization_limit: val.dht_parallelization_limit,
+			threshold: val.threshold,
 		}
 	}
 }
@@ -504,6 +512,7 @@ impl Default for RuntimeConfig {
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
 			ttl: Some(3600),
+			threshold: default_threshold(),
 		}
 	}
 }
