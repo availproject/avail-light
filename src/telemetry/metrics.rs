@@ -10,6 +10,7 @@ pub struct Metrics {
 	session_block_counter: Counter,
 	total_block_number: Gauge,
 	dht_fetched: Gauge,
+	dht_fetched_percentage: Gauge<f64, AtomicU64>,
 	node_rpc_fetched: Gauge,
 	block_confidence: Gauge<f64, AtomicU64>,
 	rpc_call_duration: Gauge<f64, AtomicU64>,
@@ -21,6 +22,7 @@ pub enum MetricEvent {
 	SessionBlockCounter,
 	TotalBlockNumber(u32),
 	DHTFetched(u64),
+	DHTFetchedPercentage(f64),
 	NodeRPCFetched(u64),
 	BlockConfidence(f64),
 	RPCCallDuration(f64),
@@ -51,6 +53,13 @@ impl Metrics {
 			"dht_fetched",
 			"Number of cells fetched from DHT",
 			Box::new(dht_fetched.clone()),
+		);
+
+		let dht_fetched_percentage = Gauge::default();
+		sub_reg.register(
+			"dht_fetched_percentage",
+			"Percentage of cells fetched via DHT compared to total number of cells requested for random sampling",
+			Box::new(dht_fetched_percentage.clone()),
 		);
 
 		let node_rpc_fetched = Gauge::default();
@@ -92,6 +101,7 @@ impl Metrics {
 			session_block_counter,
 			total_block_number,
 			dht_fetched,
+			dht_fetched_percentage,
 			node_rpc_fetched,
 			block_confidence,
 			rpc_call_duration,
@@ -110,6 +120,9 @@ impl Metrics {
 			},
 			MetricEvent::DHTFetched(num) => {
 				self.dht_fetched.set(num);
+			},
+			MetricEvent::DHTFetchedPercentage(num) => {
+				self.dht_fetched_percentage.set(num);
 			},
 			MetricEvent::NodeRPCFetched(num) => {
 				self.node_rpc_fetched.set(num);

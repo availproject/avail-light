@@ -181,6 +181,7 @@ pub async fn run(
 				cells_fetched.len()
 			);
 			metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as u64));
+			metrics.record(MetricEvent::DHTFetchedPercentage(cells_fetched.len() as f64 / positions.len() as f64));
 
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]

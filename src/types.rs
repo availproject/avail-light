@@ -337,11 +337,11 @@ mod port_range_format {
 }
 
 fn default_dht_parallelization_limit() -> usize {
-	800
+	20
 }
 
 fn default_query_proof_rpc_parallel_tasks() -> usize {
-	8
+	20
 }
 
 fn default_false() -> bool {
@@ -415,7 +415,7 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Time-to-live for DHT entries in seconds (default: 3600).
 	pub ttl: Option<u64>,
-	/// Threshold for the number of cells fetched from DHT,
+	/// Threshold for the number of cells fetched via DHT for the app client
 	#[serde(default = "default_threshold")]
 	pub threshold: usize,
 }
