@@ -136,7 +136,9 @@ async fn process_block(
 		cells.len()
 	);
 
-	let count = proof::verify(block_number, &dimensions, &cells, &commitments, &pp);
+	let (verified, unverified) =
+		proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
+	let count = verified.len() + unverified.len();
 
 	info!(
 		block_number,
@@ -144,7 +146,7 @@ async fn process_block(
 		begin.elapsed()?
 	);
 	// write confidence factor into on-disk database
-	store_confidence_in_db(db.clone(), block_number, count as u32)
+	store_confidence_in_db(db.clone(), block_number, verified.len() as u32)
 		.context("Failed to store confidence in DB")?;
 
 	network_client

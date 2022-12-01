@@ -199,7 +199,9 @@ pub async fn run(
 			}
 
 			if !cfg.disable_proof_verification {
-				let count = proof::verify(block_number, &dimensions, &cells, &commitments, &pp);
+				let (verified, unverified) =
+					proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
+				let count = verified.len() - unverified.len();
 				info!(
 					block_number,
 					"Completed {count} verification rounds in \t{:?}",
@@ -207,12 +209,12 @@ pub async fn run(
 				);
 
 				// write confidence factor into on-disk database
-				store_confidence_in_db(db.clone(), block_number, count as u32)
+				store_confidence_in_db(db.clone(), block_number, verified.len() as u32)
 					.context("Failed to store confidence in DB")?;
 				let mut lock = counter.lock().unwrap();
 				*lock = block_number;
 
-				let conf = calculate_confidence(count as u32);
+				let conf = calculate_confidence(verified.len() as u32);
 				info!(
 					block_number,
 					"confidence" = conf,
