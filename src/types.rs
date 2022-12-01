@@ -512,7 +512,7 @@ impl Default for RuntimeConfig {
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
 			ttl: Some(3600),
-			threshold: 5000,
+			threshold: default_threshold(),
 		}
 	}
 }
