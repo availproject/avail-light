@@ -347,7 +347,7 @@ fn default_query_proof_rpc_parallel_tasks() -> usize {
 fn default_false() -> bool {
 	false
 }
-fn default_threshold() -> usize{
+fn default_threshold() -> usize {
 	5000
 }
 
