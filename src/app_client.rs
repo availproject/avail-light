@@ -105,16 +105,17 @@ async fn process_block(
 
 		let unfetched_count = unfetched.len();
 		if unfetched_count == 0 {
-			let verified = proof::verify(block_number, dimensions, &fetched, &commitments, &pp);
+			let (_verified, unverified) =
+				proof::verify(block_number, dimensions, &fetched, &commitments, &pp)?;
 
-			let unverified = fetched.len() - verified;
-			if unverified == 0 {
+			if unverified.is_empty() {
 				// Assumption is that correct cells are fetched from DHT
 				for (row, data) in data::rows(&fetched) {
 					rows[row as usize] = Some(data);
 				}
 				have_missing = false;
 			} else {
+				let unverified = unverified.len();
 				warn!(block_number, "Failed to verify {unverified} DHT cells",);
 			}
 		} else {
