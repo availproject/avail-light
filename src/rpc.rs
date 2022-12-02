@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Result};
-use avail_subxt::primitives::Header as DaHeader;
+use avail_subxt::{primitives::Header as DaHeader, AvailConfig};
 use codec::{Decode, Encode};
 use hyper_tls::HttpsConnector;
 use kate_recovery::{
@@ -13,8 +13,7 @@ use kate_recovery::{
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use sp_core::H256;
-use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use subxt::OnlineClient;
 use tracing::{debug, instrument};
 
 use crate::types::*;
@@ -317,11 +316,11 @@ pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
 /// Checks the WS urls and returns first working
 pub async fn check_connection(
 	full_node_ws: &[url::Url],
-) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+) -> Option<OnlineClient<AvailConfig>> {
 	// TODO: We are ignoring errors here, we should probably return result instead of option
 	for url in full_node_ws.iter() {
-		if let Ok((ws, _)) = connect_async(url).await {
-			return Some(ws);
+		if let Ok(client) = avail_subxt::build_client(url.as_str()).await {
+			return Some(client);
 		};
 	}
 	None

@@ -27,18 +27,18 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
+use avail_subxt::{
+	api::runtime_types::da_primitives::header::extension::HeaderExtension, primitives::Header,
+};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
-use futures_util::{SinkExt, StreamExt};
 use kate_recovery::{
 	commitments,
 	matrix::{Dimensions, Position},
 };
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
-use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
 
 use crate::{
@@ -47,7 +47,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
-	types::{self, ClientMsg, LightClientConfig, QueryResult},
+	types::{self, ClientMsg, LightClientConfig},
 };
 
 /// Runs light client.
@@ -76,17 +76,12 @@ pub async fn run(
 	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
 	let urls = rpc::parse_urls(&cfg.full_node_ws)?;
 
-	while let Some(z) = rpc::check_connection(&urls).await {
-		let (mut write, mut read) = z.split();
-		write
-			.send(Message::Text(BODY.to_string()))
-			.await
-			.context("Failed to send ws-message (chain_subscribeFinalizedHeads)")?;
+	while let Some(subxt_client) = rpc::check_connection(&urls).await {
 
-		info!("Connected to Substrate Node");
+		let mut new_heads_sub = subxt_client.rpc().subscribe_finalized_blocks().await?;
 
 		struct BlockAvailableMsg {
-			params: QueryResult,
+			header: Header,
 			hash: H256,
 			received_at: Instant,
 		}
@@ -94,29 +89,26 @@ pub async fn run(
 		let (message_tx, message_rx) = sync_channel::<BlockAvailableMsg>(1 << 7);
 
 		tokio::spawn(async move {
-			while let Some(message) = read.next().await {
+			while let Some(message) = new_heads_sub.next().await {
 				if let Err(error) = message
 					.context("Failed to read web socket message")
-					.map(|data| data.into_data())
-					.and_then(|data| serde_json::from_slice(&data).context("Fail to decode data"))
-					.map(|types::Response { params, .. }| {
-						let calculated_hash: H256 =
-							Encode::using_encoded(&params.header, |e| blake2_256(e)).into();
-						(params.header.number, params, calculated_hash)
-					})
-					.map(|(block_number, params, hash)| {
+					.map(|header| {
+						let hash: H256 = Encode::using_encoded(&header, blake2_256).into() ;
 						(
-							block_number,
-							BlockAvailableMsg {
-								params,
-								hash,
-								received_at: Instant::now(),
-							},
+							header,
+							hash,
+							Instant::now(),
 						)
 					})
-					.and_then(|(block_number, message)| {
-						info!(block_number, "Received finalized block header");
-						message_tx.send(message).context("Cannot send  message")
+					.and_then(|(header, hash, received_at)| {
+						info!(header.number, "Received finalized block header");
+						message_tx
+							.send(BlockAvailableMsg {
+								header,
+								hash,
+								received_at,
+							})
+							.context("Cannot send  message")
 					}) {
 					error!("Fail to process finalized block header: {error}");
 				}
@@ -133,9 +125,9 @@ pub async fn run(
 			}
 
 			metrics.record(MetricEvent::SessionBlockCounter);
-			metrics.record(MetricEvent::TotalBlockNumber(message.params.header.number));
+			metrics.record(MetricEvent::TotalBlockNumber(message.header.number));
 
-			let header = &message.params.header;
+			let header = &message.header;
 
 			let header_hash = message.hash;
 			let block_number = header.number;
@@ -333,7 +325,7 @@ pub async fn run(
 			// that newly mined block has been received
 			if let Some(ref channel) = block_tx {
 				channel
-					.send(types::ClientMsg::try_from(message.params.header)?)
+					.send(types::ClientMsg::try_from(message.header)?)
 					.context("Failed to send block message")?;
 			}
 		}
