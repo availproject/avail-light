@@ -89,7 +89,7 @@ pub async fn insert_into_dht(
 	ttl: u64,
 ) -> f32 {
 	if cells.len() == 0 {
-		return 0.0;
+		return 1.0;
 	}
 
 	let cells: Vec<_> = cells.into_iter().map(DHTCell).collect::<Vec<_>>();
