@@ -373,6 +373,7 @@ dependencies = [
  "serde_json",
  "sp-core",
  "structopt",
+ "subxt",
  "tempdir",
  "test-case",
  "thiserror",
