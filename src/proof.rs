@@ -1,6 +1,7 @@
 //! Parallelized proof verification
 
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
+use itertools::{Either, Itertools};
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
@@ -43,10 +44,10 @@ pub fn verify(
 		.map(|(position, result)| result.map(|is_verified| (position, is_verified)))
 		.collect::<Result<Vec<(Position, bool)>, _>>()?
 		.into_iter()
-		.partition(|(_, is_verified)| *is_verified);
+		.partition_map(|(position, is_verified)| match is_verified {
+			true => Either::Left(position),
+			false => Either::Right(position),
+		});
 
-	Ok((
-		verified.into_iter().map(|(p, _)| p).collect(),
-		unverified.into_iter().map(|(p, _)| p).collect(),
-	))
+	Ok((verified, unverified))
 }

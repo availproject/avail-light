@@ -355,6 +355,7 @@ dependencies = [
  "hex",
  "hyper",
  "hyper-tls",
+ "itertools 0.10.5",
  "kate-recovery",
  "libipld",
  "libp2p",
@@ -2427,13 +2428,14 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.6.1"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.6.1#7785fc4d73916247bbef1a258c1254102f704f8b"
+version = "0.6.0"
+source = "git+https://github.com/maticnetwork/avail-core.git?branch=AV-78-reconstruction#f7871814c99dfc616c078e4561712f40cc5527a8"
 dependencies = [
  "derive_more",
  "dusk-bytes",
  "dusk-plonk",
  "getrandom 0.2.8",
+ "num",
  "once_cell",
  "parity-scale-codec",
  "rand 0.8.5",
