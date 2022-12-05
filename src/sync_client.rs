@@ -130,23 +130,19 @@ async fn process_block(
 		));
 	}
 
-	info!(
-		block_number,
-		"Fetched {} cells for verification",
-		cells.len()
-	);
+	let cells_len = cells.len();
+	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, unverified) =
-		proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
-	let count = verified.len() + unverified.len();
+	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
 
 	info!(
 		block_number,
-		"Completed {count} verification rounds: \t{:?}",
+		"Completed {cells_len} verification rounds: \t{:?}",
 		begin.elapsed()?
 	);
+
 	// write confidence factor into on-disk database
-	store_confidence_in_db(db.clone(), block_number, verified.len() as u32)
+	store_confidence_in_db(db.clone(), block_number, verified.len().try_into()?)
 		.context("Failed to store confidence in DB")?;
 
 	network_client

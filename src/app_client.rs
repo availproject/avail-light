@@ -12,18 +12,21 @@
 //!
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use avail_subxt::AvailConfig;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
-	com::decode_app_extrinsics,
+	com::{columns_positions, decode_app_extrinsics, reconstruct_columns},
 	commitments,
-	config::CHUNK_SIZE,
-	data::{self, DataCell},
-	matrix::Position,
+	config::{self, CHUNK_SIZE},
+	data::DataCell,
+	matrix::{Dimensions, Position},
 };
 use rocksdb::DB;
-use std::sync::{mpsc::Receiver, Arc};
+use std::{
+	collections::HashMap,
+	sync::{mpsc::Receiver, Arc},
+};
 use subxt::OnlineClient;
 use tracing::{error, info, instrument, warn};
 
@@ -65,6 +68,109 @@ fn data_cells_from_rows(rows: Vec<Option<Vec<u8>>>) -> Result<Vec<DataCell>> {
 		.collect::<Vec<_>>())
 }
 
+fn data_cell(
+	position: Position,
+	reconstructed: &HashMap<u16, Vec<[u8; config::CHUNK_SIZE]>>,
+) -> Result<DataCell> {
+	let row: usize = position.row.try_into()?;
+	reconstructed
+		.get(&position.col)
+		.and_then(|column| column.get(row))
+		.map(|&data| DataCell { position, data })
+		.context("Data cell not found")
+}
+
+async fn fetch_verify_and_reconstruct(
+	pp: PublicParameters,
+	network_client: Client,
+	block_number: u32,
+	dimensions: &Dimensions,
+	commitments: &[[u8; config::COMMITMENT_SIZE]],
+	positions: Vec<Position>,
+) -> Result<Vec<DataCell>> {
+	let (mut fetched, _) = network_client
+		.fetch_cells_from_dht(block_number, &positions)
+		.await
+		.context("Failed to fetch cells from DHT")?;
+
+	let (verified, _) = proof::verify(block_number, dimensions, &fetched, commitments, &pp)
+		.context("Failed to verify fetched cells")?;
+
+	fetched.retain(|cell| verified.contains(&cell.position));
+
+	let reconstructed = reconstruct_columns(dimensions, fetched)?;
+
+	positions
+		.into_iter()
+		.map(|position| data_cell(position, &reconstructed))
+		.collect::<Result<Vec<_>>>()
+}
+
+async fn fetch_and_verify(
+	pp: PublicParameters,
+	network_client: Client,
+	block_number: u32,
+	dimensions: &Dimensions,
+	commitments: &[[u8; config::COMMITMENT_SIZE]],
+	missing_rows: &[u32],
+) -> Result<Vec<(u32, Vec<u8>)>> {
+	let positions = dimensions.extended_rows_positions(missing_rows);
+
+	if positions.is_empty() {
+		return Ok(vec![]);
+	}
+
+	let (mut fetched, mut unfetched) = network_client
+		.fetch_cells_from_dht(block_number, &positions)
+		.await
+		.context("Failed to fetch cells from DHT")?;
+
+	let (verified, mut unverified) =
+		proof::verify(block_number, dimensions, &fetched, &commitments, &pp)
+			.context("Failed to verify fetched cells")?;
+
+	fetched.retain(|cell| verified.contains(&cell.position));
+	unfetched.append(&mut unverified);
+
+	let missing_cells = columns_positions(dimensions, unfetched, 0.66);
+
+	let mut result = fetch_verify_and_reconstruct(
+		pp,
+		network_client,
+		block_number,
+		dimensions,
+		commitments,
+		missing_cells,
+	)
+	.await?;
+
+	let mut data_cells: Vec<DataCell> = fetched
+		.into_iter()
+		.map(|cell| cell.into())
+		.collect::<Vec<_>>();
+	data_cells.append(&mut result);
+
+	data_cells
+		.sort_by(|a, b| (a.position.row, a.position.col).cmp(&(b.position.row, b.position.col)));
+
+	missing_rows
+		.iter()
+		.map(|&row| {
+			let data = data_cells
+				.iter()
+				.filter(|&cell| cell.position.row == row)
+				.flat_map(|cell| cell.data)
+				.collect::<Vec<_>>();
+
+			if data.len() != dimensions.cols() as usize * config::CHUNK_SIZE {
+				return Err(anyhow!("Row size is not valid after reconstruction"));
+			}
+
+			Ok((row, data))
+		})
+		.collect::<Result<Vec<_>>>()
+}
+
 #[instrument(skip_all, fields(block = block.block_num), level = "trace")]
 async fn process_block(
 	cfg: &AppClientConfig,
@@ -94,50 +200,33 @@ async fn process_block(
 		return Err(anyhow::anyhow!("Too many cells are missing"));
 	}
 
-	let mut have_missing = !missing_rows.is_empty();
+	let dht_rows = fetch_and_verify(
+		pp,
+		network_client,
+		block_number,
+		dimensions,
+		commitments,
+		&missing_rows,
+	)
+	.await?;
 
-	if have_missing {
-		let missing_positions = dimensions.extended_rows_positions(&missing_rows);
-		let (fetched, unfetched) = network_client
-			.fetch_cells_from_dht(block_number, &missing_positions)
-			.await
-			.context("Failed to fetch cells from DHT")?;
-
-		let unfetched_count = unfetched.len();
-		if unfetched_count == 0 {
-			let (_verified, unverified) =
-				proof::verify(block_number, dimensions, &fetched, &commitments, &pp)?;
-
-			if unverified.is_empty() {
-				// Assumption is that correct cells are fetched from DHT
-				for (row, data) in data::rows(&fetched) {
-					rows[row as usize] = Some(data);
-				}
-				have_missing = false;
-			} else {
-				let unverified = unverified.len();
-				warn!(block_number, "Failed to verify {unverified} DHT cells",);
-			}
-		} else {
-			warn!(block_number, "Failed to fetch {unfetched_count} DHT cells",);
-		}
-	};
-
-	if !have_missing {
-		let data_cells = data_cells_from_rows(rows)
-			.context("Failed to create data cells from rows got from RPC")?;
-
-		let data = decode_app_extrinsics(&lookup, &dimensions, data_cells, app_id)
-			.context("Failed to decode app extrinsics")?;
-
-		store_encoded_data_in_db(db, app_id, block_number, &data)
-			.context("Failed to store data into database")?;
-
-		let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
-		info!(block_number, "Stored {bytes_count} bytes into database",);
-	} else {
-		warn!(block_number, "Failed to fetch and verify data");
+	for (index, row) in dht_rows {
+		let i: usize = index.try_into()?;
+		rows[i] = Some(row);
 	}
+
+	let data_cells =
+		data_cells_from_rows(rows).context("Failed to create data cells from rows got from RPC")?;
+
+	let data = decode_app_extrinsics(&lookup, &dimensions, data_cells, app_id)
+		.context("Failed to decode app extrinsics")?;
+
+	store_encoded_data_in_db(db, app_id, block_number, &data)
+		.context("Failed to store data into database")?;
+
+	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
+	info!(block_number, "Stored {bytes_count} bytes into database");
+
 	Ok(())
 }
 
