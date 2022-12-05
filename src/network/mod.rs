@@ -34,6 +34,7 @@ pub fn init(
 	psk_path: &String,
 	metrics: Metrics,
 	port_reuse: bool,
+	replication_factor: usize
 ) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
@@ -60,6 +61,8 @@ pub fn init(
 	let swarm = {
 		let mut kad_cfg = KademliaConfig::default();
 		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
+		// Default replication factor is 20
+		kad_cfg.set_replication_factor(std::num::NonZeroUsize::new(replication_factor).expect("Invalid replication factor"));
 		let store_cfg = MemoryStoreConfig {
 			max_records: 24000000, // ~2hrs
 			max_value_bytes: 100,

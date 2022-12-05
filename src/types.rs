@@ -336,6 +336,10 @@ mod port_range_format {
 	}
 }
 
+fn default_libp2p_psk_path() -> String {
+	"./avail/psk".to_owned()
+}
+
 fn default_dht_parallelization_limit() -> usize {
 	20
 }
@@ -349,6 +353,10 @@ fn default_false() -> bool {
 }
 fn default_threshold() -> usize {
 	5000
+}
+
+fn default_replication_factor() -> usize {
+	20
 }
 
 /// Representation of a configuration used by this project.
@@ -418,6 +426,8 @@ pub struct RuntimeConfig {
 	/// Threshold for the number of cells fetched via DHT for the app client
 	#[serde(default = "default_threshold")]
 	pub threshold: usize,
+	#[serde(default = "default_replication_factor")]
+	pub replication_factor: usize
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -513,6 +523,7 @@ impl Default for RuntimeConfig {
 			max_cells_per_rpc: Some(30),
 			ttl: Some(3600),
 			threshold: default_threshold(),
+			replication_factor: default_replication_factor(),
 		}
 	}
 }
@@ -532,6 +543,4 @@ pub struct CellContentQueryPayload {
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
 }
 
-fn default_libp2p_psk_path() -> String {
-	"./avail/psk".to_owned()
-}
+
