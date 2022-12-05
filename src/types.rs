@@ -355,8 +355,32 @@ fn default_threshold() -> usize {
 	5000
 }
 
-fn default_replication_factor() -> usize {
+fn default_replication_factor() -> u16 {
 	20
+}
+
+fn default_replication_interval() -> u32 {
+	3 * 60 * 60
+}
+
+fn default_publication_interval() -> u32 {
+	12 * 60 * 60
+}
+
+fn default_ttl() -> u64 {
+	24 * 60 * 60
+}
+
+fn default_query_timeout() -> u32 {
+	30
+}
+
+fn default_query_parallelism() -> u16 {
+	3
+}
+
+fn default_caching_max_peers() -> u16 {
+	1
 }
 
 /// Representation of a configuration used by this project.
@@ -421,13 +445,42 @@ pub struct RuntimeConfig {
 	pub sync_blocks_depth: Option<u32>,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
-	/// Time-to-live for DHT entries in seconds (default: 3600).
-	pub ttl: Option<u64>,
 	/// Threshold for the number of cells fetched via DHT for the app client
 	#[serde(default = "default_threshold")]
 	pub threshold: usize,
+
+	/// Kademlia configuration - WARNING: Changing the default values might cause the peer to suffer poor performance!
+	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
+	///
+	/// Time-to-live for DHT entries in seconds (default: 24h).
+	#[serde(default = "default_ttl")]
+	pub record_ttl: u64,
+	/// Sets the (re-)publication interval of stored records, in seconds. (default: 12h)
+	/// This interval should be significantly shorter than the record TTL, to
+	/// ensure records do not expire prematurely.
+	#[serde(default = "default_publication_interval")]
+	pub publication_interval: u32,
+	/// Sets the (re-)replication interval for stored records, in seconds. (default: 3h)
+	/// This interval should be significantly shorter than the publication
+	/// interval, to ensure persistence between re-publications.
+	#[serde(default = "default_replication_interval")]
+	pub replication_interval: u32,
+	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	#[serde(default = "default_replication_factor")]
-	pub replication_factor: usize
+	pub replication_factor: u16,
+	/// Sets the timeout for a single Kademlia query. (default: 30s)
+	#[serde(default = "default_query_timeout")]
+	pub query_timeout: u32,
+	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3)
+	#[serde(default = "default_query_parallelism")]
+	pub query_parallelism: u16,
+	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1)
+	/// If set to 0, caching is disabled.
+	#[serde(default = "default_caching_max_peers")]
+	pub caching_max_peers: u16,
+	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false)
+	#[serde(default = "default_false")]
+	pub disjoint_query_paths: bool,
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -456,7 +509,34 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
-			ttl: val.ttl.unwrap_or(3600),
+			ttl: val.record_ttl,
+		}
+	}
+}
+
+/// Kademlia configuration (see [RuntimeConfig] for details)
+pub struct KademliaConfig {
+	pub record_ttl: u64,
+	pub record_replication_factor: u16,
+	pub record_replication_interval: u32,
+	pub publication_interval: u32,
+	pub query_timeout: u32,
+	pub query_parallelism: u16,
+	pub caching_max_peers: u16,
+	pub disjoint_query_paths: bool,
+}
+
+impl From<&RuntimeConfig> for KademliaConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		KademliaConfig {
+			record_ttl: val.record_ttl,
+			record_replication_factor: val.replication_factor,
+			record_replication_interval: val.replication_interval,
+			publication_interval: val.publication_interval,
+			query_timeout: val.query_timeout,
+			query_parallelism: val.query_parallelism,
+			caching_max_peers: val.caching_max_peers,
+			disjoint_query_paths: val.disjoint_query_paths,
 		}
 	}
 }
@@ -475,7 +555,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.ttl.unwrap_or(3600),
+			ttl: val.record_ttl,
 		}
 	}
 }
@@ -521,9 +601,15 @@ impl Default for RuntimeConfig {
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
-			ttl: Some(3600),
+			record_ttl: default_ttl(),
 			threshold: default_threshold(),
 			replication_factor: default_replication_factor(),
+			publication_interval: default_publication_interval(),
+			replication_interval: default_replication_interval(),
+			query_timeout: default_query_timeout(),
+			query_parallelism: default_query_parallelism(),
+			caching_max_peers: default_caching_max_peers(),
+			disjoint_query_paths: default_false(),
 		}
 	}
 }
@@ -542,5 +628,3 @@ pub struct CellContentQueryPayload {
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
 }
-
-

@@ -29,12 +29,14 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::info;
 
+use crate::types::KademliaConfig as NetworkKademliaConfig;
+
 pub fn init(
 	seed: Option<u8>,
 	psk_path: &String,
 	metrics: Metrics,
 	port_reuse: bool,
-	replication_factor: usize
+	kad_config: NetworkKademliaConfig,
 ) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
@@ -62,7 +64,10 @@ pub fn init(
 		let mut kad_cfg = KademliaConfig::default();
 		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
 		// Default replication factor is 20
-		kad_cfg.set_replication_factor(std::num::NonZeroUsize::new(replication_factor).expect("Invalid replication factor"));
+		kad_cfg.set_replication_factor(
+			std::num::NonZeroUsize::new(kad_config.record_replication_factor as usize)
+				.expect("Invalid replication factor"),
+		);
 		let store_cfg = MemoryStoreConfig {
 			max_records: 24000000, // ~2hrs
 			max_value_bytes: 100,

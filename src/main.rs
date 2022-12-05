@@ -157,7 +157,7 @@ async fn do_main() -> Result<()> {
 		&cfg.libp2p_psk_path,
 		libp2p_metrics,
 		cfg.libp2p_tcp_port_reuse,
-		cfg.replication_factor
+		(&cfg).into(),
 	)
 	.context("Failed to init Network Service")?;
 
