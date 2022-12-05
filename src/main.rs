@@ -226,16 +226,16 @@ async fn do_main() -> Result<()> {
 	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
 
 	info!("Reported version: {version}, runtime version: {runtime_version:?}");
-	if version != "1.4.0"
-		|| runtime_version.spec_version != 7
-		|| runtime_version.spec_name != "data-avail"
-	{
-		return Err(anyhow::anyhow!(
-			"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
-			version,
-			runtime_version.spec_version,
-		));
-	}
+	// if version != "1.4.0"
+	// 	|| runtime_version.spec_version != 7
+	// 	|| runtime_version.spec_name != "data-avail"
+	// {
+	// 	return Err(anyhow::anyhow!(
+	// 		"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
+	// 		version,
+	// 		runtime_version.spec_version,
+	// 	));
+	// }
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
