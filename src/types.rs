@@ -19,7 +19,7 @@ use crate::defaults;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
-const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
+pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
 /// Response of RPC get block hash
 #[derive(Deserialize, Debug)]
@@ -69,67 +69,12 @@ struct JsonRPCHeader {
 	_id: u32,
 }
 
-#[derive(Deserialize)]
-struct QueryErrorData {
-	code: i32,
-	message: String,
-}
-
-/// Query proof error
-#[derive(Deserialize)]
-pub struct QueryError {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	error: QueryErrorData,
-}
-
-impl QueryError {
-	pub fn message(&self) -> String {
-		let code = &self.error.code;
-		let message = &self.error.message;
-		format!("Query failed with code {code}: {message}")
-	}
-}
-
-/// Query proof result
-#[derive(Deserialize)]
-pub struct QueryProofResult {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: Vec<u8>,
-}
-
-impl QueryProofResult {
-	pub fn by_cell(&self, cells_len: usize) -> impl Iterator<Item = &[u8; 80]> {
-		assert_eq!(CELL_WITH_PROOF_SIZE * cells_len, self.result.len());
-		self.result
-			.chunks_exact(CELL_WITH_PROOF_SIZE)
-			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"))
-	}
-}
-
-/// Response of RPC query proof
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum QueryProofResponse {
-	Proofs(QueryProofResult),
-	Error(QueryError),
-}
-
 /// Query block result
 #[derive(Deserialize)]
 pub struct QueryAppDataResult {
 	#[serde(flatten)]
 	_jsonrpcheader: JsonRPCHeader,
 	pub result: Vec<Option<Vec<u8>>>,
-}
-
-/// Response of RPC query block
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum QueryAppDataResponse {
-	Block(QueryAppDataResult),
-	Error(QueryError),
 }
 
 /// Result of subscription to header
