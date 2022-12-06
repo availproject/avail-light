@@ -27,6 +27,7 @@ use crate::{
 mod app_client;
 mod consts;
 mod data;
+mod defaults;
 mod http;
 mod light_client;
 mod network;
@@ -157,6 +158,7 @@ async fn do_main() -> Result<()> {
 		&cfg.libp2p_psk_path,
 		libp2p_metrics,
 		cfg.libp2p_tcp_port_reuse,
+		(&cfg).into(),
 	)
 	.context("Failed to init Network Service")?;
 

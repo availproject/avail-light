@@ -16,7 +16,7 @@ use libp2p::{
 	identity::{self, ed25519, Keypair},
 	kad::{
 		store::{MemoryStore, MemoryStoreConfig},
-		KademliaConfig,
+		KademliaCaching, KademliaConfig,
 	},
 	metrics::Metrics,
 	noise::NoiseAuthenticated,
@@ -29,11 +29,14 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::info;
 
+use crate::types::KademliaConfig as NetworkKademliaConfig;
+
 pub fn init(
 	seed: Option<u8>,
 	psk_path: &String,
 	metrics: Metrics,
 	port_reuse: bool,
+	kad_config: NetworkKademliaConfig,
 ) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match seed {
@@ -59,12 +62,23 @@ pub fn init(
 	// create swarm that manages peers and events
 	let swarm = {
 		let mut kad_cfg = KademliaConfig::default();
-		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
+		kad_cfg
+			.set_publication_interval(kad_config.publication_interval)
+			.set_replication_interval(kad_config.record_replication_interval)
+			.set_replication_factor(kad_config.record_replication_factor)
+			.set_connection_idle_timeout(kad_config.connection_idle_timeout)
+			.set_query_timeout(kad_config.query_timeout)
+			.set_parallelism(kad_config.query_parallelism)
+			.set_caching(KademliaCaching::Enabled {
+				max_peers: kad_config.caching_max_peers,
+			})
+			.disjoint_query_paths(kad_config.disjoint_query_paths);
+
 		let store_cfg = MemoryStoreConfig {
-			max_records: 24000000, // ~2hrs
-			max_value_bytes: 100,
-			max_providers_per_key: 1,
-			max_provided_keys: 100000,
+			max_records: kad_config.max_kad_record_number, // ~2hrs
+			max_value_bytes: kad_config.max_kad_record_size,
+			max_providers_per_key: usize::from(kad_config.record_replication_factor), // Needs to match the replication factor, per libp2p docs
+			max_provided_keys: kad_config.max_kad_provided_keys,
 		};
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let identify_cfg =

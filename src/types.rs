@@ -1,5 +1,8 @@
 //! Shared light client structs and enums.
 
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
@@ -11,6 +14,8 @@ use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use libp2p::Multiaddr;
 use serde::{Deserialize, Deserializer, Serialize};
 use sp_core::{blake2_256, H256};
+
+use crate::defaults;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -337,25 +342,10 @@ mod port_range_format {
 	}
 }
 
-fn default_dht_parallelization_limit() -> usize {
-	20
-}
-
-fn default_query_proof_rpc_parallel_tasks() -> usize {
-	20
-}
-
-fn default_false() -> bool {
-	false
-}
-fn default_threshold() -> usize {
-	5000
-}
-
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
-	/// Light client HTTP server host name (default: 127.0.0.1)
+	/// Light client HTTP server host name (default: 127.0.0.1).
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7000).
 	#[serde(default)]
@@ -370,10 +360,10 @@ pub struct RuntimeConfig {
 	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
 	/// File system path where psk key is stored
-	#[serde(default = "default_libp2p_psk_path")]
+	#[serde(default = "defaults::libp2p_psk_path")]
 	pub libp2p_psk_path: String,
 	// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
-	#[serde(default = "default_false")]
+	#[serde(default = "defaults::default_false")]
 	pub libp2p_tcp_port_reuse: bool,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
@@ -388,23 +378,23 @@ pub struct RuntimeConfig {
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
 	pub log_level: String,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
-	#[serde(default = "default_false")]
+	#[serde(default = "defaults::default_false")]
 	pub log_format_json: bool,
-	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
+	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520).
 	pub prometheus_port: Option<u16>,
-	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
-	#[serde(default = "default_false")]
+	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
+	#[serde(default = "defaults::default_false")]
 	pub disable_rpc: bool,
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
-	#[serde(default = "default_false")]
+	#[serde(default = "defaults::default_false")]
 	pub disable_proof_verification: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 800).
-	#[serde(default = "default_dht_parallelization_limit")]
+	#[serde(default = "defaults::dht_parallelization_limit")]
 	pub dht_parallelization_limit: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
-	#[serde(default = "default_query_proof_rpc_parallel_tasks")]
+	#[serde(default = "defaults::query_proof_rpc_parallel_tasks")]
 	pub query_proof_rpc_parallel_tasks: usize,
-	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0)
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
 	#[serde(default)]
@@ -414,11 +404,60 @@ pub struct RuntimeConfig {
 	pub sync_blocks_depth: Option<u32>,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
-	/// Time-to-live for DHT entries in seconds (default: 3600).
-	pub ttl: Option<u64>,
 	/// Threshold for the number of cells fetched via DHT for the app client
-	#[serde(default = "default_threshold")]
+	#[serde(default = "defaults::threshold")]
 	pub threshold: usize,
+
+	/// Kademlia configuration - WARNING: Changing the default values might cause the peer to suffer poor performance!
+	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
+	///
+	/// Time-to-live for DHT entries in seconds (default: 24h).
+	/// Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this
+	/// value - not greater than 1hr.
+	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
+	#[serde(default = "defaults::ttl")]
+	pub kad_record_ttl: u64,
+	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
+	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
+	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
+	#[serde(default = "defaults::publication_interval")]
+	pub publication_interval: u32,
+	/// Sets the (re-)replication interval for stored records in seconds. (default: 3h).
+	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
+	/// This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
+	#[serde(default = "defaults::replication_interval")]
+	pub replication_interval: u32,
+	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
+	#[serde(default = "defaults::replication_factor")]
+	pub replication_factor: u16,
+	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
+	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
+	#[serde(default = "defaults::connection_idle_timeout")]
+	pub connection_idle_timeout: u32,
+	/// Sets the timeout for a single Kademlia query. (default: 60s).
+	#[serde(default = "defaults::query_timeout")]
+	pub query_timeout: u32,
+	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
+	#[serde(default = "defaults::query_parallelism")]
+	pub query_parallelism: u16,
+	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
+	/// If set to 0, caching is disabled.
+	#[serde(default = "defaults::caching_max_peers")]
+	pub caching_max_peers: u16,
+	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
+	#[serde(default = "defaults::default_false")]
+	pub disjoint_query_paths: bool,
+	/// The maximum number of records. (default: 2400000).
+	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
+	/// (256x512) * 3 * 60
+	#[serde(default = "defaults::max_kad_record_number")]
+	pub max_kad_record_number: u64,
+	/// The maximum size of record values, in bytes. (default: 100).
+	#[serde(default = "defaults::max_kad_record_size")]
+	pub max_kad_record_size: u64,
+	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
+	#[serde(default = "defaults::max_kad_provided_keys")]
+	pub max_kad_provided_keys: u64,
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -447,7 +486,44 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
-			ttl: val.ttl.unwrap_or(3600),
+			ttl: val.kad_record_ttl,
+		}
+	}
+}
+
+/// Kademlia configuration (see [RuntimeConfig] for details)
+pub struct KademliaConfig {
+	pub record_ttl: u64,
+	pub record_replication_factor: NonZeroUsize,
+	pub record_replication_interval: Option<Duration>,
+	pub publication_interval: Option<Duration>,
+	pub connection_idle_timeout: Duration,
+	pub query_timeout: Duration,
+	pub query_parallelism: NonZeroUsize,
+	pub caching_max_peers: u16,
+	pub disjoint_query_paths: bool,
+	pub max_kad_record_number: usize,
+	pub max_kad_record_size: usize,
+	pub max_kad_provided_keys: usize,
+}
+
+impl From<&RuntimeConfig> for KademliaConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		KademliaConfig {
+			record_ttl: val.kad_record_ttl,
+			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
+				.expect("Invalid replication factor"),
+			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
+			publication_interval: Some(Duration::from_secs(val.publication_interval.into())),
+			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout.into()),
+			query_timeout: Duration::from_secs(val.query_timeout.into()),
+			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
+				.expect("Invalid query parallelism value"),
+			caching_max_peers: val.caching_max_peers,
+			disjoint_query_paths: val.disjoint_query_paths,
+			max_kad_record_number: val.max_kad_record_number as usize,
+			max_kad_record_size: val.max_kad_record_size as usize,
+			max_kad_provided_keys: val.max_kad_provided_keys as usize,
 		}
 	}
 }
@@ -466,7 +542,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.ttl.unwrap_or(3600),
+			ttl: val.kad_record_ttl,
 		}
 	}
 }
@@ -493,7 +569,7 @@ impl Default for RuntimeConfig {
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
 			libp2p_seed: None,
-			libp2p_psk_path: default_libp2p_psk_path(),
+			libp2p_psk_path: defaults::libp2p_psk_path(),
 			libp2p_tcp_port_reuse: false,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
@@ -512,8 +588,19 @@ impl Default for RuntimeConfig {
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
-			ttl: Some(3600),
-			threshold: default_threshold(),
+			kad_record_ttl: defaults::ttl(),
+			threshold: defaults::threshold(),
+			replication_factor: defaults::replication_factor(),
+			publication_interval: defaults::publication_interval(),
+			replication_interval: defaults::replication_interval(),
+			connection_idle_timeout: defaults::connection_idle_timeout(),
+			query_timeout: defaults::query_timeout(),
+			query_parallelism: defaults::query_parallelism(),
+			caching_max_peers: defaults::caching_max_peers(),
+			disjoint_query_paths: false,
+			max_kad_record_number: defaults::max_kad_record_number(),
+			max_kad_record_size: defaults::max_kad_record_size(),
+			max_kad_provided_keys: defaults::max_kad_provided_keys(),
 		}
 	}
 }
@@ -531,8 +618,4 @@ pub struct CellContentQueryPayload {
 	pub row: u16,
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
-}
-
-fn default_libp2p_psk_path() -> String {
-	"./avail/psk".to_owned()
 }
