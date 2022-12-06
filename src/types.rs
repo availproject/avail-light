@@ -514,7 +514,7 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	#[serde(default = "default_max_kad_provided_keys")]
-	pub max_kad_provided_keys: u64
+	pub max_kad_provided_keys: u64,
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -561,7 +561,7 @@ pub struct KademliaConfig {
 	pub disjoint_query_paths: bool,
 	pub max_kad_record_number: u64,
 	pub max_kad_record_size: u64,
-	pub max_kad_provided_keys: u64
+	pub max_kad_provided_keys: u64,
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
@@ -578,7 +578,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			disjoint_query_paths: val.disjoint_query_paths,
 			max_kad_record_number: val.max_kad_record_number,
 			max_kad_record_size: val.max_kad_record_size,
-			max_kad_provided_keys: val.max_kad_provided_keys
+			max_kad_provided_keys: val.max_kad_provided_keys,
 		}
 	}
 }
@@ -655,7 +655,7 @@ impl Default for RuntimeConfig {
 			disjoint_query_paths: default_false(),
 			max_kad_record_number: default_max_kad_record_number(),
 			max_kad_record_size: default_max_kad_record_size(),
-			max_kad_provided_keys: default_max_kad_provided_keys()
+			max_kad_provided_keys: default_max_kad_provided_keys(),
 		}
 	}
 }
