@@ -386,7 +386,7 @@ fn default_caching_max_peers() -> u16 {
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
-	/// Light client HTTP server host name (default: 127.0.0.1)
+	/// Light client HTTP server host name (default: 127.0.0.1).
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7000).
 	#[serde(default)]
@@ -421,9 +421,9 @@ pub struct RuntimeConfig {
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	#[serde(default = "default_false")]
 	pub log_format_json: bool,
-	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
+	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520).
 	pub prometheus_port: Option<u16>,
-	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
+	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	#[serde(default = "default_false")]
 	pub disable_rpc: bool,
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
@@ -435,7 +435,7 @@ pub struct RuntimeConfig {
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	#[serde(default = "default_query_proof_rpc_parallel_tasks")]
 	pub query_proof_rpc_parallel_tasks: usize,
-	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0)
+	/// Number of seconds to postpone block processing after block finalized message arrives (default: 0).
 	pub block_processing_delay: Option<u32>,
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
 	#[serde(default)]
@@ -455,12 +455,12 @@ pub struct RuntimeConfig {
 	/// Time-to-live for DHT entries in seconds (default: 24h).
 	#[serde(default = "default_ttl")]
 	pub record_ttl: u64,
-	/// Sets the (re-)publication interval of stored records, in seconds. (default: 12h)
+	/// Sets the (re-)publication interval of stored records, in seconds. (default: 12h).
 	/// This interval should be significantly shorter than the record TTL, to
 	/// ensure records do not expire prematurely.
 	#[serde(default = "default_publication_interval")]
 	pub publication_interval: u32,
-	/// Sets the (re-)replication interval for stored records, in seconds. (default: 3h)
+	/// Sets the (re-)replication interval for stored records, in seconds. (default: 3h).
 	/// This interval should be significantly shorter than the publication
 	/// interval, to ensure persistence between re-publications.
 	#[serde(default = "default_replication_interval")]
@@ -468,17 +468,17 @@ pub struct RuntimeConfig {
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	#[serde(default = "default_replication_factor")]
 	pub replication_factor: u16,
-	/// Sets the timeout for a single Kademlia query. (default: 30s)
+	/// Sets the timeout for a single Kademlia query. (default: 30s).
 	#[serde(default = "default_query_timeout")]
 	pub query_timeout: u32,
-	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3)
+	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
 	#[serde(default = "default_query_parallelism")]
 	pub query_parallelism: u16,
-	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1)
+	/// Sets the Kademlia caching strategy to use for successful lookups. (default: 1).
 	/// If set to 0, caching is disabled.
 	#[serde(default = "default_caching_max_peers")]
 	pub caching_max_peers: u16,
-	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false)
+	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
 	#[serde(default = "default_false")]
 	pub disjoint_query_paths: bool,
 }

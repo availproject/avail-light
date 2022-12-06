@@ -86,7 +86,7 @@ bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127
 
 # RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 full_node_rpc = ["http://127.0.0.1:9933"]
-# WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
+# WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 app_id = 0
@@ -94,28 +94,42 @@ app_id = 0
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data.
 avail_path = "avail_path"
-# Prometheus service port, used for emmiting metrics to prometheus server. (default: 9520)
+# Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
 prometheus_port = 9520
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
-log_format_json = true
-# Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix)
+log_format_json = false
+# Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client
 block_matrix_partition = "1/20"
 # Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
-disable_proof_verification = true
+disable_proof_verification = false
 # Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false)
 disable_rpc = false
 # Number of parallel queries for cell fetching via RPC from node (default: 8).
-query_proof_rpc_parallel_tasks = 300
+query_proof_rpc_parallel_tasks = 8
 # Maximum number of cells per request for proof queries (default: 30).
-max_cells_per_rpc = 1024
-# Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 800).
-dht_parallelization_limit = 1024
-# Number of seconds to postpone block processing after block finalized message arrives (default: 0).
-block_processing_delay = 5
-# How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
-sync_blocks_depth = 250
-# Time-to-live for DHT entries in seconds (default: 3600).
-ttl = 1800
+max_cells_per_rpc = 30
+# Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
+dht_parallelization_limit = 20
+# Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
+block_processing_delay = 0
+# How many blocks before the latest block should the client sync. If parameter is empty, or set to 0, syncing is disabled. (default: 0).
+sync_blocks_depth = 0
+# Time-to-live for DHT entries in seconds (default: 24h).
+record_ttl = 86400
+# Sets the (re-)publication interval of stored records, in seconds. This interval should be significantly shorter than the record TTL, ensure records do not expire prematurely. (default: 12h).
+publication_interval = 43200
+# Sets the (re-)replication interval for stored records, in seconds. This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications. (default: 3h).
+replication_interval = 10800
+# The replication factor determines to how many closest peers a record is replicated. (default: 20).
+replication_factor = 20
+# Sets the timeout for a single Kademlia query. (default: 30s).
+query_timeout = 30
+# Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
+query_parallelism = 3
+# Sets the Kademlia caching strategy to use for successful lookups. If set to 0, caching is disabled. (default: 1).
+caching_max_peers = 1
+# Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
+disjoint_query_paths = false
 ```
 
 ## Notes
