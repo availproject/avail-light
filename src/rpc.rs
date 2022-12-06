@@ -9,7 +9,6 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 };
 use rand::{thread_rng, Rng};
-use serde::Serialize;
 use sp_core::H256;
 use subxt::{
 	rpc::{BlockNumber, RpcParams},
@@ -90,35 +89,14 @@ pub async fn get_kate_app_data(
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
-/// TODO: Avail-core position lack serialize derive for no good reason.
-/// Adding it there would make this struct obsolete and simplify get_kate_proof
-#[derive(Serialize)]
-struct QueryPosition {
-	pub row: u32,
-	pub col: u16,
-}
-
-impl From<Position> for QueryPosition {
-	fn from(e: Position) -> Self {
-		Self {
-			row: e.row,
-			col: e.col,
-		}
-	}
-}
 /// RPC to get proofs for given positions of block
 pub async fn get_kate_proof(
 	client: &OnlineClient<AvailConfig>,
 	block_hash: H256,
 	positions: Vec<Position>,
 ) -> Result<Vec<Cell>> {
-	let pos = positions
-		.iter()
-		.cloned()
-		.map(QueryPosition::from)
-		.collect::<Vec<_>>();
 	let mut params = RpcParams::new();
-	params.push(pos)?;
+	params.push(positions.clone())?;
 	params.push(block_hash)?;
 	let t = client.rpc().deref();
 	let proofs: Vec<u8> = t
