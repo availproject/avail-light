@@ -19,8 +19,7 @@ use tracing::{debug, instrument};
 
 use crate::types::*;
 
-async fn get_block_hash(url: &str, block: u32) -> Result<H256> {
-	let client = avail_subxt::build_client(url).await?;
+async fn get_block_hash(client: &OnlineClient<AvailConfig>, block: u32) -> Result<H256> {
 	client
 		.rpc()
 		.block_hash(Some(BlockNumber::from(block)))
@@ -28,8 +27,7 @@ async fn get_block_hash(url: &str, block: u32) -> Result<H256> {
 		.ok_or(anyhow!("Block with number {block} not found"))
 }
 
-async fn get_header_by_hash(url: &str, hash: H256) -> Result<DaHeader> {
-	let client = avail_subxt::build_client(url).await?;
+async fn get_header_by_hash(client: &OnlineClient<AvailConfig>, hash: H256) -> Result<DaHeader> {
 	client
 		.rpc()
 		.header(Some(hash))
@@ -40,8 +38,7 @@ async fn get_header_by_hash(url: &str, hash: H256) -> Result<DaHeader> {
 /// RPC for obtaining header of latest block mined by network
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
-pub async fn get_chain_header(url: &str) -> Result<DaHeader> {
-	let client = avail_subxt::build_client(url).await?;
+pub async fn get_chain_header(client: &OnlineClient<AvailConfig>) -> Result<DaHeader> {
 	client
 		.rpc()
 		.header(None)
@@ -50,9 +47,12 @@ pub async fn get_chain_header(url: &str) -> Result<DaHeader> {
 }
 
 /// Gets header by block number
-pub async fn get_header_by_block_number(url: &str, block: u32) -> Result<(DaHeader, H256)> {
-	let hash = get_block_hash(url, block).await?;
-	get_header_by_hash(url, hash).await.map(|e| (e, hash))
+pub async fn get_header_by_block_number(
+	client: &OnlineClient<AvailConfig>,
+	block: u32,
+) -> Result<(DaHeader, H256)> {
+	let hash = get_block_hash(client, block).await?;
+	get_header_by_hash(client, hash).await.map(|e| (e, hash))
 }
 
 /// Generates random cell positions for sampling
@@ -77,12 +77,10 @@ pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Po
 
 #[instrument(skip_all, level = "trace")]
 pub async fn get_kate_app_data(
-	url: &str,
+	client: &OnlineClient<AvailConfig>,
 	block_hash: H256,
 	app_id: u32,
 ) -> Result<Vec<Option<Vec<u8>>>> {
-	let client = avail_subxt::build_client(url).await?;
-
 	let mut params = RpcParams::new();
 	params.push(app_id)?;
 	params.push(block_hash)?;
@@ -92,6 +90,8 @@ pub async fn get_kate_app_data(
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
+/// TODO: Avail-core position lack serialize derive for no good reason.
+/// Adding it there would make this struct obsolete and simplify get_kate_proof
 #[derive(Serialize)]
 struct QueryPosition {
 	pub row: u32,
@@ -108,11 +108,10 @@ impl From<Position> for QueryPosition {
 }
 /// RPC to get proofs for given positions of block
 pub async fn get_kate_proof(
-	url: &str,
+	client: &OnlineClient<AvailConfig>,
 	block_hash: H256,
 	positions: Vec<Position>,
 ) -> Result<Vec<Cell>> {
-	// let payload = generate_kate_query_payload(block_hash, &positions);
 	let pos = positions
 		.iter()
 		.cloned()
@@ -121,8 +120,6 @@ pub async fn get_kate_proof(
 	let mut params = RpcParams::new();
 	params.push(pos)?;
 	params.push(block_hash)?;
-
-	let client = avail_subxt::build_client(url).await?;
 	let t = client.rpc().deref();
 	let proofs: Vec<u8> = t
 		.request("kate_queryProof", params)
@@ -143,8 +140,7 @@ pub async fn get_kate_proof(
 }
 
 // RPC to check connection to substrate node
-pub async fn get_system_version(url: &str) -> Result<String> {
-	let client = avail_subxt::build_client(url).await?;
+pub async fn get_system_version(client: &OnlineClient<AvailConfig>) -> Result<String> {
 	client
 		.rpc()
 		.system_version()
@@ -152,24 +148,17 @@ pub async fn get_system_version(url: &str) -> Result<String> {
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
-pub async fn get_runtime_version(url: &str) -> Result<RuntimeVersionResult> {
-	let client = avail_subxt::build_client(url).await?;
+pub async fn get_runtime_version(
+	client: &OnlineClient<AvailConfig>,
+) -> Result<RuntimeVersionResult> {
 	let t = client.rpc().deref();
 	t.request("state_getRuntimeVersion", RpcParams::new())
 		.await
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
-/// Parsing the urls given in the vector of urls
-pub fn parse_urls(urls: &[String]) -> Result<Vec<url::Url>> {
-	urls.iter()
-		.map(|url| url::Url::parse(url))
-		.map(|r| r.map_err(|parse_error| anyhow!("Cannot parse URL: {}", parse_error)))
-		.collect::<Result<Vec<_>>>()
-}
-
 /// Checks the WS urls and returns first working
-pub async fn check_connection(full_node_ws: &[url::Url]) -> Option<OnlineClient<AvailConfig>> {
+pub async fn check_connection(full_node_ws: &[String]) -> Option<OnlineClient<AvailConfig>> {
 	// TODO: We are ignoring errors here, we should probably return result instead of option
 	for url in full_node_ws.iter() {
 		if let Ok(client) = avail_subxt::build_client(url.as_str()).await {
@@ -177,18 +166,6 @@ pub async fn check_connection(full_node_ws: &[url::Url]) -> Option<OnlineClient<
 		};
 	}
 	None
-}
-
-/// Checks if the rpc_url is secure or not and if it is working properly to return
-pub async fn check_http(full_node_rpc: &Vec<String>) -> Result<String> {
-	for rpc_url in full_node_rpc {
-		let ret = get_system_version(rpc_url).await;
-		println!("RET={ret:?}");
-		if ret.is_ok() {
-			return Ok(rpc_url.to_string());
-		}
-	}
-	Err(anyhow!("No valid node rpc found from given list"))
 }
 
 /* @note: fn to take the number of cells needs to get equal to or greater than

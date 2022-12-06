@@ -13,6 +13,7 @@
 //! If application client fails to run or stops its execution, error is logged, and other tasks continue with execution.
 
 use anyhow::{Context, Result};
+use avail_subxt::AvailConfig;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
 	com::decode_app_extrinsics,
@@ -23,6 +24,7 @@ use kate_recovery::{
 };
 use rocksdb::DB;
 use std::sync::{mpsc::Receiver, Arc};
+use subxt::OnlineClient;
 use tracing::{error, info, instrument, warn};
 
 use crate::{
@@ -68,7 +70,7 @@ async fn process_block(
 	cfg: &AppClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_url: &str,
+	rpc_client: &OnlineClient<AvailConfig>,
 	app_id: u32,
 	block: &ClientMsg,
 	pp: PublicParameters,
@@ -78,7 +80,7 @@ async fn process_block(
 	let dimensions = &block.dimensions;
 	let commitments = &block.commitments;
 
-	let mut rows = get_kate_app_data(rpc_url, block.header_hash, app_id).await?;
+	let mut rows = get_kate_app_data(rpc_client, block.header_hash, app_id).await?;
 
 	let rows_count = rows.iter().filter(|row| row.is_some()).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
@@ -145,7 +147,7 @@ async fn process_block(
 /// * `cfg` - Application client configuration
 /// * `db` - Database to store data inot DB
 /// * `network_client` - Reference to a libp2p custom network client
-/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `app_id` - Application ID
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
@@ -153,7 +155,7 @@ pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_url: String,
+	rpc_client: OnlineClient<AvailConfig>,
 	app_id: u32,
 	block_receive: Receiver<ClientMsg>,
 	pp: PublicParameters,
@@ -184,7 +186,7 @@ pub async fn run(
 			&cfg,
 			db.clone(),
 			network_client.clone(),
-			&rpc_url,
+			&rpc_client,
 			app_id,
 			&block,
 			pp.clone(),

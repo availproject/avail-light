@@ -18,11 +18,14 @@
 use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
-use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
+use avail_subxt::{
+	api::runtime_types::da_primitives::header::extension::HeaderExtension, AvailConfig,
+};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
+use subxt::OnlineClient;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -37,7 +40,7 @@ use crate::{
 
 async fn process_block(
 	cfg: &SyncClientConfig,
-	rpc_url: String,
+	rpc_client: &OnlineClient<AvailConfig>,
 	db: Arc<DB>,
 	block_number: u32,
 	network_client: Client,
@@ -56,7 +59,7 @@ async fn process_block(
 	// syncing process
 	let begin = SystemTime::now();
 
-	let (header, header_hash) = rpc::get_header_by_block_number(&rpc_url, block_number)
+	let (header, header_hash) = rpc::get_header_by_block_number(rpc_client, block_number)
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
@@ -106,7 +109,7 @@ async fn process_block(
 	let rpc_fetched = if cfg.disable_rpc {
 		vec![]
 	} else {
-		rpc::get_kate_proof(&rpc_url, header_hash, unfetched)
+		rpc::get_kate_proof(rpc_client, header_hash, unfetched)
 			.await
 			.context("Failed to fetch cells from node RPC")?
 	};
@@ -156,7 +159,7 @@ async fn process_block(
 /// # Arguments
 ///
 /// * `cfg` - sync client configuration
-/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
 /// * `db` - Database to store confidence and block header
@@ -164,7 +167,7 @@ async fn process_block(
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
-	rpc_url: String,
+	rpc_client: OnlineClient<AvailConfig>,
 	end_block: u32,
 	sync_blocks_depth: u32,
 	db: Arc<DB>,
@@ -179,7 +182,7 @@ pub async fn run(
 	let blocks = (start_block..=end_block).map(move |b| {
 		(
 			b,
-			rpc_url.clone(),
+			rpc_client.clone(),
 			db.clone(),
 			network_client.clone(),
 			pp.clone(),
@@ -190,11 +193,17 @@ pub async fn run(
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_url, store, net_svc, pp)| async move {
+			|(block_number, rpc_client, store, net_svc, pp)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) =
-					process_block(cfg_clone, rpc_url, store, block_number, net_svc, pp.clone())
-						.await
+				if let Err(error) = process_block(
+					cfg_clone,
+					&rpc_client,
+					store,
+					block_number,
+					net_svc,
+					pp.clone(),
+				)
+				.await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}
