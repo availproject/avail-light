@@ -1,5 +1,8 @@
 //! Shared light client structs and enums.
 
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
@@ -551,34 +554,36 @@ impl From<&RuntimeConfig> for LightClientConfig {
 /// Kademlia configuration (see [RuntimeConfig] for details)
 pub struct KademliaConfig {
 	pub record_ttl: u64,
-	pub record_replication_factor: u16,
-	pub record_replication_interval: u32,
-	pub publication_interval: u32,
-	pub connection_idle_timeout: u32,
-	pub query_timeout: u32,
-	pub query_parallelism: u16,
+	pub record_replication_factor: NonZeroUsize,
+	pub record_replication_interval: Option<Duration>,
+	pub publication_interval: Option<Duration>,
+	pub connection_idle_timeout: Duration,
+	pub query_timeout: Duration,
+	pub query_parallelism: NonZeroUsize,
 	pub caching_max_peers: u16,
 	pub disjoint_query_paths: bool,
-	pub max_kad_record_number: u64,
-	pub max_kad_record_size: u64,
-	pub max_kad_provided_keys: u64,
+	pub max_kad_record_number: usize,
+	pub max_kad_record_size: usize,
+	pub max_kad_provided_keys: usize,
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		KademliaConfig {
 			record_ttl: val.kad_record_ttl,
-			record_replication_factor: val.replication_factor,
-			record_replication_interval: val.replication_interval,
-			publication_interval: val.publication_interval,
-			connection_idle_timeout: val.connection_idle_timeout,
-			query_timeout: val.query_timeout,
-			query_parallelism: val.query_parallelism,
+			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
+				.expect("Invalid replication factor"),
+			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
+			publication_interval: Some(Duration::from_secs(val.publication_interval.into())),
+			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout.into()),
+			query_timeout: Duration::from_secs(val.query_timeout.into()),
+			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
+				.expect("Invalid query parallelism value"),
 			caching_max_peers: val.caching_max_peers,
 			disjoint_query_paths: val.disjoint_query_paths,
-			max_kad_record_number: val.max_kad_record_number,
-			max_kad_record_size: val.max_kad_record_size,
-			max_kad_provided_keys: val.max_kad_provided_keys,
+			max_kad_record_number: val.max_kad_record_number as usize,
+			max_kad_record_size: val.max_kad_record_size as usize,
+			max_kad_provided_keys: val.max_kad_provided_keys as usize,
 		}
 	}
 }
