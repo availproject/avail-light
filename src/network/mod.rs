@@ -16,7 +16,7 @@ use libp2p::{
 	identity::{self, ed25519, Keypair},
 	kad::{
 		store::{MemoryStore, MemoryStoreConfig},
-		KademliaConfig,
+		KademliaCaching, KademliaConfig,
 	},
 	metrics::Metrics,
 	noise::NoiseAuthenticated,
@@ -62,17 +62,35 @@ pub fn init(
 	// create swarm that manages peers and events
 	let swarm = {
 		let mut kad_cfg = KademliaConfig::default();
-		kad_cfg.set_query_timeout(Duration::from_secs(5 * 60));
-		// Default replication factor is 20
-		kad_cfg.set_replication_factor(
-			std::num::NonZeroUsize::new(kad_config.record_replication_factor as usize)
-				.expect("Invalid replication factor"),
-		);
+		kad_cfg
+			.set_publication_interval(Some(Duration::from_secs(
+				kad_config.publication_interval as u64,
+			)))
+			.set_replication_interval(Some(Duration::from_secs(
+				kad_config.record_replication_interval as u64,
+			)))
+			.set_replication_factor(
+				std::num::NonZeroUsize::new(kad_config.record_replication_factor as usize)
+					.expect("Invalid replication factor"),
+			)
+			.set_connection_idle_timeout(Duration::from_secs(
+				kad_config.connection_idle_timeout as u64,
+			))
+			.set_query_timeout(Duration::from_secs(kad_config.record_ttl))
+			.set_parallelism(
+				std::num::NonZeroUsize::new(kad_config.query_parallelism as usize)
+					.expect("Invalid query parallelism value"),
+			)
+			.set_caching(KademliaCaching::Enabled {
+				max_peers: kad_config.caching_max_peers,
+			})
+			.disjoint_query_paths(kad_config.disjoint_query_paths);
+
 		let store_cfg = MemoryStoreConfig {
-			max_records: 24000000, // ~2hrs
-			max_value_bytes: 100,
-			max_providers_per_key: 1,
-			max_provided_keys: 100000,
+			max_records: kad_config.max_kad_record_number as usize, // ~2hrs
+			max_value_bytes: kad_config.max_kad_record_size as usize,
+			max_providers_per_key: kad_config.record_replication_factor as usize, // Needs to match the replication factor, per libp2p docs
+			max_provided_keys: kad_config.max_kad_provided_keys as usize,
 		};
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let identify_cfg =

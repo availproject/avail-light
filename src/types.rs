@@ -371,8 +371,12 @@ fn default_ttl() -> u64 {
 	24 * 60 * 60
 }
 
-fn default_query_timeout() -> u32 {
+fn default_connection_idle_timeout() -> u32 {
 	30
+}
+
+fn default_query_timeout() -> u32 {
+	60
 }
 
 fn default_query_parallelism() -> u16 {
@@ -381,6 +385,18 @@ fn default_query_parallelism() -> u16 {
 
 fn default_caching_max_peers() -> u16 {
 	1
+}
+
+fn default_max_kad_record_number() -> u64 {
+	2400000
+}
+
+fn default_max_kad_record_size() -> u64 {
+	100
+}
+
+fn default_max_kad_provided_keys() -> u64 {
+	1024
 }
 
 /// Representation of a configuration used by this project.
@@ -453,22 +469,29 @@ pub struct RuntimeConfig {
 	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
 	///
 	/// Time-to-live for DHT entries in seconds (default: 24h).
+	/// Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this
+	/// value - not greater than 1hr.
+	/// Record TTL, publication and replication intervals are co-dependent, meaning that TTL >> publication_interval >> replication_interval.
 	#[serde(default = "default_ttl")]
-	pub record_ttl: u64,
-	/// Sets the (re-)publication interval of stored records, in seconds. (default: 12h).
-	/// This interval should be significantly shorter than the record TTL, to
-	/// ensure records do not expire prematurely.
+	pub kad_record_ttl: u64,
+	/// Sets the (re-)publication interval of stored records in seconds. (default: 12h).
+	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL value.
+	/// This interval should be significantly shorter than the record TTL, to ensure records do not expire prematurely.
 	#[serde(default = "default_publication_interval")]
 	pub publication_interval: u32,
-	/// Sets the (re-)replication interval for stored records, in seconds. (default: 3h).
-	/// This interval should be significantly shorter than the publication
-	/// interval, to ensure persistence between re-publications.
+	/// Sets the (re-)replication interval for stored records in seconds. (default: 3h).
+	/// Default value is set for light clients. Fat client value needs to be inferred from the TTL and publication interval values.
+	/// This interval should be significantly shorter than the publication interval, to ensure persistence between re-publications.
 	#[serde(default = "default_replication_interval")]
 	pub replication_interval: u32,
 	/// The replication factor determines to how many closest peers a record is replicated. (default: 20).
 	#[serde(default = "default_replication_factor")]
 	pub replication_factor: u16,
-	/// Sets the timeout for a single Kademlia query. (default: 30s).
+	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
+	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
+	#[serde(default = "default_connection_idle_timeout")]
+	pub connection_idle_timeout: u32,
+	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	#[serde(default = "default_query_timeout")]
 	pub query_timeout: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
@@ -481,6 +504,17 @@ pub struct RuntimeConfig {
 	/// Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes. (default: false).
 	#[serde(default = "default_false")]
 	pub disjoint_query_paths: bool,
+	/// The maximum number of records. (default: 2400000).
+	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
+	/// (256x512) * 3 * 60
+	#[serde(default = "default_max_kad_record_number")]
+	pub max_kad_record_number: u64,
+	/// The maximum size of record values, in bytes. (default: 100).
+	#[serde(default = "default_max_kad_record_size")]
+	pub max_kad_record_size: u64,
+	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
+	#[serde(default = "default_max_kad_provided_keys")]
+	pub max_kad_provided_keys: u64
 }
 
 /// Light client configuration (see [RuntimeConfig] for details)
@@ -509,7 +543,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
-			ttl: val.record_ttl,
+			ttl: val.kad_record_ttl,
 		}
 	}
 }
@@ -520,23 +554,31 @@ pub struct KademliaConfig {
 	pub record_replication_factor: u16,
 	pub record_replication_interval: u32,
 	pub publication_interval: u32,
+	pub connection_idle_timeout: u32,
 	pub query_timeout: u32,
 	pub query_parallelism: u16,
 	pub caching_max_peers: u16,
 	pub disjoint_query_paths: bool,
+	pub max_kad_record_number: u64,
+	pub max_kad_record_size: u64,
+	pub max_kad_provided_keys: u64
 }
 
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		KademliaConfig {
-			record_ttl: val.record_ttl,
+			record_ttl: val.kad_record_ttl,
 			record_replication_factor: val.replication_factor,
 			record_replication_interval: val.replication_interval,
 			publication_interval: val.publication_interval,
+			connection_idle_timeout: val.connection_idle_timeout,
 			query_timeout: val.query_timeout,
 			query_parallelism: val.query_parallelism,
 			caching_max_peers: val.caching_max_peers,
 			disjoint_query_paths: val.disjoint_query_paths,
+			max_kad_record_number: val.max_kad_record_number,
+			max_kad_record_size: val.max_kad_record_size,
+			max_kad_provided_keys: val.max_kad_provided_keys
 		}
 	}
 }
@@ -555,7 +597,7 @@ impl From<&RuntimeConfig> for SyncClientConfig {
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
-			ttl: val.record_ttl,
+			ttl: val.kad_record_ttl,
 		}
 	}
 }
@@ -601,15 +643,19 @@ impl Default for RuntimeConfig {
 			block_matrix_partition: None,
 			sync_blocks_depth: None,
 			max_cells_per_rpc: Some(30),
-			record_ttl: default_ttl(),
+			kad_record_ttl: default_ttl(),
 			threshold: default_threshold(),
 			replication_factor: default_replication_factor(),
 			publication_interval: default_publication_interval(),
 			replication_interval: default_replication_interval(),
+			connection_idle_timeout: default_connection_idle_timeout(),
 			query_timeout: default_query_timeout(),
 			query_parallelism: default_query_parallelism(),
 			caching_max_peers: default_caching_max_peers(),
 			disjoint_query_paths: default_false(),
+			max_kad_record_number: default_max_kad_record_number(),
+			max_kad_record_size: default_max_kad_record_size(),
+			max_kad_provided_keys: default_max_kad_provided_keys()
 		}
 	}
 }
