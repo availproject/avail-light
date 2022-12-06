@@ -7,12 +7,12 @@ use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
-use codec::{Decode, Encode};
+use codec::Encode;
 use kate_recovery::commitments;
 use kate_recovery::matrix::Dimensions;
 use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use libp2p::Multiaddr;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use sp_core::{blake2_256, H256};
 
 use crate::defaults;
@@ -20,99 +20,6 @@ use crate::defaults;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
-
-/// Response of RPC get block hash
-#[derive(Deserialize, Debug)]
-pub struct BlockHashResponse {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: String,
-}
-
-/// Response of RPC get chain
-#[derive(Deserialize, Debug)]
-pub struct GetChainResponse {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: String,
-}
-
-/// Response of RPC get block header
-#[derive(Deserialize, Debug)]
-pub struct BlockHeaderResponse {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: DaHeader,
-}
-
-/// Root of extrinsics in header
-#[derive(Serialize, Deserialize, Debug, Clone, Decode)]
-pub struct ExtrinsicsRoot {
-	pub cols: u16,
-	pub rows: u16,
-	pub hash: String,
-	pub commitment: Vec<u8>,
-	#[serde(rename = "dataRoot")]
-	pub data_root: H256,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Digest {
-	logs: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct JsonRPCHeader {
-	#[serde(rename = "jsonrpc")]
-	_jsonrpc: String,
-	#[serde(rename = "id")]
-	_id: u32,
-}
-
-/// Query block result
-#[derive(Deserialize)]
-pub struct QueryAppDataResult {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	pub result: Vec<Option<Vec<u8>>>,
-}
-
-/// Result of subscription to header
-#[derive(Deserialize, Debug)]
-pub struct QueryResult {
-	#[serde(rename = "result")]
-	pub header: DaHeader,
-	#[serde(rename = "subscription")]
-	_subscription: String,
-}
-
-/// Response of subscription to header
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-pub struct Response {
-	jsonrpc: String,
-	method: String,
-	pub params: QueryResult,
-}
-
-/// Subscription response.
-///
-/// It is the first response after a call to `subscribe_xxx` on RPC
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-pub struct SubscriptionResponse {
-	jsonrpc: String,
-	pub id: u32,
-	#[serde(rename = "result")]
-	pub subscription_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RuntimeVersionResponse {
-	jsonrpc: String,
-	pub result: RuntimeVersionResult,
-	id: u32,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RuntimeVersionResult {
@@ -129,22 +36,6 @@ pub struct RuntimeVersionResult {
 	pub spec_version: u32,
 	#[serde(rename = "transactionVersion")]
 	transaction_version: u32,
-}
-#[derive(Deserialize, Debug)]
-pub struct SystemVersionResponse {
-	#[serde(flatten)]
-	_jsonrpcheader: JsonRPCHeader,
-	#[serde(deserialize_with = "deserialise_from_string")]
-	pub result: String,
-}
-
-fn deserialise_from_string<'de, D>(d: D) -> Result<String, D::Error>
-where
-	D: Deserializer<'de>,
-{
-	let mut val = String::deserialize(d)?;
-	val.truncate(5);
-	Ok(val)
 }
 
 /// Light to app client channel message struct

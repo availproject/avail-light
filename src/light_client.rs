@@ -29,6 +29,7 @@ use std::{
 use anyhow::{Context, Result};
 use avail_subxt::{
 	api::runtime_types::da_primitives::header::extension::HeaderExtension, primitives::Header,
+	AvailConfig,
 };
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
@@ -39,6 +40,7 @@ use kate_recovery::{
 };
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
+use subxt::OnlineClient;
 use tracing::{error, info};
 
 use crate::{
@@ -57,7 +59,7 @@ use crate::{
 /// * `cfg` - Light client configuration
 /// * `db` - Database to store confidence and block header
 /// * `network_client` - Reference to a libp2p custom network client
-/// * `rpc_url` - Node's RPC URL for fetching data unavailable in DHT (if configured)
+/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `registry` - Prometheus metrics registry
@@ -66,19 +68,15 @@ pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_url: String,
+	rpc_client: OnlineClient<AvailConfig>,
 	block_tx: Option<SyncSender<ClientMsg>>,
 	pp: PublicParameters,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
 ) -> Result<()> {
 	info!("Starting light client...");
-	const BODY: &str = r#"{"id":1, "jsonrpc":"2.0", "method": "chain_subscribeFinalizedHeads"}"#;
-	let urls = rpc::parse_urls(&cfg.full_node_ws)?;
-
-	while let Some(subxt_client) = rpc::check_connection(&urls).await {
-
-		let mut new_heads_sub = subxt_client.rpc().subscribe_finalized_blocks().await?;
+	loop {
+		let mut new_heads_sub = rpc_client.rpc().subscribe_finalized_blocks().await?;
 
 		struct BlockAvailableMsg {
 			header: Header,
@@ -93,12 +91,8 @@ pub async fn run(
 				if let Err(error) = message
 					.context("Failed to read web socket message")
 					.map(|header| {
-						let hash: H256 = Encode::using_encoded(&header, blake2_256).into() ;
-						(
-							header,
-							hash,
-							Instant::now(),
-						)
+						let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
+						(header, hash, Instant::now())
 					})
 					.and_then(|(header, hash, received_at)| {
 						info!(header.number, "Received finalized block header");
@@ -178,7 +172,7 @@ pub async fn run(
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
 			} else {
-				rpc::get_kate_proof(&rpc_url, header_hash, unfetched)
+				rpc::get_kate_proof(&rpc_client, header_hash, unfetched)
 					.await
 					.context("Failed to fetch cells from node RPC")?
 			};
@@ -258,7 +252,7 @@ pub async fn run(
 					.map(|e| {
 						join_all(
 							e.iter()
-								.map(|n| rpc::get_kate_proof(&rpc_url, header_hash, n.to_vec()))
+								.map(|n| rpc::get_kate_proof(&rpc_client, header_hash, n.to_vec()))
 								.collect::<Vec<_>>(),
 						)
 					}) {
@@ -330,7 +324,6 @@ pub async fn run(
 			}
 		}
 	}
-	Ok(())
 }
 
 #[cfg(test)]

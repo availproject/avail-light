@@ -220,22 +220,24 @@ async fn do_main() -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let rpc_url = rpc::check_http(&cfg.full_node_rpc).await?.clone();
+	let rpc_client = rpc::check_connection(&cfg.full_node_ws)
+		.await
+		.context("No working nodes")?;
 
-	let version = rpc::get_system_version(&rpc_url).await?;
-	let runtime_version = rpc::get_runtime_version(&rpc_url).await?;
+	let version = rpc::get_system_version(&rpc_client).await?;
+	let runtime_version = rpc::get_runtime_version(&rpc_client).await?;
 
 	info!("Reported version: {version}, runtime version: {runtime_version:?}");
-	// if version != "1.4.0"
-	// 	|| runtime_version.spec_version != 7
-	// 	|| runtime_version.spec_name != "data-avail"
-	// {
-	// 	return Err(anyhow::anyhow!(
-	// 		"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
-	// 		version,
-	// 		runtime_version.spec_version,
-	// 	));
-	// }
+	if !version.starts_with("1.4.0")
+		|| runtime_version.spec_version != 7
+		|| runtime_version.spec_name != "data-avail"
+	{
+		return Err(anyhow::anyhow!(
+			"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
+			version,
+			runtime_version.spec_version,
+		));
+	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
@@ -245,7 +247,7 @@ async fn do_main() -> Result<()> {
 			(&cfg).into(),
 			db.clone(),
 			network_client.clone(),
-			rpc_url.clone(),
+			rpc_client.clone(),
 			app_id,
 			block_rx,
 			pp.clone(),
@@ -255,16 +257,16 @@ async fn do_main() -> Result<()> {
 		None
 	};
 
-	let block_header = rpc::get_chain_header(&rpc_url)
+	let block_header = rpc::get_chain_header(&rpc_client)
 		.await
-		.context(format!("Failed to get chain header from {rpc_url}"))?;
+		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
 
 	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
 	if sync_block_depth > 0 {
 		tokio::task::spawn(sync_client::run(
 			(&cfg).into(),
-			rpc_url.clone(),
+			rpc_client.clone(),
 			latest_block,
 			sync_block_depth,
 			db.clone(),
@@ -278,7 +280,7 @@ async fn do_main() -> Result<()> {
 		(&cfg).into(),
 		db,
 		network_client,
-		rpc_url,
+		rpc_client.clone(),
 		block_tx,
 		pp,
 		lc_metrics,
