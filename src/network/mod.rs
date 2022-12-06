@@ -75,10 +75,10 @@ pub fn init(
 			.disjoint_query_paths(kad_config.disjoint_query_paths);
 
 		let store_cfg = MemoryStoreConfig {
-			max_records: kad_config.max_kad_record_number as usize, // ~2hrs
-			max_value_bytes: kad_config.max_kad_record_size as usize,
+			max_records: kad_config.max_kad_record_number, // ~2hrs
+			max_value_bytes: kad_config.max_kad_record_size,
 			max_providers_per_key: usize::from(kad_config.record_replication_factor), // Needs to match the replication factor, per libp2p docs
-			max_provided_keys: kad_config.max_kad_provided_keys as usize,
+			max_provided_keys: kad_config.max_kad_provided_keys,
 		};
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let identify_cfg =
