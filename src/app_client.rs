@@ -19,7 +19,7 @@ use kate_recovery::{
 	com::{columns_positions, decode_app_extrinsics, reconstruct_columns},
 	commitments,
 	config::{self, CHUNK_SIZE},
-	data::DataCell,
+	data::{Cell, DataCell},
 	matrix::{Dimensions, Position},
 };
 use rocksdb::DB;
@@ -80,33 +80,30 @@ fn data_cell(
 		.context("Data cell not found")
 }
 
-async fn fetch_verify_and_reconstruct(
-	pp: PublicParameters,
-	network_client: Client,
+async fn fetch_verified(
+	pp: &PublicParameters,
+	network_client: &Client,
 	block_number: u32,
 	dimensions: &Dimensions,
 	commitments: &[[u8; config::COMMITMENT_SIZE]],
-	positions: Vec<Position>,
-) -> Result<Vec<DataCell>> {
-	let (mut fetched, _) = network_client
-		.fetch_cells_from_dht(block_number, &positions)
+	positions: &[Position],
+) -> Result<(Vec<Cell>, Vec<Position>)> {
+	let (mut fetched, mut unfetched) = network_client
+		.fetch_cells_from_dht(block_number, positions)
 		.await
 		.context("Failed to fetch cells from DHT")?;
 
-	let (verified, _) = proof::verify(block_number, dimensions, &fetched, commitments, &pp)
-		.context("Failed to verify fetched cells")?;
+	let (verified, mut unverified) =
+		proof::verify(block_number, dimensions, &fetched, &commitments, pp)
+			.context("Failed to verify fetched cells")?;
 
 	fetched.retain(|cell| verified.contains(&cell.position));
+	unfetched.append(&mut unverified);
 
-	let reconstructed = reconstruct_columns(dimensions, fetched)?;
-
-	positions
-		.into_iter()
-		.map(|position| data_cell(position, &reconstructed))
-		.collect::<Result<Vec<_>>>()
+	Ok((fetched, unfetched))
 }
 
-async fn fetch_and_verify(
+async fn fetch_and_verify_rows(
 	pp: PublicParameters,
 	network_client: Client,
 	block_number: u32,
@@ -114,41 +111,44 @@ async fn fetch_and_verify(
 	commitments: &[[u8; config::COMMITMENT_SIZE]],
 	missing_rows: &[u32],
 ) -> Result<Vec<(u32, Vec<u8>)>> {
-	let positions = dimensions.extended_rows_positions(missing_rows);
+	let missing_cells = dimensions.extended_rows_positions(missing_rows);
 
-	if positions.is_empty() {
+	if missing_cells.is_empty() {
 		return Ok(vec![]);
 	}
 
-	let (mut fetched, mut unfetched) = network_client
-		.fetch_cells_from_dht(block_number, &positions)
-		.await
-		.context("Failed to fetch cells from DHT")?;
-
-	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, &commitments, &pp)
-			.context("Failed to verify fetched cells")?;
-
-	fetched.retain(|cell| verified.contains(&cell.position));
-	unfetched.append(&mut unverified);
-
-	let missing_cells = columns_positions(dimensions, unfetched, 0.66);
-
-	let mut result = fetch_verify_and_reconstruct(
-		pp,
-		network_client,
+	let (fetched, unfetched) = fetch_verified(
+		&pp,
+		&network_client,
 		block_number,
 		dimensions,
 		commitments,
-		missing_cells,
+		&missing_cells,
 	)
 	.await?;
 
-	let mut data_cells: Vec<DataCell> = fetched
+	let missing_cells = columns_positions(dimensions, &unfetched, 0.66);
+
+	let (missing_fetched, _) = fetch_verified(
+		&pp,
+		&network_client,
+		block_number,
+		dimensions,
+		commitments,
+		&missing_cells,
+	)
+	.await?;
+
+	let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
+
+	let mut reconstructed_cells = unfetched
 		.into_iter()
-		.map(|cell| cell.into())
-		.collect::<Vec<_>>();
-	data_cells.append(&mut result);
+		.map(|position| data_cell(position, &reconstructed))
+		.collect::<Result<Vec<_>>>()?;
+
+	let mut data_cells: Vec<DataCell> = fetched.into_iter().map(Into::into).collect::<Vec<_>>();
+
+	data_cells.append(&mut reconstructed_cells);
 
 	data_cells
 		.sort_by(|a, b| (a.position.row, a.position.col).cmp(&(b.position.row, b.position.col)));
@@ -200,7 +200,7 @@ async fn process_block(
 		return Err(anyhow::anyhow!("Too many cells are missing"));
 	}
 
-	let dht_rows = fetch_and_verify(
+	let dht_rows = fetch_and_verify_rows(
 		pp,
 		network_client,
 		block_number,
