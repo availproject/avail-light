@@ -4,6 +4,8 @@ mod stream;
 
 use std::{fs, path::Path, str::FromStr, sync::Arc, time::Duration};
 
+use libp2p::autonat::Config as AutoNatConfig;
+
 pub use client::Client;
 use event_loop::{EventLoop, NetworkBehaviour};
 pub use stream::Event;
@@ -83,8 +85,9 @@ pub fn init(
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let identify_cfg =
 			identify::Config::new("/avail_kad/id/1.0.0".to_string(), id_keys.public());
-
-		let behaviour = NetworkBehaviour::new(local_peer_id, kad_store, kad_cfg, identify_cfg)?;
+		let mut autonat_cfg: AutoNatConfig = Default::default();
+		autonat_cfg.only_global_ips = false;
+		let behaviour = NetworkBehaviour::new(local_peer_id, kad_store, kad_cfg, identify_cfg, autonat_cfg)?;
 
 		// Build the Swarm, connecting the lower transport logic with the
 		// higher layer network behaviour logic

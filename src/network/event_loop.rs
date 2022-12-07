@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use futures::StreamExt;
+use libp2p::autonat::Config as AutoNatConfig;
 use libp2p::swarm::ConnectionHandlerUpgrErr;
 use tokio::sync::{mpsc, oneshot};
 
@@ -51,6 +52,7 @@ impl NetworkBehaviour {
 		kad_store: MemoryStore,
 		kad_cfg: KademliaConfig,
 		identify_cfg: IdentifyConfig,
+		autonat_cfg: AutoNatConfig
 	) -> Result<Self> {
 		let mdns = TokioMdns::new(MdnsConfig::default())?;
 		Ok(Self {
@@ -59,7 +61,7 @@ impl NetworkBehaviour {
 			mdns,
 			ping: PingBehaviour::new(PingConfig::new()),
 			keep_alive: KeepAliveBehaviour::default(),
-			auto_nat: AutonatBehaviour::new(local_peer_id, Default::default()),
+			auto_nat: AutonatBehaviour::new(local_peer_id, autonat_cfg),
 		})
 	}
 }
