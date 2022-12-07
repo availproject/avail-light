@@ -2,12 +2,15 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use futures::StreamExt;
+use libp2p::autonat::Config as AutoNatConfig;
+use libp2p::swarm::ConnectionHandlerUpgrErr;
 use tokio::sync::{mpsc, oneshot};
 
 use super::client::Command;
 use super::stream::{Event, NetworkEvents};
 
 use libp2p::{
+	autonat::{Behaviour as AutonatBehaviour, Event as AutonatEvent},
 	core::either::EitherError,
 	identify::{
 		Behaviour as IdentifyBehaviour, Config as IdentifyConfig, Event as IdentifyEvent, Info,
@@ -40,22 +43,25 @@ pub struct NetworkBehaviour {
 	mdns: TokioMdns,
 	ping: PingBehaviour,
 	keep_alive: KeepAliveBehaviour,
+	auto_nat: AutonatBehaviour,
 }
 
 impl NetworkBehaviour {
 	pub fn new(
-		id: PeerId,
+		local_peer_id: PeerId,
 		kad_store: MemoryStore,
 		kad_cfg: KademliaConfig,
 		identify_cfg: IdentifyConfig,
+		autonat_cfg: AutoNatConfig,
 	) -> Result<Self> {
 		let mdns = TokioMdns::new(MdnsConfig::default())?;
 		Ok(Self {
-			kademlia: Kademlia::with_config(id, kad_store, kad_cfg),
+			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
 			identify: IdentifyBehaviour::new(identify_cfg),
 			mdns,
 			ping: PingBehaviour::new(PingConfig::new()),
 			keep_alive: KeepAliveBehaviour::default(),
+			auto_nat: AutonatBehaviour::new(local_peer_id, autonat_cfg),
 		})
 	}
 }
@@ -66,6 +72,7 @@ pub enum BehaviourEvent {
 	Identify(IdentifyEvent),
 	Mdns(MdnsEvent),
 	Ping(PingEvent),
+	Autonat(AutonatEvent),
 	Void,
 }
 
@@ -96,6 +103,12 @@ impl From<PingEvent> for BehaviourEvent {
 impl From<void::Void> for BehaviourEvent {
 	fn from(_: void::Void) -> Self {
 		BehaviourEvent::Void
+	}
+}
+
+impl From<AutonatEvent> for BehaviourEvent {
+	fn from(event: AutonatEvent) -> Self {
+		BehaviourEvent::Autonat(event)
 	}
 }
 
@@ -143,10 +156,13 @@ impl EventLoop {
 			BehaviourEvent,
 			EitherError<
 				EitherError<
-					EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
-					ping::Failure,
+					EitherError<
+						EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
+						ping::Failure,
+					>,
+					void::Void,
 				>,
-				void::Void,
+				ConnectionHandlerUpgrErr<std::io::Error>,
 			>,
 		>,
 	) {
@@ -307,6 +323,20 @@ impl EventLoop {
 								.remove_address(&peer_id, &multiaddr);
 						}
 					}
+				},
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Autonat(event)) => match event {
+				AutonatEvent::InboundProbe(e) => {
+					debug!("AutoNat Inbound Probe: {:#?}", e);
+				},
+				AutonatEvent::OutboundProbe(e) => {
+					debug!("AutoNat Outbound Probe: {:#?}", e);
+				},
+				AutonatEvent::StatusChanged { old, new } => {
+					debug!(
+						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
+						old, new
+					);
 				},
 			},
 			swarm_event => {
