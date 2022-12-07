@@ -35,6 +35,8 @@ use crate::types::LibP2PConfig;
 pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
+	dht_parallelization_limit: usize,
+	ttl: u64,
 ) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match cfg.libp2p_seed {
@@ -96,7 +98,7 @@ pub fn init(
 	let network_events = Arc::new(NetworkEvents::new());
 
 	Ok((
-		Client::new(command_sender),
+		Client::new(command_sender, dht_parallelization_limit, ttl),
 		network_events.clone(),
 		EventLoop::new(swarm, command_receiver, metrics, network_events),
 	))

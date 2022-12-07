@@ -26,7 +26,7 @@ use std::sync::{mpsc::Receiver, Arc};
 use tracing::{error, info, instrument, warn};
 
 use crate::{
-	data::{fetch_cells_from_dht, store_encoded_data_in_db},
+	data::store_encoded_data_in_db,
 	network::Client,
 	proof,
 	rpc::get_kate_app_data,
@@ -96,14 +96,10 @@ async fn process_block(
 
 	if have_missing {
 		let missing_positions = dimensions.extended_rows_positions(&missing_rows);
-		let (fetched, unfetched) = fetch_cells_from_dht(
-			&network_client,
-			block_number,
-			&missing_positions,
-			cfg.dht_parallelization_limit,
-		)
-		.await
-		.context("Failed to fetch cells from DHT")?;
+		let (fetched, unfetched) = network_client
+			.fetch_cells_from_dht(block_number, &missing_positions)
+			.await
+			.context("Failed to fetch cells from DHT")?;
 
 		let unfetched_count = unfetched.len();
 		if unfetched_count == 0 {
