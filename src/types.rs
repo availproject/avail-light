@@ -362,9 +362,12 @@ pub struct RuntimeConfig {
 	/// File system path where psk key is stored
 	#[serde(default = "defaults::libp2p_psk_path")]
 	pub libp2p_psk_path: String,
-	// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
+	/// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
 	#[serde(default = "defaults::default_false")]
 	pub libp2p_tcp_port_reuse: bool,
+	#[serde(default = "defaults::default_false")]
+	/// Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address
+	pub libp2p_autonat_only_global_ips: bool,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: ws://127.0.0.1:9944).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -491,6 +494,28 @@ impl From<&RuntimeConfig> for LightClientConfig {
 	}
 }
 
+pub struct LibP2PConfig {
+	pub libp2p_seed: Option<u8>,
+	pub libp2p_port: (u16, u16),
+	pub libp2p_psk_path: String,
+	pub libp2p_tcp_port_reuse: bool,
+	pub libp2p_autonat_only_global_ips: bool,
+	pub kademlia: KademliaConfig,
+}
+
+impl From<&RuntimeConfig> for LibP2PConfig {
+	fn from(rtcfg: &RuntimeConfig) -> Self {
+		Self {
+			libp2p_seed: rtcfg.libp2p_seed,
+			libp2p_port: rtcfg.libp2p_port,
+			libp2p_psk_path: rtcfg.libp2p_psk_path,
+			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
+			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
+			kademlia: rtcfg.into(),
+		}
+	}
+}
+
 /// Kademlia configuration (see [RuntimeConfig] for details)
 pub struct KademliaConfig {
 	pub record_ttl: u64,
@@ -571,6 +596,7 @@ impl Default for RuntimeConfig {
 			libp2p_seed: None,
 			libp2p_psk_path: defaults::libp2p_psk_path(),
 			libp2p_tcp_port_reuse: false,
+			libp2p_autonat_only_global_ips: true,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
