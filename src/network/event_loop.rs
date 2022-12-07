@@ -52,7 +52,7 @@ impl NetworkBehaviour {
 		kad_store: MemoryStore,
 		kad_cfg: KademliaConfig,
 		identify_cfg: IdentifyConfig,
-		autonat_cfg: AutoNatConfig
+		autonat_cfg: AutoNatConfig,
 	) -> Result<Self> {
 		let mdns = TokioMdns::new(MdnsConfig::default())?;
 		Ok(Self {
@@ -327,13 +327,16 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Autonat(event)) => match event {
 				AutonatEvent::InboundProbe(e) => {
-					info!("INBOUND: {:#?}", e);
+					debug!("AutoNat Inbound Probe: {:#?}", e);
 				},
 				AutonatEvent::OutboundProbe(e) => {
-					info!("OUTBOUND: {:#?}", e);
+					debug!("AutoNat Outbound Probe: {:#?}", e);
 				},
 				AutonatEvent::StatusChanged { old, new } => {
-					info!("OLD: {:#?}. NEW: {:#?}", old, new);
+					debug!(
+						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
+						old, new
+					);
 				},
 			},
 			swarm_event => {
