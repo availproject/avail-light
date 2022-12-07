@@ -42,9 +42,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{error, info};
 
 use crate::{
-	data::{
-		fetch_cells_from_dht, insert_into_dht, store_block_header_in_db, store_confidence_in_db,
-	},
+	data::{store_block_header_in_db, store_confidence_in_db},
 	http::calculate_confidence,
 	network::Client,
 	proof, rpc,
@@ -169,14 +167,10 @@ pub async fn run(
 				positions.len()
 			);
 
-			let (cells_fetched, unfetched) = fetch_cells_from_dht(
-				&network_client,
-				block_number,
-				&positions,
-				cfg.dht_parallelization_limit,
-			)
-			.await
-			.context("Failed to fetch cells from DHT")?;
+			let (cells_fetched, unfetched) = network_client
+				.fetch_cells_from_dht(block_number, &positions)
+				.await
+				.context("Failed to fetch cells from DHT")?;
 
 			info!(
 				block_number,
@@ -312,14 +306,9 @@ pub async fn run(
 
 			begin = SystemTime::now();
 
-			let dht_insert_success_rate = insert_into_dht(
-				&network_client,
-				block_number,
-				rpc_fetched,
-				cfg.dht_parallelization_limit,
-				cfg.ttl,
-			)
-			.await;
+			let dht_insert_success_rate = network_client
+				.insert_into_dht(block_number, rpc_fetched)
+				.await;
 
 			info!(
 				block_number,

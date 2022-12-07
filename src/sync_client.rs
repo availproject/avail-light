@@ -27,8 +27,8 @@ use tracing::{error, info, warn};
 
 use crate::{
 	data::{
-		fetch_cells_from_dht, insert_into_dht, is_block_header_in_db, is_confidence_in_db,
-		store_block_header_in_db, store_confidence_in_db,
+		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
+		store_confidence_in_db,
 	},
 	network::Client,
 	proof, rpc,
@@ -92,14 +92,10 @@ async fn process_block(
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(&dimensions, cell_count);
 
-	let (dht_fetched, unfetched) = fetch_cells_from_dht(
-		&network_client,
-		block_number,
-		&positions,
-		cfg.dht_parallelization_limit,
-	)
-	.await
-	.context("Failed to fetch cells from DHT")?;
+	let (dht_fetched, unfetched) = network_client
+		.fetch_cells_from_dht(block_number, &positions)
+		.await
+		.context("Failed to fetch cells from DHT")?;
 
 	info!(
 		block_number,
@@ -148,14 +144,9 @@ async fn process_block(
 	store_confidence_in_db(db.clone(), block_number, count as u32)
 		.context("Failed to store confidence in DB")?;
 
-	insert_into_dht(
-		&network_client,
-		block_number,
-		rpc_fetched,
-		cfg.dht_parallelization_limit,
-		cfg.ttl,
-	)
-	.await;
+	network_client
+		.insert_into_dht(block_number, rpc_fetched)
+		.await;
 	info!(block_number, "Cells inserted into DHT");
 	Ok(())
 }
