@@ -2,7 +2,7 @@ mod client;
 mod event_loop;
 mod stream;
 
-use std::{fs, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use libp2p::autonat::Config as AutoNatConfig;
 
@@ -13,7 +13,7 @@ use stream::NetworkEvents;
 
 use anyhow::{Context, Result};
 use libp2p::{
-	core::{either::EitherTransport, muxing::StreamMuxerBox, transport, upgrade::Version},
+	core::{muxing::StreamMuxerBox, transport, upgrade::Version},
 	identify,
 	identity::{self, ed25519, Keypair},
 	kad::{
@@ -22,7 +22,6 @@ use libp2p::{
 	},
 	metrics::Metrics,
 	noise::NoiseAuthenticated,
-	pnet::{PnetConfig, PreSharedKey},
 	swarm::SwarmBuilder,
 	tcp::{GenTcpConfig, TokioTcpTransport},
 	yamux::YamuxConfig,
@@ -51,12 +50,8 @@ pub fn init(
 	let local_peer_id = PeerId::from(id_keys.public());
 	info!("Local peer id: {:?}", local_peer_id);
 
-	// try to get psk
-	let psk: Option<PreSharedKey> = get_psk(&cfg.libp2p_psk_path)?
-		.map(|text| PreSharedKey::from_str(&text))
-		.transpose()?;
 	// create transport
-	let transport = setup_transport(&id_keys, psk, cfg.libp2p_tcp_port_reuse);
+	let transport = setup_transport(&id_keys, cfg.libp2p_tcp_port_reuse);
 
 	// create swarm that manages peers and events
 	let swarm = {
@@ -107,33 +102,16 @@ pub fn init(
 	))
 }
 
-/// Read the pre-shared key file from the given directory
-fn get_psk(location: &String) -> Result<Option<String>> {
-	let path = Path::new(location);
-	match fs::read_to_string(path) {
-		Ok(text) => Ok(Some(text)),
-		Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-		Err(e) => Err(e.into()),
-	}
-}
-
 fn setup_transport(
 	key_pair: &Keypair,
-	psk: Option<PreSharedKey>,
 	port_reuse: bool,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
 	let noise = NoiseAuthenticated::xx(&key_pair).unwrap();
 
 	let base_transport =
 		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(port_reuse));
-	let maybe_encrypted = match psk {
-		Some(psk) => EitherTransport::Left(
-			base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
-		),
-		None => EitherTransport::Right(base_transport),
-	};
 
-	maybe_encrypted
+	base_transport
 		.upgrade(Version::V1)
 		.authenticate(noise)
 		.multiplex(YamuxConfig::default())

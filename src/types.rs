@@ -359,9 +359,6 @@ pub struct RuntimeConfig {
 	pub libp2p_port: (u16, u16),
 	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
 	pub full_node_rpc: Vec<String>,
-	/// File system path where psk key is stored
-	#[serde(default = "defaults::libp2p_psk_path")]
-	pub libp2p_psk_path: String,
 	/// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities
 	#[serde(default = "defaults::default_false")]
 	pub libp2p_tcp_port_reuse: bool,
@@ -497,7 +494,6 @@ impl From<&RuntimeConfig> for LightClientConfig {
 pub struct LibP2PConfig {
 	pub libp2p_seed: Option<u8>,
 	pub libp2p_port: (u16, u16),
-	pub libp2p_psk_path: String,
 	pub libp2p_tcp_port_reuse: bool,
 	pub libp2p_autonat_only_global_ips: bool,
 	pub kademlia: KademliaConfig,
@@ -508,7 +504,6 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		Self {
 			libp2p_seed: rtcfg.libp2p_seed,
 			libp2p_port: rtcfg.libp2p_port,
-			libp2p_psk_path: rtcfg.libp2p_psk_path,
 			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
 			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
 			kademlia: rtcfg.into(),
@@ -594,7 +589,6 @@ impl Default for RuntimeConfig {
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
 			libp2p_seed: None,
-			libp2p_psk_path: defaults::libp2p_psk_path(),
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: true,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],

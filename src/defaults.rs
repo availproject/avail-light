@@ -1,9 +1,5 @@
 //! Default config values
 
-pub fn libp2p_psk_path() -> String {
-	"./avail/psk".to_owned()
-}
-
 pub fn dht_parallelization_limit() -> usize {
 	20
 }
