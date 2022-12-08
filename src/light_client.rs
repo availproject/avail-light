@@ -135,8 +135,15 @@ pub async fn run(
 			let begin = SystemTime::now();
 
 			let HeaderExtension::V1(xt) = &header.extension;
-			let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols)
-				.context("Invalid dimensions")?;
+			let Some(dimensions) = Dimensions::new(xt.commitment.rows, xt.commitment.cols) else {
+			    info!(
+				    block_number,
+				    "Skipping block with invalid dimensions {}x{}",
+				    xt.commitment.rows,
+				    xt.commitment.cols
+			    );
+			    continue;
+			};
 
 			if !(dimensions.cols() > 2) {
 				error!(block_number, "more than 2 columns is required");
