@@ -76,9 +76,11 @@ log_level = "info"
 http_server_host = "127.0.0.1"
 # Light client HTTP server port (default: 7000).
 http_server_port = "7000"
-
-# Seed for Libp2p keypair. If not set, or seed is 0, random seed is generated
-libp2p_seed = 2
+# Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
+# If set to seed, keypair will be generated from that seed.
+# If set to key, a valid ed25519 private key must be provided, else the client will fail
+# If `secret_key` is not set, random seed will be used.
+secret_key = { key =  "1498b5467a63dffa2dc9d9e069caf075d16fc33fdd4c3b01bfadae6433767d93" }
 # Libp2p service port range (port, range) (default: 37000).
 libp2p_port = "37000"
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
