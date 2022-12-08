@@ -75,7 +75,8 @@ fn data_cell(
 	let row: usize = position.row.try_into()?;
 	reconstructed
 		.get(&position.col)
-		.and_then(|column| column.get(row))
+		// Dividing with extension factor since reconstracted column is not extended
+		.and_then(|column| column.get(row / config::EXTENSION_FACTOR))
 		.map(|&data| DataCell { position, data })
 		.context("Data cell not found")
 }
