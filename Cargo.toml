@@ -7,7 +7,7 @@ authors = ["Polygon Avail Team"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kate-recovery = { git = "https://github.com/maticnetwork/avail-core.git", branch = "main"}
+kate-recovery = { git = "https://github.com/maticnetwork/avail-core.git", tag = "v0.6.1"}
 avail-subxt = { git = "https://github.com/maticnetwork/avail.git", tag = "v1.3.0" }
 subxt = "0.24.0"
 dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", tag = "v0.12.0-polygon-2"  }
