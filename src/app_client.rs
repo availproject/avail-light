@@ -28,7 +28,7 @@ use std::{
 	sync::{mpsc::Receiver, Arc},
 };
 use subxt::OnlineClient;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
@@ -117,6 +117,12 @@ async fn fetch_and_verify_rows(
 		return Ok(vec![]);
 	}
 
+	info!(
+		block_number,
+		"Fetching missing {} rows cells from DHT...",
+		missing_cells.len()
+	);
+
 	let (fetched, unfetched) = fetch_verified(
 		&pp,
 		&network_client,
@@ -126,6 +132,12 @@ async fn fetch_and_verify_rows(
 		&missing_cells,
 	)
 	.await?;
+
+	info!(
+		block_number,
+		"Failed to fetch or verify {} missing cells",
+		unfetched.len()
+	);
 
 	let missing_cells = columns_positions(dimensions, &unfetched, 0.66);
 
@@ -141,10 +153,22 @@ async fn fetch_and_verify_rows(
 
 	let reconstructed = reconstruct_columns(dimensions, &missing_fetched)?;
 
+	debug!(
+		block_number,
+		"Reconstructed {} columns",
+		reconstructed.keys().len()
+	);
+
 	let mut reconstructed_cells = unfetched
 		.into_iter()
 		.map(|position| data_cell(position, &reconstructed))
 		.collect::<Result<Vec<_>>>()?;
+
+	info!(
+		block_number,
+		"Reconstructed {} missing cells",
+		reconstructed_cells.len()
+	);
 
 	let mut data_cells: Vec<DataCell> = fetched.into_iter().map(Into::into).collect::<Vec<_>>();
 
@@ -195,6 +219,8 @@ async fn process_block(
 		commitments::verify_equality(&pp, commitments, &rows, lookup, dimensions, app_id)?;
 
 	info!(block_number, "Verified rows: {verified_rows:?}");
+	debug!(block_number, "{} rows are verified", verified_rows.len());
+	debug!(block_number, "{} rows are missing", missing_rows.len());
 
 	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
 		return Err(anyhow::anyhow!("Too many cells are missing"));
