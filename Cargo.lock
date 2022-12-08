@@ -2427,8 +2427,8 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.6.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?branch=main#e69cf1f0276179260a1a1d7ea691042a1bdc6afd"
+version = "0.6.1"
+source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.6.1#7785fc4d73916247bbef1a258c1254102f704f8b"
 dependencies = [
  "derive_more",
  "dusk-bytes",
