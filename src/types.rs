@@ -342,6 +342,13 @@ mod port_range_format {
 	}
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum SecretKey {
+	Seed { seed: String },
+	Key { key: String },
+}
+
 /// Representation of a configuration used by this project.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RuntimeConfig {
@@ -351,8 +358,11 @@ pub struct RuntimeConfig {
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
 	pub http_server_port: (u16, u16),
-	/// Seed for Libp2p keypair. If not set, or seed is 0, random seed is generated
-	pub libp2p_seed: Option<String>,
+	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
+	/// If set to seed, keypair will be generated from that seed.
+	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
+	/// If `secret_key` is not set, random seed will be used.
+	pub secret_key: Option<SecretKey>,
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(default)]
 	#[serde(with = "port_range_format")]
@@ -492,7 +502,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 }
 
 pub struct LibP2PConfig {
-	pub libp2p_seed: Option<String>,
+	pub libp2p_secret_key: Option<SecretKey>,
 	pub libp2p_port: (u16, u16),
 	pub libp2p_tcp_port_reuse: bool,
 	pub libp2p_autonat_only_global_ips: bool,
@@ -502,7 +512,7 @@ pub struct LibP2PConfig {
 impl From<&RuntimeConfig> for LibP2PConfig {
 	fn from(rtcfg: &RuntimeConfig) -> Self {
 		Self {
-			libp2p_seed: rtcfg.libp2p_seed.clone(),
+			libp2p_secret_key: rtcfg.secret_key.clone(),
 			libp2p_port: rtcfg.libp2p_port,
 			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
 			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
@@ -588,7 +598,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
-			libp2p_seed: None,
+			secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: true,
 			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],

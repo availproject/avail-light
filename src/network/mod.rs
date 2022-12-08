@@ -30,7 +30,7 @@ use libp2p::{
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::types::LibP2PConfig;
+use crate::types::{LibP2PConfig, SecretKey};
 
 use multihash::{self, Hasher};
 
@@ -41,18 +41,35 @@ pub fn init(
 	ttl: u64,
 ) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
-	let id_keys = match cfg.libp2p_seed {
-		Some(seed) => {
-			let mut seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
-			let bytes: &mut [u8] = seed_digest.as_mut();
-			let secret_key = ed25519::SecretKey::from_bytes(bytes)
-				.context("error generating secret key from seed")?;
-			identity::Keypair::Ed25519(secret_key.into())
+	let id_keys = match cfg.libp2p_secret_key {
+		// If seed is provided, generate secret key from seed
+		Some(seed) => match seed {
+			SecretKey::Seed { seed } => {
+				let mut seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
+				let bytes: &mut [u8] = seed_digest.as_mut();
+				let secret_key = ed25519::SecretKey::from_bytes(bytes)
+					.context("error generating secret key from seed")?;
+				identity::Keypair::Ed25519(secret_key.into())
+			},
+			// Import secret key if provided
+			SecretKey::Key { key } => {
+				let mut decoded_key = [0u8; 32];
+				hex::decode_to_slice(key.into_bytes(), &mut decoded_key)
+					.context("error decoding secret key from config")?;
+				let secret_key = ed25519::SecretKey::from_bytes(decoded_key)
+					.context("error importing secret key")?;
+				identity::Keypair::Ed25519(secret_key.into())
+			},
 		},
+		// If neither seed nor secret key provided, generate secret key from random seed
 		None => identity::Keypair::generate_ed25519(),
 	};
 	let local_peer_id = PeerId::from(id_keys.public());
-	info!("Local peer id: {:?}", local_peer_id);
+	info!(
+		"Local peer id: {:?}. Public key: {:?}.",
+		local_peer_id,
+		id_keys.public()
+	);
 
 	// create transport
 	let transport = setup_transport(&id_keys, cfg.libp2p_tcp_port_reuse)?;
