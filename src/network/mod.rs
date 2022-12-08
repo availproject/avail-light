@@ -32,6 +32,8 @@ use tracing::info;
 
 use crate::types::LibP2PConfig;
 
+use multihash::{self, Hasher};
+
 pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
@@ -41,10 +43,10 @@ pub fn init(
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match cfg.libp2p_seed {
 		Some(seed) => {
-			let mut bytes = [0u8; 32];
-			bytes[0] = seed;
-			let secret_key = ed25519::SecretKey::from_bytes(&mut bytes)
-				.context("Error should only appear if length is wrong.")?;
+			let mut seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
+			let bytes: &mut [u8] = seed_digest.as_mut();
+			let secret_key = ed25519::SecretKey::from_bytes(bytes)
+				.context("error generating secret key from seed")?;
 			identity::Keypair::Ed25519(secret_key.into())
 		},
 		None => identity::Keypair::generate_ed25519(),
