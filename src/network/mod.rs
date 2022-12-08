@@ -4,14 +4,14 @@ mod stream;
 
 use std::{sync::Arc, time::Duration};
 
-use libp2p::autonat::Config as AutoNatConfig;
+use libp2p::{autonat::Config as AutoNatConfig, dns::TokioDnsConfig};
 
 pub use client::Client;
 use event_loop::{EventLoop, NetworkBehaviour};
 pub use stream::Event;
 use stream::NetworkEvents;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use libp2p::{
 	core::{muxing::StreamMuxerBox, transport, upgrade::Version},
 	identify,
@@ -53,7 +53,7 @@ pub fn init(
 	info!("Local peer id: {:?}", local_peer_id);
 
 	// create transport
-	let transport = setup_transport(&id_keys, cfg.libp2p_tcp_port_reuse);
+	let transport = setup_transport(&id_keys, cfg.libp2p_tcp_port_reuse)?;
 
 	// create swarm that manages peers and events
 	let swarm = {
@@ -107,16 +107,16 @@ pub fn init(
 fn setup_transport(
 	key_pair: &Keypair,
 	port_reuse: bool,
-) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
+) -> Result<transport::Boxed<(PeerId, StreamMuxerBox)>> {
 	let noise = NoiseAuthenticated::xx(&key_pair).unwrap();
+	let dns_tcp = TokioDnsConfig::system(TokioTcpTransport::new(
+		GenTcpConfig::new().nodelay(true).port_reuse(port_reuse),
+	))?;
 
-	let base_transport =
-		TokioTcpTransport::new(GenTcpConfig::default().nodelay(true).port_reuse(port_reuse));
-
-	base_transport
+	Ok(dns_tcp
 		.upgrade(Version::V1)
 		.authenticate(noise)
 		.multiplex(YamuxConfig::default())
 		.timeout(Duration::from_secs(20))
-		.boxed()
+		.boxed())
 }
