@@ -1,15 +1,12 @@
 mod client;
 mod event_loop;
-mod stream;
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use libp2p::{autonat::Config as AutoNatConfig, dns::TokioDnsConfig};
+use libp2p::{autonat::Config as AutoNatConfig, core::ConnectedPoint, dns::TokioDnsConfig};
 
 pub use client::Client;
 use event_loop::{EventLoop, NetworkBehaviour};
-pub use stream::Event;
-use stream::NetworkEvents;
 
 use anyhow::{Context, Ok, Result};
 use libp2p::{
@@ -34,12 +31,21 @@ use crate::types::{LibP2PConfig, SecretKey};
 
 use multihash::{self, Hasher};
 
+// Event enum encodes all used network event variants
+#[derive(Debug, Clone)]
+pub enum Event {
+	ConnectionEstablished {
+		peer_id: PeerId,
+		endpoint: ConnectedPoint,
+	},
+}
+
 pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
 	dht_parallelization_limit: usize,
 	ttl: u64,
-) -> Result<(Client, Arc<NetworkEvents>, EventLoop)> {
+) -> Result<(Client, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match cfg.libp2p_secret_key {
 		// If seed is provided, generate secret key from seed
@@ -111,12 +117,10 @@ pub fn init(
 	};
 
 	let (command_sender, command_receiver) = mpsc::channel(10000);
-	let network_events = Arc::new(NetworkEvents::new());
 
 	Ok((
 		Client::new(command_sender, dht_parallelization_limit, ttl),
-		network_events.clone(),
-		EventLoop::new(swarm, command_receiver, metrics, network_events),
+		EventLoop::new(swarm, command_receiver, metrics),
 	))
 }
 

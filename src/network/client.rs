@@ -11,7 +11,10 @@ use libp2p::{
 	Multiaddr, PeerId,
 };
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace};
+
+use super::Event;
 
 #[derive(Clone)]
 pub struct Client {
@@ -72,6 +75,19 @@ impl Client {
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
+	}
+
+	// Events stream function creates a new stream of
+	// network events and sends a command to the Event loop
+	// with a required sender for event output
+	pub async fn events_stream(&self) -> ReceiverStream<Event> {
+		let (sender, receiver) = mpsc::channel(1000);
+		self.sender
+			.send(Command::Stream { sender })
+			.await
+			.expect("Command receiver should not be dropped.");
+
+		ReceiverStream::new(receiver)
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
@@ -247,6 +263,9 @@ pub enum Command {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
 		sender: oneshot::Sender<Result<()>>,
+	},
+	Stream {
+		sender: mpsc::Sender<Event>,
 	},
 	Bootstrap {
 		sender: oneshot::Sender<Result<()>>,

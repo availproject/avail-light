@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use futures::StreamExt;
@@ -6,8 +6,7 @@ use libp2p::autonat::Config as AutoNatConfig;
 use libp2p::swarm::ConnectionHandlerUpgrErr;
 use tokio::sync::{mpsc, oneshot};
 
-use super::client::Command;
-use super::stream::{Event, NetworkEvents};
+use super::{client::Command, Event};
 
 use libp2p::{
 	autonat::{Behaviour as AutonatBehaviour, Event as AutonatEvent},
@@ -115,7 +114,7 @@ impl From<AutonatEvent> for BehaviourEvent {
 pub struct EventLoop {
 	swarm: Swarm<NetworkBehaviour>,
 	command_receiver: mpsc::Receiver<Command>,
-	network_events: Arc<NetworkEvents>,
+	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	metrics: Metrics,
@@ -126,12 +125,11 @@ impl EventLoop {
 		swarm: Swarm<NetworkBehaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
-		network_events: Arc<NetworkEvents>,
 	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
-			network_events,
+			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			metrics,
@@ -148,6 +146,13 @@ impl EventLoop {
 				},
 			}
 		}
+	}
+
+	// Notify function is used to send network events to all listeners
+	// through send channels that are able to send, otherwise channel is discarded
+	fn notify(&mut self, event: Event) {
+		self.output_senders
+			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
 	async fn handle_event(
@@ -392,9 +397,7 @@ impl EventLoop {
 						);
 
 						// this event is of a particular interest for our first node in the network
-						self.network_events
-							.notify(Event::ConnectionEstablished { peer_id, endpoint })
-							.await;
+						self.notify(Event::ConnectionEstablished { peer_id, endpoint });
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
 						trace!("Outgoing connection error: {error:?}. PeerId: {peer_id:?}");
@@ -424,6 +427,9 @@ impl EventLoop {
 					.kademlia
 					.add_address(&peer_id, peer_addr.clone());
 				self.pending_kad_routing.insert(peer_id, sender);
+			},
+			Command::Stream { sender } => {
+				self.output_senders.push(sender);
 			},
 			Command::Bootstrap { sender } => {
 				let query_id = self
