@@ -78,58 +78,42 @@ pub async fn run(
 	loop {
 		let mut new_heads_sub = rpc_client.rpc().subscribe_finalized_blocks().await?;
 
-		struct BlockAvailableMsg {
-			header: Header,
-			hash: H256,
-			received_at: Instant,
-		}
-
-		let (message_tx, message_rx) = sync_channel::<BlockAvailableMsg>(1 << 7);
+		let (message_tx, message_rx) = sync_channel::<(Header, Instant)>(1 << 7);
 
 		tokio::spawn(async move {
 			while let Some(message) = new_heads_sub.next().await {
+				let received_at = Instant::now();
 				if let Err(error) = message
 					.context("Failed to read web socket message")
-					.map(|header| {
-						let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
-						(header, hash, Instant::now())
-					})
-					.and_then(|(header, hash, received_at)| {
+					.and_then(|header| {
 						info!(header.number, "Received finalized block header");
-						message_tx
-							.send(BlockAvailableMsg {
-								header,
-								hash,
-								received_at,
-							})
-							.context("Cannot send  message")
+						let message = (header, received_at);
+						message_tx.send(message).context("Send failed")
 					}) {
 					error!("Fail to process finalized block header: {error}");
 				}
 			}
 		});
 
-		for message in message_rx {
+		for (header, received_at) in message_rx {
 			if let Some(seconds) = cfg.block_processing_delay {
 				let sleep_time = Duration::from_secs(seconds.into());
-				let elapsed = message.received_at.elapsed();
+				let elapsed = received_at.elapsed();
 				if sleep_time > elapsed {
 					tokio::time::sleep(sleep_time - elapsed).await;
 				};
 			}
 
 			metrics.record(MetricEvent::SessionBlockCounter);
-			metrics.record(MetricEvent::TotalBlockNumber(message.header.number));
+			metrics.record(MetricEvent::TotalBlockNumber(header.number));
 
-			let header = &message.header;
-
-			let header_hash = message.hash;
+			let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			let block_number = header.number;
 			info!(
 				block_number,
-				"block_delay" = message.received_at.elapsed().as_secs(),
+				"block_delay" = received_at.elapsed().as_secs(),
 				"Processing finalized block (delayed for {} seconds)",
-				message.received_at.elapsed().as_secs(),
+				received_at.elapsed().as_secs(),
 			);
 
 			let begin = SystemTime::now();
@@ -239,7 +223,7 @@ pub async fn run(
 			// another competing thread, which syncs all block headers
 			// in range [0, LATEST], where LATEST = latest block number
 			// when this process started
-			store_block_header_in_db(db.clone(), block_number, header)
+			store_block_header_in_db(db.clone(), block_number, &header)
 				.context("Failed to store block header in DB")?;
 
 			let mut begin = SystemTime::now();
@@ -328,7 +312,7 @@ pub async fn run(
 			// that newly mined block has been received
 			if let Some(ref channel) = block_tx {
 				channel
-					.send(types::ClientMsg::try_from(message.header)?)
+					.send(types::ClientMsg::try_from(header)?)
 					.context("Failed to send block message")?;
 			}
 		}
