@@ -5,7 +5,11 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures::{future::join_all, stream};
-use kate_recovery::{config, data::Cell, matrix::Position};
+use kate_recovery::{
+	config,
+	data::Cell,
+	matrix::{Position, RowIndex},
+};
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	Multiaddr, PeerId,
@@ -36,6 +40,23 @@ impl DHTCell {
 		Record {
 			key: self.0.reference(block).as_bytes().to_vec().into(),
 			value: self.0.content.to_vec(),
+			publisher: None,
+			expires: Instant::now().checked_add(Duration::from_secs(ttl)),
+		}
+	}
+}
+
+struct DHTRow((RowIndex, Vec<u8>));
+
+impl DHTRow {
+	fn reference(&self, block: u32) -> String {
+		self.0 .0.reference(block)
+	}
+
+	fn dht_record(&self, block: u32, ttl: u64) -> Record {
+		Record {
+			key: self.0 .0.reference(block).as_bytes().to_vec().into(),
+			value: self.0 .1.clone(),
 			publisher: None,
 			expires: Instant::now().checked_add(Duration::from_secs(ttl)),
 		}
@@ -196,6 +217,34 @@ impl Client {
 		(fetched, unfetched)
 	}
 
+	async fn insert_into_dht(&self, records: Vec<(String, Record)>) -> f32 {
+		if records.is_empty() {
+			return 1.0;
+		}
+
+		let failure_counter: &Arc<Mutex<usize>> = &Arc::new(Mutex::new(0));
+		let records_len = records.len();
+		let stream_records = records
+			.into_iter()
+			.map(move |(key, record)| (key, record, self.clone(), failure_counter.clone()));
+
+		futures::StreamExt::for_each_concurrent(
+			stream::iter(stream_records),
+			self.dht_parallelization_limit,
+			|(key, record, network_client, failure_counter)| async move {
+				if let Err(error) = network_client.put_kad_record(record, Quorum::One).await {
+					let mut counter = failure_counter.lock().unwrap();
+					*counter += 1;
+					debug!("Fail to put record {key} into DHT: {error}");
+				}
+			},
+		)
+		.await;
+
+		let counter = failure_counter.lock().unwrap();
+		(1.0 - (counter.to_owned() as f32 / records_len as f32)) as f32
+	}
+
 	/// Inserts cells into the DHT.
 	/// There is no rollback, and errors will be logged and skipped,
 	/// which means that we cannot rely on error logs as alert mechanism.
@@ -206,36 +255,34 @@ impl Client {
 	///
 	/// * `block` - Block number
 	/// * `cells` - Matrix cells to store into DHT
-	pub async fn insert_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
-		if cells.is_empty() {
-			return 1.0;
-		}
+	pub async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+		let records: Vec<_> = cells
+			.into_iter()
+			.map(DHTCell)
+			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
+			.collect::<Vec<_>>();
 
-		let cells: Vec<_> = cells.into_iter().map(DHTCell).collect::<Vec<_>>();
-		let failure_counter: &Arc<Mutex<usize>> = &Arc::new(Mutex::new(0));
-		let cell_tuples = cells
-			.iter()
-			.map(move |b| (b, self.clone(), failure_counter.clone()));
+		self.insert_into_dht(records).await
+	}
 
-		futures::StreamExt::for_each_concurrent(
-			stream::iter(cell_tuples),
-			self.dht_parallelization_limit,
-			|(cell, network_client, failure_counter)| async move {
-				let reference = cell.reference(block);
-				if let Err(error) = network_client
-					.put_kad_record(cell.dht_record(block, self.ttl), Quorum::One)
-					.await
-				{
-					let mut counter = failure_counter.lock().unwrap();
-					*counter += 1;
-					debug!("Fail to put record for cell {reference} to DHT: {error}");
-				}
-			},
-		)
-		.await;
+	/// Inserts rows into the DHT.
+	/// There is no rollback, and errors will be logged and skipped,
+	/// which means that we cannot rely on error logs as alert mechanism.
+	/// Returns the success rate of the PUT operations measured by dividing
+	/// the number of returned errors with the total number of input rows
+	///
+	/// # Arguments
+	///
+	/// * `block` - Block number
+	/// * `rows` - Matrix rows to store into DHT
+	pub async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
+		let records: Vec<_> = rows
+			.into_iter()
+			.map(DHTRow)
+			.map(|row| (row.reference(block), row.dht_record(block, self.ttl)))
+			.collect::<Vec<_>>();
 
-		let counter = failure_counter.lock().unwrap();
-		(1.0 - (counter.to_owned() as f32 / cells.len() as f32)) as f32
+		self.insert_into_dht(records).await
 	}
 }
 
