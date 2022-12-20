@@ -228,7 +228,7 @@ async fn do_main() -> Result<()> {
 	let runtime_version = rpc::get_runtime_version(&rpc_client).await?;
 
 	info!("Reported version: {version}, runtime version: {runtime_version:?}");
-	if !version.starts_with("1.4.0")
+	if !version.starts_with("1.5.0")
 		|| runtime_version.spec_version != 7
 		|| runtime_version.spec_name != "data-avail"
 	{

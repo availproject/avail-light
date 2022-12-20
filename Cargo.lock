@@ -2428,8 +2428,8 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.7.1"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=kate-recovery/v0.7.1#d94ec5cb79aee3e6eb2c93235b44a08b7ce69450"
+version = "0.8.0"
+source = "git+https://github.com/maticnetwork/avail-core.git?tag=kate-recovery/v0.8.0#4c32cbeaf24abd7707a104b3f1e89679c0d7462e"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",

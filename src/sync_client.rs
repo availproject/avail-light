@@ -145,7 +145,7 @@ async fn process_block(
 		.context("Failed to store confidence in DB")?;
 
 	network_client
-		.insert_into_dht(block_number, rpc_fetched)
+		.insert_cells_into_dht(block_number, rpc_fetched)
 		.await;
 	info!(block_number, "Cells inserted into DHT");
 	Ok(())

@@ -35,7 +35,7 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
 use kate_recovery::{
-	commitments,
+	commitments, data,
 	matrix::{Dimensions, Position},
 };
 use rocksdb::DB;
@@ -129,7 +129,7 @@ pub async fn run(
 			    continue;
 			};
 
-			if !(dimensions.cols() > 2) {
+			if dimensions.cols() <= 2 {
 				error!(block_number, "more than 2 columns is required");
 			}
 
@@ -268,7 +268,38 @@ pub async fn run(
 						rpc_fetched.extend(partition_fetched_filtered.clone());
 					}
 				}
+
+				let begin = SystemTime::now();
+
+				let rpc_fetched_data_cells = rpc_fetched
+					.iter()
+					.filter(|cell| !cell.position.is_extended())
+					.collect::<Vec<_>>();
+				let rpc_fetched_data_rows = data::rows(&dimensions, &rpc_fetched_data_cells);
+				let rows_len = rpc_fetched_data_rows.len();
+
+				let dht_insert_rows_success_rate = network_client
+					.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
+					.await;
+				let success_rate: f64 = dht_insert_rows_success_rate.into();
+				let time_elapsed = begin.elapsed()?.as_secs_f64();
+
+				info!(
+					block_number,
+					"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
+				);
+
+				metrics.record(MetricEvent::DHTPutRowsSuccess(success_rate));
+
+				info!(
+					block_number,
+					"partition_dht_rows_insert_time_elapsed" = time_elapsed,
+					"{rows_len} rows inserted into DHT"
+				);
+
+				metrics.record(MetricEvent::DHTPutRowsDuration(time_elapsed));
 			}
+
 			let partition_time_elapsed = begin.elapsed()?;
 			let rpc_fetched_len = rpc_fetched.len();
 			info!(
@@ -285,7 +316,7 @@ pub async fn run(
 			begin = SystemTime::now();
 
 			let dht_insert_success_rate = network_client
-				.insert_into_dht(block_number, rpc_fetched)
+				.insert_cells_into_dht(block_number, rpc_fetched)
 				.await;
 
 			info!(
