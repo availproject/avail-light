@@ -245,7 +245,7 @@ async fn process_block(
 	let data_cells =
 		data_cells_from_rows(rows).context("Failed to create data cells from rows got from RPC")?;
 
-	let data = decode_app_extrinsics(&lookup, &dimensions, data_cells, app_id)
+	let data = decode_app_extrinsics(lookup, dimensions, data_cells, app_id)
 		.context("Failed to decode app extrinsics")?;
 
 	store_encoded_data_in_db(db, app_id, block_number, &data)
