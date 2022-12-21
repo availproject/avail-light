@@ -3,7 +3,7 @@ mod event_loop;
 
 use std::time::Duration;
 
-use libp2p::{autonat::Config as AutoNatConfig, core::ConnectedPoint, dns::TokioDnsConfig};
+use libp2p::{autonat, core::ConnectedPoint, dns::TokioDnsConfig};
 
 pub use client::Client;
 use event_loop::{EventLoop, NetworkBehaviour};
@@ -101,8 +101,10 @@ pub fn init(
 		let kad_store = MemoryStore::with_config(local_peer_id, store_cfg);
 		let identify_cfg =
 			identify::Config::new("/avail_kad/id/1.0.0".to_string(), id_keys.public());
-		let mut autonat_cfg: AutoNatConfig = Default::default();
-		autonat_cfg.only_global_ips = cfg.libp2p_autonat_only_global_ips;
+		let autonat_cfg = autonat::Config {
+			only_global_ips: cfg.libp2p_autonat_only_global_ips,
+			..Default::default()
+		};
 		let behaviour =
 			NetworkBehaviour::new(local_peer_id, kad_store, kad_cfg, identify_cfg, autonat_cfg)?;
 
