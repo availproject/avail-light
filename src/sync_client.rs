@@ -109,7 +109,7 @@ async fn process_block(
 	let rpc_fetched = if cfg.disable_rpc {
 		vec![]
 	} else {
-		rpc::get_kate_proof(rpc_client, header_hash, unfetched)
+		rpc::get_kate_proof(rpc_client, header_hash, &unfetched)
 			.await
 			.context("Failed to fetch cells from node RPC")?
 	};

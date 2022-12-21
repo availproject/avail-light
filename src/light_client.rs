@@ -163,7 +163,7 @@ pub async fn run(
 			let mut rpc_fetched = if cfg.disable_rpc {
 				vec![]
 			} else {
-				rpc::get_kate_proof(&rpc_client, header_hash, unfetched)
+				rpc::get_kate_proof(&rpc_client, header_hash, &unfetched)
 					.await
 					.context("Failed to fetch cells from node RPC")?
 			};
@@ -245,7 +245,7 @@ pub async fn run(
 					.map(|e| {
 						join_all(
 							e.iter()
-								.map(|n| rpc::get_kate_proof(&rpc_client, header_hash, n.to_vec()))
+								.map(|n| rpc::get_kate_proof(&rpc_client, header_hash, n))
 								.collect::<Vec<_>>(),
 						)
 					}) {

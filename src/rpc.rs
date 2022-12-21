@@ -93,7 +93,7 @@ pub async fn get_kate_app_data(
 pub async fn get_kate_proof(
 	client: &OnlineClient<AvailConfig>,
 	block_hash: H256,
-	positions: Vec<Position>,
+	positions: &[Position],
 ) -> Result<Vec<Cell>> {
 	let mut params = RpcParams::new();
 	params.push(positions.clone())?;
