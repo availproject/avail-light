@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use futures::{future::join_all, stream};
-use kate_recovery::{data::Cell, matrix::Position};
+use kate_recovery::{config, data::Cell, matrix::Position};
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	Multiaddr, PeerId,
@@ -129,31 +129,31 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn fetch_cell_from_dht(&self, block_number: u32, position: &Position) -> Result<Cell> {
+	async fn fetch_cell_from_dht(
+		&self,
+		block_number: u32,
+		position: &Position,
+	) -> Result<Option<Cell>> {
 		let reference = position.reference(block_number);
 		let record_key = Key::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
+
+		let peer_records = self.get_kad_record(record_key, Quorum::One).await?;
+
 		// For now, we take only the first record from the list
-		self.get_kad_record(record_key, Quorum::One)
-			.await
-			.and_then(|peer_records| {
-				peer_records
-					.get(0)
-					.cloned()
-					.context("Peer record not found")
-			})
-			.and_then(|peer_record| {
-				peer_record
-					.record
-					.value
-					.try_into()
-					.map_err(|_| anyhow::anyhow!("Cannot convert record into 80 bytes"))
-			})
-			.map(|record| Cell {
-				position: position.clone(),
-				content: record,
-			})
+		let Some(peer_record) = peer_records.into_iter().next() else {
+		    return Ok(None);
+		};
+
+		let content: [u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE] = peer_record
+			.record
+			.value
+			.try_into()
+			.map_err(|_| anyhow::anyhow!("Cannot convert record into 80 bytes"))?;
+
+		let position = position.clone();
+		Ok(Some(Cell { position, content }))
 	}
 
 	/// Fetches cells from DHT.
@@ -168,44 +168,31 @@ impl Client {
 		block_number: u32,
 		positions: &[Position],
 	) -> Result<(Vec<Cell>, Vec<Position>)> {
-		let chunked_positions = positions
-			.chunks(self.dht_parallelization_limit)
-			.map(|positions| {
-				positions
-					.iter()
-					.map(|position| self.fetch_cell_from_dht(block_number, position))
-					.collect::<Vec<_>>()
-			})
-			.collect::<Vec<_>>();
+		let mut cells = Vec::<Option<Cell>>::with_capacity(positions.len());
 
-		let mut results = Vec::<Result<Cell>>::with_capacity(positions.len());
-		for positions in chunked_positions {
-			let r = join_all(positions).await;
-			results.extend(r);
+		for positions in positions.chunks(self.dht_parallelization_limit) {
+			let fetch = |position| self.fetch_cell_from_dht(block_number, position);
+			let results = join_all(positions.iter().map(fetch)).await;
+			cells.extend(results.into_iter().collect::<Result<Vec<_>, _>>()?);
 		}
 
-		let (fetched, unfetched): (Vec<_>, Vec<_>) = results
-			.into_iter()
-			.zip(positions)
-			.partition(|(res, _)| res.is_ok());
-
-		for (result, position) in fetched.iter().chain(unfetched.iter()) {
+		for (cell, position) in cells.iter().zip(positions.iter()) {
 			let reference = position.reference(block_number);
-			match result {
-				Ok(_) => debug!("Fetched cell {reference} from DHT"),
-				Err(error) => debug!("Error fetching cell {reference} from DHT: {error}"),
+			if cell.is_some() {
+				debug!("Fetched cell {reference} from the DHT");
+			} else {
+				debug!("Cell {reference} not found in the DHT")
 			}
 		}
 
-		let fetched = fetched
-			.into_iter()
-			.map(|(result, _)| result)
-			.collect::<Result<Vec<_>>>()?;
-
-		let unfetched = unfetched
-			.into_iter()
+		let unfetched = cells
+			.iter()
+			.zip(positions)
+			.filter(|(cell, _)| cell.is_none())
 			.map(|(_, position)| position.clone())
 			.collect::<Vec<_>>();
+
+		let fetched = cells.into_iter().flatten().collect();
 
 		Ok((fetched, unfetched))
 	}
