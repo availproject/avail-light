@@ -129,31 +129,39 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn fetch_cell_from_dht(
-		&self,
-		block_number: u32,
-		position: &Position,
-	) -> Result<Option<Cell>> {
+	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
+	// Return type assumes that cell is not found in case when error is present.
+	async fn fetch_cell_from_dht(&self, block_number: u32, position: &Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
 		let record_key = Key::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
-		let peer_records = self.get_kad_record(record_key, Quorum::One).await?;
+		match self.get_kad_record(record_key, Quorum::One).await {
+			Ok(peer_records) => {
+				debug!("Fetched cell {reference} from the DHT");
 
-		// For now, we take only the first record from the list
-		let Some(peer_record) = peer_records.into_iter().next() else {
-		    return Ok(None);
-		};
+				// For now, we take only the first record from the list
+				let Some(peer_record) = peer_records.into_iter().next() else {
+				    return None;
+				};
 
-		let content: [u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE] = peer_record
-			.record
-			.value
-			.try_into()
-			.map_err(|_| anyhow::anyhow!("Cannot convert record into 80 bytes"))?;
+				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
+					peer_record.record.value.try_into();
 
-		let position = position.clone();
-		Ok(Some(Cell { position, content }))
+				let Ok(content) = try_content else {
+				    debug!("Cannot convert cell {reference} into 80 bytes");
+				    return None;
+				};
+
+				let position = position.clone();
+				Some(Cell { position, content })
+			},
+			Err(error) => {
+				debug!("Cell {reference} not found in the DHT: {error}");
+				None
+			},
+		}
 	}
 
 	/// Fetches cells from DHT.
@@ -167,22 +175,13 @@ impl Client {
 		&self,
 		block_number: u32,
 		positions: &[Position],
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
+	) -> (Vec<Cell>, Vec<Position>) {
 		let mut cells = Vec::<Option<Cell>>::with_capacity(positions.len());
 
 		for positions in positions.chunks(self.dht_parallelization_limit) {
 			let fetch = |position| self.fetch_cell_from_dht(block_number, position);
 			let results = join_all(positions.iter().map(fetch)).await;
-			cells.extend(results.into_iter().collect::<Result<Vec<_>, _>>()?);
-		}
-
-		for (cell, position) in cells.iter().zip(positions.iter()) {
-			let reference = position.reference(block_number);
-			if cell.is_some() {
-				debug!("Fetched cell {reference} from the DHT");
-			} else {
-				debug!("Cell {reference} not found in the DHT")
-			}
+			cells.extend(results.into_iter().collect::<Vec<_>>());
 		}
 
 		let unfetched = cells
@@ -194,7 +193,7 @@ impl Client {
 
 		let fetched = cells.into_iter().flatten().collect();
 
-		Ok((fetched, unfetched))
+		(fetched, unfetched)
 	}
 
 	/// Inserts cells into the DHT.

@@ -91,8 +91,7 @@ async fn fetch_verified(
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
 	let (mut fetched, mut unfetched) = network_client
 		.fetch_cells_from_dht(block_number, positions)
-		.await
-		.context("Failed to fetch cells from DHT")?;
+		.await;
 
 	let (verified, mut unverified) =
 		proof::verify(block_number, dimensions, &fetched, &commitments, pp)

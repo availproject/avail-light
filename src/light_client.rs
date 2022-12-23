@@ -146,8 +146,7 @@ pub async fn run(
 
 			let (cells_fetched, unfetched) = network_client
 				.fetch_cells_from_dht(block_number, &positions)
-				.await
-				.context("Failed to fetch cells from DHT")?;
+				.await;
 
 			info!(
 				block_number,
