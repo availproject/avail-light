@@ -52,7 +52,7 @@ pub fn max_kad_record_number() -> u64 {
 }
 
 pub fn max_kad_record_size() -> u64 {
-	100
+	8096
 }
 
 pub fn max_kad_provided_keys() -> u64 {

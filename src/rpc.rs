@@ -66,8 +66,8 @@ pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Po
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
 	while (indices.len() as u16) < count as u16 {
-		let row = rng.gen::<u32>() % dimensions.extended_rows();
-		let col = rng.gen::<u16>() % dimensions.cols();
+		let col = rng.gen_range(0..dimensions.cols());
+		let row = rng.gen_range(0..dimensions.extended_rows());
 		indices.insert(Position { row, col });
 	}
 
@@ -75,18 +75,18 @@ pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Po
 }
 
 #[instrument(skip_all, level = "trace")]
-pub async fn get_kate_app_data(
+pub async fn get_kate_rows(
 	client: &OnlineClient<AvailConfig>,
+	rows: Vec<u32>,
 	block_hash: H256,
-	app_id: u32,
 ) -> Result<Vec<Option<Vec<u8>>>> {
 	let mut params = RpcParams::new();
-	params.push(app_id)?;
+	params.push(rows)?;
 	params.push(block_hash)?;
 	let t = client.rpc().deref();
-	t.request("kate_queryAppData", params)
+	t.request("kate_queryRows", params)
 		.await
-		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
+		.map_err(|e| anyhow!("RPC failed: {e}"))
 }
 
 /// RPC to get proofs for given positions of block
@@ -96,7 +96,7 @@ pub async fn get_kate_proof(
 	positions: &[Position],
 ) -> Result<Vec<Cell>> {
 	let mut params = RpcParams::new();
-	params.push(positions.clone())?;
+	params.push(positions)?;
 	params.push(block_hash)?;
 	let t = client.rpc().deref();
 	let proofs: Vec<u8> = t

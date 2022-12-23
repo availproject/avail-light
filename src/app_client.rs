@@ -16,7 +16,7 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::AvailConfig;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
-	com::{columns_positions, decode_app_extrinsics, reconstruct_columns},
+	com::{app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns},
 	commitments,
 	config::{self, CHUNK_SIZE},
 	data::{Cell, DataCell},
@@ -24,7 +24,7 @@ use kate_recovery::{
 };
 use rocksdb::DB;
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	sync::{mpsc::Receiver, Arc},
 };
 use subxt::OnlineClient;
@@ -33,8 +33,7 @@ use tracing::{debug, error, info, instrument};
 use crate::{
 	data::store_encoded_data_in_db,
 	network::Client,
-	proof,
-	rpc::get_kate_app_data,
+	proof, rpc,
 	types::{AppClientConfig, ClientMsg},
 };
 
@@ -210,17 +209,42 @@ async fn process_block(
 	let dimensions = &block.dimensions;
 	let commitments = &block.commitments;
 
-	let mut rows = get_kate_app_data(rpc_client, block.header_hash, app_id).await?;
+	let app_rows = app_specific_rows(lookup, dimensions, app_id);
+
+	let dht_rows = network_client
+		.fetch_rows_from_dht(block_number, &app_rows)
+		.await;
+
+	let (dht_verified_rows, dht_missing_rows) =
+		commitments::verify_equality(&pp, commitments, &dht_rows, lookup, dimensions, app_id)?;
+
+	let rpc_rows = rpc::get_kate_rows(rpc_client, dht_missing_rows, block.header_hash).await?;
+
+	let (rpc_verified_rows, mut missing_rows) =
+		commitments::verify_equality(&pp, commitments, &rpc_rows, lookup, dimensions, app_id)?;
+
+	missing_rows.retain(|row| !dht_verified_rows.contains(row));
+
+	let verified_rows_iter = dht_verified_rows
+		.into_iter()
+		.chain(rpc_verified_rows.into_iter());
+	let verified_rows: HashSet<u32> = HashSet::from_iter(verified_rows_iter);
+
+	let mut rows = dht_rows
+		.into_iter()
+		.zip(rpc_rows.into_iter())
+		.zip(0..dimensions.extended_rows())
+		.map(|((dht_row, rpc_row), row_index)| {
+			let row = dht_row.or(rpc_row)?;
+			verified_rows.contains(&row_index).then_some(row)
+		})
+		.collect::<Vec<_>>();
 
 	let rows_count = rows.iter().filter(|row| row.is_some()).count();
 	info!(block_number, "Found {rows_count} rows for app {app_id}");
-
-	let (verified_rows, missing_rows) =
-		commitments::verify_equality(&pp, commitments, &rows, lookup, dimensions, app_id)?;
-
-	info!(block_number, "Verified rows: {verified_rows:?}");
-	debug!(block_number, "{} rows are verified", verified_rows.len());
-	debug!(block_number, "{} rows are missing", missing_rows.len());
+	debug!(block_number, "Verified rows: {verified_rows:?}");
+	info!(block_number, "{} rows are verified", verified_rows.len());
+	info!(block_number, "{} rows are missing", missing_rows.len());
 
 	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
 		return Err(anyhow::anyhow!("Too many cells are missing"));
@@ -236,8 +260,8 @@ async fn process_block(
 	)
 	.await?;
 
-	for (index, row) in dht_rows {
-		let i: usize = index.try_into()?;
+	for (row_index, row) in dht_rows {
+		let i: usize = row_index.try_into()?;
 		rows[i] = Some(row);
 	}
 

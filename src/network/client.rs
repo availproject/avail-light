@@ -160,12 +160,13 @@ impl Client {
 
 		match self.get_kad_record(record_key, Quorum::One).await {
 			Ok(peer_records) => {
-				debug!("Fetched cell {reference} from the DHT");
-
 				// For now, we take only the first record from the list
 				let Some(peer_record) = peer_records.into_iter().next() else {
+				    debug!("Cell {reference} not found in the DHT");
 				    return None;
 				};
+
+				debug!("Fetched cell {reference} from the DHT");
 
 				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
 					peer_record.record.value.try_into();
@@ -177,6 +178,33 @@ impl Client {
 
 				let position = position.clone();
 				Some(Cell { position, content })
+			},
+			Err(error) => {
+				debug!("Cell {reference} not found in the DHT: {error}");
+				None
+			},
+		}
+	}
+
+	async fn fetch_row_from_dht(&self, block_number: u32, row_index: u32) -> Option<Vec<u8>> {
+		let row_index = RowIndex(row_index);
+		let reference = row_index.reference(block_number);
+		let record_key = Key::from(reference.as_bytes().to_vec());
+
+		trace!("Getting DHT record for reference {}", reference);
+
+		match self.get_kad_record(record_key, Quorum::One).await {
+			Ok(peer_records) => {
+				// For now, we take only the first record from the list
+				let first = peer_records.into_iter().next();
+
+				if first.is_some() {
+					debug!("Fetched row {reference} from the DHT");
+				} else {
+					debug!("Row {reference} not found in the DHT")
+				}
+
+				first.map(|peer_record| peer_record.record.value)
 			},
 			Err(error) => {
 				debug!("Cell {reference} not found in the DHT: {error}");
@@ -215,6 +243,27 @@ impl Client {
 		let fetched = cells.into_iter().flatten().collect();
 
 		(fetched, unfetched)
+	}
+
+	/// Fetches rows from DHT.
+	/// Returns fetched rows and unfetched row indexes (so we can try RPC fetch).
+	///
+	/// # Arguments
+	///
+	/// * `block_number` - Block number
+	/// * `rows` - Row indexes to fetch
+	pub async fn fetch_rows_from_dht(
+		&self,
+		block_number: u32,
+		row_indexes: &[u32],
+	) -> Vec<Option<Vec<u8>>> {
+		let mut rows = Vec::<Option<Vec<u8>>>::with_capacity(row_indexes.len());
+		for row_indexes in row_indexes.chunks(self.dht_parallelization_limit) {
+			let fetch = |row| self.fetch_row_from_dht(block_number, row);
+			let fetched_rows = join_all(row_indexes.iter().cloned().map(fetch)).await;
+			rows.extend(fetched_rows);
+		}
+		rows
 	}
 
 	async fn insert_into_dht(&self, records: Vec<(String, Record)>) -> f32 {
