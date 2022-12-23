@@ -22,7 +22,7 @@ use libp2p::{
 	metrics::{Metrics, Recorder},
 	multiaddr::Protocol,
 	ping::{self, Behaviour as PingBehaviour, Config as PingConfig, Event as PingEvent},
-	swarm::{keep_alive::Behaviour as KeepAliveBehaviour, ConnectionError, SwarmEvent},
+	swarm::{ConnectionError, SwarmEvent},
 	NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm,
 };
 use tracing::{debug, info, trace};
@@ -41,7 +41,6 @@ pub struct NetworkBehaviour {
 	identify: IdentifyBehaviour,
 	mdns: TokioMdns,
 	ping: PingBehaviour,
-	keep_alive: KeepAliveBehaviour,
 	auto_nat: AutonatBehaviour,
 }
 
@@ -59,7 +58,6 @@ impl NetworkBehaviour {
 			identify: IdentifyBehaviour::new(identify_cfg),
 			mdns,
 			ping: PingBehaviour::new(PingConfig::new()),
-			keep_alive: KeepAliveBehaviour::default(),
 			auto_nat: AutonatBehaviour::new(local_peer_id, autonat_cfg),
 		})
 	}
@@ -161,11 +159,8 @@ impl EventLoop {
 			BehaviourEvent,
 			EitherError<
 				EitherError<
-					EitherError<
-						EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
-						ping::Failure,
-					>,
-					void::Void,
+					EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
+					ping::Failure,
 				>,
 				ConnectionHandlerUpgrErr<std::io::Error>,
 			>,
