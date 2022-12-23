@@ -298,7 +298,7 @@ pub struct RuntimeConfig {
 	/// (256x512) * 3 * 60
 	#[serde(default = "defaults::max_kad_record_number")]
 	pub max_kad_record_number: u64,
-	/// The maximum size of record values, in bytes. (default: 100).
+	/// The maximum size of record values, in bytes. (default: 8096).
 	#[serde(default = "defaults::max_kad_record_size")]
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
