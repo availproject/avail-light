@@ -390,8 +390,8 @@ dependencies = [
 
 [[package]]
 name = "avail-subxt"
-version = "0.1.0"
-source = "git+https://github.com/maticnetwork/avail.git?tag=v1.3.0#3613e1007cfe6c015b3e3690ea11fc777ad11529"
+version = "0.2.0"
+source = "git+https://github.com/maticnetwork/avail.git?branch=AV-157-update-avail-subxt-and-lc#5a368491906d6ba85daa4cdb4cba4805a7880810"
 dependencies = [
  "anyhow",
  "derive_more",
@@ -2428,10 +2428,9 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.7.0"
-source = "git+https://github.com/maticnetwork/avail-core.git?tag=v0.7.0#5782da6cd648da6bb3381713b8df12a8bd237e5c"
+version = "0.7.1"
+source = "git+https://github.com/maticnetwork/avail-core.git?tag=da-primitives/v0.4.2#d94ec5cb79aee3e6eb2c93235b44a08b7ce69450"
 dependencies = [
- "derive_more",
  "dusk-bytes",
  "dusk-plonk",
  "getrandom 0.2.8",
