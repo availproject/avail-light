@@ -391,7 +391,7 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.2.0"
-source = "git+https://github.com/maticnetwork/avail.git?branch=AV-157-update-avail-subxt-and-lc#5a368491906d6ba85daa4cdb4cba4805a7880810"
+source = "git+https://github.com/maticnetwork/avail.git?tag=v1.4.0-rc1#498815d80c058b2a8988ecb0173bffbac8a035ec"
 dependencies = [
  "anyhow",
  "derive_more",
