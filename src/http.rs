@@ -15,13 +15,14 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use avail_subxt::api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall};
 use avail_subxt::primitives::AppUncheckedExtrinsic;
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{debug, info};
 use warp::{http::StatusCode, Filter};
 
 use crate::{
@@ -166,10 +167,20 @@ fn appdata(
 		cfg.app_id.unwrap_or(0u32),
 		block_num,
 	)) {
-		Ok(Some(data)) => ClientResponse::Normal(ExtrinsicsDataResponse {
-			block: block_num,
-			extrinsics: data,
-		}),
+		Ok(Some(data)) => {
+			for (i, xt) in data.iter().enumerate() {
+				if let RuntimeCall::DataAvailability(Call::submit_data { data, .. }) = &xt.function
+				{
+					if let Ok(data) = std::str::from_utf8(data.0.as_slice()) {
+						debug!("Returning submitted extrinsic {i}: {data}");
+					}
+				}
+			}
+			ClientResponse::Normal(ExtrinsicsDataResponse {
+				block: block_num,
+				extrinsics: data,
+			})
+		},
 
 		Ok(None) => match counter {
 			lock if block_num == lock => ClientResponse::InProcess,

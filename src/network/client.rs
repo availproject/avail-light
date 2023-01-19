@@ -8,7 +8,7 @@ use futures::{future::join_all, stream};
 use kate_recovery::{
 	config,
 	data::Cell,
-	matrix::{Position, RowIndex},
+	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
@@ -186,7 +186,11 @@ impl Client {
 		}
 	}
 
-	async fn fetch_row_from_dht(&self, block_number: u32, row_index: u32) -> Option<Vec<u8>> {
+	async fn fetch_row_from_dht(
+		&self,
+		block_number: u32,
+		row_index: u32,
+	) -> Option<(u32, Vec<u8>)> {
 		let row_index = RowIndex(row_index);
 		let reference = row_index.reference(block_number);
 		let record_key = Key::from(reference.as_bytes().to_vec());
@@ -204,7 +208,7 @@ impl Client {
 					debug!("Row {reference} not found in the DHT")
 				}
 
-				first.map(|peer_record| peer_record.record.value)
+				first.map(|peer_record| (row_index.0, peer_record.record.value))
 			},
 			Err(error) => {
 				debug!("Cell {reference} not found in the DHT: {error}");
@@ -255,13 +259,18 @@ impl Client {
 	pub async fn fetch_rows_from_dht(
 		&self,
 		block_number: u32,
+		dimensions: &Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
-		let mut rows = Vec::<Option<Vec<u8>>>::with_capacity(row_indexes.len());
+		let mut rows = vec![None; dimensions.extended_rows() as usize];
 		for row_indexes in row_indexes.chunks(self.dht_parallelization_limit) {
 			let fetch = |row| self.fetch_row_from_dht(block_number, row);
 			let fetched_rows = join_all(row_indexes.iter().cloned().map(fetch)).await;
-			rows.extend(fetched_rows);
+			for row in fetched_rows {
+				if let Some((row_index, row)) = row {
+					rows[row_index as usize] = Some(row);
+				}
+			}
 		}
 		rows
 	}
