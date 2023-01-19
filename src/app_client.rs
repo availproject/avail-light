@@ -93,7 +93,7 @@ async fn fetch_verified(
 		.await;
 
 	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, &commitments, pp)
+		proof::verify(block_number, dimensions, &fetched, commitments, pp)
 			.context("Failed to verify fetched cells")?;
 
 	fetched.retain(|cell| verified.contains(&cell.position));
@@ -102,7 +102,7 @@ async fn fetch_verified(
 	Ok((fetched, unfetched))
 }
 
-async fn fetch_and_verify_rows(
+async fn reconstruct_rows_from_dht(
 	pp: PublicParameters,
 	network_client: Client,
 	block_number: u32,
@@ -116,12 +116,11 @@ async fn fetch_and_verify_rows(
 		return Ok(vec![]);
 	}
 
-	info!(
+	debug!(
 		block_number,
-		"Fetching missing {} rows cells from DHT...",
+		"Fetching {} missing row cells from DHT",
 		missing_cells.len()
 	);
-
 	let (fetched, unfetched) = fetch_verified(
 		&pp,
 		&network_client,
@@ -131,10 +130,10 @@ async fn fetch_and_verify_rows(
 		&missing_cells,
 	)
 	.await?;
-
-	info!(
+	debug!(
 		block_number,
-		"Failed to fetch or verify {} missing cells",
+		"Fetched {} row cells, {} row cells is missing",
+		fetched.len(),
 		unfetched.len()
 	);
 
@@ -154,8 +153,9 @@ async fn fetch_and_verify_rows(
 
 	debug!(
 		block_number,
-		"Reconstructed {} columns",
-		reconstructed.keys().len()
+		"Reconstructed {} columns: {:?}",
+		reconstructed.keys().len(),
+		reconstructed.keys()
 	);
 
 	let mut reconstructed_cells = unfetched
@@ -163,9 +163,9 @@ async fn fetch_and_verify_rows(
 		.map(|position| data_cell(position, &reconstructed))
 		.collect::<Result<Vec<_>>>()?;
 
-	info!(
+	debug!(
 		block_number,
-		"Reconstructed {} missing cells",
+		"Reconstructed {} missing row cells",
 		reconstructed_cells.len()
 	);
 
@@ -207,23 +207,54 @@ async fn process_block(
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = &block.dimensions;
+
 	let commitments = &block.commitments;
 
 	let app_rows = app_specific_rows(lookup, dimensions, app_id);
 
+	debug!(
+		block_number,
+		"Fetching {} app rows from DHT: {app_rows:?}",
+		app_rows.len()
+	);
+
 	let dht_rows = network_client
-		.fetch_rows_from_dht(block_number, &app_rows)
+		.fetch_rows_from_dht(block_number, dimensions, &app_rows)
 		.await;
+
+	let dht_rows_count = dht_rows.iter().flatten().count();
+	debug!(block_number, "Fetched {dht_rows_count} app rows from DHT");
 
 	let (dht_verified_rows, dht_missing_rows) =
 		commitments::verify_equality(&pp, commitments, &dht_rows, lookup, dimensions, app_id)?;
+	debug!(
+		block_number,
+		"Verified {} app rows from DHT, missing {}",
+		dht_verified_rows.len(),
+		dht_missing_rows.len()
+	);
 
-	let rpc_rows = rpc::get_kate_rows(rpc_client, dht_missing_rows, block.header_hash).await?;
+	let rpc_rows = if cfg.disable_rpc {
+		vec![None; dht_rows.len()]
+	} else {
+		debug!(
+			block_number,
+			"Fetching missing app rows from RPC: {dht_missing_rows:?}",
+		);
+		rpc::get_kate_rows(rpc_client, dht_missing_rows, block.header_hash).await?
+	};
 
 	let (rpc_verified_rows, mut missing_rows) =
 		commitments::verify_equality(&pp, commitments, &rpc_rows, lookup, dimensions, app_id)?;
-
+	// Since verify_equality returns all missing rows, exclude DHT rows that are already verified
 	missing_rows.retain(|row| !dht_verified_rows.contains(row));
+
+	debug!(
+		block_number,
+		"Verified {} app rows from RPC, missing {}",
+		rpc_verified_rows.len(),
+		missing_rows.len()
+	);
 
 	let verified_rows_iter = dht_verified_rows
 		.into_iter()
@@ -241,16 +272,23 @@ async fn process_block(
 		.collect::<Vec<_>>();
 
 	let rows_count = rows.iter().filter(|row| row.is_some()).count();
-	info!(block_number, "Found {rows_count} rows for app {app_id}");
-	debug!(block_number, "Verified rows: {verified_rows:?}");
-	info!(block_number, "{} rows are verified", verified_rows.len());
-	info!(block_number, "{} rows are missing", missing_rows.len());
+	debug!(
+		block_number,
+		"Found {rows_count} rows, verified {}, {} is missing",
+		verified_rows.len(),
+		missing_rows.len()
+	);
 
 	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
 		return Err(anyhow::anyhow!("Too many cells are missing"));
 	}
 
-	let dht_rows = fetch_and_verify_rows(
+	debug!(
+		block_number,
+		"Reconstructing {} missing app rows from DHT: {missing_rows:?}",
+		missing_rows.len()
+	);
+	let dht_rows = reconstruct_rows_from_dht(
 		pp,
 		network_client,
 		block_number,
@@ -259,6 +297,12 @@ async fn process_block(
 		&missing_rows,
 	)
 	.await?;
+
+	debug!(
+		block_number,
+		"Reconstructed {} app rows from DHT",
+		dht_rows.len()
+	);
 
 	for (row_index, row) in dht_rows {
 		let i: usize = row_index.try_into()?;
@@ -271,11 +315,12 @@ async fn process_block(
 	let data = decode_app_extrinsics(lookup, dimensions, data_cells, app_id)
 		.context("Failed to decode app extrinsics")?;
 
+	debug!(block_number, "Storing data into database");
 	store_encoded_data_in_db(db, app_id, block_number, &data)
 		.context("Failed to store data into database")?;
 
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
-	info!(block_number, "Stored {bytes_count} bytes into database");
+	debug!(block_number, "Stored {bytes_count} bytes into database");
 
 	Ok(())
 }
@@ -304,10 +349,12 @@ pub async fn run(
 
 	for block in block_receive {
 		let block_number = block.block_num;
+		let dimensions = &block.dimensions;
 
-		info!(block_number, "Block available");
+		info!(block_number, "Block available: {dimensions:?}");
 
 		if block.dimensions.cols() == 0 {
+			info!(block_number, "Skipping empty block");
 			continue;
 		}
 
@@ -318,7 +365,10 @@ pub async fn run(
 			.filter(|&(id, _)| id == &app_id)
 			.count() == 0
 		{
-			info!(block_number, "No cells for app {app_id}");
+			info!(
+				block_number,
+				"Skipping block with no cells for app {app_id}"
+			);
 			continue;
 		}
 
@@ -334,6 +384,8 @@ pub async fn run(
 		.await
 		{
 			error!(block_number, "Cannot process block: {error}");
+		} else {
+			debug!(block_number, "Block processed");
 		}
 	}
 }
