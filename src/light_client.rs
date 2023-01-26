@@ -111,7 +111,7 @@ pub async fn process_block(
 		"Number of cells fetched from DHT: {}",
 		cells_fetched.len()
 	);
-	metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as u64));
+	metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as i64));
 	metrics.record(MetricEvent::DHTFetchedPercentage(
 		cells_fetched.len() as f64 / positions.len() as f64,
 	));
@@ -130,7 +130,7 @@ pub async fn process_block(
 		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
-	metrics.record(MetricEvent::NodeRPCFetched(rpc_fetched.len() as u64));
+	metrics.record(MetricEvent::NodeRPCFetched(rpc_fetched.len() as i64));
 
 	let mut cells = vec![];
 	cells.extend(cells_fetched);

@@ -132,14 +132,10 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn get_kad_record(&self, key: Key, quorum: Quorum) -> Result<Vec<PeerRecord>> {
+	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
 		let (sender, receiver) = oneshot::channel();
 		self.sender
-			.send(Command::GetKadRecord {
-				key,
-				quorum,
-				sender,
-			})
+			.send(Command::GetKadRecord { key, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
@@ -181,14 +177,8 @@ impl Client {
 
 		trace!("Getting DHT record for reference {}", reference);
 
-		match self.get_kad_record(record_key, Quorum::One).await {
-			Ok(peer_records) => {
-				// For now, we take only the first record from the list
-				let Some(peer_record) = peer_records.into_iter().next() else {
-				    debug!("Cell {reference} not found in the DHT");
-				    return None;
-				};
-
+		match self.get_kad_record(record_key).await {
+			Ok(peer_record) => {
 				debug!("Fetched cell {reference} from the DHT");
 
 				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
@@ -220,21 +210,10 @@ impl Client {
 
 		trace!("Getting DHT record for reference {}", reference);
 
-		match self.get_kad_record(record_key, Quorum::One).await {
-			Ok(peer_records) => {
-				// For now, we take only the first record from the list
-				let first = peer_records.into_iter().next();
-
-				if first.is_some() {
-					debug!("Fetched row {reference} from the DHT");
-				} else {
-					debug!("Row {reference} not found in the DHT")
-				}
-
-				first.map(|peer_record| (row_index.0, peer_record.record.value))
-			},
+		match self.get_kad_record(record_key).await {
+			Ok(peer_record) => Some((row_index.0, peer_record.record.value)),
 			Err(error) => {
-				debug!("Cell {reference} not found in the DHT: {error}");
+				debug!("Row {reference} not found in the DHT: {error}");
 				None
 			},
 		}
@@ -371,8 +350,7 @@ pub enum Command {
 	},
 	GetKadRecord {
 		key: Key,
-		quorum: Quorum,
-		sender: oneshot::Sender<Result<Vec<PeerRecord>>>,
+		sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecord {
 		record: Record,

@@ -1,144 +1,93 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use futures::StreamExt;
-use libp2p::autonat::Config as AutoNatConfig;
-use libp2p::swarm::ConnectionHandlerUpgrErr;
+use async_std::stream::StreamExt;
+use rand::seq::SliceRandom;
 use tokio::sync::{mpsc, oneshot};
 
 use super::{
 	client::{Command, NumSuccPut},
-	Event,
+	Behaviour, BehaviourEvent, Event,
 };
 
 use libp2p::{
-	autonat::{Behaviour as AutonatBehaviour, Event as AutonatEvent},
-	core::either::EitherError,
-	identify::{
-		Behaviour as IdentifyBehaviour, Config as IdentifyConfig, Event as IdentifyEvent, Info,
+	autonat::{Event as AutonatEvent, NatStatus},
+	dcutr::{
+		inbound::UpgradeError as InboundUpgradeError,
+		outbound::UpgradeError as OutboundUpgradeError, Event as DcutrEvent,
 	},
+	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		protocol, store::MemoryStore, BootstrapOk, GetRecordOk, InboundRequest, Kademlia,
-		KademliaConfig, KademliaEvent, PeerRecord, QueryId, QueryResult,
+		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, PutRecordOk, QueryId,
+		QueryResult,
 	},
-	mdns::{MdnsConfig, MdnsEvent, TokioMdns},
+	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
 	multiaddr::Protocol,
-	ping::{self, Behaviour as PingBehaviour, Config as PingConfig, Event as PingEvent},
-	swarm::{ConnectionError, SwarmEvent},
-	NetworkBehaviour as LibP2PBehaviour, PeerId, Swarm,
+	ping,
+	relay::{
+		inbound::hop::FatalUpgradeError as InboundHopFatalUpgradeError,
+		inbound::stop::FatalUpgradeError as InboundStopFatalUpgradeError,
+		outbound::hop::FatalUpgradeError as OutboundHopFatalUpgradeError,
+		outbound::stop::FatalUpgradeError as OutboundStopFatalUpgradeError, Event as RelayEvent,
+	},
+	swarm::{
+		dial_opts::{DialOpts, PeerCondition},
+		ConnectionError, ConnectionHandlerUpgrErr, SwarmEvent,
+	},
+	Multiaddr, PeerId, Swarm,
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
 enum QueryChannel {
-	GetRecord(oneshot::Sender<Result<Vec<PeerRecord>>>),
+	GetRecord(oneshot::Sender<Result<PeerRecord>>),
 	PutRecord(oneshot::Sender<Result<()>>),
 	PutRecordBatch(oneshot::Sender<NumSuccPut>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
-#[derive(LibP2PBehaviour)]
-#[behaviour(out_event = "BehaviourEvent")]
-pub struct NetworkBehaviour {
-	kademlia: Kademlia<MemoryStore>,
-	identify: IdentifyBehaviour,
-	mdns: TokioMdns,
-	ping: PingBehaviour,
-	auto_nat: AutonatBehaviour,
-}
-
-impl NetworkBehaviour {
-	pub fn new(
-		local_peer_id: PeerId,
-		kad_store: MemoryStore,
-		kad_cfg: KademliaConfig,
-		identify_cfg: IdentifyConfig,
-		autonat_cfg: AutoNatConfig,
-	) -> Result<Self> {
-		let mdns = TokioMdns::new(MdnsConfig::default())?;
-		Ok(Self {
-			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
-			identify: IdentifyBehaviour::new(identify_cfg),
-			mdns,
-			ping: PingBehaviour::new(PingConfig::new()),
-			auto_nat: AutonatBehaviour::new(local_peer_id, autonat_cfg),
-		})
-	}
-}
-
-#[derive(Debug)]
-pub enum BehaviourEvent {
-	Kademlia(KademliaEvent),
-	Identify(IdentifyEvent),
-	Mdns(MdnsEvent),
-	Ping(PingEvent),
-	Autonat(AutonatEvent),
-	Void,
-}
-
-impl From<KademliaEvent> for BehaviourEvent {
-	fn from(event: KademliaEvent) -> Self {
-		BehaviourEvent::Kademlia(event)
-	}
-}
-
-impl From<IdentifyEvent> for BehaviourEvent {
-	fn from(event: IdentifyEvent) -> Self {
-		BehaviourEvent::Identify(event)
-	}
-}
-
-impl From<MdnsEvent> for BehaviourEvent {
-	fn from(event: MdnsEvent) -> Self {
-		BehaviourEvent::Mdns(event)
-	}
-}
-
-impl From<PingEvent> for BehaviourEvent {
-	fn from(event: PingEvent) -> Self {
-		BehaviourEvent::Ping(event)
-	}
-}
-
-impl From<void::Void> for BehaviourEvent {
-	fn from(_: void::Void) -> Self {
-		BehaviourEvent::Void
-	}
-}
-
-impl From<AutonatEvent> for BehaviourEvent {
-	fn from(event: AutonatEvent) -> Self {
-		BehaviourEvent::Autonat(event)
-	}
+struct RelayReservation {
+	id: PeerId,
+	address: Multiaddr,
+	is_reserved: bool,
 }
 
 pub struct EventLoop {
-	swarm: Swarm<NetworkBehaviour>,
+	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, Option<Result<()>>>,
 	pending_batch_complete: Option<QueryChannel>,
-	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	metrics: Metrics,
+	relay_nodes: Vec<(PeerId, Multiaddr)>,
+	relay_reservation: RelayReservation,
 }
 
 impl EventLoop {
 	pub fn new(
-		swarm: Swarm<NetworkBehaviour>,
+		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
+		relay_nodes: Vec<(PeerId, Multiaddr)>,
 	) -> Self {
 		Self {
 			swarm,
 			command_receiver,
 			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
+			pending_kad_routing: Default::default(),
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
-			pending_kad_routing: Default::default(),
 			metrics,
+			relay_nodes,
+			relay_reservation: RelayReservation {
+				id: PeerId::random(),
+				address: Multiaddr::empty(),
+				is_reserved: Default::default(),
+			},
 		}
 	}
 
@@ -165,12 +114,54 @@ impl EventLoop {
 		&mut self,
 		event: SwarmEvent<
 			BehaviourEvent,
-			EitherError<
-				EitherError<
-					EitherError<EitherError<std::io::Error, std::io::Error>, void::Void>,
-					ping::Failure,
+			itertools::Either<
+				itertools::Either<
+					itertools::Either<
+						itertools::Either<
+							itertools::Either<
+								itertools::Either<
+									itertools::Either<
+										itertools::Either<
+											ConnectionHandlerUpgrErr<
+												itertools::Either<
+													InboundHopFatalUpgradeError,
+													OutboundStopFatalUpgradeError,
+												>,
+											>,
+											void::Void,
+										>,
+										std::io::Error,
+									>,
+									itertools::Either<
+										ConnectionHandlerUpgrErr<
+											itertools::Either<
+												InboundStopFatalUpgradeError,
+												OutboundHopFatalUpgradeError,
+											>,
+										>,
+										void::Void,
+									>,
+								>,
+								itertools::Either<
+									ConnectionHandlerUpgrErr<
+										itertools::Either<
+											InboundUpgradeError,
+											OutboundUpgradeError,
+										>,
+									>,
+									itertools::Either<
+										ConnectionHandlerUpgrErr<std::io::Error>,
+										void::Void,
+									>,
+								>,
+							>,
+							std::io::Error,
+						>,
+						ConnectionHandlerUpgrErr<std::io::Error>,
+					>,
+					void::Void,
 				>,
-				ConnectionHandlerUpgrErr<std::io::Error>,
+				ping::Failure,
 			>,
 		>,
 	) {
@@ -212,13 +203,13 @@ impl EventLoop {
 							}
 						}
 					},
-					KademliaEvent::OutboundQueryCompleted { id, result, .. } => match result {
+					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
 						QueryResult::GetRecord(result) => match result {
-							Ok(GetRecordOk { records, .. }) => {
+							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
 									self.pending_kad_queries.remove(&id.into())
 								{
-									_ = ch.send(Ok(records));
+									_ = ch.send(Ok(record));
 								}
 							},
 							Err(err) => {
@@ -228,42 +219,23 @@ impl EventLoop {
 									_ = ch.send(Err(err.into()));
 								}
 							},
+							_ => (),
 						},
-						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								let _ = match result {
-									Ok(_) => ch.send(Ok(())),
-									Err(err) => ch.send(Err(err.into())),
-								};
-							} else if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								match result {
-									Ok(_) => *v = Some(Ok(())),
-									Err(err) => *v = Some(Err(err.into())),
-								};
-
-								let cnt = self
-									.pending_kad_query_batch
-									.iter()
-									.filter(|(_, elem)| elem.is_none())
-									.count();
-
-								if cnt == 0 {
-									if let Some(QueryChannel::PutRecordBatch(ch)) =
-										self.pending_batch_complete.take()
-									{
-										let count_success = self
-											.pending_kad_query_batch
-											.iter()
-											.filter(|(_, elem)| {
-												elem.is_some() && elem.as_ref().unwrap().is_ok()
-											})
-											.count();
-										_ = ch.send(NumSuccPut(count_success));
-									}
+						QueryResult::PutRecord(result) => match result {
+							Ok(PutRecordOk { .. }) => {
+								if let Some(QueryChannel::PutRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Ok(()));
 								}
-							}
+							},
+							Err(err) => {
+								if let Some(QueryChannel::PutRecord(ch)) =
+									self.pending_kad_queries.remove(&id.into())
+								{
+									_ = ch.send(Err(err.into()));
+								}
+							},
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -299,28 +271,60 @@ impl EventLoop {
 				match event {
 					IdentifyEvent::Received {
 						peer_id,
-						info: Info {
-							listen_addrs,
-							protocols,
-							..
-						},
+						info: Info { listen_addrs, .. },
 					} => {
-						debug!("Identify Received event. PeerId: {peer_id:?}. Listen address: {listen_addrs:?}");
-
-						if protocols
-							.iter()
-							.any(|p| p.as_bytes() == protocol::DEFAULT_PROTO_NAME)
+						info!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						// before we try and do a reservation with the relay
+						// we have to exchange observed addresses
+						// in this case relay needs to tell us our own
+						if peer_id == self.relay_reservation.id
+							&& self.relay_reservation.is_reserved == false
 						{
-							for addr in listen_addrs {
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.add_address(&peer_id, addr);
+							match self.swarm.listen_on(
+								self.relay_reservation
+									.address
+									.clone()
+									.with(Protocol::P2p(peer_id.into()))
+									.with(Protocol::P2pCircuit),
+							) {
+								Ok(_) => {
+									self.relay_reservation.is_reserved = true;
+								},
+								Err(e) => {
+									error!("Local node failed to listen on relay address. Error: {e:#?}");
+								},
+							}
+						}
+
+						// only interested in addresses with actual Multiaddresses
+						// ones that contains the 'p2p' tag
+						let addrs = listen_addrs
+							.into_iter()
+							.filter(|a| a.to_string().contains(Protocol::P2p(peer_id.into()).tag()))
+							.collect::<Vec<Multiaddr>>();
+
+						for addr in addrs {
+							self.swarm
+								.behaviour_mut()
+								.kademlia
+								.add_address(&peer_id, addr.clone());
+
+							// if address contains relay circuit tag,
+							// dial that address for immediate Direct Connection Upgrade
+							if *self.swarm.local_peer_id() != peer_id
+								&& addr.to_string().contains(Protocol::P2pCircuit.tag())
+							{
+								_ = self.swarm.dial(
+									DialOpts::peer_id(peer_id)
+										.condition(PeerCondition::Disconnected)
+										.addresses(vec![addr.with(Protocol::P2pCircuit)])
+										.build(),
+								);
 							}
 						}
 					},
 					IdentifyEvent::Sent { peer_id } => {
-						debug!("Identify Sent event. PeerId: {peer_id:?}");
+						info!("Identity Sent event to: {peer_id:?}");
 					},
 					IdentifyEvent::Pushed { peer_id } => {
 						debug!("Identify Pushed event. PeerId: {peer_id:?}");
@@ -343,17 +347,18 @@ impl EventLoop {
 				MdnsEvent::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
 						debug!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-
-						if !self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
-							self.swarm
-								.behaviour_mut()
-								.kademlia
-								.remove_address(&peer_id, &multiaddr);
+						if let Some(mdns) = self.swarm.behaviour_mut().mdns.as_ref() {
+							if mdns.has_node(&peer_id) {
+								self.swarm
+									.behaviour_mut()
+									.kademlia
+									.remove_address(&peer_id, &multiaddr);
+							}
 						}
 					}
 				},
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Autonat(event)) => match event {
+			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				AutonatEvent::InboundProbe(e) => {
 					debug!("AutoNat Inbound Probe: {:#?}", e);
 				},
@@ -365,6 +370,55 @@ impl EventLoop {
 						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
 						old, new
 					);
+					// check if went private or are private
+					// if so, create reservation request with relay
+					if new == NatStatus::Private {
+						info!("Autonat says we're still private.");
+						// choose relay by random
+						if let Some(relay) = self.relay_nodes.choose(&mut rand::thread_rng()) {
+							let (relay_id, relay_addr) = relay.clone();
+							// appoint this relay as our chosen one
+							self.relay_reservation(relay_id, relay_addr);
+						}
+					};
+				},
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Relay(event)) => match event {
+				RelayEvent::ReservationReqAccepted { src_peer_id, .. } => {
+					info!("Relay accepted reservation request from: {src_peer_id:#?}");
+				},
+				RelayEvent::ReservationReqDenied { src_peer_id } => {
+					debug!("Reservation request was denied for: {src_peer_id:#?}");
+				},
+				RelayEvent::ReservationTimedOut { src_peer_id } => {
+					debug!("Reservation timed out for: {src_peer_id:#?}");
+				},
+				_ => {},
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
+				info! {"Relay Client Event: {event:#?}"};
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => match event {
+				DcutrEvent::RemoteInitiatedDirectConnectionUpgrade {
+					remote_peer_id,
+					remote_relayed_addr,
+				} => {
+					info!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
+				},
+				DcutrEvent::InitiatedDirectConnectionUpgrade {
+					remote_peer_id,
+					local_relayed_addr,
+				} => {
+					info!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
+				},
+				DcutrEvent::DirectConnectionUpgradeSucceeded { remote_peer_id } => {
+					info!("Hole punching succeeded with: {remote_peer_id:#?}")
+				},
+				DcutrEvent::DirectConnectionUpgradeFailed {
+					remote_peer_id,
+					error,
+				} => {
+					info!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
 				},
 			},
 			swarm_event => {
@@ -373,11 +427,7 @@ impl EventLoop {
 
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
-						let local_peer_id = *self.swarm.local_peer_id();
-						info!(
-							"Local node is listening on {:?}",
-							address.with(Protocol::P2p(local_peer_id.into()))
-						);
+						info!("Local node is listening on {:?}", address);
 					},
 					SwarmEvent::ConnectionClosed {
 						peer_id,
@@ -415,15 +465,22 @@ impl EventLoop {
 					SwarmEvent::ConnectionEstablished {
 						peer_id, endpoint, ..
 					} => {
-						trace!(
-							"Connection established. PeerID: {peer_id:?}. Endpoint: {endpoint:?}."
-						);
+						trace!("Connection established to: {peer_id:?} via: {endpoint:?}.");
 
 						// this event is of a particular interest for our first node in the network
 						self.notify(Event::ConnectionEstablished { peer_id, endpoint });
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-						trace!("Outgoing connection error: {error:?}. PeerId: {peer_id:?}");
+						// remove error producing relay from pending dials
+						trace!("Outgoing connection error: {error:?}");
+						if let Some(peer_id) = peer_id {
+							trace!("Error produced by peer with PeerId: {peer_id:?}");
+							// if the peer giving us problems is the chosen relay
+							// just remove it by reseting the reservatin state slot
+							if self.relay_reservation.id == peer_id {
+								self.reset_relay_reservation();
+							}
+						}
 					},
 					SwarmEvent::Dialing(peer_id) => debug!("Dialing {}", peer_id),
 					_ => {},
@@ -448,7 +505,8 @@ impl EventLoop {
 				self.swarm
 					.behaviour_mut()
 					.kademlia
-					.add_address(&peer_id, peer_addr.clone());
+					.add_address(&peer_id, peer_addr);
+
 				self.pending_kad_routing.insert(peer_id, sender);
 			},
 			Command::Stream { sender } => {
@@ -465,12 +523,9 @@ impl EventLoop {
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::Bootstrap(sender));
 			},
-			Command::GetKadRecord {
-				key,
-				quorum,
-				sender,
-			} => {
-				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key, quorum);
+			Command::GetKadRecord { key, sender } => {
+				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key);
+
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::GetRecord(sender));
 			},
@@ -509,5 +564,21 @@ impl EventLoop {
 				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
 			},
 		}
+	}
+
+	fn reset_relay_reservation(&mut self) {
+		self.relay_reservation = RelayReservation {
+			id: PeerId::random(),
+			address: Multiaddr::empty(),
+			is_reserved: false,
+		};
+	}
+
+	fn relay_reservation(&mut self, id: PeerId, address: Multiaddr) {
+		self.relay_reservation = RelayReservation {
+			id,
+			address,
+			is_reserved: false,
+		};
 	}
 }

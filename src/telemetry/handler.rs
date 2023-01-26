@@ -16,7 +16,7 @@ pub async fn new(ctx: SharedRegistry, req: Request<Body>) -> Result<Response<Bod
 }
 
 async fn respond_with_metrics(reg: SharedRegistry) -> Result<Response<Body>> {
-	let mut encoded: Vec<u8> = Vec::new();
+	let mut encoded = String::new();
 	let reg = reg.lock().await;
 	encode(&mut encoded, &reg)?;
 

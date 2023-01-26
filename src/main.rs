@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
 use consts::STATE_CF;
-use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
+use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -174,7 +174,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		cfg.libp2p_port.0
 	};
 	network_client
-		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
+		.start_listening(
+			Multiaddr::empty()
+				.with("0.0.0.0".parse::<Ipv4Addr>().unwrap().into())
+				.with(Protocol::Tcp(port)),
+		)
 		.await
 		.context("Listening not to fail.")?;
 
