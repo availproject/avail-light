@@ -48,6 +48,7 @@ prometheus-client = "0.18.1"
 openssl = { version = "0.10", features = ["vendored"] }
 void = "1.0.2"
 itertools = "0.10.5"
+base64 = "0.21.0"
 
 [dev-dependencies]
 proptest = "1.0.0"
