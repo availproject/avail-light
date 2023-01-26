@@ -17,6 +17,7 @@ use std::{
 use anyhow::{Context, Result};
 use avail_subxt::api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall};
 use avail_subxt::primitives::AppUncheckedExtrinsic;
+use base64::{engine::general_purpose, Engine as _};
 use codec::Decode;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
@@ -38,9 +39,16 @@ struct ConfidenceResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum Extrinsics {
+	Encoded(Vec<AppUncheckedExtrinsic>),
+	Decoded(Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct ExtrinsicsDataResponse {
-	pub block: u32,
-	pub extrinsics: Vec<AppUncheckedExtrinsic>,
+	block: u32,
+	extrinsics: Extrinsics,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -139,6 +147,7 @@ fn appdata(
 	db: Arc<DB>,
 	cfg: RuntimeConfig,
 	counter: u32,
+	decode: bool,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
@@ -148,7 +157,7 @@ fn appdata(
 				e.iter()
 					.enumerate()
 					.map(|(i, raw)| {
-						<_>::decode(&mut &raw[..])
+						<_ as Decode>::decode(&mut &raw[..])
 							.context(format!("Couldn't decode AvailExtrinsic num {i}"))
 					})
 					.collect::<Result<Vec<_>>>()
@@ -168,18 +177,25 @@ fn appdata(
 		block_num,
 	)) {
 		Ok(Some(data)) => {
-			for (i, xt) in data.iter().enumerate() {
-				if let RuntimeCall::DataAvailability(Call::submit_data { data, .. }) = &xt.function
-				{
-					if let Ok(data) = std::str::from_utf8(data.0.as_slice()) {
-						debug!("Returning submitted extrinsic {i}: {data}");
-					}
-				}
+			if !decode {
+				ClientResponse::Normal(ExtrinsicsDataResponse {
+					block: block_num,
+					extrinsics: Extrinsics::Encoded(data),
+				})
+			} else {
+				let xts = data
+					.iter()
+					.flat_map(|xt| match &xt.function {
+						RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Some(data),
+						_ => None,
+					})
+					.map(|data| general_purpose::STANDARD.encode(data.0.as_slice()))
+					.collect::<Vec<_>>();
+				ClientResponse::Normal(ExtrinsicsDataResponse {
+					block: block_num,
+					extrinsics: Extrinsics::Decoded(xts),
+				})
 			}
-			ClientResponse::Normal(ExtrinsicsDataResponse {
-				block: block_num,
-				extrinsics: data,
-			})
 		},
 
 		Ok(None) => match counter {
@@ -188,7 +204,7 @@ fn appdata(
 		},
 		Err(e) => ClientResponse::Error(e),
 	};
-	info!("Returning AppData: {res:?}");
+	debug!("Returning AppData: {res:?}");
 	res
 }
 
@@ -220,6 +236,11 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 			.into_response(),
 		}
 	}
+}
+
+#[derive(Deserialize, Serialize)]
+struct AppDataQuery {
+	decode: Option<bool>,
 }
 
 /// Runs HTTP server
@@ -255,10 +276,18 @@ pub async fn run_server(
 	let db = store.clone();
 	let cfg1 = cfg.clone();
 	let counter_appdata = counter.clone();
-	let get_appdata = warp::path!("v1" / "appdata" / u32).map(move |block_num| {
-		let counter_lock = counter_appdata.lock().unwrap();
-		appdata(block_num, db.clone(), cfg1.clone(), *counter_lock)
-	});
+	let get_appdata = (warp::path!("v1" / "appdata" / u32))
+		.and(warp::query::<AppDataQuery>())
+		.map(move |block_num, query: AppDataQuery| {
+			let counter_lock = counter_appdata.lock().unwrap();
+			appdata(
+				block_num,
+				db.clone(),
+				cfg1.clone(),
+				*counter_lock,
+				query.decode.unwrap_or(false),
+			)
+		});
 
 	let cfg = cfg.clone();
 	let db = store.clone();
