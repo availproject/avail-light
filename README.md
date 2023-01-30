@@ -94,13 +94,13 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 # Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
 confidence = 92.0
-# File system path where RocksDB used by light client, stores its data.
+# File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
 # Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
 prometheus_port = 9520
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
-log_format_json = false
-# Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client
+log_format_json = true
+# Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client (default: None)
 block_matrix_partition = "1/20"
 # Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 disable_proof_verification = false

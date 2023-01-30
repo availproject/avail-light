@@ -27,7 +27,6 @@ use crate::{
 mod app_client;
 mod consts;
 mod data;
-mod defaults;
 mod http;
 mod light_client;
 mod network;
