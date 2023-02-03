@@ -126,6 +126,7 @@ pub async fn run(
 
 			if dimensions.cols() <= 2 {
 				error!(block_number, "more than 2 columns is required");
+				continue;
 			}
 
 			let commitments = commitments::from_slice(&xt.commitment.commitment)?;
