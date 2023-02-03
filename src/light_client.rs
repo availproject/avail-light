@@ -23,7 +23,7 @@ use std::{
 		mpsc::{sync_channel, SyncSender},
 		Arc, Mutex,
 	},
-	time::{Duration, Instant, SystemTime},
+	time::{Instant, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -96,12 +96,8 @@ pub async fn run(
 		});
 
 		for (header, received_at) in message_rx {
-			if let Some(seconds) = cfg.block_processing_delay {
-				let sleep_time = Duration::from_secs(seconds.into());
-				let elapsed = received_at.elapsed();
-				if sleep_time > elapsed {
-					tokio::time::sleep(sleep_time - elapsed).await;
-				};
+			if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+				tokio::time::sleep(seconds).await;
 			}
 
 			metrics.record(MetricEvent::SessionBlockCounter);
@@ -109,11 +105,10 @@ pub async fn run(
 
 			let header_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 			let block_number = header.number;
+
 			info!(
-				block_number,
-				"block_delay" = received_at.elapsed().as_secs(),
-				"Processing finalized block (delayed for {} seconds)",
-				received_at.elapsed().as_secs(),
+				{ block_number, block_delay = received_at.elapsed().as_secs()},
+				"Processing finalized block",
 			);
 
 			let begin = SystemTime::now();
