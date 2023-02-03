@@ -1,7 +1,7 @@
 //! Shared light client structs and enums.
 
 use std::num::NonZeroUsize;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
@@ -282,6 +282,8 @@ pub struct RuntimeConfig {
 	pub max_kad_provided_keys: u64,
 }
 
+pub struct Delay(Option<Duration>);
+
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
 	pub full_node_ws: Vec<String>,
@@ -289,22 +291,36 @@ pub struct LightClientConfig {
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
 	pub query_proof_rpc_parallel_tasks: usize,
-	pub block_processing_delay: Option<u32>,
+	pub block_processing_delay: Delay,
 	pub block_matrix_partition: Option<Partition>,
 	pub disable_proof_verification: bool,
 	pub max_cells_per_rpc: usize,
 	pub ttl: u64,
 }
 
+fn delay_for(target: Duration, elapsed: Duration) -> Option<Duration> {
+	(target > elapsed).then(|| target - elapsed)
+}
+
+impl Delay {
+	pub fn sleep_duration(&self, from: Instant) -> Option<Duration> {
+		delay_for(self.0?, from.elapsed())
+	}
+}
+
 impl From<&RuntimeConfig> for LightClientConfig {
 	fn from(val: &RuntimeConfig) -> Self {
+		let block_processing_delay = val
+			.block_processing_delay
+			.map(|v| Duration::from_secs(v.into()));
+
 		LightClientConfig {
 			full_node_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
-			block_processing_delay: val.block_processing_delay,
+			block_processing_delay: Delay(block_processing_delay),
 			block_matrix_partition: val.block_matrix_partition.clone(),
 			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
@@ -462,4 +478,22 @@ pub struct CellContentQueryPayload {
 	pub row: u16,
 	pub col: u16,
 	pub res_chan: std::sync::mpsc::SyncSender<Option<Vec<u8>>>,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::delay_for;
+	use std::time::Duration;
+	use test_case::test_case;
+
+	#[test_case(0 , 0 , None ; "No delay expected")]
+	#[test_case(1 , 0 , Some(1) ; "One second delay expected")]
+	#[test_case(5 , 1 , Some(4) ; "Four seconds delay expected")]
+	#[test_case(1 , 5 , None ; "Delay time is elapsed, no delay expected")]
+	fn test_delay_for(target: u64, elapsed: u64, expected: Option<u64>) {
+		let target = Duration::from_secs(target);
+		let elapsed = Duration::from_secs(elapsed);
+		let expected = expected.map(Duration::from_secs);
+		assert_eq!(delay_for(target, elapsed), expected);
+	}
 }
