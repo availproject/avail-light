@@ -20,7 +20,7 @@
 
 use std::{
 	sync::{
-		mpsc::{sync_channel, SyncSender},
+		mpsc::{Receiver, SyncSender},
 		Arc, Mutex,
 	},
 	time::{Instant, SystemTime},
@@ -321,58 +321,48 @@ pub async fn run(
 	pp: PublicParameters,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
-) -> Result<()> {
+	message_rx: Receiver<(Header, Instant)>,
+	error_sender: SyncSender<anyhow::Error>,
+) {
 	info!("Starting light client...");
-	loop {
-		let mut new_heads_sub = rpc_client.rpc().subscribe_finalized_blocks().await?;
 
-		let (message_tx, message_rx) = sync_channel::<(Header, Instant)>(1 << 7);
+	for (header, received_at) in message_rx {
+		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+			info!("Sleeping for {seconds:?} seconds");
+			tokio::time::sleep(seconds).await;
+		}
 
-		tokio::spawn(async move {
-			while let Some(message) = new_heads_sub.next().await {
-				let received_at = Instant::now();
-				if let Err(error) = message
-					.context("Failed to read web socket message")
-					.and_then(|header| {
-						info!(header.number, "Received finalized block header");
-						let message = (header, received_at);
-						message_tx.send(message).context("Send failed")
-					}) {
-					error!("Fail to process finalized block header: {error}");
-				}
+		if let Err(error) = process_block(
+			&cfg,
+			db.clone(),
+			&network_client,
+			&rpc_client,
+			&pp,
+			&header,
+			received_at,
+			&metrics,
+			counter.clone(),
+		)
+		.await
+		{
+			error!("Cannot process block: {error}");
+			if let Err(error) = error_sender.send(error) {
+				error!("Cannot send error message: {error}");
 			}
-		});
+			return;
+		}
 
-		for (header, received_at) in message_rx {
-			if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
-				tokio::time::sleep(seconds).await;
-			}
+		let Ok(client_msg) = types::ClientMsg::try_from(header) else {
+		    error!("Cannot create message from header");
+		    continue;
+		};
 
-			if let Err(error) = process_block(
-				&cfg,
-				db.clone(),
-				&network_client,
-				&rpc_client,
-				&pp,
-				&header,
-				received_at,
-				&metrics,
-				counter.clone(),
-			)
-			.await
-			{
-				error!(
-					{ block_number = header.number },
-					"Block processing error: {}", error
-				);
-			} else {
-				// notify dht-based application client
-				// that newly mined block has been received
-				if let Some(ref channel) = block_tx {
-					channel
-						.send(types::ClientMsg::try_from(header)?)
-						.context("Failed to send block message")?;
-				}
+		// notify dht-based application client
+		// that newly mined block has been received
+		if let Some(ref channel) = block_tx {
+			if let Err(error) = channel.send(client_msg) {
+				error!("Cannot send block verified message: {error}");
+				continue;
 			}
 		}
 	}

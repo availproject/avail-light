@@ -1,13 +1,16 @@
 #![doc = include_str!("../README.md")]
 
 use std::{
+	fmt::Display,
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
 	sync::{mpsc::sync_channel, Arc, Mutex},
+	time::Instant,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
+use avail_subxt::primitives::Header;
 use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
@@ -32,6 +35,7 @@ mod light_client;
 mod network;
 mod proof;
 mod rpc;
+mod subscriptions;
 mod sync_client;
 mod telemetry;
 mod types;
@@ -74,7 +78,7 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	db_opts.create_if_missing(true);
 	db_opts.create_missing_column_families(true);
 
-	let db = DB::open_cf_descriptors(&db_opts, &path, cf_opts)?;
+	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
 	Ok(Arc::new(db))
 }
 
@@ -100,11 +104,21 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn do_main() -> Result<()> {
+fn log_error<E: Display>(error: E) -> E {
+	error!("{error}");
+	error
+}
+
+#[tokio::main]
+pub async fn main() -> Result<()> {
 	let opts = CliOpts::from_args();
+
 	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
-		.context(format!("Failed to load configuration from {config_path}"))?;
+		.context(format!("Failed to load configuration from {config_path}"))
+		.map_err(log_error)?;
+
+	info!("Using config: {cfg:?}");
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
@@ -120,8 +134,6 @@ async fn do_main() -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	info!("Using config: {:?}", cfg);
-
 	// Spawn Prometheus server
 	let mut metric_registry = Registry::default();
 	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
@@ -133,9 +145,11 @@ async fn do_main() -> Result<()> {
 		metric_registry,
 	));
 
-	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
+	let db = init_db(&cfg.avail_path)
+		.context("Cannot initialize database")
+		.map_err(log_error)?;
 
-	// this spawns tokio task which runs one http server for handling RPC
+	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
 	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
 
@@ -145,7 +159,8 @@ async fn do_main() -> Result<()> {
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 	)
-	.context("Failed to init Network Service")?;
+	.context("Failed to init Network Service")
+	.map_err(log_error)?;
 
 	// Spawn the network task for it to run in the background
 	tokio::spawn(network_event_loop.run());
@@ -167,7 +182,7 @@ async fn do_main() -> Result<()> {
 	let bootstrap_nodes = cfg
 		.bootstraps
 		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
@@ -261,25 +276,35 @@ async fn do_main() -> Result<()> {
 		));
 	}
 
-	// Note: if light client fails to run, process exits
-	light_client::run(
+	let (error_sender, error_receiver) = sync_channel::<anyhow::Error>(1);
+
+	let (message_tx, message_rx) = sync_channel::<(Header, Instant)>(128);
+
+	tokio::task::spawn(subscriptions::finalized_headers(
+		rpc_client.clone(),
+		message_tx,
+		error_sender.clone(),
+	));
+
+	tokio::task::spawn(light_client::run(
 		(&cfg).into(),
 		db,
 		network_client,
-		rpc_client.clone(),
+		rpc_client,
 		block_tx,
 		pp,
 		lc_metrics,
 		counter.clone(),
-	)
-	.await
-	.context("Failed to run light client")
-}
+		message_rx,
+		error_sender,
+	));
 
-#[tokio::main]
-pub async fn main() -> Result<()> {
-	do_main().await.map_err(|error| {
-		error!("{error:?}");
-		error
-	})
+	let error = match error_receiver.recv() {
+		Ok(error) => error,
+		Err(error) => anyhow!("Failed to receive error message: {error}"),
+	};
+
+	// We are not logging error here since expectation is
+	// to log terminating condition before sending message to this channel
+	Err(error)
 }
