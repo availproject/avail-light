@@ -135,22 +135,9 @@ async fn do_main() -> Result<()> {
 
 	let db = init_db(&cfg.avail_path).context("Failed to init DB")?;
 
-	// Have access to key value data store, now this can be safely used
-	// from multiple threads of execution
-
-	// This channel will be used for message based communication between
-	// two tasks
-	// task_0: HTTP request handler ( query sender )
-	// task_1: DHT client ( query receiver & hopefully successfully resolver )
-	let (cell_query_tx, _) = sync_channel::<crate::types::CellContentQueryPayload>(1 << 4);
 	// this spawns tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(http::run_server(
-		db.clone(),
-		cfg.clone(),
-		cell_query_tx,
-		counter.clone(),
-	));
+	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
 
 	let (network_client, network_event_loop) = network::init(
 		(&cfg).into(),
