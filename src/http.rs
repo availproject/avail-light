@@ -11,7 +11,7 @@
 use std::{
 	net::SocketAddr,
 	str::FromStr,
-	sync::{mpsc::SyncSender, Arc, Mutex},
+	sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
@@ -28,7 +28,7 @@ use warp::{http::StatusCode, Filter};
 
 use crate::{
 	data::{get_confidence_from_db, get_decoded_data_from_db},
-	types::{CellContentQueryPayload, Mode, RuntimeConfig},
+	types::{Mode, RuntimeConfig},
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -244,12 +244,7 @@ struct AppDataQuery {
 }
 
 /// Runs HTTP server
-pub async fn run_server(
-	store: Arc<DB>,
-	cfg: RuntimeConfig,
-	_cell_query_tx: SyncSender<CellContentQueryPayload>,
-	counter: Arc<Mutex<u32>>,
-) {
+pub async fn run_server(store: Arc<DB>, cfg: RuntimeConfig, counter: Arc<Mutex<u32>>) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
 		let port: u16 = thread_rng().gen_range(cfg.http_server_port.0..=cfg.http_server_port.1);
