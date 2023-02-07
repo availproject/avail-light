@@ -54,7 +54,6 @@ http_server_port = "7000"
 libp2p_seed = 1
 libp2p_port = "37000"
 
-full_node_rpc = ["http://127.0.0.1:9933"]
 full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
@@ -86,8 +85,6 @@ libp2p_port = "37000"
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 
-# RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
-full_node_rpc = ["http://127.0.0.1:9933"]
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).

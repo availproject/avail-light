@@ -200,8 +200,6 @@ pub struct RuntimeConfig {
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(with = "port_range_format")]
 	pub libp2p_port: (u16, u16),
-	/// RPC endpoint of a full node for proof queries, etc. (default: http://127.0.0.1:9933).
-	pub full_node_rpc: Vec<String>,
 	/// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
 	pub libp2p_tcp_port_reuse: bool,
 	/// Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
@@ -431,7 +429,6 @@ impl Default for RuntimeConfig {
 			secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: false,
-			full_node_rpc: vec!["http://127.0.0.1:9933".to_owned()],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
