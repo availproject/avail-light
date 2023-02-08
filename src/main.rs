@@ -141,7 +141,7 @@ pub async fn main() -> Result<()> {
 	let prometheus_port = cfg.prometheus_port;
 
 	let incoming = telemetry::bind(SocketAddr::new(
-		IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
 		prometheus_port,
 	))
 	.await
