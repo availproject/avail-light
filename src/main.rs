@@ -138,7 +138,7 @@ pub async fn main() -> Result<()> {
 	let mut metric_registry = Registry::default();
 	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
 	let lc_metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
-	let prometheus_port = cfg.prometheus_port.unwrap_or(9520);
+	let prometheus_port = cfg.prometheus_port;
 
 	tokio::task::spawn(telemetry::http_server(
 		SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), prometheus_port),
