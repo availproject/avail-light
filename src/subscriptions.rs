@@ -24,6 +24,7 @@ pub async fn finalized_headers(
 					error!("Fail to process finalized block header: {error}");
 				}
 			}
+			error!("Finalized blocks subscription disconnected");
 			let error = anyhow!("Finalized blocks subscription disconnected");
 			if let Err(error) = error_sender.send(error) {
 				error!("Cannot send error to error channel: {error}");
