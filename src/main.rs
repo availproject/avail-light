@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 use std::{
-	fmt::Display,
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
-	sync::{mpsc::sync_channel, Arc, Mutex},
+	sync::{
+		mpsc::{sync_channel, SyncSender},
+		Arc, Mutex,
+	},
 	time::Instant,
 };
 
@@ -104,19 +106,12 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-fn log_error<E: Display>(error: E) -> E {
-	error!("{error}");
-	error
-}
-
-#[tokio::main]
-pub async fn main() -> Result<()> {
+async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 	let opts = CliOpts::from_args();
 
 	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
-		.context(format!("Failed to load configuration from {config_path}"))
-		.map_err(log_error)?;
+		.context(format!("Failed to load configuration from {config_path}"))?;
 
 	info!("Using config: {cfg:?}");
 
@@ -145,13 +140,10 @@ pub async fn main() -> Result<()> {
 		prometheus_port,
 	))
 	.await
-	.context("Cannot bind prometheus server to given address and port")
-	.map_err(log_error)?;
+	.context("Cannot bind prometheus server to given address and port")?;
 	tokio::task::spawn(telemetry::http_server(incoming, metric_registry));
 
-	let db = init_db(&cfg.avail_path)
-		.context("Cannot initialize database")
-		.map_err(log_error)?;
+	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
@@ -163,8 +155,7 @@ pub async fn main() -> Result<()> {
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 	)
-	.context("Failed to init Network Service")
-	.map_err(log_error)?;
+	.context("Failed to init Network Service")?;
 
 	// Spawn the network task for it to run in the background
 	tokio::spawn(network_event_loop.run());
@@ -280,8 +271,6 @@ pub async fn main() -> Result<()> {
 		));
 	}
 
-	let (error_sender, error_receiver) = sync_channel::<anyhow::Error>(1);
-
 	let (message_tx, message_rx) = sync_channel::<(Header, Instant)>(128);
 
 	tokio::task::spawn(subscriptions::finalized_headers(
@@ -302,6 +291,17 @@ pub async fn main() -> Result<()> {
 		message_rx,
 		error_sender,
 	));
+	Ok(())
+}
+
+#[tokio::main]
+pub async fn main() -> Result<()> {
+	let (error_sender, error_receiver) = sync_channel::<anyhow::Error>(1);
+
+	if let Err(error) = run(error_sender).await {
+		error!("{error}");
+		return Err(error);
+	};
 
 	let error = match error_receiver.recv() {
 		Ok(error) => error,
