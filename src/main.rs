@@ -13,6 +13,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
+use consts::STATE_CF;
 use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
@@ -26,6 +27,7 @@ use tracing_subscriber::{
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	data::store_last_full_node_ws_in_db,
 	types::{Mode, RuntimeConfig},
 };
 
@@ -70,10 +72,14 @@ fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut app_data_cf_opts = Options::default();
 	app_data_cf_opts.set_max_write_buffer_number(16);
 
+	let mut state_cf_opts = Options::default();
+	state_cf_opts.set_max_write_buffer_number(16);
+
 	let cf_opts = vec![
 		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
 		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
 		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
+		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
 	];
 
 	let mut db_opts = Options::default();
@@ -216,24 +222,17 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let rpc_client = rpc::check_connection(&cfg.full_node_ws)
-		.await
-		.context("No working nodes")?;
+	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
-	let version = rpc::get_system_version(&rpc_client).await?;
-	let runtime_version = rpc::get_runtime_version(&rpc_client).await?;
+	let version = rpc::Version {
+		version: "1.5.0".to_string(),
+		spec_version: 7,
+		spec_name: "data-avail".to_string(),
+	};
+	let (rpc_client, last_full_node_ws) =
+		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
 
-	info!("Reported version: {version}, runtime version: {runtime_version:?}");
-	if !version.starts_with("1.5.0")
-		|| runtime_version.spec_version != 7
-		|| runtime_version.spec_name != "data-avail"
-	{
-		return Err(anyhow::anyhow!(
-			"Expected node version 1.4.0 and spec 7, instead of {} and spec {}",
-			version,
-			runtime_version.spec_version,
-		));
-	}
+	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to

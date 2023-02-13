@@ -7,7 +7,38 @@ use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use rocksdb::DB;
 
-use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF};
+use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
+
+const LAST_FULL_NODE_WS_KEY: &str = "last_full_node_ws";
+
+pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> Result<()> {
+	let cf_handle = db.cf_handle(STATE_CF).context("Failed to get cf handle")?;
+
+	db.put_cf(
+		&cf_handle,
+		LAST_FULL_NODE_WS_KEY.as_bytes(),
+		last_full_node_ws,
+	)
+	.context("Failed to write {key} data")
+}
+
+pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
+	let cf_handle = db
+		.cf_handle(STATE_CF)
+		.context("Couldn't get column handle from db")?;
+
+	let result = db
+		.get_cf(&cf_handle, LAST_FULL_NODE_WS_KEY.as_bytes())
+		.context("Couldn't get {key} from db")?;
+
+	let Some(last_full_node_ws) = result else {
+	    return Ok(None);
+	};
+
+	Ok(std::str::from_utf8(&last_full_node_ws)
+		.map(String::from)
+		.map(Some)?)
+}
 
 fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u32, data: &[u8]) -> Result<()> {
 	let key = format!("{app_id}:{block_number}");
@@ -22,7 +53,7 @@ fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u32, data: &[u8]) ->
 fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Option<Vec<u8>>> {
 	let key = format!("{app_id}:{block_number}");
 	let cf_handle = db
-		.cf_handle(crate::consts::APP_DATA_CF)
+		.cf_handle(APP_DATA_CF)
 		.context("Couldn't get column handle from db")?;
 
 	db.get_cf(&cf_handle, key.as_bytes())
