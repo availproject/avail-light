@@ -274,7 +274,7 @@ pub struct RuntimeConfig {
 	/// The default value has been calculated to sustain ~1hr worth of cells, in case of blocks with max sizes being produces in 20s block time for fat clients
 	/// (256x512) * 3 * 60
 	pub max_kad_record_number: u64,
-	/// The maximum size of record values, in bytes. (default: 8096).
+	/// The maximum size of record values, in bytes. (default: 8192).
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
@@ -456,7 +456,7 @@ impl Default for RuntimeConfig {
 			caching_max_peers: 1,
 			disjoint_query_paths: false,
 			max_kad_record_number: 2400000,
-			max_kad_record_size: 8096,
+			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
 		}
 	}
