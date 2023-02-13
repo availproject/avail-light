@@ -8,3 +8,6 @@ pub const BLOCK_HEADER_CF: &str = "avail_light_block_header_cf";
 
 /// Column family for app data
 pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
+
+/// Column family for state
+pub const STATE_CF: &str = "avail_light_state_cf";
