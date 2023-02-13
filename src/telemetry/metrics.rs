@@ -105,7 +105,7 @@ impl Metrics {
 		sub_reg.register(
 			"dht_put_rows_duration",
 			"Time needed to perform DHT PUT rows operation for current block (in seconds)",
-			Box::new(dht_put_duration.clone()),
+			Box::new(dht_put_rows_duration.clone()),
 		);
 
 		let dht_put_rows_success = Gauge::default();
