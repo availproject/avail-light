@@ -38,7 +38,7 @@ use crate::{
 	},
 	network::Client,
 	proof, rpc,
-	types::{ClientMsg, SyncClientConfig},
+	types::{BlockVerified, SyncClientConfig},
 };
 
 async fn process_block(
@@ -48,7 +48,7 @@ async fn process_block(
 	block_number: u32,
 	network_client: Client,
 	pp: PublicParameters,
-	block_tx: Option<SyncSender<ClientMsg>>,
+	block_tx: Option<SyncSender<BlockVerified>>,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
@@ -153,7 +153,7 @@ async fn process_block(
 		.await;
 	info!(block_number, "Cells inserted into DHT");
 
-	let client_msg = ClientMsg::try_from(header).context("converting to message failed")?;
+	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
 
 	if let Some(ref channel) = block_tx {
 		if let Err(error) = channel.send(client_msg) {
@@ -183,7 +183,7 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	pp: PublicParameters,
-	block_tx: Option<SyncSender<ClientMsg>>,
+	block_tx: Option<SyncSender<BlockVerified>>,
 ) {
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");

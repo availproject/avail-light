@@ -49,7 +49,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
-	types::{self, ClientMsg, LightClientConfig},
+	types::{self, BlockVerified, LightClientConfig},
 };
 
 pub async fn process_block(
@@ -317,7 +317,7 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
-	block_tx: Option<SyncSender<ClientMsg>>,
+	block_tx: Option<SyncSender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
@@ -352,7 +352,7 @@ pub async fn run(
 			return;
 		}
 
-		let Ok(client_msg) = types::ClientMsg::try_from(header) else {
+		let Ok(client_msg) = types::BlockVerified::try_from(header) else {
 		    error!("Cannot create message from header");
 		    continue;
 		};

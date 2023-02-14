@@ -34,7 +34,7 @@ use crate::{
 	data::store_encoded_data_in_db,
 	network::Client,
 	proof, rpc,
-	types::{AppClientConfig, ClientMsg},
+	types::{AppClientConfig, BlockVerified},
 };
 
 fn new_data_cell(row: usize, col: usize, data: &[u8]) -> Result<DataCell> {
@@ -201,7 +201,7 @@ async fn process_block(
 	network_client: Client,
 	rpc_client: &OnlineClient<AvailConfig>,
 	app_id: u32,
-	block: &ClientMsg,
+	block: &BlockVerified,
 	pp: PublicParameters,
 ) -> Result<()> {
 	let lookup = &block.lookup;
@@ -342,7 +342,7 @@ pub async fn run(
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
 	app_id: u32,
-	block_receive: Receiver<ClientMsg>,
+	block_receive: Receiver<BlockVerified>,
 	pp: PublicParameters,
 ) {
 	info!("Starting for app {app_id}...");
