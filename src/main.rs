@@ -267,6 +267,7 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 			db.clone(),
 			network_client.clone(),
 			pp.clone(),
+			block_tx.clone()
 		));
 	}
 
