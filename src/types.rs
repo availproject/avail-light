@@ -37,7 +37,7 @@ pub struct RuntimeVersionResult {
 }
 
 /// Light to app client channel message struct
-pub struct ClientMsg {
+pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
 	pub dimensions: Dimensions,
@@ -45,14 +45,14 @@ pub struct ClientMsg {
 	pub commitments: Vec<[u8; 48]>,
 }
 
-impl TryFrom<DaHeader> for ClientMsg {
+impl TryFrom<DaHeader> for BlockVerified {
 	type Error = anyhow::Error;
 	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let HeaderExtension::V1(xt) = header.extension;
 		let KateCommitment { rows, cols, .. } = xt.commitment;
 
-		Ok(ClientMsg {
+		Ok(BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
 			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,

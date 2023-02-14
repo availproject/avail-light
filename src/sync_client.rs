@@ -15,7 +15,10 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.  
 
-use std::{sync::Arc, time::SystemTime};
+use std::{
+	sync::{mpsc::SyncSender, Arc},
+	time::SystemTime,
+};
 
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
@@ -35,7 +38,7 @@ use crate::{
 	},
 	network::Client,
 	proof, rpc,
-	types::SyncClientConfig,
+	types::{BlockVerified, SyncClientConfig},
 };
 
 async fn process_block(
@@ -45,6 +48,7 @@ async fn process_block(
 	block_number: u32,
 	network_client: Client,
 	pp: PublicParameters,
+	block_tx: Option<SyncSender<BlockVerified>>,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
@@ -148,6 +152,15 @@ async fn process_block(
 		.insert_cells_into_dht(block_number, rpc_fetched)
 		.await;
 	info!(block_number, "Cells inserted into DHT");
+
+	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
+
+	if let Some(ref channel) = block_tx {
+		if let Err(error) = channel.send(client_msg) {
+			error!("Cannot send block verified message: {error}");
+		}
+	}
+
 	Ok(())
 }
 
@@ -170,6 +183,7 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	pp: PublicParameters,
+	block_tx: Option<SyncSender<BlockVerified>>,
 ) {
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
@@ -183,6 +197,7 @@ pub async fn run(
 			db.clone(),
 			network_client.clone(),
 			pp.clone(),
+			block_tx.clone(),
 		)
 	});
 	let cfg_clone = &cfg;
@@ -190,7 +205,7 @@ pub async fn run(
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_client, store, net_svc, pp)| async move {
+			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) = process_block(
 					cfg_clone,
@@ -199,6 +214,7 @@ pub async fn run(
 					block_number,
 					net_svc,
 					pp.clone(),
+					block_tx,
 				)
 				.await
 				{

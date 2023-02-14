@@ -237,7 +237,7 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = sync_channel::<types::ClientMsg>(1 << 7);
+		let (block_tx, block_rx) = sync_channel::<types::BlockVerified>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -267,6 +267,7 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 			db.clone(),
 			network_client.clone(),
 			pp.clone(),
+			block_tx.clone(),
 		));
 	}
 
