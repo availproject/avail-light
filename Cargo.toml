@@ -8,7 +8,7 @@ authors = ["Polygon Avail Team"]
 
 [dependencies]
 kate-recovery = { git = "https://github.com/maticnetwork/avail-core.git", tag = "kate-recovery/v0.8.0" }
-avail-subxt = { git = "https://github.com/maticnetwork/avail.git", tag = "v1.4.0-rc1" }
+avail-subxt = { git = "https://github.com/maticnetwork/avail.git", tag = "v1.4.0-rc3" }
 subxt = "0.24.0"
 dusk-plonk = { git = "https://github.com/maticnetwork/plonk.git", tag = "v0.12.0-polygon-2"  }
 url = "2.2.2"
