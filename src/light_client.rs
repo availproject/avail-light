@@ -19,10 +19,7 @@
 //! In case partition is configured, block partition is fetched and inserted into DHT.
 
 use std::{
-	sync::{
-		mpsc::{Receiver, SyncSender},
-		Arc, Mutex,
-	},
+	sync::{Arc, Mutex},
 	time::{Instant, SystemTime},
 };
 
@@ -41,6 +38,7 @@ use kate_recovery::{
 use rocksdb::DB;
 use sp_core::{blake2_256, H256};
 use subxt::OnlineClient;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
 use crate::{
@@ -317,16 +315,16 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
-	block_tx: Option<SyncSender<BlockVerified>>,
+	block_tx: Option<Sender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
-	message_rx: Receiver<(Header, Instant)>,
-	error_sender: SyncSender<anyhow::Error>,
+	mut message_rx: Receiver<(Header, Instant)>,
+	error_sender: Sender<anyhow::Error>,
 ) {
 	info!("Starting light client...");
 
-	for (header, received_at) in message_rx {
+	while let Some((header, received_at)) = message_rx.recv().await {
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
@@ -346,7 +344,7 @@ pub async fn run(
 		.await
 		{
 			error!("Cannot process block: {error}");
-			if let Err(error) = error_sender.send(error) {
+			if let Err(error) = error_sender.send(error).await {
 				error!("Cannot send error message: {error}");
 			}
 			return;
@@ -360,7 +358,7 @@ pub async fn run(
 		// notify dht-based application client
 		// that newly mined block has been received
 		if let Some(ref channel) = block_tx {
-			if let Err(error) = channel.send(client_msg) {
+			if let Err(error) = channel.send(client_msg).await {
 				error!("Cannot send block verified message: {error}");
 				continue;
 			}

@@ -25,9 +25,10 @@ use kate_recovery::{
 use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
-	sync::{mpsc::Receiver, Arc},
+	sync::Arc,
 };
 use subxt::OnlineClient;
+use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
@@ -342,12 +343,12 @@ pub async fn run(
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
 	app_id: u32,
-	block_receive: Receiver<BlockVerified>,
+	mut block_receive: Receiver<BlockVerified>,
 	pp: PublicParameters,
 ) {
 	info!("Starting for app {app_id}...");
 
-	for block in block_receive {
+	while let Some(block) = block_receive.recv().await {
 		let block_number = block.block_num;
 		let dimensions = &block.dimensions;
 
