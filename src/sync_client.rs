@@ -15,10 +15,7 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.  
 
-use std::{
-	sync::{mpsc::SyncSender, Arc},
-	time::SystemTime,
-};
+use std::{sync::Arc, time::SystemTime};
 
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
@@ -29,6 +26,7 @@ use futures::stream::{self, StreamExt};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
 use subxt::OnlineClient;
+use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -48,7 +46,7 @@ async fn process_block(
 	block_number: u32,
 	network_client: Client,
 	pp: PublicParameters,
-	block_tx: Option<SyncSender<BlockVerified>>,
+	block_tx: Option<Sender<BlockVerified>>,
 ) -> Result<()> {
 	if is_block_header_in_db(db.clone(), block_number)
 		.context("Failed to check if block header is in DB")?
@@ -156,7 +154,7 @@ async fn process_block(
 	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
 
 	if let Some(ref channel) = block_tx {
-		if let Err(error) = channel.send(client_msg) {
+		if let Err(error) = channel.send(client_msg).await {
 			error!("Cannot send block verified message: {error}");
 		}
 	}
@@ -183,7 +181,7 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	pp: PublicParameters,
-	block_tx: Option<SyncSender<BlockVerified>>,
+	block_tx: Option<Sender<BlockVerified>>,
 ) {
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");

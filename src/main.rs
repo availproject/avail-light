@@ -3,10 +3,7 @@
 use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
 	str::FromStr,
-	sync::{
-		mpsc::{sync_channel, SyncSender},
-		Arc, Mutex,
-	},
+	sync::{Arc, Mutex},
 	time::Instant,
 };
 
@@ -19,6 +16,7 @@ use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
+use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -112,7 +110,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 		.unwrap_or_else(|parse_err| (default, Some(parse_err)))
 }
 
-async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
+async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let opts = CliOpts::from_args();
 
 	let config_path = &opts.config;
@@ -237,7 +235,7 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = sync_channel::<types::BlockVerified>(1 << 7);
+		let (block_tx, block_rx) = channel::<types::BlockVerified>(1 << 7);
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -271,7 +269,7 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 		));
 	}
 
-	let (message_tx, message_rx) = sync_channel::<(Header, Instant)>(128);
+	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
 
 	tokio::task::spawn(subscriptions::finalized_headers(
 		rpc_client.clone(),
@@ -296,16 +294,16 @@ async fn run(error_sender: SyncSender<anyhow::Error>) -> Result<()> {
 
 #[tokio::main]
 pub async fn main() -> Result<()> {
-	let (error_sender, error_receiver) = sync_channel::<anyhow::Error>(1);
+	let (error_sender, mut error_receiver) = channel::<anyhow::Error>(1);
 
 	if let Err(error) = run(error_sender).await {
 		error!("{error}");
 		return Err(error);
 	};
 
-	let error = match error_receiver.recv() {
-		Ok(error) => error,
-		Err(error) => anyhow!("Failed to receive error message: {error}"),
+	let error = match error_receiver.recv().await {
+		Some(error) => error,
+		None => anyhow!("Failed to receive error message"),
 	};
 
 	// We are not logging error here since expectation is
