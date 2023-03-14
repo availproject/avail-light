@@ -9,9 +9,9 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use sp_core::H256;
 use subxt::{
-	rpc::{BlockNumber, RpcParams},
+	rpc::{types::BlockNumber, RpcParams},
+	utils::H256,
 	OnlineClient,
 };
 use tracing::{debug, info, instrument, warn};
