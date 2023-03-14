@@ -13,7 +13,8 @@ use kate_recovery::matrix::Dimensions;
 use kate_recovery::{index::AppDataIndex, matrix::Partition};
 use libp2p::Multiaddr;
 use serde::{Deserialize, Serialize};
-use sp_core::{blake2_256, H256};
+use sp_core::blake2_256;
+use subxt::utils::H256;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;

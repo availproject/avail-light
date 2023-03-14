@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::{primitives::Header, AvailConfig};
 use subxt::OnlineClient;
 use tokio::sync::mpsc::Sender;
+use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 pub async fn finalized_headers(
@@ -15,11 +16,12 @@ pub async fn finalized_headers(
 		rpc_client: OnlineClient<AvailConfig>,
 		message_tx: Sender<(Header, Instant)>,
 	) -> Result<()> {
-		let mut new_heads_sub = rpc_client.rpc().subscribe_finalized_blocks().await?;
+		let mut new_heads_sub = rpc_client.blocks().subscribe_finalized().await?;
 
 		while let Some(message) = new_heads_sub.next().await {
 			let received_at = Instant::now();
-			if let Ok(header) = message {
+			if let Ok(block) = message {
+				let header = block.header().clone();
 				info!(header.number, "Received finalized block header");
 				let message = (header, received_at);
 				if let Err(error) = message_tx.send(message).await.context("Send failed") {

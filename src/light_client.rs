@@ -36,8 +36,8 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 };
 use rocksdb::DB;
-use sp_core::{blake2_256, H256};
-use subxt::OnlineClient;
+use sp_core::blake2_256;
+use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
