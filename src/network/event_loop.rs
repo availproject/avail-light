@@ -6,7 +6,10 @@ use libp2p::autonat::Config as AutoNatConfig;
 use libp2p::swarm::ConnectionHandlerUpgrErr;
 use tokio::sync::{mpsc, oneshot};
 
-use super::{client::Command, Event};
+use super::{
+	client::{Command, NumSuccPut},
+	Event,
+};
 
 use libp2p::{
 	autonat::{Behaviour as AutonatBehaviour, Event as AutonatEvent},
@@ -16,7 +19,7 @@ use libp2p::{
 	},
 	kad::{
 		protocol, store::MemoryStore, BootstrapOk, GetRecordOk, InboundRequest, Kademlia,
-		KademliaConfig, KademliaEvent, PeerRecord, PutRecordOk, QueryId, QueryResult,
+		KademliaConfig, KademliaEvent, PeerRecord, QueryId, QueryResult,
 	},
 	mdns::{MdnsConfig, MdnsEvent, TokioMdns},
 	metrics::{Metrics, Recorder},
@@ -31,6 +34,7 @@ use tracing::{debug, info, trace};
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<Vec<PeerRecord>>>),
 	PutRecord(oneshot::Sender<Result<()>>),
+	PutRecordBatch(oneshot::Sender<NumSuccPut>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
@@ -114,6 +118,8 @@ pub struct EventLoop {
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_query_batch: HashMap<QueryId, Option<Result<()>>>,
+	pending_batch_complete: Option<QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	metrics: Metrics,
 }
@@ -129,6 +135,8 @@ impl EventLoop {
 			command_receiver,
 			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
+			pending_kad_query_batch: Default::default(),
+			pending_batch_complete: None,
 			pending_kad_routing: Default::default(),
 			metrics,
 		}
@@ -221,21 +229,41 @@ impl EventLoop {
 								}
 							},
 						},
-						QueryResult::PutRecord(result) => match result {
-							Ok(PutRecordOk { .. }) => {
-								if let Some(QueryChannel::PutRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
-								{
-									_ = ch.send(Ok(()));
+						QueryResult::PutRecord(result) => {
+							if let Some(QueryChannel::PutRecord(ch)) =
+								self.pending_kad_queries.remove(&id.into())
+							{
+								let _ = match result {
+									Ok(_) => ch.send(Ok(())),
+									Err(err) => ch.send(Err(err.into())),
+								};
+							} else if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
+								match result {
+									Ok(_) => *v = Some(Ok(())),
+									Err(err) => *v = Some(Err(err.into())),
+								};
+
+								let cnt = self
+									.pending_kad_query_batch
+									.iter()
+									.filter(|(_, elem)| elem.is_none())
+									.count();
+
+								if cnt == 0 {
+									if let Some(QueryChannel::PutRecordBatch(ch)) =
+										self.pending_batch_complete.take()
+									{
+										let count_success = self
+											.pending_kad_query_batch
+											.iter()
+											.filter(|(_, elem)| {
+												elem.is_some() && elem.as_ref().unwrap().is_ok()
+											})
+											.count();
+										_ = ch.send(NumSuccPut(count_success));
+									}
 								}
-							},
-							Err(err) => {
-								if let Some(QueryChannel::PutRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
-								{
-									_ = ch.send(Err(err.into()));
-								}
-							},
+							}
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -460,6 +488,25 @@ impl EventLoop {
 
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::PutRecord(sender));
+			},
+			Command::PutKadRecordBatch {
+				records,
+				quorum,
+				sender,
+			} => {
+				let mut ids: HashMap<QueryId, Option<Result<()>>> = Default::default();
+
+				for record in records {
+					let query_id = self
+						.swarm
+						.behaviour_mut()
+						.kademlia
+						.put_record(record.clone(), quorum)
+						.expect("No put error.");
+					ids.insert(query_id, None);
+				}
+				self.pending_kad_query_batch = ids;
+				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
 			},
 		}
 	}

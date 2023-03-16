@@ -158,6 +158,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		libp2p_metrics,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
+		cfg.put_batch_size,
 	)
 	.context("Failed to init Network Service")?;
 
