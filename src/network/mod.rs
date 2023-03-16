@@ -45,6 +45,7 @@ pub fn init(
 	metrics: Metrics,
 	dht_parallelization_limit: usize,
 	ttl: u64,
+	put_batch_size: usize,
 ) -> Result<(Client, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match cfg.libp2p_secret_key {
@@ -121,7 +122,12 @@ pub fn init(
 	let (command_sender, command_receiver) = mpsc::channel(10000);
 
 	Ok((
-		Client::new(command_sender, dht_parallelization_limit, ttl),
+		Client::new(
+			command_sender,
+			dht_parallelization_limit,
+			ttl,
+			put_batch_size,
+		),
 		EventLoop::new(swarm, command_receiver, metrics),
 	))
 }

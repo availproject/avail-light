@@ -1,10 +1,7 @@
-use std::{
-	sync::{Arc, Mutex},
-	time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use futures::{future::join_all, stream};
+use futures::future::join_all;
 use kate_recovery::{
 	config,
 	data::Cell,
@@ -27,7 +24,12 @@ pub struct Client {
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
 	ttl: u64,
+	/// Number of records to be put in DHT simultaneuosly
+	put_batch_size: usize,
 }
+
+#[derive(Clone, Debug)]
+pub struct NumSuccPut(pub usize);
 
 struct DHTCell(Cell);
 
@@ -64,11 +66,17 @@ impl DHTRow {
 }
 
 impl Client {
-	pub fn new(sender: mpsc::Sender<Command>, dht_parallelization_limit: usize, ttl: u64) -> Self {
+	pub fn new(
+		sender: mpsc::Sender<Command>,
+		dht_parallelization_limit: usize,
+		ttl: u64,
+		put_batch_size: usize,
+	) -> Self {
 		Self {
 			sender,
 			dht_parallelization_limit,
 			ttl,
+			put_batch_size,
 		}
 	}
 
@@ -137,17 +145,32 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn put_kad_record(&self, record: Record, quorum: Quorum) -> Result<()> {
-		let (sender, receiver) = oneshot::channel();
-		self.sender
-			.send(Command::PutKadRecord {
-				record,
-				quorum,
-				sender,
-			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
+	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
+		let mut num_success: usize = 0;
+		for recs in records.chunks(self.put_batch_size) {
+			let (sender, receiver) = oneshot::channel();
+			if self
+				.sender
+				.send(Command::PutKadRecordBatch {
+					records: recs.to_vec(),
+					quorum,
+					sender,
+				})
+				.await
+				.context("Command receiver should not be dropped.")
+				.is_err()
+			{
+				return NumSuccPut(num_success);
+			}
+
+			num_success +=
+				if let Ok(NumSuccPut(num)) = receiver.await.context("Sender not to be dropped.") {
+					num
+				} else {
+					num_success
+				};
+		}
+		NumSuccPut(num_success)
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
@@ -279,28 +302,13 @@ impl Client {
 		if records.is_empty() {
 			return 1.0;
 		}
+		let len = records.len() as f32;
 
-		let failure_counter: &Arc<Mutex<usize>> = &Arc::new(Mutex::new(0));
-		let records_len = records.len();
-		let stream_records = records
-			.into_iter()
-			.map(move |(key, record)| (key, record, self.clone(), failure_counter.clone()));
+		let num = self
+			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
+			.await;
 
-		futures::StreamExt::for_each_concurrent(
-			stream::iter(stream_records),
-			self.dht_parallelization_limit,
-			|(key, record, network_client, failure_counter)| async move {
-				if let Err(error) = network_client.put_kad_record(record, Quorum::One).await {
-					let mut counter = failure_counter.lock().unwrap();
-					*counter += 1;
-					debug!("Fail to put record {key} into DHT: {error}");
-				}
-			},
-		)
-		.await;
-
-		let counter = failure_counter.lock().unwrap();
-		(1.0 - (counter.to_owned() as f32 / records_len as f32)) as f32
+		len / num.0 as f32
 	}
 
 	/// Inserts cells into the DHT.
@@ -370,5 +378,10 @@ pub enum Command {
 		record: Record,
 		quorum: Quorum,
 		sender: oneshot::Sender<Result<()>>,
+	},
+	PutKadRecordBatch {
+		records: Vec<Record>,
+		quorum: Quorum,
+		sender: oneshot::Sender<NumSuccPut>,
 	},
 }
