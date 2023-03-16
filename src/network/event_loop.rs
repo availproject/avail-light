@@ -221,21 +221,41 @@ impl EventLoop {
 							},
 							_ => (),
 						},
-						QueryResult::PutRecord(result) => match result {
-							Ok(PutRecordOk { .. }) => {
-								if let Some(QueryChannel::PutRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
-								{
-									_ = ch.send(Ok(()));
+						QueryResult::PutRecord(result) => {
+							if let Some(QueryChannel::PutRecord(ch)) =
+								self.pending_kad_queries.remove(&id.into())
+							{
+								let _ = match result {
+									Ok(_) => ch.send(Ok(())),
+									Err(err) => ch.send(Err(err.into())),
+								};
+							} else if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
+								match result {
+									Ok(_) => *v = Some(Ok(())),
+									Err(err) => *v = Some(Err(err.into())),
+								};
+
+								let cnt = self
+									.pending_kad_query_batch
+									.iter()
+									.filter(|(_, elem)| elem.is_none())
+									.count();
+
+								if cnt == 0 {
+									if let Some(QueryChannel::PutRecordBatch(ch)) =
+										self.pending_batch_complete.take()
+									{
+										let count_success = self
+											.pending_kad_query_batch
+											.iter()
+											.filter(|(_, elem)| {
+												elem.is_some() && elem.as_ref().unwrap().is_ok()
+											})
+											.count();
+										_ = ch.send(NumSuccPut(count_success));
+									}
 								}
-							},
-							Err(err) => {
-								if let Some(QueryChannel::PutRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
-								{
-									_ = ch.send(Err(err.into()));
-								}
-							},
+							}
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
