@@ -386,6 +386,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 }
 
 /// Sync client configuration (see [RuntimeConfig] for details)
+#[derive(Clone)]
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
