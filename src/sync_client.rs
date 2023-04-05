@@ -56,7 +56,12 @@ pub trait SyncClient {
 		header: DaHeader,
 		cfg: &SyncClientConfig,
 	) -> Result<Vec<Position>>;
-	async fn fetch_cells_rpc(&self, cfg: &SyncClientConfig, header_hash: H256, unfetched: &Vec<Position>) -> Result<Vec<Cell>>;
+	async fn fetch_cells_rpc(
+		&self,
+		cfg: &SyncClientConfig,
+		header_hash: H256,
+		unfetched: &Vec<Position>,
+	) -> Result<Vec<Cell>>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32>;
 	async fn fetch_cells_from_dht(
@@ -70,118 +75,120 @@ pub trait SyncClient {
 		cfg: &SyncClientConfig,
 		pp: PublicParameters,
 		block_tx: Option<Sender<BlockVerified>>,
-	) -> Result<()>{
+	) -> Result<()> {
 		if self
-		.block_header_in_db(block_number)
-		.context("Failed to check if block header is in DB")?
-	{
-		// TODO: If block header storing fails, that block will be skipped upon restart
-		// Better option would be to check for confidence
-		return Ok(());
-	};
+			.block_header_in_db(block_number)
+			.context("Failed to check if block header is in DB")?
+		{
+			// TODO: If block header storing fails, that block will be skipped upon restart
+			// Better option would be to check for confidence
+			return Ok(());
+		};
 
-	// if block header look up fails, only then comes here for
-	// fetching and storing block header as part of (light weight)
-	// syncing process
-	let begin = SystemTime::now();
+		// if block header look up fails, only then comes here for
+		// fetching and storing block header as part of (light weight)
+		// syncing process
+		let begin = SystemTime::now();
 
-	let (header, header_hash) = self
-		.get_header_by_block_number(block_number)
-		.await
-		.context("Failed to get block {block_number} by block number")?;
+		let (header, header_hash) = self
+			.get_header_by_block_number(block_number)
+			.await
+			.context("Failed to get block {block_number} by block number")?;
 
-	let HeaderExtension::V1(xt) = &header.extension;
+		info!("Header {:?}", header);
+		info!("\nHash {:?}", header_hash);
+		let HeaderExtension::V1(xt) = &header.extension;
 
-	info!(block_number, "App index {:?}", xt.app_lookup.index);
+		info!(block_number, "App index {:?}", xt.app_lookup.index);
 
-	self.store_block_header_in_db(header.clone(), block_number)
-		.context("Failed to store block header in DB")?;
+		self.store_block_header_in_db(header.clone(), block_number)
+			.context("Failed to store block header in DB")?;
 
-	info!(
-		block_number,
-		"Synced block header: \t{:?}",
-		begin.elapsed()?
-	);
+		info!(
+			block_number,
+			"Synced block header: \t{:?}",
+			begin.elapsed()?
+		);
 
-	// If it's found that this certain block is not verified
-	// then it'll be verified now
-	if self
-		.is_confidence_in_db(block_number)
-		.context("Failed to check if confidence is in DB")?
-	{
-		return Ok(());
-	};
+		// If it's found that this certain block is not verified
+		// then it'll be verified now
+		if self
+			.is_confidence_in_db(block_number)
+			.context("Failed to check if confidence is in DB")?
+		{
+			return Ok(());
+		};
 
-	let begin = SystemTime::now();
+		let begin = SystemTime::now();
 
-	let dimensions =
-		Dimensions::new(xt.commitment.rows, xt.commitment.cols).context("Invalid dimensions")?;
+		let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols)
+			.context("Invalid dimensions")?;
 
-	let commitments = commitments::from_slice(&xt.commitment.commitment)?;
+		let commitments = commitments::from_slice(&xt.commitment.commitment)?;
 
-	// now this is in `u64`
-	// let cell_count = test.cell_count_for_confidence()?;
-	let positions = self
-		.generate_random_cells(header.clone(), cfg)
-		.context("Failed to generate random cells")?;
+		// now this is in `u64`
+		// let cell_count = test.cell_count_for_confidence()?;
+		let positions = self
+			.generate_random_cells(header.clone(), cfg)
+			.context("Failed to generate random cells")?;
 
-	let (dht_fetched, unfetched) = self
-		.fetch_cells_from_dht(&positions, block_number)
-		.await?;
+		let (dht_fetched, unfetched) = self.fetch_cells_from_dht(&positions, block_number).await?;
+		info!("dht fetch {:?}, unfetch {:?}", dht_fetched, unfetched);
 
-	info!(
-		block_number,
-		"Number of cells fetched from DHT: {}",
-		dht_fetched.len()
-	);
+		info!(
+			block_number,
+			"Number of cells fetched from DHT: {}",
+			dht_fetched.len()
+		);
 
-	let rpc_fetched = self.fetch_cells_rpc(cfg, header_hash, &unfetched).await?;
+		let rpc_fetched = self.fetch_cells_rpc(cfg, header_hash, &unfetched).await?;
 
-	info!(
-		block_number,
-		"Number of cells fetched from RPC: {}",
-		rpc_fetched.len()
-	);
+		info!(
+			block_number,
+			"Number of cells fetched from RPC: {}",
+			rpc_fetched.len()
+		);
 
-	let mut cells = vec![];
-	cells.extend(dht_fetched);
-	cells.extend(rpc_fetched.clone());
-	if positions.len() > cells.len() {
-		return Err(anyhow!(
-			"Failed to fetch {} cells",
-			positions.len() - cells.len()
-		));
-	}
-
-	let cells_len = cells.len();
-	info!(block_number, "Fetched {cells_len} cells for verification");
-
-	let (verified, _) = self.verify_cells(block_number, &dimensions, &cells, &commitments, &pp)?;
-
-	info!(
-		block_number,
-		"Completed {cells_len} verification rounds: \t{:?}",
-		begin.elapsed()?
-	);
-
-	// write confidence factor into on-disk database
-	self.store_confidence_in_db(verified.len().try_into()?, block_number)
-		.context("Failed to store confidence in DB")?;
-
-	let inserted_cells = self
-		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await?;
-	info!(block_number, "Cells inserted into DHT: {inserted_cells}");
-
-	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
-
-	if let Some(ref channel) = block_tx {
-		if let Err(error) = channel.send(client_msg).await {
-			error!("Cannot send block verified message: {error}");
+		let mut cells = vec![];
+		cells.extend(dht_fetched);
+		cells.extend(rpc_fetched.clone());
+		if positions.len() > cells.len() {
+			return Err(anyhow!(
+				"Failed to fetch {} cells",
+				positions.len() - cells.len()
+			));
 		}
-	}
 
-	Ok(())
+		let cells_len = cells.len();
+		info!(block_number, "Fetched {cells_len} cells for verification");
+
+		let (verified, _) =
+			self.verify_cells(block_number, &dimensions, &cells, &commitments, &pp)?;
+
+		info!(
+			block_number,
+			"Completed {cells_len} verification rounds: \t{:?}",
+			begin.elapsed()?
+		);
+
+		// write confidence factor into on-disk database
+		self.store_confidence_in_db(verified.len().try_into()?, block_number)
+			.context("Failed to store confidence in DB")?;
+
+		let inserted_cells = self
+			.insert_cells_into_dht(block_number, rpc_fetched)
+			.await?;
+		info!(block_number, "Cells inserted into DHT: {inserted_cells}");
+
+		let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
+
+		if let Some(ref channel) = block_tx {
+			if let Err(error) = channel.send(client_msg).await {
+				error!("Cannot send block verified message: {error}");
+			}
+		}
+
+		Ok(())
 	}
 	fn verify_cells(
 		&self,
@@ -193,6 +200,20 @@ pub trait SyncClient {
 	) -> Result<(Vec<Position>, Vec<Position>)>;
 }
 
+// trait SyncClone {
+//     fn clone_box(&self) -> Box<dyn SyncClient>;
+// }
+
+// impl<T> SyncClone for T
+// where
+//     T: 'static + SyncClient + Clone,
+// {
+//     fn clone_box(&self) -> Box<dyn SyncClient> {
+//         Box::new(self.clone())
+//     }
+// }
+
+#[derive(Clone)]
 pub struct SyncClientImpl {
 	// cfg: SyncClientConfig,
 	db: Arc<DB>,
@@ -273,10 +294,15 @@ impl SyncClient for SyncClientImpl {
 			.await)
 	}
 
-	async fn fetch_cells_rpc(&self, cfg: &SyncClientConfig, header_hash:H256, unfetched: &Vec<Position>) -> Result<Vec<Cell>>{
-		let fetched = if cfg.disable_rpc{
+	async fn fetch_cells_rpc(
+		&self,
+		cfg: &SyncClientConfig,
+		header_hash: H256,
+		unfetched: &Vec<Position>,
+	) -> Result<Vec<Cell>> {
+		let fetched = if cfg.disable_rpc {
 			vec![]
-		}else{
+		} else {
 			self.get_kate_proof(header_hash, unfetched).await?
 		};
 		Ok(fetched)
@@ -298,13 +324,7 @@ impl SyncClient for SyncClientImpl {
 		commitments: &[[u8; 48]],
 		public_parameters: &PublicParameters,
 	) -> Result<(Vec<Position>, Vec<Position>)> {
-		let proof = proof::verify(
-			block_num,
-			dimensions,
-			cells,
-			commitments,
-			public_parameters,
-		)?;
+		let proof = proof::verify(block_num, dimensions, cells, commitments, public_parameters)?;
 		Ok(proof)
 	}
 }
@@ -377,8 +397,15 @@ mod tests {
 
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
+	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
+	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
+	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
+	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
+	use hex_literal::hex;
 	use kate_recovery::testnet;
 	use mockall::{predicate::eq, Sequence};
+	use subxt::config::substrate::Digest;
+	use subxt::config::substrate::DigestItem::{PreRuntime, Seal};
 	use tokio::sync::mpsc::channel;
 
 	#[tokio::test]
@@ -450,34 +477,167 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn test_kate_proof(){
+	async fn test_kate_proof() {
 		let mut seq = Sequence::new();
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
 		let pp = testnet::public_params(1024);
 		// mock_expect_get_kate_pr = testnet::public_params(1024);
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
-		if cfg.disable_rpc == true{ 
+		if cfg.disable_rpc == true {
 			mock_client.expect_fetch_cells_rpc().never();
 			mock_client
-			.expect_process_block()
-			.times(1)
-			.in_sequence(&mut seq)
-			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
-		mock_client
-			.process_block(42, &cfg, pp, Some(block_tx))
-			.await
-			.unwrap();
-		}else{
+				.expect_process_block()
+				.times(1)
+				.in_sequence(&mut seq)
+				.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
 			mock_client
+				.process_block(42, &cfg, pp, Some(block_tx))
+				.await
+				.unwrap();
+		} else {
+			mock_client
+				.expect_process_block()
+				.times(1)
+				.in_sequence(&mut seq)
+				.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
+			mock_client
+				.process_block(42, &cfg, pp, Some(block_tx))
+				.await
+				.unwrap();
+		}
+	}
+
+	//TODO: Code Cleaning/ formating
+	#[tokio::test]
+	async fn test_fetch_cells_dht() {
+		// let mut seq = Sequence::new();
+		let (block_tx, _) = channel::<types::BlockVerified>(10);
+		let pp = testnet::public_params(1024);
+		// mock_expect_get_kate_pr = testnet::public_params(1024);
+		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		let mut mock_client = MockSyncClient::new();
+		mock_client.expect_block_header_in_db().never();
+		// .with(eq(42));
+		// .returning(move |_| {
+		// 	let x = x.clone();
+		// 	Box::pin(async move {
+		// 		Ok(x)
+		// 	})
+		// });
+
+		let header: DaHeader = DaHeader {
+			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
+				.into(),
+			number: 2,
+			state_root: hex!("6f41d5a26a34f7bc3a09d4811b444c09daaebbd5c5d67c4525f42b3ed11bef86")
+				.into(),
+			extrinsics_root: hex!(
+				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
+			)
+			.into(),
+			digest: Digest {
+				logs: vec![
+					PreRuntime(
+						[66, 65, 66, 69],
+						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
+					),
+					Seal(
+						[66, 65, 66, 69],
+						vec![
+							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
+							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
+							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
+							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
+							86, 140, 246, 143,
+						],
+					),
+				],
+			},
+			extension: V1(HeaderExtension {
+				commitment: KateCommitment {
+					rows: 1,
+					cols: 4,
+					data_root: hex!(
+						"0000000000000000000000000000000000000000000000000000000000000000"
+					)
+					.into(),
+					commitment: vec![
+						181, 10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192,
+						95, 92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232,
+						10, 137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242, 181,
+						10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192, 95,
+						92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232, 10,
+						137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242,
+					],
+				},
+				app_lookup: DataLookup {
+					size: 1,
+					index: vec![],
+				},
+			}),
+		};
+		let header_hash: H256 =
+			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
+		mock_client
+			.expect_get_header_by_block_number()
+			.with(eq(2))
+			.returning(move |_| {
+				let header = header.clone();
+				let header_hash = header_hash.clone();
+				// let x = x.clone();
+
+				Box::pin(async move { Ok((header, header_hash)) })
+			});
+		mock_client
+			.expect_fetch_cells_from_dht()
+			.withf(|_, x: &u32| *x == 2)
+			.returning(|_, _| {
+				let dht = vec![Position { row: 0, col: 3 }];
+				let fetch: Vec<Cell> = vec![
+					Cell {
+						position: Position { row: 0, col: 0 },
+						content: [
+							183, 56, 112, 134, 157, 186, 15, 255, 245, 173, 188, 37, 165, 224, 226,
+							80, 196, 137, 235, 233, 154, 4, 110, 142, 26, 95, 150, 132, 61, 23,
+							202, 212, 101, 6, 235, 6, 102, 188, 206, 147, 36, 121, 128, 63, 240,
+							37, 200, 236, 4, 44, 40, 4, 3, 0, 11, 35, 249, 222, 81, 135, 1, 128, 0,
+							0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+						],
+					},
+					Cell {
+						position: Position { row: 0, col: 2 },
+						content: [
+							153, 31, 34, 70, 221, 239, 97, 236, 3, 172, 44, 167, 114, 117, 186,
+							245, 171, 12, 70, 144, 204, 207, 82, 160, 29, 83, 245, 203, 40, 238,
+							96, 131, 68, 96, 9, 136, 151, 88, 218, 72, 79, 55, 193, 228, 71, 193,
+							120, 113, 48, 237, 151, 135, 246, 8, 251, 150, 106, 44, 29, 250, 250,
+							54, 133, 203, 162, 73, 252, 32, 42, 175, 24, 166, 142, 72, 226, 150,
+							163, 206, 115, 0,
+						],
+					},
+					Cell {
+						position: Position { row: 1, col: 1 },
+						content: [
+							146, 211, 61, 65, 166, 68, 252, 65, 196, 167, 211, 64, 223, 151, 33,
+							133, 67, 132, 59, 13, 224, 100, 55, 104, 180, 174, 17, 41, 151, 125,
+							193, 80, 142, 140, 216, 97, 117, 60, 217, 44, 242, 7, 30, 204, 22, 197,
+							12, 179, 88, 163, 102, 4, 54, 208, 14, 161, 193, 25, 34, 179, 35, 234,
+							120, 131, 62, 53, 0, 54, 72, 49, 196, 234, 239, 65, 25, 159, 245, 38,
+							193, 0,
+						],
+					},
+				];
+				Box::pin(async move { Ok((fetch, dht)) })
+			});
+		// mock_client.get_header_by_block_number(42).await.unwrap();
+
+		mock_client
 			.expect_process_block()
-			.times(1)
-			.in_sequence(&mut seq)
 			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
 		mock_client
 			.process_block(42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
-		}
 	}
 }
