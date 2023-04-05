@@ -640,4 +640,35 @@ mod tests {
 			.await
 			.unwrap();
 	}
+
+	#[tokio::test]
+	async fn test_fetch_rpc() {
+		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		let mut mock_client = MockSyncClient::new();
+		let dht = vec![Position { row: 0, col: 3 }];
+		let unfetched: Vec<Cell> = vec![Cell {
+			position: Position { row: 0, col: 3 },
+			content: [
+				150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240, 174, 192, 98,
+				201, 60, 208, 50, 215, 90, 231, 2, 27, 17, 204, 140, 30, 213, 253, 200, 176, 72,
+				98, 121, 25, 239, 76, 230, 154, 121, 246, 142, 37, 85, 184, 201, 218, 107, 88, 0,
+				87, 199, 169, 98, 172, 4, 140, 151, 65, 162, 162, 190, 205, 20, 95, 67, 114, 73,
+				59, 170, 52, 243, 140, 237, 0,
+			],
+		}];
+		let header_hash: H256 =
+			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
+		mock_client.expect_block_header_in_db().never();
+		mock_client
+			.expect_fetch_cells_rpc()
+			// .with(|_, h:H256, _| h == header_hash)
+			.returning(move |_, _, _| {
+				let unfetched = unfetched.clone();
+				Box::pin(async move { Ok(unfetched) })
+			});
+		mock_client
+			.fetch_cells_rpc(&cfg, header_hash, &dht)
+			.await
+			.unwrap();
+	}
 }
