@@ -95,8 +95,8 @@ pub trait SyncClient {
 			.await
 			.context("Failed to get block {block_number} by block number")?;
 
-		info!("Header {:?}", header);
-		info!("\nHash {:?}", header_hash);
+		// info!("Header {:?}", header);
+		// info!("\nHash {:?}", header_hash);
 		let HeaderExtension::V1(xt) = &header.extension;
 
 		info!(block_number, "App index {:?}", xt.app_lookup.index);
@@ -162,8 +162,12 @@ pub trait SyncClient {
 		let cells_len = cells.len();
 		info!(block_number, "Fetched {cells_len} cells for verification");
 
-		let (verified, _) =
+		let (verified, unverified) =
 			self.verify_cells(block_number, &dimensions, &cells, &commitments, &pp)?;
+		
+		let ver = (verified.clone(), unverified);
+		// info!("dimensions {:?} \n cells {:?} \n commitments {:?}", dimensions, cells, commitments);
+		info!("verified {:?}", ver);
 
 		info!(
 			block_number,
@@ -398,6 +402,7 @@ mod tests {
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
 	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
+	// use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
 	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
@@ -518,13 +523,7 @@ mod tests {
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		mock_client.expect_block_header_in_db().never();
-		// .with(eq(42));
-		// .returning(move |_| {
-		// 	let x = x.clone();
-		// 	Box::pin(async move {
-		// 		Ok(x)
-		// 	})
-		// });
+		
 
 		let header: DaHeader = DaHeader {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
@@ -630,13 +629,29 @@ mod tests {
 				];
 				Box::pin(async move { Ok((fetch, dht)) })
 			});
-		// mock_client.get_header_by_block_number(42).await.unwrap();
 
+		let rpc_fetched = vec![Cell {
+			position: Position { row: 0, col: 3 },
+			content: [
+				150, 6, 83, 12, 56, 17, 0, 225, 186, 238, 151, 181, 116, 1, 34, 240, 174, 192, 98,
+				201, 60, 208, 50, 215, 90, 231, 2, 27, 17, 204, 140, 30, 213, 253, 200, 176, 72,
+				98, 121, 25, 239, 76, 230, 154, 121, 246, 142, 37, 85, 184, 201, 218, 107, 88, 0,
+				87, 199, 169, 98, 172, 4, 140, 151, 65, 162, 162, 190, 205, 20, 95, 67, 114, 73,
+				59, 170, 52, 243, 140, 237, 0,
+			],
+		}];
+
+		mock_client.expect_insert_cells_into_dht()
+		.withf( move |x, _| *x == 2)
+		.returning(move |_, _| {
+			Box::pin(async move { Ok(1f32)})
+		});
+		mock_client.insert_cells_into_dht(2, rpc_fetched).await.unwrap();
 		mock_client
 			.expect_process_block()
 			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
 		mock_client
-			.process_block(42, &cfg, pp, Some(block_tx))
+			.process_block(2, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -670,5 +685,93 @@ mod tests {
 			.fetch_cells_rpc(&cfg, header_hash, &dht)
 			.await
 			.unwrap();
+	}
+
+	#[tokio::test]
+	async fn test_verify_cells(){
+		let (block_tx, _) = channel::<types::BlockVerified>(10);
+		let pp = testnet::public_params(1024);
+		// mock_expect_get_kate_pr = testnet::public_params(1024);
+		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
+		let mut mock_client = MockSyncClient::new();
+		let header: DaHeader = DaHeader {
+			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
+				.into(),
+			number: 2,
+			state_root: hex!("6f41d5a26a34f7bc3a09d4811b444c09daaebbd5c5d67c4525f42b3ed11bef86")
+				.into(),
+			extrinsics_root: hex!(
+				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
+			)
+			.into(),
+			digest: Digest {
+				logs: vec![
+					PreRuntime(
+						[66, 65, 66, 69],
+						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
+					),
+					Seal(
+						[66, 65, 66, 69],
+						vec![
+							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
+							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
+							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
+							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
+							86, 140, 246, 143,
+						],
+					),
+				],
+			},
+			extension: V1(HeaderExtension {
+				commitment: KateCommitment {
+					rows: 1,
+					cols: 4,
+					data_root: hex!(
+						"0000000000000000000000000000000000000000000000000000000000000000"
+					)
+					.into(),
+					commitment: vec![
+						181, 10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192,
+						95, 92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232,
+						10, 137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242, 181,
+						10, 104, 251, 33, 171, 87, 192, 13, 195, 93, 127, 215, 78, 114, 192, 95,
+						92, 167, 10, 49, 17, 20, 204, 222, 102, 70, 218, 173, 18, 30, 49, 232, 10,
+						137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242,
+					],
+				},
+				app_lookup: DataLookup {
+					size: 1,
+					index: vec![],
+				}
+			}),
+		};
+
+		let V1(xt) = &header.extension;
+		let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols).unwrap();
+		let commitments = commitments::from_slice(&xt.commitment.commitment).unwrap();
+		let cells = vec![Cell { position: Position { row: 1, col: 1 }, content: [165, 187, 167, 30, 116, 213, 60, 35, 8, 53, 187, 175, 212, 5, 173, 37, 229, 147, 100, 43, 92, 133, 70, 203, 222, 218, 230, 148, 82, 175, 26, 252, 195, 81, 70, 186, 215, 106, 224, 70, 86, 48, 206, 206, 246, 82, 189, 226, 83, 4, 110, 41, 9, 29, 26, 180, 156, 219, 69, 155, 148, 49, 78, 25, 165, 147, 150, 253, 251, 174, 49, 215, 191, 142, 169, 70, 17, 86, 218, 0] }, Cell { position: Position { row: 0, col: 3 }, content: [135, 95, 122, 149, 35, 94, 140, 33, 42, 44, 102, 64, 94, 13, 81, 73, 35, 93, 122, 102, 190, 153, 162, 233, 194, 101, 242, 24, 227, 213, 164, 94, 254, 4, 9, 6, 232, 180, 228, 83, 87, 74, 245, 41, 119, 212, 15, 196, 85, 166, 211, 97, 111, 105, 21, 241, 123, 211, 193, 6, 254, 125, 169, 108, 252, 85, 49, 31, 54, 53, 79, 196, 5, 122, 206, 127, 226, 224, 70, 0] }, Cell { position: Position { row: 0, col: 1 }, content: [165, 187, 167, 30, 116, 213, 60, 35, 8, 53, 187, 175, 212, 5, 173, 37, 229, 147, 100, 43, 92, 133, 70, 203, 222, 218, 230, 148, 82, 175, 26, 252, 195, 81, 70, 186, 215, 106, 224, 70, 86, 48, 206, 206, 246, 82, 189, 226, 83, 4, 110, 41, 9, 29, 26, 180, 156, 219, 69, 155, 148, 49, 78, 25, 165, 147, 150, 253, 251, 174, 49, 215, 191, 142, 169, 70, 17, 86, 218, 0] }, Cell { position: Position { row: 0, col: 2 }, content: [177, 32, 13, 195, 108, 169, 237, 10, 35, 89, 89, 106, 35, 134, 95, 60, 105, 70, 170, 107, 229, 23, 204, 171, 94, 248, 45, 163, 226, 161, 59, 96, 6, 144, 185, 215, 203, 233, 130, 252, 180, 140, 194, 92, 87, 157, 221, 174, 247, 52, 138, 161, 52, 83, 193, 255, 17, 235, 98, 10, 88, 241, 25, 186, 3, 174, 139, 200, 128, 117, 255, 213, 200, 4, 46, 244, 219, 5, 131, 0] }];
+		let returned_cells:(Vec<Position>, Vec<Position>) = (vec![Position { row: 1, col: 0 }, Position { row: 1, col: 1 }, Position { row: 0, col: 1 }, Position { row: 0, col: 0 }], vec![]);
+		let verified_cells = returned_cells.clone().0;
+		mock_client.expect_verify_cells()
+		.withf(|x,_,_,_,_| *x ==2)
+		.returning(move |_,_,_,_,_|{
+			let returned_cells = returned_cells.clone();
+			Ok(returned_cells)
+		});
+		mock_client.verify_cells(2,&dimensions,&cells,&commitments,&pp).unwrap();
+		mock_client.expect_store_confidence_in_db()
+		.withf(|_,x| *x ==2)
+		.returning(|_,_| {
+			Ok(())
+		});
+		mock_client.store_confidence_in_db(verified_cells.len() as u32, 2).unwrap();
+		mock_client
+			.expect_process_block()
+			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
+		mock_client
+			.process_block(2, &cfg, pp, Some(block_tx))
+			.await
+			.unwrap();
+
 	}
 }
