@@ -49,7 +49,7 @@ pub trait SyncClient {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()>;
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool>;
 	fn cell_count_for_confidence(&self, cfg: &SyncClientConfig) -> Result<u32>;
 	fn generate_random_cells(
 		&self,
@@ -231,16 +231,14 @@ pub struct SyncClientImpl {
 #[async_trait]
 impl SyncClient for SyncClientImpl {
 	fn block_header_in_db(&self, block_number: u32) -> Result<bool> {
-		Ok(is_block_header_in_db(self.db.clone(), block_number)
-			.context("Failed to check if block header is in DB")?)
+		is_block_header_in_db(self.db.clone(), block_number)
+			.context("Failed to check if block header is in DB")
 	}
 
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
-		Ok(
-			rpc::get_header_by_block_number(&self.rpc_client, block_number)
-				.await
-				.context("Failed to get block {block_number} by block number")?,
-		)
+		rpc::get_header_by_block_number(&self.rpc_client, block_number)
+			.await
+			.context("Failed to get block {block_number} by block number")
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
@@ -255,9 +253,9 @@ impl SyncClient for SyncClientImpl {
 			.context("Failed to check if confidence is in DB")?)
 	}
 
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		Ok(store_confidence_in_db(self.db.clone(), block_number, count)
-			.context("Failed to store confidence in DB")?)
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool> {
+		store_confidence_in_db(self.db.clone(), block_number, count)
+			.context("Failed to store confidence in DB")
 	}
 
 	fn cell_count_for_confidence(&self, cfg: &SyncClientConfig) -> Result<u32> {
@@ -815,7 +813,7 @@ mod tests {
 		mock_client
 			.expect_store_confidence_in_db()
 			.withf(|_, x| *x == 2)
-			.returning(|_, _| Ok(()));
+			.returning(|_, _| Ok(true));
 		mock_client
 			.store_confidence_in_db(verified_cells.len() as u32, 2)
 			.unwrap();

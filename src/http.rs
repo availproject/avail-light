@@ -91,6 +91,7 @@ fn confidence(block_num: u32, db: Arc<DB>, counter: u32) -> ClientResponse<Confi
 	info!("Got request for confidence for block {block_num}");
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
+			info!("stored count value {:?}", count);
 			let confidence = calculate_confidence(count);
 			let serialised_confidence = serialised_confidence(block_num, confidence);
 			ClientResponse::Normal(ConfidenceResponse {
@@ -101,6 +102,7 @@ fn confidence(block_num: u32, db: Arc<DB>, counter: u32) -> ClientResponse<Confi
 		},
 		Ok(None) => {
 			// let lock = counter.lock().unwrap();
+			info!("msg from http num {:?} counter {:?}", block_num, counter);
 			if block_num < counter {
 				return ClientResponse::NotFinalized;
 			} else {
