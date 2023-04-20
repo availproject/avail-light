@@ -225,7 +225,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let version = rpc::Version {
 		version: "1.5.0".to_string(),
-		spec_version: 8,
+		spec_version: 9,
 		spec_name: "data-avail".to_string(),
 	};
 	let (rpc_client, last_full_node_ws) =
