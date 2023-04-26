@@ -38,6 +38,7 @@ pub struct RuntimeVersionResult {
 }
 
 /// Light to app client channel message struct
+#[derive(Debug)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,

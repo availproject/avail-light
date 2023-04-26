@@ -32,6 +32,7 @@ use avail_subxt::{
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
+use kate_recovery::data::Cell;
 use kate_recovery::{
 	commitments, data,
 	matrix::{Dimensions, Position},
