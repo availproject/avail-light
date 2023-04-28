@@ -99,6 +99,12 @@ pub fn init(
 	// window updates are only sent when buffered data has been consumed
 	yamux_config.set_window_update_mode(WindowUpdateMode::on_read());
 
+	let tcp_transport = TokioTcpTransport::new(
+		Config::new()
+			.nodelay(true)
+			.port_reuse(cfg.libp2p_tcp_port_reuse),
+	);
+
 	let quic_transport = {
 		let mut quic_config = QuicConfig::new(&id_keys);
 		quic_config.support_draft_29 = true;
@@ -110,12 +116,12 @@ pub fn init(
 	let transport = if cfg.is_relay {
 		// if we're a relay
 		// then we need to support TCP transport
-		let tcp_transport = TokioTcpTransport::new(Config::new().nodelay(true))
+		let relay_tcp_transport = tcp_transport
 			.upgrade(Version::V1)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
 			.multiplex(yamux_config);
 
-		TokioDnsConfig::system(OrTransport::new(quic_transport, tcp_transport).map(
+		TokioDnsConfig::system(OrTransport::new(quic_transport, relay_tcp_transport).map(
 			|either_output, _| match either_output {
 				Either::Left((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
 				Either::Right((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
@@ -125,24 +131,23 @@ pub fn init(
 	} else {
 		// but, if we're a client that will use Relaying
 		// we need to mix relay client transport with TCP
-		let tcp_transport = OrTransport::new(
-			relay_client_transport,
-			TokioTcpTransport::new(
-				Config::new()
-					.nodelay(true)
-					.port_reuse(cfg.libp2p_tcp_port_reuse),
-			),
-		)
-		.upgrade(Version::V1)
-		.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
-		.multiplex(yamux_config);
+		let relay_client_tcp_transport = OrTransport::new(relay_client_transport, tcp_transport)
+			.upgrade(Version::V1)
+			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
+			.multiplex(yamux_config);
 
-		TokioDnsConfig::system(OrTransport::new(quic_transport, tcp_transport).map(
-			|either_output, _| match either_output {
-				Either::Left((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
-				Either::Right((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
-			},
-		))?
+		TokioDnsConfig::system(
+			OrTransport::new(quic_transport, relay_client_tcp_transport).map(|either_output, _| {
+				match either_output {
+					Either::Left((peer_id, connection)) => {
+						(peer_id, StreamMuxerBox::new(connection))
+					},
+					Either::Right((peer_id, connection)) => {
+						(peer_id, StreamMuxerBox::new(connection))
+					},
+				}
+			}),
+		)?
 		.boxed()
 	};
 
