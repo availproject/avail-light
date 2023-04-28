@@ -18,8 +18,7 @@ use libp2p::{
 	},
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, PutRecordOk, QueryId,
-		QueryResult,
+		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
@@ -392,7 +391,7 @@ impl EventLoop {
 					);
 					// check if went private or are private
 					// if so, create reservation request with relay
-					if new == NatStatus::Private {
+					if new == NatStatus::Private || old == NatStatus::Private {
 						info!("Autonat says we're still private.");
 						// choose relay by random
 						if let Some(relay) = self.relay_nodes.choose(&mut rand::thread_rng()) {
