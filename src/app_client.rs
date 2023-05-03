@@ -270,15 +270,13 @@ async fn fetch_verified(
 }
 
 #[instrument(skip_all, fields(block = block.block_num), level = "trace")]
-async fn process_block<T>(
-	app_client: T,
+async fn process_block(
+	app_client: impl AppClient,
 	cfg: &AppClientConfig,
 	app_id: u32,
 	block: &BlockVerified,
 	pp: PublicParameters,
 ) -> Result<()>
-where
-	T: AppClient,
 {
 	info!("block is {:?}", block);
 	let lookup = &block.lookup;
