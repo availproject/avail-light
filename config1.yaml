@@ -1,0 +1,20 @@
+http_server_host = "127.0.0.1"
+http_server_port = "7001"
+
+libp2p_seed = 2
+libp2p_port = "37001"
+ipfs_path = "avail_ipfs_store_2"
+
+# put full_node_rpc = https://testnet.polygonavail.net/rpc incase you are connecting to devnet
+full_node_rpc = ["http://127.0.0.1:9933"]
+# put full_node_ws = wss://testnet.polygonavail.net/ws incase you are connecting to devnet
+full_node_ws = ["ws://127.0.0.1:9944"]
+# None in case of default Light Client Mode
+app_id = 0
+confidence = 92.0
+avail_path = "avail_path_2"
+prometheus_port = 9521
+sync_blocks_depth=50
+bootstraps = [["12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz","/ip4/127.0.0.1/tcp/37000"]]
+# See https://docs.rs/log/0.4.14/log/enum.LevelFilter.html for possible log level values
+log_level = "INFO"
