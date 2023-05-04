@@ -227,8 +227,6 @@ pub async fn process_block(
 			.store_confidence_in_db(verified.len() as u32, block_number)
 			.context("Failed to store confidence in DB")?;
 
-		// let y = is_confidence_in_db(db.clone(),block_number)
-
 		let mut lock = counter.lock().unwrap();
 		*lock = block_number;
 

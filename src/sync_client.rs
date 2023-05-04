@@ -60,11 +60,7 @@ pub trait SyncClient {
 }
 #[derive(Clone)]
 pub struct SyncClientImpl {
-	// cfg: SyncClientConfig,
 	db: Arc<DB>,
-	// pp: PublicParameters,
-	// block_tx: Option<Sender<BlockVerified>>,
-	// block_number: u32,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
 }
@@ -289,11 +285,7 @@ pub async fn run(
 			// run those many concurrent syncing lightweight tasks, not threads
 			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
 				let test = SyncClientImpl {
-					// cfg: cfg_clone.clone(),
 					db: store.clone(),
-					// pp: pp.clone(),
-					// block_tx: block_tx.clone(),
-					// block_number,
 					network_client: net_svc.clone(),
 					rpc_client: rpc_client.clone(),
 				};
@@ -397,7 +389,6 @@ mod tests {
 			.returning(move |_| {
 				let header = header.clone();
 				let header_hash = header_hash.clone();
-				// let x = x.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
@@ -559,7 +550,6 @@ mod tests {
 			.returning(move |_| {
 				let header = header.clone();
 				let header_hash = header_hash.clone();
-				// let x = x.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
