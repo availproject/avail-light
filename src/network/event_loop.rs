@@ -292,7 +292,7 @@ impl EventLoop {
 						peer_id,
 						info: Info { listen_addrs, .. },
 					} => {
-						info!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
+						debug!("Identity Received from: {peer_id:?} on listen address: {listen_addrs:?}");
 						// before we try and do a reservation with the relay
 						// we have to exchange observed addresses
 						// in this case relay needs to tell us our own
@@ -343,7 +343,7 @@ impl EventLoop {
 						}
 					},
 					IdentifyEvent::Sent { peer_id } => {
-						info!("Identity Sent event to: {peer_id:?}");
+						debug!("Identity Sent event to: {peer_id:?}");
 					},
 					IdentifyEvent::Pushed { peer_id } => {
 						debug!("Identify Pushed event. PeerId: {peer_id:?}");
@@ -404,7 +404,7 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Relay(event)) => match event {
 				RelayEvent::ReservationReqAccepted { src_peer_id, .. } => {
-					info!("Relay accepted reservation request from: {src_peer_id:#?}");
+					debug!("Relay accepted reservation request from: {src_peer_id:#?}");
 				},
 				RelayEvent::ReservationReqDenied { src_peer_id } => {
 					debug!("Reservation request was denied for: {src_peer_id:#?}");
@@ -415,29 +415,29 @@ impl EventLoop {
 				_ => {},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
-				info! {"Relay Client Event: {event:#?}"};
+				debug! {"Relay Client Event: {event:#?}"};
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => match event {
 				DcutrEvent::RemoteInitiatedDirectConnectionUpgrade {
 					remote_peer_id,
 					remote_relayed_addr,
 				} => {
-					info!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
+					debug!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
 				},
 				DcutrEvent::InitiatedDirectConnectionUpgrade {
 					remote_peer_id,
 					local_relayed_addr,
 				} => {
-					info!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
+					debug!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
 				},
 				DcutrEvent::DirectConnectionUpgradeSucceeded { remote_peer_id } => {
-					info!("Hole punching succeeded with: {remote_peer_id:#?}")
+					debug!("Hole punching succeeded with: {remote_peer_id:#?}")
 				},
 				DcutrEvent::DirectConnectionUpgradeFailed {
 					remote_peer_id,
 					error,
 				} => {
-					info!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
+					debug!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
 				},
 			},
 			swarm_event => {
@@ -558,7 +558,7 @@ impl EventLoop {
 					.behaviour_mut()
 					.kademlia
 					.put_record(record, quorum)
-					.expect("No put error.");
+					.expect("Unable to perform Kademlia PUT operation.");
 
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::PutRecord(sender));
@@ -576,7 +576,7 @@ impl EventLoop {
 						.behaviour_mut()
 						.kademlia
 						.put_record(record.clone(), quorum)
-						.expect("No put error.");
+						.expect("Unable to perform batch Kademlia PUT operation.");
 					ids.insert(query_id, None);
 				}
 				self.pending_kad_query_batch = ids;

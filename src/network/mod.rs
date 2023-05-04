@@ -157,7 +157,7 @@ pub fn init(
 		local_peer_id,
 		MemoryStoreConfig {
 			max_records: cfg.kademlia.max_kad_record_number, // ~2hrs
-			max_value_bytes: cfg.kademlia.max_kad_record_size,
+			max_value_bytes: cfg.kademlia.max_kad_record_size + 1,
 			max_providers_per_key: usize::from(cfg.kademlia.record_replication_factor), // Needs to match the replication factor, per libp2p docs
 			max_provided_keys: cfg.kademlia.max_kad_provided_keys,
 		},
