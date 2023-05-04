@@ -277,7 +277,6 @@ async fn process_block(
 	block: &BlockVerified,
 	pp: PublicParameters,
 ) -> Result<()> {
-	info!("block is {:?}", block);
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = &block.dimensions;
@@ -295,7 +294,6 @@ async fn process_block(
 	let dht_rows = app_client
 		.fetch_rows_from_dht(block_number, dimensions, &app_rows)
 		.await;
-	info!("dht fetched rows {:?}", dht_rows);
 
 	let dht_rows_count = dht_rows.iter().flatten().count();
 	debug!(block_number, "Fetched {dht_rows_count} app rows from DHT");
@@ -320,8 +318,6 @@ async fn process_block(
 			.get_kate_rows(dht_missing_rows, block.header_hash)
 			.await?
 	};
-
-	info!("rpc rows {:?}", rpc_rows);
 
 	let (rpc_verified_rows, mut missing_rows) =
 		commitments::verify_equality(&pp, commitments, &rpc_rows, lookup, dimensions, app_id)?;
@@ -375,8 +371,6 @@ async fn process_block(
 	let dht_rows = app_client
 		.reconstruct_rows_from_dht(pp, block_number, dimensions, commitments, &missing_rows)
 		.await?;
-
-	info!("reconstructed rows {:?}", dht_rows);
 
 	debug!(
 		block_number,

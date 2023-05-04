@@ -223,13 +223,9 @@ pub async fn process_block(
 		);
 
 		// write confidence factor into on-disk database
-		let x = light_client
+		light_client
 			.store_confidence_in_db(verified.len() as u32, block_number)
 			.context("Failed to store confidence in DB")?;
-
-		if x {
-			info!("stored in db");
-		}
 
 		// let y = is_confidence_in_db(db.clone(),block_number)
 

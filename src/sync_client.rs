@@ -146,8 +146,6 @@ async fn process_block(
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
-	// info!("Header {:?}", header);
-	// info!("\nHash {:?}", header_hash);
 	let HeaderExtension::V1(xt) = &header.extension;
 
 	info!(block_number, "App index {:?}", xt.app_lookup.index);
@@ -185,7 +183,6 @@ async fn process_block(
 	let (dht_fetched, unfetched) = sync_client
 		.fetch_cells_from_dht(&positions, block_number)
 		.await?;
-	info!("dht fetch {:?}, unfetch {:?}", dht_fetched, unfetched);
 
 	info!(
 		block_number,
@@ -198,7 +195,6 @@ async fn process_block(
 	} else {
 		sync_client.get_kate_proof(header_hash, &unfetched).await?
 	};
-	info!("rpc_fetched {:?}", rpc_fetched);
 
 	info!(
 		block_number,
@@ -223,8 +219,6 @@ async fn process_block(
 		proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
 
 	let ver = (verified.clone(), unverified);
-	// info!("dimensions {:?} \n cells {:?} \n commitments {:?}", dimensions, cells, commitments);
-	info!("verified {:?}", ver);
 
 	info!(
 		block_number,
@@ -620,12 +614,10 @@ mod tests {
 			});
 		if cfg.disable_rpc {
 			mock_client.expect_get_kate_proof().never();
-		}
-		else{
-			mock_client.expect_get_kate_proof()
-			.returning(move |_,_| {
+		} else {
+			mock_client.expect_get_kate_proof().returning(move |_, _| {
 				let unfetched = unfetched.clone();
-				Box::pin(async move {Ok(unfetched)})
+				Box::pin(async move { Ok(unfetched) })
 			});
 		}
 		mock_client
