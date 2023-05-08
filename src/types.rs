@@ -1,9 +1,10 @@
 //! Shared light client structs and enums.
 
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
 use avail_subxt::primitives::Header as DaHeader;
@@ -11,7 +12,7 @@ use codec::Encode;
 use kate_recovery::commitments;
 use kate_recovery::matrix::Dimensions;
 use kate_recovery::{index::AppDataIndex, matrix::Partition};
-use libp2p::Multiaddr;
+use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sp_core::blake2_256;
 use subxt::utils::H256;
@@ -213,6 +214,8 @@ pub struct RuntimeConfig {
 	pub confidence: f64,
 	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<(String, Multiaddr)>,
+	/// Vector of Relay nodes, which are used for hole punching
+	pub relays: Vec<(String, Multiaddr)>,
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
@@ -336,16 +339,27 @@ pub struct LibP2PConfig {
 	pub libp2p_tcp_port_reuse: bool,
 	pub libp2p_autonat_only_global_ips: bool,
 	pub kademlia: KademliaConfig,
+	pub is_relay: bool,
+	pub relays: Vec<(PeerId, Multiaddr)>,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
 	fn from(rtcfg: &RuntimeConfig) -> Self {
+		let relay_nodes = rtcfg
+			.relays
+			.iter()
+			.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
+			.expect("To be able to parse relay nodes values from config.");
+
 		Self {
 			libp2p_secret_key: rtcfg.secret_key.clone(),
 			libp2p_port: rtcfg.libp2p_port,
 			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
 			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
 			kademlia: rtcfg.into(),
+			is_relay: rtcfg.relays.is_empty(),
+			relays: relay_nodes,
 		}
 	}
 }
@@ -436,6 +450,7 @@ impl Default for RuntimeConfig {
 			app_id: None,
 			confidence: 92.0,
 			bootstraps: Vec::new(),
+			relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,

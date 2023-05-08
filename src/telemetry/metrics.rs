@@ -23,9 +23,9 @@ pub struct Metrics {
 pub enum MetricEvent {
 	SessionBlockCounter,
 	TotalBlockNumber(u32),
-	DHTFetched(u64),
+	DHTFetched(i64),
 	DHTFetchedPercentage(f64),
-	NodeRPCFetched(u64),
+	NodeRPCFetched(i64),
 	BlockConfidence(f64),
 	RPCCallDuration(f64),
 	DHTPutDuration(f64),
@@ -42,77 +42,77 @@ impl Metrics {
 		sub_reg.register(
 			"session_block_number",
 			"Number of blocks processed by the light client since (re)start",
-			Box::new(session_block_counter.clone()),
+			session_block_counter.clone(),
 		);
 
 		let total_block_number = Gauge::default();
 		sub_reg.register(
 			"total_block_number",
 			"Current block number (as received from Avail header)",
-			Box::new(total_block_number.clone()),
+			total_block_number.clone(),
 		);
 
 		let dht_fetched = Gauge::default();
 		sub_reg.register(
 			"dht_fetched",
 			"Number of cells fetched from DHT",
-			Box::new(dht_fetched.clone()),
+			dht_fetched.clone(),
 		);
 
 		let dht_fetched_percentage = Gauge::default();
 		sub_reg.register(
 			"dht_fetched_percentage",
 			"Percentage of cells fetched via DHT compared to total number of cells requested for random sampling",
-			Box::new(dht_fetched_percentage.clone()),
+			dht_fetched_percentage.clone(),
 		);
 
 		let node_rpc_fetched = Gauge::default();
 		sub_reg.register(
 			"node_rpc_fetched",
 			"Number of cells fetched via RPC call to node",
-			Box::new(node_rpc_fetched.clone()),
+			node_rpc_fetched.clone(),
 		);
 
 		let block_confidence = Gauge::<f64, AtomicU64>::default();
 		sub_reg.register(
 			"block_confidence",
 			"Block confidence of current block",
-			Box::new(block_confidence.clone()),
+			block_confidence.clone(),
 		);
 
 		let rpc_call_duration = Gauge::default();
 		sub_reg.register(
 			"rpc_call_duration",
 			"Time needed to retrieve all cells via RPC for current block (in seconds)",
-			Box::new(rpc_call_duration.clone()),
+			rpc_call_duration.clone(),
 		);
 
 		let dht_put_duration = Gauge::default();
 		sub_reg.register(
 			"dht_put_duration",
 			"Time needed to perform DHT PUT operation for current block (in seconds)",
-			Box::new(dht_put_duration.clone()),
+			dht_put_duration.clone(),
 		);
 
 		let dht_put_success = Gauge::default();
 		sub_reg.register(
 			"dht_put_sucess_rate",
 			"Success rate of the DHT PUT operation",
-			Box::new(dht_put_success.clone()),
+			dht_put_success.clone(),
 		);
 
 		let dht_put_rows_duration = Gauge::default();
 		sub_reg.register(
 			"dht_put_rows_duration",
 			"Time needed to perform DHT PUT rows operation for current block (in seconds)",
-			Box::new(dht_put_rows_duration.clone()),
+			dht_put_rows_duration.clone(),
 		);
 
 		let dht_put_rows_success = Gauge::default();
 		sub_reg.register(
 			"dht_put_rows_sucess_rate",
 			"Success rate of the DHT PUT rows operation",
-			Box::new(dht_put_success.clone()),
+			dht_put_success.clone(),
 		);
 
 		Self {

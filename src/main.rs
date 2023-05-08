@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
 use consts::STATE_CF;
-use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
+use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -173,10 +173,29 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	} else {
 		cfg.libp2p_port.0
 	};
+
+	// always listen on UDP to prioritize QUIC
 	network_client
-		.start_listening(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)
+		.start_listening(
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Udp(port))
+				.with(Protocol::QuicV1),
+		)
 		.await
-		.context("Listening not to fail.")?;
+		.context("Listening on UDP not to fail.")?;
+	// if there were no provided relays, that means we're one of those
+	// than we need to act as a Relay, listen on TCP also
+	if cfg.relays.is_empty() {
+		network_client
+			.start_listening(
+				Multiaddr::empty()
+					.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+					.with(Protocol::Tcp(port)),
+			)
+			.await
+			.context("Listening on TCP not to fail.")?;
+	}
 
 	// Check if bootstrap nodes were provided
 	let bootstrap_nodes = cfg
