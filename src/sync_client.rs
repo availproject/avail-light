@@ -51,7 +51,7 @@ pub trait SyncClient {
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32>;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn fetch_cells_from_dht(
 		&self,
 		positions: &[Position],
@@ -99,11 +99,11 @@ impl SyncClient for SyncClientImpl {
 		Ok(rpc::get_kate_proof(&self.rpc_client, hash, positions).await?)
 	}
 
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32> {
-		Ok(self
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+		self
 			.network_client
 			.insert_cells_into_dht(block, cells)
-			.await)
+			.await
 	}
 	async fn fetch_cells_from_dht(
 		&self,
@@ -211,10 +211,7 @@ async fn process_block(
 	let cells_len = cells.len();
 	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, unverified) =
-		proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
-
-	let ver = (verified.clone(), unverified);
+	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
 
 	info!(
 		block_number,
@@ -229,7 +226,7 @@ async fn process_block(
 
 	let inserted_cells = sync_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await?;
+		.await;
 	info!(block_number, "Cells inserted into DHT: {inserted_cells}");
 
 	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
@@ -313,7 +310,6 @@ mod tests {
 	use kate_recovery::testnet;
 	use mockall::predicate::eq;
 	use subxt::config::substrate::Digest;
-	use subxt::config::substrate::DigestItem::{PreRuntime, Seal};
 	use tokio::sync::mpsc::channel;
 
 	#[tokio::test]
@@ -335,22 +331,7 @@ mod tests {
 			)
 			.into(),
 			digest: Digest {
-				logs: vec![
-					PreRuntime(
-						[66, 65, 66, 69],
-						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						vec![
-							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
-							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
-							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
-							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
-							86, 140, 246, 143,
-						],
-					),
-				],
+				logs: vec![],
 			},
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
@@ -463,7 +444,7 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
-			.returning(move |_, _| Box::pin(async move { Ok(1f32) }));
+			.returning(move |_, _| Box::pin(async move { 1f32 }));
 		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
@@ -487,22 +468,7 @@ mod tests {
 			)
 			.into(),
 			digest: Digest {
-				logs: vec![
-					PreRuntime(
-						[66, 65, 66, 69],
-						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						vec![
-							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
-							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
-							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
-							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
-							86, 140, 246, 143,
-						],
-					),
-				],
+				logs: vec![],
 			},
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
@@ -614,11 +580,10 @@ mod tests {
 			.expect_is_confidence_in_db()
 			.with(eq(42))
 			.returning(|_| Ok(true));
-
 		mock_client
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
-			.returning(move |_, _| Box::pin(async move { Ok(1f32) }));
+			.returning(move |_, _| Box::pin(async move { 1f32 }));
 		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
