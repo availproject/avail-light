@@ -100,8 +100,7 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
-		self
-			.network_client
+		self.network_client
 			.insert_cells_into_dht(block, cells)
 			.await
 	}
@@ -330,9 +329,7 @@ mod tests {
 				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![],
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
@@ -467,9 +464,7 @@ mod tests {
 				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![],
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,

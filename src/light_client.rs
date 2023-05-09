@@ -490,9 +490,7 @@ mod tests {
 				"bf1c73d4d09fa6a437a411a935ad3ec56a67a35e7b21d7676a5459b55b397ad4"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![]
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
@@ -616,9 +614,7 @@ mod tests {
 				"bf1c73d4d09fa6a437a411a935ad3ec56a67a35e7b21d7676a5459b55b397ad4"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![]
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
