@@ -34,15 +34,14 @@ async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHead
 		.ok_or(anyhow!("Header with hash {hash:?} not found"))
 }
 
-/// RPC for obtaining header of latest block mined by network
-// I'm writing this function so that I can check what's latest block number of chain
-// and start syncer to fetch block headers for block range [0, LATEST]
+/// RPC for obtaining header of latest finalized block mined by network
 pub async fn get_chain_header(client: &avail::Client) -> Result<DaHeader> {
+	let h = client.rpc().finalized_head().await?;
 	client
 		.rpc()
-		.header(None)
+		.header(Some(h))
 		.await?
-		.ok_or(anyhow!("Latest header not found"))
+		.ok_or(anyhow!("Couldn't get latest finalized header"))
 }
 
 /// Gets header by block number
