@@ -153,6 +153,5 @@ pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Res
 		.context("Failed to get cf handle")?;
 
 	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
-		.context("Failed to write confidence")?;
-	Ok(())
+		.context("Failed to write confidence")
 }
