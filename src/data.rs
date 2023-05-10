@@ -147,12 +147,12 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u
 }
 
 /// Stores confidence factor into database under the given block number key
-pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Result<bool> {
+pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Result<()> {
 	let handle = db
 		.cf_handle(CONFIDENCE_FACTOR_CF)
 		.context("Failed to get cf handle")?;
 
 	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
 		.context("Failed to write confidence")?;
-	Ok(true)
+	Ok(())
 }

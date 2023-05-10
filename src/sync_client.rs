@@ -49,7 +49,7 @@ pub trait SyncClient {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)>;
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()>;
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool>;
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn fetch_cells_from_dht(
@@ -90,7 +90,7 @@ impl SyncClient for SyncClientImpl {
 			.context("Failed to check if confidence is in DB")?)
 	}
 
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool> {
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
 			.context("Failed to store confidence in DB")
 	}

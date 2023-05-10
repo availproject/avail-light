@@ -65,7 +65,7 @@ pub trait LightClient {
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool>;
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -98,10 +98,9 @@ impl LightClient for LightClientImpl {
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
 	}
-	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool> {
-		let x = store_confidence_in_db(self.db.clone(), block_number, count)
-			.context("Failed to store confidence in DB")?;
-		Ok(x)
+	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
+		store_confidence_in_db(self.db.clone(), block_number, count)
+			.context("Failed to store confidence in DB")
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, header)
@@ -573,7 +572,7 @@ mod tests {
 		});
 		mock_client
 			.expect_store_confidence_in_db()
-			.returning(|_, _| Ok(true));
+			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_store_block_header_in_db()
 			.returning(|_, _| Ok(()));
@@ -694,7 +693,7 @@ mod tests {
 		mock_client.expect_get_kate_proof().never();
 		mock_client
 			.expect_store_confidence_in_db()
-			.returning(|_, _| Ok(true));
+			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_store_block_header_in_db()
 			.returning(|_, _| Ok(()));
