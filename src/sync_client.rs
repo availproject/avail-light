@@ -21,13 +21,12 @@ use avail_subxt::{
 	api::runtime_types::da_primitives::header::extension::HeaderExtension,
 	primitives::Header as DaHeader, AvailConfig,
 };
-use std::{sync::Arc, time::SystemTime};
-use subxt::{utils::H256, OnlineClient};
-// use avail_subxt::primitives::Header as DaHeader;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
+use std::{sync::Arc, time::SystemTime};
+use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
@@ -56,7 +55,7 @@ pub trait SyncClient {
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)>;
+	) -> (Vec<Cell>, Vec<Position>);
 }
 #[derive(Clone)]
 pub struct SyncClientImpl {
@@ -79,15 +78,13 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
-		Ok(
-			store_block_header_in_db(self.db.clone(), block_number, &header)
-				.context("Failed to store block header in DB")?,
-		)
+		store_block_header_in_db(self.db.clone(), block_number, &header)
+			.context("Failed to store block header in DB")
 	}
 
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
-		Ok(is_confidence_in_db(self.db.clone(), block_number)
-			.context("Failed to check if confidence is in DB")?)
+		is_confidence_in_db(self.db.clone(), block_number)
+			.context("Failed to check if confidence is in DB")
 	}
 
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
@@ -96,7 +93,7 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		Ok(rpc::get_kate_proof(&self.rpc_client, hash, positions).await?)
+		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
 	}
 
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
@@ -108,11 +105,10 @@ impl SyncClient for SyncClientImpl {
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
-		Ok(self
-			.network_client
+	) -> (Vec<Cell>, Vec<Position>) {
+		self.network_client
 			.fetch_cells_from_dht(block_number, positions)
-			.await)
+			.await
 	}
 }
 async fn process_block(
@@ -177,7 +173,7 @@ async fn process_block(
 
 	let (dht_fetched, unfetched) = sync_client
 		.fetch_cells_from_dht(&positions, block_number)
-		.await?;
+		.await;
 
 	info!(
 		block_number,
@@ -301,7 +297,6 @@ mod tests {
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
 	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
-	// use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
 	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
@@ -318,7 +313,6 @@ mod tests {
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let mut mock_client = MockSyncClient::new();
-		// process_blocks(mock_client, 42, &cfg, pp, Some(block_tx)).await.unwrap();
 		let header: DaHeader = DaHeader {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
 				.into(),
@@ -355,7 +349,6 @@ mod tests {
 		};
 		let header_hash: H256 =
 			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
-		// let unfetched: Vec<Cell> = vec![];
 		mock_client
 			.expect_block_header_in_db()
 			.with(eq(42))
@@ -428,7 +421,7 @@ mod tests {
 						],
 					},
 				];
-				Box::pin(async move { Ok((fetch, dht)) })
+				Box::pin(async move { (fetch, dht) })
 			});
 		if cfg.disable_rpc {
 			mock_client.expect_get_kate_proof().never();
@@ -453,7 +446,6 @@ mod tests {
 		let pp = testnet::public_params(1024);
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
-		// process_blocks(mock_client, 42, &cfg, pp, Some(block_tx)).await.unwrap();
 		let header: DaHeader = DaHeader {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
 				.into(),
@@ -561,7 +553,7 @@ mod tests {
 						],
 					},
 				];
-				Box::pin(async move { Ok((fetch, dht)) })
+				Box::pin(async move { (fetch, dht) })
 			});
 		if cfg.disable_rpc {
 			mock_client.expect_get_kate_proof().never();
