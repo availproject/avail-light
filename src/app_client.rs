@@ -322,10 +322,6 @@ async fn process_block(
 		commitments::verify_equality(&pp, commitments, &rpc_rows, lookup, dimensions, app_id)?;
 	// Since verify_equality returns all missing rows, exclude DHT rows that are already verified
 	missing_rows.retain(|row| !dht_verified_rows.contains(row));
-	info!(
-		"rpc verified and missing {:?} {:?}",
-		rpc_verified_rows, missing_rows
-	);
 
 	debug!(
 		block_number,

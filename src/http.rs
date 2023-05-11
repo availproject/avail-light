@@ -101,7 +101,6 @@ fn confidence(block_num: u32, db: Arc<DB>, counter: u32) -> ClientResponse<Confi
 		},
 		Ok(None) => {
 			// let lock = counter.lock().unwrap();
-			info!("msg from http num {:?} counter {:?}", block_num, counter);
 			if block_num < counter {
 				return ClientResponse::NotFinalized;
 			} else {
