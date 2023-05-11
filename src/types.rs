@@ -39,6 +39,7 @@ pub struct RuntimeVersionResult {
 }
 
 /// Light to app client channel message struct
+#[derive(Debug)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
@@ -402,6 +403,7 @@ impl From<&RuntimeConfig> for KademliaConfig {
 }
 
 /// Sync client configuration (see [RuntimeConfig] for details)
+#[derive(Clone)]
 pub struct SyncClientConfig {
 	pub confidence: f64,
 	pub disable_rpc: bool,
