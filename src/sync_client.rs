@@ -21,13 +21,12 @@ use avail_subxt::{
 	api::runtime_types::da_primitives::header::extension::HeaderExtension,
 	primitives::Header as DaHeader, AvailConfig,
 };
-use std::{sync::Arc, time::SystemTime};
-use subxt::{utils::H256, OnlineClient};
-// use avail_subxt::primitives::Header as DaHeader;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
+use std::{sync::Arc, time::SystemTime};
+use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
@@ -50,25 +49,19 @@ pub trait SyncClient {
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()>;
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool>;
-	fn cell_count_for_confidence(&self, cfg: &SyncClientConfig) -> Result<u32>;
-	fn generate_random_cells(
-		&self,
-		header: DaHeader,
-		cfg: &SyncClientConfig,
-	) -> Result<Vec<Position>>;
 	async fn fetch_cells_rpc(
 		&self,
 		cfg: &SyncClientConfig,
 		header_hash: H256,
-		unfetched: &Vec<Position>,
+		unfetched: &[Position],
 	) -> Result<Vec<Cell>>;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32>;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn fetch_cells_from_dht(
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)>;
+	) -> (Vec<Cell>, Vec<Position>);
 	async fn process_block(
 		&self,
 		block_number: u32,
@@ -95,8 +88,6 @@ pub trait SyncClient {
 			.await
 			.context("Failed to get block {block_number} by block number")?;
 
-		// info!("Header {:?}", header);
-		// info!("\nHash {:?}", header_hash);
 		let HeaderExtension::V1(xt) = &header.extension;
 
 		info!(block_number, "App index {:?}", xt.app_lookup.index);
@@ -126,13 +117,10 @@ pub trait SyncClient {
 
 		let commitments = commitments::from_slice(&xt.commitment.commitment)?;
 
-		// now this is in `u64`
-		// let cell_count = test.cell_count_for_confidence()?;
-		let positions = self
-			.generate_random_cells(header.clone(), cfg)
-			.context("Failed to generate random cells")?;
+		let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
+		let positions = rpc::generate_random_cells(&dimensions, cell_count);
 
-		let (dht_fetched, unfetched) = self.fetch_cells_from_dht(&positions, block_number).await?;
+		let (dht_fetched, unfetched) = self.fetch_cells_from_dht(&positions, block_number).await;
 		info!("dht fetch {:?}, unfetch {:?}", dht_fetched, unfetched);
 
 		info!(
@@ -166,7 +154,6 @@ pub trait SyncClient {
 			self.verify_cells(block_number, &dimensions, &cells, &commitments, &pp)?;
 
 		let ver = (verified.clone(), unverified);
-		// info!("dimensions {:?} \n cells {:?} \n commitments {:?}", dimensions, cells, commitments);
 		info!("verified {:?}", ver);
 
 		info!(
@@ -175,13 +162,10 @@ pub trait SyncClient {
 			begin.elapsed()?
 		);
 
-		// write confidence factor into on-disk database
 		self.store_confidence_in_db(verified.len().try_into()?, block_number)
 			.context("Failed to store confidence in DB")?;
 
-		let inserted_cells = self
-			.insert_cells_into_dht(block_number, rpc_fetched)
-			.await?;
+		let inserted_cells = self.insert_cells_into_dht(block_number, rpc_fetched).await;
 		info!(block_number, "Cells inserted into DHT: {inserted_cells}");
 
 		let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
@@ -204,26 +188,9 @@ pub trait SyncClient {
 	) -> Result<(Vec<Position>, Vec<Position>)>;
 }
 
-// trait SyncClone {
-//     fn clone_box(&self) -> Box<dyn SyncClient>;
-// }
-
-// impl<T> SyncClone for T
-// where
-//     T: 'static + SyncClient + Clone,
-// {
-//     fn clone_box(&self) -> Box<dyn SyncClient> {
-//         Box::new(self.clone())
-//     }
-// }
-
 #[derive(Clone)]
 pub struct SyncClientImpl {
-	// cfg: SyncClientConfig,
 	db: Arc<DB>,
-	// pp: PublicParameters,
-	// block_tx: Option<Sender<BlockVerified>>,
-	// block_number: u32,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
 }
@@ -242,15 +209,13 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
-		Ok(
-			store_block_header_in_db(self.db.clone(), block_number, &header)
-				.context("Failed to store block header in DB")?,
-		)
+		store_block_header_in_db(self.db.clone(), block_number, &header)
+			.context("Failed to store block header in DB")
 	}
 
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
-		Ok(is_confidence_in_db(self.db.clone(), block_number)
-			.context("Failed to check if confidence is in DB")?)
+		is_confidence_in_db(self.db.clone(), block_number)
+			.context("Failed to check if confidence is in DB")
 	}
 
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool> {
@@ -258,66 +223,38 @@ impl SyncClient for SyncClientImpl {
 			.context("Failed to store confidence in DB")
 	}
 
-	fn cell_count_for_confidence(&self, cfg: &SyncClientConfig) -> Result<u32> {
-		let conf = rpc::cell_count_for_confidence(cfg.confidence);
-		Ok(conf)
-	}
-
-	fn generate_random_cells(
-		&self,
-		header: DaHeader,
-		cfg: &SyncClientConfig,
-	) -> Result<Vec<Position>> {
-		let conf = self.cell_count_for_confidence(cfg)?;
-		let HeaderExtension::V1(xt) = header.extension.clone();
-		let dimensions = Dimensions::new(xt.commitment.rows, xt.commitment.cols).unwrap();
-		let cells = rpc::generate_random_cells(&dimensions, conf);
-		Ok(cells)
-	}
-
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		Ok(rpc::get_kate_proof(&self.rpc_client, hash, positions).await?)
+		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
 	}
 
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32> {
-		Ok(self
-			.network_client
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+		self.network_client
 			.insert_cells_into_dht(block, cells)
-			.await)
+			.await
 	}
 	async fn fetch_cells_from_dht(
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
-		Ok(self
-			.network_client
+	) -> (Vec<Cell>, Vec<Position>) {
+		self.network_client
 			.fetch_cells_from_dht(block_number, positions)
-			.await)
+			.await
 	}
 
 	async fn fetch_cells_rpc(
 		&self,
 		cfg: &SyncClientConfig,
 		header_hash: H256,
-		unfetched: &Vec<Position>,
+		unfetched: &[Position],
 	) -> Result<Vec<Cell>> {
-		let fetched = if cfg.disable_rpc {
-			vec![]
+		if cfg.disable_rpc {
+			Ok(vec![])
 		} else {
-			self.get_kate_proof(header_hash, unfetched).await?
-		};
-		Ok(fetched)
+			self.get_kate_proof(header_hash, unfetched).await
+		}
 	}
-	// async fn process_block(
-	// 	&self,
-	// 	block_number: u32,
-	// 	cfg: &SyncClientConfig,
-	// 	pp: PublicParameters,
-	// 	block_tx: Option<Sender<BlockVerified>>,
-	// ) -> Result<()> {
-	// 	Ok(process_block(&self, block_number, cfg, pp, block_tx).await?)
-	// }
+
 	fn verify_cells(
 		&self,
 		block_num: u32,
@@ -326,8 +263,8 @@ impl SyncClient for SyncClientImpl {
 		commitments: &[[u8; 48]],
 		public_parameters: &PublicParameters,
 	) -> Result<(Vec<Position>, Vec<Position>)> {
-		let proof = proof::verify(block_num, dimensions, cells, commitments, public_parameters)?;
-		Ok(proof)
+		proof::verify(block_num, dimensions, cells, commitments, public_parameters)
+			.map_err(From::from)
 	}
 }
 
@@ -374,11 +311,7 @@ pub async fn run(
 			// run those many concurrent syncing lightweight tasks, not threads
 			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
 				let test = SyncClientImpl {
-					// cfg: cfg_clone.clone(),
 					db: store.clone(),
-					// pp: pp.clone(),
-					// block_tx: block_tx.clone(),
-					// block_number,
 					network_client: net_svc.clone(),
 					rpc_client: rpc_client.clone(),
 				};
@@ -400,7 +333,6 @@ mod tests {
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
 	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
-	// use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
 	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
 	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
@@ -408,7 +340,6 @@ mod tests {
 	use kate_recovery::testnet;
 	use mockall::{predicate::eq, Sequence};
 	use subxt::config::substrate::Digest;
-	use subxt::config::substrate::DigestItem::{PreRuntime, Seal};
 	use tokio::sync::mpsc::channel;
 
 	#[tokio::test]
@@ -420,7 +351,6 @@ mod tests {
 		mock_client
 			.expect_process_block()
 			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
-		// process_blocks(mock_client, 42, &cfg, pp, Some(block_tx)).await.unwrap();
 		mock_client
 			.process_block(42, &cfg, pp, Some(block_tx))
 			.await
@@ -484,10 +414,9 @@ mod tests {
 		let mut seq = Sequence::new();
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
 		let pp = testnet::public_params(1024);
-		// mock_expect_get_kate_pr = testnet::public_params(1024);
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
-		if cfg.disable_rpc == true {
+		if cfg.disable_rpc {
 			mock_client.expect_fetch_cells_rpc().never();
 			mock_client
 				.expect_process_block()
@@ -514,10 +443,8 @@ mod tests {
 	//TODO: Code Cleaning/ formating
 	#[tokio::test]
 	async fn test_fetch_cells_dht() {
-		// let mut seq = Sequence::new();
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
 		let pp = testnet::public_params(1024);
-		// mock_expect_get_kate_pr = testnet::public_params(1024);
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		mock_client.expect_block_header_in_db().never();
@@ -532,24 +459,7 @@ mod tests {
 				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![
-					PreRuntime(
-						[66, 65, 66, 69],
-						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						vec![
-							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
-							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
-							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
-							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
-							86, 140, 246, 143,
-						],
-					),
-				],
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
@@ -580,9 +490,7 @@ mod tests {
 			.with(eq(2))
 			.returning(move |_| {
 				let header = header.clone();
-				let header_hash = header_hash.clone();
-				// let x = x.clone();
-
+				let header_hash = header_hash;
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
 		mock_client
@@ -624,7 +532,7 @@ mod tests {
 						],
 					},
 				];
-				Box::pin(async move { Ok((fetch, dht)) })
+				Box::pin(async move { (fetch, dht) })
 			});
 
 		let rpc_fetched = vec![Cell {
@@ -641,11 +549,8 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 2)
-			.returning(move |_, _| Box::pin(async move { Ok(1f32) }));
-		mock_client
-			.insert_cells_into_dht(2, rpc_fetched)
-			.await
-			.unwrap();
+			.returning(move |_, _| Box::pin(async move { 1f32 }));
+		mock_client.insert_cells_into_dht(2, rpc_fetched).await;
 		mock_client
 			.expect_process_block()
 			.returning(|_, _, _, _| Box::pin(async move { Ok(()) }));
@@ -675,7 +580,6 @@ mod tests {
 		mock_client.expect_block_header_in_db().never();
 		mock_client
 			.expect_fetch_cells_rpc()
-			// .with(|_, h:H256, _| h == header_hash)
 			.returning(move |_, _, _| {
 				let unfetched = unfetched.clone();
 				Box::pin(async move { Ok(unfetched) })
@@ -690,7 +594,6 @@ mod tests {
 	async fn test_verify_cells() {
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
 		let pp = testnet::public_params(1024);
-		// mock_expect_get_kate_pr = testnet::public_params(1024);
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		let header: DaHeader = DaHeader {
@@ -703,24 +606,7 @@ mod tests {
 				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![
-					PreRuntime(
-						[66, 65, 66, 69],
-						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						vec![
-							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
-							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
-							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
-							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
-							86, 140, 246, 143,
-						],
-					),
-				],
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,

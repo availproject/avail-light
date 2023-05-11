@@ -61,9 +61,8 @@ pub trait LightClient {
 		positions: &[Position],
 		block_number: u32,
 	) -> Result<(Vec<Cell>, Vec<Position>)>;
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32>;
-	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>)
-		-> Result<f32>;
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	fn verify_cells(
 		&self,
@@ -86,18 +85,13 @@ pub struct LightClientImpl {
 
 #[async_trait]
 impl LightClient for LightClientImpl {
-	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> Result<f32> {
-		Ok(self
-			.network_client
+	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
+		self.network_client
 			.insert_cells_into_dht(block, cells)
-			.await)
+			.await
 	}
-	async fn insert_rows_into_dht(
-		&self,
-		block: u32,
-		rows: Vec<(RowIndex, Vec<u8>)>,
-	) -> Result<f32> {
-		Ok(self.network_client.insert_rows_into_dht(block, rows).await)
+	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
+		self.network_client.insert_rows_into_dht(block, rows).await
 	}
 	async fn fetch_cells_from_dht(
 		&self,
@@ -110,7 +104,7 @@ impl LightClient for LightClientImpl {
 			.await)
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		Ok(rpc::get_kate_proof(&self.rpc_client, hash, positions).await?)
+		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
 	}
 	fn verify_cells(
 		&self,
@@ -120,27 +114,22 @@ impl LightClient for LightClientImpl {
 		commitments: &[[u8; 48]],
 		public_parameters: &PublicParameters,
 	) -> Result<(Vec<Position>, Vec<Position>)> {
-		let proof = proof::verify(block_num, dimensions, cells, commitments, public_parameters)?;
-		Ok(proof)
+		proof::verify(block_num, dimensions, cells, commitments, public_parameters)
+			.map_err(From::from)
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<bool> {
-		let x = store_confidence_in_db(self.db.clone(), block_number, count)
-			.context("Failed to store confidence in DB")?;
-		Ok(x)
+		store_confidence_in_db(self.db.clone(), block_number, count)
+			.context("Failed to store confidence in DB")
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, header)
-			.context("Failed to store block header in DB")?;
-		Ok(())
+			.context("Failed to store block header in DB")
 	}
 }
 
 pub async fn process_block<T>(
 	light_client: T,
 	cfg: &LightClientConfig,
-	// db: Arc<DB>,
-	// network_client: &Client,
-	// rpc_client: &OnlineClient<AvailConfig>,
 	pp: &PublicParameters,
 	header: &Header,
 	received_at: Instant,
@@ -244,7 +233,6 @@ where
 			begin.elapsed()?
 		);
 
-		// write confidence factor into on-disk database
 		let x = light_client
 			.store_confidence_in_db(verified.len() as u32, block_number)
 			.context("Failed to store confidence in DB")?;
@@ -252,8 +240,6 @@ where
 		if x {
 			info!("stored in db");
 		}
-
-		// let y = is_confidence_in_db(db.clone(),block_number)
 
 		let mut lock = counter.lock().unwrap();
 		*lock = block_number;
@@ -335,7 +321,7 @@ where
 
 		let dht_insert_rows_success_rate = light_client
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
-			.await?;
+			.await;
 		let success_rate: f64 = dht_insert_rows_success_rate.into();
 		let time_elapsed = begin.elapsed()?.as_secs_f64();
 
@@ -372,7 +358,7 @@ where
 
 	let dht_insert_success_rate = light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
-		.await?;
+		.await;
 
 	info!(
 		block_number,
@@ -483,7 +469,6 @@ mod tests {
 	use kate_recovery::testnet;
 	use prometheus_client::registry::Registry;
 	use subxt::config::substrate::Digest;
-	use subxt::config::substrate::DigestItem::{PreRuntime, Seal};
 
 	#[test]
 	fn test_cell_count_for_confidence() {
@@ -522,7 +507,6 @@ mod tests {
 			hex!("3767f8955d6f7306b1e55701b6316fa1163daa8d4cffdb05c3b25db5f5da1723").into();
 		mock_client
 			.expect_get_kate_proof()
-			// .with(|_, h:H256, _| h == header_hash)
 			.returning(move |_, _| {
 				let unfetched = unfetched.clone();
 				Box::pin(async move { Ok(unfetched) })
@@ -531,17 +515,13 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 2)
-			.returning(move |_, _| Box::pin(async move { Ok(1f32) }));
-		mock_client
-			.insert_cells_into_dht(2, unfetched_clone)
-			.await
-			.unwrap();
+			.returning(move |_, _| Box::pin(async move { 1f32 }));
+		mock_client.insert_cells_into_dht(2, unfetched_clone).await;
 	}
 
 	#[tokio::test]
 	async fn test_verify_cells() {
 		let pp = testnet::public_params(1024);
-		// mock_expect_get_kate_pr = testnet::public_params(1024);
 		let mut mock_client = MockLightClient::new();
 		let header: Header = Header {
 			parent_hash: hex!("2a75ea712b4b2c360cb7c0cdd806de4e9363ff7e37ce30788d487a258604dba3")
@@ -553,24 +533,7 @@ mod tests {
 				"3027e34c2c75756c22770e6a3650ad68f3c9e44eed3c5ab4471742fe96678dae"
 			)
 			.into(),
-			digest: Digest {
-				logs: vec![
-					PreRuntime(
-						[66, 65, 66, 69],
-						[2, 0, 0, 0, 0, 145, 68, 2, 5, 0, 0, 0, 0].into(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						vec![
-							124, 169, 85, 4, 144, 53, 228, 107, 198, 30, 152, 128, 74, 145, 40,
-							144, 122, 89, 15, 55, 192, 162, 152, 195, 109, 123, 87, 121, 142, 140,
-							178, 53, 131, 106, 180, 233, 114, 82, 102, 51, 132, 176, 115, 150, 114,
-							216, 116, 130, 163, 224, 150, 76, 98, 209, 14, 60, 34, 192, 95, 162,
-							86, 140, 246, 143,
-						],
-					),
-				],
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
@@ -694,35 +657,7 @@ mod tests {
 				"bf1c73d4d09fa6a437a411a935ad3ec56a67a35e7b21d7676a5459b55b397ad4"
 			)
 			.into(),
-			digest: Digest {
-				logs: [
-					PreRuntime(
-						[66, 65, 66, 69],
-						[
-							1, 0, 0, 0, 0, 144, 167, 3, 5, 0, 0, 0, 0, 234, 33, 110, 57, 253, 69,
-							16, 236, 81, 53, 10, 38, 99, 79, 121, 63, 95, 20, 232, 211, 203, 73,
-							240, 255, 110, 250, 26, 69, 251, 47, 145, 106, 111, 192, 233, 228, 45,
-							103, 81, 210, 66, 24, 123, 173, 8, 67, 38, 116, 173, 71, 112, 53, 59,
-							7, 156, 61, 21, 70, 165, 132, 48, 153, 45, 6, 87, 98, 241, 165, 133,
-							107, 52, 136, 21, 88, 187, 112, 66, 146, 214, 157, 228, 148, 222, 87,
-							2, 33, 208, 69, 110, 121, 158, 8, 237, 250, 119, 7,
-						]
-						.to_vec(),
-					),
-					Seal(
-						[66, 65, 66, 69],
-						[
-							70, 238, 173, 147, 85, 24, 33, 100, 253, 206, 105, 172, 241, 64, 146,
-							206, 183, 68, 212, 79, 114, 139, 167, 13, 56, 237, 152, 109, 75, 157,
-							120, 27, 15, 101, 117, 234, 215, 154, 244, 186, 139, 208, 234, 96, 11,
-							199, 234, 241, 105, 56, 164, 157, 181, 254, 18, 32, 76, 202, 236, 225,
-							185, 70, 169, 138,
-						]
-						.to_vec(),
-					),
-				]
-				.to_vec(),
-			},
+			digest: Digest { logs: vec![] },
 			extension: V1(HeaderExtension {
 				commitment: KateCommitment {
 					rows: 1,
@@ -815,10 +750,10 @@ mod tests {
 			.returning(|_, _| Ok(()));
 		mock_client
 			.expect_insert_rows_into_dht()
-			.returning(|_, _| Box::pin(async move { Ok(1f32) }));
+			.returning(|_, _| Box::pin(async move { 1f32 }));
 		mock_client
 			.expect_insert_cells_into_dht()
-			.returning(|_, _| Box::pin(async move { Ok(1f32) }));
+			.returning(|_, _| Box::pin(async move { 1f32 }));
 		process_block(mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();

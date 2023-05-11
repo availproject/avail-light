@@ -276,8 +276,7 @@ async fn process_block(
 	app_id: u32,
 	block: &BlockVerified,
 	pp: PublicParameters,
-) -> Result<()>
-{
+) -> Result<()> {
 	info!("block is {:?}", block);
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
