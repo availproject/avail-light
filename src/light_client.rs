@@ -60,7 +60,7 @@ pub trait LightClient {
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)>;
+	) -> (Vec<Cell>, Vec<Position>);
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
@@ -89,11 +89,10 @@ impl LightClient for LightClientImpl {
 		&self,
 		positions: &[Position],
 		block_number: u32,
-	) -> Result<(Vec<Cell>, Vec<Position>)> {
-		Ok(self
-			.network_client
+	) -> (Vec<Cell>, Vec<Position>) {
+		self.network_client
 			.fetch_cells_from_dht(block_number, positions)
-			.await)
+			.await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
@@ -104,8 +103,7 @@ impl LightClient for LightClientImpl {
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
 		store_block_header_in_db(self.db.clone(), block_number, header)
-			.context("Failed to store block header in DB")?;
-		Ok(())
+			.context("Failed to store block header in DB")
 	}
 }
 
@@ -160,7 +158,7 @@ pub async fn process_block(
 
 	let (cells_fetched, unfetched) = light_client
 		.fetch_cells_from_dht(&positions, block_number)
-		.await?;
+		.await;
 	info!(
 		block_number,
 		"cells_from_dht" = cells_fetched.len(),
@@ -564,7 +562,7 @@ mod tests {
 			.returning(move |_, _| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				Box::pin(async move { Ok((fetched, unfetched)) })
+				Box::pin(async move { (fetched, unfetched) })
 			});
 		mock_client.expect_get_kate_proof().returning(move |_, _| {
 			let kate_proof = kate_proof.clone();
@@ -596,13 +594,6 @@ mod tests {
 		let mut metric_registry = Registry::default();
 		let metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 		let cells_unfetched: Vec<Position> = vec![];
-		// let cells_fetched = [
-		// 	Position { row: 1, col: 3 },
-		// 	Position { row: 0, col: 0 },
-		// 	Position { row: 1, col: 2 },
-		// 	Position { row: 0, col: 1 },
-		// ]
-		// .to_vec();
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
 				.into(),
@@ -688,7 +679,7 @@ mod tests {
 			.returning(move |_, _| {
 				let fetched = cells_fetched.clone();
 				let unfetched = cells_unfetched.clone();
-				Box::pin(async move { Ok((fetched, unfetched)) })
+				Box::pin(async move { (fetched, unfetched) })
 			});
 		mock_client.expect_get_kate_proof().never();
 		mock_client

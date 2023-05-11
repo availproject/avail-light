@@ -189,7 +189,7 @@ impl AppClient for AppClientImpl {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		Ok(rpc::get_kate_rows(&self.rpc_client, rows, block_hash).await?)
+		rpc::get_kate_rows(&self.rpc_client, rows, block_hash).await
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
@@ -199,8 +199,7 @@ impl AppClient for AppClientImpl {
 		data: &T,
 	) -> Result<()> {
 		store_encoded_data_in_db(self.db.clone(), app_id, block_number, &data)
-			.context("Failed to store data into database")?;
-		Ok(())
+			.context("Failed to store data into database")
 	}
 }
 
