@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use anyhow::{anyhow, Context, Result};
-use avail_subxt::{api, primitives::Header, AvailConfig, utils::H256, rpc::{rpc_params, types::BlockNumber}, avail::Client};
+use anyhow::{anyhow, Result};
+use avail_subxt::{api, primitives::Header, AvailConfig, avail::Client, utils::H256, rpc::{rpc_params, types::BlockNumber}};
 use codec::{Decode, Encode};
 use serde::{de::Error, Deserialize};
 use sp_core::{
@@ -9,9 +9,8 @@ use sp_core::{
 	ed25519::{self, Public as EdPublic, Signature},
 	Pair,
 };
-
 use tokio::sync::mpsc::{unbounded_channel, Sender};
-use tracing::{error, info, debug, log::trace};
+use tracing::{debug, error, info, log::trace};
 
 pub async fn finalized_headers(
 	rpc_client: Client,
@@ -28,7 +27,7 @@ pub async fn finalized_headers(
 
 #[derive(Debug, Encode)]
 enum SignerMessage {
-	DummyMessage(u32),
+	_DummyMessage(u32),
 	PrecommitMessage(Precommit),
 }
 
@@ -60,7 +59,7 @@ struct Commit {
 struct GrandpaJustification {
 	pub round: u64,
 	pub commit: Commit,
-	pub votes_ancestries: Vec<Header>,
+	pub _votes_ancestries: Vec<Header>,
 }
 
 impl<'de> Deserialize<'de> for GrandpaJustification {
@@ -99,8 +98,7 @@ async fn subscribe_check_and_process(
 		.await?;
 
 	// Decode result to proper type - ed25519 public key and u64 weight.
-	let grandpa_valset: Vec<(EdPublic, u64)> =
-		Decode::decode(&mut &grandpa_valset_raw[..])?;
+	let grandpa_valset: Vec<(EdPublic, u64)> = Decode::decode(&mut &grandpa_valset_raw[..])?;
 
 	// Drop weights, as they are not currently used.
 	let mut validator_set: Vec<EdPublic> = grandpa_valset.iter().map(|e| e.0).collect();
@@ -142,9 +140,14 @@ async fn subscribe_check_and_process(
 				let head_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 				msg_sender
 					.send(Messages::NewHeader(header, received_at))
-					.unwrap();
+					.expect("Receiver should not be dropped.");
+
 				// Fetch all events at the incoming header hight.
-				let events = subxt_client.events().at(Some(head_hash)).await.unwrap();
+				let events = subxt_client
+					.events()
+					.at(Some(head_hash))
+					.await
+					.expect("Fetching events should succeed.");
 
 				// Filter out just new authorities event.
 				let new_auths =
@@ -157,11 +160,11 @@ async fn subscribe_check_and_process(
 						.storage()
 						.at(Some(head_hash))
 						.await
-						.unwrap()
+						.expect("Block should exist")
 						.fetch(&set_id_key)
 						.await
-						.unwrap()
-						.unwrap();
+						.expect("Set id should exist in storage")
+						.expect("Set id should not be none");
 					// Drop weights and re-pack into appropriate type.
 					let new_valset: Vec<EdPublic> = auths
 						.authority_set
@@ -171,7 +174,7 @@ async fn subscribe_check_and_process(
 					// Send it.
 					msg_sender
 						.send(Messages::ValidatorSetChange((new_valset, set_id)))
-						.unwrap();
+						.expect("Receiver should not be dropped.");
 				}
 			}
 		}
@@ -193,7 +196,7 @@ async fn subscribe_check_and_process(
 		while let Some(Ok(justification)) = justification_subscription.next().await {
 			msg_sender
 				.send(Messages::Justification(justification))
-				.unwrap();
+				.expect("Receiver should not be dropped.");
 		}
 	});
 
@@ -202,9 +205,13 @@ async fn subscribe_check_and_process(
 	let mut justifications: Vec<GrandpaJustification> = vec![];
 
 	// Main loop, gathers blocks, justifications and validator sets and checks finality
-	loop {
+	let res: Result<()> = 'mainloop: loop {
 		let subxt_client = subxt_client.clone();
-		match msg_receiver.recv().await.unwrap() {
+		match msg_receiver
+			.recv()
+			.await
+			.ok_or(anyhow!("All senders dropped!"))?
+		{
 			Messages::Justification(justification) => {
 				debug!(
 					"New justification at block no.: {}, hash: {:?}",
@@ -252,11 +259,14 @@ async fn subscribe_check_and_process(
 							signed_message.as_slice(),
 							precommit.clone().id,
 						);
-						// On first failure to verify signature, we exit.
-						assert!(is_ok, "Not signed by this signature!");
-						precommit.clone().id
+						is_ok
+							.then(|| precommit.clone().id)
+							.ok_or(anyhow!("Not signed by this signature!"))
 					})
-					.collect::<Vec<_>>();
+					.collect::<Result<Vec<_>>>();
+				let Ok(signer_addresses) = signer_addresses else {
+					break 'mainloop Err(signer_addresses.unwrap_err());
+				};
 
 				// Match all the signer addresses to the current validator set.
 				let num_matched_addresses = signer_addresses
@@ -268,16 +278,26 @@ async fn subscribe_check_and_process(
 					"Number of matching signatures: {num_matched_addresses}/{}",
 					validator_set.len()
 				);
-				assert!(
-					num_matched_addresses >= (validator_set.len() * 2 / 3),
-					"Not signed by the supermajority of the validator set."
-				);
+				if num_matched_addresses < (validator_set.len() * 2 / 3) {
+					break 'mainloop Err(anyhow!(
+						"Not signed by the supermajority of the validator set."
+					));
+				}
+
 				// Get all the skipped blocks, if they exist
 				for bl_num in (last_finalized_block_header.number + 1)..header.number {
 					info!("Sending skipped block {bl_num}");
-					let hash = subxt_client.rpc().block_hash(Some(BlockNumber::from(bl_num))).await?.expect("Block should exist");
-					let header = subxt_client.rpc().header(Some(hash)).await?.expect("Header should exist");
-					message_tx.send((header,Instant::now())).await?;
+					let hash = subxt_client
+						.rpc()
+						.block_hash(Some(BlockNumber::from(bl_num)))
+						.await?
+						.expect("Block should exist");
+					let header = subxt_client
+						.rpc()
+						.header(Some(hash))
+						.await?
+						.expect("Header should exist");
+					message_tx.send((header, Instant::now())).await?;
 				}
 
 				info!("Sending finalized block {}", header.number);
@@ -285,11 +305,11 @@ async fn subscribe_check_and_process(
 				last_finalized_block_header = header.clone();
 
 				// Finally, send the verified block (header)
-				message_tx.send((header,received_at)).await?;
+				message_tx.send((header, received_at)).await?;
 			} else {
 				trace!("Matched pair of header/justification not found.");
 			}
 		}
-	}
-	Err(anyhow!("Finalized blocks subscription disconnected"))
+	};
+	res
 }
