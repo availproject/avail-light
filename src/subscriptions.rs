@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use avail_subxt::{api, primitives::Header, AvailConfig, avail::Client, utils::H256, rpc::{rpc_params, types::BlockNumber}};
-use codec::{Decode, Encode};
+use codec::{Decode, Encode, Codec};
 use serde::{de::Error, Deserialize};
 use sp_core::{
 	blake2_256, bytes,
@@ -80,6 +80,36 @@ enum Messages {
 	NewHeader(Header, Instant),
 }
 
+// TODO: Duplicated types, remove when it is merged into avail-subxt
+#[derive(Decode, Debug)]
+pub struct AuthorityId(EdPublic);
+
+pub type AuthorityIndex = u64;
+pub type AuthorityWeight = u64;
+pub type AuthorityList = Vec<(AuthorityId, AuthorityWeight)>;
+
+#[derive(Decode, Debug)]
+pub struct ScheduledChange<N> {
+	/// The new authorities after the change, along with their respective weights.
+	pub next_authorities: AuthorityList,
+	/// The number of blocks to delay.
+	pub delay: N,
+}
+/// An consensus log item for GRANDPA.
+#[derive(Decode, Debug)]
+pub enum ConsensusLog<N: Codec> {
+	#[codec(index = 1)]
+	ScheduledChange(ScheduledChange<N>),
+	#[codec(index = 2)]
+	ForcedChange(N, ScheduledChange<N>),
+	#[codec(index = 3)]
+	OnDisabled(AuthorityIndex),
+	#[codec(index = 4)]
+	Pause(N),
+	#[codec(index = 5)]
+	Resume(N),
+}
+
 async fn subscribe_check_and_process(
 	subxt_client: Client,
 	message_tx: Sender<(Header, Instant)>,
@@ -139,22 +169,34 @@ async fn subscribe_check_and_process(
 				let received_at = Instant::now();
 				let head_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 				msg_sender
-					.send(Messages::NewHeader(header, received_at))
+					.send(Messages::NewHeader(header.clone(), received_at))
 					.expect("Receiver should not be dropped.");
 
-				// Fetch all events at the incoming header hight.
-				let events = subxt_client
-					.events()
-					.at(Some(head_hash))
-					.await
-					.expect("Fetching events should succeed.");
-
-				// Filter out just new authorities event.
-				let new_auths =
-					events.find_last::<avail_subxt::api::grandpa::events::NewAuthorities>();
+				// Search the header logs for validator set change
+				let mut new_auths = header
+					.digest
+					.logs
+					.iter()
+					.filter_map(|e| match &e {
+						avail_subxt::config::substrate::DigestItem::Consensus(id, data) => match id {
+							b"FRNK" => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
+								Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
+								Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
+								_ => None,
+							},
+							_ => None,
+						},
+						_ => None,
+					})
+					.collect::<Vec<_>>();
 
 				// If the event exists, send the new auths over the message channel.
-				if let Ok(Some(auths)) = new_auths {
+				if !new_auths.is_empty() {
+					assert!(
+						new_auths.len() == 1,
+						"There should be only one valset change!"
+					);
+					let auths: Vec<(AuthorityId, u64)> = new_auths.pop().unwrap();
 					// Fetch set ID at the incoming header hight (needed to verify justification).
 					let set_id = subxt_client
 						.storage()
@@ -166,11 +208,7 @@ async fn subscribe_check_and_process(
 						.expect("Set id should exist in storage")
 						.expect("Set id should not be none");
 					// Drop weights and re-pack into appropriate type.
-					let new_valset: Vec<EdPublic> = auths
-						.authority_set
-						.into_iter()
-						.map(|(a, _)| EdPublic::from_raw(a.0 .0))
-						.collect();
+					let new_valset = auths.into_iter().map(|(a, _)| a.0).collect();
 					// Send it.
 					msg_sender
 						.send(Messages::ValidatorSetChange((new_valset, set_id)))
