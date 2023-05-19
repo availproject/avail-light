@@ -527,12 +527,12 @@ impl EventLoop {
 			} => {
 				let mut ids: HashMap<QueryId, Option<Result<()>>> = Default::default();
 
-				for record in records {
+				for record in records.as_ref() {
 					let query_id = self
 						.swarm
 						.behaviour_mut()
 						.kademlia
-						.put_record(record, quorum)
+						.put_record(record.to_owned(), quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
 					ids.insert(query_id, None);
 				}
