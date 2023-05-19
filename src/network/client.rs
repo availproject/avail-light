@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::{time::{Duration, Instant}, sync::Arc};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
@@ -148,7 +148,7 @@ impl Client {
 			if self
 				.sender
 				.send(Command::PutKadRecordBatch {
-					records: recs.to_vec(),
+					records: recs.into(),
 					quorum,
 					sender,
 				})
@@ -351,7 +351,7 @@ pub enum Command {
 		sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
-		records: Vec<Record>,
+		records: Arc<[Record]>,
 		quorum: Quorum,
 		sender: oneshot::Sender<NumSuccPut>,
 	},
