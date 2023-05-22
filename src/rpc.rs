@@ -3,22 +3,22 @@
 use std::{collections::HashSet, fmt::Display, ops::Deref};
 
 use anyhow::{anyhow, Result};
-use avail_subxt::{build_client, primitives::Header as DaHeader, AvailConfig};
+use avail_subxt::{
+	avail, build_client,
+	primitives::Header as DaHeader,
+	rpc::{types::BlockNumber, RpcParams},
+	utils::H256,
+};
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use subxt::{
-	rpc::{types::BlockNumber, RpcParams},
-	utils::H256,
-	OnlineClient,
-};
 use tracing::{debug, info, instrument, warn};
 
 use crate::types::*;
 
-async fn get_block_hash(client: &OnlineClient<AvailConfig>, block: u32) -> Result<H256> {
+async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
 	client
 		.rpc()
 		.block_hash(Some(BlockNumber::from(block)))
@@ -26,7 +26,7 @@ async fn get_block_hash(client: &OnlineClient<AvailConfig>, block: u32) -> Resul
 		.ok_or(anyhow!("Block with number {block} not found"))
 }
 
-async fn get_header_by_hash(client: &OnlineClient<AvailConfig>, hash: H256) -> Result<DaHeader> {
+async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHeader> {
 	client
 		.rpc()
 		.header(Some(hash))
@@ -37,7 +37,7 @@ async fn get_header_by_hash(client: &OnlineClient<AvailConfig>, hash: H256) -> R
 /// RPC for obtaining header of latest block mined by network
 // I'm writing this function so that I can check what's latest block number of chain
 // and start syncer to fetch block headers for block range [0, LATEST]
-pub async fn get_chain_header(client: &OnlineClient<AvailConfig>) -> Result<DaHeader> {
+pub async fn get_chain_header(client: &avail::Client) -> Result<DaHeader> {
 	client
 		.rpc()
 		.header(None)
@@ -47,7 +47,7 @@ pub async fn get_chain_header(client: &OnlineClient<AvailConfig>) -> Result<DaHe
 
 /// Gets header by block number
 pub async fn get_header_by_block_number(
-	client: &OnlineClient<AvailConfig>,
+	client: &avail::Client,
 	block: u32,
 ) -> Result<(DaHeader, H256)> {
 	let hash = get_block_hash(client, block).await?;
@@ -76,7 +76,7 @@ pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Po
 
 #[instrument(skip_all, level = "trace")]
 pub async fn get_kate_rows(
-	client: &OnlineClient<AvailConfig>,
+	client: &avail::Client,
 	rows: Vec<u32>,
 	block_hash: H256,
 ) -> Result<Vec<Option<Vec<u8>>>> {
@@ -91,7 +91,7 @@ pub async fn get_kate_rows(
 
 /// RPC to get proofs for given positions of block
 pub async fn get_kate_proof(
-	client: &OnlineClient<AvailConfig>,
+	client: &avail::Client,
 	block_hash: H256,
 	positions: &[Position],
 ) -> Result<Vec<Cell>> {
@@ -118,7 +118,7 @@ pub async fn get_kate_proof(
 }
 
 // RPC to check connection to substrate node
-async fn get_system_version(client: &OnlineClient<AvailConfig>) -> Result<String> {
+async fn get_system_version(client: &avail::Client) -> Result<String> {
 	client
 		.rpc()
 		.system_version()
@@ -126,9 +126,10 @@ async fn get_system_version(client: &OnlineClient<AvailConfig>) -> Result<String
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
-async fn get_runtime_version(client: &OnlineClient<AvailConfig>) -> Result<RuntimeVersionResult> {
-	let t = client.rpc().deref();
-	t.request("state_getRuntimeVersion", RpcParams::new())
+async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersionResult> {
+	client
+		.rpc()
+		.request("state_getRuntimeVersion", RpcParams::new())
 		.await
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
@@ -178,14 +179,14 @@ pub async fn connect_to_the_full_node(
 	full_nodes: &[String],
 	last_full_node: Option<String>,
 	expected_version: Version,
-) -> Result<(OnlineClient<AvailConfig>, String)> {
+) -> Result<(avail::Client, String)> {
 	for full_node_ws in shuffle_full_nodes(full_nodes, last_full_node).iter() {
 		let log_warn = |error| {
 			warn!("Skipping connection to {full_node_ws}: {error}");
 			error
 		};
 
-		let Ok(client) = build_client(full_node_ws.clone()).await.map_err(log_warn) else { continue };
+		let Ok(client) = build_client(&full_node_ws, true).await.map_err(log_warn) else { continue };
 		let Ok(system_version) = get_system_version(&client).await.map_err(log_warn) else { continue; };
 		let Ok(runtime_version) = get_runtime_version(&client).await.map_err(log_warn) else { continue; };
 

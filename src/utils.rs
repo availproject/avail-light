@@ -1,7 +1,44 @@
+use avail_subxt::{
+	api::runtime_types::da_primitives::{
+		asdr::data_lookup::DataLookup,
+		header::extension::HeaderExtension,
+		header::extension::{v1, v2},
+	},
+	utils::H256,
+};
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
+
+/// Extract fields from extension header
+pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<u8>) {
+	match &extension {
+		HeaderExtension::V1(v1::HeaderExtension {
+			commitment: kate, ..
+		}) => (
+			kate.rows,
+			kate.cols,
+			kate.data_root,
+			kate.commitment.clone(),
+		),
+		HeaderExtension::V2(v2::HeaderExtension {
+			commitment: kate, ..
+		}) => (
+			kate.rows,
+			kate.cols,
+			kate.data_root.unwrap_or_default(),
+			kate.commitment.clone(),
+		),
+	}
+}
+
+pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> &DataLookup {
+	match &extension {
+		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
+		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
+	}
+}
 
 // TODO: Remove unused functions if not needed after next iteration
 

@@ -4,18 +4,18 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
+use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::{Context, Result};
-use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension;
-use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
-use avail_subxt::primitives::Header as DaHeader;
+use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::Encode;
-use kate_recovery::commitments;
-use kate_recovery::matrix::Dimensions;
-use kate_recovery::{index::AppDataIndex, matrix::Partition};
+use kate_recovery::{
+	commitments,
+	index::AppDataIndex,
+	matrix::{Dimensions, Partition},
+};
 use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use sp_core::blake2_256;
-use subxt::utils::H256;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -52,23 +52,22 @@ impl TryFrom<DaHeader> for BlockVerified {
 	type Error = anyhow::Error;
 	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
-		let HeaderExtension::V1(xt) = header.extension;
-		let KateCommitment { rows, cols, .. } = xt.commitment;
+		let app_lookup = extract_app_lookup(&header.extension);
+		let (rows, cols, _, commitment) = extract_kate(&header.extension);
 
 		Ok(BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
 			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,
 			lookup: AppDataIndex {
-				size: xt.app_lookup.size,
-				index: xt
-					.app_lookup
+				size: app_lookup.size,
+				index: app_lookup
 					.index
-					.into_iter()
-					.map(|e| (e.app_id.0, e.start))
+					.iter()
+					.map(|e| (e.app_id.0.clone(), e.start.clone()))
 					.collect(),
 			},
-			commitments: commitments::from_slice(&xt.commitment.commitment)?,
+			commitments: commitments::from_slice(&commitment)?,
 		})
 	}
 }
