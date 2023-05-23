@@ -360,7 +360,6 @@ mod tests {
 			.with(eq(42))
 			.returning(move |_| {
 				let header = header.clone();
-				let header_hash = header_hash.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
