@@ -268,10 +268,8 @@ impl Client {
 		for row_indexes in row_indexes.chunks(self.dht_parallelization_limit) {
 			let fetch = |row| self.fetch_row_from_dht(block_number, row);
 			let fetched_rows = join_all(row_indexes.iter().cloned().map(fetch)).await;
-			for row in fetched_rows {
-				if let Some((row_index, row)) = row {
-					rows[row_index as usize] = Some(row);
-				}
+			for (row_index, row) in fetched_rows.into_iter().flatten() {
+				rows[row_index as usize] = Some(row);
 			}
 		}
 		rows
@@ -351,11 +349,6 @@ pub enum Command {
 	GetKadRecord {
 		key: Key,
 		sender: oneshot::Sender<Result<PeerRecord>>,
-	},
-	PutKadRecord {
-		record: Record,
-		quorum: Quorum,
-		sender: oneshot::Sender<Result<()>>,
 	},
 	PutKadRecordBatch {
 		records: Vec<Record>,

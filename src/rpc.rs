@@ -212,7 +212,7 @@ the percentage of confidence mentioned in config file */
 /// Callculates number of cells required to achieve given confidence
 pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 	let mut cell_count: u32;
-	if (confidence >= 100f64) || (confidence < 50.0) {
+	if !(50.0..100f64).contains(&confidence) {
 		//in this default of 8 cells will be taken
 		debug!(
 			"confidence is {} invalid so taking default confidence of 99",
