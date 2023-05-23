@@ -267,11 +267,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
 
-	let sync_client = Arc::new(sync_client::new(
-		db.clone(),
-		network_client.clone(),
-		rpc_client.clone(),
-	));
+	let sync_client = sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
 	if sync_block_depth > 0 {
