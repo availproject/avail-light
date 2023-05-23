@@ -50,12 +50,29 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+<<<<<<< HEAD
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
 #[command(version)]
 struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
+=======
+#[derive(StructOpt, Debug)]
+#[structopt(
+	name = "avail-light",
+	about = "Light Client for Avail Blockchain",
+	author = "Avail Team",
+	version = "0.1.0"
+)]
+struct CliOpts {
+	#[structopt(
+		short = "c",
+		long = "config",
+		default_value = "config.yaml",
+		help = "yaml configuration file"
+	)]
+>>>>>>> replaced glibc allocator with jemalloc
 	config: String,
 }
 
