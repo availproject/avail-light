@@ -255,13 +255,14 @@ async fn process_block(
 /// * `sync_blocks_depth` - How many blocks in past to sync
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
-	sync_client: Arc<impl SyncClient>,
+	sync_client: impl SyncClient,
 	cfg: SyncClientConfig,
 	end_block: u32,
 	sync_blocks_depth: u32,
 	pp: PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) {
+	let sync_client = Arc::new(sync_client);
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
