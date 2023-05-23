@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_std::stream::StreamExt;
+use itertools::Either;
 use rand::seq::SliceRandom;
 use tokio::sync::{mpsc, oneshot};
+use void::Void;
 
 use super::{
 	client::{Command, NumSuccPut},
@@ -19,6 +21,7 @@ use libp2p::{
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
 		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
+		Record,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
@@ -64,6 +67,29 @@ pub struct EventLoop {
 	relay_reservation: RelayReservation,
 }
 
+type FatalInHopOrOutStop = Either<InboundHopFatalUpgradeError, OutboundStopFatalUpgradeError>;
+
+type FatalInStopOrOutHop = Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>;
+
+type Fatal = Either<
+	Either<Either<ConnectionHandlerUpgrErr<FatalInHopOrOutStop>, Void>, std::io::Error>,
+	Either<ConnectionHandlerUpgrErr<FatalInStopOrOutHop>, Void>,
+>;
+
+type Upgrade = Either<
+	ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
+	Either<ConnectionHandlerUpgrErr<std::io::Error>, Void>,
+>;
+
+type FatalOrUpgrade = Either<Fatal, Upgrade>;
+
+type UpgradeError = Either<
+	Either<Either<FatalOrUpgrade, std::io::Error>, ConnectionHandlerUpgrErr<std::io::Error>>,
+	Void,
+>;
+
+type UpgradeErrorOrPingFailure = Either<UpgradeError, ping::Failure>;
+
 impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
@@ -105,61 +131,7 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(
-		&mut self,
-		event: SwarmEvent<
-			BehaviourEvent,
-			itertools::Either<
-				itertools::Either<
-					itertools::Either<
-						itertools::Either<
-							itertools::Either<
-								itertools::Either<
-									itertools::Either<
-										itertools::Either<
-											ConnectionHandlerUpgrErr<
-												itertools::Either<
-													InboundHopFatalUpgradeError,
-													OutboundStopFatalUpgradeError,
-												>,
-											>,
-											void::Void,
-										>,
-										std::io::Error,
-									>,
-									itertools::Either<
-										ConnectionHandlerUpgrErr<
-											itertools::Either<
-												InboundStopFatalUpgradeError,
-												OutboundHopFatalUpgradeError,
-											>,
-										>,
-										void::Void,
-									>,
-								>,
-								itertools::Either<
-									ConnectionHandlerUpgrErr<
-										itertools::Either<
-											InboundUpgradeError,
-											OutboundUpgradeError,
-										>,
-									>,
-									itertools::Either<
-										ConnectionHandlerUpgrErr<std::io::Error>,
-										void::Void,
-									>,
-								>,
-							>,
-							std::io::Error,
-						>,
-						ConnectionHandlerUpgrErr<std::io::Error>,
-					>,
-					void::Void,
-				>,
-				ping::Failure,
-			>,
-		>,
-	) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, UpgradeErrorOrPingFailure>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
@@ -191,14 +163,11 @@ impl EventLoop {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord {
 							source,
-							record: Some(block_ref),
+							record: Some(Record { key, .. }),
 							..
 						} = request
 						{
-							trace!(
-								"Inbound PUT request record key: {:?}. Source: {source:?}",
-								block_ref.key,
-							);
+							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
