@@ -41,7 +41,6 @@ use tracing::{debug, error, info, trace};
 #[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecord(oneshot::Sender<Result<()>>),
 	PutRecordBatch(oneshot::Sender<NumSuccPut>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
@@ -94,10 +93,7 @@ impl EventLoop {
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
-				command = self.command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c).await,
-					None => (),
-				},
+				Some(command) = self.command_receiver.recv() => self.handle_command(command).await,
 			}
 		}
 	}
@@ -178,7 +174,7 @@ impl EventLoop {
 						..
 					} => {
 						debug!("Routing updated. Peer: {peer:?}. is_new_peer: {is_new_peer:?}. Addresses: {addresses:#?}. Old peer: {old_peer:#?}");
-						if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
+						if let Some(ch) = self.pending_kad_routing.remove(&peer) {
 							_ = ch.send(Ok(()));
 						}
 					},
@@ -193,27 +189,30 @@ impl EventLoop {
 					},
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
-						if let InboundRequest::PutRecord { source, record, .. } = request {
-							if let Some(block_ref) = record {
-								trace!(
-									"Inbound PUT request record key: {:?}. Source: {source:?}",
-									block_ref.key,
-								);
-							}
+						if let InboundRequest::PutRecord {
+							source,
+							record: Some(block_ref),
+							..
+						} = request
+						{
+							trace!(
+								"Inbound PUT request record key: {:?}. Source: {source:?}",
+								block_ref.key,
+							);
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Ok(record));
 								}
 							},
 							Err(err) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -221,14 +220,7 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								let _ = match result {
-									Ok(_) => ch.send(Ok(())),
-									Err(err) => ch.send(Err(err.into())),
-								};
-							} else if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
+							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
 								match result {
 									Ok(_) => *v = Some(Ok(())),
 									Err(err) => *v = Some(Err(err.into())),
@@ -264,7 +256,7 @@ impl EventLoop {
 								trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
 									if let Some(QueryChannel::Bootstrap(ch)) =
-										self.pending_kad_queries.remove(&id.into())
+										self.pending_kad_queries.remove(&id)
 									{
 										_ = ch.send(Ok(()));
 									}
@@ -273,7 +265,7 @@ impl EventLoop {
 							Err(err) => {
 								trace!("Bootstrap error event. Error: {err:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -297,7 +289,7 @@ impl EventLoop {
 						// we have to exchange observed addresses
 						// in this case relay needs to tell us our own
 						if peer_id == self.relay_reservation.id
-							&& self.relay_reservation.is_reserved == false
+							&& !self.relay_reservation.is_reserved
 						{
 							match self.swarm.listen_on(
 								self.relay_reservation
@@ -547,21 +539,6 @@ impl EventLoop {
 
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::GetRecord(sender));
-			},
-			Command::PutKadRecord {
-				record,
-				quorum,
-				sender,
-			} => {
-				let query_id = self
-					.swarm
-					.behaviour_mut()
-					.kademlia
-					.put_record(record, quorum)
-					.expect("Unable to perform Kademlia PUT operation.");
-
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::PutRecord(sender));
 			},
 			Command::PutKadRecordBatch {
 				records,
