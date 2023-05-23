@@ -267,15 +267,19 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
 
+	let sync_client = Arc::new(sync_client::new(
+		db.clone(),
+		network_client.clone(),
+		rpc_client.clone(),
+	));
+
 	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
 	if sync_block_depth > 0 {
 		tokio::task::spawn(sync_client::run(
+			sync_client,
 			(&cfg).into(),
-			rpc_client.clone(),
 			latest_block,
 			sync_block_depth,
-			db.clone(),
-			network_client.clone(),
 			pp.clone(),
 			block_tx.clone(),
 		));
@@ -289,11 +293,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		error_sender.clone(),
 	));
 
+	let light_client = light_client::new(db, network_client, rpc_client);
+
 	tokio::task::spawn(light_client::run(
+		light_client,
 		(&cfg).into(),
-		db,
-		network_client,
-		rpc_client,
 		block_tx,
 		pp,
 		lc_metrics,
