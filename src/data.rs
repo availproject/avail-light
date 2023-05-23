@@ -130,7 +130,7 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u
 		.context("Couldn't get column handle from db")?;
 
 	let res = db
-		.get_cf(&cf_handle, &block_number.to_be_bytes())
+		.get_cf(&cf_handle, block_number.to_be_bytes())
 		.context("Couldn't get confidence in db")?;
 	let res = res.map(|data| {
 		data.try_into()

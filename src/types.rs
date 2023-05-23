@@ -158,7 +158,7 @@ mod port_range_format {
 	{
 		let s = String::deserialize(deserializer)?;
 		let parts = s.split('-').collect::<Vec<_>>();
-		let res = match parts.len() {
+		match parts.len() {
 			1 => {
 				let port = parts[0].parse::<u16>().map_err(serde::de::Error::custom)?;
 				Ok((port, 0))
@@ -173,8 +173,7 @@ mod port_range_format {
 				}
 			},
 			_ => Err(serde::de::Error::custom(format!("Invalid value {s}"))),
-		};
-		res
+		}
 	}
 }
 
@@ -348,7 +347,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		let relay_nodes = rtcfg
 			.relays
 			.iter()
-			.map(|(a, b)| Ok((PeerId::from_str(&a)?, b.clone())))
+			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 			.expect("To be able to parse relay nodes values from config.");
 
