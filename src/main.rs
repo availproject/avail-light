@@ -43,6 +43,13 @@ mod telemetry;
 mod types;
 mod utils;
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
 #[command(version)]
