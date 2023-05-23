@@ -256,26 +256,25 @@ pub async fn run(
 	pp: PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) {
-	let sync_client = Arc::new(sync_client);
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
 
-	let blocks =
-		(start_block..=end_block).map(move |block| (block, block_tx.clone(), sync_client.clone()));
+	let blocks = (start_block..=end_block).map(move |block| (block, block_tx.clone()));
 	let cfg = &cfg;
 	let pp = &pp;
+	let sync_client = &sync_client;
 
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, block_tx, sync_client)| async move {
+			|(block_number, block_tx)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
 				if let Err(error) =
-					process_block(sync_client.as_ref(), block_number, cfg, pp, block_tx).await
+					process_block(sync_client, block_number, cfg, pp, block_tx).await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}
