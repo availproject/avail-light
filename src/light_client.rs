@@ -69,10 +69,22 @@ pub trait LightClient {
 }
 
 #[derive(Clone)]
-pub struct LightClientImpl {
+struct LightClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
+}
+
+pub fn new(
+	db: Arc<DB>,
+	network_client: Client,
+	rpc_client: OnlineClient<AvailConfig>,
+) -> impl LightClient {
+	LightClientImpl {
+		db,
+		network_client,
+		rpc_client,
+	}
 }
 
 #[async_trait]
@@ -108,7 +120,7 @@ impl LightClient for LightClientImpl {
 }
 
 pub async fn process_block(
-	light_client: impl LightClient,
+	light_client: &impl LightClient,
 	cfg: &LightClientConfig,
 	pp: &PublicParameters,
 	header: &Header,
@@ -360,19 +372,15 @@ pub async fn process_block(
 ///
 /// # Arguments
 ///
+/// * `light_client` - Light client implementation
 /// * `cfg` - Light client configuration
-/// * `db` - Database to store confidence and block header
-/// * `network_client` - Reference to a libp2p custom network client
-/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `registry` - Prometheus metrics registry
 /// * `counter` - Processed block mutex counter
 pub async fn run(
+	light_client: impl LightClient,
 	cfg: LightClientConfig,
-	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
 	block_tx: Option<Sender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
@@ -387,15 +395,9 @@ pub async fn run(
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
-		let db_clone = db.clone();
-		let light_client = LightClientImpl {
-			db: db_clone,
-			network_client: network_client.clone(),
-			rpc_client: rpc_client.clone(),
-		};
 
 		if let Err(error) = process_block(
-			light_client,
+			&light_client,
 			&cfg,
 			&pp,
 			&header,
@@ -580,7 +582,7 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}
@@ -694,7 +696,7 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}

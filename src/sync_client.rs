@@ -58,10 +58,22 @@ pub trait SyncClient {
 	) -> (Vec<Cell>, Vec<Position>);
 }
 #[derive(Clone)]
-pub struct SyncClientImpl {
+struct SyncClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: OnlineClient<AvailConfig>,
+}
+
+pub fn new(
+	db: Arc<DB>,
+	network_client: Client,
+	rpc_client: OnlineClient<AvailConfig>,
+) -> impl SyncClient {
+	SyncClientImpl {
+		db,
+		network_client,
+		rpc_client,
+	}
 }
 
 #[async_trait]
@@ -112,10 +124,10 @@ impl SyncClient for SyncClientImpl {
 	}
 }
 async fn process_block(
-	sync_client: impl SyncClient,
+	sync_client: &impl SyncClient,
 	block_number: u32,
 	cfg: &SyncClientConfig,
-	pp: PublicParameters,
+	pp: &PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) -> Result<()> {
 	if sync_client
@@ -206,7 +218,7 @@ async fn process_block(
 	let cells_len = cells.len();
 	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
+	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, pp)?;
 
 	info!(
 		block_number,
@@ -239,19 +251,14 @@ async fn process_block(
 /// # Arguments
 ///
 /// * `cfg` - sync client configuration
-/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
-/// * `db` - Database to store confidence and block header
-/// * `network_client` - Reference to a libp2p custom network client
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
+	sync_client: Arc<impl SyncClient>,
 	cfg: SyncClientConfig,
-	rpc_client: OnlineClient<AvailConfig>,
 	end_block: u32,
 	sync_blocks_depth: u32,
-	db: Arc<DB>,
-	network_client: Client,
 	pp: PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) {
@@ -260,29 +267,20 @@ pub async fn run(
 	}
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block).map(move |b| {
-		(
-			b,
-			rpc_client.clone(),
-			db.clone(),
-			network_client.clone(),
-			pp.clone(),
-			block_tx.clone(),
-		)
-	});
-	let cfg_clone = &cfg;
+
+	let blocks =
+		(start_block..=end_block).map(move |block| (block, block_tx.clone(), sync_client.clone()));
+	let cfg = &cfg;
+	let pp = &pp;
+
 	stream::iter(blocks)
 		.for_each_concurrent(
 			num_cpus::get(), // number of logical CPUs available on machine
 			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
-				let test = SyncClientImpl {
-					db: store.clone(),
-					network_client: net_svc.clone(),
-					rpc_client: rpc_client.clone(),
-				};
+			|(block_number, block_tx, sync_client)| async move {
 				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) = process_block(test, block_number, cfg_clone, pp, block_tx).await
+				if let Err(error) =
+					process_block(sync_client.as_ref(), block_number, cfg, pp, block_tx).await
 				{
 					error!(block_number, "Cannot process block: {error:#}");
 				}
@@ -434,7 +432,7 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -501,7 +499,6 @@ mod tests {
 			.with(eq(42))
 			.returning(move |_| {
 				let header = header.clone();
-				let header_hash = header_hash.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
@@ -570,7 +567,7 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -586,7 +583,7 @@ mod tests {
 			.returning(|_| Ok(true));
 		mock_client.expect_get_header_by_block_number().never();
 		mock_client.block_header_in_db(42).unwrap();
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
