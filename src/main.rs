@@ -305,7 +305,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		block_tx,
 		pp,
 		lc_metrics,
-		counter.clone(),
+		counter,
 		message_rx,
 		error_sender,
 	));
