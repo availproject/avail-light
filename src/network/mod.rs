@@ -60,6 +60,7 @@ pub fn init(
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
+	kad_remove_local_record: bool,
 ) -> Result<(Client, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
 	let id_keys = match cfg.libp2p_secret_key {
@@ -223,7 +224,7 @@ pub fn init(
 			ttl,
 			put_batch_size,
 		),
-		EventLoop::new(swarm, command_receiver, metrics, cfg.relays),
+		EventLoop::new(swarm, command_receiver, metrics, cfg.relays, kad_remove_local_record),
 	))
 }
 
