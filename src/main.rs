@@ -252,6 +252,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
+	let genesis_hash = rpc_client.genesis_hash();
+	if let Some(stored_genesis_hash) = data::get_genesis_hash(db.clone())? {
+		if !genesis_hash.eq(&stored_genesis_hash) {
+			Err(anyhow!("Genesis hash doesn't match the stored one! Clear the db or change nodes."))?
+		}
+	} else {
+		info!("No genesis hash is found in the db, storing the new hash now.");
+		data::store_genesis_hash(db.clone(), genesis_hash)?;
+	}
+
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
