@@ -162,10 +162,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
-	let mut kad_remove_local_record = false;
-	if let Some(_) = &cfg.block_matrix_partition {
+	let kad_remove_local_record = cfg.block_matrix_partition.is_some();
+	if kad_remove_local_record {
 		info!("Fat client mode");
-		kad_remove_local_record = true;
 	}
 
 	let (network_client, network_event_loop) = network::init(
