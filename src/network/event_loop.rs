@@ -193,18 +193,14 @@ impl EventLoop {
 						},
 						QueryResult::PutRecord(result) => {
 							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								match result {
-									Ok(ok_res) => {
-										if self.kad_remove_local_record {
-											self.swarm
-												.behaviour_mut()
-												.kademlia
-												.remove_record(&ok_res.key);
-										}
-										*v = Some(Ok(()))
-									},
-									Err(err) => *v = Some(Err(err.into())),
-								};
+								*v = Some(result.map_err(Into::into).map(|ok_res| {
+									if self.kad_remove_local_record {
+										self.swarm
+											.behaviour_mut()
+											.kademlia
+											.remove_record(&ok_res.key);
+									};
+								}));
 
 								let cnt = self
 									.pending_kad_query_batch

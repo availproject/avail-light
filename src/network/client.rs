@@ -1,4 +1,7 @@
-use std::{time::{Duration, Instant}, sync::Arc};
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
@@ -143,12 +146,12 @@ impl Client {
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
 		let mut num_success: usize = 0;
-		for recs in records.chunks(self.put_batch_size) {
+		for records in records.chunks(self.put_batch_size).map(Into::into) {
 			let (sender, receiver) = oneshot::channel();
 			if self
 				.sender
 				.send(Command::PutKadRecordBatch {
-					records: recs.into(),
+					records,
 					quorum,
 					sender,
 				})
