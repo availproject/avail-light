@@ -160,12 +160,21 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let counter = Arc::new(Mutex::new(0u32));
 	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
 
+	// If in fat client mode, enable deleting local Kademlia records
+	// This is a fat client memory optimization
+	let mut kad_remove_local_record = false;
+	if let Some(_) = &cfg.block_matrix_partition {
+		info!("Fat client mode");
+		kad_remove_local_record = true;
+	}
+
 	let (network_client, network_event_loop) = network::init(
 		(&cfg).into(),
 		libp2p_metrics,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
+		kad_remove_local_record
 	)
 	.context("Failed to init Network Service")?;
 
