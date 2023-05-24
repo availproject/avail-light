@@ -224,7 +224,13 @@ pub fn init(
 			ttl,
 			put_batch_size,
 		),
-		EventLoop::new(swarm, command_receiver, metrics, cfg.relays, kad_remove_local_record),
+		EventLoop::new(
+			swarm,
+			command_receiver,
+			metrics,
+			cfg.relays,
+			kad_remove_local_record,
+		),
 	))
 }
 
