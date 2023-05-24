@@ -65,7 +65,7 @@ pub struct EventLoop {
 	metrics: Metrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
 	relay_reservation: RelayReservation,
-	kad_remove_local_record: bool
+	kad_remove_local_record: bool,
 }
 
 type FatalInHopOrOutStop = Either<InboundHopFatalUpgradeError, OutboundStopFatalUpgradeError>;
@@ -114,7 +114,7 @@ impl EventLoop {
 				address: Multiaddr::empty(),
 				is_reserved: Default::default(),
 			},
-			kad_remove_local_record: kad_remove_local_record,
+			kad_remove_local_record,
 		}
 	}
 
@@ -197,10 +197,12 @@ impl EventLoop {
 									Ok(ok_res) => {
 										if self.kad_remove_local_record {
 											self.swarm
-											.behaviour_mut()
-											.kademlia.remove_record(&ok_res.key);
-										}	
-										*v = Some(Ok(()))},
+												.behaviour_mut()
+												.kademlia
+												.remove_record(&ok_res.key);
+										}
+										*v = Some(Ok(()))
+									},
 									Err(err) => *v = Some(Err(err.into())),
 								};
 
