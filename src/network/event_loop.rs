@@ -521,7 +521,7 @@ impl EventLoop {
 						.swarm
 						.behaviour_mut()
 						.kademlia
-						.put_record(record.clone(), quorum)
+						.put_record(record, quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
 					ids.insert(query_id, None);
 				}
