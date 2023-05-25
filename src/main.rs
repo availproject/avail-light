@@ -43,11 +43,6 @@ mod telemetry;
 mod types;
 mod utils;
 
-// The file `built.rs` was placed there by cargo and `build.rs`
-mod built_info {
-	include!(concat!(env!("OUT_DIR"), "/built.rs"));
-}
-
 #[derive(StructOpt, Debug)]
 #[structopt(
 	name = "avail-light",
