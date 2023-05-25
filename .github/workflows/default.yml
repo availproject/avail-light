@@ -1,4 +1,4 @@
-name: Polygon Avail Light CI
+name: Avail Light CI
 on:
   push:
     branches:

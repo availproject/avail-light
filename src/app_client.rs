@@ -14,7 +14,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::AvailConfig;
+use avail_subxt::{avail, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
@@ -30,7 +30,6 @@ use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
 };
-use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, instrument};
 
@@ -75,7 +74,7 @@ trait AppClient {
 struct AppClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 }
 
 #[async_trait]
@@ -410,7 +409,7 @@ pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 	app_id: u32,
 	mut block_receive: Receiver<BlockVerified>,
 	pp: PublicParameters,

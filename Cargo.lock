@@ -271,6 +271,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52f63c5c1316a16a4b35eaac8b76a98248961a533f061684cb2a7cb0eafb6c6"
 
 [[package]]
+name = "array-init"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23589ecb866b460d3a0f1278834750268c607e8e28a1b982c907219f3178cd72"
+dependencies = [
+ "nodrop",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -589,7 +598,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avail-light"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "async-std",
@@ -626,7 +635,6 @@ dependencies = [
  "serde_json",
  "sp-core 6.0.0",
  "structopt",
- "subxt",
  "tempdir",
  "test-case",
  "thiserror",
@@ -643,16 +651,20 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.2.1"
-source = "git+https://github.com/availproject/avail.git?tag=v1.5.0#204f5d754f887fcb03d0a08758ba0fbdd688b28e"
+source = "git+https://github.com/availproject/avail.git?tag=v1.6.0#99b85257d6b5bb3fa3051b1c05d30d42f7471a7e"
 dependencies = [
  "anyhow",
+ "curve25519-dalek 2.1.3",
  "derive_more",
  "futures",
+ "hex",
  "jsonrpsee",
  "num_enum",
  "parity-scale-codec",
  "scale-info",
+ "schnorrkel",
  "serde",
+ "serde-hex",
  "sp-core 16.0.0",
  "structopt",
  "subxt",
@@ -3074,7 +3086,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.8.1"
-source = "git+https://github.com/availproject/avail-core.git?tag=kate-recovery/v0.8.1#dc5ce94b221bfd85debe9cd0599da527bd4d1207"
+source = "git+https://github.com/availproject/avail-core?tag=da-primitives/v0.4.6#6468206d95e55bad150d66f446bc3404488e460c"
 dependencies = [
  "dusk-bytes",
  "dusk-plonk",
@@ -3310,7 +3322,7 @@ dependencies = [
  "rand 0.8.5",
  "rw-stream-sink",
  "serde",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
  "unsigned-varint",
  "void",
@@ -3359,7 +3371,7 @@ dependencies = [
  "libp2p-core",
  "log",
  "parking_lot 0.12.1",
- "smallvec",
+ "smallvec 1.10.0",
  "trust-dns-resolver",
 ]
 
@@ -3380,7 +3392,7 @@ dependencies = [
  "quick-protobuf",
  "quick-protobuf-codec",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
 ]
 
@@ -3409,7 +3421,7 @@ dependencies = [
  "regex",
  "serde",
  "sha2 0.10.6",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
  "unsigned-varint",
  "wasm-timer",
@@ -3432,7 +3444,7 @@ dependencies = [
  "lru",
  "quick-protobuf",
  "quick-protobuf-codec",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
  "void",
 ]
@@ -3485,7 +3497,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "sha2 0.10.6",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
  "uint",
  "unsigned-varint",
@@ -3507,7 +3519,7 @@ dependencies = [
  "libp2p-swarm",
  "log",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "socket2",
  "tokio",
  "trust-dns-proto",
@@ -3545,7 +3557,7 @@ dependencies = [
  "nohash-hasher",
  "parking_lot 0.12.1",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "unsigned-varint",
 ]
 
@@ -3728,7 +3740,7 @@ dependencies = [
  "libp2p-swarm",
  "log",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "unsigned-varint",
 ]
 
@@ -3750,7 +3762,7 @@ dependencies = [
  "libp2p-swarm-derive",
  "log",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "tokio",
  "void",
  "wasm-bindgen-futures",
@@ -4059,6 +4071,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
+name = "maybe-uninit"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
+
+[[package]]
 name = "md-5"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4340,7 +4358,7 @@ dependencies = [
  "futures",
  "log",
  "pin-project",
- "smallvec",
+ "smallvec 1.10.0",
  "unsigned-varint",
 ]
 
@@ -4887,7 +4905,7 @@ dependencies = [
  "instant",
  "libc",
  "redox_syscall 0.2.16",
- "smallvec",
+ "smallvec 1.10.0",
  "winapi",
 ]
 
@@ -4900,7 +4918,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "redox_syscall 0.2.16",
- "smallvec",
+ "smallvec 1.10.0",
  "windows-sys 0.45.0",
 ]
 
@@ -6112,6 +6130,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-hex"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca37e3e4d1b39afd7ff11ee4e947efae85adfddf4841787bfa47c470e96dc26d"
+dependencies = [
+ "array-init",
+ "serde",
+ "smallvec 0.6.14",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.160"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6288,6 +6317,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6528351c9bc8ab22353f9d776db39a20288e8d6c37ef8cfe3317cf875eecfc2d"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "smallvec"
+version = "0.6.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b97fcaeba89edba30f044a10c6a3cc39df9c3f17d7cd829dd1446cab35f890e0"
+dependencies = [
+ "maybe-uninit",
 ]
 
 [[package]]
@@ -6702,7 +6740,7 @@ dependencies = [
  "parity-scale-codec",
  "parking_lot 0.12.1",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "sp-core 16.0.0",
  "sp-externalities 0.17.0",
  "sp-panic-handler",
@@ -6839,7 +6877,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "smallvec",
+ "smallvec 1.10.0",
  "sp-arithmetic",
  "sp-core 16.0.0",
  "sp-debug-derive 6.0.0",
@@ -7505,7 +7543,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.10.0",
  "thread_local",
  "tracing",
  "tracing-core",
@@ -7523,7 +7561,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sharded-slab",
- "smallvec",
+ "smallvec 1.10.0",
  "thread_local",
  "tracing-core",
  "tracing-log",
@@ -7540,7 +7578,7 @@ dependencies = [
  "hashbrown 0.12.3",
  "log",
  "rustc-hex",
- "smallvec",
+ "smallvec 1.10.0",
 ]
 
 [[package]]
@@ -7569,7 +7607,7 @@ dependencies = [
  "ipnet",
  "lazy_static",
  "rand 0.8.5",
- "smallvec",
+ "smallvec 1.10.0",
  "socket2",
  "thiserror",
  "tinyvec",
@@ -7591,7 +7629,7 @@ dependencies = [
  "lru-cache",
  "parking_lot 0.12.1",
  "resolv-conf",
- "smallvec",
+ "smallvec 1.10.0",
  "thiserror",
  "tokio",
  "tracing",

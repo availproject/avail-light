@@ -46,8 +46,8 @@ mod utils;
 #[derive(StructOpt, Debug)]
 #[structopt(
 	name = "avail-light",
-	about = "Light Client for Polygon Avail Blockchain",
-	author = "Polygon Avail Team",
+	about = "Light Client for Avail Blockchain",
+	author = "Avail Team",
 	version = "0.1.0"
 )]
 struct CliOpts {
@@ -243,7 +243,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
 	let version = rpc::Version {
-		version: "1.5.0".to_string(),
+		version: "1.6.0".to_string(),
 		spec_version: 9,
 		spec_name: "data-avail".to_string(),
 	};

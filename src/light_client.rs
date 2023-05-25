@@ -25,10 +25,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{
-	api::runtime_types::da_primitives::header::extension::HeaderExtension, primitives::Header,
-	AvailConfig,
-};
+use avail_subxt::{avail, primitives::Header, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
@@ -40,7 +37,6 @@ use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
 use rocksdb::DB;
 use sp_core::blake2_256;
-use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
@@ -51,6 +47,7 @@ use crate::{
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
 	types::{self, BlockVerified, LightClientConfig},
+	utils::extract_kate,
 };
 
 #[async_trait]
@@ -72,7 +69,7 @@ pub trait LightClient {
 pub struct LightClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 }
 
 #[async_trait]
@@ -129,13 +126,11 @@ pub async fn process_block(
 
 	let begin = SystemTime::now();
 
-	let HeaderExtension::V1(xt) = &header.extension;
-	let Some(dimensions) = Dimensions::new(xt.commitment.rows, xt.commitment.cols) else {
+	let (rows, cols, _, commitment) = extract_kate(&header.extension);
+	let Some(dimensions) = Dimensions::new(rows, cols) else {
 			    info!(
 				    block_number,
-				    "Skipping block with invalid dimensions {}x{}",
-				    xt.commitment.rows,
-				    xt.commitment.cols
+				    "Skipping block with invalid dimensions {rows}x{cols}",
 			    );
 	    return Ok(());
 	};
@@ -145,7 +140,7 @@ pub async fn process_block(
 		return Ok(());
 	}
 
-	let commitments = commitments::from_slice(&xt.commitment.commitment)?;
+	let commitments = commitments::from_slice(&commitment)?;
 
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
 	let positions = rpc::generate_random_cells(&dimensions, cell_count);
@@ -372,7 +367,7 @@ pub async fn run(
 	cfg: LightClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 	block_tx: Option<Sender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
@@ -430,19 +425,21 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-	use crate::telemetry;
-	use crate::types::RuntimeConfig;
+	use crate::{telemetry, types::RuntimeConfig};
 
 	use super::rpc::cell_count_for_confidence;
 	use super::*;
-	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
-	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
-	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
-	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
+	use avail_subxt::{
+		api::runtime_types::da_primitives::{
+			asdr::data_lookup::DataLookup,
+			header::extension::{v1::HeaderExtension, HeaderExtension::V1},
+			kate_commitment::v1::KateCommitment,
+		},
+		config::substrate::Digest,
+	};
 	use hex_literal::hex;
 	use kate_recovery::testnet;
 	use prometheus_client::registry::Registry;
-	use subxt::config::substrate::Digest;
 
 	#[test]
 	fn test_cell_count_for_confidence() {

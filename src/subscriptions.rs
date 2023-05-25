@@ -1,19 +1,18 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
-use avail_subxt::{primitives::Header, AvailConfig};
-use subxt::OnlineClient;
+use avail_subxt::{avail, primitives::Header};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 pub async fn finalized_headers(
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 	message_tx: Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
 ) {
 	async fn subscribe_and_process(
-		rpc_client: OnlineClient<AvailConfig>,
+		rpc_client: avail::Client,
 		message_tx: Sender<(Header, Instant)>,
 	) -> Result<()> {
 		let mut new_heads_sub = rpc_client.blocks().subscribe_finalized().await?;

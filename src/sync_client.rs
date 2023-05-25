@@ -17,16 +17,12 @@
 
 use anyhow::{anyhow, Context, Ok, Result};
 use async_trait::async_trait;
-use avail_subxt::{
-	api::runtime_types::da_primitives::header::extension::HeaderExtension,
-	primitives::Header as DaHeader, AvailConfig,
-};
+use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use futures::stream::{self, StreamExt};
+use futures::stream::{self, StreamExt as _};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
 use std::{sync::Arc, time::SystemTime};
-use subxt::{utils::H256, OnlineClient};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
@@ -38,6 +34,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	types::{BlockVerified, SyncClientConfig},
+	utils::{extract_app_lookup, extract_kate},
 };
 use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
@@ -61,7 +58,7 @@ pub trait SyncClient {
 pub struct SyncClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 }
 
 #[async_trait]
@@ -111,6 +108,7 @@ impl SyncClient for SyncClientImpl {
 			.await
 	}
 }
+
 async fn process_block(
 	sync_client: impl SyncClient,
 	block_number: u32,
@@ -137,9 +135,9 @@ async fn process_block(
 		.await
 		.context("Failed to get block {block_number} by block number")?;
 
-	let HeaderExtension::V1(xt) = &header.extension;
+	let app_lookup = extract_app_lookup(&header.extension);
 
-	info!(block_number, "App index {:?}", xt.app_lookup.index);
+	info!(block_number, "App index {:?}", app_lookup.index);
 
 	sync_client
 		.store_block_header_in_db(header.clone(), block_number)
@@ -162,10 +160,10 @@ async fn process_block(
 
 	let begin = SystemTime::now();
 
-	let dimensions =
-		Dimensions::new(xt.commitment.rows, xt.commitment.cols).context("Invalid dimensions")?;
+	let (rows, cols, _, commitment) = extract_kate(&header.extension);
+	let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
 
-	let commitments = commitments::from_slice(&xt.commitment.commitment)?;
+	let commitments = commitments::from_slice(&commitment)?;
 
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
@@ -247,7 +245,7 @@ async fn process_block(
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	cfg: SyncClientConfig,
-	rpc_client: OnlineClient<AvailConfig>,
+	rpc_client: avail::Client,
 	end_block: u32,
 	sync_blocks_depth: u32,
 	db: Arc<DB>,
@@ -296,14 +294,17 @@ mod tests {
 
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
-	use avail_subxt::api::runtime_types::da_primitives::asdr::data_lookup::DataLookup;
-	use avail_subxt::api::runtime_types::da_primitives::header::extension::v1::HeaderExtension;
-	use avail_subxt::api::runtime_types::da_primitives::header::extension::HeaderExtension::V1;
-	use avail_subxt::api::runtime_types::da_primitives::kate_commitment::KateCommitment;
+	use avail_subxt::{
+		api::runtime_types::da_primitives::{
+			asdr::data_lookup::DataLookup,
+			header::extension::{v1::HeaderExtension, HeaderExtension::V1},
+			kate_commitment::v1::KateCommitment,
+		},
+		config::substrate::Digest,
+	};
 	use hex_literal::hex;
 	use kate_recovery::testnet;
 	use mockall::predicate::eq;
-	use subxt::config::substrate::Digest;
 	use tokio::sync::mpsc::channel;
 
 	#[tokio::test]
