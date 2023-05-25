@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.1.2"
+version = "1.1.3"
 edition = "2021"
 authors = ["Polygon Avail Team"]
 
@@ -8,7 +8,7 @@ authors = ["Polygon Avail Team"]
 
 [dependencies]
 kate-recovery = { version = "0.8", git="https://github.com/availproject/avail-core", tag = "da-primitives/v0.4.6" }
-avail-subxt = { path = "../avail_1/avail-subxt" }
+avail-subxt = { git = "https://github.com/availproject/avail.git", tag = "v1.6.0" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2"  }
 url = "2.2.2"
 tokio = { version = "1.21.2", features = ["full"] }
