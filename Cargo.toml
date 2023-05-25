@@ -16,16 +16,24 @@ tokio-stream = "0.1.11"
 futures-util = "0.3.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
-hyper = { version = "0.14.23", features = ["full", "http1"]}
+hyper = { version = "0.14.23", features = ["full", "http1"] }
 hyper-tls = "0.5.0"
 rand = "0.8.4"
 regex = "1.5"
 num = "0.4.0"
-futures = { version = "0.3.15", default-features = false, features = ["std", "thread-pool"] }
+futures = { version = "0.3.15", default-features = false, features = [
+    "std",
+    "thread-pool",
+] }
 chrono = "0.4.19"
-libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor"] }
-multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
-libp2p = { version = "0.51.0", features = ["full"]}
+libipld = { version = "0.12.0", default-features = false, features = [
+    "dag-cbor",
+] }
+multihash = { version = "0.14.0", default-features = false, features = [
+    "blake3",
+    "sha3",
+] }
+libp2p = { version = "0.51.0", features = ["full"] }
 thiserror = "1.0.37"
 anyhow = "1.0.41"
 tempdir = "0.3.7"
@@ -36,7 +44,11 @@ num_cpus = "1.13.0"
 rocksdb = { version = "0.17.0", features = ["snappy", "multi-threaded-cf"] }
 threadpool = "1.8.1"
 sp-core = "6.0.0"
-codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["derive", "full", "bit-vec"] }
+codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = [
+    "derive",
+    "full",
+    "bit-vec",
+] }
 scale-info = { version = "2.0.0", features = ["bit-vec"] }
 hex = "0.4"
 warp = "0.3.2"
@@ -44,6 +56,9 @@ tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.15", features = ["json"] }
 prometheus-client = "0.19.0"
 clap = "4.3.0"
+smallvec = "1.6.1"
+quickcheck = "1.0.3"
+
 openssl = { version = "0.10", features = ["vendored"] }
 void = "1.0.2"
 itertools = "0.10.5"
