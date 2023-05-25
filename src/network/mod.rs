@@ -1,5 +1,6 @@
 mod client;
 mod event_loop;
+mod mem_store;
 
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
@@ -13,10 +14,7 @@ use libp2p::{
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
 	identity,
-	kad::{
-		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaCaching, KademliaConfig,
-	},
+	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
 	metrics::Metrics,
 	noise::{Keypair, NoiseConfig, X25519Spec},
@@ -28,6 +26,7 @@ use libp2p::{
 	yamux::{WindowUpdateMode, YamuxConfig},
 	PeerId, Transport,
 };
+use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc;
 use tracing::info;
