@@ -158,72 +158,250 @@ max_kad_provided_keys = 1024
 - `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
 - Prometheus is used for exposing detailed metrics about the light client
 
+## Usage and examples
+### Fetching the number of the latest block processed by light client
 
+To fetch the number of the latest block processed by light client, we can perform `GET` request on `/v1/latest_block` endpoint.
 
-## Usage
-
-Given a block number (as _(hexa-)_ decimal number), return confidence obtained by the light client for this block:
-
-```bash
-curl -s localhost:7000/v1/confidence/ <block-number>
+```sh
+curl "http://localhost:7000/v1/latest_block"
 ```
 
-Result:
+Response:
 
 ```json
 {
-    "number": 223,
-    "confidence": 99.90234375,
-    "serialisedConfidence": "958776730446"
+  "latest_block": 10
+}
+```
+
+
+### Fetching the confidence for given block
+
+To fetch the the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
+
+```sh
+curl "http://localhost:7000/v1/confidence/1"
+```
+
+Response:
+
+```json
+{
+  "block": 1,
+  "confidence": 93.75,
+  "serialised_confidence": "5232467296"
 }
 ```
 
 > `serialisedConfidence` is calculated as:
 > `blockNumber << 32 | int32(confidence * 10 ** 7)`, where confidence is represented out of 10 ** 9.
 
+### Fetching decoded application data for given block
 
-Given a block number (as _(hexa-)_ decimal number), return the extrinsic in hex string format, if app id is specified in the config
+After data is verified, it can be fetched with `GET` request on `/v1/appdata/{block_number}` endpoint, by specifying `decode=true` query parameter. In case `decode` is omitted or `false`, scale encoded extrinsics will be returned.
 
-```bash
-curl -s localhost:7000/v1/appdata/<block-number>
+#### JSON response
+
+```sh
+curl "http://localhost:7000/v1/appdata/1?decode=true"
 ```
 
-Result:
+Response:
 
 ```json
-{"block":386,"extrinsics":["{hex_encoded_extrinsic}"]}
+{
+  "block": 46,
+  "extrinsics": [
+    "ZXhhbXBsZQ=="
+  ]
+}
 ```
 
-Query parameter `decode=true` can be used to return submitted data in base64 encoded string:
+#### Decoded extrinsic
 
-```bash
-curl -s localhost:7000/v1/appdata/<block-number>?decode=true
+```sh
+curl -s "http://127.0.0.1:7000/v1/appdata/1?decode=true" | jq -r '.extrinsics[-1]' | base64 -d
 ```
 
-Result:
+Response:
 
 ```json
-{"block":386,"extrinsics":["{base64_encoded_submit_data}"]}
+"example"
 ```
 
+### Get the running mode of the Light Client
 
-Returns the Mode of the Light Client
-
-```bash
-curl -s localhost:7000/v1/mode
+```sh
+curl "localhost:7000/v1/mode"
 ```
 
-Returns the status of a latest block
+Response:
 
-```bash
-curl -s localhost:7000/v1/status
+```json
+{
+  "AppClient": 1
+}
 ```
 
-Returns the latest block 
+### Get the status of a latest block
 
-```bash
-curl -s localhost:7000/v1/latest_block
+```sh
+curl "localhost:7000/v1/status"
 ```
+
+Response:
+
+```json
+{
+  "block_num": 10,
+  "confidence": 93.75,
+  "app_id": 1
+}
+```
+
+### Get the latest block 
+
+```sh
+curl "localhost:7000/v1/latest_block"
+```
+
+Response:
+
+```json
+{
+  "latest_block": 255
+}
+```
+
+## API reference
+
+In case of error, endpoints will return response with `500 Internal Server Error` status code, and descriptive error message.
+
+### **GET** `/v1/mode`
+
+Retrieves the operating mode of the light client. Light client can operate in two different modes, `LightClient` or `AppClient`, depending on configuration of application ID.
+
+#### Responses
+
+If operating mode is `LightClient` response is:
+
+> Status code: `200 OK`
+```json
+"LightClient"
+```
+
+In case of `AppClient` mode, response is:
+
+> Status code: `200 OK`
+```json
+{"AppClient": {app_id}}
+```
+
+### **GET** `/v1/latest_block`
+
+Retrieves the latest block processed by the light client.
+
+#### Responses
+
+> Status code: `200 OK`
+```json
+{"latest_block":{block_number}}
+```
+
+### **GET** `/v1/confidence/{block_number}`
+
+Given a block number, it returns the confidence computed by the light client for that specific block.
+
+> Path parameters:
+- `block_number` - block number (requred)
+
+#### Responses
+
+In case when confidence is computed:
+
+> Status code: `200 OK`
+```json
+{"block":1,"confidence":93.75,"serialised_confidence":"5232467296"}
+```
+
+If confidence is not computed, and specified block is before the latest processed block:
+
+> Status code: `400 Bad Request`
+```json
+"Not synced"
+```
+
+If confidence is not computed, and specified block is after the latest processed block:
+
+> Status code: `404 Not Found`
+```json
+"Not found"
+```
+
+### **GET** `/v1/appdata/{block_number}`
+
+Given a block number, it retrieves the hex-encoded extrinsics for the specified block, if available. Alternatively, if specified by a query parameter, the retrieved extrinsic is decoded and returned as a base64-encoded string.
+
+> Path parameters:
+- `block_number` - block number (requred)
+
+> Query parameters:
+- `decode` - `true` if decoded extrinsics are requested (boolean, optional, default is `false`)
+
+#### Responses
+
+If application data is available, and decode is `false` or unspecified:
+
+> Status code: `200 OK`
+```json
+{"block":1,"extrinsics":["0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"]}
+```
+
+If application data is available, and decode is `true`:
+
+> Status code: `200 OK`
+```json
+{"block":1,"extrinsics":["ZXhhbXBsZQ=="]}
+```
+
+If application data is not available, and specified block is the latest block:
+
+> Status code: `401 Unauthorized`
+```json
+"Processing block"
+```
+
+If application data is not available, and specified block is not the latest block:
+
+> Status code: `404 Not Found`
+```json
+"Not found"
+```
+
+### **GET** `/v1/status/{block_number}`
+
+Retrieves the status of the latest block processed by the light client.
+
+> Path parameters:
+- `block_number` - block number (requred)
+
+#### Responses
+
+If latest processed block exists, and `app_id` is configured (otherwise, `app_id` is not set):
+
+> Status code: `200 OK`
+```json
+{"block_num":89,"confidence":93.75,"app_id":1}
+```
+
+If there are no processed blocks:
+
+> Status code: `404 Not Found`
+```json
+"Not found"
+```
+
 
 ## Test Code Coverage Report
 
