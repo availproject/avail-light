@@ -331,7 +331,6 @@ impl Client {
 	}
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Command {
 	StartListening {
