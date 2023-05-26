@@ -36,7 +36,7 @@ FROM debian:bullseye-slim
 
 RUN \
 	apt-get update && \
-	apt-get install -y curl envsubst && \
+	apt-get install -y curl gettext-base && \
 	rm -rf /var/lib/apt/lists && \
 	groupadd -r avail && \
 	useradd --no-log-init -r -g avail avail

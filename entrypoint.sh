@@ -6,7 +6,7 @@ da_bin=/da/bin/avail-light
 echo "Generate config from template..."
 envsubst < /da/config.yaml.template > /tmp/config.yaml
 
-echo "Generated confing at `/tmp/config.yaml`"
+echo "Generated confing at '/tmp/config.yaml'"
 echo "===BEGIN==="
 cat /tmp/config.yaml
 echo "===END==="
