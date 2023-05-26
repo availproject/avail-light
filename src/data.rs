@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::primitives::Header as DaHeader;
+use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
 use rocksdb::DB;
-use avail_subxt::utils::H256;
 
 use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
 
@@ -169,7 +169,8 @@ pub fn get_genesis_hash(db: Arc<DB>) -> Result<Option<H256>> {
 
 	result.map_or(Ok(None), |e| {
 		let raw_hash: std::result::Result<[u8; 32], _> = e.try_into();
-		raw_hash.map(|e| Some(H256::from(e)))
+		raw_hash
+			.map(|e| Some(H256::from(e)))
 			.map_err(|_| anyhow!("Bad genesis hash format!"))
 	})
 }

@@ -15,16 +15,27 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.  
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
+use avail_subxt::{
+	avail,
+	primitives::{
+		grandpa::{AuthorityId, ConsensusLog},
+		Header as DaHeader,
+	},
+	rpc::types::BlockNumber,
+	utils::H256,
+	AccountId,
+};
+use codec::{Decode, Encode};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::stream::{self, StreamExt as _};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
+use sp_core::{blake2_256, ed25519::Public as EdPublic};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 
 use crate::{
 	data::{
@@ -232,6 +243,7 @@ async fn process_block(
 
 	Ok(())
 }
+
 /// Runs sync client.
 ///
 /// # Arguments
@@ -256,7 +268,53 @@ pub async fn run(
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
+	let end_block_hash = rpc_client
+		.rpc()
+		.block_hash(Some(BlockNumber::from(end_block)))
+		.await
+		.unwrap()
+		.unwrap();
+	let end_block_header = rpc_client
+		.rpc()
+		.header(Some(end_block_hash))
+		.await
+		.unwrap()
+		.unwrap();
+
+	let grandpa_valset_raw = rpc_client
+		.runtime_api()
+		.at(Some(end_block_hash))
+		.await
+		.unwrap()
+		.call_raw("GrandpaApi_grandpa_authorities", None)
+		.await
+		.unwrap();
+
+	// Decode result to proper type - ed25519 public key and u64 weight.
+	let grandpa_valset: Vec<(EdPublic, u64)> =
+		Decode::decode(&mut &grandpa_valset_raw[..]).unwrap();
+
+	// Drop weights, as they are not currently used.
+	let final_validator_set: Vec<EdPublic> = grandpa_valset.iter().map(|e| e.0).collect();
+
+	let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+	// Fetch the set ID from storage at current height
+	let mut set_id = rpc_client
+		.storage()
+		// None means current height
+		.at(Some(end_block_hash))
+		.await
+		.unwrap()
+		.fetch(&set_id_key)
+		.await
+		.unwrap()
+		.expect("The set_id should exist");
+
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
+	let mut last_hash: Option<H256> = None;
+	let mut last_set_id: Option<u64> = None;
+	let mut last_validator_set: Option<Vec<EdPublic>> = None;
+
 	info!("Syncing block headers from {start_block} to {end_block}");
 	let blocks = (start_block..=end_block).map(move |b| {
 		(
@@ -269,24 +327,96 @@ pub async fn run(
 		)
 	});
 	let cfg_clone = &cfg;
-	stream::iter(blocks)
-		.for_each_concurrent(
-			num_cpus::get(), // number of logical CPUs available on machine
-			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
-				let test = SyncClientImpl {
-					db: store.clone(),
-					network_client: net_svc.clone(),
-					rpc_client: rpc_client.clone(),
-				};
-				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) = process_block(test, block_number, cfg_clone, pp, block_tx).await
-				{
-					error!(block_number, "Cannot process block: {error:#}");
-				}
-			},
-		)
-		.await;
+	for (block_number, rpc_client, store, net_svc, pp, block_tx) in blocks {
+		trace!("Testing block {block_number}!");
+		let block_hash = rpc_client
+			.rpc()
+			.block_hash(Some(BlockNumber::from(block_number)))
+			.await
+			.unwrap()
+			.unwrap();
+		let block_header = rpc_client
+			.rpc()
+			.header(Some(block_hash))
+			.await
+			.unwrap()
+			.unwrap();
+		assert_eq!(
+			block_hash,
+			Encode::using_encoded(&block_header, blake2_256).into(),
+			"Hash should match"
+		);
+		if let Some(lh) = last_hash {
+			assert_eq!(lh, block_header.parent_hash, "Parent hash should match!")
+		}
+		last_hash = Some(block_hash);
+
+		// Search the header logs for validator set change
+		let new_auths = block_header
+			.digest
+			.logs
+			.iter()
+			.filter_map(|e| match &e {
+				avail_subxt::config::substrate::DigestItem::Consensus(id, data) => match id {
+					b"FRNK" => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
+						Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
+						Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
+						_ => None,
+					},
+					_ => None,
+				},
+				_ => None,
+			})
+			.collect::<Vec<_>>();
+
+		if !new_auths.is_empty() {
+			trace!("Validator set is changed!");
+			last_validator_set = Some(
+				new_auths[0]
+					.iter()
+					.map(|a| EdPublic::from_raw(a.0 .0 .0 .0))
+					.collect(),
+			);
+			let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+			let set_id = rpc_client
+				.storage()
+				.at(Some(block_hash))
+				.await
+				.unwrap()
+				.fetch(&set_id_key)
+				.await
+				.unwrap()
+				.expect("The set_id shold exist");
+			trace!("Set id changed to {set_id}");
+			if let Some(sid) = last_set_id {
+				assert_eq!(
+					sid + 1,
+					set_id,
+					"set id should be one greater than the last!"
+				)
+			}
+			last_set_id = Some(set_id);
+		}
+
+		let test = SyncClientImpl {
+			db: store.clone(),
+			network_client: net_svc.clone(),
+			rpc_client: rpc_client.clone(),
+		};
+
+		// TODO: Should we handle unprocessed blocks differently?
+		if let Err(error) = process_block(test, block_number, cfg_clone, pp, block_tx).await {
+			error!(block_number, "Cannot process block: {error:#}");
+		}
+	}
+	if let Some(lvalset) = last_validator_set {
+		assert_eq!(
+			lvalset, final_validator_set,
+			"set id should be one greater than the last!"
+		);
+	} else {
+		trace!("Validator set hasn't changed for all sync client depth");
+	}
 }
 
 #[cfg(test)]

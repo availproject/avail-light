@@ -255,7 +255,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let genesis_hash = rpc_client.genesis_hash();
 	if let Some(stored_genesis_hash) = data::get_genesis_hash(db.clone())? {
 		if !genesis_hash.eq(&stored_genesis_hash) {
-			Err(anyhow!("Genesis hash doesn't match the stored one! Clear the db or change nodes."))?
+			Err(anyhow!(
+				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
+			))?
 		}
 	} else {
 		info!("No genesis hash is found in the db, storing the new hash now.");
