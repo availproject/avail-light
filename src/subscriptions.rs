@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use avail_subxt::{api, primitives::Header, AvailConfig, avail::Client, utils::H256, rpc::{rpc_params, types::BlockNumber}};
+use avail_subxt::{api, primitives::Header, avail::Client, utils::H256, rpc::{rpc_params, types::BlockNumber}};
 use codec::{Decode, Encode, Codec};
 use serde::{de::Error, Deserialize};
 use sp_core::{

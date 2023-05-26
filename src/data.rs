@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::primitives::Header as DaHeader;
 use codec::{Decode, Encode};
 use rocksdb::DB;
-use subxt::utils::H256;
+use avail_subxt::utils::H256;
 
 use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
 
