@@ -22,10 +22,8 @@ use libp2p::{
 	noise::{Keypair, NoiseConfig, X25519Spec},
 	ping::{Behaviour as Ping, Config as PingConfig},
 	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
-	relay::{self, client::Behaviour as RelayClient, Behaviour as Relay, Config as RelayConfig},
-	swarm::{behaviour::toggle::Toggle, NetworkBehaviour, SwarmBuilder},
-	tcp::{tokio::Transport as TokioTcpTransport, Config},
-	yamux::{WindowUpdateMode, YamuxConfig},
+	relay::{self, client::Behaviour as RelayClient},
+	swarm::{NetworkBehaviour, SwarmBuilder},
 	PeerId, Transport,
 };
 use multihash::{self, Hasher};
@@ -44,14 +42,13 @@ pub enum Event {
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
 pub struct Behaviour {
-	relay: Toggle<Relay>,
-	identify: Identify,
-	relay_client: Toggle<RelayClient>,
-	dcutr: Toggle<Dcutr>,
 	kademlia: Kademlia<MemoryStore>,
-	auto_nat: AutoNat,
-	mdns: Toggle<Mdns>,
+	identify: Identify,
 	ping: Ping,
+	mdns: Mdns,
+	auto_nat: AutoNat,
+	relay_client: RelayClient,
+	dcutr: Dcutr,
 }
 
 pub fn init(
@@ -88,57 +85,21 @@ pub fn init(
 		id_keys.public()
 	);
 
-	let noise_keys = Keypair::<X25519Spec>::new().into_authentic(&id_keys)?;
-
 	// Create Transport
-	// relay transport configuration used in relay clients
-	let local_peer_id = PeerId::from(id_keys.public());
+	// init relay transport configuration used in relay clients
 	let (relay_client_transport, relay_client_behaviour) = relay::client::new(local_peer_id);
-
-	let mut yamux_config = YamuxConfig::default();
-	// enabling propper flow-control:
-	// window updates are only sent when buffered data has been consumed
-	yamux_config.set_window_update_mode(WindowUpdateMode::on_read());
-
-	let tcp_transport = TokioTcpTransport::new(
-		Config::new()
-			.nodelay(true)
-			.port_reuse(cfg.libp2p_tcp_port_reuse),
-	);
-
-	let quic_transport = {
-		let mut quic_config = QuicConfig::new(&id_keys);
-		quic_config.support_draft_29 = true;
-		TokioQuic::new(QuicConfig::new(&id_keys))
-	};
-
-	// based on the need for a node to act as relaying server or not
-	// it's underlaying TCP transport will change
-	let transport = if cfg.is_relay {
-		// if we're a relay
-		// then we need to support TCP transport
-		let relay_tcp_transport = tcp_transport
-			.upgrade(Version::V1)
+	let transport = {
+		let quic_transport = TokioQuic::new(QuicConfig::new(&id_keys));
+		// upgrade relay transport to be used with swarm
+		let noise_keys = Keypair::<X25519Spec>::new().into_authentic(&id_keys)?;
+		let upgraded_relay_transport = relay_client_transport
+			.upgrade(Version::V1Lazy)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
-			.multiplex(yamux_config);
-
-		TokioDnsConfig::system(OrTransport::new(quic_transport, relay_tcp_transport).map(
-			|either_output, _| match either_output {
-				Either::Left((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
-				Either::Right((peer_id, connection)) => (peer_id, StreamMuxerBox::new(connection)),
-			},
-		))?
-		.boxed()
-	} else {
-		// but, if we're a client that will use Relaying
-		// we need to mix relay client transport with TCP
-		let relay_client_tcp_transport = OrTransport::new(relay_client_transport, tcp_transport)
-			.upgrade(Version::V1)
-			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
-			.multiplex(yamux_config);
-
-		TokioDnsConfig::system(
-			OrTransport::new(quic_transport, relay_client_tcp_transport).map(|either_output, _| {
+			.multiplex(libp2p::yamux::YamuxConfig::default());
+		// relay transport only handles listening and dialing on relayed [`Multiaddr`]
+		// and depends on other transport to do the actual transmission of data, we have to combine the two
+		let transport =
+			OrTransport::new(upgraded_relay_transport, quic_transport).map(|either_output, _| {
 				match either_output {
 					Either::Left((peer_id, connection)) => {
 						(peer_id, StreamMuxerBox::new(connection))
@@ -147,9 +108,9 @@ pub fn init(
 						(peer_id, StreamMuxerBox::new(connection))
 					},
 				}
-			}),
-		)?
-		.boxed()
+			});
+		// wrap transport for DNS lookups
+		TokioDnsConfig::system(transport)?.boxed()
 	};
 
 	// Initialize Network Behaviour Struct
@@ -179,35 +140,24 @@ pub fn init(
 	// create Indetify Protocol Config
 	let identify_cfg = identify::Config::new("/avail_kad/id/1.0.0".to_string(), id_keys.public())
 		.with_agent_version(agent_version());
-	// create AutoNAT Config
+	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {
-		only_global_ips: cfg.libp2p_autonat_only_global_ips,
+		retry_interval: cfg.autonat.retry_interval,
+		refresh_interval: cfg.autonat.refresh_interval,
+		boot_delay: cfg.autonat.boot_delay,
+		throttle_server_period: cfg.autonat.throttle_server_period,
+		only_global_ips: cfg.autonat.only_global_ips,
 		..Default::default()
 	};
-	// toggle Relaying related behaviours
-	// based on the need for a node to act as relaying server or not
-	let behaviour = if cfg.is_relay {
-		Behaviour {
-			relay: Some(Relay::new(local_peer_id, RelayConfig::default())).into(),
-			ping: Ping::new(PingConfig::new()),
-			identify: Identify::new(identify_cfg),
-			relay_client: None.into(),
-			dcutr: None.into(),
-			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
-			auto_nat: AutoNat::new(local_peer_id, autonat_cfg),
-			mdns: None.into(),
-		}
-	} else {
-		Behaviour {
-			relay: None.into(),
-			ping: Ping::new(PingConfig::new()),
-			identify: Identify::new(identify_cfg),
-			relay_client: Some(relay_client_behaviour).into(),
-			dcutr: Some(Dcutr::new(local_peer_id)).into(),
-			kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
-			auto_nat: AutoNat::new(local_peer_id, autonat_cfg),
-			mdns: Some(Mdns::new(MdnsConfig::default(), local_peer_id)?).into(),
-		}
+
+	let behaviour = Behaviour {
+		ping: Ping::new(PingConfig::new()),
+		identify: Identify::new(identify_cfg),
+		relay_client: relay_client_behaviour,
+		dcutr: Dcutr::new(local_peer_id),
+		kademlia: Kademlia::with_config(local_peer_id, kad_store, kad_cfg),
+		auto_nat: AutoNat::new(local_peer_id, autonat_cfg),
+		mdns: Mdns::new(MdnsConfig::default(), local_peer_id)?,
 	};
 
 	// Build the Swarm, connecting the lower transport logic with the

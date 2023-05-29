@@ -28,10 +28,8 @@ use libp2p::{
 	multiaddr::Protocol,
 	ping,
 	relay::{
-		inbound::hop::FatalUpgradeError as InboundHopFatalUpgradeError,
 		inbound::stop::FatalUpgradeError as InboundStopFatalUpgradeError,
 		outbound::hop::FatalUpgradeError as OutboundHopFatalUpgradeError,
-		outbound::stop::FatalUpgradeError as OutboundStopFatalUpgradeError, Event as RelayEvent,
 	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
@@ -134,7 +132,33 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, UpgradeErrorOrPingFailure>) {
+	async fn handle_event(
+		&mut self,
+		event: SwarmEvent<
+			BehaviourEvent,
+			Either<
+				Either<
+					Either<
+						Either<
+							Either<Either<std::io::Error, std::io::Error>, ping::Failure>,
+							void::Void,
+						>,
+						ConnectionHandlerUpgrErr<std::io::Error>,
+					>,
+					Either<
+						ConnectionHandlerUpgrErr<
+							Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>,
+						>,
+						void::Void,
+					>,
+				>,
+				Either<
+					ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
+					Either<ConnectionHandlerUpgrErr<std::io::Error>, void::Void>,
+				>,
+			>,
+		>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
@@ -334,13 +358,12 @@ impl EventLoop {
 				MdnsEvent::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
 						debug!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-						if let Some(mdns) = self.swarm.behaviour_mut().mdns.as_ref() {
-							if mdns.has_node(&peer_id) {
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.remove_address(&peer_id, &multiaddr);
-							}
+
+						if self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
+							self.swarm
+								.behaviour_mut()
+								.kademlia
+								.remove_address(&peer_id, &multiaddr);
 						}
 					}
 				},
@@ -369,18 +392,6 @@ impl EventLoop {
 						}
 					};
 				},
-			},
-			SwarmEvent::Behaviour(BehaviourEvent::Relay(event)) => match event {
-				RelayEvent::ReservationReqAccepted { src_peer_id, .. } => {
-					debug!("Relay accepted reservation request from: {src_peer_id:#?}");
-				},
-				RelayEvent::ReservationReqDenied { src_peer_id } => {
-					debug!("Reservation request was denied for: {src_peer_id:#?}");
-				},
-				RelayEvent::ReservationTimedOut { src_peer_id } => {
-					debug!("Reservation timed out for: {src_peer_id:#?}");
-				},
-				_ => {},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
 				debug! {"Relay Client Event: {event:#?}"};
