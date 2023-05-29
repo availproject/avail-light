@@ -193,20 +193,22 @@ impl EventLoop {
 						},
 						QueryResult::PutRecord(result) => {
 							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								*v = Some(result.map_err(Into::into).map(|ok_res| {
+								if let Ok(put_record_ok) = result.as_ref() {
 									// Remove local records for fat clients (memory optimization)
 									if self.kad_remove_local_record {
 										self.swarm
 											.behaviour_mut()
 											.kademlia
-											.remove_record(&ok_res.key);
-									};
+											.remove_record(&put_record_ok.key);
+									}
 									self.swarm
 										.behaviour_mut()
 										.kademlia
 										.store_mut()
 										.shrink_hashmap();
-								}));
+								};
+
+								*v = Some(result.map(|_| ()).map_err(Into::into));
 
 								let cnt = self
 									.pending_kad_query_batch
