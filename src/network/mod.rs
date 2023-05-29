@@ -60,7 +60,7 @@ pub fn init(
 	kad_remove_local_record: bool,
 ) -> Result<(Client, EventLoop)> {
 	// Create a public/private key pair, either based on a seed or random
-	let id_keys = match cfg.libp2p_secret_key {
+	let id_keys = match cfg.secret_key {
 		// If seed is provided, generate secret key from seed
 		Some(SecretKey::Seed { seed }) => {
 			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
@@ -138,8 +138,8 @@ pub fn init(
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths);
 	// create Indetify Protocol Config
-	let identify_cfg = identify::Config::new("/avail_kad/id/1.0.0".to_string(), id_keys.public())
-		.with_agent_version(agent_version());
+	let identify_cfg = identify::Config::new(cfg.protocol_version, id_keys.public())
+		.with_agent_version(cfg.agent_version);
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {
 		retry_interval: cfg.autonat.retry_interval,
@@ -182,11 +182,4 @@ pub fn init(
 			kad_remove_local_record,
 		),
 	))
-}
-
-fn agent_version() -> String {
-	format!(
-		"avail-light-client/rust-client/{}",
-		env!("CARGO_PKG_VERSION")
-	)
 }

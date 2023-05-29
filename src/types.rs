@@ -197,7 +197,7 @@ pub struct RuntimeConfig {
 	/// If set to seed, keypair will be generated from that seed.
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
-	pub secret_key: Option<SecretKey>,
+	pub libp2p_secret_key: Option<SecretKey>,
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(with = "port_range_format")]
 	pub libp2p_port: (u16, u16),
@@ -213,6 +213,10 @@ pub struct RuntimeConfig {
 	pub libp2p_autonat_refresh_interval: u64,
 	/// Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
 	pub libp2p_autonat_boot_delay: u64,
+	/// Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+	pub libp2p_identify_protocol: String,
+	/// Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
+	pub libp2p_identify_agent: String,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -341,8 +345,10 @@ impl From<&RuntimeConfig> for LightClientConfig {
 }
 
 pub struct LibP2PConfig {
-	pub libp2p_secret_key: Option<SecretKey>,
-	pub libp2p_port: (u16, u16),
+	pub secret_key: Option<SecretKey>,
+	pub port: (u16, u16),
+	pub agent_version: String,
+	pub protocol_version: String,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
@@ -359,8 +365,10 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			.expect("To be able to parse relay nodes values from config.");
 
 		Self {
-			libp2p_secret_key: rtcfg.secret_key.clone(),
-			libp2p_port: rtcfg.libp2p_port,
+			secret_key: rtcfg.libp2p_secret_key.clone(),
+			port: rtcfg.libp2p_port,
+			agent_version: rtcfg.libp2p_identify_agent.clone(),
+			protocol_version: rtcfg.libp2p_identify_protocol.clone(),
 			autonat: rtcfg.into(),
 			kademlia: rtcfg.into(),
 			is_relay: rtcfg.relays.is_empty(),
@@ -470,13 +478,15 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
-			secret_key: None,
+			libp2p_secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: false,
 			libp2p_autonat_refresh_interval: 30,
 			libp2p_autonat_retry_interval: 10,
 			libp2p_autonat_throttle: 1,
 			libp2p_autonat_boot_delay: 5,
+			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
+			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,

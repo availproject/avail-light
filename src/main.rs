@@ -220,8 +220,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	// If the client is the first one on the network, and no bootstrap nodes
-	// were provided, then wait for the second client to establish connection and use it as bootstrap.
+	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
+	// second client to establish connection and use it as bootstrap.
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
 	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
