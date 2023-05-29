@@ -205,6 +205,14 @@ pub struct RuntimeConfig {
 	pub libp2p_tcp_port_reuse: bool,
 	/// Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	pub libp2p_autonat_only_global_ips: bool,
+	/// Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+	pub libp2p_autonat_throttle: u64,
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+	pub libp2p_autonat_retry_interval: u64,
+	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+	pub libp2p_autonat_refresh_interval: u64,
+	/// Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	pub libp2p_autonat_boot_delay: u64,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -335,8 +343,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 pub struct LibP2PConfig {
 	pub libp2p_secret_key: Option<SecretKey>,
 	pub libp2p_port: (u16, u16),
-	pub libp2p_tcp_port_reuse: bool,
-	pub libp2p_autonat_only_global_ips: bool,
+	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
@@ -354,8 +361,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 		Self {
 			libp2p_secret_key: rtcfg.secret_key.clone(),
 			libp2p_port: rtcfg.libp2p_port,
-			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
-			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
+			autonat: rtcfg.into(),
 			kademlia: rtcfg.into(),
 			is_relay: rtcfg.relays.is_empty(),
 			relays: relay_nodes,
@@ -381,7 +387,7 @@ pub struct KademliaConfig {
 
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		KademliaConfig {
+		Self {
 			record_ttl: val.kad_record_ttl,
 			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
 				.expect("Invalid replication factor"),
@@ -396,6 +402,27 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			max_kad_record_number: val.max_kad_record_number as usize,
 			max_kad_record_size: val.max_kad_record_size as usize,
 			max_kad_provided_keys: val.max_kad_provided_keys as usize,
+		}
+	}
+}
+
+/// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
+pub struct AutoNATConfig {
+	pub retry_interval: Duration,
+	pub refresh_interval: Duration,
+	pub boot_delay: Duration,
+	pub throttle_server_period: Duration,
+	pub only_global_ips: bool,
+}
+
+impl From<&RuntimeConfig> for AutoNATConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		Self {
+			retry_interval: Duration::from_secs(val.libp2p_autonat_retry_interval),
+			refresh_interval: Duration::from_secs(val.libp2p_autonat_refresh_interval),
+			boot_delay: Duration::from_secs(val.libp2p_autonat_boot_delay),
+			throttle_server_period: Duration::from_secs(val.libp2p_autonat_throttle),
+			only_global_ips: val.libp2p_autonat_only_global_ips,
 		}
 	}
 }
@@ -446,6 +473,10 @@ impl Default for RuntimeConfig {
 			secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: false,
+			libp2p_autonat_refresh_interval: 30,
+			libp2p_autonat_retry_interval: 10,
+			libp2p_autonat_throttle: 1,
+			libp2p_autonat_boot_delay: 5,
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
