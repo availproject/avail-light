@@ -25,6 +25,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::{hash_map, hash_set, HashMap, HashSet};
 use std::iter;
+use tracing::{info, trace};
 
 /// In-memory implementation of a `RecordStore`.
 pub struct MemoryStore {
@@ -92,6 +93,17 @@ impl MemoryStore {
 		F: FnMut(&RecordKey, &mut Record) -> bool,
 	{
 		self.records.retain(f);
+	}
+
+	/// Shrinks the capacity of hashmap as much as possible
+	pub fn shrink_hashmap(&mut self) {
+		self.records.shrink_to_fit();
+
+		trace!(
+			"Len: {:?}. Capacity: {:?}",
+			self.records.len(),
+			self.records.capacity()
+		);
 	}
 }
 
