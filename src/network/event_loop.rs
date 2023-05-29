@@ -54,13 +54,19 @@ struct RelayReservation {
 	is_reserved: bool,
 }
 
+enum QueryState {
+	Pending,
+	Succeeded,
+	Failed(anyhow::Error),
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, Option<Result<()>>>,
+	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
 	metrics: Metrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
@@ -208,25 +214,27 @@ impl EventLoop {
 										.shrink_hashmap();
 								};
 
-								*v = Some(result.map(|_| ()).map_err(Into::into));
+								// TODO: Handle or log errors
+								*v = match result {
+									Ok(_) => QueryState::Succeeded,
+									Err(error) => QueryState::Failed(error.into()),
+								};
 
-								let cnt = self
+								let has_pending = self
 									.pending_kad_query_batch
 									.iter()
-									.filter(|(_, elem)| elem.is_none())
-									.count();
+									.any(|(_, qs)| matches!(qs, QueryState::Pending));
 
-								if cnt == 0 {
+								if !has_pending {
 									if let Some(QueryChannel::PutRecordBatch(ch)) =
 										self.pending_batch_complete.take()
 									{
 										let count_success = self
 											.pending_kad_query_batch
 											.iter()
-											.filter(|(_, elem)| {
-												elem.is_some() && elem.as_ref().unwrap().is_ok()
-											})
+											.filter(|(_, qs)| matches!(qs, QueryState::Succeeded))
 											.count();
+
 										_ = ch.send(NumSuccPut(count_success));
 									}
 								}
@@ -529,7 +537,7 @@ impl EventLoop {
 				quorum,
 				sender,
 			} => {
-				let mut ids: HashMap<QueryId, Option<Result<()>>> = Default::default();
+				let mut ids: HashMap<QueryId, QueryState> = Default::default();
 
 				for record in records.as_ref() {
 					let query_id = self
@@ -538,7 +546,7 @@ impl EventLoop {
 						.kademlia
 						.put_record(record.to_owned(), quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
-					ids.insert(query_id, None);
+					ids.insert(query_id, QueryState::Pending);
 				}
 				self.pending_kad_query_batch = ids;
 				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
