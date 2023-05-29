@@ -25,7 +25,7 @@ use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::collections::{hash_map, hash_set, HashMap, HashSet};
 use std::iter;
-use tracing::{info, trace};
+use tracing::trace;
 
 /// In-memory implementation of a `RecordStore`.
 pub struct MemoryStore {
@@ -226,11 +226,19 @@ impl RecordStore for MemoryStore {
 
 #[cfg(test)]
 mod tests {
-	use std::time::Instant;
+	use std::time::{Duration, Instant};
 
 	use super::*;
-	use libp2p::{kad::kbucket::Distance, multihash::Multihash};
-	use quickcheck::*;
+	use libp2p::{
+		kad::{kbucket::Distance, record::Key},
+		multihash::Multihash,
+	};
+	use proptest::{
+		prelude::{any, any_with},
+		proptest,
+		sample::size_range,
+		strategy::Strategy,
+	};
 	use rand::Rng;
 
 	const SHA_256_MH: u64 = 0x12;
@@ -243,55 +251,88 @@ mod tests {
 		KBucketKey::new(r.key.clone()).distance(&KBucketKey::from(r.provider))
 	}
 
-	#[test]
-	#[ignore]
-	fn put_get_remove_record() {
-		fn prop(r: Record) {
-			let mut store = MemoryStore::new(PeerId::random());
-			assert!(store.put(r.clone()).is_ok());
-			assert_eq!(Some(Cow::Borrowed(&r)), store.get(&r.key));
-			store.remove(&r.key);
-			assert!(store.get(&r.key).is_none());
-		}
-		quickcheck(prop as fn(_))
+	fn arb_key() -> impl Strategy<Value = Key> {
+		any::<[u8; 32]>().prop_map(|hash| Key::from(Multihash::wrap(SHA_256_MH, &hash).unwrap()))
 	}
 
+	fn arb_publisher() -> impl Strategy<Value = Option<PeerId>> {
+		any::<bool>().prop_map(|has_publisher| has_publisher.then(PeerId::random))
+	}
+
+	fn arb_expires() -> impl Strategy<Value = Option<Instant>> {
+		(any::<bool>(), 0..60u64).prop_map(|(expires, seconds)| {
+			expires.then(|| Instant::now() + Duration::from_secs(seconds))
+		})
+	}
+
+	fn arb_record() -> impl Strategy<Value = Record> {
+		(
+			arb_key(),
+			any_with::<Vec<u8>>(size_range(1..2048).lift()),
+			arb_publisher(),
+			arb_expires(),
+		)
+			.prop_map(|(key, value, publisher, expires)| Record {
+				key,
+				value,
+				publisher,
+				expires,
+			})
+	}
+
+	fn arb_provider_record() -> impl Strategy<Value = ProviderRecord> {
+		(arb_key(), arb_expires()).prop_map(|(key, expires)| ProviderRecord {
+			key,
+			provider: PeerId::random(),
+			expires,
+			addresses: vec![],
+		})
+	}
+
+	proptest! {
 	#[test]
-	#[ignore]
-	fn add_get_remove_provider() {
-		fn prop(r: ProviderRecord) {
-			let mut store = MemoryStore::new(PeerId::random());
+	fn put_get_remove_record(r in arb_record()) {
+		let mut store = MemoryStore::new(PeerId::random());
+		assert!(store.put(r.clone()).is_ok());
+		assert_eq!(Some(Cow::Borrowed(&r)), store.get(&r.key));
+		store.remove(&r.key);
+		assert!(store.get(&r.key).is_none());
+	}
+	}
+
+	proptest! {
+	#[test]
+	fn add_get_remove_provider(r in arb_provider_record()) {
+		let mut store = MemoryStore::new(PeerId::random());
+		assert!(store.add_provider(r.clone()).is_ok());
+		assert!(store.providers(&r.key).contains(&r));
+		store.remove_provider(&r.key, &r.provider);
+		assert!(!store.providers(&r.key).contains(&r));
+	}
+	}
+
+	proptest! {
+	#[test]
+	fn providers_ordered_by_distance_to_key(providers  in 0..256u32) {
+		let providers = (0..providers).
+			map(|_| KBucketKey::from(PeerId::random())).
+				collect::<Vec<_>>();
+		let mut store = MemoryStore::new(PeerId::random());
+		let key = RecordKey::from(random_multihash());
+
+		let mut records = providers
+			.into_iter()
+			.map(|p| ProviderRecord::new(key.clone(), p.into_preimage(), Vec::new()))
+			.collect::<Vec<_>>();
+
+		for r in &records {
 			assert!(store.add_provider(r.clone()).is_ok());
-			assert!(store.providers(&r.key).contains(&r));
-			store.remove_provider(&r.key, &r.provider);
-			assert!(!store.providers(&r.key).contains(&r));
 		}
-		quickcheck(prop as fn(_))
+
+		records.sort_by_key(distance);
+		records.truncate(store.config.max_providers_per_key);
+		assert!(records == store.providers(&key).to_vec())
 	}
-
-	#[test]
-	#[ignore]
-	fn providers_ordered_by_distance_to_key() {
-		fn prop(providers: Vec<KBucketKey<PeerId>>) -> bool {
-			let mut store = MemoryStore::new(PeerId::random());
-			let key = RecordKey::from(random_multihash());
-
-			let mut records = providers
-				.into_iter()
-				.map(|p| ProviderRecord::new(key.clone(), p.into_preimage(), Vec::new()))
-				.collect::<Vec<_>>();
-
-			for r in &records {
-				assert!(store.add_provider(r.clone()).is_ok());
-			}
-
-			records.sort_by_key(distance);
-			records.truncate(store.config.max_providers_per_key);
-
-			records == store.providers(&key).to_vec()
-		}
-
-		quickcheck(prop as fn(_) -> _)
 	}
 
 	#[test]

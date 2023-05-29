@@ -57,7 +57,6 @@ tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.15", features = ["json"] }
 prometheus-client = "0.19.0"
 smallvec = "1.6.1"
-quickcheck = "1.0.3"
 
 openssl = { version = "0.10", features = ["vendored"] }
 void = "1.0.2"
