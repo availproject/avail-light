@@ -194,12 +194,18 @@ impl EventLoop {
 						QueryResult::PutRecord(result) => {
 							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
 								*v = Some(result.map_err(Into::into).map(|ok_res| {
+									// Remove local records for fat clients (memory optimization)
 									if self.kad_remove_local_record {
 										self.swarm
 											.behaviour_mut()
 											.kademlia
 											.remove_record(&ok_res.key);
 									};
+									self.swarm
+										.behaviour_mut()
+										.kademlia
+										.store_mut()
+										.shrink_hashmap();
 								}));
 
 								let cnt = self
