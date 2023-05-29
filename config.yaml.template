@@ -1,0 +1,15 @@
+log_level = "${LC_LOG_LEVEL}"
+http_server_host = "${LC_HTTP_SERVER_HOST}"
+http_server_port = "${LC_HTTP_SERVER_PORT}"
+secret_key = { seed = "${LC_SECRET_KEY_SEED}" }
+
+libp2p_seed = ${LC_LIBP2P_SEED}
+libp2p_port = "${LC_LIBP2P_PORT}"
+
+full_node_rpc = [ "${LC_FULL_NODE_RPC}" ]
+full_node_ws = [ "${LC_FULL_NODE_WS}" ]
+app_id = ${LC_APP_ID} 
+confidence = ${LC_CONFIDENCE}
+avail_path = "${LC_AVAIL_PATH}"
+prometheus_port = ${LC_PROMETHEUS_PORT}
+bootstraps = [${LC_BOOTSTRAPS}]
