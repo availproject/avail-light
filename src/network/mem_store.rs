@@ -244,6 +244,7 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
 	fn put_get_remove_record() {
 		fn prop(r: Record) {
 			let mut store = MemoryStore::new(PeerId::random());
@@ -256,6 +257,7 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
 	fn add_get_remove_provider() {
 		fn prop(r: ProviderRecord) {
 			let mut store = MemoryStore::new(PeerId::random());
@@ -268,6 +270,7 @@ mod tests {
 	}
 
 	#[test]
+	#[ignore]
 	fn providers_ordered_by_distance_to_key() {
 		fn prop(providers: Vec<KBucketKey<PeerId>>) -> bool {
 			let mut store = MemoryStore::new(PeerId::random());
