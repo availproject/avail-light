@@ -584,6 +584,9 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
+		mock_client
+			.expect_shrink_kademlia_map()
+			.returning(|| Box::pin(async move { Ok(()) }));
 		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
@@ -698,6 +701,9 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
+		mock_client
+			.expect_shrink_kademlia_map()
+			.returning(|| Box::pin(async move { Ok(()) }));
 		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
