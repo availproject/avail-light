@@ -66,28 +66,23 @@ pub struct EventLoop {
 	kad_remove_local_record: bool,
 }
 
-type FatalInHopOrOutStop = Either<InboundHopFatalUpgradeError, OutboundStopFatalUpgradeError>;
+type IoOrPing = Either<Either<std::io::Error, std::io::Error>, ping::Failure>;
 
-type FatalInStopOrOutHop = Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>;
+type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, ConnectionHandlerUpgrErr<std::io::Error>>;
 
-type Fatal = Either<
-	Either<Either<ConnectionHandlerUpgrErr<FatalInHopOrOutStop>, Void>, std::io::Error>,
-	Either<ConnectionHandlerUpgrErr<FatalInStopOrOutHop>, Void>,
+type StopOrHop = Either<
+	ConnectionHandlerUpgrErr<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
+	void::Void,
 >;
+
+type PingOrStopOrHop = Either<UpgradeOrPing, StopOrHop>;
 
 type Upgrade = Either<
 	ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
 	Either<ConnectionHandlerUpgrErr<std::io::Error>, Void>,
 >;
 
-type FatalOrUpgrade = Either<Fatal, Upgrade>;
-
-type UpgradeError = Either<
-	Either<Either<FatalOrUpgrade, std::io::Error>, ConnectionHandlerUpgrErr<std::io::Error>>,
-	Void,
->;
-
-type UpgradeErrorOrPingFailure = Either<UpgradeError, ping::Failure>;
+type PingFailureOrUpgradeError = Either<PingOrStopOrHop, Upgrade>;
 
 impl EventLoop {
 	pub fn new(
@@ -132,33 +127,7 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(
-		&mut self,
-		event: SwarmEvent<
-			BehaviourEvent,
-			Either<
-				Either<
-					Either<
-						Either<
-							Either<Either<std::io::Error, std::io::Error>, ping::Failure>,
-							void::Void,
-						>,
-						ConnectionHandlerUpgrErr<std::io::Error>,
-					>,
-					Either<
-						ConnectionHandlerUpgrErr<
-							Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>,
-						>,
-						void::Void,
-					>,
-				>,
-				Either<
-					ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
-					Either<ConnectionHandlerUpgrErr<std::io::Error>, void::Void>,
-				>,
-			>,
-		>,
-	) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
