@@ -138,8 +138,8 @@ pub fn init(
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths);
 	// create Indetify Protocol Config
-	let identify_cfg = identify::Config::new(cfg.protocol_version, id_keys.public())
-		.with_agent_version(cfg.agent_version);
+	let identify_cfg = identify::Config::new(cfg.identify.protocol_version, id_keys.public())
+		.with_agent_version(cfg.identify.agent_version);
 	// create AutoNAT Client Config
 	let autonat_cfg = autonat::Config {
 		retry_interval: cfg.autonat.retry_interval,

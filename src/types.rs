@@ -217,16 +217,20 @@ pub struct RuntimeConfig {
 	pub libp2p_identify_protocol: String,
 	/// Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub libp2p_identify_agent: String,
+	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+	pub libp2p_bootstraps: Vec<(String, Multiaddr)>,
+	/// Vector of Relay nodes, which are used for hole punching
+	pub libp2p_relays: Vec<(String, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
+	/// Full node RPC version. (default: "1.6.0")
+	pub full_node_rpc_version: String,
+	/// Full node spec version. (default: "data-avail")
+	pub full_node_spec_name: String,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
-	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<(String, Multiaddr)>,
-	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<(String, Multiaddr)>,
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
@@ -256,7 +260,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-
 	/// Kademlia configuration - WARNING: Changing the default values might cause the peer to suffer poor performance!
 	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
 	///
@@ -347,8 +350,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
 	pub port: (u16, u16),
-	pub agent_version: String,
-	pub protocol_version: String,
+	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
@@ -356,22 +358,21 @@ pub struct LibP2PConfig {
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
-	fn from(rtcfg: &RuntimeConfig) -> Self {
-		let relay_nodes = rtcfg
-			.relays
+	fn from(val: &RuntimeConfig) -> Self {
+		let relay_nodes = val
+			.libp2p_relays
 			.iter()
 			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 			.expect("To be able to parse relay nodes values from config.");
 
 		Self {
-			secret_key: rtcfg.libp2p_secret_key.clone(),
-			port: rtcfg.libp2p_port,
-			agent_version: rtcfg.libp2p_identify_agent.clone(),
-			protocol_version: rtcfg.libp2p_identify_protocol.clone(),
-			autonat: rtcfg.into(),
-			kademlia: rtcfg.into(),
-			is_relay: rtcfg.relays.is_empty(),
+			secret_key: val.libp2p_secret_key.clone(),
+			port: val.libp2p_port,
+			identify: val.into(),
+			autonat: val.into(),
+			kademlia: val.into(),
+			is_relay: val.libp2p_relays.is_empty(),
 			relays: relay_nodes,
 		}
 	}
@@ -435,6 +436,20 @@ impl From<&RuntimeConfig> for AutoNATConfig {
 	}
 }
 
+pub struct IdentifyConfig {
+	pub agent_version: String,
+	pub protocol_version: String,
+}
+
+impl From<&RuntimeConfig> for IdentifyConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		Self {
+			agent_version: val.libp2p_identify_agent.clone(),
+			protocol_version: val.libp2p_identify_protocol.clone(),
+		}
+	}
+}
+
 /// Sync client configuration (see [RuntimeConfig] for details)
 #[derive(Clone)]
 pub struct SyncClientConfig {
@@ -488,10 +503,12 @@ impl Default for RuntimeConfig {
 			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			full_node_rpc_version: "1.6.0".to_string(),
+			full_node_spec_name: "data-avail".to_string(),
 			app_id: None,
 			confidence: 92.0,
-			bootstraps: Vec::new(),
-			relays: Vec::new(),
+			libp2p_bootstraps: Vec::new(),
+			libp2p_relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
