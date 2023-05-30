@@ -199,22 +199,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
-	// if there were no provided relays, that means we're one of those
-	// than we need to act as a Relay, listen on TCP also
-	if cfg.relays.is_empty() {
-		network_client
-			.start_listening(
-				Multiaddr::empty()
-					.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-					.with(Protocol::Tcp(port)),
-			)
-			.await
-			.context("Listening on TCP not to fail.")?;
-	}
 
 	// Check if bootstrap nodes were provided
 	let bootstrap_nodes = cfg
-		.bootstraps
+		.libp2p_bootstraps
 		.iter()
 		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
