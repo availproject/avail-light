@@ -60,6 +60,7 @@ pub struct MemoryStoreConfig {
 }
 
 impl Default for MemoryStoreConfig {
+	// Default values kept in line with libp2p
 	fn default() -> Self {
 		Self {
 			max_records: 1024,
@@ -99,8 +100,8 @@ impl MemoryStore {
 	pub fn shrink_hashmap(&mut self) {
 		self.records.shrink_to_fit();
 
-		trace!(
-			"Len: {:?}. Capacity: {:?}",
+		tracing::info!(
+			"Memory store - Len: {:?}. Capacity: {:?}",
 			self.records.len(),
 			self.records.capacity()
 		);

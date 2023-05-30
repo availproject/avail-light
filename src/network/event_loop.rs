@@ -207,11 +207,6 @@ impl EventLoop {
 											.kademlia
 											.remove_record(&put_record_ok.key);
 									}
-									self.swarm
-										.behaviour_mut()
-										.kademlia
-										.store_mut()
-										.shrink_hashmap();
 								};
 
 								// TODO: Handle or log errors
@@ -550,6 +545,13 @@ impl EventLoop {
 				}
 				self.pending_kad_query_batch = ids;
 				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
+			},
+			Command::ReduceKademliaMapSize => {
+				self.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.shrink_hashmap();
 			},
 		}
 	}
