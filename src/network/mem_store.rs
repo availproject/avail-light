@@ -100,7 +100,7 @@ impl MemoryStore {
 	pub fn shrink_hashmap(&mut self) {
 		self.records.shrink_to_fit();
 
-		tracing::info!(
+		trace!(
 			"Memory store - Len: {:?}. Capacity: {:?}",
 			self.records.len(),
 			self.records.capacity()
