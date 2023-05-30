@@ -61,6 +61,7 @@ pub trait LightClient {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
+	async fn shrink_kademlia_map(&self) -> Result<()>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
@@ -86,6 +87,9 @@ impl LightClient for LightClientImpl {
 		self.network_client
 			.insert_cells_into_dht(block, cells)
 			.await
+	}
+	async fn shrink_kademlia_map(&self) -> Result<()> {
+		self.network_client.shrink_kademlia_map().await
 	}
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
 		self.network_client.insert_rows_into_dht(block, rows).await
@@ -355,6 +359,11 @@ pub async fn process_block(
 	metrics.record(MetricEvent::DHTPutDuration(
 		dht_put_time_elapsed.as_secs_f64(),
 	));
+
+	light_client
+		.shrink_kademlia_map()
+		.await
+		.context("Unable to perform Kademlia map shrink")?;
 
 	Ok(())
 }

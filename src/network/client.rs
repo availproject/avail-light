@@ -172,6 +172,14 @@ impl Client {
 		NumSuccPut(num_success)
 	}
 
+	// Reduces the size of Kademlias underlying hashmap
+	pub async fn shrink_kademlia_map(&self) -> Result<()> {
+		self.sender
+			.send(Command::ReduceKademliaMapSize)
+			.await
+			.context("Command receiver should not be dropped.")
+	}
+
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
 	async fn fetch_cell_from_dht(&self, block_number: u32, position: &Position) -> Option<Cell> {
@@ -358,4 +366,5 @@ pub enum Command {
 		quorum: Quorum,
 		sender: oneshot::Sender<NumSuccPut>,
 	},
+	ReduceKademliaMapSize,
 }
