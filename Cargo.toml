@@ -7,9 +7,9 @@ authors = ["Avail Team"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kate-recovery = { version = "0.8", git="https://github.com/availproject/avail-core", tag = "da-primitives/v0.4.6" }
+kate-recovery = { version = "0.8", git = "https://github.com/availproject/avail-core", tag = "da-primitives/v0.4.6" }
 avail-subxt = { git = "https://github.com/availproject/avail.git", tag = "v1.6.0-b68af960" }
-dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2"  }
+dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
 url = "2.2.2"
 tokio = { version = "1.21.2", features = ["full"] }
 tokio-stream = "0.1.11"
