@@ -533,7 +533,28 @@ impl EventLoop {
 					.store_mut()
 					.shrink_hashmap();
 			},
+			Command::NetworkObservabilityDump => {
+				self.dump_routing_table_stats();
+			},
 		}
+	}
+
+	fn dump_routing_table_stats(&mut self) {
+		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
+		info!("Number of KBuckets: {:?} ", num_of_buckets);
+		let mut temp_string: String = "".to_owned();
+		let mut total_peer_number: usize = 0;
+		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
+			total_peer_number += bucket.num_entries();
+			for record_temp in bucket.iter() {
+				let entry_view = record_temp.to_owned();
+				temp_string.push_str(&format! {"{0: <55} | {1: <100} | {2: <10}\n", entry_view.node.key.preimage().to_string(), format!{"{:?}", entry_view.node.value}, format!{"{:?}", entry_view.status}});
+			}
+		}
+		info!(
+			"Total number of peers in routing table: {0}.\n{1: <55} | {2: <100} | {3: <10}\n{4}",
+			total_peer_number, "PeerID", "Multiaddress", "Status", temp_string
+		);
 	}
 
 	fn reset_relay_reservation(&mut self) {
