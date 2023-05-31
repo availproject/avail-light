@@ -37,6 +37,8 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
+
+use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
@@ -67,6 +69,7 @@ pub struct EventLoop {
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
 	metrics: Metrics,
+	avail_metrics: AvailMetrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
 	relay_reservation: RelayReservation,
 	kad_remove_local_record: bool,
@@ -95,6 +98,7 @@ impl EventLoop {
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
+		avail_metrics: AvailMetrics,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		kad_remove_local_record: bool,
 	) -> Self {
@@ -107,6 +111,7 @@ impl EventLoop {
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
 			metrics,
+			avail_metrics,
 			relay_nodes,
 			relay_reservation: RelayReservation {
 				id: PeerId::random(),
@@ -555,6 +560,12 @@ impl EventLoop {
 			"Total number of peers in routing table: {0}.\n{1: <55} | {2: <100} | {3: <10}\n{4}",
 			total_peer_number, "PeerID", "Multiaddress", "Status", temp_string
 		);
+		self.avail_metrics
+			.record(MetricEvent::KadRoutinTablePeerNum(
+				total_peer_number
+					.try_into()
+					.expect("unable to convert usize to u32"),
+			));
 	}
 
 	fn reset_relay_reservation(&mut self) {

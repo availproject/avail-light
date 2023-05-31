@@ -6,6 +6,7 @@ use prometheus_client::{
 };
 
 // Defines metrics struct that is used with Prometheus for light client.
+#[derive(Clone)]
 pub struct Metrics {
 	session_block_counter: Counter,
 	total_block_number: Gauge,
@@ -18,6 +19,7 @@ pub struct Metrics {
 	dht_put_success: Gauge<f64, AtomicU64>,
 	dht_put_rows_duration: Gauge<f64, AtomicU64>,
 	dht_put_rows_success: Gauge<f64, AtomicU64>,
+	kad_routing_table_peer_num: Gauge,
 }
 
 pub enum MetricEvent {
@@ -32,6 +34,7 @@ pub enum MetricEvent {
 	DHTPutSuccess(f64),
 	DHTPutRowsDuration(f64),
 	DHTPutRowsSuccess(f64),
+	KadRoutinTablePeerNum(u32),
 }
 
 impl Metrics {
@@ -114,6 +117,12 @@ impl Metrics {
 			"Success rate of the DHT PUT rows operation",
 			dht_put_success.clone(),
 		);
+		let kad_routing_table_peer_num = Gauge::default();
+		sub_reg.register(
+			"kad_routing_table_peer_num",
+			"Number of connected peers in clients routing table",
+			kad_routing_table_peer_num.clone(),
+		);
 
 		Self {
 			session_block_counter,
@@ -127,6 +136,7 @@ impl Metrics {
 			dht_put_success,
 			dht_put_rows_duration,
 			dht_put_rows_success,
+			kad_routing_table_peer_num,
 		}
 	}
 
@@ -164,6 +174,9 @@ impl Metrics {
 			},
 			MetricEvent::DHTPutRowsSuccess(num) => {
 				self.dht_put_rows_success.set(num);
+			},
+			MetricEvent::KadRoutinTablePeerNum(num) => {
+				self.kad_routing_table_peer_num.set(num.into());
 			},
 		}
 	}

@@ -2,6 +2,7 @@ mod client;
 mod event_loop;
 mod mem_store;
 
+use crate::telemetry::metrics::Metrics as AvailMetrics;
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
 pub use client::Client;
@@ -53,6 +54,7 @@ pub struct Behaviour {
 pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
+	avail_metrics: AvailMetrics,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
@@ -182,6 +184,7 @@ pub fn init(
 			swarm,
 			command_receiver,
 			metrics,
+			avail_metrics,
 			cfg.relays,
 			kad_remove_local_record,
 		),
