@@ -113,7 +113,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let cli = Cli::parse();
 	let config_path = &cli.config;
 
-	let cfg: RuntimeConfig = confy::load_path(&config_path)
+	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
 	info!("Using config: {cfg:?}");
