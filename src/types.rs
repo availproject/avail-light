@@ -64,7 +64,7 @@ impl TryFrom<DaHeader> for BlockVerified {
 				index: app_lookup
 					.index
 					.iter()
-					.map(|e| (e.app_id.0.clone(), e.start.clone()))
+					.map(|e| (e.app_id.0, e.start))
 					.collect(),
 			},
 			commitments: commitments::from_slice(&commitment)?,
