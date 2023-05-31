@@ -634,6 +634,7 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_json",
+ "smallvec 1.10.0",
  "sp-core 6.0.0",
  "tempdir",
  "test-case",
