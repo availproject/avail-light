@@ -223,10 +223,6 @@ pub struct RuntimeConfig {
 	pub libp2p_relays: Vec<(String, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
-	/// Full node RPC version. (default: "1.6.0")
-	pub full_node_rpc_version: String,
-	/// Full node spec version. (default: "data-avail")
-	pub full_node_spec_name: String,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
@@ -503,8 +499,6 @@ impl Default for RuntimeConfig {
 			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
-			full_node_rpc_version: "1.6.0".to_string(),
-			full_node_spec_name: "data-avail".to_string(),
 			app_id: None,
 			confidence: 92.0,
 			libp2p_bootstraps: Vec::new(),

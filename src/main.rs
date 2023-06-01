@@ -246,9 +246,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
 	let version = rpc::Version {
-		version: cfg.full_node_rpc_version.clone(),
+		version: "1.6.0".to_string(),
 		spec_version: 9,
-		spec_name: cfg.full_node_spec_name.clone(),
+		spec_name: "data-avail".to_string(),
 	};
 	let (rpc_client, last_full_node_ws) =
 		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
