@@ -50,6 +50,7 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+/// Light Client for Avail Blockchain
 #[derive(Parser)]
 #[command(version)]
 struct CliOpts {
