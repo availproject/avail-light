@@ -1,5 +1,6 @@
 mod client;
 mod event_loop;
+mod mem_store;
 
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
@@ -13,10 +14,7 @@ use libp2p::{
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
 	identity,
-	kad::{
-		store::{MemoryStore, MemoryStoreConfig},
-		Kademlia, KademliaCaching, KademliaConfig,
-	},
+	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
 	metrics::Metrics,
 	noise::{Keypair, NoiseConfig, X25519Spec},
@@ -26,6 +24,7 @@ use libp2p::{
 	swarm::{NetworkBehaviour, SwarmBuilder},
 	PeerId, Transport,
 };
+use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -137,6 +136,11 @@ pub fn init(
 			max_peers: cfg.kademlia.caching_max_peers,
 		})
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths);
+
+	// Block all incoming data in fat clients (memory footprint optimization)
+	if kad_remove_local_record {
+		kad_cfg.set_record_filtering(libp2p::kad::KademliaStoreInserts::FilterBoth);
+	}
 	// create Indetify Protocol Config
 	let identify_cfg = identify::Config::new(cfg.identify.protocol_version, id_keys.public())
 		.with_agent_version(cfg.identify.agent_version);
