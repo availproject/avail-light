@@ -66,7 +66,6 @@ base64 = "0.21.0"
 mockall = "0.11.3"
 async-trait = "0.1.66"
 hex-literal = "0.4.0"
-clap = "4.3.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5"
