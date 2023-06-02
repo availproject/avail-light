@@ -10,12 +10,12 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
+use clap::Parser;
 use consts::STATE_CF;
 use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use structopt::StructOpt;
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
@@ -118,9 +118,9 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 }
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
-	let opts = CliOpts::from_args();
+	let cli = Cli::parse();
+	let config_path = &cli.config;
 
-	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
