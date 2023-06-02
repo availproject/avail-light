@@ -53,7 +53,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
 #[command(version)]
-struct Cli {
+struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
 	config: String,
@@ -110,9 +110,8 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 }
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
-	let cli = Cli::parse();
-	let config_path = &cli.config;
-
+	let opts = CliOpts::parse();
+	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
@@ -191,29 +190,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
-	// if there were no provided relays, that means we're one of those
-	// than we need to act as a Relay, listen on TCP also
-	if cfg.relays.is_empty() {
-		network_client
-			.start_listening(
-				Multiaddr::empty()
-					.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-					.with(Protocol::Tcp(port)),
-			)
-			.await
-			.context("Listening on TCP not to fail.")?;
-	}
 
 	// Check if bootstrap nodes were provided
 	let bootstrap_nodes = cfg
-		.bootstraps
+		.libp2p_bootstraps
 		.iter()
 		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	// If the client is the first one on the network, and no bootstrap nodes
-	// were provided, then wait for the second client to establish connection and use it as bootstrap.
+	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
+	// second client to establish connection and use it as bootstrap.
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
 	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");

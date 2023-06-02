@@ -197,7 +197,7 @@ pub struct RuntimeConfig {
 	/// If set to seed, keypair will be generated from that seed.
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
-	pub secret_key: Option<SecretKey>,
+	pub libp2p_secret_key: Option<SecretKey>,
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(with = "port_range_format")]
 	pub libp2p_port: (u16, u16),
@@ -205,16 +205,28 @@ pub struct RuntimeConfig {
 	pub libp2p_tcp_port_reuse: bool,
 	/// Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 	pub libp2p_autonat_only_global_ips: bool,
+	/// Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+	pub libp2p_autonat_throttle: u64,
+	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+	pub libp2p_autonat_retry_interval: u64,
+	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+	pub libp2p_autonat_refresh_interval: u64,
+	/// Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	pub libp2p_autonat_boot_delay: u64,
+	/// Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+	pub libp2p_identify_protocol: String,
+	/// Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
+	pub libp2p_identify_agent: String,
+	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+	pub libp2p_bootstraps: Vec<(String, Multiaddr)>,
+	/// Vector of Relay nodes, which are used for hole punching
+	pub libp2p_relays: Vec<(String, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
-	/// Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<(String, Multiaddr)>,
-	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<(String, Multiaddr)>,
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
 	/// Log level, default is `INFO`. See `<https://docs.rs/log/0.4.14/log/enum.LevelFilter.html>` for possible log level values. (default: `INFO`).
@@ -244,7 +256,6 @@ pub struct RuntimeConfig {
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
 	pub threshold: usize,
-
 	/// Kademlia configuration - WARNING: Changing the default values might cause the peer to suffer poor performance!
 	/// Default Kademlia config values have been copied from rust-libp2p Kademila defaults
 	///
@@ -333,31 +344,31 @@ impl From<&RuntimeConfig> for LightClientConfig {
 }
 
 pub struct LibP2PConfig {
-	pub libp2p_secret_key: Option<SecretKey>,
-	pub libp2p_port: (u16, u16),
-	pub libp2p_tcp_port_reuse: bool,
-	pub libp2p_autonat_only_global_ips: bool,
+	pub secret_key: Option<SecretKey>,
+	pub port: (u16, u16),
+	pub identify: IdentifyConfig,
+	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
-	fn from(rtcfg: &RuntimeConfig) -> Self {
-		let relay_nodes = rtcfg
-			.relays
+	fn from(val: &RuntimeConfig) -> Self {
+		let relay_nodes = val
+			.libp2p_relays
 			.iter()
 			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 			.expect("To be able to parse relay nodes values from config.");
 
 		Self {
-			libp2p_secret_key: rtcfg.secret_key.clone(),
-			libp2p_port: rtcfg.libp2p_port,
-			libp2p_tcp_port_reuse: rtcfg.libp2p_tcp_port_reuse,
-			libp2p_autonat_only_global_ips: rtcfg.libp2p_autonat_only_global_ips,
-			kademlia: rtcfg.into(),
-			is_relay: rtcfg.relays.is_empty(),
+			secret_key: val.libp2p_secret_key.clone(),
+			port: val.libp2p_port,
+			identify: val.into(),
+			autonat: val.into(),
+			kademlia: val.into(),
+			is_relay: val.libp2p_relays.is_empty(),
 			relays: relay_nodes,
 		}
 	}
@@ -381,7 +392,7 @@ pub struct KademliaConfig {
 
 impl From<&RuntimeConfig> for KademliaConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		KademliaConfig {
+		Self {
 			record_ttl: val.kad_record_ttl,
 			record_replication_factor: std::num::NonZeroUsize::new(val.replication_factor as usize)
 				.expect("Invalid replication factor"),
@@ -396,6 +407,41 @@ impl From<&RuntimeConfig> for KademliaConfig {
 			max_kad_record_number: val.max_kad_record_number as usize,
 			max_kad_record_size: val.max_kad_record_size as usize,
 			max_kad_provided_keys: val.max_kad_provided_keys as usize,
+		}
+	}
+}
+
+/// Libp2p AutoNAT configuration (see [RuntimeConfig] for details)
+pub struct AutoNATConfig {
+	pub retry_interval: Duration,
+	pub refresh_interval: Duration,
+	pub boot_delay: Duration,
+	pub throttle_server_period: Duration,
+	pub only_global_ips: bool,
+}
+
+impl From<&RuntimeConfig> for AutoNATConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		Self {
+			retry_interval: Duration::from_secs(val.libp2p_autonat_retry_interval),
+			refresh_interval: Duration::from_secs(val.libp2p_autonat_refresh_interval),
+			boot_delay: Duration::from_secs(val.libp2p_autonat_boot_delay),
+			throttle_server_period: Duration::from_secs(val.libp2p_autonat_throttle),
+			only_global_ips: val.libp2p_autonat_only_global_ips,
+		}
+	}
+}
+
+pub struct IdentifyConfig {
+	pub agent_version: String,
+	pub protocol_version: String,
+}
+
+impl From<&RuntimeConfig> for IdentifyConfig {
+	fn from(val: &RuntimeConfig) -> Self {
+		Self {
+			agent_version: val.libp2p_identify_agent.clone(),
+			protocol_version: val.libp2p_identify_protocol.clone(),
 		}
 	}
 }
@@ -443,14 +489,20 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
-			secret_key: None,
+			libp2p_secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: false,
+			libp2p_autonat_refresh_interval: 30,
+			libp2p_autonat_retry_interval: 10,
+			libp2p_autonat_throttle: 1,
+			libp2p_autonat_boot_delay: 5,
+			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
+			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
-			bootstraps: Vec::new(),
-			relays: Vec::new(),
+			libp2p_bootstraps: Vec::new(),
+			libp2p_relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
