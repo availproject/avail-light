@@ -10,12 +10,12 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
+use clap::Parser;
 use consts::STATE_CF;
 use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use structopt::StructOpt;
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
@@ -50,20 +50,11 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-#[derive(StructOpt, Debug)]
-#[structopt(
-	name = "avail-light",
-	about = "Light Client for Avail Blockchain",
-	author = "Avail Team",
-	version = "0.1.0"
-)]
+#[derive(Parser)]
+#[command(version)]
 struct CliOpts {
-	#[structopt(
-		short = "c",
-		long = "config",
-		default_value = "config.yaml",
-		help = "yaml configuration file"
-	)]
+	/// Path to the yaml configuration file
+	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
 	config: String,
 }
 
@@ -118,8 +109,7 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 }
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
-	let opts = CliOpts::from_args();
-
+	let opts = CliOpts::parse();
 	let config_path = &opts.config;
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
