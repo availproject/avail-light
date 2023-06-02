@@ -72,7 +72,6 @@ pub struct EventLoop {
 	kad_remove_local_record: bool,
 }
 
-
 type IoOrPing = Either<Either<std::io::Error, std::io::Error>, ping::Failure>;
 
 type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, ConnectionHandlerUpgrErr<std::io::Error>>;
