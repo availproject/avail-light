@@ -115,8 +115,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
 
-	info!("Using config: {cfg:?}");
-
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
 	if cfg.log_format_json {
@@ -126,6 +124,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
+
+	info!("Using config: {cfg:?}");
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
