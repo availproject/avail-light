@@ -276,7 +276,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		None
 	};
 
-	let block_header = rpc::get_chain_header(&rpc_client)
+	let block_header = rpc::get_chain_head_header(&rpc_client)
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;

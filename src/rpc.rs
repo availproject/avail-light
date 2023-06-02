@@ -9,16 +9,18 @@ use avail_subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	utils::H256,
 };
+use codec::Decode;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
+use sp_core::ed25519::Public as EdPublic;
 use tracing::{debug, info, instrument, warn};
 
 use crate::types::*;
 
-async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
+pub async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
 	client
 		.rpc()
 		.block_hash(Some(BlockNumber::from(block)))
@@ -26,7 +28,7 @@ async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
 		.ok_or(anyhow!("Block with number {block} not found"))
 }
 
-async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHeader> {
+pub async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHeader> {
 	client
 		.rpc()
 		.header(Some(hash))
@@ -34,14 +36,65 @@ async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHead
 		.ok_or(anyhow!("Header with hash {hash:?} not found"))
 }
 
+pub async fn get_valset_by_hash(client: &avail::Client, hash: H256) -> Result<Vec<EdPublic>> {
+	let grandpa_valset_raw = client
+		.runtime_api()
+		.at(Some(hash))
+		.await
+		.unwrap()
+		.call_raw("GrandpaApi_grandpa_authorities", None)
+		.await
+		.unwrap();
+
+	// Decode result to proper type - ed25519 public key and u64 weight.
+	let grandpa_valset: Vec<(EdPublic, u64)> =
+		Decode::decode(&mut &grandpa_valset_raw[..]).unwrap();
+
+	// Drop weights, as they are not currently used.
+	Ok(grandpa_valset.iter().map(|e| e.0).collect())
+}
+
+pub async fn get_valset_by_block_number(
+	client: &avail::Client,
+	block: u32,
+) -> Result<Vec<EdPublic>> {
+	let hash = get_block_hash(client, block).await?;
+	get_valset_by_hash(client, hash).await
+}
 /// RPC for obtaining header of latest finalized block mined by network
-pub async fn get_chain_header(client: &avail::Client) -> Result<DaHeader> {
+pub async fn get_chain_head_header(client: &avail::Client) -> Result<DaHeader> {
 	let h = client.rpc().finalized_head().await?;
 	client
 		.rpc()
 		.header(Some(h))
 		.await?
 		.ok_or(anyhow!("Couldn't get latest finalized header"))
+}
+
+pub async fn get_chain_head_hash(client: &avail::Client) -> Result<H256> {
+	client
+		.rpc()
+		.finalized_head()
+		.await
+		.map_err(|_| anyhow!("Cannot get finalized head hash"))
+}
+
+pub async fn get_set_id_by_hash(client: &avail::Client, hash: H256) -> Result<u64> {
+	let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+	// Fetch the set ID from storage at current height
+	Ok(client
+		.storage()
+		// None means current height
+		.at(Some(hash))
+		.await?
+		.fetch(&set_id_key)
+		.await?
+		.expect("The set_id should exist"))
+}
+
+pub async fn get_set_id_by_block_number(client: &avail::Client, block: u32) -> Result<u64> {
+	let hash = get_block_hash(client, block).await?;
+	get_set_id_by_hash(client, hash).await
 }
 
 /// Gets header by block number

@@ -2,16 +2,12 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use avail_subxt::{
-	api,
 	avail::Client,
-	primitives::{
-		grandpa::{AuthorityId, ConsensusLog},
-		Header,
-	},
-	rpc::{rpc_params, types::BlockNumber},
+	primitives::{grandpa::AuthorityId, Header},
+	rpc::rpc_params,
 	utils::H256,
 };
-use codec::{Codec, Decode, Encode};
+use codec::{Decode, Encode};
 use serde::{de::Error, Deserialize};
 use sp_core::{
 	blake2_256, bytes,
@@ -19,7 +15,9 @@ use sp_core::{
 	Pair,
 };
 use tokio::sync::mpsc::{unbounded_channel, Sender};
-use tracing::{debug, error, info, log::trace};
+use tracing::{error, info, trace};
+
+use crate::{rpc, utils};
 
 pub async fn finalized_headers(
 	rpc_client: Client,
@@ -96,42 +94,19 @@ async fn subscribe_check_and_process(
 		.rpc()
 		.subscribe_finalized_block_headers()
 		.await?;
+	// Get the hash of the head (finalized)
+	let last_finalized_block_hash = rpc::get_chain_head_hash(&subxt_client).await?;
 
 	// Current set of authorities, implicitly trusted, fetched from grandpa runtime.
-	let grandpa_valset_raw = subxt_client
-		.runtime_api()
-		.at(None)
-		.await?
-		.call_raw("GrandpaApi_grandpa_authorities", None)
-		.await?;
+	let mut validator_set =
+		rpc::get_valset_by_hash(&subxt_client, last_finalized_block_hash).await?;
 
-	// Decode result to proper type - ed25519 public key and u64 weight.
-	let grandpa_valset: Vec<(EdPublic, u64)> = Decode::decode(&mut &grandpa_valset_raw[..])?;
-
-	// Drop weights, as they are not currently used.
-	let mut validator_set: Vec<EdPublic> = grandpa_valset.iter().map(|e| e.0).collect();
-
-	// Set ID is acquired in a separate storage query. It is necessary, because it is a part of message being signed.
-
-	// Form a query key for storage
-	let set_id_key = api::storage().grandpa().current_set_id();
 	// Fetch the set ID from storage at current height
-	let mut set_id = subxt_client
-		.storage()
-		// None means current height
-		.at(None)
-		.await?
-		.fetch(&set_id_key)
-		.await?
-		.expect("The set_id shold exist");
+	let mut set_id = rpc::get_set_id_by_hash(&subxt_client, last_finalized_block_hash).await?;
 
 	// Get last (implicitly trusted) finalized block number
-	let last_finalized_block_hash = subxt_client.rpc().finalized_head().await?;
-	let mut last_finalized_block_header = subxt_client
-		.rpc()
-		.header(Some(last_finalized_block_hash))
-		.await?
-		.expect("Finalized head should exist");
+	let mut last_finalized_block_header =
+		rpc::get_header_by_hash(&subxt_client, last_finalized_block_hash).await?;
 
 	info!("Current set: {:?}", (validator_set.clone(), set_id));
 
@@ -140,34 +115,18 @@ async fn subscribe_check_and_process(
 
 	// Task that produces headers and new validator sets
 	tokio::spawn({
-		let subxt_client = subxt_client.clone();
+		// let subxt_client = subxt_client.clone();
 		let msg_sender = msg_sender.clone();
 		async move {
 			while let Some(Ok(header)) = header_subscription.next().await {
 				let received_at = Instant::now();
-				let head_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
+				// let head_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 				msg_sender
 					.send(Messages::NewHeader(header.clone(), received_at))
 					.expect("Receiver should not be dropped.");
 
 				// Search the header logs for validator set change
-				let mut new_auths = header
-					.digest
-					.logs
-					.iter()
-					.filter_map(|e| match &e {
-						avail_subxt::config::substrate::DigestItem::Consensus(id, data) => match id
-						{
-							b"FRNK" => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
-								Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
-								Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
-								_ => None,
-							},
-							_ => None,
-						},
-						_ => None,
-					})
-					.collect::<Vec<_>>();
+				let mut new_auths = utils::filter_auth_set_changes(header);
 
 				// If the event exists, send the new auths over the message channel.
 				if !new_auths.is_empty() {
@@ -299,16 +258,9 @@ async fn subscribe_check_and_process(
 				// Get all the skipped blocks, if they exist
 				for bl_num in (last_finalized_block_header.number + 1)..header.number {
 					info!("Sending skipped block {bl_num}");
-					let hash = subxt_client
-						.rpc()
-						.block_hash(Some(BlockNumber::from(bl_num)))
+					let header = rpc::get_header_by_block_number(&subxt_client, bl_num)
 						.await?
-						.expect("Block should exist");
-					let header = subxt_client
-						.rpc()
-						.header(Some(hash))
-						.await?
-						.expect("Header should exist");
+						.0;
 					message_tx.send((header, Instant::now())).await?;
 				}
 

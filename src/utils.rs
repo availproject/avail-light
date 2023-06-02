@@ -4,8 +4,10 @@ use avail_subxt::{
 		header::extension::HeaderExtension,
 		header::extension::{v1, v2},
 	},
+	primitives::{grandpa::AuthorityId, grandpa::ConsensusLog, Header as DaHeader},
 	utils::H256,
 };
+use codec::Decode;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
@@ -38,6 +40,27 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> &DataLookup {
 		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
 		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
 	}
+}
+
+pub fn filter_auth_set_changes(header: DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
+	let new_auths = header
+		.digest
+		.logs
+		.iter()
+		.filter_map(|e| match &e {
+			// UGHHH, why won't the b"FRNK" just work
+			avail_subxt::config::substrate::DigestItem::Consensus(
+				[b'F', b'R', b'N', b'K'],
+				data,
+			) => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
+				Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
+				Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
+				_ => None,
+			},
+			_ => None,
+		})
+		.collect::<Vec<_>>();
+	new_auths
 }
 
 // TODO: Remove unused functions if not needed after next iteration
