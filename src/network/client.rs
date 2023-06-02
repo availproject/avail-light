@@ -50,7 +50,6 @@ impl DHTCell {
 		}
 	}
 }
-
 struct DHTRow((RowIndex, Vec<u8>));
 
 impl DHTRow {

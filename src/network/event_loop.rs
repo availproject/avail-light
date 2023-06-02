@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
 use rand::seq::SliceRandom;
+use std::str;
 use tokio::sync::{mpsc, oneshot};
 use void::Void;
 
@@ -21,7 +22,6 @@ use libp2p::{
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
 		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
-		Record,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
@@ -168,13 +168,19 @@ impl EventLoop {
 					},
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
-						if let InboundRequest::PutRecord {
-							source,
-							record: Some(Record { key, .. }),
-							..
-						} = request
-						{
+						if let InboundRequest::PutRecord { source, record, .. } = request {
+							let key = &record.as_ref().expect("msg").key;
 							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+
+							// TODO: Handle put errors?
+							if !self.kad_remove_local_record {
+								_ = self
+									.swarm
+									.behaviour_mut()
+									.kademlia
+									.store_mut()
+									.put(record.expect("msg"));
+							}
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
@@ -540,7 +546,36 @@ impl EventLoop {
 			},
 			Command::NetworkObservabilityDump => {
 				self.dump_routing_table_stats();
+				self.dump_hash_map_block_stats();
 			},
+		}
+	}
+
+	fn dump_hash_map_block_stats(&mut self) {
+		let mut occurence_map = HashMap::new();
+
+		for record in self
+			.swarm
+			.behaviour_mut()
+			.kademlia
+			.store_mut()
+			.records_iter()
+		{
+			let vec_key = record.0.to_vec();
+			let record_key = str::from_utf8(&vec_key);
+			let record_publisher = &record.1.publisher.expect("no publisher");
+
+			let (block_num, _) = record_key
+				.expect("unable to cast key to string")
+				.split_once(":")
+				.clone()
+				.expect("unable to split the key string");
+
+			let count = occurence_map.entry(block_num).or_insert(0);
+			*count += 1;
+		}
+		for (key, value) in occurence_map {
+			info!("Number of cells in DHT for block {:?}: {}", key, value);
 		}
 	}
 
