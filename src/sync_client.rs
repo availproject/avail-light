@@ -17,25 +17,15 @@
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{
-	avail,
-	primitives::{
-		grandpa::{AuthorityId, ConsensusLog},
-		Header as DaHeader,
-	},
-	rpc::types::BlockNumber,
-	utils::H256,
-	AccountId,
-};
-use codec::{Decode, Encode};
+use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
+use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use futures::stream::{self, StreamExt as _};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
 use sp_core::{blake2_256, ed25519::Public as EdPublic};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::mpsc::Sender;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, warn};
 
 use crate::{
 	data::{
@@ -45,6 +35,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	types::{BlockVerified, SyncClientConfig},
+	utils,
 	utils::{extract_app_lookup, extract_kate},
 };
 use kate_recovery::{data::Cell, matrix::Position};
@@ -276,47 +267,16 @@ pub async fn run(
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
-	let end_block_hash = rpc_client
-		.rpc()
-		.block_hash(Some(BlockNumber::from(end_block)))
-		.await
-		.unwrap()
-		.unwrap();
-	let end_block_header = rpc_client
-		.rpc()
-		.header(Some(end_block_hash))
-		.await
-		.unwrap()
-		.unwrap();
 
-	let grandpa_valset_raw = rpc_client
-		.runtime_api()
-		.at(Some(end_block_hash))
-		.await
-		.unwrap()
-		.call_raw("GrandpaApi_grandpa_authorities", None)
+	// Fetch validator set at current height
+	let final_validator_set = rpc::get_valset_by_block_number(&rpc_client, end_block)
 		.await
 		.unwrap();
 
-	// Decode result to proper type - ed25519 public key and u64 weight.
-	let grandpa_valset: Vec<(EdPublic, u64)> =
-		Decode::decode(&mut &grandpa_valset_raw[..]).unwrap();
-
-	// Drop weights, as they are not currently used.
-	let final_validator_set: Vec<EdPublic> = grandpa_valset.iter().map(|e| e.0).collect();
-
-	let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
 	// Fetch the set ID from storage at current height
-	let set_id = rpc_client
-		.storage()
-		// None means current height
-		.at(Some(end_block_hash))
+	let final_set_id = rpc::get_set_id_by_block_number(&rpc_client, end_block)
 		.await
-		.unwrap()
-		.fetch(&set_id_key)
-		.await
-		.unwrap()
-		.expect("The set_id should exist");
+		.unwrap();
 
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	let mut last_hash: Option<H256> = None;
@@ -329,17 +289,11 @@ pub async fn run(
 	let cfg_clone = &cfg;
 	for (block_number, rpc_client, pp, block_tx) in blocks {
 		info!("Testing block {block_number}!");
-		let block_hash = rpc_client
-			.rpc()
-			.block_hash(Some(BlockNumber::from(block_number)))
+		let block_hash = rpc::get_block_hash(&rpc_client, block_number)
 			.await
-			.unwrap()
 			.unwrap();
-		let block_header = rpc_client
-			.rpc()
-			.header(Some(block_hash))
+		let block_header = rpc::get_header_by_hash(&rpc_client, block_hash)
 			.await
-			.unwrap()
 			.unwrap();
 		assert_eq!(
 			block_hash,
@@ -352,22 +306,7 @@ pub async fn run(
 		last_hash = Some(block_hash);
 
 		// Search the header logs for validator set change
-		let new_auths = block_header
-			.digest
-			.logs
-			.iter()
-			.filter_map(|e| match &e {
-				avail_subxt::config::substrate::DigestItem::Consensus(id, data) => match id {
-					b"FRNK" => match ConsensusLog::<u32>::decode(&mut data.as_slice()) {
-						Ok(ConsensusLog::ScheduledChange(x)) => Some(x.next_authorities),
-						Ok(ConsensusLog::ForcedChange(_, x)) => Some(x.next_authorities),
-						_ => None,
-					},
-					_ => None,
-				},
-				_ => None,
-			})
-			.collect::<Vec<_>>();
+		let new_auths = utils::filter_auth_set_changes(block_header);
 
 		if !new_auths.is_empty() {
 			info!("Validator set is changed!");
@@ -377,22 +316,15 @@ pub async fn run(
 					.map(|a| EdPublic::from_raw(a.0 .0 .0 .0))
 					.collect(),
 			);
-			let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
-			let set_id = rpc_client
-				.storage()
-				.at(Some(block_hash))
+			let set_id = rpc::get_set_id_by_hash(&rpc_client, block_hash)
 				.await
-				.unwrap()
-				.fetch(&set_id_key)
-				.await
-				.unwrap()
-				.expect("The set_id shold exist");
+				.unwrap();
 			info!("Set id changed to {set_id}");
 			if let Some(sid) = last_set_id {
 				assert_eq!(
 					sid + 1,
 					set_id,
-					"set id should be one greater than the last!"
+					"Set ID should be one greater than the last!"
 				)
 			}
 			last_set_id = Some(set_id);
@@ -408,7 +340,12 @@ pub async fn run(
 	if let Some(lvalset) = last_validator_set {
 		assert_eq!(
 			lvalset, final_validator_set,
-			"set id should be one greater than the last!"
+			"Validator set should match the last one"
+		);
+		assert_eq!(
+			last_set_id.unwrap(),
+			final_set_id,
+			"Set ID should match the final one"
 		);
 	} else {
 		info!("Validator set hasn't changed for all sync client depth");
