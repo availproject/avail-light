@@ -571,7 +571,7 @@ impl EventLoop {
 				.clone()
 				.expect("unable to split the key string");
 
-			let count = occurence_map.entry(block_num).or_insert(0);
+			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
 			*count += 1;
 		}
 		for (key, value) in occurence_map {
