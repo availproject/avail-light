@@ -247,6 +247,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
 	let genesis_hash = rpc_client.genesis_hash();
+	info!("Genesis hash: {genesis_hash:?}");
 	if let Some(stored_genesis_hash) = data::get_genesis_hash(db.clone())? {
 		if !genesis_hash.eq(&stored_genesis_hash) {
 			Err(anyhow!(
