@@ -271,12 +271,12 @@ pub async fn run(
 	// Fetch validator set at current height
 	let final_validator_set = rpc::get_valset_by_block_number(&rpc_client, end_block)
 		.await
-		.unwrap();
+		.expect("Couldn't get current validator set");
 
 	// Fetch the set ID from storage at current height
 	let final_set_id = rpc::get_set_id_by_block_number(&rpc_client, end_block)
 		.await
-		.unwrap();
+		.expect("Couldn't get current set ID");
 
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	let mut last_hash: Option<H256> = None;
@@ -291,10 +291,10 @@ pub async fn run(
 		info!("Testing block {block_number}!");
 		let block_hash = rpc::get_block_hash(&rpc_client, block_number)
 			.await
-			.unwrap();
+			.expect("Couldn't get block hash");
 		let block_header = rpc::get_header_by_hash(&rpc_client, block_hash)
 			.await
-			.unwrap();
+			.expect("Couldn't get header by hash");
 		assert_eq!(
 			block_hash,
 			Encode::using_encoded(&block_header, blake2_256).into(),
@@ -318,7 +318,7 @@ pub async fn run(
 			);
 			let set_id = rpc::get_set_id_by_hash(&rpc_client, block_hash)
 				.await
-				.unwrap();
+				.expect("Couldn't get set id by hash");
 			info!("Set id changed to {set_id}");
 			if let Some(sid) = last_set_id {
 				assert_eq!(
@@ -343,7 +343,7 @@ pub async fn run(
 			"Validator set should match the last one"
 		);
 		assert_eq!(
-			last_set_id.unwrap(),
+			last_set_id.expect("last_set_id shouldn't be None if valset is Some"),
 			final_set_id,
 			"Set ID should match the final one"
 		);
