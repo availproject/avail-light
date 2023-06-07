@@ -86,6 +86,9 @@ enum Messages {
 	ValidatorSetChange((Vec<EdPublic>, u64)),
 	NewHeader(Header, Instant),
 }
+
+// Subscribes to finalized headers, justifications and monitors the changes in validator set.
+// Verifies the justifications. Then sends the header off to be processed by LC.
 async fn subscribe_check_and_process(
 	subxt_client: Client,
 	message_tx: Sender<(Header, Instant)>,
@@ -115,12 +118,10 @@ async fn subscribe_check_and_process(
 
 	// Task that produces headers and new validator sets
 	tokio::spawn({
-		// let subxt_client = subxt_client.clone();
 		let msg_sender = msg_sender.clone();
 		async move {
 			while let Some(Ok(header)) = header_subscription.next().await {
 				let received_at = Instant::now();
-				// let head_hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 				msg_sender
 					.send(Messages::NewHeader(header.clone(), received_at))
 					.expect("Receiver should not be dropped.");
