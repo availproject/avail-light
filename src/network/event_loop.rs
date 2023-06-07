@@ -172,15 +172,12 @@ impl EventLoop {
 							let key = &record.as_ref().expect("msg").key;
 							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
 
-							// TODO: Handle put errors?
-							if !self.kad_remove_local_record {
-								_ = self
-									.swarm
-									.behaviour_mut()
-									.kademlia
-									.store_mut()
-									.put(record.expect("msg"));
-							}
+							_ = self
+								.swarm
+								.behaviour_mut()
+								.kademlia
+								.store_mut()
+								.put(record.expect("msg"));
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
@@ -563,7 +560,6 @@ impl EventLoop {
 		{
 			let vec_key = record.0.to_vec();
 			let record_key = str::from_utf8(&vec_key);
-			let record_publisher = &record.1.publisher.expect("no publisher");
 
 			let (block_num, _) = record_key
 				.expect("unable to cast key to string")
@@ -574,14 +570,20 @@ impl EventLoop {
 			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
 			*count += 1;
 		}
-		for (key, value) in occurence_map {
-			info!("Number of cells in DHT for block {:?}: {}", key, value);
+		let mut sorted: Vec<(&String, &i32)> = occurence_map.iter().collect();
+		sorted.sort_by(|a, b| a.0.cmp(b.0));
+		for (block_number, cell_count) in sorted {
+			trace!(
+				"Number of cells in DHT for block {:?}: {}",
+				block_number,
+				cell_count
+			);
 		}
 	}
 
 	fn dump_routing_table_stats(&mut self) {
 		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
-		info!("Number of KBuckets: {:?} ", num_of_buckets);
+		debug!("Number of KBuckets: {:?} ", num_of_buckets);
 		let mut temp_string: String = "".to_owned();
 		let mut total_peer_number: usize = 0;
 		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
@@ -591,7 +593,7 @@ impl EventLoop {
 				temp_string.push_str(&format! {"{0: <55} | {1: <100} | {2: <10}\n", entry_view.node.key.preimage().to_string(), format!{"{:?}", entry_view.node.value}, format!{"{:?}", entry_view.status}});
 			}
 		}
-		info!(
+		debug!(
 			"Total number of peers in routing table: {0}.\n{1: <55} | {2: <100} | {3: <10}\n{4}",
 			total_peer_number, "PeerID", "Multiaddress", "Status", temp_string
 		);
