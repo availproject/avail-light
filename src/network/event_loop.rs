@@ -13,6 +13,10 @@ use super::{
 	Behaviour, BehaviourEvent, Event,
 };
 
+const PEER_ID: &str = "PeerID";
+const MULTIADDRESS: &str = "Multiaddress";
+const STATUS: &str = "Status";
+
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
 	dcutr::{
@@ -21,7 +25,8 @@ use libp2p::{
 	},
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
+		BootstrapOk, EntryView, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId,
+		QueryResult,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
@@ -563,8 +568,7 @@ impl EventLoop {
 
 			let (block_num, _) = record_key
 				.expect("unable to cast key to string")
-				.split_once(":")
-				.clone()
+				.split_once(':')
 				.expect("unable to split the key string");
 
 			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
@@ -584,19 +588,22 @@ impl EventLoop {
 	fn dump_routing_table_stats(&mut self) {
 		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
 		debug!("Number of KBuckets: {:?} ", num_of_buckets);
-		let mut temp_string: String = "".to_owned();
+		let mut table: String = "".to_owned();
 		let mut total_peer_number: usize = 0;
 		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
 			total_peer_number += bucket.num_entries();
-			for record_temp in bucket.iter() {
-				let entry_view = record_temp.to_owned();
-				temp_string.push_str(&format! {"{0: <55} | {1: <100} | {2: <10}\n", entry_view.node.key.preimage().to_string(), format!{"{:?}", entry_view.node.value}, format!{"{:?}", entry_view.status}});
+			for EntryView { node, status } in bucket.iter().map(|r| r.to_owned()) {
+				let key = node.key.preimage().to_string();
+				let value = format!("{:?}", node.value);
+				let status = format!("{:?}", status);
+				table.push_str(&format! {"{key: <55} | {value: <100} | {status: <10}\n"});
 			}
 		}
-		debug!(
-			"Total number of peers in routing table: {0}.\n{1: <55} | {2: <100} | {3: <10}\n{4}",
-			total_peer_number, "PeerID", "Multiaddress", "Status", temp_string
-		);
+
+		let text = format!("Total number of peers in routing table: {total_peer_number}.");
+		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
+		debug!("{text}\n{header}\n{table}");
+
 		self.avail_metrics
 			.record(MetricEvent::KadRoutingTablePeerNum(
 				total_peer_number
