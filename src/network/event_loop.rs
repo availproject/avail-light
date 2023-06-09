@@ -4,6 +4,7 @@ use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
 use rand::seq::SliceRandom;
+use std::str;
 use tokio::sync::{mpsc, oneshot};
 use void::Void;
 
@@ -11,6 +12,10 @@ use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
 };
+
+const PEER_ID: &str = "PeerID";
+const MULTIADDRESS: &str = "Multiaddress";
+const STATUS: &str = "Status";
 
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
@@ -20,8 +25,8 @@ use libp2p::{
 	},
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
-		Record,
+		BootstrapOk, EntryView, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId,
+		QueryResult,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
@@ -37,6 +42,8 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
+
+use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
@@ -67,6 +74,7 @@ pub struct EventLoop {
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
 	metrics: Metrics,
+	avail_metrics: AvailMetrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
 	relay_reservation: RelayReservation,
 	kad_remove_local_record: bool,
@@ -95,6 +103,7 @@ impl EventLoop {
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
+		avail_metrics: AvailMetrics,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		kad_remove_local_record: bool,
 	) -> Self {
@@ -107,6 +116,7 @@ impl EventLoop {
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
 			metrics,
+			avail_metrics,
 			relay_nodes,
 			relay_reservation: RelayReservation {
 				id: PeerId::random(),
@@ -163,13 +173,16 @@ impl EventLoop {
 					},
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
-						if let InboundRequest::PutRecord {
-							source,
-							record: Some(Record { key, .. }),
-							..
-						} = request
-						{
+						if let InboundRequest::PutRecord { source, record, .. } = request {
+							let key = &record.as_ref().expect("msg").key;
 							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+
+							_ = self
+								.swarm
+								.behaviour_mut()
+								.kademlia
+								.store_mut()
+								.put(record.expect("msg"));
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
@@ -533,7 +546,70 @@ impl EventLoop {
 					.store_mut()
 					.shrink_hashmap();
 			},
+			Command::NetworkObservabilityDump => {
+				self.dump_routing_table_stats();
+				self.dump_hash_map_block_stats();
+			},
 		}
+	}
+
+	fn dump_hash_map_block_stats(&mut self) {
+		let mut occurence_map = HashMap::new();
+
+		for record in self
+			.swarm
+			.behaviour_mut()
+			.kademlia
+			.store_mut()
+			.records_iter()
+		{
+			let vec_key = record.0.to_vec();
+			let record_key = str::from_utf8(&vec_key);
+
+			let (block_num, _) = record_key
+				.expect("unable to cast key to string")
+				.split_once(':')
+				.expect("unable to split the key string");
+
+			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
+			*count += 1;
+		}
+		let mut sorted: Vec<(&String, &i32)> = occurence_map.iter().collect();
+		sorted.sort_by(|a, b| a.0.cmp(b.0));
+		for (block_number, cell_count) in sorted {
+			trace!(
+				"Number of cells in DHT for block {:?}: {}",
+				block_number,
+				cell_count
+			);
+		}
+	}
+
+	fn dump_routing_table_stats(&mut self) {
+		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
+		debug!("Number of KBuckets: {:?} ", num_of_buckets);
+		let mut table: String = "".to_owned();
+		let mut total_peer_number: usize = 0;
+		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
+			total_peer_number += bucket.num_entries();
+			for EntryView { node, status } in bucket.iter().map(|r| r.to_owned()) {
+				let key = node.key.preimage().to_string();
+				let value = format!("{:?}", node.value);
+				let status = format!("{:?}", status);
+				table.push_str(&format! {"{key: <55} | {value: <100} | {status: <10}\n"});
+			}
+		}
+
+		let text = format!("Total number of peers in routing table: {total_peer_number}.");
+		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
+		debug!("{text}\n{header}\n{table}");
+
+		self.avail_metrics
+			.record(MetricEvent::KadRoutingTablePeerNum(
+				total_peer_number
+					.try_into()
+					.expect("unable to convert usize to u32"),
+			));
 	}
 
 	fn reset_relay_reservation(&mut self) {

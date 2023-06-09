@@ -62,6 +62,7 @@ pub trait LightClient {
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
+	async fn network_stats(&self) -> Result<()>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
@@ -90,6 +91,9 @@ impl LightClient for LightClientImpl {
 	}
 	async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.network_client.shrink_kademlia_map().await
+	}
+	async fn network_stats(&self) -> Result<()> {
+		self.network_client.network_stats().await
 	}
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
 		self.network_client.insert_rows_into_dht(block, rows).await
@@ -365,6 +369,11 @@ pub async fn process_block(
 		.await
 		.context("Unable to perform Kademlia map shrink")?;
 
+	light_client
+		.network_stats()
+		.await
+		.context("Unable to dump network stats")?;
+
 	Ok(())
 }
 
@@ -587,6 +596,9 @@ mod tests {
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_network_stats()
+			.returning(|| Box::pin(async move { Ok(()) }));
 		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
@@ -703,6 +715,9 @@ mod tests {
 			.returning(|_, _| Box::pin(async move { 1f32 }));
 		mock_client
 			.expect_shrink_kademlia_map()
+			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
 		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await

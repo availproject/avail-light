@@ -161,6 +161,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let (network_client, network_event_loop) = network::init(
 		(&cfg).into(),
 		libp2p_metrics,
+		lc_metrics.clone(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,

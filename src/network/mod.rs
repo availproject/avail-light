@@ -2,6 +2,7 @@ mod client;
 mod event_loop;
 mod mem_store;
 
+use crate::telemetry::metrics::Metrics as AvailMetrics;
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
 pub use client::Client;
@@ -53,6 +54,7 @@ pub struct Behaviour {
 pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
+	avail_metrics: AvailMetrics,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
@@ -135,12 +137,9 @@ pub fn init(
 		.set_caching(KademliaCaching::Enabled {
 			max_peers: cfg.kademlia.caching_max_peers,
 		})
-		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths);
+		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
+		.set_record_filtering(libp2p::kad::KademliaStoreInserts::FilterBoth);
 
-	// Block all incoming data in fat clients (memory footprint optimization)
-	if kad_remove_local_record {
-		kad_cfg.set_record_filtering(libp2p::kad::KademliaStoreInserts::FilterBoth);
-	}
 	// create Indetify Protocol Config
 	let identify_cfg = identify::Config::new(cfg.identify.protocol_version, id_keys.public())
 		.with_agent_version(cfg.identify.agent_version);
@@ -182,6 +181,7 @@ pub fn init(
 			swarm,
 			command_receiver,
 			metrics,
+			avail_metrics,
 			cfg.relays,
 			kad_remove_local_record,
 		),
