@@ -50,7 +50,6 @@ impl DHTCell {
 		}
 	}
 }
-
 struct DHTRow((RowIndex, Vec<u8>));
 
 impl DHTRow {
@@ -176,6 +175,14 @@ impl Client {
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.sender
 			.send(Command::ReduceKademliaMapSize)
+			.await
+			.context("Command receiver should not be dropped.")
+	}
+
+	// Dump p2p network stats in a readable manner
+	pub async fn network_stats(&self) -> Result<()> {
+		self.sender
+			.send(Command::NetworkObservabilityDump)
 			.await
 			.context("Command receiver should not be dropped.")
 	}
@@ -367,4 +374,5 @@ pub enum Command {
 		sender: oneshot::Sender<NumSuccPut>,
 	},
 	ReduceKademliaMapSize,
+	NetworkObservabilityDump,
 }

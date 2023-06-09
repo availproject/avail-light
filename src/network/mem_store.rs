@@ -96,6 +96,16 @@ impl MemoryStore {
 		self.records.retain(f);
 	}
 
+	// Inserts a record into the record store
+	pub fn put(&mut self, r: Record) -> Result<()> {
+		RecordStore::put(self, r)
+	}
+
+	// Return an iterator over records
+	pub fn records_iter(&mut self) -> std::collections::hash_map::Iter<'_, RecordKey, Record> {
+		self.records.iter()
+	}
+
 	/// Shrinks the capacity of hashmap as much as possible
 	pub fn shrink_hashmap(&mut self) {
 		self.records.shrink_to_fit();
