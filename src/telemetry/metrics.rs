@@ -34,7 +34,7 @@ pub enum MetricEvent {
 	DHTPutSuccess(f64),
 	DHTPutRowsDuration(f64),
 	DHTPutRowsSuccess(f64),
-	KadRoutinTablePeerNum(u32),
+	KadRoutingTablePeerNum(u32),
 }
 
 impl Metrics {
@@ -175,7 +175,7 @@ impl Metrics {
 			MetricEvent::DHTPutRowsSuccess(num) => {
 				self.dht_put_rows_success.set(num);
 			},
-			MetricEvent::KadRoutinTablePeerNum(num) => {
+			MetricEvent::KadRoutingTablePeerNum(num) => {
 				self.kad_routing_table_peer_num.set(num.into());
 			},
 		}

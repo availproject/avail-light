@@ -598,7 +598,7 @@ impl EventLoop {
 			total_peer_number, "PeerID", "Multiaddress", "Status", temp_string
 		);
 		self.avail_metrics
-			.record(MetricEvent::KadRoutinTablePeerNum(
+			.record(MetricEvent::KadRoutingTablePeerNum(
 				total_peer_number
 					.try_into()
 					.expect("unable to convert usize to u32"),
