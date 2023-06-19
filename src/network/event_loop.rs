@@ -1,11 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
 use rand::seq::SliceRandom;
 use std::str;
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+	sync::{mpsc, oneshot},
+	time::{interval_at, Instant, Interval},
+};
 use void::Void;
 
 use super::{
@@ -59,6 +62,14 @@ struct RelayReservation {
 	is_reserved: bool,
 }
 
+// BootstrapState keeps track of all things bootstrap ralated
+struct BootstrapState {
+	// referring to the initial bootstrap process,
+	// one that runs when the Light Client node starts up
+	is_startup_done: bool,
+	timer: Interval,
+}
+
 enum QueryState {
 	Pending,
 	Succeeded,
@@ -77,6 +88,7 @@ pub struct EventLoop {
 	avail_metrics: AvailMetrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
 	relay_reservation: RelayReservation,
+	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
 }
 
@@ -105,6 +117,7 @@ impl EventLoop {
 		metrics: Metrics,
 		avail_metrics: AvailMetrics,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
+		periodic_bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
 	) -> Self {
 		Self {
@@ -123,6 +136,13 @@ impl EventLoop {
 				address: Multiaddr::empty(),
 				is_reserved: Default::default(),
 			},
+			bootstrap: BootstrapState {
+				is_startup_done: false,
+				timer: interval_at(
+					Instant::now() + periodic_bootstrap_interval,
+					periodic_bootstrap_interval,
+				),
+			},
 			kad_remove_local_record,
 		}
 	}
@@ -132,6 +152,7 @@ impl EventLoop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
 				Some(command) = self.command_receiver.recv() => self.handle_command(command).await,
+				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
 	}
@@ -252,6 +273,10 @@ impl EventLoop {
 										self.pending_kad_queries.remove(&id)
 									{
 										_ = ch.send(Ok(()));
+										// we can say that the startup bootstrap is done here
+										if self.bootstrap.is_startup_done == false {
+											self.bootstrap.is_startup_done = true;
+										}
 									}
 								}
 							},
@@ -626,5 +651,13 @@ impl EventLoop {
 			address,
 			is_reserved: false,
 		};
+	}
+
+	fn handle_periodic_bootstraps(&mut self) {
+		// commence with periodic bootstraps,
+		// only when the initial startup bootstrap is done
+		if self.bootstrap.is_startup_done {
+			_ = self.swarm.behaviour_mut().kademlia.bootstrap();
+		}
 	}
 }

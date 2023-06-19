@@ -220,7 +220,9 @@ pub struct RuntimeConfig {
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<(String, Multiaddr)>,
+	pub libp2p_relays: Vec<(String, Multiaddr)>,
+	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+	pub libp2p2_bootstrap_period: u64,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -351,6 +353,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
+	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -370,6 +373,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			kademlia: val.into(),
 			is_relay: val.relays.is_empty(),
 			relays: relay_nodes,
+			bootstrap_interval: Duration::from_secs(val.libp2p2_bootstrap_period),
 		}
 	}
 }
@@ -498,11 +502,12 @@ impl Default for RuntimeConfig {
 			libp2p_autonat_boot_delay: 5,
 			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
+			libp2p_bootstraps: Vec::new(),
+			libp2p_relays: Vec::new(),
+			libp2p2_bootstrap_period: 300,
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
-			bootstraps: Vec::new(),
-			relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
