@@ -150,8 +150,12 @@ impl EventLoop {
 	pub async fn run(mut self) {
 		loop {
 			tokio::select! {
-				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
-				Some(command) = self.command_receiver.recv() => self.handle_command(command).await,
+				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")),
+				command = self.command_receiver.recv() => match command {
+					Some(c) => self.handle_command(c),
+					// Command channel closed, thus shutting down the network event loop.
+					None=>  return,
+				},
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
@@ -164,7 +168,7 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
+	fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
@@ -505,7 +509,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_command(&mut self, command: Command) {
+	fn handle_command(&mut self, command: Command) {
 		match command {
 			Command::StartListening { addr, sender } => {
 				_ = match self.swarm.listen_on(addr) {
