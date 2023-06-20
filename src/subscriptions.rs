@@ -201,16 +201,14 @@ async fn subscribe_check_and_process(
 			},
 		}
 
-		while let Some((header, received_at)) = unverified_headers.pop() {
-			let hash = Encode::using_encoded(&header, blake2_256).into();
-
-			// Iterate through justifications and try to find a matching one.
-			if let Some(pos) = justifications
-				.iter()
-				.position(|e| e.commit.target_hash == hash)
-			{
+		while let Some(justification) = justifications.pop() {
+			// Iterate through headers and try to find a matching one.
+			if let Some(pos) = unverified_headers.iter().position(|(h, _)| {
+				let hash = Encode::using_encoded(h, blake2_256).into();
+				justification.commit.target_hash == hash
+			}) {
 				// Basically, pop it out of the collection.
-				let justification = justifications.swap_remove(pos);
+				let (header, received_at) = unverified_headers.swap_remove(pos);
 				// Form a message which is signed in the justification, it's a triplet of a Precommit, round number and set_id (taken from Substrate code).
 				let signed_message = Encode::encode(&(
 					&SignerMessage::PrecommitMessage(
@@ -247,9 +245,11 @@ async fn subscribe_check_and_process(
 					.count();
 
 				info!(
-					"Number of matching signatures: {num_matched_addresses}/{}",
-					validator_set.len()
+					"Number of matching signatures: {num_matched_addresses}/{} for block {}",
+					validator_set.len(),
+					header.number
 				);
+
 				if num_matched_addresses < (validator_set.len() * 2 / 3) {
 					break 'mainloop Err(anyhow!(
 						"Not signed by the supermajority of the validator set."
@@ -259,10 +259,27 @@ async fn subscribe_check_and_process(
 				// Get all the skipped blocks, if they exist
 				for bl_num in (last_finalized_block_header.number + 1)..header.number {
 					info!("Sending skipped block {bl_num}");
-					let header = rpc::get_header_by_block_number(&subxt_client, bl_num)
-						.await?
-						.0;
-					message_tx.send((header, Instant::now())).await?;
+
+					let (header, received_at) = match unverified_headers
+						.iter()
+						.position(|(h, _)| h.number == bl_num)
+					{
+						Some(pos) => {
+							info!("Fetching header from unverified headers");
+							unverified_headers.swap_remove(pos)
+						},
+						None => {
+							info!("Fetching header from RPC");
+							(
+								rpc::get_header_by_block_number(&subxt_client, bl_num)
+									.await?
+									.0,
+								Instant::now(),
+							)
+						},
+					};
+
+					message_tx.send((header, received_at)).await?;
 				}
 
 				info!("Sending finalized block {}", header.number);
