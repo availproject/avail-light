@@ -13,6 +13,11 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 };
 
+/// Calculates confidence from given number of verified cells
+pub fn calculate_confidence(count: u32) -> f64 {
+	100f64 * (1f64 - 1f64 / 2u32.pow(count) as f64)
+}
+
 /// Extract fields from extension header
 pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<u8>) {
 	match &extension {

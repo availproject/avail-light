@@ -29,10 +29,10 @@ use crate::{
 	types::{Mode, RuntimeConfig},
 };
 
+mod api;
 mod app_client;
 mod consts;
 mod data;
-mod http;
 mod light_client;
 mod network;
 mod proof;
@@ -149,7 +149,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
+	tokio::task::spawn(api::server::run(db.clone(), cfg.clone(), counter.clone()));
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
