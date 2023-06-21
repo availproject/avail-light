@@ -42,12 +42,11 @@ use tracing::{error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
-	http::calculate_confidence,
 	network::Client,
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
 	types::{self, BlockVerified, LightClientConfig},
-	utils::extract_kate,
+	utils::{calculate_confidence, extract_kate},
 };
 
 #[async_trait]
