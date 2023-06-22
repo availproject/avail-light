@@ -150,9 +150,20 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
+	let network_version = rpc::Version {
+		version: "1.6.2".to_string(),
+		spec_version: 11,
+		spec_name: "data-avail".to_string(),
+	};
+
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(api::server::run(db.clone(), cfg.clone(), counter.clone()));
+	tokio::task::spawn(api::server::run(
+		db.clone(),
+		cfg.clone(),
+		counter.clone(),
+		network_version.to_string(),
+	));
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
@@ -246,13 +257,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
-	let version = rpc::Version {
-		version: "1.6.2".to_string(),
-		spec_version: 11,
-		spec_name: "data-avail".to_string(),
-	};
 	let (rpc_client, last_full_node_ws) =
-		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
+		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, network_version)
+			.await?;
 
 	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
