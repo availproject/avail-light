@@ -1,2 +1,3 @@
 pub mod server;
-pub mod v1;
+mod v1;
+mod v2;

@@ -9,7 +9,10 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::{
-	api::v1::{self},
+	api::{
+		v1::{self},
+		v2,
+	},
 	types::RuntimeConfig,
 };
 use anyhow::Context;
@@ -24,7 +27,12 @@ use tracing::info;
 use warp::Filter;
 
 /// Runs HTTP server
-pub async fn run(store: Arc<DB>, cfg: RuntimeConfig, counter: Arc<Mutex<u32>>) {
+pub async fn run(
+	store: Arc<DB>,
+	cfg: RuntimeConfig,
+	counter: Arc<Mutex<u32>>,
+	network_version: String,
+) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
 		let port: u16 = thread_rng().gen_range(cfg.http_server_port.0..=cfg.http_server_port.1);
@@ -34,14 +42,16 @@ pub async fn run(store: Arc<DB>, cfg: RuntimeConfig, counter: Arc<Mutex<u32>>) {
 		cfg.http_server_port.0
 	};
 
+	let version = clap::crate_version!();
 	let v1_api = v1::routes(store.clone(), cfg.app_id, counter.clone());
+	let v2_api = v2::routes(version.to_string(), network_version.clone());
 
 	let cors = warp::cors()
 		.allow_any_origin()
 		.allow_header("content-type")
 		.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-	let routes = v1_api.with(cors);
+	let routes = v1_api.or(v2_api).with(cors);
 
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
