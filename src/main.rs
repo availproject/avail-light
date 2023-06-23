@@ -26,6 +26,7 @@ use tracing_subscriber::{
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	data::store_last_full_node_ws_in_db,
+	network::network_analyzer,
 	types::{Mode, RuntimeConfig},
 };
 
@@ -228,6 +229,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
+
+	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
+		cfg.libp2p_port.0,
+		10,
+	));
 
 	let pp = kate_recovery::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
