@@ -203,10 +203,11 @@ async fn subscribe_check_and_process(
 
 		while let Some(justification) = justifications.pop() {
 			// Iterate through headers and try to find a matching one.
-			if let Some(pos) = unverified_headers.iter().position(|(h, _)| {
-				let hash = Encode::using_encoded(h, blake2_256).into();
-				justification.commit.target_hash == hash
-			}) {
+			if let Some(pos) = unverified_headers
+				.iter()
+				.map(|(h, _)| Encode::using_encoded(h, blake2_256).into())
+				.position(|hash| justification.commit.target_hash == hash)
+			{
 				// Basically, pop it out of the collection.
 				let (header, received_at) = unverified_headers.swap_remove(pos);
 				// Form a message which is signed in the justification, it's a triplet of a Precommit, round number and set_id (taken from Substrate code).
@@ -290,6 +291,8 @@ async fn subscribe_check_and_process(
 				message_tx.send((header, received_at)).await?;
 			} else {
 				trace!("Matched pair of header/justification not found.");
+				justifications.push(justification);
+				break;
 			}
 		}
 	};
