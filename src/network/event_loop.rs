@@ -45,6 +45,7 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
+use uuid::Uuid;
 
 use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
 use tracing::{debug, error, info, trace};
@@ -52,7 +53,7 @@ use tracing::{debug, error, info, trace};
 #[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(oneshot::Sender<NumSuccPut>),
+	PutRecordBatch(mpsc::Sender<NumSuccPut>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
@@ -89,7 +90,20 @@ struct BootstrapState {
 	timer: Interval,
 }
 
-enum QueryState {
+// Query Details struct gives additional meaning and data to ongoing KAD queries
+struct QueryDetails {
+	// Batch ID field is only ever populated in case query is being utilized in batch
+	// only present in case of batching
+	batch_id: Option<Uuid>,
+	// Status field is used when query came from a batch
+	// can be used otherwise, but for the time being only used with batching
+	status: Option<QueryStatus>,
+	// Result sender channel is always present, for all queries
+	res_sender: QueryChannel,
+}
+
+// Query Status enum represents current state of the ongoing KAD query
+enum QueryStatus {
 	Pending,
 	Succeeded,
 	Failed(anyhow::Error),
@@ -99,10 +113,8 @@ pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
-	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_queries: HashMap<QueryId, QueryDetails>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, QueryState>,
-	pending_batch_complete: Option<QueryChannel>,
 	metrics: Metrics,
 	avail_metrics: AvailMetrics,
 	relay: RelayState,
@@ -144,8 +156,6 @@ impl EventLoop {
 			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
-			pending_kad_query_batch: Default::default(),
-			pending_batch_complete: None,
 			metrics,
 			avail_metrics,
 			relay: RelayState {
@@ -231,15 +241,19 @@ impl EventLoop {
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
-								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id)
+								if let Some(QueryDetails {
+									res_sender: QueryChannel::GetRecord(ch),
+									..
+								}) = self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Ok(record));
 								}
 							},
 							Err(err) => {
-								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id)
+								if let Some(QueryDetails {
+									res_sender: QueryChannel::GetRecord(ch),
+									..
+								}) = self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -247,41 +261,85 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								if let Ok(put_record_ok) = result.as_ref() {
-									// Remove local records for fat clients (memory optimization)
-									if self.kad_remove_local_record {
-										self.swarm
-											.behaviour_mut()
-											.kademlia
-											.remove_record(&put_record_ok.key);
-									}
-								};
-
-								// TODO: Handle or log errors
-								*v = match result {
-									Ok(_) => QueryState::Succeeded,
-									Err(error) => QueryState::Failed(error.into()),
-								};
-
-								let has_pending = self
-									.pending_kad_query_batch
-									.iter()
-									.any(|(_, qs)| matches!(qs, QueryState::Pending));
-
-								if !has_pending {
-									if let Some(QueryChannel::PutRecordBatch(ch)) =
-										self.pending_batch_complete.take()
-									{
-										let count_success = self
-											.pending_kad_query_batch
-											.iter()
-											.filter(|(_, qs)| matches!(qs, QueryState::Succeeded))
-											.count();
-
-										_ = ch.send(NumSuccPut(count_success));
+							// update this records ongoing Status Field accordingly, if there's any
+							self.pending_kad_queries.entry(id).and_modify(|qd| {
+								if let QueryDetails {
+									status: Some(query_status),
+									..
+								} = qd
+								{
+									// Set status for ongoing KAD query based on result from PUT
+									// TODO: Handle or log errors
+									*query_status = match result {
+										Ok(record) => {
+											// check if removal of local records is set for fat clients memory optimization
+											if self.kad_remove_local_record {
+												self.swarm
+													.behaviour_mut()
+													.kademlia
+													.remove_record(&record.key);
+											}
+											QueryStatus::Succeeded
+										},
+										Err(err) => QueryStatus::Failed(err.into()),
 									}
 								}
+							});
+
+							// count phase:
+							let ids_to_remove = if let Some(QueryDetails {
+								batch_id: Some(uuid),
+								res_sender: QueryChannel::PutRecordBatch(ch),
+								..
+							}) = self.pending_kad_queries.get(&id)
+							{
+								// create iterator for all queries with same batch ID
+								self.pending_kad_queries
+									.iter()
+									.filter(|(_, qd)| qd.batch_id == Some(*uuid))
+									.all(|(_, qd)| {
+										matches!(
+											qd.status,
+											Some(QueryStatus::Succeeded)
+												| Some(QueryStatus::Failed(_))
+										)
+									})
+									.then(|| {
+										self.pending_kad_queries
+											.iter()
+											.filter(|(_, qd)| {
+												matches!(
+													qd.status,
+													Some(QueryStatus::Succeeded)
+														| Some(QueryStatus::Failed(_))
+												)
+											})
+											.collect::<HashMap<&QueryId, &QueryDetails>>()
+									})
+									.and_then(|queries| {
+										let success_count = queries
+											.iter()
+											.filter(|(_, qd)| {
+												matches!(qd.status, Some(QueryStatus::Succeeded))
+											})
+											.count();
+										// send result back
+										_ = ch.send(NumSuccPut(success_count));
+
+										let ids_to_remove = queries
+											.iter()
+											.map(|(&&id, _)| id)
+											.collect::<Vec<QueryId>>();
+										Some(ids_to_remove)
+									})
+							} else {
+								None
+							};
+
+							if let Some(ids) = ids_to_remove {
+								ids.iter().for_each(|id| {
+									self.pending_kad_queries.remove(id);
+								})
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {
@@ -291,8 +349,10 @@ impl EventLoop {
 							}) => {
 								trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
-									if let Some(QueryChannel::Bootstrap(ch)) =
-										self.pending_kad_queries.remove(&id)
+									if let Some(QueryDetails {
+										res_sender: QueryChannel::Bootstrap(ch),
+										..
+									}) = self.pending_kad_queries.remove(&id)
 									{
 										_ = ch.send(Ok(()));
 										// we can say that the startup bootstrap is done here
@@ -304,8 +364,10 @@ impl EventLoop {
 							},
 							Err(err) => {
 								trace!("Bootstrap error event. Error: {err:?}.");
-								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id)
+								if let Some(QueryDetails {
+									res_sender: QueryChannel::Bootstrap(ch),
+									..
+								}) = self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -532,21 +594,34 @@ impl EventLoop {
 					.bootstrap()
 					.expect("DHT not to be empty");
 
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::Bootstrap(sender));
+				self.pending_kad_queries.insert(
+					query_id,
+					QueryDetails {
+						batch_id: None,
+						status: None,
+						res_sender: QueryChannel::Bootstrap(sender),
+					},
+				);
 			},
 			Command::GetKadRecord { key, sender } => {
 				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key);
 
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::GetRecord(sender));
+				self.pending_kad_queries.insert(
+					query_id,
+					QueryDetails {
+						batch_id: None,
+						status: None,
+						res_sender: QueryChannel::GetRecord(sender),
+					},
+				);
 			},
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
 				sender,
 			} => {
-				let mut ids: HashMap<QueryId, QueryState> = Default::default();
+				// create unique batch ID
+				let batch_id = Uuid::new_v4();
 
 				for record in records.as_ref() {
 					let query_id = self
@@ -554,11 +629,18 @@ impl EventLoop {
 						.behaviour_mut()
 						.kademlia
 						.put_record(record.to_owned(), quorum)
-						.expect("Unable to perform batch Kademlia PUT operation.");
-					ids.insert(query_id, QueryState::Pending);
+						.expect("Should be able to perform Kademlia PUT operation while batching");
+
+					// insert batch queries into pending KAD queries
+					self.pending_kad_queries.insert(
+						query_id,
+						QueryDetails {
+							batch_id: Some(batch_id),
+							status: Some(QueryStatus::Pending),
+							res_sender: QueryChannel::PutRecordBatch(sender.clone()),
+						},
+					);
 				}
-				self.pending_kad_query_batch = ids;
-				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
 			},
 			Command::ReduceKademliaMapSize => {
 				self.swarm
