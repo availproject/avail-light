@@ -10,12 +10,14 @@ use pcap::{ConnectionStatus, Device};
 use tokio::time;
 use tracing::{debug, info};
 
+// TODO: implement graceful shutdown for all async spawned functions
 pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 	info!("Starting network analyzer.");
 	let devices = Device::list().unwrap();
 	let mut dev: Option<Device> = None;
 	for device in devices.clone() {
 		if !device.addresses.is_empty()
+		// The first interface with Connected status is usually the one with all the traffic
 			&& device.flags.connection_status == ConnectionStatus::Connected
 		{
 			dev = Some(device.clone());
@@ -53,6 +55,7 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 	// Start packet inspection tasks
 	let total_bytes_lo = Arc::clone(&total_bytes);
 	tokio::task::spawn_blocking(move || loop {
+		// Start loopback listener for traffic on same machine
 		match cap_loopback.next_packet() {
 			Ok(packet) => {
 				total_bytes_lo.fetch_add(packet.len().try_into().unwrap_or(0), Ordering::Relaxed);
@@ -62,6 +65,7 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 	});
 	let total_bytes_dev = Arc::clone(&total_bytes);
 	tokio::task::spawn_blocking(move || loop {
+		// Start listener for the interface facing outside network
 		match dev_cap.next_packet() {
 			Ok(packet) => {
 				total_bytes_dev.fetch_add(packet.len().try_into().unwrap_or(0), Ordering::Relaxed);
@@ -75,7 +79,8 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 		let mut interval = time::interval(Duration::from_secs(sampling_interval));
 		loop {
 			interval.tick().await;
-			info!("Total throughput: {}", total_bytes.load(Ordering::Relaxed));
+			debug!("Total throughput: {}", total_bytes.load(Ordering::Relaxed));
+			// TODO: Implement result serialization
 		}
 	});
 }

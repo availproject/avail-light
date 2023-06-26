@@ -1,6 +1,7 @@
 mod client;
 mod event_loop;
 mod mem_store;
+#[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 
 use crate::telemetry::metrics::Metrics as AvailMetrics;

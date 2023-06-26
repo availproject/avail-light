@@ -26,9 +26,11 @@ use tracing_subscriber::{
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
 	data::store_last_full_node_ws_in_db,
-	network::network_analyzer,
 	types::{Mode, RuntimeConfig},
 };
+
+#[cfg(feature = "network-analysis")]
+use crate::network::network_analyzer;
 
 mod api;
 mod app_client;
@@ -230,6 +232,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
 
+	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
 		cfg.libp2p_port.0,
 		10,
