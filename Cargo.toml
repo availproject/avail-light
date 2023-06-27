@@ -70,6 +70,7 @@ pcap = "1.1.0"
 
 [features]
 network-analysis = []
+api-v2 = []
 default = []
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
@@ -84,3 +85,4 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+

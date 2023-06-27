@@ -1,4 +1,3 @@
-use crate::rpc;
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
