@@ -8,11 +8,10 @@
 //! * `/v1/confidence/{block_number}` - returns calculated confidence for a given block number
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
+#[cfg(feature = "api-v2")]
+use crate::api::v2;
 use crate::{
-	api::{
-		v1::{self},
-		v2,
-	},
+	api::v1::{self},
 	types::RuntimeConfig,
 };
 use anyhow::Context;
@@ -25,7 +24,6 @@ use std::{
 };
 use tracing::info;
 use warp::Filter;
-
 /// Runs HTTP server
 pub async fn run(
 	store: Arc<DB>,
@@ -42,8 +40,10 @@ pub async fn run(
 		cfg.http_server_port.0
 	};
 
-	let version = clap::crate_version!();
 	let v1_api = v1::routes(store.clone(), cfg.app_id, counter.clone());
+	#[cfg(feature = "api-v2")]
+	let version = clap::crate_version!();
+	#[cfg(feature = "api-v2")]
 	let v2_api = v2::routes(version.to_string(), network_version.clone());
 
 	let cors = warp::cors()
@@ -51,7 +51,12 @@ pub async fn run(
 		.allow_header("content-type")
 		.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-	let routes = v1_api.or(v2_api).with(cors);
+	let routes = v1_api;
+
+	#[cfg(feature = "api-v2")]
+	let routes = routes.or(v2_api);
+
+	let routes = routes.with(cors);
 
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
