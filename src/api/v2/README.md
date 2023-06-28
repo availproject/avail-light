@@ -7,6 +7,12 @@ To access new endpoints, light client has to be run with:
 cargo run --release --features api-v2
 ```
 
+Since entire module is under the feature toggle, tests has to be run with:
+
+```sh
+cargo test --features api-v2
+```
+
 # API reference
 
 ## **GET** `/v2/version`
