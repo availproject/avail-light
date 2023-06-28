@@ -90,6 +90,7 @@ struct BootstrapState {
 	timer: Interval,
 }
 
+#[derive(Debug)]
 // Query Details struct gives additional meaning and data to ongoing KAD queries
 struct QueryDetails {
 	// Batch ID field is only ever populated in case query is being utilized in batch
@@ -101,6 +102,7 @@ struct QueryDetails {
 	res_sender: QueryChannel,
 }
 
+#[derive(Debug)]
 // Query Status enum represents current state of the ongoing KAD query
 enum QueryStatus {
 	Pending,
@@ -329,7 +331,6 @@ impl EventLoop {
 								if let Some((success_count, ids_to_remove)) = finished_queries {
 									// send result back through channel
 									_ = ch.send(NumSuccPut(success_count)).await;
-
 									Some(ids_to_remove)
 								} else {
 									None
@@ -338,11 +339,20 @@ impl EventLoop {
 								None
 							};
 
+							info!("Checking pending KAD queries for REMOVAL");
 							// check to see if we have something to remove from pending map
 							if let Some(ids) = ids_to_remove {
 								ids.iter().for_each(|id| {
-									self.pending_kad_queries.remove(id);
+									if let Some(QueryDetails { res_sender, .. }) =
+										self.pending_kad_queries.remove(id)
+									{
+										drop(res_sender);
+									}
+									info!("Removed ID: {id:?}");
 								});
+							}
+							for (k, v) in &self.pending_kad_queries {
+								info!("{k:?} : {v:?}");
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {

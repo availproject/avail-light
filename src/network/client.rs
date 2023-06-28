@@ -16,7 +16,7 @@ use libp2p::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use super::Event;
 
@@ -144,7 +144,8 @@ impl Client {
 	}
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
-		let (tx, mut rx) = mpsc::channel(100);
+		info!("Putting records in BATCH");
+		let (tx, mut rx) = mpsc::channel::<NumSuccPut>(100);
 		let commands =
 			records
 				.chunks(self.put_batch_size)
@@ -160,11 +161,18 @@ impl Client {
 			}
 		}
 
+		// drop tx manually,
+		// ensure that only senders in spawned threads are still in use
+		drop(tx);
+
 		let mut num_success: usize = 0;
 		while let Some(NumSuccPut(num)) = rx.recv().await {
+			info!("Received SUCC: {num:?}");
 			num_success += num;
+			info!("prrr");
 		}
-
+		info!("Leaving PUT BATCH");
+		info!("NUM SUCCES: {num_success:?}");
 		NumSuccPut(num_success)
 	}
 

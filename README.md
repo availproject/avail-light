@@ -81,29 +81,31 @@ http_server_port = "7000"
 # If set to seed, keypair will be generated from that seed.
 # If set to key, a valid ed25519 private key must be provided, else the client will fail
 # If `secret_key` is not set, random seed will be used.
-secret_key = { key =  "1498b5467a63dffa2dc9d9e069caf075d16fc33fdd4c3b01bfadae6433767d93" }
-# Libp2p service port range (port, range) (default: 37000).
-libp2p_port = "37000"
-# Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
-libp2p_tcp_port_reuse = false
-# Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
-libp2p_autonat_only_global_ips = false
-# Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
-libp2p_autonat_throttle = 1
+secret_key = { seed="1" }
+# P2P service port (default: 37000).
+port = 3700
+# Configures TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
+tcp_port_reuse = bool
+# Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+autonat_only_global_ips = false
+# AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+autonat_throttle = 2
 # Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
-libp2p_autonat_retry_interval = 10
+autonat_retry_interval = 10
 # Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
-libp2p_autonat_refresh_interval = 30
-# Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
-libp2p_autonat_boot_delay = 5
-# Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
-libp2p_identify_protocol = "/avail_kad/id/1.0.0"
-# Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
-libp2p_identify_agent = "avail-light-client/rust-client"
-# Vector of Relay nodes, which are used for hole punching (default: empty)
-relays = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
-# Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
+autonat_refresh_interval = 30
+# AutoNat on init delay before starting the fist probe. (default: 5 sec)
+autonat_boot_delay = 10
+# Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+identify_protocol = "/avail_kad/id/1.0.0"
+# Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
+identify_agent = "avail-light-client/rust-client"
+# Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+bootstraps = [["12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds", "/ip4/13.51.79.255/udp/39000/quic-v1"]]
+# Vector of Relay nodes, which are used for hole punching
+relays = [["12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b", "/ip4/13.49.44.246/udp/39111/quic-v1"]]
+# Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+bootstrap_period = 300,
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).

@@ -14,7 +14,6 @@ use clap::Parser;
 use consts::STATE_CF;
 use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
-use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
@@ -191,13 +190,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	tokio::spawn(network_event_loop.run());
 
 	// Start listening on provided port
-	let port = if cfg.libp2p_port.1 > 0 {
-		let port: u16 = thread_rng().gen_range(cfg.libp2p_port.0..=cfg.libp2p_port.1);
-		info!("Using random port: {port}");
-		port
-	} else {
-		cfg.libp2p_port.0
-	};
+	let port = cfg.port;
+	info!("Using random port: {port}");
 
 	// always listen on UDP to prioritize QUIC
 	network_client
