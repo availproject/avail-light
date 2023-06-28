@@ -158,12 +158,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(api::server::run(
-		db.clone(),
-		cfg.clone(),
-		counter.clone(),
-		network_version.to_string(),
-	));
+
+	let server = api::server::Server {
+		db: db.clone(),
+		cfg: cfg.clone(),
+		counter: counter.clone(),
+		version: clap::crate_version!().to_string(),
+		network_version: network_version.to_string(),
+	};
+
+	tokio::task::spawn(server.run());
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
