@@ -95,16 +95,10 @@ fn start_listening_on_device(
 	Ok(())
 }
 
-fn open_capture_from_device(device_name: String) -> Result<Capture<Active>> {
-	match pcap::Capture::from_device(device_name.as_str()) {
-		Ok(l_c) => match l_c.immediate_mode(true).promisc(true).open() {
-			Ok(l_c_o) => Ok(l_c_o),
-			Err(err) => {
-				return Err(err.into());
-			},
-		},
-		Err(err) => {
-			return Err(err.into());
-		},
-	}
+fn open_capture_from_device(device_name: String) -> Result<Capture<Active>, pcap::Error> {
+	let l_c = Capture::from_device(device_name.as_str())?
+		.immediate_mode(true)
+		.promisc(true)
+		.open()?;
+	Ok(l_c)
 }
