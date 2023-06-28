@@ -29,6 +29,9 @@ use crate::{
 	types::{Mode, RuntimeConfig},
 };
 
+#[cfg(feature = "network-analysis")]
+use crate::network::network_analyzer;
+
 mod api;
 mod app_client;
 mod consts;
@@ -228,6 +231,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
+
+	#[cfg(feature = "network-analysis")]
+	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
+		cfg.libp2p_port.0,
+		10,
+	));
 
 	let pp = kate_recovery::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();

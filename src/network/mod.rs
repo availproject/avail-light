@@ -1,6 +1,8 @@
 mod client;
 mod event_loop;
 mod mem_store;
+#[cfg(feature = "network-analysis")]
+pub mod network_analyzer;
 
 use crate::telemetry::metrics::Metrics as AvailMetrics;
 use crate::types::{LibP2PConfig, SecretKey};
