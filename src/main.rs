@@ -197,7 +197,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Check if bootstrap nodes were provided
 	let bootstrap_nodes = cfg
-		.libp2p_bootstraps
+		.bootstraps
 		.iter()
 		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()

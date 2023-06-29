@@ -40,7 +40,8 @@ Start by cloning this repo in your local setup:
 git clone git@github.com:maticnetwork/avail-light.git
 ```
 
-Create one yaml configuration file in the root of the project & put following content. Config example is for a bootstrap client, detailed config specs can be found bellow.
+Create one yaml configuration file in the root of the project & put following content.
+Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found bellow.
 
 ```bash
 touch config.yaml
@@ -51,7 +52,7 @@ log_level = "info"
 http_server_host = "127.0.0.1"
 http_server_port = "7000"
 
-libp2p_seed = 1
+secret_key = { seed = "avail" }
 libp2p_port = "37000"
 
 full_node_ws = ["ws://127.0.0.1:9944"]
@@ -59,7 +60,7 @@ app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
 prometheus_port = 9520
-bootstraps = []
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 ```
 
 Now, run the client:
@@ -83,9 +84,26 @@ http_server_port = "7000"
 secret_key = { key =  "1498b5467a63dffa2dc9d9e069caf075d16fc33fdd4c3b01bfadae6433767d93" }
 # Libp2p service port range (port, range) (default: 37000).
 libp2p_port = "37000"
+# Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
+libp2p_tcp_port_reuse = false
+# Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+libp2p_autonat_only_global_ips = false
+# Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+libp2p_autonat_throttle = 1
+# Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+libp2p_autonat_retry_interval = 10
+# Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+libp2p_autonat_refresh_interval = 30
+# Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
+libp2p_autonat_boot_delay = 5
+# Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+libp2p_identify_protocol = "/avail_kad/id/1.0.0"
+# Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
+libp2p_identify_agent = "avail-light-client/rust-client"
+# Vector of Relay nodes, which are used for hole punching (default: empty)
+relays = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
-
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -319,6 +337,7 @@ Retrieves the latest block processed by the light client.
 Given a block number, it returns the confidence computed by the light client for that specific block.
 
 > Path parameters:
+
 * `block_number` - block number (requred)
 
 #### Responses
@@ -352,9 +371,11 @@ If confidence is not computed, and specified block is after the latest processed
 Given a block number, it retrieves the hex-encoded extrinsics for the specified block, if available. Alternatively, if specified by a query parameter, the retrieved extrinsic is decoded and returned as a base64-encoded string.
 
 > Path parameters:
+
 * `block_number` - block number (requred)
 
 > Query parameters:
+
 * `decode` - `true` if decoded extrinsics are requested (boolean, optional, default is `false`)
 
 #### Responses
@@ -396,6 +417,7 @@ If application data is not available, and specified block is not the latest bloc
 Retrieves the status of the latest block processed by the light client.
 
 > Path parameters:
+
 * `block_number` - block number (requred)
 
 #### Responses
