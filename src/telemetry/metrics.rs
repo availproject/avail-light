@@ -115,7 +115,7 @@ impl Metrics {
 		sub_reg.register(
 			"dht_put_rows_sucess_rate",
 			"Success rate of the DHT PUT rows operation",
-			dht_put_success.clone(),
+			dht_put_rows_success.clone(),
 		);
 		let kad_routing_table_peer_num = Gauge::default();
 		sub_reg.register(
