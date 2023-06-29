@@ -197,7 +197,7 @@ pub struct RuntimeConfig {
 	/// If set to seed, keypair will be generated from that seed.
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
-	pub libp2p_secret_key: Option<SecretKey>,
+	pub secret_key: Option<SecretKey>,
 	/// Libp2p service port range (port, range) (default: 37000).
 	#[serde(with = "port_range_format")]
 	pub libp2p_port: (u16, u16),
@@ -218,9 +218,9 @@ pub struct RuntimeConfig {
 	/// Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub libp2p_identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub libp2p_bootstraps: Vec<(String, Multiaddr)>,
+	pub bootstraps: Vec<(String, Multiaddr)>,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub libp2p_relays: Vec<(String, Multiaddr)>,
+	pub relays: Vec<(String, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -356,19 +356,19 @@ pub struct LibP2PConfig {
 impl From<&RuntimeConfig> for LibP2PConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		let relay_nodes = val
-			.libp2p_relays
+			.relays
 			.iter()
 			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
 			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 			.expect("To be able to parse relay nodes values from config.");
 
 		Self {
-			secret_key: val.libp2p_secret_key.clone(),
+			secret_key: val.secret_key.clone(),
 			port: val.libp2p_port,
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
-			is_relay: val.libp2p_relays.is_empty(),
+			is_relay: val.relays.is_empty(),
 			relays: relay_nodes,
 		}
 	}
@@ -489,7 +489,7 @@ impl Default for RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
 			libp2p_port: (37000, 0),
-			libp2p_secret_key: None,
+			secret_key: None,
 			libp2p_tcp_port_reuse: false,
 			libp2p_autonat_only_global_ips: false,
 			libp2p_autonat_refresh_interval: 30,
@@ -501,8 +501,8 @@ impl Default for RuntimeConfig {
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
-			libp2p_bootstraps: Vec::new(),
-			libp2p_relays: Vec::new(),
+			bootstraps: Vec::new(),
+			relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
