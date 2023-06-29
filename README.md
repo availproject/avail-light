@@ -32,6 +32,8 @@ Once the data is received, light client verifies individual cells and calculates
 3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation.
    **IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct.
 
+4. **Crawl-Client Mode**: The client crawls cells from DHT for entire block, and calculates success rate. Every block processing is delayed by `crawl_block_delay` parameter. Delay should be enough so crawling of large block can be compensated. This mode is enabled by setting `crawl_block` parameter to `true`. Success rate is emmited in logs and metrics.
+
 ## Installation
 
 Suppose you are already running our [node](https://github.com/availproject/avail). For this setup we will run it in dev mode:

@@ -26,6 +26,7 @@ pub enum MetricValue {
 	DHTPutRowsSuccess(f64),
 	KadRoutingTablePeerNum(u32),
 	HealthCheck(),
+	CrawlCellsSuccessRate(f64),
 }
 
 #[automock]

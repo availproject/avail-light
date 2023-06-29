@@ -295,6 +295,10 @@ pub struct RuntimeConfig {
 	/// Avail account secret key. (default: None)
 	#[serde(skip_serializing)]
 	pub avail_secret_key: Option<AvailSecretKey>,
+	/// Crawl block periodically to ensure availability. (default: false)
+	pub crawl_block: bool,
+	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
+	pub crawl_block_delay: u64,
 }
 
 #[derive(Deserialize, Clone)]
@@ -319,7 +323,7 @@ impl TryFrom<String> for AvailSecretKey {
 	}
 }
 
-pub struct Delay(Option<Duration>);
+pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
@@ -554,6 +558,8 @@ impl Default for RuntimeConfig {
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
 			avail_secret_key: None,
+			crawl_block: false,
+			crawl_block_delay: 20,
 		}
 	}
 }

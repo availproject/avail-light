@@ -97,6 +97,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::HealthCheck() => {
 				self.record_u64("up", 1)?;
 			},
+			super::MetricValue::CrawlCellsSuccessRate(number) => {
+				self.record_f64("crawl_cells_success_rate", number)?;
+			},
 		};
 		Ok(())
 	}
