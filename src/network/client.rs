@@ -303,7 +303,7 @@ impl Client {
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
 			.await;
 
-		len / num.0 as f32
+		num.0 as f32 / len
 	}
 
 	/// Inserts cells into the DHT.
