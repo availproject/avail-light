@@ -100,6 +100,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
 				self.record_f64("crawl_cells_success_rate", number)?;
 			},
+			super::MetricValue::CrawlRowsSuccessRate(number) => {
+				self.record_f64("crawl_rows_success_rate", number)?;
+			},
 		};
 		Ok(())
 	}

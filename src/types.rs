@@ -299,6 +299,8 @@ pub struct RuntimeConfig {
 	pub crawl_block: bool,
 	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
 	pub crawl_block_delay: u64,
+	/// Crawl block mode. Available modes are "cells", "rows" and "both" (default: "cells")
+	pub crawl_block_mode: CrawlMode,
 }
 
 #[derive(Deserialize, Clone)]
@@ -510,6 +512,14 @@ impl From<&RuntimeConfig> for AppClientConfig {
 	}
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum CrawlMode {
+	Rows,
+	Cells,
+	Both,
+}
+
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
@@ -560,6 +570,7 @@ impl Default for RuntimeConfig {
 			avail_secret_key: None,
 			crawl_block: false,
 			crawl_block_delay: 20,
+			crawl_block_mode: CrawlMode::Cells,
 		}
 	}
 }

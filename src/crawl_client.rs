@@ -1,7 +1,7 @@
 use crate::{
 	network::Client,
 	telemetry::{MetricValue, Metrics},
-	types::{self, Delay},
+	types::{self, CrawlMode, Delay},
 };
 use avail_subxt::primitives::Header;
 use kate_recovery::matrix::Partition;
@@ -22,6 +22,7 @@ pub async fn run(
 	network_client: Client,
 	delay: Delay,
 	metrics: Arc<impl Metrics>,
+	mode: CrawlMode,
 ) {
 	info!("Starting crawl client...");
 
@@ -31,7 +32,7 @@ pub async fn run(
 			tokio::time::sleep(seconds).await;
 		}
 		let block_number = header.number;
-		info!("Crawling block {block_number}...");
+		info!(block_number, "Crawling block...");
 
 		let start = SystemTime::now();
 
@@ -40,27 +41,51 @@ pub async fn run(
 			continue;
 		};
 
-		let positions = block
-			.dimensions
-			.iter_extended_partition_positions(&ENTIRE_BLOCK)
-			.collect::<Vec<_>>();
+		if mode == CrawlMode::Cells || mode == CrawlMode::Both {
+			let positions = block
+				.dimensions
+				.iter_extended_partition_positions(&ENTIRE_BLOCK)
+				.collect::<Vec<_>>();
 
-		let total = positions.len();
-		let (fetched, _) = network_client
-			.fetch_cells_from_dht(block_number, &positions)
-			.await;
+			let total = positions.len();
+			let (fetched, _) = network_client
+				.fetch_cells_from_dht(block_number, &positions)
+				.await;
+
+			let success_rate = fetched.len() as f64 / total as f64;
+			info!(
+				block_number,
+				"Fetched {fetched} cells of {total}, success rate: {success_rate}",
+				fetched = fetched.len(),
+			);
+			let _ = metrics.record(MetricValue::CrawlCellsSuccessRate(success_rate));
+		}
+
+		if mode == CrawlMode::Rows || mode == CrawlMode::Both {
+			let dimensions = block.dimensions;
+			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
+			let total = rows.len();
+			let fetched = network_client
+				.fetch_rows_from_dht(block_number, dimensions, &rows)
+				.await
+				.iter()
+				.step_by(2)
+				.flatten()
+				.count();
+
+			let success_rate = fetched as f64 / total as f64;
+			info!(
+				block_number,
+				"Fetched {fetched} rows of {total}, success rate: {success_rate}"
+			);
+			let _ = metrics.record(MetricValue::CrawlRowsSuccessRate(success_rate));
+		}
 
 		let elapsed = start
 			.elapsed()
 			.map(|elapsed| format!("{elapsed:?}"))
 			.unwrap_or("unknown".to_string());
 
-		let success_rate = fetched.len() as f64 / total as f64;
-		info!(
-		    "Block {block_number}, fetched {fetched} of {total}, success rate: {success_rate}, elapsed: {elapsed}",
-		    fetched = fetched.len(),
-		);
-
-		let _ = metrics.record(MetricValue::CrawlCellsSuccessRate(success_rate));
+		info!(block_number, "Crawling block finished in {elapsed}")
 	}
 }

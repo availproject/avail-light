@@ -27,6 +27,7 @@ pub enum MetricValue {
 	KadRoutingTablePeerNum(u32),
 	HealthCheck(),
 	CrawlCellsSuccessRate(f64),
+	CrawlRowsSuccessRate(f64),
 }
 
 #[automock]
