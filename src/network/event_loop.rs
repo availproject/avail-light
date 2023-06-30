@@ -2,13 +2,20 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use async_std::stream::StreamExt;
+use itertools::Either;
 use rand::seq::SliceRandom;
+use std::str;
 use tokio::sync::{mpsc, oneshot};
+use void::Void;
 
 use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
 };
+
+const PEER_ID: &str = "PeerID";
+const MULTIADDRESS: &str = "Multiaddress";
+const STATUS: &str = "Status";
 
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
@@ -18,17 +25,16 @@ use libp2p::{
 	},
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
+		BootstrapOk, EntryView, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId,
+		QueryResult,
 	},
 	mdns::Event as MdnsEvent,
 	metrics::{Metrics, Recorder},
 	multiaddr::Protocol,
 	ping,
 	relay::{
-		inbound::hop::FatalUpgradeError as InboundHopFatalUpgradeError,
 		inbound::stop::FatalUpgradeError as InboundStopFatalUpgradeError,
 		outbound::hop::FatalUpgradeError as OutboundHopFatalUpgradeError,
-		outbound::stop::FatalUpgradeError as OutboundStopFatalUpgradeError, Event as RelayEvent,
 	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
@@ -36,12 +42,13 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
+
+use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecord(oneshot::Sender<Result<()>>),
 	PutRecordBatch(oneshot::Sender<NumSuccPut>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
@@ -52,25 +59,53 @@ struct RelayReservation {
 	is_reserved: bool,
 }
 
+enum QueryState {
+	Pending,
+	Succeeded,
+	Failed(anyhow::Error),
+}
+
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, Option<Result<()>>>,
+	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
 	metrics: Metrics,
+	avail_metrics: AvailMetrics,
 	relay_nodes: Vec<(PeerId, Multiaddr)>,
 	relay_reservation: RelayReservation,
+	kad_remove_local_record: bool,
 }
+
+type IoOrPing = Either<Either<std::io::Error, std::io::Error>, ping::Failure>;
+
+type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, ConnectionHandlerUpgrErr<std::io::Error>>;
+
+type StopOrHop = Either<
+	ConnectionHandlerUpgrErr<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
+	void::Void,
+>;
+
+type PingOrStopOrHop = Either<UpgradeOrPing, StopOrHop>;
+
+type Upgrade = Either<
+	ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
+	Either<ConnectionHandlerUpgrErr<std::io::Error>, Void>,
+>;
+
+type PingFailureOrUpgradeError = Either<PingOrStopOrHop, Upgrade>;
 
 impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		metrics: Metrics,
+		avail_metrics: AvailMetrics,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
+		kad_remove_local_record: bool,
 	) -> Self {
 		Self {
 			swarm,
@@ -81,12 +116,14 @@ impl EventLoop {
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
 			metrics,
+			avail_metrics,
 			relay_nodes,
 			relay_reservation: RelayReservation {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
 				is_reserved: Default::default(),
 			},
+			kad_remove_local_record,
 		}
 	}
 
@@ -94,10 +131,7 @@ impl EventLoop {
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
-				command = self.command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c).await,
-					None => (),
-				},
+				Some(command) = self.command_receiver.recv() => self.handle_command(command).await,
 			}
 		}
 	}
@@ -109,61 +143,7 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(
-		&mut self,
-		event: SwarmEvent<
-			BehaviourEvent,
-			itertools::Either<
-				itertools::Either<
-					itertools::Either<
-						itertools::Either<
-							itertools::Either<
-								itertools::Either<
-									itertools::Either<
-										itertools::Either<
-											ConnectionHandlerUpgrErr<
-												itertools::Either<
-													InboundHopFatalUpgradeError,
-													OutboundStopFatalUpgradeError,
-												>,
-											>,
-											void::Void,
-										>,
-										std::io::Error,
-									>,
-									itertools::Either<
-										ConnectionHandlerUpgrErr<
-											itertools::Either<
-												InboundStopFatalUpgradeError,
-												OutboundHopFatalUpgradeError,
-											>,
-										>,
-										void::Void,
-									>,
-								>,
-								itertools::Either<
-									ConnectionHandlerUpgrErr<
-										itertools::Either<
-											InboundUpgradeError,
-											OutboundUpgradeError,
-										>,
-									>,
-									itertools::Either<
-										ConnectionHandlerUpgrErr<std::io::Error>,
-										void::Void,
-									>,
-								>,
-							>,
-							std::io::Error,
-						>,
-						ConnectionHandlerUpgrErr<std::io::Error>,
-					>,
-					void::Void,
-				>,
-				ping::Failure,
-			>,
-		>,
-	) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				// record KAD Behaviour events
@@ -178,7 +158,7 @@ impl EventLoop {
 						..
 					} => {
 						debug!("Routing updated. Peer: {peer:?}. is_new_peer: {is_new_peer:?}. Addresses: {addresses:#?}. Old peer: {old_peer:#?}");
-						if let Some(ch) = self.pending_kad_routing.remove(&peer.into()) {
+						if let Some(ch) = self.pending_kad_routing.remove(&peer) {
 							_ = ch.send(Ok(()));
 						}
 					},
@@ -194,26 +174,29 @@ impl EventLoop {
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord { source, record, .. } = request {
-							if let Some(block_ref) = record {
-								trace!(
-									"Inbound PUT request record key: {:?}. Source: {source:?}",
-									block_ref.key,
-								);
-							}
+							let key = &record.as_ref().expect("msg").key;
+							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+
+							_ = self
+								.swarm
+								.behaviour_mut()
+								.kademlia
+								.store_mut()
+								.put(record.expect("msg"));
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Ok(record));
 								}
 							},
 							Err(err) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -221,36 +204,38 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(QueryChannel::PutRecord(ch)) =
-								self.pending_kad_queries.remove(&id.into())
-							{
-								let _ = match result {
-									Ok(_) => ch.send(Ok(())),
-									Err(err) => ch.send(Err(err.into())),
-								};
-							} else if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								match result {
-									Ok(_) => *v = Some(Ok(())),
-									Err(err) => *v = Some(Err(err.into())),
+							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
+								if let Ok(put_record_ok) = result.as_ref() {
+									// Remove local records for fat clients (memory optimization)
+									if self.kad_remove_local_record {
+										self.swarm
+											.behaviour_mut()
+											.kademlia
+											.remove_record(&put_record_ok.key);
+									}
 								};
 
-								let cnt = self
+								// TODO: Handle or log errors
+								*v = match result {
+									Ok(_) => QueryState::Succeeded,
+									Err(error) => QueryState::Failed(error.into()),
+								};
+
+								let has_pending = self
 									.pending_kad_query_batch
 									.iter()
-									.filter(|(_, elem)| elem.is_none())
-									.count();
+									.any(|(_, qs)| matches!(qs, QueryState::Pending));
 
-								if cnt == 0 {
+								if !has_pending {
 									if let Some(QueryChannel::PutRecordBatch(ch)) =
 										self.pending_batch_complete.take()
 									{
 										let count_success = self
 											.pending_kad_query_batch
 											.iter()
-											.filter(|(_, elem)| {
-												elem.is_some() && elem.as_ref().unwrap().is_ok()
-											})
+											.filter(|(_, qs)| matches!(qs, QueryState::Succeeded))
 											.count();
+
 										_ = ch.send(NumSuccPut(count_success));
 									}
 								}
@@ -264,7 +249,7 @@ impl EventLoop {
 								trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
 									if let Some(QueryChannel::Bootstrap(ch)) =
-										self.pending_kad_queries.remove(&id.into())
+										self.pending_kad_queries.remove(&id)
 									{
 										_ = ch.send(Ok(()));
 									}
@@ -273,7 +258,7 @@ impl EventLoop {
 							Err(err) => {
 								trace!("Bootstrap error event. Error: {err:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
-									self.pending_kad_queries.remove(&id.into())
+									self.pending_kad_queries.remove(&id)
 								{
 									_ = ch.send(Err(err.into()));
 								}
@@ -297,7 +282,7 @@ impl EventLoop {
 						// we have to exchange observed addresses
 						// in this case relay needs to tell us our own
 						if peer_id == self.relay_reservation.id
-							&& self.relay_reservation.is_reserved == false
+							&& !self.relay_reservation.is_reserved
 						{
 							match self.swarm.listen_on(
 								self.relay_reservation
@@ -366,13 +351,12 @@ impl EventLoop {
 				MdnsEvent::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
 						debug!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
-						if let Some(mdns) = self.swarm.behaviour_mut().mdns.as_ref() {
-							if mdns.has_node(&peer_id) {
-								self.swarm
-									.behaviour_mut()
-									.kademlia
-									.remove_address(&peer_id, &multiaddr);
-							}
+
+						if self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
+							self.swarm
+								.behaviour_mut()
+								.kademlia
+								.remove_address(&peer_id, &multiaddr);
 						}
 					}
 				},
@@ -401,18 +385,6 @@ impl EventLoop {
 						}
 					};
 				},
-			},
-			SwarmEvent::Behaviour(BehaviourEvent::Relay(event)) => match event {
-				RelayEvent::ReservationReqAccepted { src_peer_id, .. } => {
-					debug!("Relay accepted reservation request from: {src_peer_id:#?}");
-				},
-				RelayEvent::ReservationReqDenied { src_peer_id } => {
-					debug!("Reservation request was denied for: {src_peer_id:#?}");
-				},
-				RelayEvent::ReservationTimedOut { src_peer_id } => {
-					debug!("Reservation timed out for: {src_peer_id:#?}");
-				},
-				_ => {},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
 				debug! {"Relay Client Event: {event:#?}"};
@@ -548,41 +520,96 @@ impl EventLoop {
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::GetRecord(sender));
 			},
-			Command::PutKadRecord {
-				record,
-				quorum,
-				sender,
-			} => {
-				let query_id = self
-					.swarm
-					.behaviour_mut()
-					.kademlia
-					.put_record(record, quorum)
-					.expect("Unable to perform Kademlia PUT operation.");
-
-				self.pending_kad_queries
-					.insert(query_id, QueryChannel::PutRecord(sender));
-			},
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
 				sender,
 			} => {
-				let mut ids: HashMap<QueryId, Option<Result<()>>> = Default::default();
+				let mut ids: HashMap<QueryId, QueryState> = Default::default();
 
-				for record in records {
+				for record in records.as_ref() {
 					let query_id = self
 						.swarm
 						.behaviour_mut()
 						.kademlia
-						.put_record(record.clone(), quorum)
+						.put_record(record.to_owned(), quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
-					ids.insert(query_id, None);
+					ids.insert(query_id, QueryState::Pending);
 				}
 				self.pending_kad_query_batch = ids;
 				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
 			},
+			Command::ReduceKademliaMapSize => {
+				self.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.shrink_hashmap();
+			},
+			Command::NetworkObservabilityDump => {
+				self.dump_routing_table_stats();
+				self.dump_hash_map_block_stats();
+			},
 		}
+	}
+
+	fn dump_hash_map_block_stats(&mut self) {
+		let mut occurence_map = HashMap::new();
+
+		for record in self
+			.swarm
+			.behaviour_mut()
+			.kademlia
+			.store_mut()
+			.records_iter()
+		{
+			let vec_key = record.0.to_vec();
+			let record_key = str::from_utf8(&vec_key);
+
+			let (block_num, _) = record_key
+				.expect("unable to cast key to string")
+				.split_once(':')
+				.expect("unable to split the key string");
+
+			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
+			*count += 1;
+		}
+		let mut sorted: Vec<(&String, &i32)> = occurence_map.iter().collect();
+		sorted.sort_by(|a, b| a.0.cmp(b.0));
+		for (block_number, cell_count) in sorted {
+			trace!(
+				"Number of cells in DHT for block {:?}: {}",
+				block_number,
+				cell_count
+			);
+		}
+	}
+
+	fn dump_routing_table_stats(&mut self) {
+		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
+		debug!("Number of KBuckets: {:?} ", num_of_buckets);
+		let mut table: String = "".to_owned();
+		let mut total_peer_number: usize = 0;
+		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
+			total_peer_number += bucket.num_entries();
+			for EntryView { node, status } in bucket.iter().map(|r| r.to_owned()) {
+				let key = node.key.preimage().to_string();
+				let value = format!("{:?}", node.value);
+				let status = format!("{:?}", status);
+				table.push_str(&format! {"{key: <55} | {value: <100} | {status: <10}\n"});
+			}
+		}
+
+		let text = format!("Total number of peers in routing table: {total_peer_number}.");
+		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
+		debug!("{text}\n{header}\n{table}");
+
+		self.avail_metrics
+			.record(MetricEvent::KadRoutingTablePeerNum(
+				total_peer_number
+					.try_into()
+					.expect("unable to convert usize to u32"),
+			));
 	}
 
 	fn reset_relay_reservation(&mut self) {

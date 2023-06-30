@@ -4,12 +4,14 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::primitives::Header as DaHeader;
+use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
 use rocksdb::DB;
 
 use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
 
 const LAST_FULL_NODE_WS_KEY: &str = "last_full_node_ws";
+const GENESIS_HASH_KEY: &str = "genesis_hash";
 
 pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> Result<()> {
 	let cf_handle = db.cf_handle(STATE_CF).context("Failed to get cf handle")?;
@@ -130,7 +132,7 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u
 		.context("Couldn't get column handle from db")?;
 
 	let res = db
-		.get_cf(&cf_handle, &block_number.to_be_bytes())
+		.get_cf(&cf_handle, block_number.to_be_bytes())
 		.context("Couldn't get confidence in db")?;
 	let res = res.map(|data| {
 		data.try_into()
@@ -154,4 +156,33 @@ pub fn store_confidence_in_db(db: Arc<DB>, block_number: u32, count: u32) -> Res
 
 	db.put_cf(&handle, block_number.to_be_bytes(), count.to_be_bytes())
 		.context("Failed to write confidence")
+}
+
+pub fn get_genesis_hash(db: Arc<DB>) -> Result<Option<H256>> {
+	let cf_handle = db
+		.cf_handle(STATE_CF)
+		.context("Couldn't get column handle from db")?;
+
+	let result = db
+		.get_cf(&cf_handle, GENESIS_HASH_KEY.as_bytes())
+		.context("Couldn't get {key} from db")?;
+
+	result.map_or(Ok(None), |e| {
+		let raw_hash: std::result::Result<[u8; 32], _> = e.try_into();
+		raw_hash
+			.map(|e| Some(H256::from(e)))
+			.map_err(|_| anyhow!("Bad genesis hash format!"))
+	})
+}
+
+pub fn store_genesis_hash(db: Arc<DB>, genesis_hash: H256) -> Result<()> {
+	let cf_handle = db
+		.cf_handle(STATE_CF)
+		.context("Couldn't get column handle from db")?;
+	db.put_cf(
+		&cf_handle,
+		GENESIS_HASH_KEY.as_bytes(),
+		genesis_hash.as_bytes(),
+	)
+	.context("Failed to write {key} data")
 }
