@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.4.1"
+version = "1.4.2"
 edition = "2021"
 authors = ["Avail Team"]
 
