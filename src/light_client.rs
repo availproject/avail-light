@@ -42,12 +42,11 @@ use tracing::{error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
-	http::calculate_confidence,
 	network::Client,
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
 	types::{self, BlockVerified, LightClientConfig},
-	utils::extract_kate,
+	utils::{calculate_confidence, extract_kate},
 };
 
 #[async_trait]
@@ -61,15 +60,25 @@ pub trait LightClient {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32;
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
+	async fn shrink_kademlia_map(&self) -> Result<()>;
+	async fn network_stats(&self) -> Result<()>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
 
 #[derive(Clone)]
-pub struct LightClientImpl {
+struct LightClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: avail::Client,
+}
+
+pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl LightClient {
+	LightClientImpl {
+		db,
+		network_client,
+		rpc_client,
+	}
 }
 
 #[async_trait]
@@ -78,6 +87,12 @@ impl LightClient for LightClientImpl {
 		self.network_client
 			.insert_cells_into_dht(block, cells)
 			.await
+	}
+	async fn shrink_kademlia_map(&self) -> Result<()> {
+		self.network_client.shrink_kademlia_map().await
+	}
+	async fn network_stats(&self) -> Result<()> {
+		self.network_client.network_stats().await
 	}
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
 		self.network_client.insert_rows_into_dht(block, rows).await
@@ -105,7 +120,7 @@ impl LightClient for LightClientImpl {
 }
 
 pub async fn process_block(
-	light_client: impl LightClient,
+	light_client: &impl LightClient,
 	cfg: &LightClientConfig,
 	pp: &PublicParameters,
 	header: &Header,
@@ -348,6 +363,16 @@ pub async fn process_block(
 		dht_put_time_elapsed.as_secs_f64(),
 	));
 
+	light_client
+		.shrink_kademlia_map()
+		.await
+		.context("Unable to perform Kademlia map shrink")?;
+
+	light_client
+		.network_stats()
+		.await
+		.context("Unable to dump network stats")?;
+
 	Ok(())
 }
 
@@ -355,19 +380,15 @@ pub async fn process_block(
 ///
 /// # Arguments
 ///
+/// * `light_client` - Light client implementation
 /// * `cfg` - Light client configuration
-/// * `db` - Database to store confidence and block header
-/// * `network_client` - Reference to a libp2p custom network client
-/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `registry` - Prometheus metrics registry
 /// * `counter` - Processed block mutex counter
 pub async fn run(
+	light_client: impl LightClient,
 	cfg: LightClientConfig,
-	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
 	block_tx: Option<Sender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
@@ -382,15 +403,9 @@ pub async fn run(
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
-		let db_clone = db.clone();
-		let light_client = LightClientImpl {
-			db: db_clone,
-			network_client: network_client.clone(),
-			rpc_client: rpc_client.clone(),
-		};
 
 		if let Err(error) = process_block(
-			light_client,
+			&light_client,
 			&cfg,
 			&pp,
 			&header,
@@ -577,7 +592,13 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		mock_client
+			.expect_shrink_kademlia_map()
+			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_network_stats()
+			.returning(|| Box::pin(async move { Ok(()) }));
+		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}
@@ -691,7 +712,13 @@ mod tests {
 		mock_client
 			.expect_insert_cells_into_dht()
 			.returning(|_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		mock_client
+			.expect_shrink_kademlia_map()
+			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_network_stats()
+			.returning(|| Box::pin(async move { Ok(()) }));
+		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}

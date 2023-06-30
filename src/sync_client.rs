@@ -15,13 +15,14 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.  
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
+use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
-use futures::stream::{self, StreamExt as _};
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
+use sp_core::{blake2_256, ed25519::Public as EdPublic};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
@@ -34,6 +35,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	types::{BlockVerified, SyncClientConfig},
+	utils,
 	utils::{extract_app_lookup, extract_kate},
 };
 use kate_recovery::{data::Cell, matrix::Position};
@@ -53,12 +55,21 @@ pub trait SyncClient {
 		positions: &[Position],
 		block_number: u32,
 	) -> (Vec<Cell>, Vec<Position>);
+	fn get_client(&self) -> avail::Client;
 }
 #[derive(Clone)]
-pub struct SyncClientImpl {
+struct SyncClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: avail::Client,
+}
+
+pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl SyncClient {
+	SyncClientImpl {
+		db,
+		network_client,
+		rpc_client,
+	}
 }
 
 #[async_trait]
@@ -107,13 +118,16 @@ impl SyncClient for SyncClientImpl {
 			.fetch_cells_from_dht(block_number, positions)
 			.await
 	}
+	fn get_client(&self) -> avail::Client {
+		self.rpc_client.clone()
+	}
 }
 
 async fn process_block(
-	sync_client: impl SyncClient,
+	sync_client: &impl SyncClient,
 	block_number: u32,
 	cfg: &SyncClientConfig,
-	pp: PublicParameters,
+	pp: &PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) -> Result<()> {
 	if sync_client
@@ -204,7 +218,7 @@ async fn process_block(
 	let cells_len = cells.len();
 	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, &pp)?;
+	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, pp)?;
 
 	info!(
 		block_number,
@@ -232,61 +246,110 @@ async fn process_block(
 
 	Ok(())
 }
+
 /// Runs sync client.
 ///
 /// # Arguments
 ///
 /// * `cfg` - sync client configuration
-/// * `rpc_client` - Node's RPC subxt client for fetching data unavailable in DHT (if configured)
 /// * `end_block` - Latest block to sync
 /// * `sync_blocks_depth` - How many blocks in past to sync
-/// * `db` - Database to store confidence and block header
-/// * `network_client` - Reference to a libp2p custom network client
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
+	sync_client: impl SyncClient,
 	cfg: SyncClientConfig,
-	rpc_client: avail::Client,
 	end_block: u32,
 	sync_blocks_depth: u32,
-	db: Arc<DB>,
-	network_client: Client,
 	pp: PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) {
+	let rpc_client = sync_client.get_client();
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
+
+	// Fetch validator set at current height
+	let final_validator_set = rpc::get_valset_by_block_number(&rpc_client, end_block)
+		.await
+		.expect("Couldn't get current validator set");
+
+	// Fetch the set ID from storage at current height
+	let final_set_id = rpc::get_set_id_by_block_number(&rpc_client, end_block)
+		.await
+		.expect("Couldn't get current set ID");
+
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
+	let mut last_hash: Option<H256> = None;
+	let mut last_set_id: Option<u64> = None;
+	let mut last_validator_set: Option<Vec<EdPublic>> = None;
+
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block).map(move |b| {
-		(
-			b,
-			rpc_client.clone(),
-			db.clone(),
-			network_client.clone(),
-			pp.clone(),
-			block_tx.clone(),
-		)
-	});
+	let blocks = (start_block..=end_block)
+		.map(move |b| (b, rpc_client.clone(), pp.clone(), block_tx.clone()));
 	let cfg_clone = &cfg;
-	stream::iter(blocks)
-		.for_each_concurrent(
-			num_cpus::get(), // number of logical CPUs available on machine
-			// run those many concurrent syncing lightweight tasks, not threads
-			|(block_number, rpc_client, store, net_svc, pp, block_tx)| async move {
-				let test = SyncClientImpl {
-					db: store.clone(),
-					network_client: net_svc.clone(),
-					rpc_client: rpc_client.clone(),
-				};
-				// TODO: Should we handle unprocessed blocks differently?
-				if let Err(error) = process_block(test, block_number, cfg_clone, pp, block_tx).await
-				{
-					error!(block_number, "Cannot process block: {error:#}");
-				}
-			},
-		)
-		.await;
+	for (block_number, rpc_client, pp, block_tx) in blocks {
+		info!("Testing block {block_number}!");
+		let block_hash = rpc::get_block_hash(&rpc_client, block_number)
+			.await
+			.expect("Couldn't get block hash");
+		let block_header = rpc::get_header_by_hash(&rpc_client, block_hash)
+			.await
+			.expect("Couldn't get header by hash");
+		assert_eq!(
+			block_hash,
+			Encode::using_encoded(&block_header, blake2_256).into(),
+			"Hash should match"
+		);
+		if let Some(lh) = last_hash {
+			assert_eq!(lh, block_header.parent_hash, "Parent hash should match!")
+		}
+		last_hash = Some(block_hash);
+
+		// Search the header logs for validator set change
+		let new_auths = utils::filter_auth_set_changes(block_header);
+
+		if !new_auths.is_empty() {
+			info!("Validator set is changed!");
+			last_validator_set = Some(
+				new_auths[0]
+					.iter()
+					.map(|a| EdPublic::from_raw(a.0 .0 .0 .0))
+					.collect(),
+			);
+			let set_id = rpc::get_set_id_by_hash(&rpc_client, block_hash)
+				.await
+				.expect("Couldn't get set id by hash");
+			info!("Set id changed to {set_id}");
+			if let Some(sid) = last_set_id {
+				assert_eq!(
+					sid + 1,
+					set_id,
+					"Set ID should be one greater than the last!"
+				)
+			}
+			last_set_id = Some(set_id);
+		}
+
+		// TODO: Should we handle unprocessed blocks differently?
+		if let Err(error) =
+			process_block(&sync_client, block_number, cfg_clone, &pp, block_tx).await
+		{
+			error!(block_number, "Cannot process block: {error:#}");
+		}
+	}
+	if let Some(lvalset) = last_validator_set {
+		assert_eq!(
+			lvalset, final_validator_set,
+			"Validator set should match the last one"
+		);
+		assert_eq!(
+			last_set_id.expect("last_set_id shouldn't be None if valset is Some"),
+			final_set_id,
+			"Set ID should match the final one"
+		);
+	} else {
+		info!("Validator set hasn't changed for all sync client depth");
+	}
 }
 
 #[cfg(test)]
@@ -360,7 +423,6 @@ mod tests {
 			.with(eq(42))
 			.returning(move |_| {
 				let header = header.clone();
-				let header_hash = header_hash.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
@@ -436,7 +498,7 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -503,7 +565,6 @@ mod tests {
 			.with(eq(42))
 			.returning(move |_| {
 				let header = header.clone();
-				let header_hash = header_hash.clone();
 
 				Box::pin(async move { Ok((header, header_hash)) })
 			});
@@ -572,7 +633,7 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -588,7 +649,7 @@ mod tests {
 			.returning(|_| Ok(true));
 		mock_client.expect_get_header_by_block_number().never();
 		mock_client.block_header_in_db(42).unwrap();
-		process_block(mock_client, 42, &cfg, pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
