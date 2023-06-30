@@ -29,10 +29,13 @@ use crate::{
 	types::{Mode, RuntimeConfig},
 };
 
+#[cfg(feature = "network-analysis")]
+use crate::network::network_analyzer;
+
+mod api;
 mod app_client;
 mod consts;
 mod data;
-mod http;
 mod light_client;
 mod network;
 mod proof;
@@ -43,10 +46,17 @@ mod telemetry;
 mod types;
 mod utils;
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
 #[command(version)]
-struct Cli {
+struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
 	config: String,
@@ -103,13 +113,10 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 }
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
-	let cli = Cli::parse();
-	let config_path = &cli.config;
-
-	let cfg: RuntimeConfig = confy::load_path(&config_path)
+	let opts = CliOpts::parse();
+	let config_path = &opts.config;
+	let cfg: RuntimeConfig = confy::load_path(config_path)
 		.context(format!("Failed to load configuration from {config_path}"))?;
-
-	info!("Using config: {cfg:?}");
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
@@ -120,6 +127,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
+
+	info!("Using config: {cfg:?}");
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
@@ -143,14 +152,23 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
+	tokio::task::spawn(api::server::run(db.clone(), cfg.clone(), counter.clone()));
+
+	// If in fat client mode, enable deleting local Kademlia records
+	// This is a fat client memory optimization
+	let kad_remove_local_record = cfg.block_matrix_partition.is_some();
+	if kad_remove_local_record {
+		info!("Fat client mode");
+	}
 
 	let (network_client, network_event_loop) = network::init(
 		(&cfg).into(),
 		libp2p_metrics,
+		lc_metrics.clone(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
+		kad_remove_local_record,
 	)
 	.context("Failed to init Network Service")?;
 
@@ -176,18 +194,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
-	// if there were no provided relays, that means we're one of those
-	// than we need to act as a Relay, listen on TCP also
-	if cfg.relays.is_empty() {
-		network_client
-			.start_listening(
-				Multiaddr::empty()
-					.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-					.with(Protocol::Tcp(port)),
-			)
-			.await
-			.context("Listening on TCP not to fail.")?;
-	}
 
 	// Check if bootstrap nodes were provided
 	let bootstrap_nodes = cfg
@@ -197,8 +203,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	// If the client is the first one on the network, and no bootstrap nodes
-	// were provided, then wait for the second client to establish connection and use it as bootstrap.
+	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
+	// second client to establish connection and use it as bootstrap.
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
 	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
@@ -226,6 +232,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(bootstrap_nodes).await?;
 
+	#[cfg(feature = "network-analysis")]
+	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
+		cfg.libp2p_port.0,
+		10,
+	));
+
 	let pp = kate_recovery::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
@@ -243,6 +255,19 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
 
 	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
+
+	let genesis_hash = rpc_client.genesis_hash();
+	info!("Genesis hash: {genesis_hash:?}");
+	if let Some(stored_genesis_hash) = data::get_genesis_hash(db.clone())? {
+		if !genesis_hash.eq(&stored_genesis_hash) {
+			Err(anyhow!(
+				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
+			))?
+		}
+	} else {
+		info!("No genesis hash is found in the db, storing the new hash now.");
+		data::store_genesis_hash(db.clone(), genesis_hash)?;
+	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
@@ -262,20 +287,20 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		None
 	};
 
-	let block_header = rpc::get_chain_header(&rpc_client)
+	let block_header = rpc::get_chain_head_header(&rpc_client)
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
 
+	let sync_client = sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
+
 	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
 	if sync_block_depth > 0 {
 		tokio::task::spawn(sync_client::run(
+			sync_client,
 			(&cfg).into(),
-			rpc_client.clone(),
 			latest_block,
 			sync_block_depth,
-			db.clone(),
-			network_client.clone(),
 			pp.clone(),
 			block_tx.clone(),
 		));
@@ -289,15 +314,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		error_sender.clone(),
 	));
 
+	let light_client = light_client::new(db, network_client, rpc_client);
+
 	tokio::task::spawn(light_client::run(
+		light_client,
 		(&cfg).into(),
-		db,
-		network_client,
-		rpc_client,
 		block_tx,
 		pp,
 		lc_metrics,
-		counter.clone(),
+		counter,
 		message_rx,
 		error_sender,
 	));

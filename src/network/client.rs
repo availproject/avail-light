@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use futures::future::join_all;
@@ -47,7 +50,6 @@ impl DHTCell {
 		}
 	}
 }
-
 struct DHTRow((RowIndex, Vec<u8>));
 
 impl DHTRow {
@@ -143,12 +145,12 @@ impl Client {
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
 		let mut num_success: usize = 0;
-		for recs in records.chunks(self.put_batch_size) {
+		for records in records.chunks(self.put_batch_size).map(Into::into) {
 			let (sender, receiver) = oneshot::channel();
 			if self
 				.sender
 				.send(Command::PutKadRecordBatch {
-					records: recs.to_vec(),
+					records,
 					quorum,
 					sender,
 				})
@@ -167,6 +169,22 @@ impl Client {
 				};
 		}
 		NumSuccPut(num_success)
+	}
+
+	// Reduces the size of Kademlias underlying hashmap
+	pub async fn shrink_kademlia_map(&self) -> Result<()> {
+		self.sender
+			.send(Command::ReduceKademliaMapSize)
+			.await
+			.context("Command receiver should not be dropped.")
+	}
+
+	// Dump p2p network stats in a readable manner
+	pub async fn network_stats(&self) -> Result<()> {
+		self.sender
+			.send(Command::NetworkObservabilityDump)
+			.await
+			.context("Command receiver should not be dropped.")
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
@@ -268,10 +286,8 @@ impl Client {
 		for row_indexes in row_indexes.chunks(self.dht_parallelization_limit) {
 			let fetch = |row| self.fetch_row_from_dht(block_number, row);
 			let fetched_rows = join_all(row_indexes.iter().cloned().map(fetch)).await;
-			for row in fetched_rows {
-				if let Some((row_index, row)) = row {
-					rows[row_index as usize] = Some(row);
-				}
+			for (row_index, row) in fetched_rows.into_iter().flatten() {
+				rows[row_index as usize] = Some(row);
 			}
 		}
 		rows
@@ -287,7 +303,7 @@ impl Client {
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
 			.await;
 
-		len / num.0 as f32
+		num.0 as f32 / len
 	}
 
 	/// Inserts cells into the DHT.
@@ -352,14 +368,11 @@ pub enum Command {
 		key: Key,
 		sender: oneshot::Sender<Result<PeerRecord>>,
 	},
-	PutKadRecord {
-		record: Record,
-		quorum: Quorum,
-		sender: oneshot::Sender<Result<()>>,
-	},
 	PutKadRecordBatch {
-		records: Vec<Record>,
+		records: Arc<[Record]>,
 		quorum: Quorum,
 		sender: oneshot::Sender<NumSuccPut>,
 	},
+	ReduceKademliaMapSize,
+	NetworkObservabilityDump,
 }

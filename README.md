@@ -23,14 +23,14 @@
 1. **Light-client Mode**: The basic mode of operation and is always active no matter the mode selected. If an `App_ID` is not provided (or is =0), this mode will commence. On each header received the client does random sampling using two mechanisms:
 
     1. DHT - client first tries to retrieve cells via Kademlia.
-	2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded.
+    2. RPC - if DHT retrieve fails, the client uses RPC calls to Avail nodes to retrieve the needed cells. The cells not already found in the DHT will be uploaded.
 
-	Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
+ Once the data is received, light client verifies individual cells and calculates the confidence, which is then stored locally.
 
 2. **App-Specific Mode**: If an **`App_ID` > 0** is given in the config file, the application client (part ot the light client) downloads all the relevant app data, reconstructs it and persists it locally. Reconstructed data is then available to accessed via an HTTP endpoint. (WIP)
 
-3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation. 
-**IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct. 
+3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation.
+**IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct.
 
 ## Installation
 
@@ -40,7 +40,8 @@ Start by cloning this repo in your local setup:
 git clone git@github.com:maticnetwork/avail-light.git
 ```
 
-Create one yaml configuration file in the root of the project & put following content. Config example is for a bootstrap client, detailed config specs can be found bellow.
+Create one yaml configuration file in the root of the project & put following content.
+Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found bellow.
 
 ```bash
 touch config.yaml
@@ -51,7 +52,7 @@ log_level = "info"
 http_server_host = "127.0.0.1"
 http_server_port = "7000"
 
-libp2p_seed = 1
+secret_key = { seed = "avail" }
 libp2p_port = "37000"
 
 full_node_ws = ["ws://127.0.0.1:9944"]
@@ -59,7 +60,7 @@ app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
 prometheus_port = 9520
-bootstraps = []
+bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 ```
 
 Now, run the client:
@@ -69,6 +70,7 @@ cargo run -- -c config.yaml
 ```
 
 ## Config reference
+
 ```yaml
 log_level = "info"
 # Light client HTTP server host name (default: 127.0.0.1)
@@ -82,9 +84,26 @@ http_server_port = "7000"
 secret_key = { key =  "1498b5467a63dffa2dc9d9e069caf075d16fc33fdd4c3b01bfadae6433767d93" }
 # Libp2p service port range (port, range) (default: 37000).
 libp2p_port = "37000"
+# Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
+libp2p_tcp_port_reuse = false
+# Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+libp2p_autonat_only_global_ips = false
+# Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+libp2p_autonat_throttle = 1
+# Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
+libp2p_autonat_retry_interval = 10
+# Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
+libp2p_autonat_refresh_interval = 30
+# Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
+libp2p_autonat_boot_delay = 5
+# Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+libp2p_identify_protocol = "/avail_kad/id/1.0.0"
+# Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
+libp2p_identify_agent = "avail-light-client/rust-client"
+# Vector of Relay nodes, which are used for hole punching (default: empty)
+relays = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 # Vector of IPFS bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
-
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -152,13 +171,15 @@ max_kad_provided_keys = 1024
 
 ## Notes
 
-- When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully. 
-- Immediately after starting a fresh light client, block sync is executed to a block depth set in the `sync_blocks_depth` config parameter. The sync client is using both the DHT and RPC for that purpose.
-- In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
-- `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
-- Prometheus is used for exposing detailed metrics about the light client
+* When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully.
+* Immediately after starting a fresh light client, block sync is executed to a block depth set in the `sync_blocks_depth` config parameter. The sync client is using both the DHT and RPC for that purpose.
+* In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
+* `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
+* Prometheus is used for exposing detailed metrics about the light client
+* In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
 ## Usage and examples
+
 ### Fetching the number of the latest block processed by light client
 
 To fetch the number of the latest block processed by light client, we can perform `GET` request on `/v1/latest_block` endpoint.
@@ -174,7 +195,6 @@ Response:
   "latest_block": 10
 }
 ```
-
 
 ### Fetching the confidence for given block
 
@@ -260,7 +280,7 @@ Response:
 }
 ```
 
-### Get the latest block 
+### Get the latest block
 
 ```sh
 curl "localhost:7000/v1/latest_block"
@@ -287,6 +307,7 @@ Retrieves the operating mode of the light client. Light client can operate in tw
 If operating mode is `LightClient` response is:
 
 > Status code: `200 OK`
+
 ```json
 "LightClient"
 ```
@@ -294,6 +315,7 @@ If operating mode is `LightClient` response is:
 In case of `AppClient` mode, response is:
 
 > Status code: `200 OK`
+
 ```json
 {"AppClient": {app_id}}
 ```
@@ -305,6 +327,7 @@ Retrieves the latest block processed by the light client.
 #### Responses
 
 > Status code: `200 OK`
+
 ```json
 {"latest_block":{block_number}}
 ```
@@ -314,13 +337,15 @@ Retrieves the latest block processed by the light client.
 Given a block number, it returns the confidence computed by the light client for that specific block.
 
 > Path parameters:
-- `block_number` - block number (requred)
+
+* `block_number` - block number (requred)
 
 #### Responses
 
 In case when confidence is computed:
 
 > Status code: `200 OK`
+
 ```json
 {"block":1,"confidence":93.75,"serialised_confidence":"5232467296"}
 ```
@@ -328,6 +353,7 @@ In case when confidence is computed:
 If confidence is not computed, and specified block is before the latest processed block:
 
 > Status code: `400 Bad Request`
+
 ```json
 "Not synced"
 ```
@@ -335,6 +361,7 @@ If confidence is not computed, and specified block is before the latest processe
 If confidence is not computed, and specified block is after the latest processed block:
 
 > Status code: `404 Not Found`
+
 ```json
 "Not found"
 ```
@@ -344,16 +371,19 @@ If confidence is not computed, and specified block is after the latest processed
 Given a block number, it retrieves the hex-encoded extrinsics for the specified block, if available. Alternatively, if specified by a query parameter, the retrieved extrinsic is decoded and returned as a base64-encoded string.
 
 > Path parameters:
-- `block_number` - block number (requred)
+
+* `block_number` - block number (requred)
 
 > Query parameters:
-- `decode` - `true` if decoded extrinsics are requested (boolean, optional, default is `false`)
+
+* `decode` - `true` if decoded extrinsics are requested (boolean, optional, default is `false`)
 
 #### Responses
 
 If application data is available, and decode is `false` or unspecified:
 
 > Status code: `200 OK`
+
 ```json
 {"block":1,"extrinsics":["0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"]}
 ```
@@ -361,6 +391,7 @@ If application data is available, and decode is `false` or unspecified:
 If application data is available, and decode is `true`:
 
 > Status code: `200 OK`
+
 ```json
 {"block":1,"extrinsics":["ZXhhbXBsZQ=="]}
 ```
@@ -368,6 +399,7 @@ If application data is available, and decode is `true`:
 If application data is not available, and specified block is the latest block:
 
 > Status code: `401 Unauthorized`
+
 ```json
 "Processing block"
 ```
@@ -375,6 +407,7 @@ If application data is not available, and specified block is the latest block:
 If application data is not available, and specified block is not the latest block:
 
 > Status code: `404 Not Found`
+
 ```json
 "Not found"
 ```
@@ -384,13 +417,15 @@ If application data is not available, and specified block is not the latest bloc
 Retrieves the status of the latest block processed by the light client.
 
 > Path parameters:
-- `block_number` - block number (requred)
+
+* `block_number` - block number (requred)
 
 #### Responses
 
 If latest processed block exists, and `app_id` is configured (otherwise, `app_id` is not set):
 
 > Status code: `200 OK`
+
 ```json
 {"block_num":89,"confidence":93.75,"app_id":1}
 ```
@@ -398,10 +433,10 @@ If latest processed block exists, and `app_id` is configured (otherwise, `app_id
 If there are no processed blocks:
 
 > Status code: `404 Not Found`
+
 ```json
 "Not found"
 ```
-
 
 ## Test Code Coverage Report
 
@@ -417,19 +452,19 @@ Source code coverage data is generated when running tests with:
 
 ```bash
 env RUSTFLAGS="-C instrument-coverage" \
-	LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
-	cargo test
+ LLVM_PROFILE_FILE="tests-coverage-%p-%m.profraw" \
+ cargo test
 ```
 
 To generate the report, run:
 
 ```bash
 grcov . -s . \
-	--binary-path ./target/debug/ \
-	-t html \
-	--branch \
-	--ignore-not-existing -o \
-	./target/debug/coverage/
+ --binary-path ./target/debug/ \
+ -t html \
+ --branch \
+ --ignore-not-existing -o \
+ ./target/debug/coverage/
 ```
 
 To clean up generate coverage information files, run:
