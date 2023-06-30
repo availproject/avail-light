@@ -598,7 +598,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avail-light"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "anyhow",
  "async-std",
@@ -654,7 +654,7 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.2.1"
-source = "git+https://github.com/availproject/avail.git?tag=v1.6.0-b68af960#b68af9607e3d0db972eb54b1ccea70223584cfe9"
+source = "git+https://github.com/availproject/avail.git?tag=v1.6.1-rc2#586b3b6299f301423867ec205adb011f3b412887"
 dependencies = [
  "anyhow",
  "curve25519-dalek 2.1.3",
