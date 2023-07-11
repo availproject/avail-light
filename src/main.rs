@@ -247,7 +247,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
 	let version = rpc::Version {
-		version: "1.6.1-7fcca43d5f5".to_string(),
+		version: "1.6.2".to_string(),
 		spec_version: 11,
 		spec_name: "data-avail".to_string(),
 	};
