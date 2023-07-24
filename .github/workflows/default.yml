@@ -44,6 +44,15 @@ jobs:
           command: fmt
           args: --check
 
+      # - name: Run clippy linter
+      #   run: uses: actions-rs/clippy-check@v1
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     args: --all-features --all-targets
+
+      - name: Run clippy linter
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
