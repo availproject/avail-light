@@ -24,7 +24,7 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 		},
 	};
 	let mut dev: Option<Device> = None;
-	for device in devices.clone() {
+	for device in devices {
 		if !device.addresses.is_empty()
 		// The first interface with Connected status is usually the one with all the traffic
 			&& device.flags.connection_status == ConnectionStatus::Connected
