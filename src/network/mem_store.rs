@@ -72,6 +72,7 @@ impl Default for MemoryStoreConfig {
 }
 
 impl MemoryStore {
+	#[allow(dead_code)]
 	/// Creates a new `MemoryRecordStore` with a default configuration.
 	pub fn new(local_id: PeerId) -> Self {
 		Self::with_config(local_id, Default::default())
@@ -88,6 +89,7 @@ impl MemoryStore {
 		}
 	}
 
+	#[allow(dead_code)]
 	/// Retains the records satisfying a predicate.
 	pub fn retain<F>(&mut self, f: F)
 	where
