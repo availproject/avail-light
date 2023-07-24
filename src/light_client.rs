@@ -376,6 +376,12 @@ pub async fn process_block(
 	Ok(())
 }
 
+pub struct Channels {
+	pub block_sender: Option<Sender<BlockVerified>>,
+	pub header_receiver: Receiver<(Header, Instant)>,
+	pub error_sender: Sender<anyhow::Error>,
+}
+
 /// Runs light client.
 ///
 /// # Arguments
@@ -389,16 +395,14 @@ pub async fn process_block(
 pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
-	block_tx: Option<Sender<BlockVerified>>,
 	pp: PublicParameters,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
-	mut message_rx: Receiver<(Header, Instant)>,
-	error_sender: Sender<anyhow::Error>,
+	mut channels: Channels,
 ) {
 	info!("Starting light client...");
 
-	while let Some((header, received_at)) = message_rx.recv().await {
+	while let Some((header, received_at)) = channels.header_receiver.recv().await {
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
@@ -416,7 +420,7 @@ pub async fn run(
 		.await
 		{
 			error!("Cannot process block: {error}");
-			if let Err(error) = error_sender.send(error).await {
+			if let Err(error) = channels.error_sender.send(error).await {
 				error!("Cannot send error message: {error}");
 			}
 			return;
@@ -429,7 +433,7 @@ pub async fn run(
 
 		// notify dht-based application client
 		// that newly mined block has been received
-		if let Some(ref channel) = block_tx {
+		if let Some(ref channel) = channels.block_sender {
 			if let Err(error) = channel.send(client_msg).await {
 				error!("Cannot send block verified message: {error}");
 				continue;
