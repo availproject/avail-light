@@ -316,15 +316,19 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let light_client = light_client::new(db, network_client, rpc_client);
 
+	let lc_channels = light_client::Channels {
+		block_sender: block_tx,
+		header_receiver: message_rx,
+		error_sender,
+	};
+
 	tokio::task::spawn(light_client::run(
 		light_client,
 		(&cfg).into(),
-		block_tx,
 		pp,
 		lc_metrics,
 		counter,
-		message_rx,
-		error_sender,
+		lc_channels,
 	));
 	Ok(())
 }
