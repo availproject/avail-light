@@ -11,3 +11,5 @@ pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
 
 /// Column family for state
 pub const STATE_CF: &str = "avail_light_state_cf";
+
+// const TEST: &str = "test";
