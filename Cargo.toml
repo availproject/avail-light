@@ -67,6 +67,11 @@ mockall = "0.11.3"
 async-trait = "0.1.66"
 hex-literal = "0.4.0"
 pcap = "1.1.0"
+uuid = { version = "1.3.4", features = [
+    "v4",
+    "fast-rng",
+    "macro-diagnostics",
+] }
 
 [features]
 network-analysis = []
@@ -85,4 +90,3 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-
