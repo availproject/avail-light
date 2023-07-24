@@ -36,14 +36,14 @@ pub async fn start_traffic_analyzer(port: u16, sampling_interval: u64) {
 	let total_bytes = Arc::new(AtomicU32::new(0));
 
 	// Listen to loopback device for local testing
-	if let Ok(_) = start_listening_on_device("lo".to_owned(), port, Arc::clone(&total_bytes)) {
+	if start_listening_on_device("lo".to_owned(), port, Arc::clone(&total_bytes)).is_ok() {
 		is_one_capture_active = true;
 	}
 
 	// Listen to non-loopback device for local testing
 	if let Some(device) = dev {
 		debug!("Non lo device selected: {}", device.name.as_str());
-		if let Ok(_) = start_listening_on_device(device.name, port, Arc::clone(&total_bytes)) {
+		if start_listening_on_device(device.name, port, Arc::clone(&total_bytes)).is_ok() {
 			is_one_capture_active = true;
 		}
 	};
