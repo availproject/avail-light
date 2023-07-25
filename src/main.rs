@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
+use avail_core::AppId;
 use avail_subxt::primitives::Header;
 use clap::Parser;
 use consts::STATE_CF;
@@ -278,7 +279,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			db.clone(),
 			network_client.clone(),
 			rpc_client.clone(),
-			app_id,
+			AppId(app_id),
 			block_rx,
 			pp.clone(),
 		));

@@ -9,13 +9,12 @@ use avail_subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	utils::H256,
 };
-use codec::Decode;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use sp_core::ed25519::Public as EdPublic;
+use sp_core::ed25519;
 use tracing::{debug, info, instrument, warn};
 
 use crate::types::*;
@@ -36,19 +35,16 @@ pub async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<Da
 		.ok_or(anyhow!("Header with hash {hash:?} not found"))
 }
 
-pub async fn get_valset_by_hash(client: &avail::Client, hash: H256) -> Result<Vec<EdPublic>> {
-	let grandpa_valset_raw = client
+pub async fn get_valset_by_hash(
+	client: &avail::Client,
+	hash: H256,
+) -> Result<Vec<ed25519::Public>> {
+	let grandpa_valset = client
 		.runtime_api()
-		.at(Some(hash))
-		.await
-		.unwrap()
-		.call_raw("GrandpaApi_grandpa_authorities", None)
+		.at(hash)
+		.call_raw::<Vec<(ed25519::Public, u64)>>("GrandpaApi_grandpa_authorities", None)
 		.await
 		.unwrap();
-
-	// Decode result to proper type - ed25519 public key and u64 weight.
-	let grandpa_valset: Vec<(EdPublic, u64)> =
-		Decode::decode(&mut &grandpa_valset_raw[..]).unwrap();
 
 	// Drop weights, as they are not currently used.
 	Ok(grandpa_valset.iter().map(|e| e.0).collect())
@@ -57,7 +53,7 @@ pub async fn get_valset_by_hash(client: &avail::Client, hash: H256) -> Result<Ve
 pub async fn get_valset_by_block_number(
 	client: &avail::Client,
 	block: u32,
-) -> Result<Vec<EdPublic>> {
+) -> Result<Vec<ed25519::Public>> {
 	let hash = get_block_hash(client, block).await?;
 	get_valset_by_hash(client, hash).await
 }
@@ -85,8 +81,7 @@ pub async fn get_set_id_by_hash(client: &avail::Client, hash: H256) -> Result<u6
 	Ok(client
 		.storage()
 		// None means current height
-		.at(Some(hash))
-		.await?
+		.at(hash)
 		.fetch(&set_id_key)
 		.await?
 		.expect("The set_id should exist"))
@@ -107,7 +102,7 @@ pub async fn get_header_by_block_number(
 }
 
 /// Generates random cell positions for sampling
-pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Position> {
+pub fn generate_random_cells(dimensions: Dimensions, cell_count: u32) -> Vec<Position> {
 	let max_cells = dimensions.extended_size();
 	let count = if max_cells < cell_count.into() {
 		debug!("Max cells count {max_cells} is lesser than cell_count {cell_count}");
@@ -118,7 +113,7 @@ pub fn generate_random_cells(dimensions: &Dimensions, cell_count: u32) -> Vec<Po
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
 	while (indices.len() as u16) < count as u16 {
-		let col = rng.gen_range(0..dimensions.cols());
+		let col = rng.gen_range(0..dimensions.cols().into());
 		let row = rng.gen_range(0..dimensions.extended_rows());
 		indices.insert(Position { row, col });
 	}

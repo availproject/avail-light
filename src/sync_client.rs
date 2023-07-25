@@ -22,7 +22,7 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
-use sp_core::{blake2_256, ed25519::Public as EdPublic};
+use sp_core::{blake2_256, ed25519};
 use std::{sync::Arc, time::SystemTime};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
@@ -151,7 +151,7 @@ async fn process_block(
 
 	let app_lookup = extract_app_lookup(&header.extension);
 
-	info!(block_number, "App index {:?}", app_lookup.index);
+	info!(block_number, "App index {:?}", app_lookup);
 
 	sync_client
 		.store_block_header_in_db(header.clone(), block_number)
@@ -181,7 +181,7 @@ async fn process_block(
 
 	// now this is in `u64`
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(&dimensions, cell_count);
+	let positions = rpc::generate_random_cells(dimensions, cell_count);
 
 	let (dht_fetched, unfetched) = sync_client
 		.fetch_cells_from_dht(&positions, block_number)
@@ -218,7 +218,7 @@ async fn process_block(
 	let cells_len = cells.len();
 	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, _) = proof::verify(block_number, &dimensions, &cells, &commitments, pp)?;
+	let (verified, _) = proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
 
 	info!(
 		block_number,
@@ -271,7 +271,10 @@ pub async fn run(
 	// Fetch validator set at current height
 	let final_validator_set = rpc::get_valset_by_block_number(&rpc_client, end_block)
 		.await
-		.expect("Couldn't get current validator set");
+		.expect("Couldn't get current validator set")
+		.into_iter()
+		.map(|validator_pub| ed25519::Public::from_raw(validator_pub.0))
+		.collect::<Vec<_>>();
 
 	// Fetch the set ID from storage at current height
 	let final_set_id = rpc::get_set_id_by_block_number(&rpc_client, end_block)
@@ -281,7 +284,7 @@ pub async fn run(
 	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	let mut last_hash: Option<H256> = None;
 	let mut last_set_id: Option<u64> = None;
-	let mut last_validator_set: Option<Vec<EdPublic>> = None;
+	let mut last_validator_set: Option<Vec<ed25519::Public>> = None;
 
 	info!("Syncing block headers from {start_block} to {end_block}");
 	let blocks = (start_block..=end_block)
@@ -313,7 +316,7 @@ pub async fn run(
 			last_validator_set = Some(
 				new_auths[0]
 					.iter()
-					.map(|a| EdPublic::from_raw(a.0 .0 .0 .0))
+					.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
 					.collect(),
 			);
 			let set_id = rpc::get_set_id_by_hash(&rpc_client, block_hash)
@@ -358,8 +361,8 @@ mod tests {
 	use super::*;
 	use crate::types::{self, RuntimeConfig};
 	use avail_subxt::{
-		api::runtime_types::da_primitives::{
-			asdr::data_lookup::DataLookup,
+		api::runtime_types::avail_core::{
+			data_lookup::compact::CompactDataLookup,
 			header::extension::{v1::HeaderExtension, HeaderExtension::V1},
 			kate_commitment::v1::KateCommitment,
 		},
@@ -405,7 +408,7 @@ mod tests {
 						137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242,
 					],
 				},
-				app_lookup: DataLookup {
+				app_lookup: CompactDataLookup {
 					size: 1,
 					index: vec![],
 				},
@@ -537,7 +540,7 @@ mod tests {
 						137, 187, 186, 216, 97, 140, 16, 33, 52, 56, 170, 208, 118, 242,
 					],
 				},
-				app_lookup: DataLookup {
+				app_lookup: CompactDataLookup {
 					size: 1,
 					index: vec![],
 				},

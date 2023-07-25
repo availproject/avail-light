@@ -1,6 +1,9 @@
+use avail_core::{
+	data_lookup::compact::{CompactDataLookup, DataLookupItem},
+	AppId, DataLookup,
+};
 use avail_subxt::{
-	api::runtime_types::da_primitives::{
-		asdr::data_lookup::DataLookup,
+	api::runtime_types::avail_core::{
 		header::extension::HeaderExtension,
 		header::extension::{v1, v2},
 	},
@@ -40,11 +43,21 @@ pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<
 	}
 }
 
-pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> &DataLookup {
-	match &extension {
+pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> DataLookup {
+	let compact = match &extension {
 		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
 		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
-	}
+	};
+
+	let size = compact.size;
+	let index = compact
+		.index
+		.iter()
+		.map(|item| DataLookupItem::new(AppId(item.app_id.0), item.start))
+		.collect::<Vec<_>>();
+
+	let compact = CompactDataLookup::new(size, index);
+	DataLookup::try_from(compact).expect("Invalid app lookup")
 }
 
 pub fn filter_auth_set_changes(header: DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
@@ -71,13 +84,13 @@ pub fn filter_auth_set_changes(header: DaHeader) -> Vec<Vec<(AuthorityId, u64)>>
 // TODO: Remove unused functions if not needed after next iteration
 
 #[allow(dead_code)]
-fn can_reconstruct(dimensions: &Dimensions, columns: &[u16], cells: &[Cell]) -> bool {
+fn can_reconstruct(dimensions: Dimensions, columns: &[u16], cells: &[Cell]) -> bool {
 	columns.iter().all(|&col| {
 		cells
 			.iter()
 			.filter(move |cell| cell.position.col == col)
 			.count() as u16
-			>= dimensions.rows()
+			>= dimensions.rows().into()
 	})
 }
 
@@ -114,13 +127,13 @@ mod tests {
 		let dimensions = Dimensions::new(1, 4).unwrap();
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0), empty_cell(0, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		assert!(can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(1, 0), empty_cell(0, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		assert!(can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(1, 0), empty_cell(1, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		assert!(can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(0, 0), empty_cell(1, 1)];
-		assert!(can_reconstruct(&dimensions, &columns, &cells));
+		assert!(can_reconstruct(dimensions, &columns, &cells));
 	}
 
 	#[test]
@@ -128,15 +141,15 @@ mod tests {
 		let dimensions = Dimensions::new(1, 4).unwrap();
 		let columns = vec![0, 1];
 		let cells = vec![empty_cell(0, 0)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		assert!(!can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(0, 1)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		assert!(!can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(1, 0)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		assert!(!can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(1, 1)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		assert!(!can_reconstruct(dimensions, &columns, &cells));
 		let cells = vec![empty_cell(0, 2), empty_cell(0, 3)];
-		assert!(!can_reconstruct(&dimensions, &columns, &cells));
+		assert!(!can_reconstruct(dimensions, &columns, &cells));
 	}
 
 	#[test]

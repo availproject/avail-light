@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 
 use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::{Context, Result};
+use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
-use codec::Encode;
+use codec::{Decode, Encode};
 use kate_recovery::{
 	commitments,
-	index::AppDataIndex,
 	matrix::{Dimensions, Partition},
 };
 use libp2p::{Multiaddr, PeerId};
@@ -44,7 +44,7 @@ pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
 	pub dimensions: Dimensions,
-	pub lookup: AppDataIndex,
+	pub lookup: DataLookup,
 	pub commitments: Vec<[u8; 48]>,
 }
 
@@ -52,21 +52,15 @@ impl TryFrom<DaHeader> for BlockVerified {
 	type Error = anyhow::Error;
 	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
-		let app_lookup = extract_app_lookup(&header.extension);
+		let enc_lookup = extract_app_lookup(&header.extension).encode();
+		let lookup = DataLookup::decode(&mut enc_lookup.as_slice())?;
 		let (rows, cols, _, commitment) = extract_kate(&header.extension);
 
 		Ok(BlockVerified {
 			header_hash: hash,
 			block_num: header.number,
 			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,
-			lookup: AppDataIndex {
-				size: app_lookup.size,
-				index: app_lookup
-					.index
-					.iter()
-					.map(|e| (e.app_id.0, e.start))
-					.collect(),
-			},
+			lookup,
 			commitments: commitments::from_slice(&commitment)?,
 		})
 	}

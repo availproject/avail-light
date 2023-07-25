@@ -150,7 +150,7 @@ pub async fn process_block(
 	    return Ok(());
 	};
 
-	if dimensions.cols() <= 2 {
+	if dimensions.cols().get() <= 2 {
 		error!(block_number, "more than 2 columns is required");
 		return Ok(());
 	}
@@ -158,7 +158,7 @@ pub async fn process_block(
 	let commitments = commitments::from_slice(&commitment)?;
 
 	let cell_count = rpc::cell_count_for_confidence(cfg.confidence);
-	let positions = rpc::generate_random_cells(&dimensions, cell_count);
+	let positions = rpc::generate_random_cells(dimensions, cell_count);
 	info!(
 		block_number,
 		"cells_requested" = positions.len(),
@@ -212,7 +212,7 @@ pub async fn process_block(
 
 	if !cfg.disable_proof_verification {
 		let (verified, unverified) =
-			proof::verify(block_number, &dimensions, &cells, &commitments, pp)?;
+			proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
 		let count = verified.len() - unverified.len();
 		info!(
 			block_number,
@@ -300,7 +300,7 @@ pub async fn process_block(
 			.iter()
 			.filter(|cell| !cell.position.is_extended())
 			.collect::<Vec<_>>();
-		let rpc_fetched_data_rows = data::rows(&dimensions, &rpc_fetched_data_cells);
+		let rpc_fetched_data_rows = data::rows(dimensions, &rpc_fetched_data_cells);
 		let rows_len = rpc_fetched_data_rows.len();
 
 		let dht_insert_rows_success_rate = light_client
@@ -445,8 +445,8 @@ mod tests {
 	use super::rpc::cell_count_for_confidence;
 	use super::*;
 	use avail_subxt::{
-		api::runtime_types::da_primitives::{
-			asdr::data_lookup::DataLookup,
+		api::runtime_types::avail_core::{
+			data_lookup::compact::CompactDataLookup,
 			header::extension::{v1::HeaderExtension, HeaderExtension::V1},
 			kate_commitment::v1::KateCommitment,
 		},
@@ -518,7 +518,7 @@ mod tests {
 					]
 					.to_vec(),
 				},
-				app_lookup: DataLookup {
+				app_lookup: CompactDataLookup {
 					size: 1,
 					index: vec![],
 				},
@@ -641,7 +641,7 @@ mod tests {
 					]
 					.to_vec(),
 				},
-				app_lookup: DataLookup {
+				app_lookup: CompactDataLookup {
 					size: 1,
 					index: vec![],
 				},
