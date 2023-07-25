@@ -163,7 +163,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		counter: counter.clone(),
-		version: clap::crate_version!().to_string(),
+		version: format!("v{}", clap::crate_version!().to_string()),
 		network_version: network_version.to_string(),
 	};
 
