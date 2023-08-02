@@ -152,7 +152,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	let network_version = rpc::Version {
-		version: "1.6.2".to_string(),
+		version: "1.6".to_string(),
 		spec_version: 11,
 		spec_name: "data-avail".to_string(),
 	};
