@@ -16,7 +16,7 @@ use libp2p::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 use super::Event;
 
