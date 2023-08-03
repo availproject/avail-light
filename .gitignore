@@ -1,6 +1,5 @@
+.*
 /target
 **/*.rs.bk
-.env
-.DS_Store
 config.yaml
 avail_light_store
