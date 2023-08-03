@@ -144,30 +144,31 @@ impl Client {
 	}
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
-		let mut num_success: usize = 0;
-		for records in records.chunks(self.put_batch_size).map(Into::into) {
-			let (sender, receiver) = oneshot::channel();
-			if self
-				.sender
-				.send(Command::PutKadRecordBatch {
-					records,
+		let (tx, mut rx) = mpsc::channel::<NumSuccPut>(100);
+		let commands =
+			records
+				.chunks(self.put_batch_size)
+				.map(|records| Command::PutKadRecordBatch {
+					records: records.into(),
 					quorum,
-					sender,
-				})
-				.await
-				.context("Command receiver should not be dropped.")
-				.is_err()
-			{
-				return NumSuccPut(num_success);
-			}
+					sender: tx.clone(),
+				});
 
-			num_success +=
-				if let Ok(NumSuccPut(num)) = receiver.await.context("Sender not to be dropped.") {
-					num
-				} else {
-					num_success
-				};
+		for cmd in commands {
+			if self.sender.send(cmd).await.is_err() {
+				return NumSuccPut(0);
+			}
 		}
+
+		// drop tx manually,
+		// ensure that only senders in spawned threads are still in use
+		drop(tx);
+
+		let mut num_success: usize = 0;
+		while let Some(NumSuccPut(num)) = rx.recv().await {
+			num_success += num;
+		}
+
 		NumSuccPut(num_success)
 	}
 
@@ -371,7 +372,7 @@ pub enum Command {
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
 		quorum: Quorum,
-		sender: oneshot::Sender<NumSuccPut>,
+		sender: mpsc::Sender<NumSuccPut>,
 	},
 	ReduceKademliaMapSize,
 	NetworkObservabilityDump,
