@@ -269,7 +269,7 @@ impl EventLoop {
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-				// record Indetify Behaviour events
+				// record Identify Behaviour events
 				self.metrics.record(&event);
 
 				match event {
@@ -426,7 +426,7 @@ impl EventLoop {
 						num_established,
 						cause,
 					} => {
-						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num establ: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
+						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
 						if let Some(cause) = cause {
 							match cause {
@@ -554,7 +554,7 @@ impl EventLoop {
 	}
 
 	fn dump_hash_map_block_stats(&mut self) {
-		let mut occurence_map = HashMap::new();
+		let mut occurrence_map = HashMap::new();
 
 		for record in self
 			.swarm
@@ -571,10 +571,10 @@ impl EventLoop {
 				.split_once(':')
 				.expect("unable to split the key string");
 
-			let count = occurence_map.entry(block_num.to_string()).or_insert(0);
+			let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
 			*count += 1;
 		}
-		let mut sorted: Vec<(&String, &i32)> = occurence_map.iter().collect();
+		let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
 		sorted.sort_by(|a, b| a.0.cmp(b.0));
 		for (block_number, cell_count) in sorted {
 			trace!(
