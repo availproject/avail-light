@@ -286,27 +286,26 @@ impl EventLoop {
 								..
 							}) = self.pending_kad_queries.get(&id)
 							{
-								// create iterator for all queries with same batch ID
-								let finished_queries = self
+								// filter queries from the current batch
+								let batch_queries = self
 									.pending_kad_queries
 									.iter()
 									.filter(|(_, qd)| qd.batch_id == Some(*uuid))
-									// check to see if there are any Pending left
-									.all(|(_, qd)| {
-										matches!(
-											qd.status,
-											QueryStatus::Succeeded | QueryStatus::Failed(_)
-										)
-									})
-									// collect finished
+									.collect::<HashMap<&QueryId, &QueryDetails>>();
+
+								// make sure there are no Pending queries left
+								let has_no_pending = !batch_queries
+									.iter()
+									.any(|(_, qd)| matches!(qd.status, QueryStatus::Pending));
+
+								// if there are no Pending queries left
+								// collect ones that are considered to be done
+								let finished_queries = has_no_pending
 									.then(|| {
-										self.pending_kad_queries
-											.iter()
+										batch_queries
+											.into_iter()
 											.filter(|(_, qd)| {
-												matches!(
-													qd.status,
-													QueryStatus::Succeeded | QueryStatus::Failed(_)
-												)
+												!matches!(qd.status, QueryStatus::Pending)
 											})
 											.collect::<HashMap<&QueryId, &QueryDetails>>()
 									})
@@ -339,20 +338,11 @@ impl EventLoop {
 								None
 							};
 
-							info!("Checking pending KAD queries for REMOVAL");
 							// check to see if we have something to remove from pending map
 							if let Some(ids) = ids_to_remove {
 								ids.iter().for_each(|id| {
-									if let Some(QueryDetails { res_sender, .. }) =
-										self.pending_kad_queries.remove(id)
-									{
-										drop(res_sender);
-									}
-									info!("Removed ID: {id:?}");
+									self.pending_kad_queries.remove(id);
 								});
-							}
-							for (k, v) in &self.pending_kad_queries {
-								info!("{k:?} : {v:?}");
 							}
 						},
 						QueryResult::Bootstrap(result) => match result {

@@ -167,12 +167,8 @@ impl Client {
 
 		let mut num_success: usize = 0;
 		while let Some(NumSuccPut(num)) = rx.recv().await {
-			info!("Received SUCC: {num:?}");
 			num_success += num;
-			info!("prrr");
 		}
-		info!("Leaving PUT BATCH");
-		info!("NUM SUCCES: {num_success:?}");
 		NumSuccPut(num_success)
 	}
 
