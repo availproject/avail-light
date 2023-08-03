@@ -27,7 +27,7 @@ pub struct Client {
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
 	ttl: u64,
-	/// Number of records to be put in DHT simultaneuosly
+	/// Number of records to be put in DHT simultaneously
 	put_batch_size: usize,
 }
 
