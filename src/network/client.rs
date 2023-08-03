@@ -144,7 +144,6 @@ impl Client {
 	}
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
-		info!("Putting records in BATCH");
 		let (tx, mut rx) = mpsc::channel::<NumSuccPut>(100);
 		let commands =
 			records
