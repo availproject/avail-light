@@ -195,25 +195,24 @@ pub struct RuntimeConfig {
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
 	/// If `secret_key` is not set, random seed will be used.
 	pub secret_key: Option<SecretKey>,
-	/// Libp2p service port range (port, range) (default: 37000).
-	#[serde(with = "port_range_format")]
-	pub libp2p_port: (u16, u16),
-	/// Configures LibP2P TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
-	pub libp2p_tcp_port_reuse: bool,
-	/// Configures LibP2P AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
-	pub libp2p_autonat_only_global_ips: bool,
-	/// Libp2p AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
-	pub libp2p_autonat_throttle: u64,
+	/// P2P service port (default: 37000).
+	pub port: u16,
+	/// Configures TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
+	pub tcp_port_reuse: bool,
+	/// Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
+	pub autonat_only_global_ips: bool,
+	/// AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
+	pub autonat_throttle: u64,
 	/// Interval in which the NAT status should be re-tried if it is currently unknown or max confidence was not reached yet. (default: 10 sec)
-	pub libp2p_autonat_retry_interval: u64,
+	pub autonat_retry_interval: u64,
 	/// Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
-	pub libp2p_autonat_refresh_interval: u64,
-	/// Libp2p AutoNat on init delay before starting the fist probe. (default: 5 sec)
-	pub libp2p_autonat_boot_delay: u64,
-	/// Sets libp2p application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
-	pub libp2p_identify_protocol: String,
-	/// Sets libp2p agent version that is sent to peers. (default: "avail-light-client/rust-client")
-	pub libp2p_identify_agent: String,
+	pub autonat_refresh_interval: u64,
+	/// AutoNat on init delay before starting the fist probe. (default: 5 sec)
+	pub autonat_boot_delay: u64,
+	/// Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
+	pub identify_protocol: String,
+	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
+	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<(String, Multiaddr)>,
 	/// Vector of Relay nodes, which are used for hole punching
@@ -342,7 +341,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 
 pub struct LibP2PConfig {
 	pub secret_key: Option<SecretKey>,
-	pub port: (u16, u16),
+	pub port: u16,
 	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
@@ -361,7 +360,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 
 		Self {
 			secret_key: val.secret_key.clone(),
-			port: val.libp2p_port,
+			port: val.port,
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
@@ -420,11 +419,11 @@ pub struct AutoNATConfig {
 impl From<&RuntimeConfig> for AutoNATConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
-			retry_interval: Duration::from_secs(val.libp2p_autonat_retry_interval),
-			refresh_interval: Duration::from_secs(val.libp2p_autonat_refresh_interval),
-			boot_delay: Duration::from_secs(val.libp2p_autonat_boot_delay),
-			throttle_server_period: Duration::from_secs(val.libp2p_autonat_throttle),
-			only_global_ips: val.libp2p_autonat_only_global_ips,
+			retry_interval: Duration::from_secs(val.autonat_retry_interval),
+			refresh_interval: Duration::from_secs(val.autonat_refresh_interval),
+			boot_delay: Duration::from_secs(val.autonat_boot_delay),
+			throttle_server_period: Duration::from_secs(val.autonat_throttle),
+			only_global_ips: val.autonat_only_global_ips,
 		}
 	}
 }
@@ -437,8 +436,8 @@ pub struct IdentifyConfig {
 impl From<&RuntimeConfig> for IdentifyConfig {
 	fn from(val: &RuntimeConfig) -> Self {
 		Self {
-			agent_version: val.libp2p_identify_agent.clone(),
-			protocol_version: val.libp2p_identify_protocol.clone(),
+			agent_version: val.identify_agent.clone(),
+			protocol_version: val.identify_protocol.clone(),
 		}
 	}
 }
@@ -485,21 +484,21 @@ impl Default for RuntimeConfig {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: (7000, 0),
-			libp2p_port: (37000, 0),
+			port: 37000,
 			secret_key: None,
-			libp2p_tcp_port_reuse: false,
-			libp2p_autonat_only_global_ips: false,
-			libp2p_autonat_refresh_interval: 30,
-			libp2p_autonat_retry_interval: 10,
-			libp2p_autonat_throttle: 1,
-			libp2p_autonat_boot_delay: 5,
-			libp2p_identify_protocol: "/avail_kad/id/1.0.0".to_string(),
-			libp2p_identify_agent: "avail-light-client/rust-client".to_string(),
+			tcp_port_reuse: false,
+			autonat_only_global_ips: false,
+			autonat_refresh_interval: 30,
+			autonat_retry_interval: 10,
+			autonat_throttle: 1,
+			autonat_boot_delay: 5,
+			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
+			identify_agent: "avail-light-client/rust-client".to_string(),
+			bootstraps: Vec::new(),
+			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
-			bootstraps: Vec::new(),
-			relays: Vec::new(),
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
