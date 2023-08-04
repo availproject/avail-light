@@ -279,7 +279,7 @@ impl Client {
 	pub async fn fetch_rows_from_dht(
 		&self,
 		block_number: u32,
-		dimensions: &Dimensions,
+		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
 		let mut rows = vec![None; dimensions.extended_rows() as usize];

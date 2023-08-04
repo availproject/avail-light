@@ -13,7 +13,7 @@ use tracing::error;
 /// Verifies proofs for given block, cells and commitments
 pub fn verify(
 	block_num: u32,
-	dimensions: &Dimensions,
+	dimensions: Dimensions,
 	cells: &[Cell],
 	commitments: &[[u8; 48]],
 	public_parameters: &PublicParameters,
@@ -25,13 +25,12 @@ pub fn verify(
 	for cell in cells {
 		let commitment = commitments[cell.position.row as usize];
 
-		let dimensions = dimensions.clone();
 		let tx = tx.clone();
 		let cell = cell.clone();
 		let public_parameters = public_parameters.clone();
 
 		pool.execute(move || {
-			let result = proof::verify(&public_parameters, &dimensions, &commitment, &cell);
+			let result = proof::verify(&public_parameters, dimensions, &commitment, &cell);
 			if let Err(error) = tx.clone().send((cell.position, result)) {
 				error!(block_num, "Failed to send proof verified message: {error}");
 			}

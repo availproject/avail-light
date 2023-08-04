@@ -9,11 +9,7 @@ use avail_subxt::{
 };
 use codec::{Decode, Encode};
 use serde::{de::Error, Deserialize};
-use sp_core::{
-	blake2_256, bytes,
-	ed25519::{self, Public as EdPublic, Signature},
-	Pair,
-};
+use sp_core::{blake2_256, bytes, ed25519, Pair};
 use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
@@ -49,9 +45,9 @@ struct Precommit {
 struct SignedPrecommit {
 	pub precommit: Precommit,
 	/// The signature on the message.
-	pub signature: Signature,
+	pub signature: ed25519::Signature,
 	/// The Id of the signer.
-	pub id: EdPublic,
+	pub id: ed25519::Public,
 }
 #[derive(Clone, Debug, Decode, Deserialize)]
 struct Commit {
@@ -83,7 +79,7 @@ impl<'de> Deserialize<'de> for GrandpaJustification {
 #[derive(Clone, Debug)]
 enum Messages {
 	Justification(GrandpaJustification),
-	ValidatorSetChange((Vec<EdPublic>, u64)),
+	ValidatorSetChange((Vec<ed25519::Public>, u64)),
 	NewHeader(Header, Instant),
 }
 
@@ -138,7 +134,7 @@ async fn subscribe_check_and_process(
 					let auths: Vec<(AuthorityId, u64)> = new_auths.pop().unwrap();
 					let new_valset = auths
 						.into_iter()
-						.map(|(a, _)| EdPublic::from_raw(a.0 .0 .0))
+						.map(|(a, _)| ed25519::Public::from_raw(a.0 .0 .0))
 						.collect();
 
 					// Increment set_id
@@ -225,10 +221,10 @@ async fn subscribe_check_and_process(
 					.precommits
 					.iter()
 					.map(|precommit| {
-						let is_ok = <ed25519::Pair as Pair>::verify_weak(
-							&precommit.clone().signature.0[..],
-							signed_message.as_slice(),
-							precommit.clone().id,
+						let is_ok = <ed25519::Pair as Pair>::verify(
+							&precommit.signature,
+							&signed_message,
+							&precommit.id,
 						);
 						is_ok
 							.then(|| precommit.clone().id)
