@@ -1,77 +1,67 @@
 [package]
 name = "avail-light"
 version = "1.5.0"
-edition = "2021"
 authors = ["Avail Team"]
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kate-recovery = { version = "0.8", git = "https://github.com/availproject/avail-core", tag = "da-primitives/v0.4.6" }
-avail-subxt = { git = "https://github.com/availproject/avail.git", tag = "v1.6.1-rc3" }
+# Internal deps
+avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "avail-core/v0.5.0" }
+avail-subxt = { version = "0.3", git = "https://github.com/availproject/avail.git", tag = "v1.6.3" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-url = "2.2.2"
-tokio = { version = "1.21.2", features = ["full"] }
-tokio-stream = "0.1.11"
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "avail-core/v0.5.0" }
+
+# Substrate
+codec = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive", "full", "bit-vec"] }
+scale-info = { version = "2", features = ["bit-vec"] }
+sp-arithmetic = { version = "*" }
+sp-core = { version = "*" }
+
+# 3rd-party
+anyhow = "1.0.41"
+async-std = { version = "1.12.0", features = ["attributes"] }
+async-trait = "0.1.66"
+base64 = "0.21.0"
+chrono = "0.4.19"
+clap = { version = "4.3.0", features = ["cargo"] }
+confy = "0.4.0"
+ed25519-dalek = "1.0.1"
+futures = { version = "0.3.15", default-features = false, features = ["std", "thread-pool"] }
 futures-util = "0.3.17"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.68"
+hex = "0.4"
+hex-literal = "0.4.0"
 hyper = { version = "0.14.23", features = ["full", "http1"] }
 hyper-tls = "0.5.0"
-rand = "0.8.4"
-regex = "1.5"
-num = "0.4.0"
-futures = { version = "0.3.15", default-features = false, features = [
-    "std",
-    "thread-pool",
-] }
-chrono = "0.4.19"
-
-libipld = { version = "0.12.0", default-features = false, features = [
-    "dag-cbor",
-] }
-multihash = { version = "0.14.0", default-features = false, features = [
-    "blake3",
-    "sha3",
-] }
+itertools = "0.10.5"
+libipld = { version = "0.12.0", default-features = false, features = ["dag-cbor"] }
 libp2p = { version = "0.51.0", features = ["full"] }
-thiserror = "1.0.37"
-anyhow = "1.0.41"
-tempdir = "0.3.7"
-ed25519-dalek = "1.0.1"
-async-std = { version = "1.12.0", features = ["attributes"] }
-confy = "0.4.0"
+mockall = "0.11.3"
+multihash = { version = "0.14.0", default-features = false, features = ["blake3", "sha3"] }
+num = "0.4.0"
 num_cpus = "1.13.0"
+openssl = { version = "0.10", features = ["vendored"] }
+pcap = "1.1.0"
+prometheus-client = "0.19.0"
+rand = "0.8.4"
+rand_chacha = "0.3"
+regex = "1.5"
 rocksdb = { version = "0.17.0", features = ["snappy", "multi-threaded-cf"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.68"
+smallvec = "1.6.1"
+tempdir = "0.3.7"
+thiserror = "1.0.37"
 threadpool = "1.8.1"
-sp-core = "6.0.0"
-codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = [
-    "derive",
-    "full",
-    "bit-vec",
-] }
-scale-info = { version = "2.0.0", features = ["bit-vec"] }
-hex = "0.4"
-warp = "0.3.2"
+tokio = { version = "1.25", features = ["full"] }
+tokio-stream = "0.1.12"
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.15", features = ["json"] }
-prometheus-client = "0.19.0"
-clap = { version = "4.3.0", features = ["cargo"] }
-smallvec = "1.6.1"
-
-openssl = { version = "0.10", features = ["vendored"] }
+url = "2.2.2"
+uuid = { version = "1.3.4", features = ["v4", "fast-rng", "macro-diagnostics"] }
 void = "1.0.2"
-itertools = "0.10.5"
-base64 = "0.21.0"
-mockall = "0.11.3"
-async-trait = "0.1.66"
-hex-literal = "0.4.0"
-pcap = "1.1.0"
-uuid = { version = "1.3.4", features = [
-    "v4",
-    "fast-rng",
-    "macro-diagnostics",
-] }
+warp = "0.3.2"
 
 [features]
 network-analysis = []

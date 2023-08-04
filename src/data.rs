@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use avail_core::AppId;
 use avail_subxt::primitives::Header as DaHeader;
 use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
@@ -42,8 +43,8 @@ pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
 		.map(Some)?)
 }
 
-fn store_data_in_db(db: Arc<DB>, app_id: u32, block_number: u32, data: &[u8]) -> Result<()> {
-	let key = format!("{app_id}:{block_number}");
+fn store_data_in_db(db: Arc<DB>, app_id: AppId, block_number: u32, data: &[u8]) -> Result<()> {
+	let key = format!("{}:{block_number}", app_id.0);
 	let cf_handle = db
 		.cf_handle(APP_DATA_CF)
 		.context("Failed to get cf handle")?;
@@ -65,7 +66,7 @@ fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Optio
 /// Encodes and stores app data into database under the `app_id:block_number` key
 pub fn store_encoded_data_in_db<T: Encode>(
 	db: Arc<DB>,
-	app_id: u32,
+	app_id: AppId,
 	block_number: u32,
 	data: &T,
 ) -> Result<()> {

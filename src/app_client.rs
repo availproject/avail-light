@@ -14,17 +14,22 @@
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use avail_core::AppId;
 use avail_subxt::{avail, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
-	com::{app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns},
+	com::{
+		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, Percent,
+	},
 	commitments,
 	config::{self, CHUNK_SIZE},
 	data::{Cell, DataCell},
 	matrix::{Dimensions, Position},
 };
 use mockall::automock;
+use rand::SeedableRng as _;
+use rand_chacha::ChaChaRng;
 use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
@@ -47,7 +52,7 @@ trait AppClient {
 		&self,
 		pp: PublicParameters,
 		block_number: u32,
-		dimensions: &Dimensions,
+		dimensions: Dimensions,
 		commitments: &[[u8; config::COMMITMENT_SIZE]],
 		missing_rows: &[u32],
 	) -> Result<Vec<(u32, Vec<u8>)>>;
@@ -55,7 +60,7 @@ trait AppClient {
 	async fn fetch_rows_from_dht(
 		&self,
 		block_number: u32,
-		dimensions: &Dimensions,
+		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>>;
 
@@ -64,7 +69,7 @@ trait AppClient {
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
 		&self,
-		app_id: u32,
+		app_id: AppId,
 		block_number: u32,
 		data: &T,
 	) -> Result<()>;
@@ -83,7 +88,7 @@ impl AppClient for AppClientImpl {
 		&self,
 		pp: PublicParameters,
 		block_number: u32,
-		dimensions: &Dimensions,
+		dimensions: Dimensions,
 		commitments: &[[u8; config::COMMITMENT_SIZE]],
 		missing_rows: &[u32],
 	) -> Result<Vec<(u32, Vec<u8>)>> {
@@ -114,7 +119,9 @@ impl AppClient for AppClientImpl {
 			unfetched.len()
 		);
 
-		let missing_cells = columns_positions(dimensions, &unfetched, 0.66);
+		let mut rng = ChaChaRng::from_seed(Default::default());
+		let missing_cells =
+			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
 
 		let (missing_fetched, _) = fetch_verified(
 			&pp,
@@ -163,7 +170,7 @@ impl AppClient for AppClientImpl {
 					.flat_map(|cell| cell.data)
 					.collect::<Vec<_>>();
 
-				if data.len() != dimensions.cols() as usize * config::CHUNK_SIZE {
+				if data.len() != dimensions.width() * config::CHUNK_SIZE {
 					return Err(anyhow!("Row size is not valid after reconstruction"));
 				}
 
@@ -175,7 +182,7 @@ impl AppClient for AppClientImpl {
 	async fn fetch_rows_from_dht(
 		&self,
 		block_number: u32,
-		dimensions: &Dimensions,
+		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
 		self.network_client
@@ -193,7 +200,7 @@ impl AppClient for AppClientImpl {
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
 		&self,
-		app_id: u32,
+		app_id: AppId,
 		block_number: u32,
 		data: &T,
 	) -> Result<()> {
@@ -249,7 +256,7 @@ async fn fetch_verified(
 	pp: &PublicParameters,
 	network_client: &Client,
 	block_number: u32,
-	dimensions: &Dimensions,
+	dimensions: Dimensions,
 	commitments: &[[u8; config::COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
@@ -271,13 +278,13 @@ async fn fetch_verified(
 async fn process_block(
 	app_client: impl AppClient,
 	cfg: &AppClientConfig,
-	app_id: u32,
+	app_id: AppId,
 	block: &BlockVerified,
 	pp: PublicParameters,
 ) -> Result<()> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
-	let dimensions = &block.dimensions;
+	let dimensions = block.dimensions;
 
 	let commitments = &block.commitments;
 
@@ -352,7 +359,7 @@ async fn process_block(
 		missing_rows.len()
 	);
 
-	if missing_rows.len() * dimensions.cols() as usize > cfg.threshold {
+	if missing_rows.len() * dimensions.width() > cfg.threshold {
 		return Err(anyhow::anyhow!("Too many cells are missing"));
 	}
 
@@ -410,7 +417,7 @@ pub async fn run(
 	db: Arc<DB>,
 	network_client: Client,
 	rpc_client: avail::Client,
-	app_id: u32,
+	app_id: AppId,
 	mut block_receive: Receiver<BlockVerified>,
 	pp: PublicParameters,
 ) {
@@ -422,18 +429,7 @@ pub async fn run(
 
 		info!(block_number, "Block available: {dimensions:?}");
 
-		if block.dimensions.cols() == 0 {
-			info!(block_number, "Skipping empty block");
-			continue;
-		}
-
-		if block
-			.lookup
-			.index
-			.iter()
-			.filter(|&(id, _)| id == &app_id)
-			.count() == 0
-		{
+		if block.lookup.range_of(app_id).is_none() {
 			info!(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
@@ -459,8 +455,9 @@ pub async fn run(
 mod tests {
 	use super::*;
 	use crate::types::{AppClientConfig, RuntimeConfig};
+	use avail_core::DataLookup;
 	use hex_literal::hex;
-	use kate_recovery::{index::AppDataIndex, matrix::Dimensions, testnet};
+	use kate_recovery::{matrix::Dimensions, testnet};
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
@@ -475,15 +472,14 @@ mod tests {
 		]
 		.to_vec();
 
+		let id_lens: Vec<(u32, usize)> = vec![(0, 1), (1, 69)];
+		let lookup = DataLookup::from_id_and_len_iter(id_lens.into_iter()).unwrap();
 		let block = BlockVerified {
 			header_hash: hex!("ec30fcc1f32db0f51ce6305c2601089741ea0b42853f402194b49b04bf936338")
 				.into(),
 			block_num: 270,
 			dimensions,
-			lookup: AppDataIndex {
-				size: 70,
-				index: [(1, 1)].to_vec(),
-			},
+			lookup,
 			commitments: [
 				[
 					171, 159, 250, 70, 135, 100, 125, 155, 243, 109, 243, 101, 158, 165, 185, 147,
@@ -513,7 +509,7 @@ mod tests {
 		mock_client
 			.expect_store_encoded_data_in_db()
 			.returning(|_, _, _: &Vec<Vec<u8>>| Ok(()));
-		process_block(mock_client, &cfg, 1, &block, pp)
+		process_block(mock_client, &cfg, AppId(1), &block, pp)
 			.await
 			.unwrap();
 	}
@@ -532,15 +528,14 @@ mod tests {
 		]
 		.to_vec();
 
+		let id_lens: Vec<(u32, usize)> = vec![(0, 1), (1, 11)];
+		let lookup = DataLookup::from_id_and_len_iter(id_lens.into_iter()).unwrap();
 		let block = BlockVerified {
 			header_hash: hex!("5bc959e1d05c68f7e1b5bc3a83cfba4efe636ce7f86102c30bcd6a2794e75afe")
 				.into(),
 			block_num: 288,
 			dimensions,
-			lookup: AppDataIndex {
-				size: 12,
-				index: [(1, 1)].to_vec(),
-			},
+			lookup,
 			commitments: [
 				[
 					165, 227, 207, 130, 59, 77, 78, 242, 184, 232, 114, 218, 145, 167, 149, 53, 89,
@@ -575,7 +570,7 @@ mod tests {
 		mock_client
 			.expect_store_encoded_data_in_db()
 			.returning(|_, _, _: &Vec<Vec<u8>>| Ok(()));
-		process_block(mock_client, &cfg, 1, &block, pp)
+		process_block(mock_client, &cfg, AppId(1), &block, pp)
 			.await
 			.unwrap();
 	}

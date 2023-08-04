@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
+use avail_core::AppId;
 use avail_subxt::primitives::Header;
 use clap::Parser;
 use consts::STATE_CF;
@@ -150,7 +151,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	let network_version = rpc::Version {
-		version: "1.6.2".to_string(),
+		version: "1.6".to_string(),
 		spec_version: 11,
 		spec_name: "data-avail".to_string(),
 	};
@@ -162,7 +163,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		counter: counter.clone(),
-		version: clap::crate_version!().to_string(),
+		version: format!("v{}", clap::crate_version!().to_string()),
 		network_version: network_version.to_string(),
 	};
 
@@ -283,7 +284,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			db.clone(),
 			network_client.clone(),
 			rpc_client.clone(),
-			app_id,
+			AppId(app_id),
 			block_rx,
 			pp.clone(),
 		));
