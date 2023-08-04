@@ -196,18 +196,33 @@ fn shuffle_full_nodes(full_nodes: &[String], last_full_node: Option<String>) -> 
 	candidates
 }
 
+pub struct ExpectedVersion {
+	pub version: String,
+	pub spec_name: String,
+}
+
+impl ExpectedVersion {
+	/// Checks if expected version matches network version.
+	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
+	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
+	/// Specification name is checked for exact match.
+	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
+	/// NOTE: Runtime compatiblity check is currently not implemented.
+	pub fn matches(&self, other: &Version) -> bool {
+		other.version.starts_with(&self.version) && self.spec_name == other.spec_name
+	}
+}
+
+impl Display for ExpectedVersion {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "v{}/{}", self.version, self.spec_name)
+	}
+}
+
 pub struct Version {
 	pub version: String,
 	pub spec_version: u32,
 	pub spec_name: String,
-}
-
-impl Version {
-	pub fn matches(&self, other: &Version) -> bool {
-		(self.version.starts_with(&other.version) || other.version.starts_with(&self.version))
-			&& self.spec_name == other.spec_name
-			&& self.spec_version == other.spec_version
-	}
 }
 
 impl Display for Version {
@@ -225,7 +240,7 @@ impl Display for Version {
 pub async fn connect_to_the_full_node(
 	full_nodes: &[String],
 	last_full_node: Option<String>,
-	expected_version: Version,
+	expected_version: ExpectedVersion,
 ) -> Result<(avail::Client, String)> {
 	for full_node_ws in shuffle_full_nodes(full_nodes, last_full_node).iter() {
 		let log_warn = |error| {
@@ -282,6 +297,8 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 
 #[cfg(test)]
 mod tests {
+	use super::{ExpectedVersion, Version};
+	use crate::rpc::shuffle_full_nodes;
 	use proptest::{
 		prelude::any_with,
 		prop_assert, prop_assert_eq, proptest,
@@ -289,8 +306,7 @@ mod tests {
 		strategy::{BoxedStrategy, Strategy},
 	};
 	use rand::{seq::SliceRandom, thread_rng};
-
-	use crate::rpc::shuffle_full_nodes;
+	use test_case::test_case;
 
 	fn full_nodes() -> BoxedStrategy<(Vec<String>, Option<String>)> {
 		any_with::<Vec<String>>(size_range(10).lift())
@@ -299,6 +315,29 @@ mod tests {
 				(nodes, last_node)
 			})
 			.boxed()
+	}
+
+	#[test_case("1.6" , "data_avail" , "1.6.1" , "data_avail" , true; "1.6/data_avail matches 1.6.1/data_avail/0")]
+	#[test_case("1.2" , "data_avail" , "1.2.9" , "data_avail" , true; "1.2/data_avail matches 1.2.9/data_avail/0")]
+	#[test_case("1.6" , "data_avail" , "1.6.1" , "no_data_avail" , false; "1.6/data_avail matches 1.6.1/no_data_avail/0")]
+	#[test_case("1.6" , "data_avail" , "1.7.0" , "data_avail" , false; "1.6/data_avail doesn't match 1.7.0/data_avail/0")]
+	fn test_version_match(
+		expected_version: &str,
+		expected_spec_name: &str,
+		version: &str,
+		spec_name: &str,
+		matches: bool,
+	) {
+		let expected = ExpectedVersion {
+			version: expected_version.to_string(),
+			spec_name: expected_spec_name.to_string(),
+		};
+		let version = Version {
+			version: version.to_string(),
+			spec_name: spec_name.to_string(),
+			spec_version: 0,
+		};
+		assert_eq!(expected.matches(&version), matches);
 	}
 
 	proptest! {
