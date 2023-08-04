@@ -208,30 +208,14 @@ impl ExpectedVersion {
 	/// Specification name is checked for exact match.
 	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
 	/// NOTE: Runtime compatiblity check is currently not implemented.
-	pub fn matches(&self, other: &Version) -> bool {
-		other.version.starts_with(&self.version) && self.spec_name == other.spec_name
+	pub fn matches(&self, node_version: String, spec_name: String) -> bool {
+		node_version.starts_with(&self.version) && self.spec_name == spec_name
 	}
 }
 
 impl Display for ExpectedVersion {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "v{}/{}", self.version, self.spec_name)
-	}
-}
-
-pub struct Version {
-	pub version: String,
-	pub spec_version: u32,
-	pub spec_name: String,
-}
-
-impl Display for Version {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"v{}/{}/{}",
-			self.version, self.spec_name, self.spec_version
-		)
 	}
 }
 
@@ -252,13 +236,12 @@ pub async fn connect_to_the_full_node(
 		let Ok(system_version) = get_system_version(&client).await.map_err(log_warn) else { continue; };
 		let Ok(runtime_version) = get_runtime_version(&client).await.map_err(log_warn) else { continue; };
 
-		let version = Version {
-			version: system_version,
-			spec_name: runtime_version.spec_name,
-			spec_version: runtime_version.spec_version,
-		};
+		let version = format!(
+			"v{}/{}/{}",
+			system_version, runtime_version.spec_name, runtime_version.spec_version,
+		);
 
-		if !expected_version.matches(&version) {
+		if !expected_version.matches(system_version, runtime_version.spec_name) {
 			log_warn(anyhow!("expected {expected_version}, found {version}"));
 			continue;
 		}
@@ -297,8 +280,7 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 
 #[cfg(test)]
 mod tests {
-	use super::{ExpectedVersion, Version};
-	use crate::rpc::shuffle_full_nodes;
+	use crate::rpc::{shuffle_full_nodes, ExpectedVersion};
 	use proptest::{
 		prelude::any_with,
 		prop_assert, prop_assert_eq, proptest,
@@ -332,12 +314,11 @@ mod tests {
 			version: expected_version.to_string(),
 			spec_name: expected_spec_name.to_string(),
 		};
-		let version = Version {
-			version: version.to_string(),
-			spec_name: spec_name.to_string(),
-			spec_version: 0,
-		};
-		assert_eq!(expected.matches(&version), matches);
+
+		assert_eq!(
+			expected.matches(version.to_string(), spec_name.to_string()),
+			matches
+		);
 	}
 
 	proptest! {
