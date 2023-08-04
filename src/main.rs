@@ -25,7 +25,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
 	types::{Mode, RuntimeConfig},
 };
@@ -151,11 +151,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
-	let network_version = rpc::ExpectedVersion {
-		version: "1.6".to_string(),
-		spec_name: "data-avail".to_string(),
-	};
-
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
 
@@ -164,7 +159,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		cfg: cfg.clone(),
 		counter: counter.clone(),
 		version: format!("v{}", clap::crate_version!().to_string()),
-		network_version: network_version.to_string(),
+		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 	};
 
 	tokio::task::spawn(server.run());
@@ -261,9 +256,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
 
-	let (rpc_client, last_full_node_ws) =
-		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, network_version)
-			.await?;
+	let (rpc_client, last_full_node_ws) = rpc::connect_to_the_full_node(
+		&cfg.full_node_ws,
+		last_full_node_ws,
+		EXPECTED_NETWORK_VERSION,
+	)
+	.await?;
 
 	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
