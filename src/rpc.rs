@@ -162,7 +162,7 @@ pub async fn get_kate_proof(
 }
 
 // RPC to check connection to substrate node
-async fn get_system_version(client: &avail::Client) -> Result<String> {
+pub async fn get_system_version(client: &avail::Client) -> Result<String> {
 	client
 		.rpc()
 		.system_version()
@@ -170,7 +170,7 @@ async fn get_system_version(client: &avail::Client) -> Result<String> {
 		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
 }
 
-async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersionResult> {
+pub async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersionResult> {
 	client
 		.rpc()
 		.request("state_getRuntimeVersion", RpcParams::new())
