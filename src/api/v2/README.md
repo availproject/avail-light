@@ -1,6 +1,6 @@
 # API Version 2
 
-API version 2 is still under development and under the **api-v2** feature toggle.  
+API version 2 is still under development and under the **api-v2** feature toggle.\
 To access new endpoints, light client has to be run with:
 
 ```sh
@@ -17,7 +17,7 @@ cargo test --features api-v2
 
 ## **GET** `/v2/version`
 
-Gets the version of the light client binary, and the version of the compatible network. 
+Gets the version of the light client binary, and the version of the compatible network.
 
 Response:
 
@@ -91,10 +91,11 @@ Request Avail Light Client version data.
 
 ```json
 {
-  "type": "version",
-  "request_id": "{uuid}"
+	"type": "version",
+	"request_id": "{uuid}"
 }
 ```
+
 ## Server-to-client messages
 
 If response contains ******request_id****** field, it will be pushed to the client which initiated request. Those messages are not subject to a topic filtering at the moment.
@@ -105,12 +106,12 @@ Version response.
 
 ```json
 {
-  "topic": "version",
-  "request_id": "{uuid}",
-  "message": {
-    "version": "{version-string}",
-    "network_version": "{version-string}"
-  }
+	"topic": "version",
+	"request_id": "{uuid}",
+	"message": {
+		"version": "{version-string}",
+		"network_version": "{version-string}"
+	}
 }
 ```
 
@@ -120,10 +121,10 @@ In case of errors, descriptive error message is sent:
 
 ```json
 {
-  "topic": "error",
-  "request_id": "{uuid}", // Optional
-  "code": "{error-code}",
-  "message": "{descriptive-error-message}"
+	"topic": "error",
+	"request_id": "{uuid}", // Optional
+	"code": "{error-code}",
+	"message": "{descriptive-error-message}"
 }
 ```
 
