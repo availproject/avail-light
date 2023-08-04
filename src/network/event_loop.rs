@@ -298,6 +298,8 @@ impl EventLoop {
 										self.pending_kad_queries.remove(&id)
 									{
 										_ = ch.send(Ok(()));
+										// we can say that the startup bootstrap is done here
+										self.bootstrap.is_startup_done = true;
 									}
 								}
 							},
