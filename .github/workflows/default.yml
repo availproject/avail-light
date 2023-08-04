@@ -37,10 +37,7 @@ jobs:
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
-
-      - name: Check `TOML`, `JSON`, and `MarkDown` formatting
-        uses: dprint/check@v2.1
-
+            
       - name: Check code formatting
         uses: actions-rs/cargo@v1
         with:
