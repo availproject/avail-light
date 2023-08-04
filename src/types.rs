@@ -215,6 +215,8 @@ pub struct RuntimeConfig {
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
 	pub bootstraps: Vec<(String, Multiaddr)>,
+	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
+	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<(String, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
@@ -347,6 +349,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
+	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -366,6 +369,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			kademlia: val.into(),
 			is_relay: val.relays.is_empty(),
 			relays: relay_nodes,
+			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}
 }
@@ -495,6 +499,7 @@ impl Default for RuntimeConfig {
 			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			identify_agent: "avail-light-client/rust-client".to_string(),
 			bootstraps: Vec::new(),
+			bootstrap_period: 300,
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,

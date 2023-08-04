@@ -185,6 +185,7 @@ pub fn init(
 			metrics,
 			avail_metrics,
 			cfg.relays,
+			cfg.bootstrap_interval,
 			kad_remove_local_record,
 		),
 	))
