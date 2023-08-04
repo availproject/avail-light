@@ -5,6 +5,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use crate::utils::{extract_app_lookup, extract_kate};
+use anyhow::anyhow;
 use anyhow::{Context, Result};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
@@ -52,7 +53,9 @@ impl TryFrom<DaHeader> for BlockVerified {
 	type Error = anyhow::Error;
 	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
-		let enc_lookup = extract_app_lookup(&header.extension).encode();
+		let enc_lookup = extract_app_lookup(&header.extension)
+			.map_err(|e| anyhow!("Invalid DataLookup: {}", e))?
+			.encode();
 		let lookup = DataLookup::decode(&mut enc_lookup.as_slice())?;
 		let (rows, cols, _, commitment) = extract_kate(&header.extension);
 

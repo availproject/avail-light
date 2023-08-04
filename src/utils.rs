@@ -1,5 +1,6 @@
 use avail_core::{
 	data_lookup::compact::{CompactDataLookup, DataLookupItem},
+	data_lookup::Error as DataLookupError,
 	AppId, DataLookup,
 };
 use avail_subxt::{
@@ -43,7 +44,9 @@ pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<
 	}
 }
 
-pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> DataLookup {
+pub(crate) fn extract_app_lookup(
+	extension: &HeaderExtension,
+) -> Result<DataLookup, DataLookupError> {
 	let compact = match &extension {
 		HeaderExtension::V1(v1::HeaderExtension { app_lookup, .. }) => app_lookup,
 		HeaderExtension::V2(v2::HeaderExtension { app_lookup, .. }) => app_lookup,
@@ -57,7 +60,7 @@ pub(crate) fn extract_app_lookup(extension: &HeaderExtension) -> DataLookup {
 		.collect::<Vec<_>>();
 
 	let compact = CompactDataLookup::new(size, index);
-	DataLookup::try_from(compact).expect("Invalid app lookup")
+	DataLookup::try_from(compact)
 }
 
 pub fn filter_auth_set_changes(header: DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
