@@ -196,12 +196,12 @@ fn shuffle_full_nodes(full_nodes: &[String], last_full_node: Option<String>) -> 
 	candidates
 }
 
-pub struct ExpectedVersion {
-	pub version: String,
-	pub spec_name: String,
+pub struct ExpectedVersion<'a> {
+	pub version: &'a str,
+	pub spec_name: &'a str,
 }
 
-impl ExpectedVersion {
+impl ExpectedVersion<'_> {
 	/// Checks if expected version matches network version.
 	/// Since the light client uses subset of the node APIs, `matches` checks only prefix of a node version.
 	/// This means that if expected version is `1.6`, versions `1.6.x` of the node will match.
@@ -213,7 +213,7 @@ impl ExpectedVersion {
 	}
 }
 
-impl Display for ExpectedVersion {
+impl Display for ExpectedVersion<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "v{}/{}", self.version, self.spec_name)
 	}
@@ -224,7 +224,7 @@ impl Display for ExpectedVersion {
 pub async fn connect_to_the_full_node(
 	full_nodes: &[String],
 	last_full_node: Option<String>,
-	expected_version: ExpectedVersion,
+	expected_version: ExpectedVersion<'_>,
 ) -> Result<(avail::Client, String)> {
 	for full_node_ws in shuffle_full_nodes(full_nodes, last_full_node).iter() {
 		let log_warn = |error| {
@@ -311,8 +311,8 @@ mod tests {
 		matches: bool,
 	) {
 		let expected = ExpectedVersion {
-			version: expected_version.to_string(),
-			spec_name: expected_spec_name.to_string(),
+			version: expected_version,
+			spec_name: expected_spec_name,
 		};
 
 		assert_eq!(
