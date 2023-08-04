@@ -1,4 +1,4 @@
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../README.md")]
 
 use std::{
 	net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -10,9 +10,9 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_core::AppId;
+use avail_light::consts::STATE_CF;
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use consts::STATE_CF;
 use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
@@ -23,7 +23,7 @@ use tracing_subscriber::{
 	FmtSubscriber,
 };
 
-use crate::{
+use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
 	types::{Mode, RuntimeConfig},
@@ -31,20 +31,6 @@ use crate::{
 
 #[cfg(feature = "network-analysis")]
 use crate::network::network_analyzer;
-
-mod api;
-mod app_client;
-mod consts;
-mod data;
-mod light_client;
-mod network;
-mod proof;
-mod rpc;
-mod subscriptions;
-mod sync_client;
-mod telemetry;
-mod types;
-mod utils;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -137,23 +123,26 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// Spawn Prometheus server
 	let mut metric_registry = Registry::default();
 	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
-	let lc_metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
+	let lc_metrics = avail_light::telemetry::metrics::Metrics::new(&mut metric_registry);
 	let prometheus_port = cfg.prometheus_port;
 
-	let incoming = telemetry::bind(SocketAddr::new(
+	let incoming = avail_light::telemetry::bind(SocketAddr::new(
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
 		prometheus_port,
 	))
 	.await
 	.context("Cannot bind prometheus server to given address and port")?;
-	tokio::task::spawn(telemetry::http_server(incoming, metric_registry));
+	tokio::task::spawn(avail_light::telemetry::http_server(
+		incoming,
+		metric_registry,
+	));
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
 
-	let server = api::server::Server {
+	let server = avail_light::api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		counter: counter.clone(),
@@ -170,7 +159,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		info!("Fat client mode");
 	}
 
-	let (network_client, network_event_loop) = network::init(
+	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
 		libp2p_metrics,
 		lc_metrics.clone(),
@@ -216,7 +205,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			.events_stream()
 			.await
 			.find_map(|e| match e {
-				network::Event::ConnectionEstablished { peer_id, endpoint } => {
+				avail_light::network::Event::ConnectionEstablished { peer_id, endpoint } => {
 					if endpoint.is_listener() {
 						Some((peer_id, endpoint.get_remote_address().clone()))
 					} else {
@@ -245,9 +234,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
+	let last_full_node_ws = avail_light::data::get_last_full_node_ws_from_db(db.clone())?;
 
-	let (rpc_client, last_full_node_ws) = rpc::connect_to_the_full_node(
+	let (rpc_client, last_full_node_ws) = avail_light::rpc::connect_to_the_full_node(
 		&cfg.full_node_ws,
 		last_full_node_ws,
 		EXPECTED_NETWORK_VERSION,
@@ -258,7 +247,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let genesis_hash = rpc_client.genesis_hash();
 	info!("Genesis hash: {genesis_hash:?}");
-	if let Some(stored_genesis_hash) = data::get_genesis_hash(db.clone())? {
+	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
 		if !genesis_hash.eq(&stored_genesis_hash) {
 			Err(anyhow!(
 				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
@@ -266,14 +255,14 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		}
 	} else {
 		info!("No genesis hash is found in the db, storing the new hash now.");
-		data::store_genesis_hash(db.clone(), genesis_hash)?;
+		avail_light::data::store_genesis_hash(db.clone(), genesis_hash)?;
 	}
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = channel::<types::BlockVerified>(1 << 7);
-		tokio::task::spawn(app_client::run(
+		let (block_tx, block_rx) = channel::<avail_light::types::BlockVerified>(1 << 7);
+		tokio::task::spawn(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
 			network_client.clone(),
@@ -287,15 +276,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		None
 	};
 
-	let block_header = rpc::get_chain_head_header(&rpc_client)
+	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
 
-	let sync_client = sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
+	let sync_client =
+		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
-		tokio::task::spawn(sync_client::run(
+		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
 			(&cfg).into(),
 			sync_start_block,
@@ -307,21 +297,21 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
 
-	tokio::task::spawn(subscriptions::finalized_headers(
+	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
 		rpc_client.clone(),
 		message_tx,
 		error_sender.clone(),
 	));
 
-	let light_client = light_client::new(db, network_client, rpc_client);
+	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
 
-	let lc_channels = light_client::Channels {
+	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
 		header_receiver: message_rx,
 		error_sender,
 	};
 
-	tokio::task::spawn(light_client::run(
+	tokio::task::spawn(avail_light::light_client::run(
 		light_client,
 		(&cfg).into(),
 		pp,
