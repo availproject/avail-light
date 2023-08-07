@@ -237,10 +237,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	network_client.bootstrap(bootstrap_nodes).await?;
 
 	#[cfg(feature = "network-analysis")]
-	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
-		cfg.port,
-		10,
-	));
+	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
 
 	let pp = kate_recovery::testnet::public_params(1024);
 	let raw_pp = pp.to_raw_var_bytes();
