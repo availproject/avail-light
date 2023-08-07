@@ -238,7 +238,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(
-		cfg.libp2p_port.0,
+		cfg.port,
 		10,
 	));
 
