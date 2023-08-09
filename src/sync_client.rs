@@ -251,19 +251,25 @@ async fn process_block(
 ///
 /// # Arguments
 ///
-/// * `cfg` - sync client configuration
-/// * `end_block` - Latest block to sync
-/// * `sync_blocks_depth` - How many blocks in past to sync
+/// * `cfg` - Sync client configuration
+/// * `start_block` - Sync start block
+/// * `end_block` - Sync end block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 pub async fn run(
 	sync_client: impl SyncClient,
 	cfg: SyncClientConfig,
+	start_block: u32,
 	end_block: u32,
-	sync_blocks_depth: u32,
 	pp: PublicParameters,
 	block_tx: Option<Sender<BlockVerified>>,
 ) {
 	let rpc_client = sync_client.get_client();
+
+	if start_block >= end_block {
+		warn!("There are no block to sync from {start_block} to {end_block}");
+		return;
+	}
+	let sync_blocks_depth = end_block - start_block;
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
@@ -281,7 +287,6 @@ pub async fn run(
 		.await
 		.expect("Couldn't get current set ID");
 
-	let start_block = end_block.saturating_sub(sync_blocks_depth);
 	let mut last_hash: Option<H256> = None;
 	let mut last_set_id: Option<u64> = None;
 	let mut last_validator_set: Option<Vec<ed25519::Public>> = None;
