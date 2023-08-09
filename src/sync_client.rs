@@ -128,7 +128,7 @@ async fn process_block(
 	block_number: u32,
 	cfg: &SyncClientConfig,
 	pp: &PublicParameters,
-	block_tx: Option<Sender<BlockVerified>>,
+	block_verified_sender: Option<Sender<BlockVerified>>,
 ) -> Result<()> {
 	if sync_client
 		.block_header_in_db(block_number)
@@ -238,7 +238,7 @@ async fn process_block(
 
 	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
 
-	if let Some(ref channel) = block_tx {
+	if let Some(ref channel) = block_verified_sender {
 		if let Err(error) = channel.send(client_msg).await {
 			error!("Cannot send block verified message: {error}");
 		}
@@ -255,13 +255,14 @@ async fn process_block(
 /// * `start_block` - Sync start block
 /// * `end_block` - Sync end block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
+/// * `block_verified_sender` - Optional channel to send verified blocks
 pub async fn run(
 	sync_client: impl SyncClient,
 	cfg: SyncClientConfig,
 	start_block: u32,
 	end_block: u32,
 	pp: PublicParameters,
-	block_tx: Option<Sender<BlockVerified>>,
+	block_verified_sender: Option<Sender<BlockVerified>>,
 ) {
 	let rpc_client = sync_client.get_client();
 
@@ -292,10 +293,7 @@ pub async fn run(
 	let mut last_validator_set: Option<Vec<ed25519::Public>> = None;
 
 	info!("Syncing block headers from {start_block} to {end_block}");
-	let blocks = (start_block..=end_block)
-		.map(move |b| (b, rpc_client.clone(), pp.clone(), block_tx.clone()));
-	let cfg_clone = &cfg;
-	for (block_number, rpc_client, pp, block_tx) in blocks {
+	for block_number in start_block..=end_block {
 		info!("Testing block {block_number}!");
 		let block_hash = rpc::get_block_hash(&rpc_client, block_number)
 			.await
@@ -339,8 +337,9 @@ pub async fn run(
 		}
 
 		// TODO: Should we handle unprocessed blocks differently?
+		let block_verified_sender = block_verified_sender.clone();
 		if let Err(error) =
-			process_block(&sync_client, block_number, cfg_clone, &pp, block_tx).await
+			process_block(&sync_client, block_number, &cfg, &pp, block_verified_sender).await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
 		}
