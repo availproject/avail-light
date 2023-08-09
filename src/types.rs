@@ -248,8 +248,8 @@ pub struct RuntimeConfig {
 	/// Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix) (default: None)
 	#[serde(with = "block_matrix_partition_format")]
 	pub block_matrix_partition: Option<Partition>,
-	/// How many blocks behind latest block to sync. If parameter is empty, or set to 0, synching is disabled (default: 0).
-	pub sync_blocks_depth: Option<u32>,
+	/// Starting block of the syncing process. Omitting it will disable syncing. (default: None).
+	pub sync_start_block: Option<u32>,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
@@ -515,7 +515,7 @@ impl Default for RuntimeConfig {
 			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
-			sync_blocks_depth: None,
+			sync_start_block: None,
 			max_cells_per_rpc: Some(30),
 			kad_record_ttl: 24 * 60 * 60,
 			threshold: 5000,

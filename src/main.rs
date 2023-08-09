@@ -294,13 +294,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let sync_client = sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
-	let sync_block_depth = cfg.sync_blocks_depth.unwrap_or(0);
-	if sync_block_depth > 0 {
+	if let Some(sync_start_block) = cfg.sync_start_block {
 		tokio::task::spawn(sync_client::run(
 			sync_client,
 			(&cfg).into(),
+			sync_start_block,
 			latest_block,
-			sync_block_depth,
 			pp.clone(),
 			block_tx.clone(),
 		));

@@ -132,8 +132,8 @@ dht_parallelization_limit = 20
 put_batch_size = 100
 # Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
 block_processing_delay = 0
-# How many blocks before the latest block should the client sync. If parameter is empty, or set to 0, syncing is disabled. (default: 0).
-sync_blocks_depth = 0
+# Starting block of the syncing process. Omitting it will disable syncing. (default: None).
+sync_start_block = 0
 # Time-to-live for DHT entries in seconds (default: 24h).
 # Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
@@ -172,9 +172,9 @@ max_kad_provided_keys = 1024
 ## Notes
 
 - When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully.
-- Immediately after starting a fresh light client, block sync is executed to a block depth set in the `sync_blocks_depth` config parameter. The sync client is using both the DHT and RPC for that purpose.
+- Immediately after starting a fresh light client, block sync is executed from a starting block set with the `sync_start_block` config parameter. The sync process is using both the DHT and RPC for that purpose.
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
-- `sync_blocks_depth` needs to be set correspondingly to the max number of blocks the connected node is caching (if downloading data via RPC).
+- `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
 - Prometheus is used for exposing detailed metrics about the light client
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
