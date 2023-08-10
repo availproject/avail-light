@@ -50,7 +50,7 @@ use crate::{
 trait AppClient {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: PublicParameters,
+		pp: Arc<PublicParameters>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; config::COMMITMENT_SIZE]],
@@ -86,7 +86,7 @@ struct AppClientImpl {
 impl AppClient for AppClientImpl {
 	async fn reconstruct_rows_from_dht(
 		&self,
-		pp: PublicParameters,
+		pp: Arc<PublicParameters>,
 		block_number: u32,
 		dimensions: Dimensions,
 		commitments: &[[u8; config::COMMITMENT_SIZE]],
@@ -104,7 +104,7 @@ impl AppClient for AppClientImpl {
 			missing_cells.len()
 		);
 		let (fetched, unfetched) = fetch_verified(
-			&pp,
+			pp.clone(),
 			&self.network_client,
 			block_number,
 			dimensions,
@@ -124,7 +124,7 @@ impl AppClient for AppClientImpl {
 			columns_positions(dimensions, &unfetched, Percent::from_percent(66), &mut rng);
 
 		let (missing_fetched, _) = fetch_verified(
-			&pp,
+			pp,
 			&self.network_client,
 			block_number,
 			dimensions,
@@ -253,7 +253,7 @@ fn data_cell(
 }
 
 async fn fetch_verified(
-	pp: &PublicParameters,
+	pp: Arc<PublicParameters>,
 	network_client: &Client,
 	block_number: u32,
 	dimensions: Dimensions,
@@ -280,7 +280,7 @@ async fn process_block(
 	cfg: &AppClientConfig,
 	app_id: AppId,
 	block: &BlockVerified,
-	pp: PublicParameters,
+	pp: Arc<PublicParameters>,
 ) -> Result<()> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
@@ -419,7 +419,7 @@ pub async fn run(
 	rpc_client: avail::Client,
 	app_id: AppId,
 	mut block_receive: Receiver<BlockVerified>,
-	pp: PublicParameters,
+	pp: Arc<PublicParameters>,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -463,7 +463,7 @@ mod tests {
 	async fn test_process_blocks_without_rpc() {
 		let mut cfg = AppClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockAppClient::new();
 		let dht_fetched_rows: Vec<Option<Vec<u8>>> = [
@@ -517,7 +517,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let cfg = AppClientConfig::from(&RuntimeConfig::default());
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockAppClient::new();
 		// let dht_missing_rows: Vec<u32> = vec![0];
