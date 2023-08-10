@@ -7,7 +7,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position},
 	proof,
 };
-use std::sync::mpsc::channel;
+use std::sync::{mpsc::channel, Arc};
 use tracing::error;
 
 /// Verifies proofs for given block, cells and commitments
@@ -16,7 +16,7 @@ pub fn verify(
 	dimensions: Dimensions,
 	cells: &[Cell],
 	commitments: &[[u8; 48]],
-	public_parameters: &PublicParameters,
+	public_parameters: Arc<PublicParameters>,
 ) -> Result<(Vec<Position>, Vec<Position>), proof::Error> {
 	let cpus = num_cpus::get();
 	let pool = threadpool::ThreadPool::new(cpus);

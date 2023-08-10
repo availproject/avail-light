@@ -122,7 +122,7 @@ impl LightClient for LightClientImpl {
 pub async fn process_block(
 	light_client: &impl LightClient,
 	cfg: &LightClientConfig,
-	pp: &PublicParameters,
+	pp: Arc<PublicParameters>,
 	header: &Header,
 	received_at: Instant,
 	metrics: &Metrics,
@@ -395,7 +395,7 @@ pub struct Channels {
 pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
-	pp: PublicParameters,
+	pp: Arc<PublicParameters>,
 	metrics: Metrics,
 	counter: Arc<Mutex<u32>>,
 	mut channels: Channels,
@@ -411,7 +411,7 @@ pub async fn run(
 		if let Err(error) = process_block(
 			&light_client,
 			&cfg,
-			&pp,
+			pp.clone(),
 			&header,
 			received_at,
 			&metrics,
@@ -482,7 +482,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_client = MockLightClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let mut metric_registry = Registry::default();
 		let metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 		let cells_fetched: Vec<Cell> = vec![];
@@ -602,7 +602,7 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}
@@ -612,7 +612,7 @@ mod tests {
 		let mut mock_client = MockLightClient::new();
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let mut metric_registry = Registry::default();
 		let metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 		let cells_unfetched: Vec<Position> = vec![];
@@ -722,7 +722,7 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, &pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, counter)
 			.await
 			.unwrap();
 	}

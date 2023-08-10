@@ -127,7 +127,7 @@ async fn process_block(
 	sync_client: &impl SyncClient,
 	block_number: u32,
 	cfg: &SyncClientConfig,
-	pp: &PublicParameters,
+	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<Sender<BlockVerified>>,
 ) -> Result<()> {
 	if sync_client
@@ -261,7 +261,7 @@ pub async fn run(
 	cfg: SyncClientConfig,
 	start_block: u32,
 	end_block: u32,
-	pp: PublicParameters,
+	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<Sender<BlockVerified>>,
 ) {
 	let rpc_client = sync_client.get_client();
@@ -338,8 +338,9 @@ pub async fn run(
 
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
+		let pp = pp.clone();
 		if let Err(error) =
-			process_block(&sync_client, block_number, &cfg, &pp, block_verified_sender).await
+			process_block(&sync_client, block_number, &cfg, pp, block_verified_sender).await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
 		}
@@ -380,7 +381,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let mut mock_client = MockSyncClient::new();
@@ -505,7 +506,7 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
@@ -513,7 +514,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		let header: DaHeader = DaHeader {
@@ -640,14 +641,14 @@ mod tests {
 			.expect_insert_cells_into_dht()
 			.withf(move |x, _| *x == 42)
 			.returning(move |_, _| Box::pin(async move { 1f32 }));
-		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
 	#[tokio::test]
 	pub async fn test_header_in_dbstore() {
 		let (block_tx, _) = channel::<types::BlockVerified>(10);
-		let pp = testnet::public_params(1024);
+		let pp = Arc::new(testnet::public_params(1024));
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		mock_client
@@ -656,7 +657,7 @@ mod tests {
 			.returning(|_| Ok(true));
 		mock_client.expect_get_header_by_block_number().never();
 		mock_client.block_header_in_db(42).unwrap();
-		process_block(&mock_client, 42, &cfg, &pp, Some(block_tx))
+		process_block(&mock_client, 42, &cfg, pp, Some(block_tx))
 			.await
 			.unwrap();
 	}
