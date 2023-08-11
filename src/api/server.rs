@@ -12,7 +12,7 @@
 use crate::api::v2;
 use crate::{
 	api::v1::{self},
-	types::RuntimeConfig,
+	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
 use rand::{thread_rng, Rng};
@@ -28,7 +28,7 @@ use warp::Filter;
 pub struct Server {
 	pub db: Arc<DB>,
 	pub cfg: RuntimeConfig,
-	pub counter: Arc<Mutex<u32>>,
+	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
 }
@@ -47,7 +47,7 @@ impl Server {
 			.then(|| thread_rng().gen_range(port.0..=port.1))
 			.unwrap_or(port.0);
 
-		let v1_api = v1::routes(self.db.clone(), app_id, self.counter.clone());
+		let v1_api = v1::routes(self.db.clone(), app_id, self.state.clone());
 		#[cfg(feature = "api-v2")]
 		let v2_api = v2::routes(self.version.clone(), self.network_version.clone());
 
