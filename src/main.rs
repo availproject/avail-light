@@ -157,7 +157,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		counter: counter.clone(),
-		version: format!("v{}", clap::crate_version!().to_string()),
+		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 	};
 

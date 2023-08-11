@@ -333,7 +333,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			dht_parallelization_limit: val.dht_parallelization_limit,
 			query_proof_rpc_parallel_tasks: val.query_proof_rpc_parallel_tasks,
 			block_processing_delay: Delay(block_processing_delay),
-			block_matrix_partition: val.block_matrix_partition.clone(),
+			block_matrix_partition: val.block_matrix_partition,
 			disable_proof_verification: val.disable_proof_verification,
 			max_cells_per_rpc: val.max_cells_per_rpc.unwrap_or(30),
 			ttl: val.kad_record_ttl,

@@ -104,11 +104,11 @@ pub async fn get_header_by_block_number(
 /// Generates random cell positions for sampling
 pub fn generate_random_cells(dimensions: Dimensions, cell_count: u32) -> Vec<Position> {
 	let max_cells = dimensions.extended_size();
-	let count = if max_cells < cell_count.into() {
+	let count = if max_cells < cell_count {
 		debug!("Max cells count {max_cells} is lesser than cell_count {cell_count}");
 		max_cells
 	} else {
-		cell_count.into()
+		cell_count
 	};
 	let mut rng = thread_rng();
 	let mut indices = HashSet::new();
@@ -157,10 +157,7 @@ pub async fn get_kate_proof(
 	Ok(positions
 		.iter()
 		.zip(i)
-		.map(|(position, &content)| Cell {
-			position: position.clone(),
-			content,
-		})
+		.map(|(&position, &content)| Cell { position, content })
 		.collect::<Vec<_>>())
 }
 
@@ -209,7 +206,7 @@ impl ExpectedVersion<'_> {
 	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
 	/// NOTE: Runtime compatiblity check is currently not implemented.
 	pub fn matches(&self, node_version: String, spec_name: String) -> bool {
-		node_version.starts_with(&self.version) && self.spec_name == spec_name
+		node_version.starts_with(self.version) && self.spec_name == spec_name
 	}
 }
 

@@ -189,7 +189,7 @@ impl Client {
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
-	async fn fetch_cell_from_dht(&self, block_number: u32, position: &Position) -> Option<Cell> {
+	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
 		let record_key = Key::from(reference.as_bytes().to_vec());
 
@@ -207,7 +207,6 @@ impl Client {
 				    return None;
 				};
 
-				let position = position.clone();
 				Some(Cell { position, content })
 			},
 			Err(error) => {
@@ -252,7 +251,7 @@ impl Client {
 		let mut cells = Vec::<Option<Cell>>::with_capacity(positions.len());
 
 		for positions in positions.chunks(self.dht_parallelization_limit) {
-			let fetch = |position| self.fetch_cell_from_dht(block_number, position);
+			let fetch = |&position| self.fetch_cell_from_dht(block_number, position);
 			let results = join_all(positions.iter().map(fetch)).await;
 			cells.extend(results.into_iter().collect::<Vec<_>>());
 		}
@@ -261,7 +260,7 @@ impl Client {
 			.iter()
 			.zip(positions)
 			.filter(|(cell, _)| cell.is_none())
-			.map(|(_, position)| position.clone())
+			.map(|(_, &position)| position)
 			.collect::<Vec<_>>();
 
 		let fetched = cells.into_iter().flatten().collect();
