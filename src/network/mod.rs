@@ -98,7 +98,7 @@ pub fn init(
 		let upgraded_relay_transport = relay_client_transport
 			.upgrade(Version::V1Lazy)
 			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
-			.multiplex(libp2p::yamux::YamuxConfig::default());
+			.multiplex(libp2p::yamux::Config::default());
 		// relay transport only handles listening and dialing on relayed [`Multiaddr`]
 		// and depends on other transport to do the actual transmission of data, we have to combine the two
 		let transport =
