@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use std::borrow::BorrowMut;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -531,6 +532,37 @@ impl Default for RuntimeConfig {
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
 		}
+	}
+}
+
+#[derive(Clone)]
+pub struct BlockRange {
+	pub first: u32,
+	pub last: u32,
+}
+
+impl BlockRange {
+	pub fn init(last: u32) -> BlockRange {
+		let first = last;
+		BlockRange { first, last }
+	}
+}
+
+#[derive(Default)]
+pub struct State {
+	pub synced: Option<bool>,
+	pub confidence_achieved: Option<BlockRange>,
+	pub data_verified: Option<BlockRange>,
+	pub sync_confidence_achieved: Option<BlockRange>,
+	pub sync_data_verified: Option<BlockRange>,
+}
+
+impl State {
+	pub fn set_confidence_achieved(&mut self, block_number: u32) {
+		match self.confidence_achieved.as_mut() {
+			Some(range) => range.last = block_number,
+			None => self.confidence_achieved = Some(BlockRange::init(block_number)),
+		};
 	}
 }
 

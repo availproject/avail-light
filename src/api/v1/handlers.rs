@@ -2,7 +2,7 @@ use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlock
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{get_confidence_from_db, get_decoded_data_from_db},
-	types::Mode,
+	types::{Mode, State},
 	utils::calculate_confidence,
 };
 use anyhow::{Context, Result};
@@ -31,10 +31,9 @@ pub fn mode(app_id: Option<u32>) -> ClientResponse<Mode> {
 pub fn confidence(
 	block_num: u32,
 	db: Arc<DB>,
-	counter: Arc<Mutex<u32>>,
+	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ConfidenceResponse> {
 	info!("Got request for confidence for block {block_num}");
-	let counter = *counter.lock().unwrap();
 	let res = match get_confidence_from_db(db, block_num) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
@@ -46,7 +45,13 @@ pub fn confidence(
 			})
 		},
 		Ok(None) => {
-			if block_num < counter {
+			let state = state.lock().unwrap();
+			if state
+				.confidence_achieved
+				.as_ref()
+				.map(|range| block_num < range.last)
+				.unwrap_or(false)
+			{
 				return ClientResponse::NotFinalized;
 			} else {
 				return ClientResponse::NotFound;
@@ -60,15 +65,18 @@ pub fn confidence(
 
 pub fn status(
 	app_id: Option<u32>,
-	counter: Arc<Mutex<u32>>,
+	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 ) -> ClientResponse<Status> {
-	let counter = *counter.lock().unwrap();
-	let res = match get_confidence_from_db(db, counter) {
+	let state = state.lock().unwrap();
+	let Some(last) = state.confidence_achieved.as_ref().map(|range| range.last) else {
+	    return ClientResponse::NotFound;
+	};
+	let res = match get_confidence_from_db(db, last) {
 		Ok(Some(count)) => {
 			let confidence = calculate_confidence(count);
 			ClientResponse::Normal(Status {
-				block_num: counter,
+				block_num: last,
 				confidence,
 				app_id,
 			})
@@ -81,15 +89,13 @@ pub fn status(
 	res
 }
 
-pub fn latest_block(counter: Arc<Mutex<u32>>) -> ClientResponse<LatestBlockResponse> {
+pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
-	let res = match counter.lock() {
-		Ok(counter) => ClientResponse::Normal(LatestBlockResponse {
-			latest_block: *counter,
-		}),
-		Err(_) => ClientResponse::NotFound,
-	};
-	res
+	let state = state.lock().unwrap();
+	match state.confidence_achieved.as_ref().map(|range| range.last) {
+		None => ClientResponse::NotFound,
+		Some(latest_block) => ClientResponse::Normal(LatestBlockResponse { latest_block }),
+	}
 }
 
 pub fn appdata(
@@ -97,7 +103,7 @@ pub fn appdata(
 	query: AppDataQuery,
 	db: Arc<DB>,
 	app_id: Option<u32>,
-	counter: Arc<Mutex<u32>>,
+	state: Arc<Mutex<State>>,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
 		data: Result<Option<Vec<Vec<u8>>>>,
@@ -121,7 +127,8 @@ pub fn appdata(
 		}
 	}
 	info!("Got request for AppData for block {block_num}");
-	let counter = *counter.lock().unwrap();
+	let state = state.lock().unwrap();
+	let last = state.confidence_achieved.as_ref().map(|range| range.last);
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,
@@ -150,8 +157,8 @@ pub fn appdata(
 			}
 		},
 
-		Ok(None) => match counter {
-			lock if block_num == lock => ClientResponse::InProcess,
+		Ok(None) => match last {
+			Some(last) if block_num == last => ClientResponse::InProcess,
 			_ => ClientResponse::NotFound,
 		},
 		Err(e) => ClientResponse::Error(e),

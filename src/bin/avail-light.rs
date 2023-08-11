@@ -26,7 +26,7 @@ use tracing_subscriber::{
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
-	types::{Mode, RuntimeConfig},
+	types::{Mode, RuntimeConfig, State},
 };
 
 #[cfg(feature = "network-analysis")]
@@ -140,12 +140,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// Spawn tokio task which runs one http server for handling RPC
-	let counter = Arc::new(Mutex::new(0u32));
+	let state = Arc::new(Mutex::new(State::default()));
 
 	let server = avail_light::api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
-		counter: counter.clone(),
+		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 	};
@@ -316,7 +316,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(&cfg).into(),
 		pp,
 		lc_metrics,
-		counter,
+		state,
 		lc_channels,
 	));
 	Ok(())

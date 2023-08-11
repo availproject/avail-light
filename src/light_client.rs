@@ -45,7 +45,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	telemetry::metrics::{MetricEvent, Metrics},
-	types::{self, BlockVerified, LightClientConfig},
+	types::{self, BlockVerified, LightClientConfig, State},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -126,7 +126,7 @@ pub async fn process_block(
 	header: &Header,
 	received_at: Instant,
 	metrics: &Metrics,
-	counter: Arc<Mutex<u32>>,
+	state: Arc<Mutex<State>>,
 ) -> Result<()> {
 	metrics.record(MetricEvent::SessionBlockCounter);
 	metrics.record(MetricEvent::TotalBlockNumber(header.number));
@@ -225,8 +225,7 @@ pub async fn process_block(
 			.store_confidence_in_db(verified.len() as u32, block_number)
 			.context("Failed to store confidence in DB")?;
 
-		let mut lock = counter.lock().unwrap();
-		*lock = block_number;
+		state.lock().unwrap().set_confidence_achieved(block_number);
 
 		let conf = calculate_confidence(verified.len() as u32);
 		info!(
@@ -391,13 +390,13 @@ pub struct Channels {
 /// * `block_tx` - Channel used to send header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
 /// * `registry` - Prometheus metrics registry
-/// * `counter` - Processed block mutex counter
+/// * `state` - Processed blocks state
 pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
 	pp: Arc<PublicParameters>,
 	metrics: Metrics,
-	counter: Arc<Mutex<u32>>,
+	state: Arc<Mutex<State>>,
 	mut channels: Channels,
 ) {
 	info!("Starting light client...");
@@ -415,7 +414,7 @@ pub async fn run(
 			&header,
 			received_at,
 			&metrics,
-			counter.clone(),
+			state.clone(),
 		)
 		.await
 		{
@@ -528,7 +527,7 @@ mod tests {
 				},
 			}),
 		};
-		let counter = Arc::new(Mutex::new(0u32));
+		let state = Arc::new(Mutex::new(State::default()));
 		let recv = Instant::now();
 		let kate_proof = [
 			Cell {
@@ -602,7 +601,7 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, state)
 			.await
 			.unwrap();
 	}
@@ -651,7 +650,7 @@ mod tests {
 				},
 			}),
 		};
-		let counter = Arc::new(Mutex::new(0u32));
+		let state = Arc::new(Mutex::new(State::default()));
 		let recv = Instant::now();
 		let cells_fetched = [
 			Cell {
@@ -722,7 +721,7 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, counter)
+		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, state)
 			.await
 			.unwrap();
 	}
