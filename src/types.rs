@@ -1,6 +1,5 @@
 //! Shared light client structs and enums.
 
-use std::borrow::BorrowMut;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -558,6 +557,10 @@ pub struct State {
 }
 
 impl State {
+	pub fn set_synced(&mut self, synced: bool) {
+		self.synced = Some(synced)
+	}
+
 	pub fn set_confidence_achieved(&mut self, block_number: u32) {
 		match self.confidence_achieved.as_mut() {
 			Some(range) => range.last = block_number,

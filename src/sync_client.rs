@@ -23,7 +23,10 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use rocksdb::DB;
 use sp_core::{blake2_256, ed25519};
-use std::{sync::Arc, time::SystemTime};
+use std::{
+	sync::{Arc, Mutex},
+	time::SystemTime,
+};
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
@@ -34,7 +37,7 @@ use crate::{
 	},
 	network::Client,
 	proof, rpc,
-	types::{BlockVerified, SyncClientConfig},
+	types::{BlockVerified, State, SyncClientConfig},
 	utils,
 	utils::{extract_app_lookup, extract_kate},
 };
@@ -263,6 +266,7 @@ pub async fn run(
 	end_block: u32,
 	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<Sender<BlockVerified>>,
+	state: Arc<Mutex<State>>,
 ) {
 	let rpc_client = sync_client.get_client();
 
@@ -358,6 +362,7 @@ pub async fn run(
 	} else {
 		info!("Validator set hasn't changed for all sync client depth");
 	}
+	state.lock().unwrap().set_synced(true);
 }
 
 #[cfg(test)]
