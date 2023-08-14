@@ -567,6 +567,13 @@ impl State {
 			None => self.confidence_achieved = Some(BlockRange::init(block_number)),
 		};
 	}
+
+	pub fn set_data_verified(&mut self, block_number: u32) {
+		match self.data_verified.as_mut() {
+			Some(range) => range.last = block_number,
+			None => self.data_verified = Some(BlockRange::init(block_number)),
+		};
+	}
 }
 
 #[cfg(test)]
