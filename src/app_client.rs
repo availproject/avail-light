@@ -33,7 +33,7 @@ use rand_chacha::ChaChaRng;
 use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
-	sync::Arc,
+	sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, instrument};
@@ -42,7 +42,7 @@ use crate::{
 	data::store_encoded_data_in_db,
 	network::Client,
 	proof, rpc,
-	types::{AppClientConfig, BlockVerified},
+	types::{AppClientConfig, BlockVerified, State},
 };
 
 #[async_trait]
@@ -420,6 +420,7 @@ pub async fn run(
 	app_id: AppId,
 	mut block_receive: Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
+	state: Arc<Mutex<State>>,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -446,6 +447,7 @@ pub async fn run(
 		if let Err(error) = process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
 			error!(block_number, "Cannot process block: {error}");
 		} else {
+			state.lock().unwrap().set_data_verified(block.block_num);
 			debug!(block_number, "Block processed");
 		}
 	}

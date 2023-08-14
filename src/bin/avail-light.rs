@@ -270,6 +270,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			AppId(app_id),
 			block_rx,
 			pp.clone(),
+			state.clone(),
 		));
 		Some(block_tx)
 	} else {
