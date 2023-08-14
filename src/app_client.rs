@@ -447,7 +447,17 @@ pub async fn run(
 		if let Err(error) = process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
 			error!(block_number, "Cannot process block: {error}");
 		} else {
-			state.lock().unwrap().set_data_verified(block.block_num);
+			let mut state = state.lock().unwrap();
+			let synced = state
+				.confidence_achieved
+				.as_ref()
+				.map(|range| block_number < range.first)
+				.unwrap_or(false);
+			if synced {
+				state.set_sync_data_verified(block_number);
+			} else {
+				state.set_data_verified(block_number);
+			}
 			debug!(block_number, "Block processed");
 		}
 	}

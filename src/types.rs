@@ -574,6 +574,20 @@ impl State {
 			None => self.data_verified = Some(BlockRange::init(block_number)),
 		};
 	}
+
+	pub fn set_sync_confidence_achieved(&mut self, block_number: u32) {
+		match self.sync_confidence_achieved.as_mut() {
+			Some(range) => range.last = block_number,
+			None => self.sync_confidence_achieved = Some(BlockRange::init(block_number)),
+		};
+	}
+
+	pub fn set_sync_data_verified(&mut self, block_number: u32) {
+		match self.sync_data_verified.as_mut() {
+			Some(range) => range.last = block_number,
+			None => self.sync_data_verified = Some(BlockRange::init(block_number)),
+		};
+	}
 }
 
 #[cfg(test)]
