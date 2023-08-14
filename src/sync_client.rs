@@ -347,6 +347,11 @@ pub async fn run(
 			process_block(&sync_client, block_number, &cfg, pp, block_verified_sender).await
 		{
 			error!(block_number, "Cannot process block: {error:#}");
+		} else {
+			state
+				.lock()
+				.unwrap()
+				.set_sync_confidence_achieved(block_number);
 		}
 	}
 	if let Some(lvalset) = last_validator_set {
