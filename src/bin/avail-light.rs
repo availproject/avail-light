@@ -30,7 +30,7 @@ use avail_light::{
 };
 
 #[cfg(feature = "network-analysis")]
-use crate::network::network_analyzer;
+use avail_light::network::network_analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -285,6 +285,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
+		state.lock().unwrap().set_synced(false);
 		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
 			(&cfg).into(),
@@ -292,6 +293,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			latest_block,
 			pp.clone(),
 			block_tx.clone(),
+			state.clone(),
 		));
 	}
 
