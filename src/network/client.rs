@@ -22,7 +22,7 @@ use super::Event;
 
 #[derive(Clone)]
 pub struct Client {
-	sender: mpsc::Sender<Command>,
+	cmd_sender: mpsc::Sender<Command>,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -69,13 +69,13 @@ impl DHTRow {
 
 impl Client {
 	pub fn new(
-		sender: mpsc::Sender<Command>,
+		cmd_sender: mpsc::Sender<Command>,
 		dht_parallelization_limit: usize,
 		ttl: u64,
 		put_batch_size: usize,
 	) -> Self {
 		Self {
-			sender,
+			cmd_sender,
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
@@ -84,7 +84,7 @@ impl Client {
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::StartListening { addr, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -97,7 +97,7 @@ impl Client {
 		peer_addr: Multiaddr,
 	) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::AddAddress {
 				peer_id,
 				peer_addr,
@@ -113,7 +113,7 @@ impl Client {
 	// with a required sender for event output
 	pub async fn events_stream(&self) -> ReceiverStream<Event> {
 		let (sender, receiver) = mpsc::channel(1000);
-		self.sender
+		self.cmd_sender
 			.send(Command::Stream { sender })
 			.await
 			.expect("Command receiver should not be dropped.");
@@ -127,7 +127,7 @@ impl Client {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.sender
+		self.cmd_sender
 			.send(Command::Bootstrap { sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -136,7 +136,7 @@ impl Client {
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::GetKadRecord { key, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -155,13 +155,14 @@ impl Client {
 				});
 
 		for cmd in commands {
-			if self.sender.send(cmd).await.is_err() {
+			if self.cmd_sender.send(cmd).await.is_err() {
 				return NumSuccPut(0);
 			}
 		}
 
 		// drop tx manually,
 		// ensure that only senders in spawned threads are still in use
+		// IMPORTANT: forgetting this will make recv call sleep forever
 		drop(tx);
 
 		let mut num_success: usize = 0;
@@ -174,7 +175,7 @@ impl Client {
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.sender
+		self.cmd_sender
 			.send(Command::ReduceKademliaMapSize)
 			.await
 			.context("Command receiver should not be dropped.")
@@ -182,7 +183,7 @@ impl Client {
 
 	// Dump p2p network stats in a readable manner
 	pub async fn network_stats(&self) -> Result<()> {
-		self.sender
+		self.cmd_sender
 			.send(Command::NetworkObservabilityDump)
 			.await
 			.context("Command receiver should not be dropped.")
