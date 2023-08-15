@@ -143,7 +143,7 @@ impl EventLoop {
 		loop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
-				Some(command) = self.command_receiver.recv() => self.handle_command(command).await,
+				Some(command) = self.command_receiver.recv() => self.handle_command(command),
 			}
 		}
 	}
@@ -546,7 +546,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_command(&mut self, command: Command) {
+	fn handle_command(&mut self, command: Command) {
 		match command {
 			Command::StartListening { addr, sender } => {
 				_ = match self.swarm.listen_on(addr) {
