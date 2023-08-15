@@ -5,6 +5,7 @@ mod mem_store;
 pub mod network_analyzer;
 
 use crate::telemetry::metrics::Metrics as AvailMetrics;
+use crate::telemetry::otlp::{OTControl, OTMetrics};
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
 pub use client::Client;
@@ -29,6 +30,7 @@ use libp2p::{
 };
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
+use opentelemetry_api::metrics::Meter;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -57,6 +59,7 @@ pub fn init(
 	cfg: LibP2PConfig,
 	metrics: Metrics,
 	avail_metrics: AvailMetrics,
+	global_meter: Meter,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
@@ -184,6 +187,7 @@ pub fn init(
 			command_receiver,
 			metrics,
 			avail_metrics,
+			global_meter,
 			cfg.relays,
 			cfg.bootstrap_interval,
 			kad_remove_local_record,
