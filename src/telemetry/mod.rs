@@ -12,6 +12,7 @@ use tracing::info;
 
 pub mod handler;
 pub mod metrics;
+pub mod otlp;
 
 pub async fn bind(prometheus_addr: SocketAddr) -> Result<hyper::server::conn::AddrIncoming, Error> {
 	let listener = tokio::net::TcpListener::bind(&prometheus_addr)
