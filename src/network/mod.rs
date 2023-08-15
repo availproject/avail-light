@@ -142,7 +142,7 @@ pub fn init(
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
 		.set_record_filtering(libp2p::kad::KademliaStoreInserts::FilterBoth);
 
-	// create Indetify Protocol Config
+	// create Identify Protocol Config
 	let identify_cfg = identify::Config::new(cfg.identify.protocol_version, id_keys.public())
 		.with_agent_version(cfg.identify.agent_version);
 	// create AutoNAT Client Config
