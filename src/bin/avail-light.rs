@@ -1,7 +1,7 @@
 #![doc = include_str!("../../README.md")]
 
 use std::{
-	net::{IpAddr, Ipv4Addr, SocketAddr},
+	net::Ipv4Addr,
 	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
@@ -13,8 +13,7 @@ use avail_core::AppId;
 use avail_light::consts::STATE_CF;
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
-use prometheus_client::registry::Registry;
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
@@ -26,6 +25,7 @@ use tracing_subscriber::{
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
+	telemetry::otlp::initialize_open_telemetry,
 	types::{Mode, RuntimeConfig, State},
 };
 
@@ -120,22 +120,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	// Spawn Prometheus server
-	let mut metric_registry = Registry::default();
-	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
-	let lc_metrics = avail_light::telemetry::metrics::Metrics::new(&mut metric_registry);
-	let prometheus_port = cfg.prometheus_port;
-
-	let incoming = avail_light::telemetry::bind(SocketAddr::new(
-		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-		prometheus_port,
-	))
-	.await
-	.context("Cannot bind prometheus server to given address and port")?;
-	tokio::task::spawn(avail_light::telemetry::http_server(
-		incoming,
-		metric_registry,
-	));
+	let ot_metrics = initialize_open_telemetry(cfg.ot_collector_endpoint.clone())
+		.context("Unable to initialize OpenTelemetry service")?;
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
@@ -161,8 +147,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
-		libp2p_metrics,
-		lc_metrics.clone(),
+		ot_metrics.clone(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
@@ -321,7 +306,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		light_client,
 		(&cfg).into(),
 		pp,
-		lc_metrics,
+		ot_metrics,
 		state,
 		lc_channels,
 	));

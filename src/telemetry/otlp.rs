@@ -29,9 +29,9 @@ pub enum OTMetricEvent {
 	KadRoutingTablePeerNum(u32),
 }
 
-pub fn initialize_open_telemetry() -> Result<OTMetrics, Error> {
+pub fn initialize_open_telemetry(endpoint: String) -> Result<OTMetrics, Error> {
 	let export_config = ExportConfig {
-		endpoint: "http://otelcollector.avail.tools:4317".to_string(),
+		endpoint,
 		timeout: Duration::from_secs(3),
 		protocol: Protocol::Grpc,
 	};

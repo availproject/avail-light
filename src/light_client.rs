@@ -524,7 +524,7 @@ mod tests {
 		let mut mock_client = MockLightClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let pp = Arc::new(testnet::public_params(1024));
-		let global_meter = initialize_open_telemetry().unwrap();
+		let global_meter = initialize_open_telemetry("http://localhost:4317".to_string()).unwrap();
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -653,7 +653,7 @@ mod tests {
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let pp = Arc::new(testnet::public_params(1024));
-		let global_meter = initialize_open_telemetry().unwrap();
+		let global_meter = initialize_open_telemetry("http://localhost:4317".to_string()).unwrap();
 		let cells_unfetched: Vec<Position> = vec![];
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
