@@ -550,6 +550,7 @@ impl BlockRange {
 #[derive(Default)]
 pub struct State {
 	pub synced: Option<bool>,
+	pub latest: u32,
 	pub confidence_achieved: Option<BlockRange>,
 	pub data_verified: Option<BlockRange>,
 	pub sync_confidence_achieved: Option<BlockRange>,

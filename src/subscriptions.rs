@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::{
+	sync::{Arc, Mutex},
+	time::Instant,
+};
 
 use anyhow::{anyhow, Result};
 use avail_subxt::{
@@ -13,14 +16,15 @@ use sp_core::{blake2_256, bytes, ed25519, Pair};
 use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
-use crate::{rpc, utils};
+use crate::{rpc, types::State, utils};
 
 pub async fn finalized_headers(
 	rpc_client: Client,
 	message_tx: Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
+	state: Arc<Mutex<State>>,
 ) {
-	if let Err(error) = subscribe_check_and_process(rpc_client, message_tx).await {
+	if let Err(error) = subscribe_check_and_process(rpc_client, message_tx, state).await {
 		error!("{error}");
 		if let Err(error) = error_sender.send(error).await {
 			error!("Cannot send error to error channel: {error}");
@@ -88,6 +92,7 @@ enum Messages {
 async fn subscribe_check_and_process(
 	subxt_client: Client,
 	message_tx: Sender<(Header, Instant)>,
+	state: Arc<Mutex<State>>,
 ) -> Result<()> {
 	let mut header_subscription = subxt_client
 		.rpc()
@@ -118,6 +123,7 @@ async fn subscribe_check_and_process(
 		async move {
 			while let Some(Ok(header)) = header_subscription.next().await {
 				let received_at = Instant::now();
+				state.lock().unwrap().latest = header.number;
 				msg_sender
 					.send(Messages::NewHeader(header.clone(), received_at))
 					.expect("Receiver should not be dropped.");
