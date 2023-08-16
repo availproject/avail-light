@@ -139,19 +139,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
-	// Spawn tokio task which runs one http server for handling RPC
-	let state = Arc::new(Mutex::new(State::default()));
-
-	let server = avail_light::api::server::Server {
-		db: db.clone(),
-		cfg: cfg.clone(),
-		state: state.clone(),
-		version: format!("v{}", clap::crate_version!()),
-		network_version: EXPECTED_NETWORK_VERSION.to_string(),
-	};
-
-	tokio::task::spawn(server.run());
-
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
 	let kad_remove_local_record = cfg.block_matrix_partition.is_some();
@@ -236,33 +223,46 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let last_full_node_ws = avail_light::data::get_last_full_node_ws_from_db(db.clone())?;
 
-	let (rpc_client, last_full_node_ws) = avail_light::rpc::connect_to_the_full_node(
+	let (rpc_client, node) = avail_light::rpc::connect_to_the_full_node(
 		&cfg.full_node_ws,
 		last_full_node_ws,
 		EXPECTED_NETWORK_VERSION,
 	)
 	.await?;
 
-	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
+	store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
 
-	let genesis_hash = rpc_client.genesis_hash();
-	info!("Genesis hash: {genesis_hash:?}");
+	info!("Genesis hash: {:?}", node.genesis_hash);
 	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
-		if !genesis_hash.eq(&stored_genesis_hash) {
+		if !node.genesis_hash.eq(&stored_genesis_hash) {
 			Err(anyhow!(
 				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
 			))?
 		}
 	} else {
 		info!("No genesis hash is found in the db, storing the new hash now.");
-		avail_light::data::store_genesis_hash(db.clone(), genesis_hash)?;
+		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
 	}
 
 	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+
+    	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number - 1;
+
+	// Spawn tokio task which runs one http server for handling RPC
+	let server = avail_light::api::server::Server {
+		db: db.clone(),
+		cfg: cfg.clone(),
+		state: state.clone(),
+		version: format!("v{}", clap::crate_version!()),
+		network_version: EXPECTED_NETWORK_VERSION.to_string(),
+		node,
+	};
+
+	tokio::task::spawn(server.run());
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
