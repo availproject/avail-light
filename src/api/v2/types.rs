@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::{
 	collections::{HashMap, HashSet},
@@ -7,6 +8,13 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use warp::{ws, Reply};
 
+use crate::types::{self, block_matrix_partition_format, RuntimeConfig};
+
+#[derive(Debug)]
+pub struct InternalServerError {}
+
+impl warp::reject::Reject for InternalServerError {}
+
 #[derive(Serialize, Clone)]
 pub struct Version {
 	pub version: String,
@@ -14,6 +22,84 @@ pub struct Version {
 }
 
 impl Reply for Version {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
+#[derive(Serialize)]
+pub struct BlockRange {
+	pub first: u32,
+	pub last: u32,
+}
+
+impl From<&types::BlockRange> for BlockRange {
+	fn from(value: &types::BlockRange) -> Self {
+		BlockRange {
+			first: value.first,
+			last: value.last,
+		}
+	}
+}
+
+#[derive(Serialize)]
+pub struct HistoricalSync {
+	pub synced: bool,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub available: Option<BlockRange>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub app_data: Option<BlockRange>,
+}
+
+#[derive(Serialize)]
+pub struct Blocks {
+	pub latest: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub available: Option<BlockRange>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub app_data: Option<BlockRange>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub historical_sync: Option<HistoricalSync>,
+}
+
+#[derive(Serialize)]
+pub struct Status {
+	pub modes: Vec<Mode>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub app_id: Option<u32>,
+	pub genesis_hash: String,
+	pub network: String,
+	pub blocks: Blocks,
+	#[serde(
+		skip_serializing_if = "Option::is_none",
+		with = "block_matrix_partition_format"
+	)]
+	pub partition: Option<Partition>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Mode {
+	Light,
+	App,
+	Partition,
+}
+
+impl From<&RuntimeConfig> for Vec<Mode> {
+	fn from(value: &RuntimeConfig) -> Self {
+		let mut result: Vec<Mode> = vec![];
+		result.push(Mode::Light);
+		if value.app_id.is_some() {
+			result.push(Mode::App);
+		}
+		if value.block_matrix_partition.is_some() {
+			result.push(Mode::Partition)
+		}
+		result
+	}
+}
+
+impl Reply for Status {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
 	}
@@ -118,5 +204,12 @@ pub struct Error {
 impl From<Error> for String {
 	fn from(error: Error) -> Self {
 		serde_json::to_string(&error).expect("Error is serializable")
+	}
+}
+
+pub fn handle_result(result: Result<impl Reply, impl Reply>) -> impl Reply {
+	match result {
+		Ok(ok) => ok.into_response(),
+		Err(err) => err.into_response(),
 	}
 }

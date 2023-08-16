@@ -17,7 +17,7 @@ use rand::{seq::SliceRandom, thread_rng, Rng};
 use sp_core::ed25519;
 use tracing::{debug, info, instrument, warn};
 
-use crate::types::*;
+use crate::{consts::EXPECTED_NETWORK_VERSION, types::*};
 
 pub async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
 	client
@@ -205,7 +205,7 @@ impl ExpectedVersion<'_> {
 	/// Specification name is checked for exact match.
 	/// Since runtime `spec_version` can be changed with runtime upgrade, `spec_version` is removed.
 	/// NOTE: Runtime compatiblity check is currently not implemented.
-	pub fn matches(&self, node_version: String, spec_name: String) -> bool {
+	pub fn matches(&self, node_version: &str, spec_name: &str) -> bool {
 		node_version.starts_with(self.version) && self.spec_name == spec_name
 	}
 }
@@ -216,13 +216,33 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
+#[derive(Clone)]
+pub struct Node {
+	pub host: String,
+	pub system_version: String,
+	pub spec_version: u32,
+	pub genesis_hash: H256,
+}
+
+impl Node {
+	pub fn network(&self) -> String {
+		format!(
+			"{host}/{system_version}/{spec_name}/{spec_version}",
+			host = self.host,
+			system_version = self.system_version,
+			spec_name = EXPECTED_NETWORK_VERSION.spec_name,
+			spec_version = self.spec_version,
+		)
+	}
+}
+
 /// Connects to the random full node from the list,
 /// trying to connect to the last connected full node as least priority.
 pub async fn connect_to_the_full_node(
 	full_nodes: &[String],
 	last_full_node: Option<String>,
 	expected_version: ExpectedVersion<'_>,
-) -> Result<(avail::Client, String)> {
+) -> Result<(avail::Client, Node)> {
 	for full_node_ws in shuffle_full_nodes(full_nodes, last_full_node).iter() {
 		let log_warn = |error| {
 			warn!("Skipping connection to {full_node_ws}: {error}");
@@ -238,13 +258,19 @@ pub async fn connect_to_the_full_node(
 			system_version, runtime_version.spec_name, runtime_version.spec_version,
 		);
 
-		if !expected_version.matches(system_version, runtime_version.spec_name) {
+		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
 			log_warn(anyhow!("expected {expected_version}, found {version}"));
 			continue;
 		}
 
 		info!("Connection established to the node: {full_node_ws} <{version}>");
-		return Ok((client, full_node_ws.clone()));
+		let node = Node {
+			host: full_node_ws.clone(),
+			system_version,
+			spec_version: client.runtime_version().spec_version,
+			genesis_hash: client.genesis_hash(),
+		};
+		return Ok((client, node));
 	}
 	Err(anyhow!("No working nodes"))
 }
@@ -312,10 +338,7 @@ mod tests {
 			spec_name: expected_spec_name,
 		};
 
-		assert_eq!(
-			expected.matches(version.to_string(), spec_name.to_string()),
-			matches
-		);
+		assert_eq!(expected.matches(version, spec_name), matches);
 	}
 
 	proptest! {

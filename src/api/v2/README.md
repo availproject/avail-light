@@ -34,6 +34,77 @@ Content-Type: application/json
 - **version** - the Avail Light Client version
 - **network_version** - Avail network version supported by the Avail Light Client
 
+## **GET** `/v2/status`
+
+Gets current status and active modes of the light client.
+
+Response:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "modes": [
+    "light",
+    "app",
+    "partition"
+  ],
+  "app_id": {app-id}, // Optional
+  "genesis_hash": "{genesis-hash}",
+  "network": "{network}",
+  "blocks": {
+    "latest": {latest},
+    "available": { // Optional
+      "first": {first},
+      "last": {last}
+    },
+    "app_data": { // Optional
+      "first": {first},
+      "last": {last}
+    },
+    "historcal_sync": { // Optional
+      "synced": false,
+      "available": { // Optional
+        "first": {first},
+        "last": {last}
+      },
+      "app_data": { // Optional
+        "first": {first},
+        "last": {last}
+      }
+    }
+  },
+  "partition": "{partition}" // Optional
+}
+```
+
+- **modes** - active modes
+- **app_id** - if **app** mode is active, this field contains configured application ID
+- **genesis_hash** - genesis hash of the network to which the light client is connected
+- **network** - network host, version and spec version light client is currently con
+- **blocks** - state of processed blocks
+- **partition** - if configured, displays partition which light client distributes to the peer to peer network
+
+### Modes
+
+- **light** - data availability sampling mode, the light client performs random sampling and calculates confidence
+- **app** - light client fetches, verifies, and stores application-related data
+- **partition** - light client fetches configured block partition and publishes it to the DHT
+
+### Blocks
+
+- **latest** - block number of the latest [finalized](https://docs.substrate.io/learn/consensus/) block received from the node
+- **available** - range of blocks with verified data availability (configured confidence has been achieved)
+- **app_data** - range of blocks with app data retrieved and verified
+- **historical_sync** - state for historical blocks syncing up to configured block (ommited if historical sync is not configured)
+
+### Historical sync
+
+- **synced** - `true` if there are no historical blocks left to sync
+- **available** - range of historical blocks with verified data availability (configured confidence has been achieved)
+- **app_data** - range of historical blocks with app data retrieved and verified
+
 # WebSocket API
 
 The Avail Light Client WebSocket API allows real-time communication between a client and a server over a persistent connection, enabling push notifications as an alternative to polling. Web socket API can be used on its own or in combination with HTTP API to enable different pull/push use cases.
