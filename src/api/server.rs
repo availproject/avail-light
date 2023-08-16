@@ -12,6 +12,7 @@
 use crate::api::v2;
 use crate::{
 	api::v1::{self},
+	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
@@ -31,6 +32,7 @@ pub struct Server {
 	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
+	pub node: Node,
 }
 
 impl Server {
@@ -41,7 +43,7 @@ impl Server {
 			http_server_port: port,
 			app_id,
 			..
-		} = self.cfg;
+		} = self.cfg.clone();
 
 		let port = (port.1 > 0)
 			.then(|| thread_rng().gen_range(port.0..=port.1))
@@ -49,7 +51,13 @@ impl Server {
 
 		let v1_api = v1::routes(self.db.clone(), app_id, self.state.clone());
 		#[cfg(feature = "api-v2")]
-		let v2_api = v2::routes(self.version.clone(), self.network_version.clone());
+		let v2_api = v2::routes(
+			self.version.clone(),
+			self.network_version.clone(),
+			self.node,
+			self.state.clone(),
+			self.cfg,
+		);
 
 		let cors = warp::cors()
 			.allow_any_origin()

@@ -89,7 +89,7 @@ impl From<Option<u32>> for Mode {
 	}
 }
 
-mod block_matrix_partition_format {
+pub mod block_matrix_partition_format {
 	use kate_recovery::matrix::Partition;
 	use serde::{self, Deserialize, Deserializer, Serializer};
 
