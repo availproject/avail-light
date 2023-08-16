@@ -281,7 +281,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 	let latest_block = block_header.number;
-
+	state.lock().unwrap().latest = latest_block;
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
@@ -304,6 +304,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		rpc_client.clone(),
 		message_tx,
 		error_sender.clone(),
+		state.clone(),
 	));
 
 	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
