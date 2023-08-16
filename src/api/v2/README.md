@@ -167,6 +167,17 @@ Request Avail Light Client version data.
 }
 ```
 
+### Request status
+
+Request current Avail Light Client status data.
+
+```json
+{
+  "type": "status",
+  "request_id": "{uuid}"
+}
+```
+
 ## Server-to-client messages
 
 If response contains ******request_id****** field, it will be pushed to the client which initiated request. Those messages are not subject to a topic filtering at the moment.
@@ -177,12 +188,56 @@ Version response.
 
 ```json
 {
-	"topic": "version",
-	"request_id": "{uuid}",
-	"message": {
-		"version": "{version-string}",
-		"network_version": "{version-string}"
-	}
+  "topic": "version",
+  "request_id": "{uuid}",
+  "message": {
+    "version": "{version-string}",
+    "network_version": "{version-string}"
+  }
+}
+```
+
+### Status
+
+Status response.
+
+```json
+{
+  "topic": "status",
+  "request_id": "{uuid}",
+  "message": {
+    "modes": [
+      "light",
+      "app",
+      "partition"
+    ],
+    "app_id": {app-id}, // Optional
+    "genesis_hash": "{genesis-hash}",
+    "network": "{network}",
+    "blocks": {
+      "latest": {latest},
+      "available": {  // Optional
+        "first": {first},
+        "last": {last}
+      },
+      "app_data": {  // Optional
+        "first": {first},
+        "last": {last}
+      },
+      "historical_sync": {  // Optional
+        "synced": false,
+        "available": {  // Optional
+          "first": {first},
+          "last": {last}
+        },
+        "app_data": {  // Optional
+          "first": {first},
+          "last": {last}
+        }
+      }
+    },
+    "partition": "{partition}"
+  }
 }
 ```
 

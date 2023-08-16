@@ -34,12 +34,25 @@ pub async fn ws(
 	ws: Ws,
 	clients: Clients,
 	version: Version,
+	config: RuntimeConfig,
+	node: Node,
+	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.read().await.contains_key(&subscription_id) {
 		return Err(warp::reject::not_found());
 	}
 	// Multiple connections to the same client are currently allowed
-	Ok(ws.on_upgrade(move |web_socket| ws::connect(subscription_id, web_socket, clients, version)))
+	Ok(ws.on_upgrade(move |web_socket| {
+		ws::connect(
+			subscription_id,
+			web_socket,
+			clients,
+			version,
+			config,
+			node,
+			state.clone(),
+		)
+	}))
 }
 
 pub async fn status(
@@ -55,28 +68,7 @@ pub async fn status(
 		},
 	};
 
-	let historical_sync = state.synced.map(|synced| HistoricalSync {
-		synced,
-		available: state.sync_confidence_achieved.as_ref().map(From::from),
-		app_data: state.sync_data_verified.as_ref().map(From::from),
-	});
-
-	let blocks = Blocks {
-		latest: state.latest,
-		available: state.confidence_achieved.as_ref().map(From::from),
-		app_data: state.data_verified.as_ref().map(From::from),
-		historical_sync,
-	};
-
-	let status = Status {
-		modes: (&config).into(),
-		app_id: config.app_id,
-		genesis_hash: format!("{:?}", node.genesis_hash),
-		network: node.network(),
-		blocks,
-		partition: config.block_matrix_partition,
-	};
-	Ok(status)
+	Ok(Status::new(&config, &node, &state))
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {

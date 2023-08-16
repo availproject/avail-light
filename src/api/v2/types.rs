@@ -8,7 +8,10 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use warp::{ws, Reply};
 
-use crate::types::{self, block_matrix_partition_format, RuntimeConfig};
+use crate::{
+	rpc::Node,
+	types::{self, block_matrix_partition_format, RuntimeConfig, State},
+};
 
 #[derive(Debug)]
 pub struct InternalServerError {}
@@ -75,6 +78,32 @@ pub struct Status {
 		with = "block_matrix_partition_format"
 	)]
 	pub partition: Option<Partition>,
+}
+
+impl Status {
+	pub fn new(config: &RuntimeConfig, node: &Node, state: &State) -> Self {
+		let historical_sync = state.synced.map(|synced| HistoricalSync {
+			synced,
+			available: state.sync_confidence_achieved.as_ref().map(From::from),
+			app_data: state.sync_data_verified.as_ref().map(From::from),
+		});
+
+		let blocks = Blocks {
+			latest: state.latest,
+			available: state.confidence_achieved.as_ref().map(From::from),
+			app_data: state.data_verified.as_ref().map(From::from),
+			historical_sync,
+		};
+
+		Status {
+			modes: config.into(),
+			app_id: config.app_id,
+			genesis_hash: format!("{:?}", node.genesis_hash),
+			network: node.network(),
+			blocks,
+			partition: config.block_matrix_partition,
+		}
+	}
 }
 
 #[derive(Serialize)]
@@ -159,6 +188,7 @@ impl Reply for SubscriptionId {
 #[serde(rename_all = "kebab-case")]
 pub enum RequestType {
 	Version,
+	Status,
 }
 
 #[derive(Deserialize)]
@@ -172,6 +202,7 @@ pub struct Request {
 #[serde(rename_all = "kebab-case")]
 pub enum ResponseTopic {
 	Version,
+	Status,
 }
 
 #[derive(Serialize)]
@@ -193,12 +224,29 @@ impl TryFrom<ws::Message> for Request {
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorCode {
 	BadRequest,
+	InternalServerError,
 }
 
 #[derive(Serialize)]
 pub struct Error {
 	pub error_code: ErrorCode,
 	pub message: String,
+}
+
+impl Error {
+	pub fn internal_server_error() -> Self {
+		Error {
+			error_code: ErrorCode::InternalServerError,
+			message: "Internal Server Error".to_string(),
+		}
+	}
+
+	pub fn bad_request(message: String) -> Self {
+		Error {
+			error_code: ErrorCode::BadRequest,
+			message,
+		}
+	}
 }
 
 impl From<Error> for String {
