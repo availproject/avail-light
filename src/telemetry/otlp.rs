@@ -3,34 +3,18 @@ use std::time::Duration;
 use anyhow::{Error, Ok, Result};
 use opentelemetry_api::{
 	global,
-	metrics::{Counter, Meter, ObservableGauge},
+	metrics::{Counter, Meter},
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 
-#[derive(Clone)]
-pub struct OTControl {
-	pub global_meter: Meter,
-	pub metrics: OTMetrics,
-}
-
 #[derive(Debug, Clone)]
 pub struct OTMetrics {
-	session_block_counter: Counter<u64>,
-	total_block_number: ObservableGauge<u64>,
-	dht_fetched: ObservableGauge<f64>,
-	dht_fetched_percentage: ObservableGauge<f64>,
-	node_rpc_fetched: ObservableGauge<f64>,
-	block_confidence: ObservableGauge<f64>,
-	rpc_call_duration: ObservableGauge<f64>,
-	dht_put_duration: ObservableGauge<f64>,
-	dht_put_success: ObservableGauge<f64>,
-	dht_put_rows_duration: ObservableGauge<f64>,
-	dht_put_rows_success: ObservableGauge<f64>,
-	pub kad_routing_table_peer_num: ObservableGauge<u64>,
+	pub global_meter: Meter,
+	pub session_block_counter: Counter<u64>,
 }
 
-pub enum MetricEvent {
+pub enum OTMetricEvent {
 	SessionBlockCounter(Counter<u64>),
 	TotalBlockNumber(u32),
 	DHTFetched(f64),
@@ -45,9 +29,9 @@ pub enum MetricEvent {
 	KadRoutingTablePeerNum(u32),
 }
 
-pub fn initialize_open_telemetry() -> Result<Meter, Error> {
+pub fn initialize_open_telemetry() -> Result<OTMetrics, Error> {
 	let export_config = ExportConfig {
-		endpoint: "http://localhost:4317".to_string(),
+		endpoint: "http://otelcollector.avail.tools:4317".to_string(),
 		timeout: Duration::from_secs(3),
 		protocol: Protocol::Grpc,
 	};
@@ -64,16 +48,22 @@ pub fn initialize_open_telemetry() -> Result<Meter, Error> {
 
 	global::set_meter_provider(provider);
 	let meter = global::meter("avail_light_client");
-	Ok(meter)
+	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
+	// TODO - move to a separate func once there's more than 1 counter
+	let session_block_counter = meter.u64_counter("session_block_counter").init();
+	Ok(OTMetrics {
+		global_meter: meter,
+		session_block_counter,
+	})
 }
 
-pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
+pub fn record(event: OTMetricEvent, meter: &Meter, peer_id: &str) {
 	match event {
-		MetricEvent::SessionBlockCounter(counter) => {
+		OTMetricEvent::SessionBlockCounter(counter) => {
 			let peer_id = peer_id.to_string();
 			counter.add(1, [KeyValue::new("peerID", peer_id.clone())].as_ref());
 		},
-		MetricEvent::TotalBlockNumber(num) => {
+		OTMetricEvent::TotalBlockNumber(num) => {
 			let total_block_number = meter.u64_observable_gauge("total_block_number").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -86,7 +76,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTFetched(num) => {
+		OTMetricEvent::DHTFetched(num) => {
 			let dht_fetched = meter.f64_observable_gauge("dht_fetched").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -99,7 +89,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTFetchedPercentage(num) => {
+		OTMetricEvent::DHTFetchedPercentage(num) => {
 			let dht_fetched_percentage =
 				meter.f64_observable_gauge("dht_fetched_percentage").init();
 			let peer_id = peer_id.to_string();
@@ -113,7 +103,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::NodeRPCFetched(num) => {
+		OTMetricEvent::NodeRPCFetched(num) => {
 			let node_rpc_fetched = meter.f64_observable_gauge("node_rpc_fetched").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -126,7 +116,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::BlockConfidence(num) => {
+		OTMetricEvent::BlockConfidence(num) => {
 			let block_confidence = meter.f64_observable_gauge("block_confidence").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -139,7 +129,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::RPCCallDuration(num) => {
+		OTMetricEvent::RPCCallDuration(num) => {
 			let rpc_call_duration = meter.f64_observable_gauge("rpc_call_duration").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -152,7 +142,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTPutDuration(num) => {
+		OTMetricEvent::DHTPutDuration(num) => {
 			let dht_put_duration = meter.f64_observable_gauge("dht_put_duration").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -165,7 +155,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTPutSuccess(num) => {
+		OTMetricEvent::DHTPutSuccess(num) => {
 			let dht_put_success = meter.f64_observable_gauge("dht_put_success").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -178,7 +168,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTPutRowsDuration(num) => {
+		OTMetricEvent::DHTPutRowsDuration(num) => {
 			let peer_id = peer_id;
 			let dht_put_rows_duration = meter.f64_observable_gauge("dht_put_rows_duration").init();
 			let peer_id = peer_id.to_string();
@@ -192,7 +182,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::DHTPutRowsSuccess(num) => {
+		OTMetricEvent::DHTPutRowsSuccess(num) => {
 			let dht_put_rows_success = meter.f64_observable_gauge("dht_put_rows_success").init();
 			let peer_id = peer_id.to_string();
 			meter
@@ -205,7 +195,7 @@ pub fn record(event: MetricEvent, meter: &Meter, peer_id: &str) {
 				})
 				.unwrap();
 		},
-		MetricEvent::KadRoutingTablePeerNum(num) => {
+		OTMetricEvent::KadRoutingTablePeerNum(num) => {
 			let kad_routing_table_peer_num = meter
 				.u64_observable_gauge("kad_routing_table_peer_num")
 				.init();

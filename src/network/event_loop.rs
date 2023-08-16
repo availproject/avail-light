@@ -3,7 +3,6 @@ use std::{collections::HashMap, time::Duration};
 use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
-use opentelemetry_api::{metrics::Meter, KeyValue};
 use rand::seq::SliceRandom;
 use std::str;
 use tokio::{
@@ -33,7 +32,6 @@ use libp2p::{
 		QueryResult,
 	},
 	mdns::Event as MdnsEvent,
-	metrics::{Metrics, Recorder},
 	multiaddr::Protocol,
 	ping,
 	relay::{
@@ -47,10 +45,7 @@ use libp2p::{
 	Multiaddr, PeerId, Swarm,
 };
 
-use crate::telemetry::{
-	metrics::{MetricEvent, Metrics as AvailMetrics},
-	otlp::{self, OTControl, OTMetrics},
-};
+use crate::telemetry::otlp::{self, OTMetrics};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
@@ -113,9 +108,7 @@ pub struct EventLoop {
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
-	metrics: Metrics,
-	avail_metrics: AvailMetrics,
-	global_meter: Meter,
+	ot_metrics: OTMetrics,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -143,9 +136,7 @@ impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
-		metrics: Metrics,
-		avail_metrics: AvailMetrics,
-		global_meter: Meter,
+		ot_metrics: OTMetrics,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
@@ -158,9 +149,7 @@ impl EventLoop {
 			pending_kad_routing: Default::default(),
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
-			metrics,
-			avail_metrics,
-			global_meter,
+			ot_metrics,
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -199,9 +188,6 @@ impl EventLoop {
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
-				// record KAD Behaviour events
-				self.metrics.record(&event);
-
 				match event {
 					KademliaEvent::RoutingUpdated {
 						peer,
@@ -324,9 +310,6 @@ impl EventLoop {
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-				// record Identify Behaviour events
-				self.metrics.record(&event);
-
 				match event {
 					IdentifyEvent::Received {
 						peer_id,
@@ -442,9 +425,6 @@ impl EventLoop {
 				},
 			},
 			swarm_event => {
-				// record Swarm events
-				self.metrics.record(&swarm_event);
-
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
 						info!("Local node is listening on {:?}", address);
@@ -633,44 +613,15 @@ impl EventLoop {
 		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
 		debug!("{text}\n{header}\n{table}");
 
-		self.avail_metrics
-			.record(MetricEvent::KadRoutingTablePeerNum(
-				total_peer_number
-					.try_into()
-					.expect("unable to convert usize to u32"),
-			));
-		// otlp::record(
-		// 	&self.ot_control.metrics,
-		// 	crate::telemetry::otlp::MetricEvent::KadRoutingTablePeerNum(
-		// 		total_peer_number
-		// 			.try_into()
-		// 			.expect("unable to convert usize to u32"),
-		// 	),
-		// 	&self.ot_control.global_meter,
-		// );
 		otlp::record(
-			otlp::MetricEvent::KadRoutingTablePeerNum(
+			otlp::OTMetricEvent::KadRoutingTablePeerNum(
 				total_peer_number
 					.try_into()
 					.expect("unable to convert usize to u32"),
 			),
-			&self.global_meter,
+			&self.ot_metrics.global_meter,
 			&self.swarm.local_peer_id().to_string(),
 		)
-
-		// let num = total_peer_number
-		// 	.try_into()
-		// 	.expect("unable to convert usize to u32");
-		// &self.ot_control.global_meter.register_callback(
-		// 	&[self.ot_control.metrics.kad_routing_table_peer_num.as_any()],
-		// 	move |observer| {
-		// 		observer.observe_u64(
-		// 			&self.ot_control.metrics.kad_routing_table_peer_num,
-		// 			num,
-		// 			[KeyValue::new("peerID", "peerID")].as_ref(),
-		// 		)
-		// 	},
-		// );
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

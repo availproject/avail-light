@@ -29,6 +29,8 @@ pub struct Client {
 	ttl: u64,
 	/// Number of records to be put in DHT simultaneuosly
 	put_batch_size: usize,
+	/// Client peer ID
+	peer_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -73,13 +75,19 @@ impl Client {
 		dht_parallelization_limit: usize,
 		ttl: u64,
 		put_batch_size: usize,
+		peer_id: String,
 	) -> Self {
 		Self {
 			sender,
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
+			peer_id,
 		}
+	}
+
+	pub fn get_peer_id(&self) -> String {
+		self.peer_id.clone()
 	}
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
