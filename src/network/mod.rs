@@ -4,8 +4,7 @@ mod mem_store;
 #[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 
-use crate::telemetry::metrics::Metrics as AvailMetrics;
-use crate::telemetry::otlp::{OTControl, OTMetrics};
+use crate::telemetry::otlp::OTMetrics;
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
 pub use client::Client;
@@ -20,7 +19,6 @@ use libp2p::{
 	identity,
 	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
-	metrics::Metrics,
 	noise::{Keypair, NoiseConfig, X25519Spec},
 	ping::{Behaviour as Ping, Config as PingConfig},
 	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
@@ -30,7 +28,6 @@ use libp2p::{
 };
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
-use opentelemetry_api::metrics::Meter;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -57,9 +54,7 @@ pub struct Behaviour {
 
 pub fn init(
 	cfg: LibP2PConfig,
-	metrics: Metrics,
-	avail_metrics: AvailMetrics,
-	global_meter: Meter,
+	ot_metrics: OTMetrics,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
@@ -181,13 +176,12 @@ pub fn init(
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
+			swarm.local_peer_id().to_string(),
 		),
 		EventLoop::new(
 			swarm,
 			command_receiver,
-			metrics,
-			avail_metrics,
-			global_meter,
+			ot_metrics,
 			cfg.relays,
 			cfg.bootstrap_interval,
 			kad_remove_local_record,
