@@ -271,7 +271,7 @@ pub async fn run(
 	let rpc_client = sync_client.get_client();
 
 	if start_block >= end_block {
-		warn!("There are no block to sync from {start_block} to {end_block}");
+		warn!("There are no blocks to sync from {start_block} to {end_block}");
 		return;
 	}
 	let sync_blocks_depth = end_block - start_block;
@@ -367,7 +367,9 @@ pub async fn run(
 	} else {
 		info!("Validator set hasn't changed for all sync client depth");
 	}
-	state.lock().unwrap().set_synced(true);
+	if block_verified_sender.is_none() {
+		state.lock().unwrap().set_synced(true);
+	}
 }
 
 #[cfg(test)]

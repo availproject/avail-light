@@ -421,6 +421,7 @@ pub async fn run(
 	mut block_receive: Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
+	sync_end_block: u32,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -457,6 +458,9 @@ pub async fn run(
 				state.set_sync_data_verified(block_number);
 			} else {
 				state.set_data_verified(block_number);
+			}
+			if sync_end_block == block_number {
+				state.set_synced(true)
 			}
 			debug!(block_number, "Block processed");
 		}
