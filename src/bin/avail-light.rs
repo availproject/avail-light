@@ -258,6 +258,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::data::store_genesis_hash(db.clone(), genesis_hash)?;
 	}
 
+	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
+		.await
+		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+	state.lock().unwrap().latest = block_header.number;
+	let sync_end_block = block_header.number - 1;
+
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
@@ -271,17 +277,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			block_rx,
 			pp.clone(),
 			state.clone(),
+			sync_end_block,
 		));
 		Some(block_tx)
 	} else {
 		None
 	};
 
-	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
-		.await
-		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
-	let latest_block = block_header.number;
-	state.lock().unwrap().latest = latest_block;
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
@@ -291,7 +293,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			sync_client,
 			(&cfg).into(),
 			sync_start_block,
-			latest_block,
+			sync_end_block,
 			pp.clone(),
 			block_tx.clone(),
 			state.clone(),
