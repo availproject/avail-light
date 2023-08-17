@@ -666,6 +666,11 @@ impl EventLoop {
 		};
 	}
 
+	// This function filters out finished KAD queries from the mapped ongoing queries.
+	// For the inputted batch id, an Optional result will be given in a form of a tuple.
+	// Tuple represents a number of queries marked as QueryStatus::Succeeded, and
+	// a vector of queries that need to be removed from the map of ongoing queries,
+	// both QueryStatus::Succeeded and QueryStatus::Failed
 	fn finished_batch_queries(&self, batch_id: &Uuid) -> Option<(usize, Vec<QueryId>)> {
 		// filter queries from the current batch
 		let batch_queries = self
