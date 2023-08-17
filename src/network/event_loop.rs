@@ -237,71 +237,24 @@ impl EventLoop {
 								}
 							});
 
-							// gather finished queries that should be removed from pending
-							let ids_to_remove = if let Some(QueryDetails {
+							if let Some(QueryDetails {
 								batch_id: Some(uuid),
 								res_sender: QueryChannel::PutRecordBatch(ch),
 								..
 							}) = self.pending_kad_queries.get(&id)
 							{
-								// filter queries from the current batch
-								let batch_queries = self
-									.pending_kad_queries
-									.iter()
-									.filter(|(_, qd)| qd.batch_id == Some(*uuid))
-									.collect::<HashMap<&QueryId, &QueryDetails>>();
-
-								// make sure there are no Pending queries left
-								let has_no_pending = !batch_queries
-									.iter()
-									.any(|(_, qd)| matches!(qd.status, QueryStatus::Pending));
-
-								// if there are no Pending queries left
-								// collect ones that are considered to be done
-								let finished_queries = has_no_pending
-									.then(|| {
-										batch_queries
-											.into_iter()
-											.filter(|(_, qd)| {
-												!matches!(qd.status, QueryStatus::Pending)
-											})
-											.collect::<HashMap<&QueryId, &QueryDetails>>()
-									})
-									// count successful ones and gather what ids to remove
-									.and_then(|queries| {
-										let success_count = queries
-											.iter()
-											.filter(|(_, &qd)| {
-												matches!(qd.status, QueryStatus::Succeeded)
-											})
-											.count();
-
-										let ids_to_remove = queries
-											.into_iter()
-											.map(|(&id, _)| id)
-											.collect::<Vec<QueryId>>();
-
-										Some((success_count, ids_to_remove))
-									});
-
-								// construct result to return out of closure
+								// gather finished queries that should be removed from pending
+								let finished_queries = self.finished_batch_queries(uuid);
 								if let Some((success_count, ids_to_remove)) = finished_queries {
 									// send result back through channel
 									_ = ch.send(NumSuccPut(success_count)).await;
-									Some(ids_to_remove)
-								} else {
-									None
-								}
-							} else {
-								None
-							};
 
-							// check to see if we have something to remove from pending map
-							if let Some(ids) = ids_to_remove {
-								ids.iter().for_each(|id| {
-									self.pending_kad_queries.remove(id);
-								});
-							}
+									// check to see if we have something to remove from pending map
+									ids_to_remove.iter().for_each(|id| {
+										self.pending_kad_queries.remove(id);
+									});
+								};
+							};
 						},
 						QueryResult::Bootstrap(result) => match result {
 							Ok(BootstrapOk {
@@ -711,5 +664,45 @@ impl EventLoop {
 			address,
 			is_reserved: false,
 		};
+	}
+
+	fn finished_batch_queries(&self, batch_id: &Uuid) -> Option<(usize, Vec<QueryId>)> {
+		// filter queries from the current batch
+		let batch_queries = self
+			.pending_kad_queries
+			.iter()
+			.filter(|(_, qd)| qd.batch_id == Some(*batch_id))
+			.collect::<HashMap<&QueryId, &QueryDetails>>();
+
+		// make sure there are no Pending queries left
+		let has_no_pending = !batch_queries
+			.iter()
+			.any(|(_, qd)| matches!(qd.status, QueryStatus::Pending));
+
+		// if there are no Pending queries left
+		// collect ones that are considered to be done
+		let finished_queries = has_no_pending
+			.then(|| {
+				batch_queries
+					.into_iter()
+					.filter(|(_, qd)| !matches!(qd.status, QueryStatus::Pending))
+					.collect::<HashMap<&QueryId, &QueryDetails>>()
+			})
+			// count successful ones and gather what ids to remove
+			.and_then(|queries| {
+				let success_count = queries
+					.iter()
+					.filter(|(_, &qd)| matches!(qd.status, QueryStatus::Succeeded))
+					.count();
+
+				let ids_to_remove = queries
+					.into_iter()
+					.map(|(&id, _)| id)
+					.collect::<Vec<QueryId>>();
+
+				Some((success_count, ids_to_remove))
+			});
+
+		finished_queries
 	}
 }
