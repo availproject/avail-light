@@ -25,7 +25,7 @@ use tracing_subscriber::{
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
-	telemetry::otlp::initialize_open_telemetry,
+	telemetry::otlp::initialize,
 	types::{Mode, RuntimeConfig, State},
 };
 
@@ -120,7 +120,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	let ot_metrics = initialize_open_telemetry(cfg.ot_collector_endpoint.clone())
+	let ot_metrics = initialize(cfg.ot_collector_endpoint.clone())
 		.context("Unable to initialize OpenTelemetry service")?;
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;

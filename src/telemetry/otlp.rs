@@ -29,7 +29,7 @@ pub enum OTMetricEvent {
 	KadRoutingTablePeerNum(u32),
 }
 
-pub fn initialize_open_telemetry(endpoint: String) -> Result<OTMetrics, Error> {
+pub fn initialize(endpoint: String) -> Result<OTMetrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(3),
