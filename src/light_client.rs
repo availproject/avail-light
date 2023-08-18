@@ -642,6 +642,9 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_get_peer_id()
+			.returning(|| "peer_id".to_string());
 		process_block(&mock_client, &cfg, pp, &header, recv, &global_meter, state)
 			.await
 			.unwrap();
@@ -761,6 +764,9 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client
+			.expect_get_peer_id()
+			.returning(|| "peer_id".to_string());
 		process_block(&mock_client, &cfg, pp, &header, recv, &global_meter, state)
 			.await
 			.unwrap();
