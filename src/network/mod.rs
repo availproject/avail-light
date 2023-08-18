@@ -4,7 +4,6 @@ mod mem_store;
 #[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 
-use crate::telemetry::otlp::OTMetrics;
 use crate::types::{LibP2PConfig, SecretKey};
 use anyhow::{Context, Result};
 pub use client::Client;
@@ -28,7 +27,7 @@ use libp2p::{
 };
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Sender};
 use tracing::info;
 
 // Event enum encodes all used network event variants
@@ -54,31 +53,13 @@ pub struct Behaviour {
 
 pub fn init(
 	cfg: LibP2PConfig,
-	ot_metrics: OTMetrics,
+	network_stats_sender: Sender<usize>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
 	kad_remove_local_record: bool,
+	id_keys: libp2p::identity::Keypair,
 ) -> Result<(Client, EventLoop)> {
-	// Create a public/private key pair, either based on a seed or random
-	let id_keys = match cfg.secret_key {
-		// If seed is provided, generate secret key from seed
-		Some(SecretKey::Seed { seed }) => {
-			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
-			identity::Keypair::ed25519_from_bytes(seed_digest)
-				.context("error generating secret key from seed")?
-		},
-		// Import secret key if provided
-		Some(SecretKey::Key { key }) => {
-			let mut decoded_key = [0u8; 32];
-			hex::decode_to_slice(key.into_bytes(), &mut decoded_key)
-				.context("error decoding secret key from config")?;
-			identity::Keypair::ed25519_from_bytes(decoded_key)
-				.context("error importing secret key")?
-		},
-		// If neither seed nor secret key provided, generate secret key from random seed
-		None => identity::Keypair::generate_ed25519(),
-	};
 	let local_peer_id = PeerId::from(id_keys.public());
 	info!(
 		"Local peer id: {:?}. Public key: {:?}.",
@@ -176,15 +157,37 @@ pub fn init(
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
-			swarm.local_peer_id().to_string(),
 		),
 		EventLoop::new(
 			swarm,
 			command_receiver,
-			ot_metrics,
+			network_stats_sender,
 			cfg.relays,
 			cfg.bootstrap_interval,
 			kad_remove_local_record,
 		),
 	))
+}
+
+pub fn keypair(cfg: LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)> {
+	let keypair = match cfg.secret_key {
+		// If seed is provided, generate secret key from seed
+		Some(SecretKey::Seed { seed }) => {
+			let seed_digest = multihash::Sha3_256::digest(seed.as_bytes());
+			identity::Keypair::ed25519_from_bytes(seed_digest)
+				.context("error generating secret key from seed")?
+		},
+		// Import secret key if provided
+		Some(SecretKey::Key { key }) => {
+			let mut decoded_key = [0u8; 32];
+			hex::decode_to_slice(key.into_bytes(), &mut decoded_key)
+				.context("error decoding secret key from config")?;
+			identity::Keypair::ed25519_from_bytes(decoded_key)
+				.context("error importing secret key")?
+		},
+		// If neither seed nor secret key provided, generate secret key from random seed
+		None => identity::Keypair::generate_ed25519(),
+	};
+	let peer_id = PeerId::from(keypair.public()).to_string();
+	Ok((keypair, peer_id))
 }
