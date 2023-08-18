@@ -18,13 +18,11 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
-use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
 use rocksdb::DB;
-use sp_core::{blake2_256, ed25519};
 use std::{
 	sync::{Arc, Mutex},
 	time::SystemTime,
@@ -40,7 +38,6 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	types::{BlockVerified, State, SyncClientConfig},
-	utils,
 	utils::{extract_app_lookup, extract_kate},
 };
 
@@ -269,8 +266,6 @@ pub async fn run(
 	block_verified_sender: Option<Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
-	let rpc_client = sync_client.get_client();
-
 	if start_block >= end_block {
 		warn!("There are no blocks to sync from {start_block} to {end_block}");
 		return;
@@ -280,66 +275,9 @@ pub async fn run(
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
 
-	// Fetch validator set at current height
-	let final_validator_set = rpc::get_valset_by_block_number(&rpc_client, end_block)
-		.await
-		.expect("Couldn't get current validator set")
-		.into_iter()
-		.map(|validator_pub| ed25519::Public::from_raw(validator_pub.0))
-		.collect::<Vec<_>>();
-
-	// Fetch the set ID from storage at current height
-	let final_set_id = rpc::get_set_id_by_block_number(&rpc_client, end_block)
-		.await
-		.expect("Couldn't get current set ID");
-
-	let mut last_hash: Option<H256> = None;
-	let mut last_set_id: Option<u64> = None;
-	let mut last_validator_set: Option<Vec<ed25519::Public>> = None;
-
 	info!("Syncing block headers from {start_block} to {end_block}");
 	for block_number in start_block..=end_block {
 		info!("Testing block {block_number}!");
-		let block_hash = rpc::get_block_hash(&rpc_client, block_number)
-			.await
-			.expect("Couldn't get block hash");
-		let block_header = rpc::get_header_by_hash(&rpc_client, block_hash)
-			.await
-			.expect("Couldn't get header by hash");
-		assert_eq!(
-			block_hash,
-			Encode::using_encoded(&block_header, blake2_256).into(),
-			"Hash should match"
-		);
-		if let Some(lh) = last_hash {
-			assert_eq!(lh, block_header.parent_hash, "Parent hash should match!")
-		}
-		last_hash = Some(block_hash);
-
-		// Search the header logs for validator set change
-		let new_auths = utils::filter_auth_set_changes(&block_header);
-
-		if !new_auths.is_empty() {
-			info!("Validator set is changed!");
-			last_validator_set = Some(
-				new_auths[0]
-					.iter()
-					.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
-					.collect(),
-			);
-			let set_id = rpc::get_set_id_by_hash(&rpc_client, block_hash)
-				.await
-				.expect("Couldn't get set id by hash");
-			info!("Set id changed to {set_id}");
-			if let Some(sid) = last_set_id {
-				assert_eq!(
-					sid + 1,
-					set_id,
-					"Set ID should be one greater than the last!"
-				)
-			}
-			last_set_id = Some(set_id);
-		}
 
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
@@ -355,19 +293,7 @@ pub async fn run(
 				.set_sync_confidence_achieved(block_number);
 		}
 	}
-	if let Some(lvalset) = last_validator_set {
-		assert_eq!(
-			lvalset, final_validator_set,
-			"Validator set should match the last one"
-		);
-		assert_eq!(
-			last_set_id.expect("last_set_id shouldn't be None if valset is Some"),
-			final_set_id,
-			"Set ID should match the final one"
-		);
-	} else {
-		info!("Validator set hasn't changed for all sync client depth");
-	}
+
 	if block_verified_sender.is_none() {
 		state.lock().unwrap().set_synced(true);
 	}
