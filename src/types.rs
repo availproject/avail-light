@@ -231,7 +231,7 @@ pub struct RuntimeConfig {
 	pub log_level: String,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
-	/// OpenTelemetry Collector endpoint (default: `http://localhost:4317`)
+	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
 	pub ot_collector_endpoint: String,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
@@ -507,7 +507,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			ot_collector_endpoint: "http://localhost:4317".to_string(),
+			ot_collector_endpoint: "http://otelcollector.avail.tools:4317".to_string(),
 			disable_rpc: false,
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,

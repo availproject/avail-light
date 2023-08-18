@@ -111,8 +111,8 @@ app_id = 0
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
-# OpenTelemetry Collector endpoint (default: `http://localhost:4317`)
-ot_collector_endpoint = "http://localhost:4317"
+# OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
+ot_collector_endpoint = "http://otelcollector.avail.tools:4317"
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client (default: None)
@@ -191,7 +191,7 @@ Response:
 
 ```json
 {
-	"latest_block": 10
+ "latest_block": 10
 }
 ```
 
@@ -207,9 +207,9 @@ Response:
 
 ```json
 {
-	"block": 1,
-	"confidence": 93.75,
-	"serialised_confidence": "5232467296"
+ "block": 1,
+ "confidence": 93.75,
+ "serialised_confidence": "5232467296"
 }
 ```
 
@@ -230,10 +230,10 @@ Response:
 
 ```json
 {
-	"block": 46,
-	"extrinsics": [
-		"ZXhhbXBsZQ=="
-	]
+ "block": 46,
+ "extrinsics": [
+  "ZXhhbXBsZQ=="
+ ]
 }
 ```
 
@@ -259,7 +259,7 @@ Response:
 
 ```json
 {
-	"AppClient": 1
+ "AppClient": 1
 }
 ```
 
@@ -273,9 +273,9 @@ Response:
 
 ```json
 {
-	"block_num": 10,
-	"confidence": 93.75,
-	"app_id": 1
+ "block_num": 10,
+ "confidence": 93.75,
+ "app_id": 1
 }
 ```
 
@@ -289,7 +289,7 @@ Response:
 
 ```json
 {
-	"latest_block": 255
+ "latest_block": 255
 }
 ```
 
@@ -385,10 +385,10 @@ If application data is available, and decode is `false` or unspecified:
 
 ```json
 {
-	"block": 1,
-	"extrinsics": [
-		"0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
-	]
+ "block": 1,
+ "extrinsics": [
+  "0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
+ ]
 }
 ```
 
