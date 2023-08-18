@@ -317,7 +317,7 @@ pub async fn run(
 		last_hash = Some(block_hash);
 
 		// Search the header logs for validator set change
-		let new_auths = utils::filter_auth_set_changes(block_header);
+		let new_auths = utils::filter_auth_set_changes(&block_header);
 
 		if !new_auths.is_empty() {
 			info!("Validator set is changed!");

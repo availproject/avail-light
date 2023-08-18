@@ -8,6 +8,7 @@ pub mod proof;
 pub mod rpc;
 pub mod subscriptions;
 pub mod sync_client;
+pub mod sync_finality;
 pub mod telemetry;
 pub mod types;
 pub mod utils;

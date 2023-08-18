@@ -15,8 +15,8 @@ use kate_recovery::{
 	matrix::{Dimensions, Partition},
 };
 use libp2p::{Multiaddr, PeerId};
-use serde::{Deserialize, Serialize};
-use sp_core::blake2_256;
+use serde::{de::Error, Deserialize, Serialize};
+use sp_core::{blake2_256, bytes, ed25519};
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -588,6 +588,54 @@ impl State {
 			Some(range) => range.last = block_number,
 			None => self.sync_data_verified = Some(BlockRange::init(block_number)),
 		};
+	}
+}
+
+#[derive(Debug, Encode)]
+pub enum SignerMessage {
+	_DummyMessage(u32),
+	PrecommitMessage(Precommit),
+}
+
+#[derive(Clone, Debug, Decode, Encode, Deserialize)]
+pub struct Precommit {
+	pub target_hash: H256,
+	/// The target block's number
+	pub target_number: u32,
+}
+
+#[derive(Clone, Debug, Decode, Deserialize)]
+pub struct SignedPrecommit {
+	pub precommit: Precommit,
+	/// The signature on the message.
+	pub signature: ed25519::Signature,
+	/// The Id of the signer.
+	pub id: ed25519::Public,
+}
+#[derive(Clone, Debug, Decode, Deserialize)]
+pub struct Commit {
+	pub target_hash: H256,
+	/// The target block's number.
+	pub target_number: u32,
+	/// Precommits for target block or any block after it that justify this commit.
+	pub precommits: Vec<SignedPrecommit>,
+}
+
+#[derive(Clone, Debug, Decode)]
+pub struct GrandpaJustification {
+	pub round: u64,
+	pub commit: Commit,
+	pub _votes_ancestries: Vec<DaHeader>,
+}
+
+impl<'de> Deserialize<'de> for GrandpaJustification {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		let encoded = bytes::deserialize(deserializer)?;
+		Self::decode(&mut &encoded[..])
+			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
 	}
 }
 
