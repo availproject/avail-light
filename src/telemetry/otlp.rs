@@ -92,7 +92,7 @@ impl super::Metrics for Metrics {
 pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
-		timeout: Duration::from_secs(3),
+		timeout: Duration::from_secs(10),
 		protocol: Protocol::Grpc,
 	};
 	let provider = opentelemetry_otlp::new_pipeline()
@@ -102,8 +102,8 @@ pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 				.tonic()
 				.with_export_config(export_config),
 		)
-		.with_period(Duration::from_secs(3))
-		.with_timeout(Duration::from_secs(10))
+		.with_period(Duration::from_secs(10)) // Configures the intervening time between exports
+		.with_timeout(Duration::from_secs(15)) // Configures the time a OT waits for an export to complete before canceling it.
 		.build()?;
 
 	global::set_meter_provider(provider);
