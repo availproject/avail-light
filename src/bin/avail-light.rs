@@ -316,6 +316,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		));
 	}
 
+	let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
+	tokio::task::spawn(avail_light::sync_finality::run(
+		sync_finality,
+		error_sender.clone(),
+	));
+
 	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(

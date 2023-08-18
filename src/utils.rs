@@ -63,7 +63,7 @@ pub(crate) fn extract_app_lookup(
 	DataLookup::try_from(compact)
 }
 
-pub fn filter_auth_set_changes(header: DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
+pub fn filter_auth_set_changes(header: &DaHeader) -> Vec<Vec<(AuthorityId, u64)>> {
 	let new_auths = header
 		.digest
 		.logs

@@ -3,11 +3,9 @@ use avail_subxt::{
 	avail::Client,
 	primitives::{grandpa::AuthorityId, Header},
 	rpc::rpc_params,
-	utils::H256,
 };
-use codec::{Decode, Encode};
-use serde::{de::Error, Deserialize};
-use sp_core::{blake2_256, bytes, ed25519, Pair};
+use codec::Encode;
+use sp_core::{blake2_256, ed25519, Pair};
 use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
@@ -15,7 +13,11 @@ use std::{
 use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
-use crate::{rpc, types::State, utils};
+use crate::{
+	rpc,
+	types::{GrandpaJustification, SignerMessage, State},
+	utils,
+};
 
 pub async fn finalized_headers(
 	rpc_client: Client,
@@ -28,54 +30,6 @@ pub async fn finalized_headers(
 		if let Err(error) = error_sender.send(error).await {
 			error!("Cannot send error to error channel: {error}");
 		}
-	}
-}
-
-#[derive(Debug, Encode)]
-enum SignerMessage {
-	_DummyMessage(u32),
-	PrecommitMessage(Precommit),
-}
-
-#[derive(Clone, Debug, Decode, Encode, Deserialize)]
-struct Precommit {
-	pub target_hash: H256,
-	/// The target block's number
-	pub target_number: u32,
-}
-
-#[derive(Clone, Debug, Decode, Deserialize)]
-struct SignedPrecommit {
-	pub precommit: Precommit,
-	/// The signature on the message.
-	pub signature: ed25519::Signature,
-	/// The Id of the signer.
-	pub id: ed25519::Public,
-}
-#[derive(Clone, Debug, Decode, Deserialize)]
-struct Commit {
-	pub target_hash: H256,
-	/// The target block's number.
-	pub target_number: u32,
-	/// Precommits for target block or any block after it that justify this commit.
-	pub precommits: Vec<SignedPrecommit>,
-}
-
-#[derive(Clone, Debug, Decode)]
-struct GrandpaJustification {
-	pub round: u64,
-	pub commit: Commit,
-	pub _votes_ancestries: Vec<Header>,
-}
-
-impl<'de> Deserialize<'de> for GrandpaJustification {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: serde::Deserializer<'de>,
-	{
-		let encoded = bytes::deserialize(deserializer)?;
-		Self::decode(&mut &encoded[..])
-			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
 	}
 }
 
@@ -128,7 +82,7 @@ async fn subscribe_check_and_process(
 					.expect("Receiver should not be dropped.");
 
 				// Search the header logs for validator set change
-				let mut new_auths = utils::filter_auth_set_changes(header);
+				let mut new_auths = utils::filter_auth_set_changes(&header);
 
 				// If the event exists, send the new auths over the message channel.
 				if !new_auths.is_empty() {
