@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use anyhow::{Error, Ok, Result};
 use opentelemetry_api::{
 	global,
@@ -7,29 +5,91 @@ use opentelemetry_api::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
-pub struct OTMetrics {
-	pub global_meter: Meter,
+pub struct Metrics {
+	pub meter: Meter,
 	pub session_block_counter: Counter<u64>,
+	pub peer_id: String,
 }
 
-pub enum OTMetricEvent {
-	SessionBlockCounter(Counter<u64>),
-	TotalBlockNumber(u32),
-	DHTFetched(f64),
-	DHTFetchedPercentage(f64),
-	NodeRPCFetched(f64),
-	BlockConfidence(f64),
-	RPCCallDuration(f64),
-	DHTPutDuration(f64),
-	DHTPutSuccess(f64),
-	DHTPutRowsDuration(f64),
-	DHTPutRowsSuccess(f64),
-	KadRoutingTablePeerNum(u32),
+impl Metrics {
+	fn attributes(&self) -> [KeyValue; 1] {
+		[KeyValue::new("peerID", self.peer_id.clone())]
+	}
+
+	fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
+		let attributes = self.attributes();
+		self.meter
+			.register_callback(&[instrument.as_any()], move |observer| {
+				observer.observe_u64(&instrument, value, &attributes)
+			})?;
+		Ok(())
+	}
+
+	fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
+		let attributes = self.attributes();
+		self.meter
+			.register_callback(&[instrument.as_any()], move |observer| {
+				observer.observe_f64(&instrument, value, &attributes)
+			})?;
+		Ok(())
+	}
 }
 
-pub fn initialize(endpoint: String) -> Result<OTMetrics, Error> {
+impl super::Metrics for Metrics {
+	fn count(&self, counter: super::MetricCounter) {
+		match counter {
+			super::MetricCounter::SessionBlock => {
+				self.session_block_counter.add(1, &self.attributes());
+			},
+		}
+	}
+
+	fn record(&self, value: super::MetricValue) -> Result<()> {
+		match value {
+			super::MetricValue::TotalBlockNumber(number) => {
+				self.record_u64("total_block_number", number.into())?;
+			},
+			super::MetricValue::DHTFetched(number) => {
+				self.record_f64("dht_fetched", number)?;
+			},
+			super::MetricValue::DHTFetchedPercentage(number) => {
+				self.record_f64("dht_fetched_percentage", number)?;
+			},
+			super::MetricValue::NodeRPCFetched(number) => {
+				self.record_f64("node_rpc_fetched", number)?;
+			},
+			super::MetricValue::BlockConfidence(number) => {
+				self.record_f64("block_confidence", number)?;
+			},
+			super::MetricValue::RPCCallDuration(number) => {
+				self.record_f64("rpc_call_duration", number)?;
+			},
+			super::MetricValue::DHTPutDuration(number) => {
+				self.record_f64("dht_put_duration", number)?;
+			},
+			super::MetricValue::DHTPutSuccess(number) => {
+				self.record_f64("dht_put_success", number)?;
+			},
+			super::MetricValue::DHTPutRowsDuration(number) => {
+				self.record_f64("dht_put_rows_duration", number)?;
+			},
+			super::MetricValue::DHTPutRowsSuccess(number) => {
+				self.record_f64("dht_put_rows_success", number)?;
+			},
+			super::MetricValue::KadRoutingTablePeerNum(number) => {
+				self.record_u64("kad_routing_table_peer_num", number.into())?;
+			},
+		};
+		Ok(())
+	}
+}
+
+pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(3),
@@ -51,164 +111,9 @@ pub fn initialize(endpoint: String) -> Result<OTMetrics, Error> {
 	// Initialize counters - they need to persist unlike Gauges that are recreated on every record
 	// TODO - move to a separate func once there's more than 1 counter
 	let session_block_counter = meter.u64_counter("session_block_counter").init();
-	Ok(OTMetrics {
-		global_meter: meter,
+	Ok(Metrics {
+		meter,
 		session_block_counter,
+		peer_id,
 	})
-}
-
-pub fn record(event: OTMetricEvent, meter: &Meter, peer_id: &str) {
-	match event {
-		OTMetricEvent::SessionBlockCounter(counter) => {
-			let peer_id = peer_id.to_string();
-			counter.add(1, [KeyValue::new("peerID", peer_id.clone())].as_ref());
-		},
-		OTMetricEvent::TotalBlockNumber(num) => {
-			let total_block_number = meter.u64_observable_gauge("total_block_number").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[total_block_number.as_any()], move |observer| {
-					observer.observe_u64(
-						&total_block_number,
-						num.into(),
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTFetched(num) => {
-			let dht_fetched = meter.f64_observable_gauge("dht_fetched").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_fetched.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_fetched,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTFetchedPercentage(num) => {
-			let dht_fetched_percentage =
-				meter.f64_observable_gauge("dht_fetched_percentage").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_fetched_percentage.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_fetched_percentage,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::NodeRPCFetched(num) => {
-			let node_rpc_fetched = meter.f64_observable_gauge("node_rpc_fetched").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[node_rpc_fetched.as_any()], move |observer| {
-					observer.observe_f64(
-						&node_rpc_fetched,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::BlockConfidence(num) => {
-			let block_confidence = meter.f64_observable_gauge("block_confidence").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[block_confidence.as_any()], move |observer| {
-					observer.observe_f64(
-						&block_confidence,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::RPCCallDuration(num) => {
-			let rpc_call_duration = meter.f64_observable_gauge("rpc_call_duration").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[rpc_call_duration.as_any()], move |observer| {
-					observer.observe_f64(
-						&rpc_call_duration,
-						num.into(),
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTPutDuration(num) => {
-			let dht_put_duration = meter.f64_observable_gauge("dht_put_duration").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_put_duration.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_put_duration,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTPutSuccess(num) => {
-			let dht_put_success = meter.f64_observable_gauge("dht_put_success").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_put_success.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_put_success,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTPutRowsDuration(num) => {
-			let peer_id = peer_id;
-			let dht_put_rows_duration = meter.f64_observable_gauge("dht_put_rows_duration").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_put_rows_duration.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_put_rows_duration,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::DHTPutRowsSuccess(num) => {
-			let dht_put_rows_success = meter.f64_observable_gauge("dht_put_rows_success").init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[dht_put_rows_success.as_any()], move |observer| {
-					observer.observe_f64(
-						&dht_put_rows_success,
-						num,
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-		OTMetricEvent::KadRoutingTablePeerNum(num) => {
-			let kad_routing_table_peer_num = meter
-				.u64_observable_gauge("kad_routing_table_peer_num")
-				.init();
-			let peer_id = peer_id.to_string();
-			meter
-				.register_callback(&[kad_routing_table_peer_num.as_any()], move |observer| {
-					observer.observe_u64(
-						&kad_routing_table_peer_num,
-						num.into(),
-						[KeyValue::new("peerID", peer_id.clone())].as_ref(),
-					)
-				})
-				.unwrap();
-		},
-	}
 }

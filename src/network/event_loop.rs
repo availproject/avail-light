@@ -1,12 +1,14 @@
-use std::{collections::HashMap, time::Duration};
-
 use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
 use rand::seq::SliceRandom;
 use std::str;
+use std::{collections::HashMap, time::Duration};
 use tokio::{
-	sync::{mpsc, oneshot},
+	sync::{
+		mpsc::{self, Sender},
+		oneshot,
+	},
 	time::{interval_at, Instant, Interval},
 };
 use void::Void;
@@ -45,7 +47,6 @@ use libp2p::{
 	Multiaddr, PeerId, Swarm,
 };
 
-use crate::telemetry::otlp::{self, OTMetrics};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug)]
@@ -108,7 +109,7 @@ pub struct EventLoop {
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
-	ot_metrics: OTMetrics,
+	network_stats_sender: Sender<usize>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -136,7 +137,7 @@ impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
-		ot_metrics: OTMetrics,
+		network_stats_sender: Sender<usize>,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
@@ -149,7 +150,7 @@ impl EventLoop {
 			pending_kad_routing: Default::default(),
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
-			ot_metrics,
+			network_stats_sender,
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -169,7 +170,7 @@ impl EventLoop {
 			tokio::select! {
 				event = self.swarm.next() => self.handle_event(event.expect("Swarm stream should be infinite")).await,
 				command = self.command_receiver.recv() => match command {
-					Some(c) => self.handle_command(c),
+					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the network event loop.
 					None => return,
 				},
@@ -489,7 +490,7 @@ impl EventLoop {
 		}
 	}
 
-	fn handle_command(&mut self, command: Command) {
+	async fn handle_command(&mut self, command: Command) {
 		match command {
 			Command::StartListening { addr, sender } => {
 				_ = match self.swarm.listen_on(addr) {
@@ -556,7 +557,7 @@ impl EventLoop {
 					.shrink_hashmap();
 			},
 			Command::NetworkObservabilityDump => {
-				self.dump_routing_table_stats();
+				self.dump_routing_table_stats().await;
 				self.dump_hash_map_block_stats();
 			},
 		}
@@ -594,7 +595,7 @@ impl EventLoop {
 		}
 	}
 
-	fn dump_routing_table_stats(&mut self) {
+	async fn dump_routing_table_stats(&mut self) {
 		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
 		debug!("Number of KBuckets: {:?} ", num_of_buckets);
 		let mut table: String = "".to_owned();
@@ -613,15 +614,9 @@ impl EventLoop {
 		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
 		debug!("{text}\n{header}\n{table}");
 
-		otlp::record(
-			otlp::OTMetricEvent::KadRoutingTablePeerNum(
-				total_peer_number
-					.try_into()
-					.expect("unable to convert usize to u32"),
-			),
-			&self.ot_metrics.global_meter,
-			&self.swarm.local_peer_id().to_string(),
-		)
+		if let Err(error) = self.network_stats_sender.send(total_peer_number).await {
+			error!("Cannot send network stats: {error}");
+		};
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

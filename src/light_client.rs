@@ -44,7 +44,7 @@ use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
 	network::Client,
 	proof, rpc,
-	telemetry::otlp::{self, OTMetricEvent, OTMetrics},
+	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockVerified, LightClientConfig, State},
 	utils::{calculate_confidence, extract_kate},
 };
@@ -64,7 +64,6 @@ pub trait LightClient {
 	async fn network_stats(&self) -> Result<()>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
-	fn get_peer_id(&self) -> String;
 }
 
 #[derive(Clone)]
@@ -118,30 +117,19 @@ impl LightClient for LightClientImpl {
 		store_block_header_in_db(self.db.clone(), block_number, header)
 			.context("Failed to store block header in DB")
 	}
-	fn get_peer_id(&self) -> String {
-		self.network_client.get_peer_id()
-	}
 }
 
 pub async fn process_block(
 	light_client: &impl LightClient,
+	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
 	pp: Arc<PublicParameters>,
 	header: &Header,
 	received_at: Instant,
-	ot_metrics: &OTMetrics,
 	state: Arc<Mutex<State>>,
 ) -> Result<()> {
-	otlp::record(
-		OTMetricEvent::SessionBlockCounter(ot_metrics.session_block_counter.clone()),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
-	otlp::record(
-		OTMetricEvent::TotalBlockNumber(header.number),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.count(MetricCounter::SessionBlock);
+	metrics.record(MetricValue::TotalBlockNumber(header.number))?;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -187,17 +175,11 @@ pub async fn process_block(
 		"Number of cells fetched from DHT: {}",
 		cells_fetched.len()
 	);
-	otlp::record(
-		OTMetricEvent::DHTFetched(cells_fetched.len() as f64),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::DHTFetched(cells_fetched.len() as f64))?;
 
-	otlp::record(
-		OTMetricEvent::DHTFetchedPercentage(cells_fetched.len() as f64 / positions.len() as f64),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::DHTFetchedPercentage(
+		cells_fetched.len() as f64 / positions.len() as f64,
+	))?;
 
 	let mut rpc_fetched = if cfg.disable_rpc {
 		vec![]
@@ -214,11 +196,7 @@ pub async fn process_block(
 		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
-	otlp::record(
-		OTMetricEvent::NodeRPCFetched(rpc_fetched.len() as f64),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))?;
 
 	let mut cells = vec![];
 	cells.extend(cells_fetched);
@@ -257,11 +235,7 @@ pub async fn process_block(
 			"Confidence factor: {}",
 			conf
 		);
-		otlp::record(
-			OTMetricEvent::BlockConfidence(conf),
-			&ot_metrics.global_meter,
-			&light_client.get_peer_id(),
-		);
+		metrics.record(MetricValue::BlockConfidence(conf))?;
 	}
 
 	// push latest mined block's header into column family specified
@@ -340,11 +314,7 @@ pub async fn process_block(
 			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
 		);
 
-		otlp::record(
-			OTMetricEvent::DHTPutRowsSuccess(success_rate),
-			&ot_metrics.global_meter,
-			&light_client.get_peer_id(),
-		);
+		metrics.record(MetricValue::DHTPutRowsSuccess(success_rate))?;
 
 		info!(
 			block_number,
@@ -352,11 +322,7 @@ pub async fn process_block(
 			"{rows_len} rows inserted into DHT"
 		);
 
-		otlp::record(
-			OTMetricEvent::DHTPutRowsDuration(time_elapsed),
-			&ot_metrics.global_meter,
-			&light_client.get_peer_id(),
-		);
+		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed))?;
 	}
 
 	let partition_time_elapsed = begin.elapsed()?;
@@ -368,11 +334,9 @@ pub async fn process_block(
 		"Partition cells received. Time elapsed: \t{:?}",
 		partition_time_elapsed
 	);
-	otlp::record(
-		OTMetricEvent::RPCCallDuration(partition_time_elapsed.as_secs_f64()),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::RPCCallDuration(
+		partition_time_elapsed.as_secs_f64(),
+	))?;
 
 	begin = SystemTime::now();
 
@@ -385,11 +349,7 @@ pub async fn process_block(
 		"DHT PUT operation success rate: {}", dht_insert_success_rate
 	);
 
-	otlp::record(
-		OTMetricEvent::DHTPutSuccess(dht_insert_success_rate as f64),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
 
 	let dht_put_time_elapsed = begin.elapsed()?;
 	info!(
@@ -399,11 +359,9 @@ pub async fn process_block(
 		dht_put_time_elapsed
 	);
 
-	otlp::record(
-		OTMetricEvent::DHTPutDuration(dht_put_time_elapsed.as_secs_f64()),
-		&ot_metrics.global_meter,
-		&light_client.get_peer_id(),
-	);
+	metrics.record(MetricValue::DHTPutDuration(
+		dht_put_time_elapsed.as_secs_f64(),
+	))?;
 
 	light_client
 		.shrink_kademlia_map()
@@ -438,7 +396,7 @@ pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
 	pp: Arc<PublicParameters>,
-	ot_metrics: OTMetrics,
+	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
 	mut channels: Channels,
 ) {
@@ -452,11 +410,11 @@ pub async fn run(
 
 		if let Err(error) = process_block(
 			&light_client,
+			&metrics,
 			&cfg,
 			pp.clone(),
 			&header,
 			received_at,
-			&ot_metrics,
 			state.clone(),
 		)
 		.await
@@ -486,10 +444,10 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-	use crate::{telemetry::otlp::initialize, types::RuntimeConfig};
-
 	use super::rpc::cell_count_for_confidence;
 	use super::*;
+	use crate::telemetry;
+	use crate::types::RuntimeConfig;
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -524,7 +482,6 @@ mod tests {
 		let mut mock_client = MockLightClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let pp = Arc::new(testnet::public_params(1024));
-		let global_meter = initialize("http://localhost:4317".to_string()).unwrap();
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -642,12 +599,20 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		mock_client
-			.expect_get_peer_id()
-			.returning(|| "peer_id".to_string());
-		process_block(&mock_client, &cfg, pp, &header, recv, &global_meter, state)
-			.await
-			.unwrap();
+		let mut mock_metrics = telemetry::MockMetrics::new();
+		mock_metrics.expect_count().returning(|_| ());
+		mock_metrics.expect_record().returning(|_| Ok(()));
+		process_block(
+			&mock_client,
+			&Arc::new(mock_metrics),
+			&cfg,
+			pp,
+			&header,
+			recv,
+			state,
+		)
+		.await
+		.unwrap();
 	}
 
 	#[tokio::test]
@@ -656,7 +621,6 @@ mod tests {
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let pp = Arc::new(testnet::public_params(1024));
-		let global_meter = initialize("http://localhost:4317".to_string()).unwrap();
 		let cells_unfetched: Vec<Position> = vec![];
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
@@ -764,11 +728,19 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		mock_client
-			.expect_get_peer_id()
-			.returning(|| "peer_id".to_string());
-		process_block(&mock_client, &cfg, pp, &header, recv, &global_meter, state)
-			.await
-			.unwrap();
+		let mut mock_metrics = telemetry::MockMetrics::new();
+		mock_metrics.expect_count().returning(|_| ());
+		mock_metrics.expect_record().returning(|_| Ok(()));
+		process_block(
+			&mock_client,
+			&Arc::new(mock_metrics),
+			&cfg,
+			pp,
+			&header,
+			recv,
+			state,
+		)
+		.await
+		.unwrap();
 	}
 }
