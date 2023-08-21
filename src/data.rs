@@ -7,11 +7,16 @@ use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
 use rocksdb::DB;
 use std::sync::Arc;
+use sp_core::ed25519;
 
-use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
+use crate::{
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF},
+	types::FinalitySyncCheckpoint,
+};
 
 const LAST_FULL_NODE_WS_KEY: &str = "last_full_node_ws";
 const GENESIS_HASH_KEY: &str = "genesis_hash";
+const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
 pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> Result<()> {
 	let cf_handle = db.cf_handle(STATE_CF).context("Failed to get cf handle")?;
@@ -183,6 +188,37 @@ pub fn store_genesis_hash(db: Arc<DB>, genesis_hash: H256) -> Result<()> {
 		&cf_handle,
 		GENESIS_HASH_KEY.as_bytes(),
 		genesis_hash.as_bytes(),
+	)
+	.context("Failed to write {key} data")
+}
+
+pub fn get_finality_sync_checkpoint(db: Arc<DB>) -> Result<Option<FinalitySyncCheckpoint>> {
+	let cf_handle = db
+		.cf_handle(STATE_CF)
+		.context("Couldn't get column handle from db")?;
+
+	let result = db
+		.get_cf(&cf_handle, FINALITY_SYNC_CHECKPOINT_KEY.as_bytes())
+		.context("Couldn't get {key} from db")?;
+
+	result.map_or(Ok(None), |e| {
+		FinalitySyncCheckpoint::decode(&mut &e[..])
+			.map_err(|e| anyhow!("Error decoding: {e}!"))
+			.map(Some)
+	})
+}
+
+pub fn store_finality_sync_checkpoint(
+	db: Arc<DB>,
+	checkpoint: FinalitySyncCheckpoint,
+) -> Result<()> {
+	let cf_handle = db
+		.cf_handle(STATE_CF)
+		.context("Couldn't get column handle from db")?;
+	db.put_cf(
+		&cf_handle,
+		FINALITY_SYNC_CHECKPOINT_KEY.as_bytes(),
+		checkpoint.encode().as_slice(),
 	)
 	.context("Failed to write {key} data")
 }
