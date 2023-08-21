@@ -5,6 +5,7 @@ use avail_subxt::{
 	rpc::rpc_params,
 };
 use codec::Encode;
+use rocksdb::DB;
 use sp_core::{blake2_256, ed25519, Pair};
 use std::{
 	sync::{Arc, Mutex},
@@ -14,8 +15,9 @@ use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
 use crate::{
+	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
 	rpc,
-	types::{GrandpaJustification, SignerMessage, State},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils,
 };
 
@@ -24,8 +26,9 @@ pub async fn finalized_headers(
 	message_tx: Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
 	state: Arc<Mutex<State>>,
+	db: Arc<DB>,
 ) {
-	if let Err(error) = subscribe_check_and_process(rpc_client, message_tx, state).await {
+	if let Err(error) = subscribe_check_and_process(rpc_client, message_tx, state, db).await {
 		error!("{error}");
 		if let Err(error) = error_sender.send(error).await {
 			error!("Cannot send error to error channel: {error}");
@@ -46,6 +49,7 @@ async fn subscribe_check_and_process(
 	subxt_client: Client,
 	message_tx: Sender<(Header, Instant)>,
 	state: Arc<Mutex<State>>,
+	db: Arc<DB>,
 ) -> Result<()> {
 	let mut header_subscription = subxt_client
 		.rpc()
@@ -73,6 +77,7 @@ async fn subscribe_check_and_process(
 	// Task that produces headers and new validator sets
 	tokio::spawn({
 		let msg_sender = msg_sender.clone();
+		let state = state.clone();
 		async move {
 			while let Some(Ok(header)) = header_subscription.next().await {
 				let received_at = Instant::now();
@@ -210,6 +215,19 @@ async fn subscribe_check_and_process(
 					break 'mainloop Err(anyhow!(
 						"Not signed by the supermajority of the validator set."
 					));
+				} else {
+					let state_locked = state.lock().unwrap();
+					if state_locked.finality_synced {
+						info!("Storing finality checkpoint at block {}", header.number);
+						store_finality_sync_checkpoint(
+							db.clone(),
+							FinalitySyncCheckpoint {
+								set_id,
+								number: header.number,
+								validator_set: validator_set.clone(),
+							},
+						)?;
+					}
 				}
 
 				// Get all the skipped blocks, if they exist
