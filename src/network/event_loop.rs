@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
+use libp2p::swarm::AddressRecord;
 use rand::seq::SliceRandom;
 use std::str;
 use std::{collections::HashMap, time::Duration};
@@ -616,7 +617,10 @@ impl EventLoop {
 		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
 		debug!("{text}\n{header}\n{table}");
 
-		let current_multiaddress = self.dump_current_multiaddress();
+		let mut current_multiaddress = "".to_string();
+		if let Some(multiaddress) = self.dump_current_multiaddress() {
+			current_multiaddress = multiaddress.addr.to_string();
+		}
 
 		let network_dump_event = NetworkDumpEvent {
 			routing_table_num_of_peers: total_peer_number,
@@ -627,12 +631,8 @@ impl EventLoop {
 		};
 	}
 
-	fn dump_current_multiaddress(&mut self) -> &Multiaddr {
-		info!(
-			"{}",
-			&self.swarm.external_addresses().last().expect("msg").addr
-		);
-		&self.swarm.external_addresses().last().expect("msg").addr
+	fn dump_current_multiaddress(&mut self) -> Option<&AddressRecord> {
+		self.swarm.external_addresses().last()
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

@@ -146,8 +146,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	tokio::spawn(async move {
 		while let Some(network_dump_event) = network_stats_receiver.recv().await {
 			// Set multiaddress for metric dispatch
-			network_stats_metrics.lock().unwrap().multiaddress =
-				network_dump_event.current_multiaddress;
+			if network_dump_event.current_multiaddress != "" {
+				network_stats_metrics.lock().unwrap().multiaddress =
+					network_dump_event.current_multiaddress;
+			}
 
 			let number = network_dump_event
 				.routing_table_num_of_peers
