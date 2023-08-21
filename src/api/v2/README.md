@@ -173,8 +173,8 @@ Request current Avail Light Client status data.
 
 ```json
 {
-  "type": "status",
-  "request_id": "{uuid}"
+	"type": "status",
+	"request_id": "{uuid}"
 }
 ```
 
@@ -188,12 +188,12 @@ Version response.
 
 ```json
 {
-  "topic": "version",
-  "request_id": "{uuid}",
-  "message": {
-    "version": "{version-string}",
-    "network_version": "{version-string}"
-  }
+	"topic": "version",
+	"request_id": "{uuid}",
+	"message": {
+		"version": "{version-string}",
+		"network_version": "{version-string}"
+	}
 }
 ```
 

@@ -248,7 +248,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
 
-    	let state = Arc::new(Mutex::new(State::default()));
+	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number - 1;
 
