@@ -243,7 +243,7 @@ mod tests {
 
 	use super::*;
 	use libp2p::{
-		kad::{kbucket::Distance, record::Key},
+		kad::{record::Key, KBucketDistance},
 		multihash::Multihash,
 	};
 	use proptest::{
@@ -256,11 +256,11 @@ mod tests {
 
 	const SHA_256_MH: u64 = 0x12;
 
-	fn random_multihash() -> Multihash {
+	fn random_multihash() -> Multihash<32> {
 		Multihash::wrap(SHA_256_MH, &rand::thread_rng().gen::<[u8; 32]>()).unwrap()
 	}
 
-	fn distance(r: &ProviderRecord) -> Distance {
+	fn distance(r: &ProviderRecord) -> KBucketDistance {
 		KBucketKey::new(r.key.clone()).distance(&KBucketKey::from(r.provider))
 	}
 
