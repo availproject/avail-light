@@ -591,6 +591,13 @@ impl State {
 	}
 }
 
+#[derive(Debug, Decode, Encode)]
+pub struct FinalitySyncCheckpoint {
+	pub number: u32,
+	pub set_id: u64,
+	pub validator_set: Vec<ed25519::Public>,
+}
+
 #[derive(Debug, Encode)]
 pub enum SignerMessage {
 	_DummyMessage(u32),

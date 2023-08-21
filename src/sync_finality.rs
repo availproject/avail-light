@@ -4,14 +4,14 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
-	avail,
+	avail::{self, Client},
 	primitives::Header,
 	rpc::rpc_params,
 };
 use codec::{Decode, Encode};
 use futures_util::future::join_all;
 use mockall::automock;
-use rocksdb::DB;
+use rocksdb::{checkpoint, DB};
 use serde::de::{self};
 use serde::Deserialize;
 use sp_core::{
@@ -25,7 +25,8 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
-	types::{GrandpaJustification, SignerMessage},
+	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage},
 	utils::filter_auth_set_changes,
 };
 
@@ -68,10 +69,11 @@ impl<'de> Deserialize<'de> for WrappedProof {
 #[automock]
 pub trait SyncFinality {
 	fn get_client(&self) -> avail::Client;
+	fn get_db(&self) -> Arc<DB>;
 }
 
 pub struct SyncFinalityImpl {
-	_db: Arc<DB>,
+	db: Arc<DB>,
 	rpc_client: avail::Client,
 }
 
@@ -79,13 +81,14 @@ impl SyncFinality for SyncFinalityImpl {
 	fn get_client(&self) -> avail::Client {
 		self.rpc_client.clone()
 	}
+
+	fn get_db(&self) -> Arc<DB> {
+		self.db.clone()
+	}
 }
 
 pub fn new(db: Arc<DB>, rpc_client: avail::Client) -> impl SyncFinality {
-	SyncFinalityImpl {
-		_db: db,
-		rpc_client,
-	}
+	SyncFinalityImpl { db, rpc_client }
 }
 
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
@@ -101,21 +104,20 @@ pub async fn run(sync_finality: impl SyncFinality, error_sender: Sender<anyhow::
 	};
 }
 
-pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
-	let rpc_client = sync_finality.get_client();
-	let gen_hash = rpc_client.genesis_hash();
-
+async fn get_valset_at_genesis(
+	rpc_client: Client,
+	genesis_hash: H256,
+) -> Result<Vec<ed25519::Public>> {
 	let mut k1 = twox_128("Session".as_bytes()).to_vec();
 	let mut k2 = twox_128("KeyOwner".as_bytes()).to_vec();
 	k1.append(&mut k2);
 
-	info!("Starting finality validation sync.");
 	// Get validator set from genesis (Substrate Account ID)
 	let validators_key = api::storage().session().validators();
 	let validator_set_pre = rpc_client
 		.clone()
 		.storage()
-		.at(gen_hash)
+		.at(genesis_hash)
 		.fetch(&validators_key)
 		.await
 		.context("Couldn't get initial validator set")?
@@ -126,7 +128,7 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 		.rpc()
 		// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
 		// Perhaps there is a better way, but I don't know it
-		.storage_keys_paged(&k1, 1000, None, Some(gen_hash))
+		.storage_keys_paged(&k1, 1000, None, Some(genesis_hash))
 		.await
 		.context("Couldn't get storage keys associated with key owners!")?
 		.into_iter()
@@ -148,7 +150,7 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 					.key_owner(KeyTypeId(sp_core::crypto::key_types::GRANDPA.0), e.0);
 				let k = c
 					.storage()
-					.at(gen_hash)
+					.at(genesis_hash)
 					.fetch(&session_key_key_owner)
 					.await
 					.expect("Couldn't get session key owner for grandpa key!")
@@ -160,24 +162,42 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 	let grandpa_keys_and_account = join_all(grandpa_keys_and_account).await;
 
 	// Filter just the keys that are found in the initial validator set
-	let mut validator_set = grandpa_keys_and_account
+	let validator_set = grandpa_keys_and_account
 		.into_iter()
 		.filter(|(_, parent_acc)| validator_set_pre.iter().any(|e| e.0 == parent_acc.0))
 		.map(|(grandpa_key, _)| grandpa_key)
 		.collect::<Vec<_>>();
+	Ok(validator_set)
+}
 
-	info!("Initial validator set at genesis is: {:?}", validator_set);
+pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
+	let rpc_client = sync_finality.get_client();
+	let gen_hash = rpc_client.genesis_hash();
 
-	// Get set_id from genesis. Should be 0.
-	let set_id_key = api::storage().grandpa().current_set_id();
-	let mut set_id = rpc_client
-		.storage()
-		.at(gen_hash)
-		.fetch(&set_id_key)
-		.await
-		.context(format!("Couldn't get set_id at {}", gen_hash))?
-		.context("Set_id is empty?")?;
-	info!("Set ID at genesis is {set_id}");
+	let checkpoint = get_finality_sync_checkpoint(sync_finality.get_db())?;
+
+	info!("Starting finality validation sync.");
+	let mut set_id: u64;
+	let mut curr_block_num = 1u32;
+	let mut validator_set: Vec<ed25519::Public>;
+	if let Some(ch) = checkpoint {
+		info!("Continuing from: {ch:?}");
+		set_id = ch.set_id;
+		validator_set = ch.validator_set;
+		curr_block_num = ch.number;
+	} else {
+		validator_set = get_valset_at_genesis(rpc_client.clone(), gen_hash).await?;
+		// Get set_id from genesis. Should be 0.
+		let set_id_key = api::storage().grandpa().current_set_id();
+		set_id = rpc_client
+			.storage()
+			.at(gen_hash)
+			.fetch(&set_id_key)
+			.await
+			.context(format!("Couldn't get set_id at {}", gen_hash))?
+			.context("Set_id is empty?")?;
+		info!("Set ID at genesis is {set_id}");
+	}
 
 	let head = rpc_client
 		.rpc()
@@ -192,9 +212,13 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 		.context("Finalized head header not found!")?;
 	let last_block_num = head.number;
 
-	info!("Syncing finality up to block no. {last_block_num}");
-	let mut curr_block_num = 1u32;
-	let mut prev_hash = gen_hash;
+	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
+
+	let mut prev_hash = rpc_client
+		.rpc()
+		.block_hash(Some((curr_block_num - 1).into()))
+		.await?
+		.context("Hash doesn't exist?")?;
 	loop {
 		if curr_block_num == last_block_num + 1 {
 			info!("Finished verifying finality up to block no. {last_block_num}!");
@@ -284,6 +308,15 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 		);
 		if num_matched_addresses < (validator_set.len() * 2 / 3) {
 			bail!("Not signed by the supermajority of the validator set.");
+		} else {
+			store_finality_sync_checkpoint(
+				sync_finality.get_db(),
+				FinalitySyncCheckpoint {
+					number: curr_block_num,
+					set_id,
+					validator_set,
+				},
+			)?;
 		}
 
 		trace!("Proof in block: {}", p_h.number);
