@@ -555,6 +555,7 @@ pub struct State {
 	pub data_verified: Option<BlockRange>,
 	pub sync_confidence_achieved: Option<BlockRange>,
 	pub sync_data_verified: Option<BlockRange>,
+	pub finality_synced: bool,
 }
 
 impl State {
@@ -588,6 +589,9 @@ impl State {
 			Some(range) => range.last = block_number,
 			None => self.sync_data_verified = Some(BlockRange::init(block_number)),
 		};
+	}
+	pub fn set_finality_synced(&mut self, synced: bool) {
+		self.finality_synced = synced;
 	}
 }
 

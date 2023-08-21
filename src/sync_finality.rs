@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -26,7 +26,7 @@ use tracing::{error, info, trace};
 
 use crate::{
 	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
-	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -94,16 +94,6 @@ pub fn new(db: Arc<DB>, rpc_client: avail::Client) -> impl SyncFinality {
 const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
 const GRANDPA_KEY_LEN: usize = 32;
 
-pub async fn run(sync_finality: impl SyncFinality, error_sender: Sender<anyhow::Error>) {
-	if let Err(err) = sync_finality_f(sync_finality).await {
-		error!("Cannot sync finality {err}");
-		if let Err(error) = error_sender.send(err).await {
-			error!("Cannot send error message: {error}");
-		}
-		return;
-	};
-}
-
 async fn get_valset_at_genesis(
 	rpc_client: Client,
 	genesis_hash: H256,
@@ -170,7 +160,24 @@ async fn get_valset_at_genesis(
 	Ok(validator_set)
 }
 
-pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
+pub async fn run(
+	sync_finality_impl: impl SyncFinality,
+	error_sender: Sender<anyhow::Error>,
+	state: Arc<Mutex<State>>,
+) {
+	if let Err(err) = sync_finality(sync_finality_impl, state).await {
+		error!("Cannot sync finality {err}");
+		if let Err(error) = error_sender.send(err).await {
+			error!("Cannot send error message: {error}");
+		}
+		return;
+	};
+}
+
+pub async fn sync_finality(
+	sync_finality: impl SyncFinality,
+	state: Arc<Mutex<State>>,
+) -> Result<()> {
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.genesis_hash();
 
@@ -181,11 +188,12 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 	let mut curr_block_num = 1u32;
 	let mut validator_set: Vec<ed25519::Public>;
 	if let Some(ch) = checkpoint {
-		info!("Continuing from: {ch:?}");
+		info!("Continuing from block no {}", ch.number);
 		set_id = ch.set_id;
 		validator_set = ch.validator_set;
 		curr_block_num = ch.number;
 	} else {
+		info!("No checkpoint found, starting from genesis.");
 		validator_set = get_valset_at_genesis(rpc_client.clone(), gen_hash).await?;
 		// Get set_id from genesis. Should be 0.
 		let set_id_key = api::storage().grandpa().current_set_id();
@@ -204,13 +212,13 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 		.finalized_head()
 		.await
 		.context("Couldn't get finalized head!")?;
-	let mut head = rpc_client
+	let mut header = rpc_client
 		.rpc()
 		.header(Some(head))
 		.await
 		.context("Couldn't get finalized head header!")?
 		.context("Finalized head header not found!")?;
-	let last_block_num = head.number;
+	let last_block_num = header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
 
@@ -224,7 +232,7 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 			info!("Finished verifying finality up to block no. {last_block_num}!");
 			break;
 		}
-		let h = rpc_client
+		let hash = rpc_client
 			.rpc()
 			.block_hash(Some(curr_block_num.into()))
 			.await
@@ -233,17 +241,17 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 				curr_block_num
 			))?
 			.context(format!("Hash for block no. {} not found!", curr_block_num))?;
-		head = rpc_client
+		header = rpc_client
 			.rpc()
-			.header(Some(h))
+			.header(Some(hash))
 			.await
-			.context(format!("Couldn't get header for {}", h))?
-			.context(format!("Header for hash {} not found!", h))?;
-		assert_eq!(head.parent_hash, prev_hash, "Parent hash doesn't match!");
-		prev_hash = head.using_encoded(blake2_256).into();
+			.context(format!("Couldn't get header for {}", hash))?
+			.context(format!("Header for hash {} not found!", hash))?;
+		assert_eq!(header.parent_hash, prev_hash, "Parent hash doesn't match!");
+		prev_hash = header.using_encoded(blake2_256).into();
 
-		let f = filter_auth_set_changes(&head);
-		if f.is_empty() {
+		let next_validator_set = filter_auth_set_changes(&header);
+		if next_validator_set.is_empty() {
 			curr_block_num += 1;
 			continue;
 		}
@@ -309,24 +317,26 @@ pub async fn sync_finality_f(sync_finality: impl SyncFinality) -> Result<()> {
 		if num_matched_addresses < (validator_set.len() * 2 / 3) {
 			bail!("Not signed by the supermajority of the validator set.");
 		} else {
+			trace!("Proof in block: {}", p_h.number);
+			curr_block_num += 1;
+
+			validator_set = next_validator_set[0]
+				.iter()
+				.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
+				.collect();
+			set_id += 1;
 			store_finality_sync_checkpoint(
 				sync_finality.get_db(),
 				FinalitySyncCheckpoint {
 					number: curr_block_num,
 					set_id,
-					validator_set,
+					validator_set: validator_set.clone(),
 				},
 			)?;
 		}
-
-		trace!("Proof in block: {}", p_h.number);
-		curr_block_num += 1;
-
-		validator_set = f[0]
-			.iter()
-			.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
-			.collect();
-		set_id += 1;
 	}
+	let mut state = state.lock().unwrap();
+	state.set_finality_synced(true);
+	info!("Finality is fully synced.");
 	Ok(())
 }

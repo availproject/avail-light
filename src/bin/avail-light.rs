@@ -320,6 +320,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	tokio::task::spawn(avail_light::sync_finality::run(
 		sync_finality,
 		error_sender.clone(),
+		state.clone(),
 	));
 
 	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
@@ -329,6 +330,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		message_tx,
 		error_sender.clone(),
 		state.clone(),
+		db.clone(),
 	));
 
 	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
