@@ -5,21 +5,21 @@ use opentelemetry_api::{
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::time::Duration;
+use std::{sync::RwLock, time::Duration};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Metrics {
 	pub meter: Meter,
 	pub session_block_counter: Counter<u64>,
 	pub peer_id: String,
-	pub multiaddress: String,
+	pub multiaddress: RwLock<String>,
 }
 
 impl Metrics {
 	fn attributes(&self) -> [KeyValue; 2] {
 		[
 			KeyValue::new("peerID", self.peer_id.clone()),
-			KeyValue::new("multiaddress", self.multiaddress.clone()),
+			KeyValue::new("multiaddress", self.multiaddress.read().unwrap().clone()),
 		]
 	}
 
@@ -119,6 +119,6 @@ pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 		meter,
 		session_block_counter,
 		peer_id,
-		multiaddress: "".to_string(), // Default value is empty until first processed block triggers an update
+		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update
 	})
 }

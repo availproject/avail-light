@@ -121,18 +121,15 @@ impl LightClient for LightClientImpl {
 
 pub async fn process_block(
 	light_client: &impl LightClient,
-	metrics: &Arc<Mutex<impl Metrics>>,
+	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
 	pp: Arc<PublicParameters>,
 	header: &Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
 ) -> Result<()> {
-	metrics.lock().unwrap().count(MetricCounter::SessionBlock);
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::TotalBlockNumber(header.number))?;
+	metrics.count(MetricCounter::SessionBlock);
+	metrics.record(MetricValue::TotalBlockNumber(header.number))?;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -178,17 +175,11 @@ pub async fn process_block(
 		"Number of cells fetched from DHT: {}",
 		cells_fetched.len()
 	);
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::DHTFetched(cells_fetched.len() as f64))?;
+	metrics.record(MetricValue::DHTFetched(cells_fetched.len() as f64))?;
 
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::DHTFetchedPercentage(
-			cells_fetched.len() as f64 / positions.len() as f64,
-		))?;
+	metrics.record(MetricValue::DHTFetchedPercentage(
+		cells_fetched.len() as f64 / positions.len() as f64,
+	))?;
 
 	let mut rpc_fetched = if cfg.disable_rpc {
 		vec![]
@@ -205,10 +196,7 @@ pub async fn process_block(
 		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))?;
+	metrics.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))?;
 
 	let mut cells = vec![];
 	cells.extend(cells_fetched);
@@ -247,10 +235,7 @@ pub async fn process_block(
 			"Confidence factor: {}",
 			conf
 		);
-		metrics
-			.lock()
-			.unwrap()
-			.record(MetricValue::BlockConfidence(conf))?;
+		metrics.record(MetricValue::BlockConfidence(conf))?;
 	}
 
 	// push latest mined block's header into column family specified
@@ -329,10 +314,7 @@ pub async fn process_block(
 			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
 		);
 
-		metrics
-			.lock()
-			.unwrap()
-			.record(MetricValue::DHTPutRowsSuccess(success_rate))?;
+		metrics.record(MetricValue::DHTPutRowsSuccess(success_rate))?;
 
 		info!(
 			block_number,
@@ -340,10 +322,7 @@ pub async fn process_block(
 			"{rows_len} rows inserted into DHT"
 		);
 
-		metrics
-			.lock()
-			.unwrap()
-			.record(MetricValue::DHTPutRowsDuration(time_elapsed))?;
+		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed))?;
 	}
 
 	let partition_time_elapsed = begin.elapsed()?;
@@ -355,12 +334,9 @@ pub async fn process_block(
 		"Partition cells received. Time elapsed: \t{:?}",
 		partition_time_elapsed
 	);
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::RPCCallDuration(
-			partition_time_elapsed.as_secs_f64(),
-		))?;
+	metrics.record(MetricValue::RPCCallDuration(
+		partition_time_elapsed.as_secs_f64(),
+	))?;
 
 	begin = SystemTime::now();
 
@@ -373,10 +349,7 @@ pub async fn process_block(
 		"DHT PUT operation success rate: {}", dht_insert_success_rate
 	);
 
-	metrics
-		.lock()
-		.unwrap()
-		.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
+	metrics.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
 
 	let dht_put_time_elapsed = begin.elapsed()?;
 	info!(
@@ -386,7 +359,7 @@ pub async fn process_block(
 		dht_put_time_elapsed
 	);
 
-	metrics.lock().unwrap().record(MetricValue::DHTPutDuration(
+	metrics.record(MetricValue::DHTPutDuration(
 		dht_put_time_elapsed.as_secs_f64(),
 	))?;
 
@@ -423,7 +396,7 @@ pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
 	pp: Arc<PublicParameters>,
-	metrics: Arc<Mutex<impl Metrics>>,
+	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
 	mut channels: Channels,
 ) {
@@ -631,7 +604,7 @@ mod tests {
 		mock_metrics.expect_record().returning(|_| Ok(()));
 		process_block(
 			&mock_client,
-			&Arc::new(Mutex::new(mock_metrics)),
+			&Arc::new(mock_metrics),
 			&cfg,
 			pp,
 			&header,
@@ -760,7 +733,7 @@ mod tests {
 		mock_metrics.expect_record().returning(|_| Ok(()));
 		process_block(
 			&mock_client,
-			&Arc::new(Mutex::new(mock_metrics)),
+			&Arc::new(mock_metrics),
 			&cfg,
 			pp,
 			&header,

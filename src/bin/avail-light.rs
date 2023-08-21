@@ -133,10 +133,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
-	let ot_metrics = Arc::new(Mutex::new(
+	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id)
 			.context("Unable to initialize OpenTelemetry service")?,
-	));
+	);
 
 	let (network_stats_sender, mut network_stats_receiver) = channel::<NetworkDumpEvent>(100);
 
@@ -147,7 +147,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		while let Some(network_dump_event) = network_stats_receiver.recv().await {
 			// Set multiaddress for metric dispatch
 			if network_dump_event.current_multiaddress != "" {
-				network_stats_metrics.lock().unwrap().multiaddress =
+				*network_stats_metrics.multiaddress.write().unwrap() =
 					network_dump_event.current_multiaddress;
 			}
 
@@ -156,7 +156,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 				.try_into()
 				.expect("usize should be u32");
 			let value = MetricValue::KadRoutingTablePeerNum(number);
-			if let Err(error) = &network_stats_metrics.lock().unwrap().record(value) {
+			if let Err(error) = &network_stats_metrics.record(value) {
 				error!("Error recording network stats metric: {error}");
 			}
 		}
