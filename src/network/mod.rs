@@ -21,13 +21,14 @@ use libp2p::{
 	identity,
 	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
-	noise::{Keypair, NoiseConfig, X25519Spec},
+	metrics::Metrics,
+	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
-	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
 	relay::{self, client::Behaviour as RelayClient},
 	swarm::{NetworkBehaviour, SwarmBuilder},
 	PeerId, Transport,
 };
+use libp2p_quic::{tokio::Transport as TokioQuic, Config as QuicConfig};
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self, Sender};
@@ -76,10 +77,9 @@ pub fn init(
 	let transport = {
 		let quic_transport = TokioQuic::new(QuicConfig::new(&id_keys));
 		// upgrade relay transport to be used with swarm
-		let noise_keys = Keypair::<X25519Spec>::new().into_authentic(&id_keys)?;
 		let upgraded_relay_transport = relay_client_transport
 			.upgrade(Version::V1Lazy)
-			.authenticate(NoiseConfig::xx(noise_keys).into_authenticated())
+			.authenticate(NoiseConfig::new(&id_keys)?)
 			.multiplex(libp2p::yamux::Config::default());
 		// relay transport only handles listening and dialing on relayed [`Multiaddr`]
 		// and depends on other transport to do the actual transmission of data, we have to combine the two
