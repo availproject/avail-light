@@ -13,6 +13,8 @@ use tokio::{
 };
 use void::Void;
 
+use crate::telemetry::NetworkDumpEvent;
+
 use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
@@ -109,7 +111,7 @@ pub struct EventLoop {
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
-	network_stats_sender: Sender<usize>,
+	network_stats_sender: Sender<NetworkDumpEvent>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -137,7 +139,7 @@ impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
-		network_stats_sender: Sender<usize>,
+		network_stats_sender: Sender<NetworkDumpEvent>,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
@@ -614,9 +616,23 @@ impl EventLoop {
 		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
 		debug!("{text}\n{header}\n{table}");
 
-		if let Err(error) = self.network_stats_sender.send(total_peer_number).await {
+		let current_multiaddress = self.dump_current_multiaddress();
+
+		let network_dump_event = NetworkDumpEvent {
+			routing_table_num_of_peers: total_peer_number,
+			current_multiaddress: current_multiaddress.to_string(),
+		};
+		if let Err(error) = self.network_stats_sender.send(network_dump_event).await {
 			error!("Cannot send network stats: {error}");
 		};
+	}
+
+	fn dump_current_multiaddress(&mut self) -> &Multiaddr {
+		info!(
+			"{}",
+			&self.swarm.external_addresses().last().expect("msg").addr
+		);
+		&self.swarm.external_addresses().last().expect("msg").addr
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

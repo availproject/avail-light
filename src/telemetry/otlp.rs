@@ -12,11 +12,15 @@ pub struct Metrics {
 	pub meter: Meter,
 	pub session_block_counter: Counter<u64>,
 	pub peer_id: String,
+	pub multiaddress: String,
 }
 
 impl Metrics {
-	fn attributes(&self) -> [KeyValue; 1] {
-		[KeyValue::new("peerID", self.peer_id.clone())]
+	fn attributes(&self) -> [KeyValue; 2] {
+		[
+			KeyValue::new("peerID", self.peer_id.clone()),
+			KeyValue::new("multiaddress", self.multiaddress.clone()),
+		]
 	}
 
 	fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
@@ -115,5 +119,6 @@ pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 		meter,
 		session_block_counter,
 		peer_id,
+		multiaddress: "".to_string(), // Default value is empty until first processed block triggers an update
 	})
 }

@@ -4,7 +4,10 @@ mod mem_store;
 #[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::{
+	telemetry::NetworkDumpEvent,
+	types::{LibP2PConfig, SecretKey},
+};
 use anyhow::{Context, Result};
 pub use client::Client;
 use event_loop::EventLoop;
@@ -53,7 +56,7 @@ pub struct Behaviour {
 
 pub fn init(
 	cfg: LibP2PConfig,
-	network_stats_sender: Sender<usize>,
+	network_stats_sender: Sender<NetworkDumpEvent>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,

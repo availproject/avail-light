@@ -7,6 +7,11 @@ pub enum MetricCounter {
 	SessionBlock,
 }
 
+pub struct NetworkDumpEvent {
+	pub routing_table_num_of_peers: usize,
+	pub current_multiaddress: String,
+}
+
 pub enum MetricValue {
 	TotalBlockNumber(u32),
 	DHTFetched(f64),
