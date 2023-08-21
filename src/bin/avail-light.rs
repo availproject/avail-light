@@ -1,7 +1,7 @@
 #![doc = include_str!("../../README.md")]
 
 use std::{
-	net::{IpAddr, Ipv4Addr, SocketAddr},
+	net::Ipv4Addr,
 	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
@@ -10,11 +10,13 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_core::AppId;
-use avail_light::consts::STATE_CF;
+use avail_light::{
+	consts::STATE_CF,
+	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
+};
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use libp2p::{metrics::Metrics as LibP2PMetrics, multiaddr::Protocol, Multiaddr, PeerId};
-use prometheus_client::registry::Registry;
+use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
@@ -120,23 +122,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	// Spawn Prometheus server
-	let mut metric_registry = Registry::default();
-	let libp2p_metrics = LibP2PMetrics::new(&mut metric_registry);
-	let lc_metrics = avail_light::telemetry::metrics::Metrics::new(&mut metric_registry);
-	let prometheus_port = cfg.prometheus_port;
-
-	let incoming = avail_light::telemetry::bind(SocketAddr::new(
-		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-		prometheus_port,
-	))
-	.await
-	.context("Cannot bind prometheus server to given address and port")?;
-	tokio::task::spawn(avail_light::telemetry::http_server(
-		incoming,
-		metric_registry,
-	));
-
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// If in fat client mode, enable deleting local Kademlia records
@@ -146,14 +131,45 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		info!("Fat client mode");
 	}
 
+	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
+
+	let ot_metrics = Arc::new(
+		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id)
+			.context("Unable to initialize OpenTelemetry service")?,
+	);
+
+	let (network_stats_sender, mut network_stats_receiver) = channel::<NetworkDumpEvent>(100);
+
+	let network_stats_metrics = ot_metrics.clone();
+
+	// Network stats receiver
+	tokio::spawn(async move {
+		while let Some(network_dump_event) = network_stats_receiver.recv().await {
+			// Set multiaddress for metric dispatch
+			if network_dump_event.current_multiaddress != "" {
+				*network_stats_metrics.multiaddress.write().unwrap() =
+					network_dump_event.current_multiaddress;
+			}
+
+			let number = network_dump_event
+				.routing_table_num_of_peers
+				.try_into()
+				.expect("usize should be u32");
+			let value = MetricValue::KadRoutingTablePeerNum(number);
+			if let Err(error) = &network_stats_metrics.record(value) {
+				error!("Error recording network stats metric: {error}");
+			}
+		}
+	});
+
 	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
-		libp2p_metrics,
-		lc_metrics.clone(),
+		network_stats_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
 		kad_remove_local_record,
+		id_keys,
 	)
 	.context("Failed to init Network Service")?;
 
@@ -321,7 +337,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		light_client,
 		(&cfg).into(),
 		pp,
-		lc_metrics,
+		ot_metrics,
 		state,
 		lc_channels,
 	));

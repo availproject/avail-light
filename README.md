@@ -59,7 +59,6 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-prometheus_port = 9520
 bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
 ```
 
@@ -112,8 +111,8 @@ app_id = 0
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
-# Prometheus service port, used for emitting metrics to prometheus server. (default: 9520)
-prometheus_port = 9520
+# OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
+ot_collector_endpoint = "http://otelcollector.avail.tools:4317"
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client (default: None)
@@ -175,7 +174,7 @@ max_kad_provided_keys = 1024
 - Immediately after starting a fresh light client, block sync is executed from a starting block set with the `sync_start_block` config parameter. The sync process is using both the DHT and RPC for that purpose.
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
-- Prometheus is used for exposing detailed metrics about the light client
+- OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
 ## Usage and examples

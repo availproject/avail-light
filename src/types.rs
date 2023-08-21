@@ -231,8 +231,8 @@ pub struct RuntimeConfig {
 	pub log_level: String,
 	/// If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 	pub log_format_json: bool,
-	/// Prometheus service port, used for emitting metrics to prometheus server. (default: 9520).
-	pub prometheus_port: u16,
+	/// OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
+	pub ot_collector_endpoint: String,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
@@ -507,7 +507,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			prometheus_port: 9520,
+			ot_collector_endpoint: "http://otelcollector.avail.tools:4317".to_string(),
 			disable_rpc: false,
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,

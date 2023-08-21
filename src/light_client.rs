@@ -44,7 +44,7 @@ use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
 	network::Client,
 	proof, rpc,
-	telemetry::metrics::{MetricEvent, Metrics},
+	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockVerified, LightClientConfig, State},
 	utils::{calculate_confidence, extract_kate},
 };
@@ -121,15 +121,15 @@ impl LightClient for LightClientImpl {
 
 pub async fn process_block(
 	light_client: &impl LightClient,
+	metrics: &Arc<impl Metrics>,
 	cfg: &LightClientConfig,
 	pp: Arc<PublicParameters>,
 	header: &Header,
 	received_at: Instant,
-	metrics: &Metrics,
 	state: Arc<Mutex<State>>,
 ) -> Result<()> {
-	metrics.record(MetricEvent::SessionBlockCounter);
-	metrics.record(MetricEvent::TotalBlockNumber(header.number));
+	metrics.count(MetricCounter::SessionBlock);
+	metrics.record(MetricValue::TotalBlockNumber(header.number))?;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -175,10 +175,11 @@ pub async fn process_block(
 		"Number of cells fetched from DHT: {}",
 		cells_fetched.len()
 	);
-	metrics.record(MetricEvent::DHTFetched(cells_fetched.len() as i64));
-	metrics.record(MetricEvent::DHTFetchedPercentage(
+	metrics.record(MetricValue::DHTFetched(cells_fetched.len() as f64))?;
+
+	metrics.record(MetricValue::DHTFetchedPercentage(
 		cells_fetched.len() as f64 / positions.len() as f64,
-	));
+	))?;
 
 	let mut rpc_fetched = if cfg.disable_rpc {
 		vec![]
@@ -195,7 +196,7 @@ pub async fn process_block(
 		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
-	metrics.record(MetricEvent::NodeRPCFetched(rpc_fetched.len() as i64));
+	metrics.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))?;
 
 	let mut cells = vec![];
 	cells.extend(cells_fetched);
@@ -234,7 +235,7 @@ pub async fn process_block(
 			"Confidence factor: {}",
 			conf
 		);
-		metrics.record(MetricEvent::BlockConfidence(conf));
+		metrics.record(MetricValue::BlockConfidence(conf))?;
 	}
 
 	// push latest mined block's header into column family specified
@@ -313,7 +314,7 @@ pub async fn process_block(
 			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
 		);
 
-		metrics.record(MetricEvent::DHTPutRowsSuccess(success_rate));
+		metrics.record(MetricValue::DHTPutRowsSuccess(success_rate))?;
 
 		info!(
 			block_number,
@@ -321,7 +322,7 @@ pub async fn process_block(
 			"{rows_len} rows inserted into DHT"
 		);
 
-		metrics.record(MetricEvent::DHTPutRowsDuration(time_elapsed));
+		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed))?;
 	}
 
 	let partition_time_elapsed = begin.elapsed()?;
@@ -333,9 +334,9 @@ pub async fn process_block(
 		"Partition cells received. Time elapsed: \t{:?}",
 		partition_time_elapsed
 	);
-	metrics.record(MetricEvent::RPCCallDuration(
+	metrics.record(MetricValue::RPCCallDuration(
 		partition_time_elapsed.as_secs_f64(),
-	));
+	))?;
 
 	begin = SystemTime::now();
 
@@ -348,7 +349,7 @@ pub async fn process_block(
 		"DHT PUT operation success rate: {}", dht_insert_success_rate
 	);
 
-	metrics.record(MetricEvent::DHTPutSuccess(dht_insert_success_rate as f64));
+	metrics.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
 
 	let dht_put_time_elapsed = begin.elapsed()?;
 	info!(
@@ -358,9 +359,9 @@ pub async fn process_block(
 		dht_put_time_elapsed
 	);
 
-	metrics.record(MetricEvent::DHTPutDuration(
+	metrics.record(MetricValue::DHTPutDuration(
 		dht_put_time_elapsed.as_secs_f64(),
-	));
+	))?;
 
 	light_client
 		.shrink_kademlia_map()
@@ -395,7 +396,7 @@ pub async fn run(
 	light_client: impl LightClient,
 	cfg: LightClientConfig,
 	pp: Arc<PublicParameters>,
-	metrics: Metrics,
+	metrics: Arc<impl Metrics>,
 	state: Arc<Mutex<State>>,
 	mut channels: Channels,
 ) {
@@ -409,11 +410,11 @@ pub async fn run(
 
 		if let Err(error) = process_block(
 			&light_client,
+			&metrics,
 			&cfg,
 			pp.clone(),
 			&header,
 			received_at,
-			&metrics,
 			state.clone(),
 		)
 		.await
@@ -443,10 +444,10 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-	use crate::{telemetry, types::RuntimeConfig};
-
 	use super::rpc::cell_count_for_confidence;
 	use super::*;
+	use crate::telemetry;
+	use crate::types::RuntimeConfig;
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
@@ -457,7 +458,6 @@ mod tests {
 	};
 	use hex_literal::hex;
 	use kate_recovery::testnet;
-	use prometheus_client::registry::Registry;
 
 	#[test]
 	fn test_cell_count_for_confidence() {
@@ -482,8 +482,6 @@ mod tests {
 		let mut mock_client = MockLightClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
 		let pp = Arc::new(testnet::public_params(1024));
-		let mut metric_registry = Registry::default();
-		let metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -601,9 +599,20 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, state)
-			.await
-			.unwrap();
+		let mut mock_metrics = telemetry::MockMetrics::new();
+		mock_metrics.expect_count().returning(|_| ());
+		mock_metrics.expect_record().returning(|_| Ok(()));
+		process_block(
+			&mock_client,
+			&Arc::new(mock_metrics),
+			&cfg,
+			pp,
+			&header,
+			recv,
+			state,
+		)
+		.await
+		.unwrap();
 	}
 
 	#[tokio::test]
@@ -612,8 +621,6 @@ mod tests {
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let pp = Arc::new(testnet::public_params(1024));
-		let mut metric_registry = Registry::default();
-		let metrics = telemetry::metrics::Metrics::new(&mut metric_registry);
 		let cells_unfetched: Vec<Position> = vec![];
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
@@ -721,8 +728,19 @@ mod tests {
 		mock_client
 			.expect_network_stats()
 			.returning(|| Box::pin(async move { Ok(()) }));
-		process_block(&mock_client, &cfg, pp, &header, recv, &metrics, state)
-			.await
-			.unwrap();
+		let mut mock_metrics = telemetry::MockMetrics::new();
+		mock_metrics.expect_count().returning(|_| ());
+		mock_metrics.expect_record().returning(|_| Ok(()));
+		process_block(
+			&mock_client,
+			&Arc::new(mock_metrics),
+			&cfg,
+			pp,
+			&header,
+			recv,
+			state,
+		)
+		.await
+		.unwrap();
 	}
 }

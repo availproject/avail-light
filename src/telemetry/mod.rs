@@ -1,39 +1,33 @@
-use anyhow::{Error, Ok};
-use hyper::{
-	server::conn::AddrStream,
-	service::{make_service_fn, service_fn},
-	Server,
-};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
+use anyhow::Result;
+use mockall::automock;
 
-use prometheus_client::registry::Registry;
-use tracing::info;
+pub mod otlp;
 
-pub mod handler;
-pub mod metrics;
-
-pub async fn bind(prometheus_addr: SocketAddr) -> Result<hyper::server::conn::AddrIncoming, Error> {
-	let listener = tokio::net::TcpListener::bind(&prometheus_addr)
-		.await
-		.map_err(|_| anyhow::anyhow!("Port already in use: {}", prometheus_addr))?;
-	hyper::server::conn::AddrIncoming::from_listener(listener).map_err(Into::into)
+pub enum MetricCounter {
+	SessionBlock,
 }
 
-pub async fn http_server(
-	incoming: hyper::server::conn::AddrIncoming,
-	registry: Registry,
-) -> Result<(), Error> {
-	let context = Arc::new(Mutex::new(registry));
+pub struct NetworkDumpEvent {
+	pub routing_table_num_of_peers: usize,
+	pub current_multiaddress: String,
+}
 
-	let service = make_service_fn(move |_conn: &AddrStream| {
-		let ctx = context.clone();
-		let service = service_fn(move |req| handler::new(ctx.clone(), req));
-		async move { Ok(service) }
-	});
+pub enum MetricValue {
+	TotalBlockNumber(u32),
+	DHTFetched(f64),
+	DHTFetchedPercentage(f64),
+	NodeRPCFetched(f64),
+	BlockConfidence(f64),
+	RPCCallDuration(f64),
+	DHTPutDuration(f64),
+	DHTPutSuccess(f64),
+	DHTPutRowsDuration(f64),
+	DHTPutRowsSuccess(f64),
+	KadRoutingTablePeerNum(u32),
+}
 
-	let server = Server::builder(incoming).serve(service);
-	info!("Metrics server on http://{}/metrics", server.local_addr());
-
-	server.await.map_err(Into::into)
+#[automock]
+pub trait Metrics {
+	fn count(&self, counter: MetricCounter);
+	fn record(&self, value: MetricValue) -> Result<()>;
 }
