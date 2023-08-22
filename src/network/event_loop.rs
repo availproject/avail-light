@@ -28,7 +28,10 @@ use rand::seq::SliceRandom;
 use std::str;
 use std::{collections::HashMap, time::Duration};
 use tokio::{
-	sync::{mpsc, oneshot},
+	sync::{
+		mpsc::{self, Sender},
+		oneshot,
+	},
 	time::{interval_at, Instant, Interval},
 };
 use tracing::{debug, error, info, trace};
@@ -37,7 +40,7 @@ use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
 };
-use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
+use crate::telemetry::NetworkDumpEvent;
 
 const PEER_ID: &str = "PeerID";
 const MULTIADDRESS: &str = "Multiaddress";
@@ -479,9 +482,12 @@ impl EventLoop {
 							}
 						}
 					},
-					SwarmEvent::Dialing { peer_id, .. } => {
-						if let Some(id) = peer_id {
-							debug!("Dialing {}", id);
+					SwarmEvent::Dialing {
+						peer_id,
+						connection_id,
+					} => {
+						if let Some(peer) = peer_id {
+							debug!("Dialing: {}, on connection: {}", peer, connection_id);
 						}
 					},
 					_ => {},
@@ -616,7 +622,7 @@ impl EventLoop {
 
 		let mut current_multiaddress = "".to_string();
 		if let Some(multiaddress) = self.dump_current_multiaddress() {
-			current_multiaddress = multiaddress.addr.to_string();
+			current_multiaddress = multiaddress.to_string();
 		}
 
 		let network_dump_event = NetworkDumpEvent {
@@ -628,7 +634,7 @@ impl EventLoop {
 		};
 	}
 
-	fn dump_current_multiaddress(&mut self) -> Option<&AddressRecord> {
+	fn dump_current_multiaddress(&mut self) -> Option<&Multiaddr> {
 		self.swarm.external_addresses().last()
 	}
 

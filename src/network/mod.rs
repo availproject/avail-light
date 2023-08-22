@@ -10,7 +10,6 @@ use libp2p::{
 	identity,
 	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
-	metrics::Metrics,
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
 	relay::{self, client::Behaviour as RelayClient},
@@ -30,8 +29,10 @@ mod mem_store;
 pub mod network_analyzer;
 pub use client::Client;
 
-use crate::telemetry::metrics::Metrics as AvailMetrics;
-use crate::types::{LibP2PConfig, SecretKey};
+use crate::{
+	telemetry::NetworkDumpEvent,
+	types::{LibP2PConfig, SecretKey},
+};
 
 // Event enum encodes all used network event variants
 #[derive(Debug, Clone)]
