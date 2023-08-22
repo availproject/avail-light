@@ -1,4 +1,5 @@
 use anyhow::Context;
+use hyper::{http, StatusCode};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -78,6 +79,24 @@ pub struct Status {
 		with = "block_matrix_partition_format"
 	)]
 	pub partition: Option<Partition>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Transaction {
+	Data(String),
+	Extrinsic(String),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TransactionHash {
+	pub hash: String,
+}
+
+impl Reply for TransactionHash {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
 }
 
 impl Status {
@@ -223,6 +242,7 @@ impl TryFrom<ws::Message> for Request {
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorCode {
+	NotFound,
 	BadRequest,
 	InternalServerError,
 }
@@ -234,6 +254,13 @@ pub struct Error {
 }
 
 impl Error {
+	pub fn not_found() -> Self {
+		Error {
+			error_code: ErrorCode::NotFound,
+			message: "Not Found".to_string(),
+		}
+	}
+
 	pub fn internal_server_error() -> Self {
 		Error {
 			error_code: ErrorCode::InternalServerError,
@@ -246,6 +273,24 @@ impl Error {
 			error_code: ErrorCode::BadRequest,
 			message,
 		}
+	}
+
+	fn status(&self) -> StatusCode {
+		match self.error_code {
+			ErrorCode::NotFound => StatusCode::NOT_FOUND,
+			ErrorCode::BadRequest => StatusCode::BAD_REQUEST,
+			ErrorCode::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
+		}
+	}
+}
+
+impl Reply for Error {
+	fn into_response(self) -> warp::reply::Response {
+		http::Response::builder()
+			.status(self.status())
+			.body(self.message.clone())
+			.expect("Can create error response")
+			.into_response()
 	}
 }
 

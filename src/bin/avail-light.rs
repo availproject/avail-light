@@ -18,6 +18,7 @@ use avail_subxt::primitives::Header;
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
@@ -268,6 +269,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number - 1;
 
+	let avail_secret_key = match &cfg.avail_secret_key {
+		None => None,
+		Some(secret) => Some(Pair::from_string_with_seed(secret, None).map(|(pair, _)| pair)?),
+	};
+
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = avail_light::api::server::Server {
 		db: db.clone(),
@@ -276,6 +282,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
+		node_client: rpc_client.clone(),
+		avail_secret_key,
 	};
 
 	tokio::task::spawn(server.run());
