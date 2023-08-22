@@ -1,15 +1,4 @@
-mod client;
-mod event_loop;
-mod mem_store;
-#[cfg(feature = "network-analysis")]
-pub mod network_analyzer;
-
-use crate::{
-	telemetry::NetworkDumpEvent,
-	types::{LibP2PConfig, SecretKey},
-};
 use anyhow::{Context, Result};
-pub use client::Client;
 use event_loop::EventLoop;
 use futures::future::Either;
 use libp2p::{
@@ -33,6 +22,16 @@ use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self, Sender};
 use tracing::info;
+
+mod client;
+mod event_loop;
+mod mem_store;
+#[cfg(feature = "network-analysis")]
+pub mod network_analyzer;
+pub use client::Client;
+
+use crate::telemetry::metrics::Metrics as AvailMetrics;
+use crate::types::{LibP2PConfig, SecretKey};
 
 // Event enum encodes all used network event variants
 #[derive(Debug, Clone)]

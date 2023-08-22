@@ -1,13 +1,12 @@
 //! Persistence to RocksDB.
 
-use std::sync::Arc;
-
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
 use avail_subxt::primitives::Header as DaHeader;
 use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
 use rocksdb::DB;
+use std::sync::Arc;
 
 use crate::consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
 

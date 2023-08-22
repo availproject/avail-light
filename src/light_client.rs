@@ -18,11 +18,6 @@
 //! In case RPC is disabled, RPC calls will be skipped.  
 //! In case partition is configured, block partition is fetched and inserted into DHT.
 
-use std::{
-	sync::{Arc, Mutex},
-	time::{Instant, SystemTime},
-};
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header, utils::H256};
@@ -37,6 +32,10 @@ use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
 use rocksdb::DB;
 use sp_core::blake2_256;
+use std::{
+	sync::{Arc, Mutex},
+	time::{Instant, SystemTime},
+};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 

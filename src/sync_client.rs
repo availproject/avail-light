@@ -21,6 +21,8 @@ use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
+use kate_recovery::{data::Cell, matrix::Position};
+use mockall::automock;
 use rocksdb::DB;
 use sp_core::{blake2_256, ed25519};
 use std::{
@@ -41,8 +43,7 @@ use crate::{
 	utils,
 	utils::{extract_app_lookup, extract_kate},
 };
-use kate_recovery::{data::Cell, matrix::Position};
-use mockall::automock;
+
 #[async_trait]
 #[automock]
 pub trait SyncClient {

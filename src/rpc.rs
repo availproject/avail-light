@@ -1,7 +1,5 @@
 //! RPC communication with avail node.
 
-use std::{collections::HashSet, fmt::Display, ops::Deref};
-
 use anyhow::{anyhow, Result};
 use avail_subxt::{
 	avail, build_client,
@@ -15,6 +13,7 @@ use kate_recovery::{
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use sp_core::ed25519;
+use std::{collections::HashSet, fmt::Display, ops::Deref};
 use tracing::{debug, info, instrument, warn};
 
 use crate::{consts::EXPECTED_NETWORK_VERSION, types::*};
