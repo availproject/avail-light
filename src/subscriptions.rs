@@ -15,7 +15,7 @@ use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
+	data::store_finality_sync_checkpoint,
 	rpc,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils,
