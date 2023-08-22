@@ -7,7 +7,6 @@ use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
 use rocksdb::DB;
 use std::sync::Arc;
-use sp_core::ed25519;
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF},

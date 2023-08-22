@@ -11,7 +11,7 @@ use avail_subxt::{
 use codec::{Decode, Encode};
 use futures_util::future::join_all;
 use mockall::automock;
-use rocksdb::{checkpoint, DB};
+use rocksdb::DB;
 use serde::de::{self};
 use serde::Deserialize;
 use sp_core::{
@@ -170,7 +170,6 @@ pub async fn run(
 		if let Err(error) = error_sender.send(err).await {
 			error!("Cannot send error message: {error}");
 		}
-		return;
 	};
 }
 
