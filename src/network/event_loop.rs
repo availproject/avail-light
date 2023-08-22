@@ -45,7 +45,7 @@ use libp2p::{
 	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
-		ConnectionError, ConnectionHandlerUpgrErr, SwarmEvent,
+		ConnectionError, StreamUpgradeError, SwarmEvent,
 	},
 	Multiaddr, PeerId, Swarm,
 };
@@ -120,18 +120,18 @@ pub struct EventLoop {
 
 type IoOrPing = Either<Either<std::io::Error, std::io::Error>, ping::Failure>;
 
-type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, ConnectionHandlerUpgrErr<std::io::Error>>;
+type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, StreamUpgradeError<std::io::Error>>;
 
 type StopOrHop = Either<
-	ConnectionHandlerUpgrErr<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
+	StreamUpgradeError<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
 	void::Void,
 >;
 
 type PingOrStopOrHop = Either<UpgradeOrPing, StopOrHop>;
 
 type Upgrade = Either<
-	ConnectionHandlerUpgrErr<Either<InboundUpgradeError, OutboundUpgradeError>>,
-	Either<ConnectionHandlerUpgrErr<std::io::Error>, Void>,
+	StreamUpgradeError<Either<InboundUpgradeError, OutboundUpgradeError>>,
+	Either<StreamUpgradeError<std::io::Error>, Void>,
 >;
 
 type PingFailureOrUpgradeError = Either<PingOrStopOrHop, Upgrade>;
@@ -189,7 +189,41 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, PingFailureOrUpgradeError>) {
+	async fn handle_event(
+		&mut self,
+		event: SwarmEvent<
+			BehaviourEvent,
+			itertools::Either<
+				itertools::Either<
+					itertools::Either<
+						itertools::Either<
+							itertools::Either<
+								itertools::Either<std::io::Error, std::io::Error>,
+								void::Void,
+							>,
+							void::Void,
+						>,
+						void::Void,
+					>,
+					itertools::Either<
+						StreamUpgradeError<
+							itertools::Either<
+								InboundStopFatalUpgradeError,
+								OutboundHopFatalUpgradeError,
+							>,
+						>,
+						void::Void,
+					>,
+				>,
+				itertools::Either<
+					StreamUpgradeError<
+						itertools::Either<InboundUpgradeError, OutboundUpgradeError>,
+					>,
+					void::Void,
+				>,
+			>,
+		>,
+	) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
@@ -438,6 +472,7 @@ impl EventLoop {
 						endpoint,
 						num_established,
 						cause,
+						..
 					} => {
 						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
@@ -456,6 +491,7 @@ impl EventLoop {
 					SwarmEvent::IncomingConnection {
 						local_addr,
 						send_back_addr,
+						..
 					} => {
 						trace!("Incoming connection from address: {send_back_addr:?}. Local address: {local_addr:?}");
 					},
@@ -463,6 +499,7 @@ impl EventLoop {
 						local_addr,
 						send_back_addr,
 						error,
+						..
 					} => {
 						trace!("Incoming connection error from address: {send_back_addr:?}. Local address: {local_addr:?}. Error: {error:?}.")
 					},
@@ -474,7 +511,7 @@ impl EventLoop {
 						// this event is of a particular interest for our first node in the network
 						self.notify(Event::ConnectionEstablished { peer_id, endpoint });
 					},
-					SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						// remove error producing relay from pending dials
 						trace!("Outgoing connection error: {error:?}");
 						if let Some(peer_id) = peer_id {
@@ -486,7 +523,11 @@ impl EventLoop {
 							}
 						}
 					},
-					SwarmEvent::Dialing(peer_id) => debug!("Dialing {}", peer_id),
+					SwarmEvent::Dialing { peer_id, .. } => {
+						if let Some(id) = peer_id {
+							debug!("Dialing {}", id);
+						}
+					},
 					_ => {},
 				}
 			},
