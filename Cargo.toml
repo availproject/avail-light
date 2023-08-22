@@ -17,6 +17,9 @@ test = false
 bench = false
 
 [dependencies]
+# TODO: Remove direct dependency after relevant traits are implemented in avail-subxt
+subxt = "*"
+
 # Internal deps
 avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "avail-core/v0.5.0" }
 avail-subxt = { version = "0.3", git = "https://github.com/availproject/avail.git", tag = "v1.6.3" }

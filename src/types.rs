@@ -287,6 +287,8 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
+	/// Avail account secret key. (default: None)
+	pub avail_secret_key: Option<String>,
 }
 
 pub struct Delay(Option<Duration>);
@@ -523,6 +525,7 @@ impl Default for RuntimeConfig {
 			max_kad_record_number: 2400000,
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
+			avail_secret_key: None,
 		}
 	}
 }

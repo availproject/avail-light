@@ -1,23 +1,32 @@
-use crate::{
-	rpc::Node,
-	types::{RuntimeConfig, State},
-};
-
 use self::{
 	handlers::handle_rejection,
 	types::{Clients, Version},
 };
+use crate::{
+	rpc::Node,
+	types::{RuntimeConfig, State},
+};
+use avail_subxt::avail;
 use std::{
 	collections::HashMap,
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
+use subxt::ext::sp_core::sr25519::Pair;
 use tokio::sync::RwLock;
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
+mod transactions;
 mod types;
 mod ws;
+
+async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
+	match value {
+		Some(value) => Ok(value),
+		None => Err(warp::reject::not_found()),
+	}
+}
 
 fn with_clients(clients: Clients) -> impl Filter<Extract = (Clients,), Error = Infallible> + Clone {
 	warp::any().map(move || clients.clone())
@@ -42,6 +51,17 @@ fn status_route(
 		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.then(handlers::status)
+		.map(types::handle_result)
+}
+
+fn submit_route(
+	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync>>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "submit")
+		.and(warp::post())
+		.and_then(move || optionally(submitter.clone()))
+		.and(warp::body::json())
+		.then(handlers::submit)
 		.map(types::handle_result)
 }
 
@@ -78,27 +98,48 @@ pub fn routes(
 	node: Node,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
+	node_client: avail::Client,
+	pair: Option<Pair>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 	let version = Version {
 		version,
 		network_version,
 	};
+
+	let pair_signer = pair.map(transactions::AvailSigner::new);
+
+	let submitter = config.app_id.map(|app_id| {
+		Arc::new(transactions::Submitter {
+			node_client,
+			app_id,
+			pair_signer,
+		})
+	});
+
 	version_route(version.clone())
 		.or(status_route(config.clone(), node.clone(), state.clone()))
 		.or(subscriptions_route(clients.clone()))
 		.or(ws_route(clients, version, config, node, state))
+		.or(submit_route(submitter))
 		.recover(handle_rejection)
 }
 
 #[cfg(test)]
 mod tests {
-	use super::types::Client;
+	use super::{
+		transactions::{self, Transaction},
+		types::Client,
+	};
 	use crate::{
-		api::v2::types::{Clients, DataFields, Subscription, SubscriptionId, Topics, Version},
+		api::v2::types::{
+			Clients, DataFields, Subscription, SubscriptionId, Topics, TransactionHash, Version,
+		},
 		rpc::Node,
 		types::{RuntimeConfig, State},
 	};
+	use async_trait::async_trait;
+	use hyper::StatusCode;
 	use kate_recovery::matrix::Partition;
 	use sp_core::H256;
 	use std::{
@@ -215,6 +256,47 @@ mod tests {
 		vec![DataFields::Extrinsic, DataFields::Data]
 			.into_iter()
 			.collect()
+	}
+
+	#[derive(Clone)]
+	struct MockSubmitter {}
+
+	#[async_trait]
+	impl transactions::Submit for MockSubmitter {
+		async fn submit(&self, _: Transaction) -> anyhow::Result<H256> {
+			Ok(H256::random())
+		}
+
+		fn has_signer(&self) -> bool {
+			true
+		}
+	}
+
+	#[tokio::test]
+	async fn submit_route_bad_request() {
+		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
+		let response = warp::test::request()
+			.method("POST")
+			.path("/v2/submit")
+			.body(r#"{"data":"dHJhbnooNhY3Rpb24:"}"#)
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+		assert_eq!(response.body(), "Bad Request: Invalid byte 58, offset 17.");
+	}
+
+	#[tokio::test]
+	async fn submit_route() {
+		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
+		let response = warp::test::request()
+			.method("POST")
+			.path("/v2/submit")
+			.body(r#"{"data":"dHJhbnNhY3Rpb24K"}"#)
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::OK);
+		let result: TransactionHash = serde_json::from_slice(response.body()).unwrap();
+		assert!(H256::from_str(&result.hash).is_ok());
 	}
 
 	#[tokio::test]

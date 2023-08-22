@@ -105,6 +105,51 @@ Content-Type: application/json
 - **available** - range of historical blocks with verified data availability (configured confidence has been achieved)
 - **app_data** - range of historical blocks with app data retrieved and verified
 
+## POST `/v2/submit`
+
+Signs and submits opaque application data to avail network. Since block data can contain multiple transactions, representation is a JSON array, with data encoded using _base64_ encoding. For consistency, this endpoint uses the same data encoding.
+
+Request:
+
+```yaml
+POST /v2/submit HTTP/1.1
+Host: {light-client-url}
+Content-Type: application/json
+Content-Length: {content-length}
+
+{
+  "data": "{base-64-encoded-data}"
+}
+```
+
+Response:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "hash": "{transaction-hash}"
+}
+```
+
+If **app** mode is not active or signing key is not configured response is:
+
+```yaml
+HTTP/1.1 400 Bad Request
+```
+
+## Errors
+
+In case of an error, endpoints will return a response with `500 Internal Server Error` status code, and descriptive error message:
+
+```yaml
+HTTP/1.1 500 Internal Server Error
+Content-Type: text/plain
+
+Internal Server Error
+```
+
 # WebSocket API
 
 The Avail Light Client WebSocket API allows real-time communication between a client and a server over a persistent connection, enabling push notifications as an alternative to polling. Web socket API can be used on its own or in combination with HTTP API to enable different pull/push use cases.

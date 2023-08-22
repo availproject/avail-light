@@ -499,6 +499,7 @@ dependencies = [
  "serde_json",
  "smallvec 1.11.0",
  "sp-core 22.0.0",
+ "subxt",
  "test-case",
  "threadpool",
  "tikv-jemallocator",

@@ -1,5 +1,9 @@
 use super::{
-	types::{Client, Clients, Status, Subscription, SubscriptionId, Version},
+	transactions,
+	types::{
+		Client, Clients, Error, Status, Subscription, SubscriptionId, Transaction, TransactionHash,
+		Version,
+	},
 	ws,
 };
 use crate::{
@@ -7,6 +11,7 @@ use crate::{
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
+use base64::{engine::general_purpose, Engine};
 use hyper::StatusCode;
 use std::{
 	convert::Infallible,
@@ -24,6 +29,33 @@ pub async fn subscriptions(
 	let mut clients = clients.write().await;
 	clients.insert(subscription_id.clone(), Client::new(subscription));
 	Ok(SubscriptionId { subscription_id })
+}
+
+pub async fn submit(
+	submitter: Arc<impl transactions::Submit>,
+	transaction: Transaction,
+) -> Result<TransactionHash, Error> {
+	fn base64_decode(data: String) -> Result<Vec<u8>, Error> {
+		general_purpose::STANDARD
+			.decode(data)
+			.map_err(|error| Error::bad_request(format!("Bad Request: {error}")))
+	}
+
+	if matches!(&transaction, Transaction::Data(_)) && !submitter.has_signer() {
+		return Err(Error::not_found());
+	};
+
+	let transaction = match transaction {
+		Transaction::Data(data) => transactions::Transaction::Data(base64_decode(data)?),
+		Transaction::Extrinsic(data) => transactions::Transaction::Extrinsic(base64_decode(data)?),
+	};
+
+	submitter
+		.submit(transaction)
+		.await
+		.map(|hash| format!("{hash:#x}"))
+		.map(|hash| TransactionHash { hash })
+		.map_err(|_| Error::internal_server_error())
 }
 
 pub async fn ws(
@@ -61,7 +93,7 @@ pub async fn status(
 		Ok(state) => state,
 		Err(error) => {
 			info!("Cannot acquire lock for last_block: {error}");
-			return Err(StatusCode::INTERNAL_SERVER_ERROR);
+			return Err(Error::internal_server_error());
 		},
 	};
 

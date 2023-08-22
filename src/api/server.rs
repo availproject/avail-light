@@ -11,11 +11,12 @@
 #[cfg(feature = "api-v2")]
 use crate::api::v2;
 use crate::{
-	api::v1::{self},
+	api::v1,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
+use avail_subxt::avail;
 use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use std::{
@@ -23,6 +24,7 @@ use std::{
 	str::FromStr,
 	sync::{Arc, Mutex},
 };
+use subxt::ext::sp_core::sr25519::Pair;
 use tracing::info;
 use warp::Filter;
 
@@ -33,6 +35,8 @@ pub struct Server {
 	pub version: String,
 	pub network_version: String,
 	pub node: Node,
+	pub node_client: avail::Client,
+	pub avail_secret_key: Option<Pair>,
 }
 
 impl Server {
@@ -57,6 +61,8 @@ impl Server {
 			self.node,
 			self.state.clone(),
 			self.cfg,
+			self.node_client.clone(),
+			self.avail_secret_key,
 		);
 
 		let cors = warp::cors()
