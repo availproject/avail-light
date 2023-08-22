@@ -310,7 +310,7 @@ pub async fn sync_finality(
 			.filter(|x| validator_set.iter().any(|e| e.0.eq(&x.0)))
 			.count();
 		info!(
-			"Number of matching signatures: {num_matched_addresses}/{}",
+			"Number of matching signatures for block {curr_block_num}: {num_matched_addresses}/{}",
 			validator_set.len()
 		);
 		if num_matched_addresses < (validator_set.len() * 2 / 3) {
