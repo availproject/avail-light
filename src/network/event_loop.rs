@@ -109,23 +109,22 @@ pub struct EventLoop {
 	kad_remove_local_record: bool,
 }
 
-type IoOrPing = Either<Either<std::io::Error, std::io::Error>, ping::Failure>;
+type IoError = Either<
+	Either<Either<Either<std::io::Error, std::io::Error>, void::Void>, void::Void>,
+	void::Void,
+>;
 
-type UpgradeOrPing = Either<Either<IoOrPing, void::Void>, StreamUpgradeError<std::io::Error>>;
-
-type StopOrHop = Either<
+type StopOrHopError = Either<
 	StreamUpgradeError<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
 	void::Void,
 >;
 
-type PingOrStopOrHop = Either<UpgradeOrPing, StopOrHop>;
+type InOrOutError =
+	Either<StreamUpgradeError<Either<InboundUpgradeError, OutboundUpgradeError>>, void::Void>;
 
-type Upgrade = Either<
-	StreamUpgradeError<Either<InboundUpgradeError, OutboundUpgradeError>>,
-	Either<StreamUpgradeError<std::io::Error>, Void>,
->;
+type IoStopOrHopError = Either<IoError, StopOrHopError>;
 
-type PingFailureOrUpgradeError = Either<PingOrStopOrHop, Upgrade>;
+type StreamError = Either<IoStopOrHopError, InOrOutError>;
 
 impl EventLoop {
 	pub fn new(
@@ -180,41 +179,7 @@ impl EventLoop {
 			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
-	async fn handle_event(
-		&mut self,
-		event: SwarmEvent<
-			BehaviourEvent,
-			itertools::Either<
-				itertools::Either<
-					itertools::Either<
-						itertools::Either<
-							itertools::Either<
-								itertools::Either<std::io::Error, std::io::Error>,
-								void::Void,
-							>,
-							void::Void,
-						>,
-						void::Void,
-					>,
-					itertools::Either<
-						StreamUpgradeError<
-							itertools::Either<
-								InboundStopFatalUpgradeError,
-								OutboundHopFatalUpgradeError,
-							>,
-						>,
-						void::Void,
-					>,
-				>,
-				itertools::Either<
-					StreamUpgradeError<
-						itertools::Either<InboundUpgradeError, OutboundUpgradeError>,
-					>,
-					void::Void,
-				>,
-			>,
-		>,
-	) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, StreamError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
