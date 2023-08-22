@@ -26,17 +26,15 @@ async fn main() -> Result<()> {
 	print!("Testing system version... ");
 	let res = rpc::get_system_version(&client).await;
 	res_helper(&res, &mut correct);
-	match res {
-		Ok(v) => println!("Reported system version: {v}"),
-		_ => (),
+	if let Ok(v) = res {
+		println!("Reported system version: {v}")
 	};
 
 	print!("Testing runtime version... ");
 	let res = rpc::get_runtime_version(&client).await;
 	res_helper(&res, &mut correct);
-	match res {
-		Ok(v) => println!("Reported runtime version: {v:?}"),
-		_ => (),
+	if let Ok(v) = res {
+		println!("Reported runtime version: {v:?}")
 	};
 
 	print!("Testing get head block header... ");
@@ -46,7 +44,7 @@ async fn main() -> Result<()> {
 
 	print!("Testing get head block hash... ");
 	let res = rpc::get_chain_head_hash(&client).await;
-	let hash = res.as_ref().unwrap().clone(); // TODO: Properly handle and skip if not working
+	let hash = *res.as_ref().unwrap(); // TODO: Properly handle and skip if not working
 	res_helper(&res, &mut correct);
 
 	print!("Testing get block hash at height {number}... ");

@@ -61,9 +61,10 @@ pub async fn connect(
 					},
 					Err(error) => {
 						warn!("Error handling web socket message: {error}");
-						Some(Error::bad_request(format!(
+						Some(Error::bad_request(
 							"Error handling web socket message: Failed to parse request"
-						)))
+								.to_string(),
+						))
 					},
 				} {
 					if let Err(error) = sender.send(Ok(Message::text::<String>(error.into()))) {
