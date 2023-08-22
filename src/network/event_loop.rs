@@ -1,30 +1,6 @@
 use anyhow::Result;
 use async_std::stream::StreamExt;
 use itertools::Either;
-use libp2p::swarm::AddressRecord;
-use rand::seq::SliceRandom;
-use std::str;
-use std::{collections::HashMap, time::Duration};
-use tokio::{
-	sync::{
-		mpsc::{self, Sender},
-		oneshot,
-	},
-	time::{interval_at, Instant, Interval},
-};
-use void::Void;
-
-use crate::telemetry::NetworkDumpEvent;
-
-use super::{
-	client::{Command, NumSuccPut},
-	Behaviour, BehaviourEvent, Event,
-};
-
-const PEER_ID: &str = "PeerID";
-const MULTIADDRESS: &str = "Multiaddress";
-const STATUS: &str = "Status";
-
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
 	dcutr::{
@@ -38,7 +14,6 @@ use libp2p::{
 	},
 	mdns::Event as MdnsEvent,
 	multiaddr::Protocol,
-	ping,
 	relay::{
 		inbound::stop::FatalUpgradeError as InboundStopFatalUpgradeError,
 		outbound::hop::FatalUpgradeError as OutboundHopFatalUpgradeError,
@@ -49,8 +24,24 @@ use libp2p::{
 	},
 	Multiaddr, PeerId, Swarm,
 };
-
+use rand::seq::SliceRandom;
+use std::str;
+use std::{collections::HashMap, time::Duration};
+use tokio::{
+	sync::{mpsc, oneshot},
+	time::{interval_at, Instant, Interval},
+};
 use tracing::{debug, error, info, trace};
+
+use super::{
+	client::{Command, NumSuccPut},
+	Behaviour, BehaviourEvent, Event,
+};
+use crate::telemetry::metrics::{MetricEvent, Metrics as AvailMetrics};
+
+const PEER_ID: &str = "PeerID";
+const MULTIADDRESS: &str = "Multiaddress";
+const STATUS: &str = "Status";
 
 #[derive(Debug)]
 enum QueryChannel {
