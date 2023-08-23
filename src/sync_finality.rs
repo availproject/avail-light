@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
-use async_trait::async_trait;
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail::{self, Client},
@@ -10,7 +9,6 @@ use avail_subxt::{
 };
 use codec::{Decode, Encode};
 use futures_util::future::join_all;
-use mockall::automock;
 use rocksdb::DB;
 use serde::de::{self};
 use serde::Deserialize;
@@ -65,8 +63,6 @@ impl<'de> Deserialize<'de> for WrappedProof {
 	}
 }
 
-#[async_trait]
-#[automock]
 pub trait SyncFinality {
 	fn get_client(&self) -> avail::Client;
 	fn get_db(&self) -> Arc<DB>;
