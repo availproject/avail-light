@@ -1,3 +1,5 @@
+use anyhow::Result;
+use pcap::{Active, Capture, ConnectionStatus, Device};
 use std::{
 	sync::{
 		atomic::{AtomicU32, Ordering},
@@ -5,9 +7,6 @@ use std::{
 	},
 	time::Duration,
 };
-
-use anyhow::Result;
-use pcap::{Active, Capture, ConnectionStatus, Device};
 use tokio::time;
 use tracing::{debug, error, info, warn};
 

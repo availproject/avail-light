@@ -243,7 +243,7 @@ mod tests {
 
 	use super::*;
 	use libp2p::{
-		kad::{kbucket::Distance, record::Key},
+		kad::{record::Key, KBucketDistance},
 		multihash::Multihash,
 	};
 	use proptest::{
@@ -255,17 +255,20 @@ mod tests {
 	use rand::Rng;
 
 	const SHA_256_MH: u64 = 0x12;
+	const MULTIHASH_SIZE: usize = 32;
 
-	fn random_multihash() -> Multihash {
+	fn random_multihash() -> Multihash<MULTIHASH_SIZE> {
 		Multihash::wrap(SHA_256_MH, &rand::thread_rng().gen::<[u8; 32]>()).unwrap()
 	}
 
-	fn distance(r: &ProviderRecord) -> Distance {
+	fn distance(r: &ProviderRecord) -> KBucketDistance {
 		KBucketKey::new(r.key.clone()).distance(&KBucketKey::from(r.provider))
 	}
 
 	fn arb_key() -> impl Strategy<Value = Key> {
-		any::<[u8; 32]>().prop_map(|hash| Key::from(Multihash::wrap(SHA_256_MH, &hash).unwrap()))
+		any::<[u8; 32]>().prop_map(|hash| {
+			Key::from(Multihash::<MULTIHASH_SIZE>::wrap(SHA_256_MH, &hash).unwrap())
+		})
 	}
 
 	fn arb_publisher() -> impl Strategy<Value = Option<PeerId>> {

@@ -1,8 +1,3 @@
-use std::{
-	sync::{Arc, Mutex},
-	time::Instant,
-};
-
 use anyhow::{anyhow, Result};
 use avail_subxt::{
 	avail::Client,
@@ -13,6 +8,10 @@ use avail_subxt::{
 use codec::{Decode, Encode};
 use serde::{de::Error, Deserialize};
 use sp_core::{blake2_256, bytes, ed25519, Pair};
+use std::{
+	sync::{Arc, Mutex},
+	time::Instant,
+};
 use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
