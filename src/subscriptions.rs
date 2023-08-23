@@ -217,7 +217,9 @@ async fn subscribe_check_and_process(
 					));
 				} else {
 					let state_locked = state.lock().unwrap();
-					if state_locked.finality_synced {
+					let finality_synced = state_locked.finality_synced;
+					drop(state_locked);
+					if finality_synced {
 						info!("Storing finality checkpoint at block {}", header.number);
 						store_finality_sync_checkpoint(
 							db.clone(),
