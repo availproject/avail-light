@@ -161,6 +161,7 @@ async fn subscribe_check_and_process(
 			},
 		}
 
+		let mut finality_synced = false;
 		while let Some(justification) = justifications.pop() {
 			// Iterate through headers and try to find a matching one.
 			if let Some(pos) = unverified_headers
@@ -215,21 +216,22 @@ async fn subscribe_check_and_process(
 					break 'mainloop Err(anyhow!(
 						"Not signed by the supermajority of the validator set."
 					));
-				} else {
-					let state_locked = state.lock().unwrap();
-					let finality_synced = state_locked.finality_synced;
-					drop(state_locked);
-					if finality_synced {
-						info!("Storing finality checkpoint at block {}", header.number);
-						store_finality_sync_checkpoint(
-							db.clone(),
-							FinalitySyncCheckpoint {
-								set_id,
-								number: header.number,
-								validator_set: validator_set.clone(),
-							},
-						)?;
-					}
+				}
+
+				// Store finality checkpoint if finality is synced
+				if !finality_synced {
+					finality_synced = state.lock().unwrap().finality_synced;
+				}
+				if finality_synced {
+					info!("Storing finality checkpoint at block {}", header.number);
+					store_finality_sync_checkpoint(
+						db.clone(),
+						FinalitySyncCheckpoint {
+							set_id,
+							number: header.number,
+							validator_set: validator_set.clone(),
+						},
+					)?;
 				}
 
 				// Get all the skipped blocks, if they exist
