@@ -90,8 +90,18 @@ tikv-jemallocator = "0.5"
 proptest = "1.0.0"
 test-case = "1.2.3"
 
+[profile.debug-fast]
+inherits = "release"
+debug = true
+
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
+incremental = false
+
+[profile.maxperf]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
