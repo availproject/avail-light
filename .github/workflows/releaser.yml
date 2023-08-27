@@ -19,7 +19,7 @@ jobs:
             curl https://sh.rustup.rs -sSf | sh -s -- -y
             source "$HOME/.cargo/env"
             sudo apt-get update && sudo apt-get install -y protobuf-compiler
-            cargo build --release -p avail-light
+            cargo build --maxperf -p avail-light
             mv target/release/avail-light target/release/avail-light-linux-amd64
             pushd target/release/
             tar czf avail-light-linux-amd64.tar.gz avail-light-linux-amd64
@@ -40,7 +40,7 @@ jobs:
             source "$HOME/.cargo/env"
             rustup target add aarch64-unknown-linux-gnu
             sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config librust-openssl-dev build-essential protobuf-compiler
-            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --release --target=aarch64-unknown-linux-gnu -p avail-light           
+            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --maxperf --target=aarch64-unknown-linux-gnu -p avail-light           
             mv target/aarch64-unknown-linux-gnu/release/avail-light target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64
             pushd target/aarch64-unknown-linux-gnu/release/
             tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
