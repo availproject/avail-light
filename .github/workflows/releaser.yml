@@ -19,7 +19,7 @@ jobs:
             curl https://sh.rustup.rs -sSf | sh -s -- -y
             source "$HOME/.cargo/env"
             sudo apt-get update && sudo apt-get install -y protobuf-compiler
-            cargo build --maxperf -p avail-light
+            cargo build --profile maxperf -p avail-light
             mv target/maxperf/avail-light target/maxperf/avail-light-linux-amd64
             pushd target/maxperf/
             tar czf avail-light-linux-amd64.tar.gz avail-light-linux-amd64
@@ -40,7 +40,7 @@ jobs:
             source "$HOME/.cargo/env"
             rustup target add aarch64-unknown-linux-gnu
             sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config librust-openssl-dev build-essential protobuf-compiler
-            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --maxperf --target=aarch64-unknown-linux-gnu -p avail-light           
+            env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --profile maxperf --target=aarch64-unknown-linux-gnu -p avail-light           
             mv target/aarch64-unknown-linux-gnu/maxperf/avail-light target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64
             pushd target/aarch64-unknown-linux-gnu/maxperf/
             tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
@@ -50,9 +50,29 @@ jobs:
              name: avail-light-linux-aarch64-binary
              path: target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64.tar.gz
 
+  binary_apple_arm64:
+    runs-on: macos-latest
+    steps:
+          - uses: actions/checkout@v2
+          - name: install cargo deps and build avail
+            shell: bash
+            run: |
+              curl https://sh.rustup.rs -sSf | sh -s -- -y
+              source "$HOME/.cargo/env"
+              rustup target add aarch64-apple-darwin
+              cargo build --profile maxperf -p avail-light
+              mv target/maxperf/avail-light target/maxperf/avail-light-apple-arm64
+              pushd target/maxperf/
+              tar czf avail-light-apple-arm64.tar.gz avail-light-apple-arm64
+              popd
+          - uses: actions/upload-artifact@v2
+            with:
+              name: avail-light-apple-arm64-binary
+              path: target/maxperf/avail-light-apple-arm64.tar.gz
+
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
-    needs: [binary_linux_amd64, binary_linux_aarch64]
+    needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64]
     runs-on: ubuntu-latest
     steps:
          - uses: actions/download-artifact@v2
@@ -61,6 +81,9 @@ jobs:
          - uses: actions/download-artifact@v2
            with:
              name: avail-light-linux-aarch64-binary
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-apple-arm64-binary
          - name: Prepare
            id: prepare
            run: |
