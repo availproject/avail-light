@@ -20,14 +20,14 @@ jobs:
             source "$HOME/.cargo/env"
             sudo apt-get update && sudo apt-get install -y protobuf-compiler
             cargo build --maxperf -p avail-light
-            mv target/release/avail-light target/release/avail-light-linux-amd64
-            pushd target/release/
+            mv target/maxperf/avail-light target/maxperf/avail-light-linux-amd64
+            pushd target/maxperf/
             tar czf avail-light-linux-amd64.tar.gz avail-light-linux-amd64
             popd
          - uses: actions/upload-artifact@v2
            with:
              name: avail-light-linux-amd64-binary
-             path: target/release/avail-light-linux-amd64.tar.gz
+             path: target/maxperf/avail-light-linux-amd64.tar.gz
              
   binary_linux_aarch64:
     runs-on: ubuntu-latest
@@ -41,14 +41,14 @@ jobs:
             rustup target add aarch64-unknown-linux-gnu
             sudo apt-get update && sudo apt-get install -y musl-tools clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev libc6-dev-arm64-cross libssl-dev pkg-config librust-openssl-dev build-essential protobuf-compiler
             env  BINDGEN_EXTRA_CLANG_ARGS='--sysroot /usr/aarch64-linux-gnu' CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc cargo build --maxperf --target=aarch64-unknown-linux-gnu -p avail-light           
-            mv target/aarch64-unknown-linux-gnu/release/avail-light target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64
-            pushd target/aarch64-unknown-linux-gnu/release/
+            mv target/aarch64-unknown-linux-gnu/maxperf/avail-light target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64
+            pushd target/aarch64-unknown-linux-gnu/maxperf/
             tar czf avail-light-linux-aarch64.tar.gz avail-light-linux-aarch64
             popd
          - uses: actions/upload-artifact@v2
            with:
              name: avail-light-linux-aarch64-binary
-             path: target/aarch64-unknown-linux-gnu/release/avail-light-linux-aarch64.tar.gz
+             path: target/aarch64-unknown-linux-gnu/maxperf/avail-light-linux-aarch64.tar.gz
 
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
