@@ -4,3 +4,4 @@
 .DS_Store
 config.yaml
 avail_light_store
+/.direnv
