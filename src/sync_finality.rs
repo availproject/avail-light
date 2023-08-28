@@ -297,9 +297,9 @@ pub async fn sync_finality(
 			.collect::<Result<Vec<_>>>();
 
 		let Ok(signer_addresses) = signer_addresses else {
-               error!("Verification failed!");
-               bail!("Some of the signatures don't match");
-            };
+			error!("Verification failed!");
+			bail!("Some of the signatures don't match");
+		};
 
 		let num_matched_addresses = signer_addresses
 			.iter()

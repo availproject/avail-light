@@ -38,7 +38,7 @@ pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
 		.context("Couldn't get {key} from db")?;
 
 	let Some(last_full_node_ws) = result else {
-	    return Ok(None);
+		return Ok(None);
 	};
 
 	Ok(std::str::from_utf8(&last_full_node_ws)

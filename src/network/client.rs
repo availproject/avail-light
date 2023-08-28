@@ -203,8 +203,8 @@ impl Client {
 					peer_record.record.value.try_into();
 
 				let Ok(content) = try_content else {
-				    debug!("Cannot convert cell {reference} into 80 bytes");
-				    return None;
+					debug!("Cannot convert cell {reference} into 80 bytes");
+					return None;
 				};
 
 				Some(Cell { position, content })
