@@ -70,7 +70,7 @@ pub fn status(
 ) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
 	let Some(last) = state.confidence_achieved.as_ref().map(|range| range.last) else {
-	    return ClientResponse::NotFound;
+		return ClientResponse::NotFound;
 	};
 	let res = match get_confidence_from_db(db, last) {
 		Ok(Some(count)) => {

@@ -28,8 +28,8 @@ pub async fn connect(
 
 	let mut clients = clients.write().await;
 	let Some(client) = clients.get_mut(&subscription_id) else {
-	    info!("Client is not subscribed");
-	    return;
+		info!("Client is not subscribed");
+		return;
 	};
 	client.sender = Some(sender.clone());
 

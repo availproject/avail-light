@@ -142,11 +142,11 @@ pub async fn process_block(
 
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
 	let Some(dimensions) = Dimensions::new(rows, cols) else {
-			    info!(
-				    block_number,
-				    "Skipping block with invalid dimensions {rows}x{cols}",
-			    );
-	    return Ok(());
+		info!(
+			block_number,
+			"Skipping block with invalid dimensions {rows}x{cols}",
+		);
+		return Ok(());
 	};
 
 	if dimensions.cols().get() <= 2 {
@@ -426,8 +426,8 @@ pub async fn run(
 		}
 
 		let Ok(client_msg) = types::BlockVerified::try_from(header) else {
-		    error!("Cannot create message from header");
-		    continue;
+			error!("Cannot create message from header");
+			continue;
 		};
 
 		// notify dht-based application client

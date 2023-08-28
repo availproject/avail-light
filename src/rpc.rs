@@ -248,9 +248,15 @@ pub async fn connect_to_the_full_node(
 			error
 		};
 
-		let Ok(client) = build_client(&full_node_ws, false).await.map_err(log_warn) else { continue };
-		let Ok(system_version) = get_system_version(&client).await.map_err(log_warn) else { continue; };
-		let Ok(runtime_version) = get_runtime_version(&client).await.map_err(log_warn) else { continue; };
+		let Ok(client) = build_client(&full_node_ws, false).await.map_err(log_warn) else {
+			continue;
+		};
+		let Ok(system_version) = get_system_version(&client).await.map_err(log_warn) else {
+			continue;
+		};
+		let Ok(runtime_version) = get_runtime_version(&client).await.map_err(log_warn) else {
+			continue;
+		};
 
 		let version = format!(
 			"v{}/{}/{}",
