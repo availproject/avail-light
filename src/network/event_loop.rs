@@ -319,7 +319,7 @@ impl EventLoop {
 						// ones that contains the 'p2p' tag
 						listen_addrs
 							.into_iter()
-							.filter(|a| a.to_string().contains(Protocol::P2p(peer_id.into()).tag()))
+							.filter(|a| a.to_string().contains(Protocol::P2p(peer_id).tag()))
 							.for_each(|a| {
 								self.swarm
 									.behaviour_mut()
@@ -483,12 +483,10 @@ impl EventLoop {
 						}
 					},
 					SwarmEvent::Dialing {
-						peer_id,
+						peer_id: Some(peer),
 						connection_id,
 					} => {
-						if let Some(peer) = peer_id {
-							debug!("Dialing: {}, on connection: {}", peer, connection_id);
-						}
+						debug!("Dialing: {}, on connection: {}", peer, connection_id);
 					},
 					_ => {},
 				}
@@ -655,7 +653,7 @@ impl EventLoop {
 				self.relay
 					.address
 					.clone()
-					.with(Protocol::P2p(peer_id.into()))
+					.with(Protocol::P2p(peer_id))
 					.with(Protocol::P2pCircuit),
 			) {
 				Ok(_) => {

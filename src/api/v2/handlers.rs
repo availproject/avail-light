@@ -1,8 +1,5 @@
 use super::{
-	types::{
-		BlockRange, Blocks, Client, Clients, HistoricalSync, Status, Subscription, SubscriptionId,
-		Version,
-	},
+	types::{Client, Clients, Status, Subscription, SubscriptionId, Version},
 	ws,
 };
 use crate::{
