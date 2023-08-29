@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.5.0"
+version = "1.6.0"
 authors = ["Avail Team"]
 default-run = "avail-light"
 edition = "2021"
