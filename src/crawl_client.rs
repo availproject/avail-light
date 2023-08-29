@@ -5,10 +5,7 @@ use crate::{
 };
 use avail_subxt::primitives::Header;
 use kate_recovery::matrix::Partition;
-use std::{
-	sync::Arc,
-	time::{Instant, SystemTime},
-};
+use std::{sync::Arc, time::Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
@@ -27,21 +24,24 @@ pub async fn run(
 	info!("Starting crawl client...");
 
 	while let Ok((header, received_at)) = message_rx.recv().await {
+		let block = match types::BlockVerified::try_from((header, None)) {
+			Ok(block) => block,
+			Err(error) => {
+				error!("Header is not valid: {error}");
+				continue;
+			},
+		};
+
 		if let Some(seconds) = delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}
-		let block_number = header.number;
+		let block_number = block.block_num;
 		info!(block_number, "Crawling block...");
 
-		let start = SystemTime::now();
+		let start = Instant::now();
 
-		let Ok(block) = types::BlockVerified::try_from((header, None)) else {
-			error!("Header is not valid");
-			continue;
-		};
-
-		if mode == CrawlMode::Cells || mode == CrawlMode::Both {
+		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
 			let positions = block
 				.dimensions
 				.iter_extended_partition_positions(&ENTIRE_BLOCK)
@@ -81,11 +81,7 @@ pub async fn run(
 			let _ = metrics.record(MetricValue::CrawlRowsSuccessRate(success_rate));
 		}
 
-		let elapsed = start
-			.elapsed()
-			.map(|elapsed| format!("{elapsed:?}"))
-			.unwrap_or("unknown".to_string());
-
-		info!(block_number, "Crawling block finished in {elapsed}")
+		let elapsed = start.elapsed();
+		info!(block_number, "Crawling block finished in {elapsed:?}")
 	}
 }

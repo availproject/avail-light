@@ -512,7 +512,7 @@ impl From<&RuntimeConfig> for AppClientConfig {
 	}
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum CrawlMode {
 	Rows,

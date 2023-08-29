@@ -397,13 +397,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	if cfg.crawl_block {
 		let delay = Delay(Some(Duration::from_secs(cfg.crawl_block_delay)));
-		let mode = cfg.crawl_block_mode.clone();
 		tokio::task::spawn(crawl_client::run(
 			message_tx.subscribe(),
 			network_client.clone(),
 			delay,
 			ot_metrics,
-			mode,
+			cfg.crawl_block_mode,
 		));
 	}
 
