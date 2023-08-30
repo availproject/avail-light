@@ -5,7 +5,7 @@
 
 <br>
 
-[![Build status](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/maticnetwork/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/maticnetwork/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/maticnetwork/avail-light)
+[![Build status](https://github.com/availproject/avail-light/actions/workflows/default.yml/badge.svg)](https://github.com/availproject/avail-light/actions/workflows/default.yml) [![Code coverage](https://codecov.io/gh/availproject/avail-light/branch/main/graph/badge.svg?token=7O2EA7QMC2)](https://codecov.io/gh/availproject/avail-light)
 
 ![demo](./img/lc.png)
 
@@ -34,20 +34,17 @@ Once the data is received, light client verifies individual cells and calculates
 
 ## Installation
 
-Start by cloning this repo in your local setup:
+Suppose you are already running our [node](https://github.com/availproject/avail). For this setup we will run it in dev mode:
 
-```ssh
-git clone git@github.com:maticnetwork/avail-light.git
+```sh
+data-avail --dev
 ```
 
 Create one yaml configuration file in the root of the project & put following content.
 Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found bellow.
 
-```bash
-touch config.yaml
-```
-
 ```yaml
+# config.yaml
 log_level = "info"
 http_server_host = "127.0.0.1"
 http_server_port = "7000"
@@ -416,7 +413,7 @@ If application data is not available, and specified block is not the latest bloc
 "Not found"
 ```
 
-### **GET** `/v1/status/{block_number}`
+### **GET** `/v1/status`
 
 Retrieves the status of the latest block processed by the light client.
 
