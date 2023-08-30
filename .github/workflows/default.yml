@@ -47,6 +47,12 @@ jobs:
           command: fmt
           args: --check
 
+      - name: Check clippy lints
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
