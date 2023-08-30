@@ -1,7 +1,9 @@
 use anyhow::Context;
+use base64::{engine::general_purpose, DecodeError, Engine};
 use hyper::{http, StatusCode};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
+use sp_core::H256;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
@@ -13,6 +15,8 @@ use crate::{
 	rpc::Node,
 	types::{self, block_matrix_partition_format, RuntimeConfig, State},
 };
+
+use super::transactions;
 
 #[derive(Debug)]
 pub struct InternalServerError {}
@@ -88,12 +92,29 @@ pub enum Transaction {
 	Extrinsic(String),
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct TransactionHash {
-	pub hash: String,
+impl TryInto<transactions::Transaction> for Transaction {
+	type Error = anyhow::Error;
+
+	fn try_into(self) -> Result<transactions::Transaction, Self::Error> {
+		fn decode(data: String) -> Result<Vec<u8>, DecodeError> {
+			general_purpose::STANDARD.decode(data)
+		}
+
+		Ok(match self {
+			Transaction::Data(data) => decode(data).map(transactions::Transaction::Data),
+			Transaction::Extrinsic(data) => decode(data).map(transactions::Transaction::Extrinsic),
+		}?)
+	}
 }
 
-impl Reply for TransactionHash {
+#[derive(Serialize, Deserialize)]
+pub struct SubmitResponse {
+	pub block_hash: H256,
+	pub hash: H256,
+	pub index: u32,
+}
+
+impl Reply for SubmitResponse {
 	fn into_response(self) -> warp::reply::Response {
 		warp::reply::json(&self).into_response()
 	}

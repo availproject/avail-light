@@ -133,7 +133,7 @@ mod tests {
 	};
 	use crate::{
 		api::v2::types::{
-			Clients, DataFields, Subscription, SubscriptionId, Topics, TransactionHash, Version,
+			Clients, DataFields, SubmitResponse, Subscription, SubscriptionId, Topics, Version,
 		},
 		rpc::Node,
 		types::{RuntimeConfig, State},
@@ -263,8 +263,12 @@ mod tests {
 
 	#[async_trait]
 	impl transactions::Submit for MockSubmitter {
-		async fn submit(&self, _: Transaction) -> anyhow::Result<H256> {
-			Ok(H256::random())
+		async fn submit(&self, _: Transaction) -> anyhow::Result<SubmitResponse> {
+			Ok(SubmitResponse {
+				block_hash: H256::random(),
+				hash: H256::random(),
+				index: 0,
+			})
 		}
 
 		fn has_signer(&self) -> bool {
@@ -295,8 +299,8 @@ mod tests {
 			.reply(&route)
 			.await;
 		assert_eq!(response.status(), StatusCode::OK);
-		let result: TransactionHash = serde_json::from_slice(response.body()).unwrap();
-		assert!(H256::from_str(&result.hash).is_ok());
+		let response: SubmitResponse = serde_json::from_slice(response.body()).unwrap();
+		let _ = serde_json::to_string(&response).unwrap();
 	}
 
 	#[tokio::test]
