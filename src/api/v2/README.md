@@ -129,7 +129,9 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "hash": "{transaction-hash}"
+  "block_hash": "{block-hash}",
+  "hash": "{transaction-hash}",
+  "index": {transaction-index}
 }
 ```
 

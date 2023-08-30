@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::bounded::bounded_vec::BoundedVec},
@@ -6,8 +6,12 @@ use avail_subxt::{
 	primitives::AvailExtrinsicParams,
 	AvailConfig,
 };
-use sp_core::H256;
-use subxt::{ext::sp_core::sr25519::Pair, tx::PairSigner};
+use subxt::{
+	ext::sp_core::sr25519::Pair,
+	tx::{PairSigner, SubmittableExtrinsic},
+};
+
+use super::types::SubmitResponse;
 
 pub enum Transaction {
 	Data(Vec<u8>),
@@ -16,7 +20,7 @@ pub enum Transaction {
 
 #[async_trait]
 pub trait Submit {
-	async fn submit(&self, transaction: Transaction) -> Result<H256>;
+	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse>;
 	fn has_signer(&self) -> bool;
 }
 
@@ -32,28 +36,34 @@ pub struct Submitter {
 
 #[async_trait]
 impl Submit for Submitter {
-	async fn submit(&self, transaction: Transaction) -> Result<H256> {
-		match transaction {
+	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse> {
+		let tx_progress = match transaction {
 			Transaction::Data(data) => {
-				let pair_signer = self
-					.pair_signer
-					.as_ref()
-					.context("Pair signer is not configured")?;
-				let data_transfer = api::tx().data_availability().submit_data(BoundedVec(data));
-				let extrinsic_params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
+				let Some(pair_signer) = self.pair_signer.as_ref() else {
+					return Err(anyhow!("Pair signer is not configured"));
+				};
+				let extrinsic = api::tx().data_availability().submit_data(BoundedVec(data));
+				let params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
 				self.node_client
 					.tx()
-					.sign_and_submit(&data_transfer, pair_signer, extrinsic_params)
-					.await
-					.context("Cannot sign and submit transaction")
+					.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
+					.await?
 			},
-			Transaction::Extrinsic(data) => self
-				.node_client
-				.rpc()
-				.submit_extrinsic(data)
-				.await
-				.context("Cannot submit transaction"),
-		}
+			Transaction::Extrinsic(extrinsic) => {
+				SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic)
+					.submit_and_watch()
+					.await?
+			},
+		};
+		tx_progress
+			.wait_for_finalized_success()
+			.await
+			.map(|event| SubmitResponse {
+				block_hash: event.block_hash(),
+				hash: event.extrinsic_hash(),
+				index: event.extrinsic_index(),
+			})
+			.context("Cannot sign and submit transaction")
 	}
 
 	fn has_signer(&self) -> bool {
