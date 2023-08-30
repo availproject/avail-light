@@ -146,7 +146,7 @@ pub enum Topics {
 #[serde(rename_all = "kebab-case")]
 pub enum DataFields {
 	Data,
-	Raw,
+	Extrinsic,
 }
 
 #[derive(Serialize, Deserialize, PartialEq)]

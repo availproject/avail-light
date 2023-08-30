@@ -212,7 +212,7 @@ mod tests {
 	}
 
 	fn all_data_fields() -> HashSet<DataFields> {
-		vec![DataFields::Raw, DataFields::Data]
+		vec![DataFields::Extrinsic, DataFields::Data]
 			.into_iter()
 			.collect()
 	}
@@ -222,7 +222,7 @@ mod tests {
 		let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 		let route = super::subscriptions_route(clients.clone());
 
-		let body = r#"{"topics":["confidence-achieved","data-verified","header-verified"],"data_fields":["data","raw"]}"#;
+		let body = r#"{"topics":["confidence-achieved","data-verified","header-verified"],"data_fields":["data","extrinsic"]}"#;
 		let response = warp::test::request()
 			.method("POST")
 			.body(body)
