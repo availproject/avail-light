@@ -12,12 +12,12 @@
 use crate::api::v2;
 use crate::{
 	api::v1::{self},
+	data::Db,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
 use rand::{thread_rng, Rng};
-use rocksdb::DB;
 use std::{
 	net::SocketAddr,
 	str::FromStr,
@@ -27,7 +27,7 @@ use tracing::info;
 use warp::Filter;
 
 pub struct Server {
-	pub db: Arc<DB>,
+	pub db: Db,
 	pub cfg: RuntimeConfig,
 	pub state: Arc<Mutex<State>>,
 	pub version: String,

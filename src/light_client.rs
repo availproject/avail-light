@@ -30,7 +30,6 @@ use kate_recovery::{
 };
 use kate_recovery::{data::Cell, matrix::RowIndex};
 use mockall::automock;
-use rocksdb::DB;
 use sp_core::blake2_256;
 use std::{
 	sync::{Arc, Mutex},
@@ -40,7 +39,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
 use crate::{
-	data::{store_block_header_in_db, store_confidence_in_db},
+	data::Db,
 	network::Client,
 	proof, rpc,
 	telemetry::{MetricCounter, MetricValue, Metrics},
@@ -67,12 +66,12 @@ pub trait LightClient {
 
 #[derive(Clone)]
 struct LightClientImpl {
-	db: Arc<DB>,
+	db: Db,
 	network_client: Client,
 	rpc_client: avail::Client,
 }
 
-pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl LightClient {
+pub fn new(db: Db, network_client: Client, rpc_client: avail::Client) -> impl LightClient {
 	LightClientImpl {
 		db,
 		network_client,
@@ -109,11 +108,13 @@ impl LightClient for LightClientImpl {
 		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		store_confidence_in_db(self.db.clone(), block_number, count)
+		self.db
+			.store_confidence(block_number, count)
 			.context("Failed to store confidence in DB")
 	}
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()> {
-		store_block_header_in_db(self.db.clone(), block_number, header)
+		self.db
+			.store_block_header(block_number, header)
 			.context("Failed to store block header in DB")
 	}
 }

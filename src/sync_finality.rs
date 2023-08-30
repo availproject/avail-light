@@ -9,7 +9,6 @@ use avail_subxt::{
 };
 use codec::{Decode, Encode};
 use futures::future::join_all;
-use rocksdb::DB;
 use serde::de::{self};
 use serde::Deserialize;
 use sp_core::{
@@ -23,7 +22,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
+	data::Db,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
@@ -65,11 +64,11 @@ impl<'de> Deserialize<'de> for WrappedProof {
 
 pub trait SyncFinality {
 	fn get_client(&self) -> avail::Client;
-	fn get_db(&self) -> Arc<DB>;
+	fn get_db(&self) -> Db;
 }
 
 pub struct SyncFinalityImpl {
-	db: Arc<DB>,
+	db: Db,
 	rpc_client: avail::Client,
 }
 
@@ -78,12 +77,12 @@ impl SyncFinality for SyncFinalityImpl {
 		self.rpc_client.clone()
 	}
 
-	fn get_db(&self) -> Arc<DB> {
+	fn get_db(&self) -> Db {
 		self.db.clone()
 	}
 }
 
-pub fn new(db: Arc<DB>, rpc_client: avail::Client) -> impl SyncFinality {
+pub fn new(db: Db, rpc_client: avail::Client) -> impl SyncFinality {
 	SyncFinalityImpl { db, rpc_client }
 }
 
@@ -176,7 +175,7 @@ pub async fn sync_finality(
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.genesis_hash();
 
-	let checkpoint = get_finality_sync_checkpoint(sync_finality.get_db())?;
+	let checkpoint = sync_finality.get_db().get_finality_sync_checkpoint()?;
 
 	info!("Starting finality validation sync.");
 	let mut set_id: u64;
@@ -320,14 +319,13 @@ pub async fn sync_finality(
 				.map(|a| ed25519::Public::from_raw(a.0 .0 .0 .0))
 				.collect();
 			set_id += 1;
-			store_finality_sync_checkpoint(
-				sync_finality.get_db(),
-				FinalitySyncCheckpoint {
+			sync_finality
+				.get_db()
+				.store_finality_sync_checkpoint(FinalitySyncCheckpoint {
 					number: curr_block_num,
 					set_id,
 					validator_set: validator_set.clone(),
-				},
-			)?;
+				})?;
 		}
 	}
 	let mut state = state.lock().unwrap();

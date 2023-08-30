@@ -11,13 +11,12 @@ use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_core::AppId;
 use avail_light::{
-	consts::STATE_CF,
+	data::Db,
 	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
@@ -26,8 +25,7 @@ use tracing_subscriber::{
 };
 
 use avail_light::{
-	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
-	data::store_last_full_node_ws_in_db,
+	consts::EXPECTED_NETWORK_VERSION,
 	types::{Mode, RuntimeConfig, State},
 };
 
@@ -48,34 +46,6 @@ struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
 	config: String,
-}
-
-fn init_db(path: &str) -> Result<Arc<DB>> {
-	let mut confidence_cf_opts = Options::default();
-	confidence_cf_opts.set_max_write_buffer_number(16);
-
-	let mut block_header_cf_opts = Options::default();
-	block_header_cf_opts.set_max_write_buffer_number(16);
-
-	let mut app_data_cf_opts = Options::default();
-	app_data_cf_opts.set_max_write_buffer_number(16);
-
-	let mut state_cf_opts = Options::default();
-	state_cf_opts.set_max_write_buffer_number(16);
-
-	let cf_opts = vec![
-		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
-		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
-	];
-
-	let mut db_opts = Options::default();
-	db_opts.create_if_missing(true);
-	db_opts.create_missing_column_families(true);
-
-	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
-	Ok(Arc::new(db))
 }
 
 fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
@@ -122,7 +92,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
+	let db = Db::new(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
@@ -237,7 +207,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let last_full_node_ws = avail_light::data::get_last_full_node_ws_from_db(db.clone())?;
+	let last_full_node_ws = db.get_last_full_node_ws()?;
 
 	let (rpc_client, node) = avail_light::rpc::connect_to_the_full_node(
 		&cfg.full_node_ws,
@@ -246,10 +216,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	)
 	.await?;
 
-	store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
+	db.store_last_full_node_ws(&node.host)?;
 
 	info!("Genesis hash: {:?}", node.genesis_hash);
-	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
+	if let Some(stored_genesis_hash) = db.get_genesis_hash()? {
 		if !node.genesis_hash.eq(&stored_genesis_hash) {
 			Err(anyhow!(
 				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
@@ -257,12 +227,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		}
 	} else {
 		info!("No genesis hash is found in the db, storing the new hash now.");
-		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
+		db.store_genesis_hash(node.genesis_hash)?;
 	}
 
 	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
 		.await
-		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+		.with_context(|| format!("Failed to get chain header from {rpc_client:?}"))?;
 
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;

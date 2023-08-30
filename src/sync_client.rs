@@ -22,7 +22,6 @@ use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
-use rocksdb::DB;
 use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
@@ -31,10 +30,7 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
 use crate::{
-	data::{
-		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
-		store_confidence_in_db,
-	},
+	data::Db,
 	network::Client,
 	proof, rpc,
 	types::{BlockVerified, State, SyncClientConfig},
@@ -60,12 +56,12 @@ pub trait SyncClient {
 }
 #[derive(Clone)]
 struct SyncClientImpl {
-	db: Arc<DB>,
+	db: Db,
 	network_client: Client,
 	rpc_client: avail::Client,
 }
 
-pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl SyncClient {
+pub fn new(db: Db, network_client: Client, rpc_client: avail::Client) -> impl SyncClient {
 	SyncClientImpl {
 		db,
 		network_client,
@@ -76,7 +72,8 @@ pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> im
 #[async_trait]
 impl SyncClient for SyncClientImpl {
 	fn block_header_in_db(&self, block_number: u32) -> Result<bool> {
-		is_block_header_in_db(self.db.clone(), block_number)
+		self.db
+			.contains_block_header(block_number)
 			.context("Failed to check if block header is in DB")
 	}
 
@@ -87,17 +84,20 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
-		store_block_header_in_db(self.db.clone(), block_number, &header)
+		self.db
+			.store_block_header(block_number, &header)
 			.context("Failed to store block header in DB")
 	}
 
 	fn is_confidence_in_db(&self, block_number: u32) -> Result<bool> {
-		is_confidence_in_db(self.db.clone(), block_number)
+		self.db
+			.contains_confidence(block_number)
 			.context("Failed to check if confidence is in DB")
 	}
 
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
-		store_confidence_in_db(self.db.clone(), block_number, count)
+		self.db
+			.store_confidence(block_number, count)
 			.context("Failed to store confidence in DB")
 	}
 

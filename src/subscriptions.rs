@@ -5,7 +5,6 @@ use avail_subxt::{
 	rpc::rpc_params,
 };
 use codec::Encode;
-use rocksdb::DB;
 use sp_core::{blake2_256, ed25519, Pair};
 use std::{
 	sync::{Arc, Mutex},
@@ -15,7 +14,7 @@ use tokio::sync::mpsc::{unbounded_channel, Sender};
 use tracing::{error, info, trace};
 
 use crate::{
-	data::store_finality_sync_checkpoint,
+	data::Db,
 	rpc,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils,
@@ -26,7 +25,7 @@ pub async fn finalized_headers(
 	message_tx: Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
 	state: Arc<Mutex<State>>,
-	db: Arc<DB>,
+	db: Db,
 ) {
 	if let Err(error) = subscribe_check_and_process(rpc_client, message_tx, state, db).await {
 		error!("{error}");
@@ -49,7 +48,7 @@ async fn subscribe_check_and_process(
 	subxt_client: Client,
 	message_tx: Sender<(Header, Instant)>,
 	state: Arc<Mutex<State>>,
-	db: Arc<DB>,
+	db: Db,
 ) -> Result<()> {
 	let mut header_subscription = subxt_client
 		.rpc()
@@ -224,14 +223,11 @@ async fn subscribe_check_and_process(
 				}
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
-					store_finality_sync_checkpoint(
-						db.clone(),
-						FinalitySyncCheckpoint {
-							set_id,
-							number: header.number,
-							validator_set: validator_set.clone(),
-						},
-					)?;
+					db.store_finality_sync_checkpoint(FinalitySyncCheckpoint {
+						set_id,
+						number: header.number,
+						validator_set: validator_set.clone(),
+					})?;
 				}
 
 				// Get all the skipped blocks, if they exist

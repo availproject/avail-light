@@ -30,7 +30,6 @@ use kate_recovery::{
 use mockall::automock;
 use rand::SeedableRng as _;
 use rand_chacha::ChaChaRng;
-use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, Mutex},
@@ -39,7 +38,7 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
-	data::store_encoded_data_in_db,
+	data::Db,
 	network::Client,
 	proof, rpc,
 	types::{AppClientConfig, BlockVerified, State},
@@ -77,7 +76,7 @@ trait AppClient {
 
 #[derive(Clone)]
 struct AppClientImpl {
-	db: Arc<DB>,
+	db: Db,
 	network_client: Client,
 	rpc_client: avail::Client,
 }
@@ -204,7 +203,8 @@ impl AppClient for AppClientImpl {
 		block_number: u32,
 		data: &T,
 	) -> Result<()> {
-		store_encoded_data_in_db(self.db.clone(), app_id, block_number, &data)
+		self.db
+			.store_encoded_app_data(app_id, block_number, &data)
 			.context("Failed to store data into database")
 	}
 }
@@ -414,7 +414,7 @@ async fn process_block(
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
 	cfg: AppClientConfig,
-	db: Arc<DB>,
+	db: Db,
 	network_client: Client,
 	rpc_client: avail::Client,
 	app_id: AppId,
