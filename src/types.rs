@@ -23,19 +23,14 @@ const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeVersionResult {
 	apis: Vec<(String, u32)>,
-	#[serde(rename = "authoringVersion")]
 	authoring_version: u32,
-	#[serde(rename = "implName")]
 	impl_name: String,
-	#[serde(rename = "implVersion")]
 	pub impl_version: u32,
-	#[serde(rename = "specName")]
 	pub spec_name: String,
-	#[serde(rename = "specVersion")]
 	pub spec_version: u32,
-	#[serde(rename = "transactionVersion")]
 	transaction_version: u32,
 }
 
