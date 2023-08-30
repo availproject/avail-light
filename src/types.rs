@@ -310,13 +310,11 @@ pub struct LightClientConfig {
 	pub ttl: u64,
 }
 
-fn delay_for(target: Duration, elapsed: Duration) -> Option<Duration> {
-	(target > elapsed).then(|| target - elapsed)
-}
-
 impl Delay {
 	pub fn sleep_duration(&self, from: Instant) -> Option<Duration> {
-		delay_for(self.0?, from.elapsed())
+		(self.0?)
+			.checked_sub(from.elapsed())
+			.filter(|duration| !duration.is_zero())
 	}
 }
 
@@ -647,23 +645,5 @@ impl<'de> Deserialize<'de> for GrandpaJustification {
 		let encoded = bytes::deserialize(deserializer)?;
 		Self::decode(&mut &encoded[..])
 			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::delay_for;
-	use std::time::Duration;
-	use test_case::test_case;
-
-	#[test_case(0 , 0 , None ; "No delay expected")]
-	#[test_case(1 , 0 , Some(1) ; "One second delay expected")]
-	#[test_case(5 , 1 , Some(4) ; "Four seconds delay expected")]
-	#[test_case(1 , 5 , None ; "Delay time is elapsed, no delay expected")]
-	fn test_delay_for(target: u64, elapsed: u64, expected: Option<u64>) {
-		let target = Duration::from_secs(target);
-		let elapsed = Duration::from_secs(elapsed);
-		let expected = expected.map(Duration::from_secs);
-		assert_eq!(delay_for(target, elapsed), expected);
 	}
 }
