@@ -112,9 +112,7 @@ fn handle_websocket_message(
 			},
 		)?,
 		RequestType::Status => {
-			let state = state
-				.lock()
-				.map_err(|error| anyhow!("Cannot acquire state lock: {error}"))?;
+			let state = state.lock().context("Cannot acquire state lock")?;
 
 			let status = Status::new(config, node, &state);
 

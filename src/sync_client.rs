@@ -83,7 +83,7 @@ impl SyncClient for SyncClientImpl {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		rpc::get_header_by_block_number(&self.rpc_client, block_number)
 			.await
-			.context("Failed to get block {block_number} by block number")
+			.with_context(|| format!("Failed to get block {block_number} by block number"))
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
@@ -145,10 +145,7 @@ async fn process_block(
 	// syncing process
 	let begin = Instant::now();
 
-	let (header, header_hash) = sync_client
-		.get_header_by_block_number(block_number)
-		.await
-		.context("Failed to get block {block_number} by block number")?;
+	let (header, header_hash) = sync_client.get_header_by_block_number(block_number).await?;
 
 	let app_lookup = extract_app_lookup(&header.extension);
 

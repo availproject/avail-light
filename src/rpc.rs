@@ -1,6 +1,6 @@
 //! RPC communication with avail node.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
 	avail, build_client,
 	primitives::Header as DaHeader,
@@ -23,7 +23,7 @@ pub async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> 
 		.rpc()
 		.block_hash(Some(BlockNumber::from(block)))
 		.await?
-		.ok_or(anyhow!("Block with number {block} not found"))
+		.ok_or_else(|| anyhow!("Block with number {block} not found"))
 }
 
 pub async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHeader> {
@@ -31,7 +31,7 @@ pub async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<Da
 		.rpc()
 		.header(Some(hash))
 		.await?
-		.ok_or(anyhow!("Header with hash {hash:?} not found"))
+		.ok_or_else(|| anyhow!("Header with hash {hash:?} not found"))
 }
 
 pub async fn get_valset_by_hash(
@@ -63,7 +63,7 @@ pub async fn get_chain_head_header(client: &avail::Client) -> Result<DaHeader> {
 		.rpc()
 		.header(Some(h))
 		.await?
-		.ok_or(anyhow!("Couldn't get latest finalized header"))
+		.context("Couldn't get latest finalized header")
 }
 
 pub async fn get_chain_head_hash(client: &avail::Client) -> Result<H256> {
@@ -71,7 +71,7 @@ pub async fn get_chain_head_hash(client: &avail::Client) -> Result<H256> {
 		.rpc()
 		.finalized_head()
 		.await
-		.map_err(|_| anyhow!("Cannot get finalized head hash"))
+		.context("Cannot get finalized head hash")
 }
 
 pub async fn get_set_id_by_hash(client: &avail::Client, hash: H256) -> Result<u64> {
@@ -132,7 +132,7 @@ pub async fn get_kate_rows(
 	let t = client.rpc().deref();
 	t.request("kate_queryRows", params)
 		.await
-		.map_err(|e| anyhow!("RPC failed: {e}"))
+		.context("Failed to get Kate rows")
 }
 
 /// RPC to get proofs for given positions of block
@@ -148,7 +148,7 @@ pub async fn get_kate_proof(
 	let proofs: Vec<u8> = t
 		.request("kate_queryProof", params)
 		.await
-		.map_err(|e| anyhow!("Error fetching proof: {e}"))?;
+		.context("Failed to fetch proof")?;
 
 	let i = proofs
 		.chunks_exact(CELL_WITH_PROOF_SIZE)
@@ -166,7 +166,7 @@ pub async fn get_system_version(client: &avail::Client) -> Result<String> {
 		.rpc()
 		.system_version()
 		.await
-		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
+		.context("Failed to retrieve version")
 }
 
 pub async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersionResult> {
@@ -174,7 +174,7 @@ pub async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersio
 		.rpc()
 		.request("state_getRuntimeVersion", RpcParams::new())
 		.await
-		.map_err(|e| anyhow!("Version couldn't be retrieved, error: {e}"))
+		.context("Failed to retrieve version")
 }
 
 /// Shuffles full nodes to randomize access,

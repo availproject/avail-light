@@ -25,7 +25,7 @@ pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> 
 		LAST_FULL_NODE_WS_KEY.as_bytes(),
 		last_full_node_ws,
 	)
-	.context("Failed to write {key} data")
+	.context("Failed to write last full node ws to db")
 }
 
 pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
@@ -35,7 +35,7 @@ pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
 
 	let result = db
 		.get_cf(&cf_handle, LAST_FULL_NODE_WS_KEY.as_bytes())
-		.context("Couldn't get {key} from db")?;
+		.context("Couldn't get last full node ws from db")?;
 
 	let Some(last_full_node_ws) = result else {
 		return Ok(None);
@@ -135,21 +135,15 @@ pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u
 		.cf_handle(crate::consts::CONFIDENCE_FACTOR_CF)
 		.context("Couldn't get column handle from db")?;
 
-	let res = db
-		.get_cf(&cf_handle, block_number.to_be_bytes())
-		.context("Couldn't get confidence in db")?;
-	let res = res.map(|data| {
-		data.try_into()
-			.map_err(|_| anyhow!("Conversion failed"))
-			.context("Unable to convert confindence (wrong number of bytes)")
-			.map(u32::from_be_bytes)
-	});
-
-	match res {
-		Some(Ok(r)) => Ok(Some(r)),
-		None => Ok(None),
-		Some(Err(e)) => Err(e),
-	}
+	db.get_cf(&cf_handle, block_number.to_be_bytes())
+		.context("Couldn't get confidence in db")?
+		.map(|data| {
+			data.try_into()
+				.map_err(|_| anyhow!("Conversion failed"))
+				.context("Unable to convert confindence (wrong number of bytes)")
+				.map(u32::from_be_bytes)
+		})
+		.transpose()
 }
 
 /// Stores confidence factor into database under the given block number key
@@ -169,7 +163,7 @@ pub fn get_genesis_hash(db: Arc<DB>) -> Result<Option<H256>> {
 
 	let result = db
 		.get_cf(&cf_handle, GENESIS_HASH_KEY.as_bytes())
-		.context("Couldn't get {key} from db")?;
+		.context("Couldn't get genesis hash from db")?;
 
 	result.map_or(Ok(None), |e| {
 		let raw_hash: std::result::Result<[u8; 32], _> = e.try_into();
@@ -188,7 +182,7 @@ pub fn store_genesis_hash(db: Arc<DB>, genesis_hash: H256) -> Result<()> {
 		GENESIS_HASH_KEY.as_bytes(),
 		genesis_hash.as_bytes(),
 	)
-	.context("Failed to write {key} data")
+	.context("Failed to write genesis hash to db")
 }
 
 pub fn get_finality_sync_checkpoint(db: Arc<DB>) -> Result<Option<FinalitySyncCheckpoint>> {
@@ -198,11 +192,11 @@ pub fn get_finality_sync_checkpoint(db: Arc<DB>) -> Result<Option<FinalitySyncCh
 
 	let result = db
 		.get_cf(&cf_handle, FINALITY_SYNC_CHECKPOINT_KEY.as_bytes())
-		.context("Couldn't get {key} from db")?;
+		.context("Couldn't get finality sync checkpoint from db")?;
 
 	result.map_or(Ok(None), |e| {
 		FinalitySyncCheckpoint::decode(&mut &e[..])
-			.map_err(|e| anyhow!("Error decoding: {e}!"))
+			.context("Failed to decoded finality sync checkpoint")
 			.map(Some)
 	})
 }
@@ -219,5 +213,5 @@ pub fn store_finality_sync_checkpoint(
 		FINALITY_SYNC_CHECKPOINT_KEY.as_bytes(),
 		checkpoint.encode().as_slice(),
 	)
-	.context("Failed to write {key} data")
+	.context("Failed to write finality sync checkpoint data")
 }
