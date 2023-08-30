@@ -123,7 +123,7 @@ Content-Length: {content-length}
 
 {
   "topics": ["header-verified", "confidence-achieved", "data-verified"],
-  "data_fields": ["data", "raw"]
+  "data_fields": ["data", "extrinsic"]
 }
 ```
 
@@ -146,7 +146,7 @@ Content-Type: application/json
 
 ### Data fields
 
-Filters **data-verified** message. Optional parameter used when **raw** transaction data is needed. If omitted, only decoded **data** is present in the message.
+Filters **data-verified** message. Optional parameter used when encoded **extrinsic** is needed. If omitted, only decoded **data** is present in the message.
 
 ## GET `/v2/ws/{subscription-id}`
 
