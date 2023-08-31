@@ -38,18 +38,10 @@ pub async fn submit(
 		return Err(Error::not_found());
 	};
 
-	let transaction = transaction
-		.try_into()
-		.map_err(|error| Error::bad_request(format!("Bad Request: {error}")))?;
-
-	submitter
-		.submit(transaction)
-		.await
-		.map(From::from)
-		.map_err(|error| {
-			error!(%error, "Submit transaction failed");
-			Error::internal_server_error()
-		})
+	submitter.submit(transaction).await.map_err(|error| {
+		error!(%error, "Submit transaction failed");
+		Error::internal_server_error()
+	})
 }
 
 pub async fn ws(

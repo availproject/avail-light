@@ -1,22 +1,11 @@
+use super::types::{SubmitResponse, Transaction};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{
-	api::{self, runtime_types::sp_core::bounded::bounded_vec::BoundedVec},
-	avail,
-	primitives::AvailExtrinsicParams,
-	AvailConfig,
-};
+use avail_subxt::{api, avail, primitives::AvailExtrinsicParams, AvailConfig};
 use subxt::{
 	ext::sp_core::sr25519::Pair,
 	tx::{PairSigner, SubmittableExtrinsic},
 };
-
-use super::types::SubmitResponse;
-
-pub enum Transaction {
-	Data(Vec<u8>),
-	Extrinsic(Vec<u8>),
-}
 
 #[async_trait]
 pub trait Submit {
@@ -42,7 +31,7 @@ impl Submit for Submitter {
 				let Some(pair_signer) = self.pair_signer.as_ref() else {
 					return Err(anyhow!("Pair signer is not configured"));
 				};
-				let extrinsic = api::tx().data_availability().submit_data(BoundedVec(data));
+				let extrinsic = api::tx().data_availability().submit_data(data.into());
 				let params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
 				self.node_client
 					.tx()
@@ -50,7 +39,7 @@ impl Submit for Submitter {
 					.await?
 			},
 			Transaction::Extrinsic(extrinsic) => {
-				SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic)
+				SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic.into())
 					.submit_and_watch()
 					.await?
 			},
