@@ -107,8 +107,8 @@ Content-Type: application/json
 
 ## POST `/v2/submit`
 
-Submits application data to the avail network. If `data` transaction is submitted, transaction is created, signed and submitted.  
-Externaly signed transaction can be submitted passing it as base64 encoded `extrinsic` field.  
+Submits application data to the avail network. If `data` transaction is submitted, transaction is created, signed and submitted.\
+Externaly signed transaction can be submitted passing it as base64 encoded `extrinsic` field.\
 Only one field is allowed per request. Since block data can contain multiple transactions, representation in the block is the JSON array, with data encoded using _base64_ encoding. For consistency, this endpoint uses the same data encoding.
 
 Request:

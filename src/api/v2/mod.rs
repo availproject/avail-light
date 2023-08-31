@@ -12,7 +12,6 @@ use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
-use subxt::ext::sp_core::sr25519::Pair;
 use tokio::sync::RwLock;
 use warp::{Filter, Rejection, Reply};
 
@@ -99,7 +98,6 @@ pub fn routes(
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	node_client: avail::Client,
-	pair: Option<Pair>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 	let version = Version {
@@ -107,9 +105,10 @@ pub fn routes(
 		network_version,
 	};
 
-	let pair_signer = pair.map(transactions::AvailSigner::new);
+	let app_id = config.app_id.as_ref();
+	let pair_signer = config.avail_secret_key.clone().map(From::from);
 
-	let submitter = config.app_id.map(|app_id| {
+	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
 			node_client,
 			app_id,
