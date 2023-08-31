@@ -128,8 +128,8 @@ pub fn routes(
 #[cfg(test)]
 mod tests {
 	use super::{
-		transactions::{self, Transaction},
-		types::Client,
+		transactions,
+		types::{Client, Transaction},
 	};
 	use crate::{
 		api::v2::types::{
@@ -286,7 +286,10 @@ mod tests {
 			.reply(&route)
 			.await;
 		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-		assert_eq!(response.body(), "Bad Request: Invalid byte 58, offset 17.");
+		assert_eq!(
+			response.body(),
+			"Request body deserialize error: Invalid byte 58, offset 17."
+		);
 	}
 
 	#[tokio::test]

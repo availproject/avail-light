@@ -1,4 +1,5 @@
 use anyhow::Context;
+use avail_subxt::api::runtime_types::sp_core::bounded::bounded_vec::BoundedVec;
 use base64::{engine::general_purpose, DecodeError, Engine};
 use hyper::{http, StatusCode};
 use kate_recovery::matrix::Partition;
@@ -15,8 +16,6 @@ use crate::{
 	rpc::Node,
 	types::{self, block_matrix_partition_format, RuntimeConfig, State},
 };
-
-use super::transactions;
 
 #[derive(Debug)]
 pub struct InternalServerError {}
@@ -86,25 +85,34 @@ pub struct Status {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Transaction {
-	Data(String),
-	Extrinsic(String),
+#[serde(try_from = "String")]
+pub struct Base64(pub Vec<u8>);
+
+impl From<Base64> for BoundedVec<u8> {
+	fn from(val: Base64) -> Self {
+		BoundedVec(val.0)
+	}
 }
 
-impl TryInto<transactions::Transaction> for Transaction {
-	type Error = anyhow::Error;
-
-	fn try_into(self) -> Result<transactions::Transaction, Self::Error> {
-		fn decode(data: String) -> Result<Vec<u8>, DecodeError> {
-			general_purpose::STANDARD.decode(data)
-		}
-
-		Ok(match self {
-			Transaction::Data(data) => decode(data).map(transactions::Transaction::Data),
-			Transaction::Extrinsic(data) => decode(data).map(transactions::Transaction::Extrinsic),
-		}?)
+impl From<Base64> for Vec<u8> {
+	fn from(val: Base64) -> Self {
+		val.0
 	}
+}
+
+impl TryFrom<String> for Base64 {
+	type Error = DecodeError;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		general_purpose::STANDARD.decode(value).map(Base64)
+	}
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Transaction {
+	Data(Base64),
+	Extrinsic(Base64),
 }
 
 #[derive(Serialize, Deserialize)]
