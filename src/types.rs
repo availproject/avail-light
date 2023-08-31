@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use std::fmt;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -17,6 +18,8 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -288,7 +291,30 @@ pub struct RuntimeConfig {
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
 	/// Avail account secret key. (default: None)
-	pub avail_secret_key: Option<String>,
+	#[serde(skip_serializing)]
+	pub avail_secret_key: Option<AvailSecretKey>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(try_from = "String")]
+pub struct AvailSecretKey(pub Pair);
+
+impl fmt::Debug for AvailSecretKey {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_tuple("AvailSecretKey")
+			.field(&self.0.public())
+			.finish()
+	}
+}
+
+impl TryFrom<String> for AvailSecretKey {
+	type Error = SecretStringError;
+
+	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+		Pair::from_string_with_seed(&value, None)
+			.map(|(pair, _)| pair)
+			.map(AvailSecretKey)
+	}
 }
 
 pub struct Delay(Option<Duration>);

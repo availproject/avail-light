@@ -1,3 +1,5 @@
+use crate::types::AvailSecretKey;
+
 use super::types::{SubmitResponse, Transaction};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -15,6 +17,12 @@ pub trait Submit {
 
 // TODO: Replace this with avail::PairSigner after implementing required traits in avail-subxt
 pub type AvailSigner = PairSigner<AvailConfig, Pair>;
+
+impl From<AvailSecretKey> for AvailSigner {
+	fn from(value: AvailSecretKey) -> Self {
+		AvailSigner::new(value.0)
+	}
+}
 
 #[derive(Clone)]
 pub struct Submitter {

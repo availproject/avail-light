@@ -24,7 +24,6 @@ use std::{
 	str::FromStr,
 	sync::{Arc, Mutex},
 };
-use subxt::ext::sp_core::sr25519::Pair;
 use tracing::info;
 use warp::Filter;
 
@@ -36,7 +35,6 @@ pub struct Server {
 	pub network_version: String,
 	pub node: Node,
 	pub node_client: avail::Client,
-	pub avail_secret_key: Option<Pair>,
 }
 
 impl Server {
@@ -62,7 +60,6 @@ impl Server {
 			self.state.clone(),
 			self.cfg,
 			self.node_client.clone(),
-			self.avail_secret_key,
 		);
 
 		let cors = warp::cors()

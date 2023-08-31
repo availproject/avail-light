@@ -1,12 +1,5 @@
 #![doc = include_str!("../../README.md")]
 
-use std::{
-	net::Ipv4Addr,
-	str::FromStr,
-	sync::{Arc, Mutex},
-	time::Instant,
-};
-
 use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_core::AppId;
@@ -14,22 +7,26 @@ use avail_light::{
 	consts::STATE_CF,
 	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
 };
+use avail_light::{
+	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
+	data::store_last_full_node_ws_in_db,
+	types::{Mode, RuntimeConfig, State},
+};
 use avail_subxt::primitives::Header;
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
+use std::{
+	net::Ipv4Addr,
+	str::FromStr,
+	sync::{Arc, Mutex},
+	time::Instant,
+};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
 	FmtSubscriber,
-};
-
-use avail_light::{
-	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
-	data::store_last_full_node_ws_in_db,
-	types::{Mode, RuntimeConfig, State},
 };
 
 #[cfg(feature = "network-analysis")]
@@ -269,11 +266,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number - 1;
 
-	let avail_secret_key = match &cfg.avail_secret_key {
-		None => None,
-		Some(secret) => Some(Pair::from_string_with_seed(secret, None).map(|(pair, _)| pair)?),
-	};
-
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = avail_light::api::server::Server {
 		db: db.clone(),
@@ -283,7 +275,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
 		node_client: rpc_client.clone(),
-		avail_secret_key,
 	};
 
 	tokio::task::spawn(server.run());
