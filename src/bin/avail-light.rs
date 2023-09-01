@@ -241,19 +241,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	)
 	.await
 	.context("Failed to create rpc client")?;
-	let node = rpc.current_node().await;
-
-	info!(?node.genesis_hash);
-	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
-		if !node.genesis_hash.eq(&stored_genesis_hash) {
-			Err(anyhow!(
-				"Genesis hash doesn't match the stored one! Clear the db or change nodes."
-			))?
-		}
-	} else {
-		info!("No genesis hash is found in the db, storing the new hash now.");
-		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
-	}
 
 	let block_header = rpc
 		.get_chain_head_header()
@@ -271,8 +258,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
-		node,
 		rpc: rpc.clone(),
+		node: rpc.current_node().await,
 	};
 
 	tokio::task::spawn(server.run());

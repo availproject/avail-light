@@ -36,6 +36,7 @@ impl RpcClient {
 	async fn connect(
 		full_node_ws: &str,
 		expected_version: &ExpectedVersion<'_>,
+		expected_genesis_hash: Option<H256>,
 	) -> Result<(avail::Client, Node)> {
 		tracing::debug!(full_node_ws, "Trying to connect to rpc");
 		let client = build_client(&full_node_ws, false).await?;
@@ -56,7 +57,18 @@ impl RpcClient {
 		);
 
 		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			return Err(anyhow!("expected {expected_version}, found {version}"));
+			return Err(anyhow!(
+				"expected version {expected_version}, found {version}"
+			));
+		}
+		let genesis_hash = client.genesis_hash();
+		match expected_genesis_hash {
+			Some(hash) if hash != genesis_hash => {
+				return Err(anyhow!(
+					"expected genesis hash {hash}, found {genesis_hash}"
+				));
+			},
+			_ => (),
 		}
 
 		info!("Connection established to the node: {full_node_ws} <{version}>");
@@ -64,7 +76,7 @@ impl RpcClient {
 			host: full_node_ws.to_owned(),
 			system_version,
 			spec_version: client.runtime_version().spec_version,
-			genesis_hash: client.genesis_hash(),
+			genesis_hash,
 		};
 
 		Ok((client, node))
@@ -73,11 +85,12 @@ impl RpcClient {
 	async fn connect_to_available_rpc(
 		full_nodes: &[String],
 		expected_version: &ExpectedVersion<'static>,
+		expected_genesis_hash: Option<H256>,
 	) -> Result<(avail::Client, Node)> {
 		full_nodes
 			.iter()
 			.map(|address| {
-				Self::connect(address, expected_version)
+				Self::connect(address, expected_version, expected_genesis_hash)
 					.inspect_err(move |error| warn!(address, %error, "Skipping connection"))
 			})
 			.collect::<futures::stream::FuturesUnordered<_>>()
@@ -114,10 +127,24 @@ impl RpcClient {
 			.transpose()?
 			.flatten();
 		Self::shuffle_full_nodes(&mut nodes, last_full_node.as_ref());
-		let (client, node) = Self::connect_to_available_rpc(&nodes, &expected_version).await?;
+		let expected_genesis_hash = if let Some(db) = &db {
+			crate::data::get_genesis_hash(db.clone())?
+		} else {
+			None
+		};
+		let (client, node) =
+			Self::connect_to_available_rpc(&nodes, &expected_version, expected_genesis_hash)
+				.await?;
+
+		info!(?node.genesis_hash);
 		if let Some(db) = &db {
 			crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
+			if expected_genesis_hash.is_none() {
+				info!("No genesis hash is found in the db, storing the new hash now.");
+				crate::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
+			}
 		}
+
 		let backoff = backoff::ExponentialBackoffBuilder::new()
 			.with_max_elapsed_time(Some(std::time::Duration::from_secs(20)))
 			.build();
@@ -149,16 +176,19 @@ impl RpcClient {
 				warn!(%error, "Failed to connect to node. Trying to reach to another one");
 			},
 		}
-		let last_full_node = Some(self.current_node().await.host.clone());
+		let last_node = self.current_node().await;
 
 		let (ok, client) = backoff::future::retry(self.backoff.clone(), || async {
 			let mut f = f;
 			let mut nodes = self.nodes.clone();
-			Self::shuffle_full_nodes(&mut nodes, last_full_node.as_ref());
-			let (client, node) =
-				Self::connect_to_available_rpc(&nodes, &self.expected_version)
-					.await
-					.map_err(backoff::Error::permanent)?;
+			Self::shuffle_full_nodes(&mut nodes, Some(&last_node.host));
+			let (client, node) = Self::connect_to_available_rpc(
+				&nodes,
+				&self.expected_version,
+				Some(last_node.genesis_hash),
+			)
+			.await
+			.map_err(backoff::Error::permanent)?;
 
 			match f(client.clone()).await {
 				Ok(ok) => Ok((ok, (client, node))),
@@ -492,7 +522,7 @@ mod tests {
 
 			if !full_nodes.contains(&"invalid_node".to_string()) {
 				let mut shuffled = full_nodes.clone();
-				RpcClient::shuffle_full_nodes(&mut shuffled, Some("invalid_node".to_string()));
+				RpcClient::shuffle_full_nodes(&mut shuffled, Some(&"invalid_node".to_string()));
 				prop_assert!(shuffled.len() == full_nodes.len());
 				prop_assert!(shuffled.iter().all(|node| full_nodes.contains(node)))
 			}
@@ -503,7 +533,7 @@ mod tests {
 			let last_full_node_count = full_nodes.iter().filter(|&n| Some(n) == last_full_node.as_ref()).count();
 
 			let mut shuffled = full_nodes.clone();
-			RpcClient::shuffle_full_nodes(&mut shuffled, last_full_node.clone());
+			RpcClient::shuffle_full_nodes(&mut shuffled, last_full_node.as_ref());
 			prop_assert_eq!(shuffled.pop(), last_full_node);
 
 			// Assuming case when last full node occuring more than once in full nodes list
