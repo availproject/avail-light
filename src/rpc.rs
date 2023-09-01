@@ -37,6 +37,7 @@ impl RpcClient {
 		full_node_ws: &str,
 		expected_version: &ExpectedVersion<'_>,
 	) -> Result<(avail::Client, Node)> {
+		tracing::debug!(full_node_ws, "Trying to connect to rpc");
 		let client = build_client(&full_node_ws, false).await?;
 		let system_version: String = client
 			.rpc()
@@ -80,23 +81,24 @@ impl RpcClient {
 					.inspect_err(move |error| warn!(address, %error, "Skipping connection"))
 			})
 			.collect::<futures::stream::FuturesUnordered<_>>()
-			.try_next()
+			.skip_while(|res| futures::future::ready(res.is_err()))
+			.map(Result::unwrap)
+			.next()
 			.await
 			.context("Failed to connect to a working node")
-			.map(|opt| opt.expect("Always called with at least one full node. QED"))
 	}
 
 	/// Shuffles full nodes to randomize access,
 	/// and pushes last full node to the end of a list
 	/// so we can try it if connection to other node fails
-	fn shuffle_full_nodes(full_nodes: &mut Vec<String>, last_full_node: Option<String>) {
+	fn shuffle_full_nodes(full_nodes: &mut Vec<String>, last_full_node: Option<&String>) {
 		let old_len = full_nodes.len();
-		full_nodes.retain(|node| Some(node) != last_full_node.as_ref());
+		full_nodes.retain(|node| Some(node) != last_full_node);
 		full_nodes.shuffle(&mut thread_rng());
 
 		// Pushing last full node to the end of a list, if it's only one left to try
 		if let (Some(node), true) = (last_full_node, old_len != full_nodes.len()) {
-			full_nodes.push(node);
+			full_nodes.push(node.clone());
 		}
 	}
 
@@ -111,7 +113,7 @@ impl RpcClient {
 			.map(crate::data::get_last_full_node_ws_from_db)
 			.transpose()?
 			.flatten();
-		Self::shuffle_full_nodes(&mut nodes, last_full_node);
+		Self::shuffle_full_nodes(&mut nodes, last_full_node.as_ref());
 		let (client, node) = Self::connect_to_available_rpc(&nodes, &expected_version).await?;
 		if let Some(db) = &db {
 			crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
@@ -147,11 +149,14 @@ impl RpcClient {
 				warn!(%error, "Failed to connect to node. Trying to reach to another one");
 			},
 		}
+		let last_full_node = Some(self.current_node().await.host.clone());
 
 		let (ok, client) = backoff::future::retry(self.backoff.clone(), || async {
 			let mut f = f;
+			let mut nodes = self.nodes.clone();
+			Self::shuffle_full_nodes(&mut nodes, last_full_node.as_ref());
 			let (client, node) =
-				Self::connect_to_available_rpc(&self.nodes, &self.expected_version)
+				Self::connect_to_available_rpc(&nodes, &self.expected_version)
 					.await
 					.map_err(backoff::Error::permanent)?;
 
