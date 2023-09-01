@@ -28,7 +28,7 @@ pub struct RpcClient {
 	client: Arc<RwLock<(avail::Client, Node)>>,
 	nodes: Vec<String>,
 	expected_version: ExpectedVersion<'static>,
-	db: Arc<DB>,
+	db: Option<Arc<DB>>,
 	backoff: backoff::ExponentialBackoff,
 }
 
@@ -103,12 +103,19 @@ impl RpcClient {
 	pub async fn new(
 		mut nodes: Vec<String>,
 		expected_version: ExpectedVersion<'static>,
-		db: Arc<DB>,
+		db: Option<Arc<DB>>,
 	) -> Result<Self> {
-		let last_full_node = crate::data::get_last_full_node_ws_from_db(db.clone())?;
+		let last_full_node = db
+			.as_ref()
+			.map(Arc::clone)
+			.map(crate::data::get_last_full_node_ws_from_db)
+			.transpose()?
+			.flatten();
 		Self::shuffle_full_nodes(&mut nodes, last_full_node);
 		let (client, node) = Self::connect_to_available_rpc(&nodes, &expected_version).await?;
-		crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
+		if let Some(db) = &db {
+			crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
+		}
 		let backoff = backoff::ExponentialBackoffBuilder::new()
 			.with_max_elapsed_time(Some(std::time::Duration::from_secs(20)))
 			.build();
@@ -159,7 +166,9 @@ impl RpcClient {
 		.await
 		.context("Failed to reach to any node")?;
 
-		crate::data::store_last_full_node_ws_in_db(self.db.clone(), client.1.host.clone())?;
+		if let Some(db) = &self.db {
+			crate::data::store_last_full_node_ws_in_db(db.clone(), client.1.host.clone())?;
+		}
 
 		*self.client.write().await = client;
 

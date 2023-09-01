@@ -237,7 +237,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let rpc = avail_light::rpc::RpcClient::new(
 		cfg.full_node_ws.clone(),
 		EXPECTED_NETWORK_VERSION,
-		db.clone(),
+		Some(db.clone()),
 	)
 	.await
 	.context("Failed to create rpc client")?;
