@@ -12,7 +12,7 @@
 use crate::api::v2;
 use crate::{
 	api::v1,
-	rpc::{Node, RpcClient},
+	rpc::RpcClient,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
@@ -32,7 +32,6 @@ pub struct Server {
 	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
-	pub node: Node,
 	pub rpc: RpcClient,
 }
 
@@ -55,10 +54,10 @@ impl Server {
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
-			self.node,
+			self.rpc.clone(),
 			self.state.clone(),
 			self.cfg,
-			self.rpc.clone(),
+			self.rpc,
 		);
 
 		let cors = warp::cors()

@@ -1,9 +1,10 @@
+use crate::rpc::RpcClient;
 use crate::types::AvailSecretKey;
 
 use super::types::{SubmitResponse, Transaction};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{api, avail, primitives::AvailExtrinsicParams, AvailConfig};
+use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
 use subxt::{
 	ext::sp_core::sr25519::Pair,
 	tx::{PairSigner, SubmittableExtrinsic},
@@ -26,7 +27,7 @@ impl From<AvailSecretKey> for AvailSigner {
 
 #[derive(Clone)]
 pub struct Submitter {
-	pub node_client: RpcClient,
+	pub rpc: RpcClient,
 	pub app_id: u32,
 	pub pair_signer: Option<AvailSigner>,
 }
@@ -34,22 +35,33 @@ pub struct Submitter {
 #[async_trait]
 impl Submit for Submitter {
 	async fn submit(&self, transaction: Transaction) -> Result<SubmitResponse> {
-		let tx_progress = match transaction {
+		let tx_progress: subxt::tx::TxProgress<
+			avail_subxt::AvailConfig,
+			subxt::client::OnlineClient<avail_subxt::AvailConfig>,
+		> = match transaction {
 			Transaction::Data(data) => {
 				let Some(pair_signer) = self.pair_signer.as_ref() else {
 					return Err(anyhow!("Pair signer is not configured"));
 				};
 				let extrinsic = api::tx().data_availability().submit_data(data.into());
 				let params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
-				self.node_client
-					.tx()
-					.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
-					.await?
+				todo!(
+					r#"
+					self.node_client
+						.tx()
+						.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
+						.await?
+				"#
+				)
 			},
 			Transaction::Extrinsic(extrinsic) => {
-				SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic.into())
-					.submit_and_watch()
-					.await?
+				todo!(
+					r#"
+					SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic.into())
+						.submit_and_watch()
+						.await?
+				"#
+				)
 			},
 		};
 		tx_progress

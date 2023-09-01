@@ -4,11 +4,10 @@ use super::{
 		Client, Clients, Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction,
 		Version,
 	},
-	ws,
+	ws, NodeGetter,
 };
 use crate::{
 	api::v2::types::InternalServerError,
-	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use hyper::StatusCode;
@@ -50,7 +49,7 @@ pub async fn ws(
 	clients: Clients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
+	node_getter: impl NodeGetter + Clone + Send,
 	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.read().await.contains_key(&subscription_id) {
@@ -64,7 +63,7 @@ pub async fn ws(
 			clients,
 			version,
 			config,
-			node,
+			node_getter,
 			state.clone(),
 		)
 	}))
@@ -72,9 +71,10 @@ pub async fn ws(
 
 pub async fn status(
 	config: RuntimeConfig,
-	node: Node,
+	node_getter: impl NodeGetter + Clone + Send,
 	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, impl Reply> {
+	let node = node_getter.node().await;
 	let state = match state.lock() {
 		Ok(state) => state,
 		Err(error) => {

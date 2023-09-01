@@ -1,4 +1,5 @@
 use super::types::{Clients, Request, RequestType, Response, ResponseTopic, Status, Version};
+use super::NodeGetter;
 use crate::{
 	api::v2::types::Error,
 	rpc::Node,
@@ -19,7 +20,7 @@ pub async fn connect(
 	clients: Clients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
+	node_getter: impl NodeGetter,
 	state: Arc<Mutex<State>>,
 ) {
 	let (web_socket_sender, mut web_socket_receiver) = web_socket.split();
@@ -50,7 +51,7 @@ pub async fn connect(
 							sender.clone(),
 							&version,
 							&config,
-							&node,
+							&node_getter.node().await,
 							state.clone(),
 						) {
 							error!("Error handling web socket message: {error}");

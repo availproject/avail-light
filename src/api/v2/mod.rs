@@ -3,10 +3,9 @@ use self::{
 	types::{Clients, Version},
 };
 use crate::{
-	rpc::Node,
+	rpc::{Node, RpcClient},
 	types::{RuntimeConfig, State},
 };
-use avail_subxt::avail;
 use std::{
 	collections::HashMap,
 	convert::Infallible,
@@ -19,6 +18,25 @@ mod handlers;
 mod transactions;
 mod types;
 mod ws;
+
+#[async_trait::async_trait]
+pub trait NodeGetter: Clone + Send + Sync + 'static {
+	async fn node(&self) -> Node;
+}
+
+#[async_trait::async_trait]
+impl NodeGetter for RpcClient {
+	async fn node(&self) -> Node {
+		self.current_node().await
+	}
+}
+
+#[async_trait::async_trait]
+impl NodeGetter for Node {
+	async fn node(&self) -> Node {
+		self.clone()
+	}
+}
 
 async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
 	match value {
@@ -41,13 +59,13 @@ fn version_route(
 
 fn status_route(
 	config: RuntimeConfig,
-	node: Node,
+	node_getter: impl NodeGetter,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
+		.and(warp::any().map(move || node_getter.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.then(handlers::status)
 		.map(types::handle_result)
@@ -78,7 +96,7 @@ fn ws_route(
 	clients: Clients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
+	node_getter: impl NodeGetter,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "ws" / String)
@@ -86,7 +104,7 @@ fn ws_route(
 		.and(with_clients(clients))
 		.and(warp::any().map(move || version.clone()))
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
+		.and(warp::any().map(move || node_getter.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.and_then(handlers::ws)
 }
@@ -94,10 +112,10 @@ fn ws_route(
 pub fn routes(
 	version: String,
 	network_version: String,
-	node: Node,
+	node_getter: impl NodeGetter,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
-	node_client: avail::Client,
+	rpc: RpcClient,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 	let version = Version {
@@ -110,16 +128,20 @@ pub fn routes(
 
 	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
-			node_client,
+			rpc,
 			app_id,
 			pair_signer,
 		})
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), node.clone(), state.clone()))
+		.or(status_route(
+			config.clone(),
+			node_getter.clone(),
+			state.clone(),
+		))
 		.or(subscriptions_route(clients.clone()))
-		.or(ws_route(clients, version, config, node, state))
+		.or(ws_route(clients, version, config, node_getter, state))
 		.or(submit_route(submitter))
 		.recover(handle_rejection)
 }

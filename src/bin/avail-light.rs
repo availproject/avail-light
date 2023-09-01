@@ -259,7 +259,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		rpc: rpc.clone(),
-		node: rpc.current_node().await,
 	};
 
 	tokio::task::spawn(server.run());
