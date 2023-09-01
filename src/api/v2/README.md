@@ -107,9 +107,10 @@ Content-Type: application/json
 
 ## POST `/v2/submit`
 
-Submits application data to the avail network. If `data` transaction is submitted, transaction is created, signed and submitted.\
-Externaly signed transaction can be submitted passing it as base64 encoded `extrinsic` field.\
-Only one field is allowed per request. Since block data can contain multiple transactions, representation in the block is the JSON array, with data encoded using _base64_ encoding. For consistency, this endpoint uses the same data encoding.
+Submits application data to the avail network.\
+In case of `data` transaction, data transaction is created, signed and submitted.\
+In case of `extrinsic`, externaly created and signed transaction is submitted. Only one field is allowed per request.\
+Both `data` and `extrinsic` has to be encoded using base64 encoding.
 
 Request:
 
@@ -138,10 +139,10 @@ Content-Type: application/json
 }
 ```
 
-If **app** mode is not active or signing key is not configured response is:
+If **app** mode is not active (or signing key is not configured and `data` is submitted) response is:
 
 ```yaml
-HTTP/1.1 400 Bad Request
+HTTP/1.1 404 Not found
 ```
 
 ## Errors
