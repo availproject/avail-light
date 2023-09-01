@@ -128,7 +128,7 @@ impl RpcClient {
 		})
 	}
 
-	pub async fn current_client(&self) -> avail::Client {
+	async fn current_client(&self) -> avail::Client {
 		self.client.read().await.0.clone()
 	}
 
@@ -173,6 +173,30 @@ impl RpcClient {
 		*self.client.write().await = client;
 
 		Ok(ok)
+	}
+
+	pub fn with_client_subscribe<T, F, Fut>(self, f: F) -> impl Stream<Item = anyhow::Result<T>>
+	where
+		F: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<
+			Output = Result<avail_subxt::rpc::Subscription<T>, subxt::error::Error>,
+		>,
+		T: serde::de::DeserializeOwned,
+	{
+		async_stream::stream! {
+			loop {
+				let mut stream = match self.with_client(f).await {
+					Ok(s) => s,
+					Err(err) => {
+						yield Err(err);
+						return;
+					}
+				};
+				while let Some(Ok(res)) = stream.next().await {
+					yield Ok(res);
+				}
+			}
+		}
 	}
 
 	pub async fn get_block_hash(&self, block: u32) -> Result<H256> {

@@ -4,6 +4,7 @@ use avail_subxt::{
 	rpc::rpc_params,
 };
 use codec::Encode;
+use futures::prelude::*;
 use rocksdb::DB;
 use sp_core::{blake2_256, ed25519, Pair};
 use std::{
@@ -50,12 +51,9 @@ async fn subscribe_check_and_process(
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 ) -> Result<()> {
-	let mut header_subscription = rpc
-		.current_client()
-		.await
-		.rpc()
-		.subscribe_finalized_block_headers()
-		.await?;
+	let header_subscription = rpc.clone().with_client_subscribe(|client| async move {
+		client.rpc().subscribe_finalized_block_headers().await
+	});
 	// Get the hash of the head (finalized)
 	let last_finalized_block_hash = rpc.get_chain_head_hash().await?;
 
@@ -78,6 +76,7 @@ async fn subscribe_check_and_process(
 		let msg_sender = msg_sender.clone();
 		let state = state.clone();
 		async move {
+			futures::pin_mut!(header_subscription);
 			while let Some(Ok(header)) = header_subscription.next().await {
 				let received_at = Instant::now();
 				state.lock().unwrap().latest = header.number;
@@ -112,20 +111,22 @@ async fn subscribe_check_and_process(
 	});
 
 	// Subscribe to justifications.
-	let j: Result<avail_subxt::rpc::Subscription<GrandpaJustification>, _> = rpc
-		.current_client()
-		.await
-		.rpc()
-		.subscribe(
-			"grandpa_subscribeJustifications",
-			rpc_params![],
-			"grandpa_unsubscribeJustifications",
-		)
-		.await;
-	let mut justification_subscription = j?;
+	let justification_subscription = rpc
+		.clone()
+		.with_client_subscribe::<GrandpaJustification, _, _>(|client| async move {
+			client
+				.rpc()
+				.subscribe(
+					"grandpa_subscribeJustifications",
+					rpc_params![],
+					"grandpa_unsubscribeJustifications",
+				)
+				.await
+		});
 
 	// Task that produces justifications concurrently and just passes the justification to the main task.
 	tokio::spawn(async move {
+		futures::pin_mut!(justification_subscription);
 		while let Some(Ok(justification)) = justification_subscription.next().await {
 			msg_sender
 				.send(Messages::Justification(justification))
