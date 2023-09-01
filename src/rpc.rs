@@ -136,7 +136,7 @@ impl RpcClient {
 		self.client.read().await.1.clone()
 	}
 
-	async fn with_client<F, Fut, T>(&self, mut f: F) -> Result<T>
+	pub async fn with_client<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,

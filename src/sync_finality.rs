@@ -99,25 +99,32 @@ async fn get_valset_at_genesis(
 	k1.append(&mut k2);
 
 	// Get validator set from genesis (Substrate Account ID)
-	let validators_key = api::storage().session().validators();
 	let validator_set_pre = rpc_client
-		.current_client()
-		.await
-		.storage()
-		.at(genesis_hash)
-		.fetch(&validators_key)
+		.with_client(move |client| async move {
+			let validators_key = api::storage().session().validators();
+			client
+				.storage()
+				.at(genesis_hash)
+				.fetch(&validators_key)
+				.await
+		})
 		.await
 		.context("Couldn't get initial validator set")?
 		.ok_or_else(|| anyhow!("Validator set is empty!"))?;
 
 	// Get all grandpa session keys from genesis (GRANDPA ed25519 keys)
 	let grandpa_keys_and_account = rpc_client
-		.current_client()
-		.await
-		.rpc()
-		// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
-		// Perhaps there is a better way, but I don't know it
-		.storage_keys_paged(&k1, 1000, None, Some(genesis_hash))
+		.with_client(|client| {
+			let k1 = k1.clone();
+			async move {
+				client
+					.rpc()
+					// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
+					// Perhaps there is a better way, but I don't know it
+					.storage_keys_paged(&k1, 1000, None, Some(genesis_hash))
+					.await
+			}
+		})
 		.await
 		.context("Couldn't get storage keys associated with key owners!")?
 		.into_iter()
@@ -134,15 +141,17 @@ async fn get_valset_at_genesis(
 		.map(|e| {
 			let c = rpc_client.clone();
 			async move {
-				let session_key_key_owner = api::storage()
-					.session()
-					.key_owner(KeyTypeId(sp_core::crypto::key_types::GRANDPA.0), e.0);
 				let k = c
-					.current_client()
-					.await
-					.storage()
-					.at(genesis_hash)
-					.fetch(&session_key_key_owner)
+					.with_client(|client| async move {
+						let session_key_key_owner = api::storage()
+							.session()
+							.key_owner(KeyTypeId(sp_core::crypto::key_types::GRANDPA.0), e.0);
+						client
+							.storage()
+							.at(genesis_hash)
+							.fetch(&session_key_key_owner)
+							.await
+					})
 					.await
 					.expect("Couldn't get session key owner for grandpa key!")
 					.expect("Result is empty (grandpa key has no owner?)");
@@ -179,7 +188,7 @@ pub async fn sync_finality(
 	state: Arc<Mutex<State>>,
 ) -> Result<()> {
 	let rpc_client = sync_finality.get_client();
-	let gen_hash = rpc_client.current_client().await.genesis_hash();
+	let gen_hash = rpc_client.current_node().await.genesis_hash;
 
 	let checkpoint = get_finality_sync_checkpoint(sync_finality.get_db())?;
 
@@ -196,69 +205,36 @@ pub async fn sync_finality(
 		info!("No checkpoint found, starting from genesis.");
 		validator_set = get_valset_at_genesis(rpc_client.clone(), gen_hash).await?;
 		// Get set_id from genesis. Should be 0.
-		let set_id_key = api::storage().grandpa().current_set_id();
 		set_id = rpc_client
-			.current_client()
-			.await
-			.storage()
-			.at(gen_hash)
-			.fetch(&set_id_key)
+			.with_client(|client| async move {
+				let set_id_key = api::storage().grandpa().current_set_id();
+				client.storage().at(gen_hash).fetch(&set_id_key).await
+			})
 			.await
 			.context(format!("Couldn't get set_id at {}", gen_hash))?
 			.context("Set_id is empty?")?;
 		info!("Set ID at genesis is {set_id}");
 	}
 
-	let head = rpc_client
-		.current_client()
-		.await
-		.rpc()
-		.finalized_head()
+	let mut header = rpc_client
+		.get_chain_head_header()
 		.await
 		.context("Couldn't get finalized head!")?;
-	let mut header = rpc_client
-		.current_client()
-		.await
-		.rpc()
-		.header(Some(head))
-		.await
-		.context("Couldn't get finalized head header!")?
-		.context("Finalized head header not found!")?;
 	let last_block_num = header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
 
-	let mut prev_hash = rpc_client
-		.current_client()
-		.await
-		.rpc()
-		.block_hash(Some((curr_block_num - 1).into()))
-		.await?
-		.context("Hash doesn't exist?")?;
+	let mut prev_hash = rpc_client.get_block_hash(curr_block_num - 1).await?;
 	loop {
 		if curr_block_num == last_block_num + 1 {
 			info!("Finished verifying finality up to block no. {last_block_num}!");
 			break;
 		}
-		let hash = rpc_client
-			.current_client()
-			.await
-			.rpc()
-			.block_hash(Some(curr_block_num.into()))
-			.await
-			.context(format!(
-				"Couldn't get hash for block no. {}",
-				curr_block_num
-			))?
-			.context(format!("Hash for block no. {} not found!", curr_block_num))?;
 		header = rpc_client
-			.current_client()
+			.get_header_by_block_number(curr_block_num)
 			.await
-			.rpc()
-			.header(Some(hash))
-			.await
-			.context(format!("Couldn't get header for {}", hash))?
-			.context(format!("Header for hash {} not found!", hash))?;
+			.context(format!("Couldn't get header for {curr_block_num}"))?
+			.0;
 		assert_eq!(header.parent_hash, prev_hash, "Parent hash doesn't match!");
 		prev_hash = header.using_encoded(blake2_256).into();
 
@@ -269,10 +245,12 @@ pub async fn sync_finality(
 		}
 
 		let proof: WrappedProof = rpc_client
-			.current_client()
-			.await
-			.rpc()
-			.request("grandpa_proveFinality", rpc_params![curr_block_num])
+			.with_client(|client| async move {
+				client
+					.rpc()
+					.request("grandpa_proveFinality", rpc_params![curr_block_num])
+					.await
+			})
 			.await
 			.context(format!(
 				"Couldn't get finality proof for block no. {}",
@@ -280,13 +258,9 @@ pub async fn sync_finality(
 			))?;
 		let proof_block_hash = proof.0.block;
 		let p_h = rpc_client
-			.current_client()
+			.get_header_by_hash(proof_block_hash)
 			.await
-			.rpc()
-			.header(Some(proof_block_hash))
-			.await
-			.context(format!("Couldn't get header for {}", proof_block_hash))?
-			.context(format!("Header for hash {} not found!", proof_block_hash))?;
+			.context(format!("Couldn't get header for {}", proof_block_hash))?;
 
 		let signed_message = Encode::encode(&(
 			&SignerMessage::PrecommitMessage(
