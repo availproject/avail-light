@@ -22,7 +22,7 @@ pub struct InternalServerError {}
 
 impl warp::reject::Reject for InternalServerError {}
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct Version {
 	pub version: String,
 	pub network_version: String,
@@ -84,7 +84,7 @@ pub struct Status {
 	pub partition: Option<Partition>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(try_from = "String")]
 pub struct Base64(pub Vec<u8>);
 
@@ -108,14 +108,14 @@ impl TryFrom<String> for Base64 {
 	}
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Transaction {
 	Data(Base64),
 	Extrinsic(Base64),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitResponse {
 	pub block_hash: H256,
 	pub hash: H256,

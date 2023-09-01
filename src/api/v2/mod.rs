@@ -127,7 +127,7 @@ pub fn routes(
 #[cfg(test)]
 mod tests {
 	use super::{
-		transactions,
+		submit_route, transactions,
 		types::{Client, Transaction},
 	};
 	use crate::{
@@ -146,6 +146,7 @@ mod tests {
 		str::FromStr,
 		sync::{Arc, Mutex},
 	};
+	use test_case::test_case;
 	use tokio::sync::RwLock;
 	use uuid::Uuid;
 	use warp::test::WsClient;
@@ -258,7 +259,9 @@ mod tests {
 	}
 
 	#[derive(Clone)]
-	struct MockSubmitter {}
+	struct MockSubmitter {
+		has_signer: bool,
+	}
 
 	#[async_trait]
 	impl transactions::Submit for MockSubmitter {
@@ -271,33 +274,46 @@ mod tests {
 		}
 
 		fn has_signer(&self) -> bool {
-			true
+			self.has_signer
 		}
 	}
 
+	#[test_case(r#"{"raw":""}"#, b"Request body deserialize error: unknown variant `raw`" ; "Invalid json schema")]
+	#[test_case(r#"{"data":"dHJhbnooNhY3Rpb24:"}"#, b"Request body deserialize error: Invalid byte" ; "Invalid base64 value")]
 	#[tokio::test]
-	async fn submit_route_bad_request() {
-		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
+	async fn submit_route_bad_request(json: &str, message: &[u8]) {
+		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: false })));
 		let response = warp::test::request()
 			.method("POST")
 			.path("/v2/submit")
-			.body(r#"{"data":"dHJhbnooNhY3Rpb24:"}"#)
+			.body(json)
 			.reply(&route)
 			.await;
 		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-		assert_eq!(
-			response.body(),
-			"Request body deserialize error: Invalid byte 58, offset 17."
-		);
+		assert!(response.body().starts_with(message));
 	}
 
 	#[tokio::test]
-	async fn submit_route() {
-		let route = super::submit_route(Some(Arc::new(MockSubmitter {})));
+	async fn submit_route_no_signign_key() {
+		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: false })));
 		let response = warp::test::request()
 			.method("POST")
 			.path("/v2/submit")
 			.body(r#"{"data":"dHJhbnNhY3Rpb24K"}"#)
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	#[test_case(r#"{"data":"dHJhbnNhY3Rpb24K"}"# ; "No errors in case of submitted data")]
+	#[test_case(r#"{"extrinsic":"dHJhbnNhY3Rpb24K"}"# ; "No errors in case of submitted extrinsic")]
+	#[tokio::test]
+	async fn submit_route_extrinsic(body: &str) {
+		let route = super::submit_route(Some(Arc::new(MockSubmitter { has_signer: true })));
+		let response = warp::test::request()
+			.method("POST")
+			.path("/v2/submit")
+			.body(body)
 			.reply(&route)
 			.await;
 		assert_eq!(response.status(), StatusCode::OK);
