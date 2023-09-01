@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use avail_subxt::{
-	avail::Client,
 	primitives::{grandpa::AuthorityId, Header},
 	rpc::rpc_params,
 };
@@ -16,13 +15,13 @@ use tracing::{error, info, trace};
 
 use crate::{
 	data::store_finality_sync_checkpoint,
-	rpc,
+	rpc::RpcClient,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils,
 };
 
 pub async fn finalized_headers(
-	rpc_client: Client,
+	rpc_client: RpcClient,
 	message_tx: Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
 	state: Arc<Mutex<State>>,
@@ -46,28 +45,28 @@ enum Messages {
 // Subscribes to finalized headers, justifications and monitors the changes in validator set.
 // Verifies the justifications. Then sends the header off to be processed by LC.
 async fn subscribe_check_and_process(
-	subxt_client: Client,
+	rpc: RpcClient,
 	message_tx: Sender<(Header, Instant)>,
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 ) -> Result<()> {
-	let mut header_subscription = subxt_client
+	let mut header_subscription = rpc
+		.current_client()
+		.await
 		.rpc()
 		.subscribe_finalized_block_headers()
 		.await?;
 	// Get the hash of the head (finalized)
-	let last_finalized_block_hash = rpc::get_chain_head_hash(&subxt_client).await?;
+	let last_finalized_block_hash = rpc.get_chain_head_hash().await?;
 
 	// Current set of authorities, implicitly trusted, fetched from grandpa runtime.
-	let mut validator_set =
-		rpc::get_valset_by_hash(&subxt_client, last_finalized_block_hash).await?;
+	let mut validator_set = rpc.get_valset_by_hash(last_finalized_block_hash).await?;
 
 	// Fetch the set ID from storage at current height
-	let mut set_id = rpc::get_set_id_by_hash(&subxt_client, last_finalized_block_hash).await?;
+	let mut set_id = rpc.get_set_id_by_hash(last_finalized_block_hash).await?;
 
 	// Get last (implicitly trusted) finalized block number
-	let mut last_finalized_block_header =
-		rpc::get_header_by_hash(&subxt_client, last_finalized_block_hash).await?;
+	let mut last_finalized_block_header = rpc.get_header_by_hash(last_finalized_block_hash).await?;
 
 	info!("Current set: {:?}", (validator_set.clone(), set_id));
 
@@ -113,7 +112,9 @@ async fn subscribe_check_and_process(
 	});
 
 	// Subscribe to justifications.
-	let j: Result<avail_subxt::rpc::Subscription<GrandpaJustification>, _> = subxt_client
+	let j: Result<avail_subxt::rpc::Subscription<GrandpaJustification>, _> = rpc
+		.current_client()
+		.await
 		.rpc()
 		.subscribe(
 			"grandpa_subscribeJustifications",
@@ -138,7 +139,7 @@ async fn subscribe_check_and_process(
 
 	// Main loop, gathers blocks, justifications and validator sets and checks finality
 	let res: Result<()> = 'mainloop: loop {
-		let subxt_client = subxt_client.clone();
+		let rpc = rpc.clone();
 		match msg_receiver
 			.recv()
 			.await
@@ -249,9 +250,7 @@ async fn subscribe_check_and_process(
 						None => {
 							info!("Fetching header from RPC");
 							(
-								rpc::get_header_by_block_number(&subxt_client, bl_num)
-									.await?
-									.0,
+								rpc.get_header_by_block_number(bl_num).await?.0,
 								Instant::now(),
 							)
 						},

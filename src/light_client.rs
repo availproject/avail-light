@@ -20,7 +20,7 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header, utils::H256};
+use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
@@ -69,10 +69,10 @@ pub trait LightClient {
 struct LightClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: avail::Client,
+	rpc_client: rpc::RpcClient,
 }
 
-pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl LightClient {
+pub fn new(db: Arc<DB>, network_client: Client, rpc_client: rpc::RpcClient) -> impl LightClient {
 	LightClientImpl {
 		db,
 		network_client,
@@ -106,7 +106,7 @@ impl LightClient for LightClientImpl {
 			.await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
+		self.rpc_client.get_kate_proof(hash, positions).await
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)

@@ -26,7 +26,7 @@ impl From<AvailSecretKey> for AvailSigner {
 
 #[derive(Clone)]
 pub struct Submitter {
-	pub node_client: avail::Client,
+	pub node_client: RpcClient,
 	pub app_id: u32,
 	pub pair_signer: Option<AvailSigner>,
 }

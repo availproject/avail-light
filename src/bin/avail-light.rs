@@ -9,7 +9,6 @@ use avail_light::{
 };
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
-	data::store_last_full_node_ws_in_db,
 	types::{Mode, RuntimeConfig, State},
 };
 use avail_subxt::primitives::Header;
@@ -235,18 +234,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let last_full_node_ws = avail_light::data::get_last_full_node_ws_from_db(db.clone())?;
-
-	let (rpc_client, node) = avail_light::rpc::connect_to_the_full_node(
-		&cfg.full_node_ws,
-		last_full_node_ws,
+	let rpc = avail_light::rpc::RpcClient::new(
+		cfg.full_node_ws.clone(),
 		EXPECTED_NETWORK_VERSION,
+		db.clone(),
 	)
-	.await?;
+	.await
+	.context("Failed to create rpc client")?;
+	let node = rpc.current_node().await;
 
-	store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
-
-	info!("Genesis hash: {:?}", node.genesis_hash);
+	info!(?node.genesis_hash);
 	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
 		if !node.genesis_hash.eq(&stored_genesis_hash) {
 			Err(anyhow!(
@@ -258,9 +255,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
 	}
 
-	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
+	let block_header = rpc
+		.get_chain_head_header()
 		.await
-		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+		.context("Failed to get chain header from rpc")?;
 
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
@@ -274,7 +272,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
-		node_client: rpc_client.clone(),
+		rpc: rpc.clone(),
 	};
 
 	tokio::task::spawn(server.run());
@@ -287,7 +285,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			(&cfg).into(),
 			db.clone(),
 			network_client.clone(),
-			rpc_client.clone(),
+			rpc.clone(),
 			AppId(app_id),
 			block_rx,
 			pp.clone(),
@@ -300,7 +298,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	};
 
 	let sync_client =
-		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
+		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
 		state.lock().unwrap().set_synced(false);
@@ -315,7 +313,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		));
 	}
 
-	let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
+	let sync_finality = avail_light::sync_finality::new(db.clone(), rpc.clone());
 	tokio::task::spawn(avail_light::sync_finality::run(
 		sync_finality,
 		error_sender.clone(),
@@ -325,14 +323,14 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
-		rpc_client.clone(),
+		rpc.clone(),
 		message_tx,
 		error_sender.clone(),
 		state.clone(),
 		db.clone(),
 	));
 
-	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
+	let light_client = avail_light::light_client::new(db, network_client, rpc);
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,

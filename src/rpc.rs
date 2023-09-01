@@ -1,5 +1,7 @@
 //! RPC communication with avail node.
 
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
 	avail, build_client,
@@ -7,97 +9,309 @@ use avail_subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	utils::H256,
 };
+use futures::prelude::*;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
 use rand::{seq::SliceRandom, thread_rng, Rng};
+use rocksdb::DB;
 use sp_core::ed25519;
-use std::{collections::HashSet, fmt::Display, ops::Deref};
+use std::{collections::HashSet, fmt::Display};
+use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
 use crate::{consts::EXPECTED_NETWORK_VERSION, types::*};
 
-pub async fn get_block_hash(client: &avail::Client, block: u32) -> Result<H256> {
-	client
-		.rpc()
-		.block_hash(Some(BlockNumber::from(block)))
+#[derive(Debug, Clone)]
+pub struct RpcClient {
+	client: Arc<RwLock<(avail::Client, Node)>>,
+	nodes: Vec<String>,
+	expected_version: ExpectedVersion<'static>,
+	db: Arc<DB>,
+	backoff: backoff::ExponentialBackoff,
+}
+
+impl RpcClient {
+	async fn connect(
+		full_node_ws: &str,
+		expected_version: &ExpectedVersion<'_>,
+	) -> Result<(avail::Client, Node)> {
+		let client = build_client(&full_node_ws, false).await?;
+		let system_version: String = client
+			.rpc()
+			.system_version()
+			.await
+			.context("Failed to retrieve system version")?;
+		let runtime_version: RuntimeVersionResult = client
+			.rpc()
+			.request("state_getRuntimeVersion", RpcParams::new())
+			.await
+			.context("Failed to retrieve runtime version")?;
+
+		let version = format!(
+			"v{}/{}/{}",
+			system_version, runtime_version.spec_name, runtime_version.spec_version,
+		);
+
+		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
+			return Err(anyhow!("expected {expected_version}, found {version}"));
+		}
+
+		info!("Connection established to the node: {full_node_ws} <{version}>");
+		let node = Node {
+			host: full_node_ws.to_owned(),
+			system_version,
+			spec_version: client.runtime_version().spec_version,
+			genesis_hash: client.genesis_hash(),
+		};
+
+		Ok((client, node))
+	}
+
+	async fn connect_to_available_rpc(
+		full_nodes: &[String],
+		expected_version: &ExpectedVersion<'static>,
+	) -> Result<(avail::Client, Node)> {
+		full_nodes
+			.iter()
+			.map(|address| {
+				Self::connect(address, expected_version)
+					.inspect_err(move |error| warn!(address, %error, "Skipping connection"))
+			})
+			.collect::<futures::stream::FuturesUnordered<_>>()
+			.try_next()
+			.await
+			.context("Failed to connect to a working node")
+			.map(|opt| opt.expect("Always called with at least one full node. QED"))
+	}
+
+	/// Shuffles full nodes to randomize access,
+	/// and pushes last full node to the end of a list
+	/// so we can try it if connection to other node fails
+	fn shuffle_full_nodes(full_nodes: &mut Vec<String>, last_full_node: Option<String>) {
+		let old_len = full_nodes.len();
+		full_nodes.retain(|node| Some(node) != last_full_node.as_ref());
+		full_nodes.shuffle(&mut thread_rng());
+
+		// Pushing last full node to the end of a list, if it's only one left to try
+		if let (Some(node), true) = (last_full_node, old_len != full_nodes.len()) {
+			full_nodes.push(node);
+		}
+	}
+
+	pub async fn new(
+		mut nodes: Vec<String>,
+		expected_version: ExpectedVersion<'static>,
+		db: Arc<DB>,
+	) -> Result<Self> {
+		let last_full_node = crate::data::get_last_full_node_ws_from_db(db.clone())?;
+		Self::shuffle_full_nodes(&mut nodes, last_full_node);
+		let (client, node) = Self::connect_to_available_rpc(&nodes, &expected_version).await?;
+		crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
+		let backoff = backoff::ExponentialBackoffBuilder::new()
+			.with_max_elapsed_time(Some(std::time::Duration::from_secs(20)))
+			.build();
+		Ok(Self {
+			client: Arc::new(RwLock::new((client, node))),
+			nodes,
+			expected_version,
+			db,
+			backoff,
+		})
+	}
+
+	pub async fn current_client(&self) -> avail::Client {
+		self.client.read().await.0.clone()
+	}
+
+	pub async fn current_node(&self) -> Node {
+		self.client.read().await.1.clone()
+	}
+
+	async fn with_client<F, Fut, T>(&self, mut f: F) -> Result<T>
+	where
+		F: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
+	{
+		match f(self.current_client().await).await {
+			Ok(ok) => return Ok(ok),
+			Err(error) => {
+				warn!(%error, "Failed to connect to node. Trying to reach to another one");
+			},
+		}
+
+		let (ok, client) = backoff::future::retry(self.backoff.clone(), || async {
+			let mut f = f;
+			let (client, node) =
+				Self::connect_to_available_rpc(&self.nodes, &self.expected_version)
+					.await
+					.map_err(backoff::Error::permanent)?;
+
+			match f(client.clone()).await {
+				Ok(ok) => Ok((ok, (client, node))),
+				Err(error) => {
+					warn!(%error, "Failed to connect to node. Trying to reach to another one");
+					Err(backoff::Error::transient(anyhow::Error::from(error)))
+				},
+			}
+		})
+		.await
+		.context("Failed to reach to any node")?;
+
+		crate::data::store_last_full_node_ws_in_db(self.db.clone(), client.1.host.clone())?;
+
+		*self.client.write().await = client;
+
+		Ok(ok)
+	}
+
+	pub async fn get_block_hash(&self, block: u32) -> Result<H256> {
+		self.with_client(move |client| async move {
+			client
+				.rpc()
+				.block_hash(Some(BlockNumber::from(block)))
+				.await
+		})
 		.await?
 		.ok_or_else(|| anyhow!("Block with number {block} not found"))
-}
+	}
 
-pub async fn get_header_by_hash(client: &avail::Client, hash: H256) -> Result<DaHeader> {
-	client
-		.rpc()
-		.header(Some(hash))
-		.await?
-		.ok_or_else(|| anyhow!("Header with hash {hash:?} not found"))
-}
+	pub async fn get_header_by_hash(&self, hash: H256) -> Result<DaHeader> {
+		self.with_client(move |client| async move { client.rpc().header(Some(hash)).await })
+			.await?
+			.ok_or_else(|| anyhow!("Header with hash {hash:?} not found"))
+	}
+	pub async fn get_valset_by_hash(&self, hash: H256) -> Result<Vec<ed25519::Public>> {
+		let grandpa_valset: Vec<(ed25519::Public, u64)> = self
+			.with_client(move |client| async move {
+				client
+					.runtime_api()
+					.at(hash)
+					.call_raw("GrandpaApi_grandpa_authorities", None)
+					.await
+			})
+			.await?;
 
-pub async fn get_valset_by_hash(
-	client: &avail::Client,
-	hash: H256,
-) -> Result<Vec<ed25519::Public>> {
-	let grandpa_valset = client
-		.runtime_api()
-		.at(hash)
-		.call_raw::<Vec<(ed25519::Public, u64)>>("GrandpaApi_grandpa_authorities", None)
+		// Drop weights, as they are not currently used.
+		Ok(grandpa_valset.iter().map(|e| e.0).collect())
+	}
+
+	pub async fn get_valset_by_block_number(&self, block: u32) -> Result<Vec<ed25519::Public>> {
+		let hash = self.get_block_hash(block).await?;
+		self.get_valset_by_hash(hash).await
+	}
+
+	/// RPC for obtaining header of latest finalized block mined by network
+	pub async fn get_chain_head_header(&self) -> Result<DaHeader> {
+		let h = self
+			.with_client(|client| async move { client.rpc().finalized_head().await })
+			.await?;
+		self.with_client(move |client| async move { client.rpc().header(Some(h)).await })
+			.await?
+			.ok_or_else(|| anyhow!("Couldn't get latest finalized header"))
+	}
+
+	pub async fn get_chain_head_hash(&self) -> Result<H256> {
+		self.with_client(|client| async move { client.rpc().finalized_head().await })
+			.await
+			.context("Cannot get finalized head hash")
+	}
+
+	pub async fn get_set_id_by_hash(&self, hash: H256) -> Result<u64> {
+		self.with_client(move |client| {
+			let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+			async move {
+				client
+					// Fetch the set ID from storage at current height
+					.storage()
+					// None means current height
+					.at(hash)
+					.fetch(&set_id_key)
+					.await
+			}
+		})
 		.await
-		.unwrap();
+		.map(|opt| opt.expect("The set_id should exist"))
+	}
 
-	// Drop weights, as they are not currently used.
-	Ok(grandpa_valset.iter().map(|e| e.0).collect())
-}
+	pub async fn get_set_id_by_block_number(&self, block: u32) -> Result<u64> {
+		let hash = self.get_block_hash(block).await?;
+		self.get_set_id_by_hash(hash).await
+	}
 
-pub async fn get_valset_by_block_number(
-	client: &avail::Client,
-	block: u32,
-) -> Result<Vec<ed25519::Public>> {
-	let hash = get_block_hash(client, block).await?;
-	get_valset_by_hash(client, hash).await
-}
-/// RPC for obtaining header of latest finalized block mined by network
-pub async fn get_chain_head_header(client: &avail::Client) -> Result<DaHeader> {
-	let h = client.rpc().finalized_head().await?;
-	client
-		.rpc()
-		.header(Some(h))
-		.await?
-		.context("Couldn't get latest finalized header")
-}
+	/// Gets header by block number
+	pub async fn get_header_by_block_number(&self, block: u32) -> Result<(DaHeader, H256)> {
+		let hash = self.get_block_hash(block).await?;
+		self.get_header_by_hash(hash).await.map(|e| (e, hash))
+	}
 
-pub async fn get_chain_head_hash(client: &avail::Client) -> Result<H256> {
-	client
-		.rpc()
-		.finalized_head()
+	#[instrument(skip_all, level = "trace")]
+	pub async fn get_kate_rows(
+		&self,
+		rows: Vec<u32>,
+		block_hash: H256,
+	) -> Result<Vec<Option<Vec<u8>>>> {
+		let mut params = RpcParams::new();
+		params.push(rows)?;
+		params.push(block_hash)?;
+		self.with_client(|client| {
+			let params = params.clone();
+			async move { client.rpc().request("kate_queryRows", params).await }
+		})
 		.await
-		.context("Cannot get finalized head hash")
-}
+	}
 
-pub async fn get_set_id_by_hash(client: &avail::Client, hash: H256) -> Result<u64> {
-	let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
-	// Fetch the set ID from storage at current height
-	Ok(client
-		.storage()
-		// None means current height
-		.at(hash)
-		.fetch(&set_id_key)
-		.await?
-		.expect("The set_id should exist"))
-}
+	/// RPC to get proofs for given positions of block
+	pub async fn get_kate_proof(
+		&self,
+		block_hash: H256,
+		positions: &[Position],
+	) -> Result<Vec<Cell>> {
+		let mut params = RpcParams::new();
+		params.push(positions)?;
+		params.push(block_hash)?;
 
-pub async fn get_set_id_by_block_number(client: &avail::Client, block: u32) -> Result<u64> {
-	let hash = get_block_hash(client, block).await?;
-	get_set_id_by_hash(client, hash).await
-}
+		let proofs: Vec<u8> = self
+			.with_client(|client| {
+				let params = &params;
+				async move {
+					client
+						.rpc()
+						.request("kate_queryProof", params.clone())
+						.await
+				}
+			})
+			.await
+			.context("Error fetching proof")?;
 
-/// Gets header by block number
-pub async fn get_header_by_block_number(
-	client: &avail::Client,
-	block: u32,
-) -> Result<(DaHeader, H256)> {
-	let hash = get_block_hash(client, block).await?;
-	get_header_by_hash(client, hash).await.map(|e| (e, hash))
+		let i = proofs
+			.chunks_exact(CELL_WITH_PROOF_SIZE)
+			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
+		Ok(positions
+			.iter()
+			.zip(i)
+			.map(|(&position, &content)| Cell { position, content })
+			.collect::<Vec<_>>())
+	}
+
+	// RPC to check connection to substrate node
+	pub async fn get_system_version(&self) -> Result<String> {
+		self.with_client(|client| async move { client.rpc().system_version().await })
+			.await
+			.context("Version couldn't be retrieved")
+	}
+
+	pub async fn get_runtime_version(&self) -> Result<RuntimeVersionResult> {
+		self.with_client(|client| async move {
+			client
+				.rpc()
+				.request("state_getRuntimeVersion", RpcParams::new())
+				.await
+		})
+		.await
+		.context("Version couldn't be retrieved, error")
+	}
 }
 
 /// Generates random cell positions for sampling
@@ -120,78 +334,7 @@ pub fn generate_random_cells(dimensions: Dimensions, cell_count: u32) -> Vec<Pos
 	indices.into_iter().collect::<Vec<_>>()
 }
 
-#[instrument(skip_all, level = "trace")]
-pub async fn get_kate_rows(
-	client: &avail::Client,
-	rows: Vec<u32>,
-	block_hash: H256,
-) -> Result<Vec<Option<Vec<u8>>>> {
-	let mut params = RpcParams::new();
-	params.push(rows)?;
-	params.push(block_hash)?;
-	let t = client.rpc().deref();
-	t.request("kate_queryRows", params)
-		.await
-		.context("Failed to get Kate rows")
-}
-
-/// RPC to get proofs for given positions of block
-pub async fn get_kate_proof(
-	client: &avail::Client,
-	block_hash: H256,
-	positions: &[Position],
-) -> Result<Vec<Cell>> {
-	let mut params = RpcParams::new();
-	params.push(positions)?;
-	params.push(block_hash)?;
-	let t = client.rpc().deref();
-	let proofs: Vec<u8> = t
-		.request("kate_queryProof", params)
-		.await
-		.context("Failed to fetch proof")?;
-
-	let i = proofs
-		.chunks_exact(CELL_WITH_PROOF_SIZE)
-		.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
-	Ok(positions
-		.iter()
-		.zip(i)
-		.map(|(&position, &content)| Cell { position, content })
-		.collect::<Vec<_>>())
-}
-
-// RPC to check connection to substrate node
-pub async fn get_system_version(client: &avail::Client) -> Result<String> {
-	client
-		.rpc()
-		.system_version()
-		.await
-		.context("Failed to retrieve version")
-}
-
-pub async fn get_runtime_version(client: &avail::Client) -> Result<RuntimeVersionResult> {
-	client
-		.rpc()
-		.request("state_getRuntimeVersion", RpcParams::new())
-		.await
-		.context("Failed to retrieve version")
-}
-
-/// Shuffles full nodes to randomize access,
-/// and pushes last full node to the end of a list
-/// so we can try it if connection to other node fails
-fn shuffle_full_nodes(full_nodes: &[String], last_full_node: Option<String>) -> Vec<String> {
-	let mut candidates = full_nodes.to_owned();
-	candidates.retain(|node| Some(node) != last_full_node.as_ref());
-	candidates.shuffle(&mut thread_rng());
-
-	// Pushing last full node to the end of a list, if it's only one left to try
-	if let (Some(node), true) = (last_full_node, full_nodes.len() != candidates.len()) {
-		candidates.push(node);
-	}
-	candidates
-}
-
+#[derive(Debug, Clone, Copy)]
 pub struct ExpectedVersion<'a> {
 	pub version: &'a str,
 	pub spec_name: &'a str,
@@ -215,7 +358,7 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Node {
 	pub host: String,
 	pub system_version: String,
@@ -233,51 +376,6 @@ impl Node {
 			spec_version = self.spec_version,
 		)
 	}
-}
-
-/// Connects to the random full node from the list,
-/// trying to connect to the last connected full node as least priority.
-pub async fn connect_to_the_full_node(
-	full_nodes: &[String],
-	last_full_node: Option<String>,
-	expected_version: ExpectedVersion<'_>,
-) -> Result<(avail::Client, Node)> {
-	for full_node_ws in shuffle_full_nodes(full_nodes, last_full_node).iter() {
-		let log_warn = |error| {
-			warn!("Skipping connection to {full_node_ws}: {error}");
-			error
-		};
-
-		let Ok(client) = build_client(&full_node_ws, false).await.map_err(log_warn) else {
-			continue;
-		};
-		let Ok(system_version) = get_system_version(&client).await.map_err(log_warn) else {
-			continue;
-		};
-		let Ok(runtime_version) = get_runtime_version(&client).await.map_err(log_warn) else {
-			continue;
-		};
-
-		let version = format!(
-			"v{}/{}/{}",
-			system_version, runtime_version.spec_name, runtime_version.spec_version,
-		);
-
-		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			log_warn(anyhow!("expected {expected_version}, found {version}"));
-			continue;
-		}
-
-		info!("Connection established to the node: {full_node_ws} <{version}>");
-		let node = Node {
-			host: full_node_ws.clone(),
-			system_version,
-			spec_version: client.runtime_version().spec_version,
-			genesis_hash: client.genesis_hash(),
-		};
-		return Ok((client, node));
-	}
-	Err(anyhow!("No working nodes"))
 }
 
 /* @note: fn to take the number of cells needs to get equal to or greater than
@@ -308,7 +406,7 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 
 #[cfg(test)]
 mod tests {
-	use crate::rpc::{shuffle_full_nodes, ExpectedVersion};
+	use crate::rpc::{ExpectedVersion, RpcClient};
 	use proptest::{
 		prelude::any_with,
 		prop_assert, prop_assert_eq, proptest,
@@ -349,12 +447,14 @@ mod tests {
 	proptest! {
 		#[test]
 		fn shuffle_without_last((full_nodes, _) in full_nodes()) {
-			let shuffled = shuffle_full_nodes(&full_nodes, None);
+			let mut shuffled = full_nodes.clone();
+			RpcClient::shuffle_full_nodes(&mut shuffled, None);
 			prop_assert!(shuffled.len() == full_nodes.len());
 			prop_assert!(shuffled.iter().all(|node| full_nodes.contains(node)));
 
 			if !full_nodes.contains(&"invalid_node".to_string()) {
-				let shuffled = shuffle_full_nodes(&full_nodes, Some("invalid_node".to_string()));
+				let mut shuffled = full_nodes.clone();
+				RpcClient::shuffle_full_nodes(&mut shuffled, Some("invalid_node".to_string()));
 				prop_assert!(shuffled.len() == full_nodes.len());
 				prop_assert!(shuffled.iter().all(|node| full_nodes.contains(node)))
 			}
@@ -364,7 +464,8 @@ mod tests {
 		fn shuffle_with_last((full_nodes, last_full_node) in full_nodes()) {
 			let last_full_node_count = full_nodes.iter().filter(|&n| Some(n) == last_full_node.as_ref()).count();
 
-			let mut shuffled = shuffle_full_nodes(&full_nodes, last_full_node.clone());
+			let mut shuffled = full_nodes.clone();
+			RpcClient::shuffle_full_nodes(&mut shuffled, last_full_node.clone());
 			prop_assert_eq!(shuffled.pop(), last_full_node);
 
 			// Assuming case when last full node occuring more than once in full nodes list

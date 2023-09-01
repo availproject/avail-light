@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, bail, Context, Result};
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
-	avail::{self, Client},
 	primitives::Header,
 	rpc::rpc_params,
 };
@@ -24,6 +23,7 @@ use tracing::{error, info, trace};
 
 use crate::{
 	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
+	rpc::RpcClient,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
@@ -64,17 +64,17 @@ impl<'de> Deserialize<'de> for WrappedProof {
 }
 
 pub trait SyncFinality {
-	fn get_client(&self) -> avail::Client;
+	fn get_client(&self) -> RpcClient;
 	fn get_db(&self) -> Arc<DB>;
 }
 
 pub struct SyncFinalityImpl {
 	db: Arc<DB>,
-	rpc_client: avail::Client,
+	rpc_client: RpcClient,
 }
 
 impl SyncFinality for SyncFinalityImpl {
-	fn get_client(&self) -> avail::Client {
+	fn get_client(&self) -> RpcClient {
 		self.rpc_client.clone()
 	}
 
@@ -83,7 +83,7 @@ impl SyncFinality for SyncFinalityImpl {
 	}
 }
 
-pub fn new(db: Arc<DB>, rpc_client: avail::Client) -> impl SyncFinality {
+pub fn new(db: Arc<DB>, rpc_client: RpcClient) -> impl SyncFinality {
 	SyncFinalityImpl { db, rpc_client }
 }
 
@@ -91,7 +91,7 @@ const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
 const GRANDPA_KEY_LEN: usize = 32;
 
 async fn get_valset_at_genesis(
-	rpc_client: Client,
+	rpc_client: RpcClient,
 	genesis_hash: H256,
 ) -> Result<Vec<ed25519::Public>> {
 	let mut k1 = twox_128("Session".as_bytes()).to_vec();
@@ -101,7 +101,8 @@ async fn get_valset_at_genesis(
 	// Get validator set from genesis (Substrate Account ID)
 	let validators_key = api::storage().session().validators();
 	let validator_set_pre = rpc_client
-		.clone()
+		.current_client()
+		.await
 		.storage()
 		.at(genesis_hash)
 		.fetch(&validators_key)
@@ -111,6 +112,8 @@ async fn get_valset_at_genesis(
 
 	// Get all grandpa session keys from genesis (GRANDPA ed25519 keys)
 	let grandpa_keys_and_account = rpc_client
+		.current_client()
+		.await
 		.rpc()
 		// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
 		// Perhaps there is a better way, but I don't know it
@@ -135,6 +138,8 @@ async fn get_valset_at_genesis(
 					.session()
 					.key_owner(KeyTypeId(sp_core::crypto::key_types::GRANDPA.0), e.0);
 				let k = c
+					.current_client()
+					.await
 					.storage()
 					.at(genesis_hash)
 					.fetch(&session_key_key_owner)
@@ -174,7 +179,7 @@ pub async fn sync_finality(
 	state: Arc<Mutex<State>>,
 ) -> Result<()> {
 	let rpc_client = sync_finality.get_client();
-	let gen_hash = rpc_client.genesis_hash();
+	let gen_hash = rpc_client.current_client().await.genesis_hash();
 
 	let checkpoint = get_finality_sync_checkpoint(sync_finality.get_db())?;
 
@@ -193,6 +198,8 @@ pub async fn sync_finality(
 		// Get set_id from genesis. Should be 0.
 		let set_id_key = api::storage().grandpa().current_set_id();
 		set_id = rpc_client
+			.current_client()
+			.await
 			.storage()
 			.at(gen_hash)
 			.fetch(&set_id_key)
@@ -203,11 +210,15 @@ pub async fn sync_finality(
 	}
 
 	let head = rpc_client
+		.current_client()
+		.await
 		.rpc()
 		.finalized_head()
 		.await
 		.context("Couldn't get finalized head!")?;
 	let mut header = rpc_client
+		.current_client()
+		.await
 		.rpc()
 		.header(Some(head))
 		.await
@@ -218,6 +229,8 @@ pub async fn sync_finality(
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
 
 	let mut prev_hash = rpc_client
+		.current_client()
+		.await
 		.rpc()
 		.block_hash(Some((curr_block_num - 1).into()))
 		.await?
@@ -228,6 +241,8 @@ pub async fn sync_finality(
 			break;
 		}
 		let hash = rpc_client
+			.current_client()
+			.await
 			.rpc()
 			.block_hash(Some(curr_block_num.into()))
 			.await
@@ -237,6 +252,8 @@ pub async fn sync_finality(
 			))?
 			.context(format!("Hash for block no. {} not found!", curr_block_num))?;
 		header = rpc_client
+			.current_client()
+			.await
 			.rpc()
 			.header(Some(hash))
 			.await
@@ -252,6 +269,8 @@ pub async fn sync_finality(
 		}
 
 		let proof: WrappedProof = rpc_client
+			.current_client()
+			.await
 			.rpc()
 			.request("grandpa_proveFinality", rpc_params![curr_block_num])
 			.await
@@ -261,6 +280,8 @@ pub async fn sync_finality(
 			))?;
 		let proof_block_hash = proof.0.block;
 		let p_h = rpc_client
+			.current_client()
+			.await
 			.rpc()
 			.header(Some(proof_block_hash))
 			.await

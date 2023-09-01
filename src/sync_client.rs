@@ -17,7 +17,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
+use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{commitments, matrix::Dimensions};
 use kate_recovery::{data::Cell, matrix::Position};
@@ -30,6 +30,7 @@ use std::{
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
 
+use crate::rpc::RpcClient;
 use crate::{
 	data::{
 		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
@@ -56,16 +57,16 @@ pub trait SyncClient {
 		positions: &[Position],
 		block_number: u32,
 	) -> (Vec<Cell>, Vec<Position>);
-	fn get_client(&self) -> avail::Client;
+	fn get_client(&self) -> RpcClient;
 }
 #[derive(Clone)]
 struct SyncClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: avail::Client,
+	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl SyncClient {
+pub fn new(db: Arc<DB>, network_client: Client, rpc_client: RpcClient) -> impl SyncClient {
 	SyncClientImpl {
 		db,
 		network_client,
@@ -81,7 +82,8 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
-		rpc::get_header_by_block_number(&self.rpc_client, block_number)
+		self.rpc_client
+			.get_header_by_block_number(block_number)
 			.await
 			.with_context(|| format!("Failed to get block {block_number} by block number"))
 	}
@@ -102,7 +104,7 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
+		self.rpc_client.get_kate_proof(hash, positions).await
 	}
 
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
@@ -119,7 +121,7 @@ impl SyncClient for SyncClientImpl {
 			.fetch_cells_from_dht(block_number, positions)
 			.await
 	}
-	fn get_client(&self) -> avail::Client {
+	fn get_client(&self) -> RpcClient {
 		self.rpc_client.clone()
 	}
 }

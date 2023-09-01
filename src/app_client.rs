@@ -15,7 +15,7 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_core::AppId;
-use avail_subxt::{avail, utils::H256};
+use avail_subxt::utils::H256;
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
@@ -41,7 +41,8 @@ use tracing::{debug, error, info, instrument};
 use crate::{
 	data::store_encoded_data_in_db,
 	network::Client,
-	proof, rpc,
+	proof,
+	rpc::{self, RpcClient},
 	types::{AppClientConfig, BlockVerified, State},
 };
 
@@ -79,7 +80,7 @@ trait AppClient {
 struct AppClientImpl {
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: avail::Client,
+	rpc_client: rpc::RpcClient,
 }
 
 #[async_trait]
@@ -195,7 +196,7 @@ impl AppClient for AppClientImpl {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		rpc::get_kate_rows(&self.rpc_client, rows, block_hash).await
+		self.rpc_client.get_kate_rows(rows, block_hash).await
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
@@ -417,7 +418,7 @@ pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,
 	network_client: Client,
-	rpc_client: avail::Client,
+	rpc_client: RpcClient,
 	app_id: AppId,
 	mut block_receive: Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
