@@ -56,7 +56,7 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
+bootstraps = ["/ip4/127.0.0.1/tcp/37000/p2p/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
 ```
 
 Now, run the client:
@@ -97,9 +97,9 @@ identify_protocol = "/avail_kad/id/1.0.0"
 # Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 identify_agent = "avail-light-client/rust-client"
 # Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-bootstraps = [["12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds", "/ip4/13.51.79.255/udp/39000/quic-v1"]]
+bootstraps = ["/ip4/13.51.79.255/udp/39000/quic-v1/p2p/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
 # Vector of Relay nodes, which are used for hole punching
-relays = [["12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b", "/ip4/13.49.44.246/udp/39111/quic-v1"]]
+relays = ["/ip4/13.49.44.246/udp/39111/quic-v1/p2p/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b"]
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).

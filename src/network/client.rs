@@ -12,11 +12,13 @@ use kate_recovery::{
 };
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
-	Multiaddr, PeerId,
+	Multiaddr,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace};
+
+use crate::types::MultiaddrWithPeerId;
 
 use super::Event;
 
@@ -91,18 +93,10 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	pub async fn add_address(
-		&self,
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-	) -> Result<(), anyhow::Error> {
+	pub async fn add_address(&self, multiaddr: MultiaddrWithPeerId) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
 		self.sender
-			.send(Command::AddAddress {
-				peer_id,
-				peer_addr,
-				sender,
-			})
+			.send(Command::AddAddress { multiaddr, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
@@ -121,10 +115,10 @@ impl Client {
 		ReceiverStream::new(receiver)
 	}
 
-	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+	pub async fn bootstrap(&self, nodes: Vec<MultiaddrWithPeerId>) -> Result<()> {
 		let (sender, receiver) = oneshot::channel();
-		for (peer, addr) in nodes {
-			self.add_address(peer, addr.clone()).await?;
+		for node in nodes {
+			self.add_address(node).await?;
 		}
 
 		self.sender
@@ -353,8 +347,7 @@ pub enum Command {
 		sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
+		multiaddr: MultiaddrWithPeerId,
 		sender: oneshot::Sender<Result<()>>,
 	},
 	Stream {

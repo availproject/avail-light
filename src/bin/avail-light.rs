@@ -2,7 +2,6 @@
 
 use std::{
 	net::Ipv4Addr,
-	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
@@ -13,10 +12,11 @@ use avail_core::AppId;
 use avail_light::{
 	consts::STATE_CF,
 	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
+	types::MultiaddrWithPeerId,
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
@@ -191,18 +191,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context("Listening on UDP not to fail.")?;
 
-	// Check if bootstrap nodes were provided
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
-
 	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
 	// second client to establish connection and use it as bootstrap.
 	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
-	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
+	let bootstrap_nodes = if cfg.bootstraps.is_empty() {
 		info!("No bootstrap nodes, waiting for first peer to connect...");
 		let node = network_client
 			.events_stream()
@@ -210,7 +202,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			.find_map(|e| match e {
 				avail_light::network::Event::ConnectionEstablished { peer_id, endpoint } => {
 					if endpoint.is_listener() {
-						Some((peer_id, endpoint.get_remote_address().clone()))
+						Some(MultiaddrWithPeerId {
+							multiaddr: endpoint.get_remote_address().clone(),
+							peer_id,
+						})
 					} else {
 						None
 					}
@@ -221,7 +216,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			.context("Connection is not established")?;
 		vec![node]
 	} else {
-		bootstrap_nodes
+		cfg.bootstraps.clone()
 	};
 
 	// wait here for bootstrap to finish

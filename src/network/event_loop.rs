@@ -40,7 +40,7 @@ use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
 };
-use crate::telemetry::NetworkDumpEvent;
+use crate::{telemetry::NetworkDumpEvent, types::MultiaddrWithPeerId};
 
 const PEER_ID: &str = "PeerID";
 const MULTIADDRESS: &str = "Multiaddress";
@@ -55,30 +55,27 @@ enum QueryChannel {
 
 // RelayState keeps track of all things relay related
 struct RelayState {
-	// id of the selected Relay that needs to be connected
-	id: PeerId,
 	// Multiaddress of the selected Relay that needs to be connected
-	address: Multiaddr,
+	address: MultiaddrWithPeerId,
 	// boolean value that signals if have established a circuit with the selected Relay
 	is_circuit_established: bool,
 	// list of available Relay nodes
-	nodes: Vec<(PeerId, Multiaddr)>,
+	nodes: Vec<MultiaddrWithPeerId>,
 }
 
 impl RelayState {
 	fn reset(&mut self) {
-		self.id = PeerId::random();
-		self.address = Multiaddr::empty();
+		self.address = MultiaddrWithPeerId {
+			multiaddr: Multiaddr::empty(),
+			peer_id: PeerId::random(),
+		};
 		self.is_circuit_established = false;
 	}
 
 	fn select_random(&mut self) {
 		// choose relay by random
 		if let Some(relay) = self.nodes.choose(&mut rand::thread_rng()) {
-			let (id, addr) = relay.clone();
-			// appoint this relay as our chosen one
-			self.id = id;
-			self.address = addr;
+			self.address = relay.clone();
 		}
 	}
 }
@@ -134,7 +131,7 @@ impl EventLoop {
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
 		network_stats_sender: Sender<NetworkDumpEvent>,
-		relay_nodes: Vec<(PeerId, Multiaddr)>,
+		relay_nodes: Vec<MultiaddrWithPeerId>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
 	) -> Self {
@@ -148,8 +145,10 @@ impl EventLoop {
 			pending_batch_complete: None,
 			network_stats_sender,
 			relay: RelayState {
-				id: PeerId::random(),
-				address: Multiaddr::empty(),
+				address: MultiaddrWithPeerId {
+					multiaddr: Multiaddr::empty(),
+					peer_id: PeerId::random(),
+				},
 				is_circuit_established: false,
 				nodes: relay_nodes,
 			},
@@ -477,7 +476,7 @@ impl EventLoop {
 							trace!("Error produced by peer with PeerId: {peer_id:?}");
 							// if the peer giving us problems is the chosen relay
 							// just remove it by resetting the reservation state slot
-							if self.relay.id == peer_id {
+							if self.relay.address.peer_id == peer_id {
 								self.relay.reset();
 							}
 						}
@@ -503,14 +502,13 @@ impl EventLoop {
 				}
 			},
 			Command::AddAddress {
-				peer_id,
-				peer_addr,
+				multiaddr: MultiaddrWithPeerId { multiaddr, peer_id },
 				sender,
 			} => {
 				self.swarm
 					.behaviour_mut()
 					.kademlia
-					.add_address(&peer_id, peer_addr);
+					.add_address(&peer_id, multiaddr);
 
 				self.pending_kad_routing.insert(peer_id, sender);
 			},
@@ -648,12 +646,12 @@ impl EventLoop {
 		// before we try and create a circuit with the relay
 		// we have to exchange observed addresses
 		// in this case we're waiting on relay to tell us our own
-		if peer_id == self.relay.id && !self.relay.is_circuit_established {
+		if peer_id == self.relay.address.peer_id && !self.relay.is_circuit_established {
 			match self.swarm.listen_on(
 				self.relay
 					.address
 					.clone()
-					.with(Protocol::P2p(peer_id))
+					.concat()
 					.with(Protocol::P2pCircuit),
 			) {
 				Ok(_) => {
@@ -676,13 +674,16 @@ impl EventLoop {
 		// dial selected relay,
 		// so we don't wait on swarm to do it eventually
 		match self.swarm.dial(
-			DialOpts::peer_id(self.relay.id)
+			DialOpts::peer_id(self.relay.address.peer_id)
 				.condition(PeerCondition::NotDialing)
-				.addresses(vec![self.relay.address.clone()])
+				.addresses(vec![self.relay.address.multiaddr.clone()])
 				.build(),
 		) {
 			Ok(_) => {
-				info!("Dialing Relay: {id:?} succeeded.", id = self.relay.id);
+				info!(
+					"Dialing Relay: {id:?} succeeded.",
+					id = self.relay.address.peer_id
+				);
 			},
 			Err(e) => {
 				// got an error while dialing,
@@ -690,7 +691,7 @@ impl EventLoop {
 				self.relay.reset();
 				error!(
 					"Dialing Relay: {id:?}, produced an error: {e:?}",
-					id = self.relay.id
+					id = self.relay.address.peer_id
 				);
 			},
 		}
