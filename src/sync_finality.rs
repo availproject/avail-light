@@ -8,7 +8,7 @@ use avail_subxt::{
 	rpc::rpc_params,
 };
 use codec::{Decode, Encode};
-use futures_util::future::join_all;
+use futures::future::join_all;
 use rocksdb::DB;
 use serde::de::{self};
 use serde::Deserialize;
