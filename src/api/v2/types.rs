@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::{

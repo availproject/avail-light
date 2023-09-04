@@ -4,7 +4,7 @@ use crate::{
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use futures::{FutureExt, StreamExt};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -112,7 +112,7 @@ fn handle_websocket_message(
 			},
 		)?,
 		RequestType::Status => {
-			let state = state.lock().context("Cannot acquire state lock")?;
+			let state = state.lock().expect("Cannot acquire state lock");
 
 			let status = Status::new(config, node, &state);
 
