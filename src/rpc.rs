@@ -116,17 +116,10 @@ impl RpcClient {
 	}
 
 	pub async fn new(
-		mut nodes: Vec<String>,
+		nodes: Vec<String>,
 		expected_version: ExpectedVersion<'static>,
 		db: Option<Arc<DB>>,
 	) -> Result<Self> {
-		let last_full_node = db
-			.as_ref()
-			.map(Arc::clone)
-			.map(crate::data::get_last_full_node_ws_from_db)
-			.transpose()?
-			.flatten();
-		Self::shuffle_full_nodes(&mut nodes, last_full_node.as_ref());
 		let expected_genesis_hash = if let Some(db) = &db {
 			crate::data::get_genesis_hash(db.clone())?
 		} else {
