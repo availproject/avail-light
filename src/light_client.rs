@@ -211,8 +211,7 @@ pub async fn process_block(
 	}
 
 	if !cfg.disable_proof_verification {
-		let (verified, unverified) =
-			proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
+		let (verified, unverified) = proof::verify(dimensions, &cells, &commitments, pp)?;
 		let count = verified.len() - unverified.len();
 		info!(
 			block_number,

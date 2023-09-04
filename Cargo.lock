@@ -484,7 +484,6 @@ dependencies = [
  "mockall",
  "multihash 0.14.0",
  "num",
- "num_cpus",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_api",
@@ -494,13 +493,13 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "rayon",
  "rocksdb",
  "serde",
  "serde_json",
  "smallvec 1.11.0",
  "sp-core 22.0.0",
  "test-case",
- "threadpool",
  "tikv-jemallocator",
  "tokio",
  "tokio-stream",
@@ -7901,15 +7900,6 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if 1.0.0",
  "once_cell",
-]
-
-[[package]]
-name = "threadpool"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
-dependencies = [
- "num_cpus",
 ]
 
 [[package]]

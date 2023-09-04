@@ -212,7 +212,7 @@ async fn process_block(
 	let cells_len = cells.len();
 	info!(block_number, "Fetched {cells_len} cells for verification");
 
-	let (verified, _) = proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
+	let (verified, _) = proof::verify(dimensions, &cells, &commitments, pp)?;
 
 	info!(
 		block_number,

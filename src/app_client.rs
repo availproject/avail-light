@@ -264,9 +264,8 @@ async fn fetch_verified(
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
-	let (verified, mut unverified) =
-		proof::verify(block_number, dimensions, &fetched, commitments, pp)
-			.context("Failed to verify fetched cells")?;
+	let (verified, mut unverified) = proof::verify(dimensions, &fetched, commitments, pp)
+		.context("Failed to verify fetched cells")?;
 
 	fetched.retain(|cell| verified.contains(&cell.position));
 	unfetched.append(&mut unverified);
