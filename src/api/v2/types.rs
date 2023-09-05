@@ -22,7 +22,7 @@ pub struct InternalServerError {}
 
 impl warp::reject::Reject for InternalServerError {}
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Version {
 	pub version: String,
 	pub network_version: String,
@@ -34,7 +34,7 @@ impl Reply for Version {
 	}
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct BlockRange {
 	pub first: u32,
 	pub last: u32,
@@ -49,7 +49,7 @@ impl From<&types::BlockRange> for BlockRange {
 	}
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HistoricalSync {
 	pub synced: bool,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -58,7 +58,7 @@ pub struct HistoricalSync {
 	pub app_data: Option<BlockRange>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Blocks {
 	pub latest: u32,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -69,7 +69,7 @@ pub struct Blocks {
 	pub historical_sync: Option<HistoricalSync>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Status {
 	pub modes: Vec<Mode>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -115,6 +115,15 @@ pub enum Transaction {
 	Extrinsic(Base64),
 }
 
+impl Transaction {
+	pub fn is_empty(&self) -> bool {
+		match self {
+			Transaction::Data(data) => data.0.is_empty(),
+			Transaction::Extrinsic(data) => data.0.is_empty(),
+		}
+	}
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubmitResponse {
 	pub block_hash: H256,
@@ -154,7 +163,7 @@ impl Status {
 	}
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Mode {
 	Light,
@@ -237,6 +246,7 @@ impl Reply for SubscriptionId {
 pub enum RequestType {
 	Version,
 	Status,
+	Submit,
 }
 
 #[derive(Deserialize)]
@@ -244,31 +254,33 @@ pub struct Request {
 	#[serde(rename = "type")]
 	pub request_type: RequestType,
 	pub request_id: String,
+	pub message: Option<Transaction>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ResponseTopic {
-	Version,
-	Status,
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Response<T> {
-	pub topic: ResponseTopic,
 	pub request_id: String,
 	pub message: T,
+}
+
+impl<T> Response<T> {
+	pub fn new(request_id: String, message: T) -> Self {
+		Response {
+			request_id,
+			message,
+		}
+	}
 }
 
 impl TryFrom<ws::Message> for Request {
 	type Error = anyhow::Error;
 
 	fn try_from(value: ws::Message) -> Result<Self, Self::Error> {
-		serde_json::from_slice(value.as_bytes()).context("Failed to parse json request")
+		serde_json::from_slice(value.as_bytes()).context("Cannot parse json")
 	}
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum ErrorCode {
 	NotFound,
@@ -276,32 +288,41 @@ pub enum ErrorCode {
 	InternalServerError,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Error {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub request_id: Option<String>,
 	pub error_code: ErrorCode,
 	pub message: String,
 }
 
 impl Error {
-	pub fn not_found() -> Self {
+	fn new(request_id: Option<String>, error_code: ErrorCode, message: &str) -> Self {
 		Error {
-			error_code: ErrorCode::NotFound,
-			message: "Not Found".to_string(),
+			request_id,
+			error_code,
+			message: message.to_string(),
 		}
+	}
+
+	pub fn not_found() -> Self {
+		Self::new(None, ErrorCode::NotFound, "Not Found")
 	}
 
 	pub fn internal_server_error() -> Self {
-		Error {
-			error_code: ErrorCode::InternalServerError,
-			message: "Internal Server Error".to_string(),
-		}
+		Self::new(
+			None,
+			ErrorCode::InternalServerError,
+			"Internal Server Error",
+		)
 	}
 
-	pub fn bad_request(message: String) -> Self {
-		Error {
-			error_code: ErrorCode::BadRequest,
-			message,
-		}
+	pub fn bad_request_unknown(message: &str) -> Self {
+		Self::new(None, ErrorCode::BadRequest, message)
+	}
+
+	pub fn bad_request(request_id: String, message: &str) -> Self {
+		Self::new(Some(request_id), ErrorCode::BadRequest, message)
 	}
 
 	fn status(&self) -> StatusCode {
@@ -333,5 +354,38 @@ pub fn handle_result(result: Result<impl Reply, impl Reply>) -> impl Reply {
 	match result {
 		Ok(ok) => ok.into_response(),
 		Err(err) => err.into_response(),
+	}
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "topic", rename_all = "kebab-case")]
+pub enum WsResponse {
+	Error(Error),
+	Version(Response<Version>),
+	Status(Response<Status>),
+	DataTransactionSubmitted(Response<SubmitResponse>),
+}
+
+impl From<Response<Version>> for WsResponse {
+	fn from(value: Response<Version>) -> Self {
+		WsResponse::Version(value)
+	}
+}
+
+impl From<Response<Status>> for WsResponse {
+	fn from(value: Response<Status>) -> Self {
+		WsResponse::Status(value)
+	}
+}
+
+impl From<Response<SubmitResponse>> for WsResponse {
+	fn from(value: Response<SubmitResponse>) -> Self {
+		WsResponse::DataTransactionSubmitted(value)
+	}
+}
+
+impl From<Error> for WsResponse {
+	fn from(value: Error) -> Self {
+		WsResponse::Error(value)
 	}
 }

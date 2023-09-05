@@ -44,6 +44,7 @@ pub async fn submit(
 	})
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn ws(
 	subscription_id: String,
 	ws: Ws,
@@ -51,6 +52,7 @@ pub async fn ws(
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,
+	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, Rejection> {
 	if !clients.read().await.contains_key(&subscription_id) {
@@ -65,6 +67,7 @@ pub async fn ws(
 			version,
 			config,
 			node,
+			submitter.clone(),
 			state.clone(),
 		)
 	}))
