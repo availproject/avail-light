@@ -229,6 +229,21 @@ Request current Avail Light Client status data.
 }
 ```
 
+### Submit data transaction
+
+Submits data transaction to the Avail.
+
+```json
+{
+	"type": "submit",
+	"request_id": "{uuid}",
+	"message": {
+		"data": "{base-64-encoded-data}", // Optional
+		"extrinsic": "{base-64-encoded-data}" // Optional
+	}
+}
+```
+
 ## Server-to-client messages
 
 If response contains ******request_id****** field, it will be pushed to the client which initiated request. Those messages are not subject to a topic filtering at the moment.
@@ -291,6 +306,24 @@ Status response.
   }
 }
 ```
+
+### Data transaction submitted
+
+Data transaction submitted response. It contains transaction **hash** used to correlate transaction with verified data once transaction is included in the block and verified by the light client.
+
+```json
+{
+  "topic": "data-transaction-submitted",
+  "request_id": "{uuid}",
+  "message": {
+    "block_hash": "{block-hash}",
+    "hash": "{transaction-hash}",
+    "index": {transaction-index}
+  }
+}
+```
+
+If **app** mode is not active or signing key is not configured error response is sent with descriptive error message.
 
 ### Errors
 

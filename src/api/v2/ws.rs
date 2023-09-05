@@ -1,4 +1,7 @@
-use super::types::{Clients, Request, RequestType, Response, ResponseTopic, Status, Version};
+use super::{
+	transactions,
+	types::{Clients, Request, RequestType, Response, Status, Transaction, Version, WsResponse},
+};
 use crate::{
 	api::v2::types::Error,
 	rpc::Node,
@@ -6,13 +9,13 @@ use crate::{
 };
 use anyhow::Context;
 use futures::{FutureExt, StreamExt};
-use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{error, info, warn};
 use warp::ws::{self, Message, WebSocket};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn connect(
 	subscription_id: String,
 	web_socket: WebSocket,
@@ -20,6 +23,7 @@ pub async fn connect(
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,
+	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) {
 	let (web_socket_sender, mut web_socket_receiver) = web_socket.split();
@@ -40,48 +44,47 @@ pub async fn connect(
 	}));
 
 	while let Some(result) = web_socket_receiver.next().await {
-		match result {
-			Ok(message) if !message.is_text() => continue,
-			Ok(message) => {
-				if let Some(error) = match <Request>::try_from(message) {
-					Ok(request) => {
-						if let Err(error) = handle_websocket_message(
-							request,
-							sender.clone(),
-							&version,
-							&config,
-							&node,
-							state.clone(),
-						) {
-							error!("Error handling web socket message: {error}");
-							Some(Error::internal_server_error())
-						} else {
-							None
-						}
-					},
-					Err(error) => {
-						warn!("Error handling web socket message: {error}");
-						Some(Error::bad_request(
-							"Error handling web socket message: Failed to parse request"
-								.to_string(),
-						))
-					},
-				} {
-					if let Err(error) = sender.send(Ok(Message::text::<String>(error.into()))) {
-						error!("{error}");
-					};
-				};
-			},
+		let message = match result {
 			Err(error) => {
 				error!("Error receiving client message: {error}");
+				continue;
 			},
+			Ok(message) if !message.is_text() => continue,
+			Ok(message) => message,
+		};
+
+		let request = match Request::try_from(message) {
+			Err(error) => {
+				warn!("Error handling web socket message: {error}");
+				let error =
+					Error::bad_request_unknown(&format!("Failed to parse request: {error}"));
+				if let Err(error) = send_response(sender.clone(), error.into()) {
+					error!("Failed to send error: {error}");
+				}
+				continue;
+			},
+			Ok(request) => request,
+		};
+
+		let submitter = submitter.clone();
+		let state = state.clone();
+
+		let response = handle_request(request, &version, &config, &node, submitter, state)
+			.await
+			.unwrap_or_else(|error| {
+				error!("Error handling web socket message: {error}");
+				Error::internal_server_error().into()
+			});
+
+		if let Err(error) = send_response(sender.clone(), response) {
+			error!("Failed to send response: {error}");
 		}
 	}
 }
 
-fn send_websocket_message<T: Serialize>(
+fn send_response(
 	sender: UnboundedSender<Result<Message, warp::Error>>,
-	response: Response<T>,
+	response: WsResponse,
 ) -> anyhow::Result<()> {
 	let message = serde_json::to_string(&response)
 		.map(ws::Message::text)
@@ -94,38 +97,40 @@ fn send_websocket_message<T: Serialize>(
 	Ok(())
 }
 
-fn handle_websocket_message(
+async fn handle_request(
 	request: Request,
-	sender: UnboundedSender<Result<Message, warp::Error>>,
 	version: &Version,
 	config: &RuntimeConfig,
 	node: &Node,
+	submitter: Option<Arc<impl transactions::Submit>>,
 	state: Arc<Mutex<State>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<WsResponse> {
+	let request_id = request.request_id;
 	match request.request_type {
-		RequestType::Version => send_websocket_message(
-			sender,
-			Response {
-				topic: ResponseTopic::Version,
-				request_id: request.request_id,
-				message: version.clone(),
-			},
-		)?,
+		RequestType::Version => Ok(Response::new(request_id, version.clone()).into()),
 		RequestType::Status => {
 			let state = state.lock().expect("Cannot acquire state lock");
 
 			let status = Status::new(config, node, &state);
-
-			send_websocket_message(
-				sender,
-				Response {
-					topic: ResponseTopic::Status,
-					request_id: request.request_id,
-					message: status,
-				},
-			)?;
+			Ok(Response::new(request_id, status).into())
 		},
-	};
+		RequestType::Submit => {
+			let Some(submitter) = submitter else {
+				let message = "Submit feature is not configured.";
+				return Ok(Error::bad_request(request_id, message).into());
+			};
+			let Some(transaction) = request.message else {
+				return Ok(Error::bad_request(request_id, "Message is empty.").into());
+			};
+			if transaction.is_empty() {
+				return Ok(Error::bad_request(request_id, "Transaction is empty.").into());
+			}
+			if matches!(transaction, Transaction::Data(_)) && !submitter.has_signer() {
+				return Ok(Error::bad_request(request_id, "Signer is not configured.").into());
+			};
 
-	Ok(())
+			let submit_response = submitter.submit(transaction).await?;
+			Ok(Response::new(request_id, submit_response).into())
+		},
+	}
 }
