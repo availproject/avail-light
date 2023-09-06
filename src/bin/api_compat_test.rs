@@ -14,7 +14,12 @@ async fn main() -> Result<()> {
 	let CommandArgs { url } = CommandArgs::parse();
 
 	println!("Using URL: {url}");
-	let rpc = avail_light::rpc::RpcClient::new(vec![url], EXPECTED_NETWORK_VERSION, None)
+
+	let backoff = backoff::ExponentialBackoffBuilder::new()
+		.with_max_elapsed_time(Some(std::time::Duration::from_secs(20)))
+		.build();
+
+	let rpc = avail_light::rpc::RpcClient::new(vec![url], EXPECTED_NETWORK_VERSION, None, backoff)
 		.await
 		.unwrap_or_else(|e| {
 			eprintln!("Couldn't establish connection with node: {e}");

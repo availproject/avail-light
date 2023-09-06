@@ -233,6 +233,8 @@ pub struct RuntimeConfig {
 	pub ot_collector_endpoint: String,
 	/// Disables fetching of cells from RPC, set to true if client expects cells to be available in DHT (default: false).
 	pub disable_rpc: bool,
+	/// Timeout during which light client tries to connect to full nodes. (default: 60s).
+	pub rpc_rotation_max_elapsed_time: Duration,
 	/// Disables proof verification in general, if set to true, otherwise proof verification is performed. (default: false).
 	pub disable_proof_verification: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
@@ -530,6 +532,7 @@ impl Default for RuntimeConfig {
 			log_format_json: false,
 			ot_collector_endpoint: "http://otelcollector.avail.tools:4317".to_string(),
 			disable_rpc: false,
+			rpc_rotation_max_elapsed_time: Duration::from_secs(60),
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,
 			put_batch_size: 100,

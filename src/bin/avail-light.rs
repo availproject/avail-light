@@ -234,10 +234,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
+	let backoff = backoff::ExponentialBackoffBuilder::new()
+		.with_max_elapsed_time(Some(cfg.rpc_rotation_max_elapsed_time))
+		.build();
+
 	let rpc = avail_light::rpc::RpcClient::new(
 		cfg.full_node_ws.clone(),
 		EXPECTED_NETWORK_VERSION,
 		Some(db.clone()),
+		backoff,
 	)
 	.await
 	.context("Failed to create rpc client")?;

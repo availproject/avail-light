@@ -119,6 +119,7 @@ impl RpcClient {
 		nodes: Vec<String>,
 		expected_version: ExpectedVersion<'static>,
 		db: Option<Arc<DB>>,
+		backoff: backoff::ExponentialBackoff,
 	) -> Result<Self> {
 		let expected_genesis_hash = if let Some(db) = &db {
 			crate::data::get_genesis_hash(db.clone())?
@@ -138,9 +139,6 @@ impl RpcClient {
 			}
 		}
 
-		let backoff = backoff::ExponentialBackoffBuilder::new()
-			.with_max_elapsed_time(Some(std::time::Duration::from_secs(20)))
-			.build();
 		Ok(Self {
 			client: Arc::new(RwLock::new((client, node))),
 			nodes,
