@@ -161,6 +161,7 @@ impl RpcClient {
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
 	{
+		// Try with current client
 		match f(self.current_client().await).await {
 			Ok(ok) => return Ok(ok),
 			Err(error) => {
@@ -172,16 +173,19 @@ impl RpcClient {
 		let (ok, client) = backoff::future::retry(self.backoff.clone(), || async {
 			let mut f = f;
 			let mut nodes = self.nodes.clone();
+			// Shuffle nodes discarding the last one
 			Self::shuffle_full_nodes(&mut nodes, Some(&last_node.host));
+			// Trying to find some node which is available
 			let (client, node) = Self::connect_to_available_rpc(
 				&nodes,
 				&self.expected_version,
 				Some(last_node.genesis_hash),
 			)
 			.await
-			.map_err(backoff::Error::permanent)?;
+			.map_err(backoff::Error::transient)?;
 
 			match f(client.clone()).await {
+				// If closure works then we found a new working full node
 				Ok(ok) => Ok((ok, (client, node))),
 				Err(error) => {
 					warn!(%error, "Failed to connect to node. Trying to reach to another one");
@@ -192,10 +196,12 @@ impl RpcClient {
 		.await
 		.context("Failed to reach to any node")?;
 
+		// Update last full node in DB
 		if let Some(db) = &self.db {
 			crate::data::store_last_full_node_ws_in_db(db.clone(), client.1.host.clone())?;
 		}
 
+		// And in structure
 		*self.client.write().await = client;
 
 		Ok(ok)
