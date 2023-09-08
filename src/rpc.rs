@@ -224,7 +224,12 @@ impl RpcClient {
 						return;
 					}
 				};
-				while let Some(Ok(res)) = stream.next().await {
+
+				loop {
+					// We need to return, as stream has ended
+					let Some(result) = stream.next().await else { return };
+					// If we received error that means that we need to find a new client
+					let Ok(res) = result else { break };
 					yield Ok(res);
 				}
 			}
