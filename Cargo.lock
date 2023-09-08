@@ -436,8 +436,8 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avail-core"
-version = "0.5.0"
-source = "git+https://github.com/availproject/avail-core?tag=avail-core/v0.5.0#3e972524dce089d73140a2e32c83084e5c9c418c"
+version = "0.5.1"
+source = "git+https://github.com/availproject/avail-core?branch=main#1c341788275f88aa334c1d674eb029403fa45c52"
 dependencies = [
  "beefy-merkle-tree",
  "derive_more",
@@ -448,13 +448,13 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic 17.0.0",
- "sp-core 22.0.0",
- "sp-io 24.0.0",
+ "sp-arithmetic 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sp-core 7.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sp-io 7.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp-runtime 7.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp-runtime-interface 7.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "sp-std 9.0.0",
- "sp-trie 23.0.0",
+ "sp-std 5.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sp-trie 7.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "static_assertions",
  "thiserror-no-std",
 ]
@@ -505,7 +505,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec 1.11.0",
- "sp-arithmetic 17.0.0",
+ "sp-arithmetic 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp-core 22.0.0",
  "tempdir",
  "test-case",
@@ -525,7 +525,7 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.3.0"
-source = "git+https://github.com/availproject/avail.git?tag=v1.6.3#b4feb4aef5af12931287247c73edb44fd8a72811"
+source = "git+https://github.com/availproject/avail.git?branch=develop#0958c6ed499497b70a33ab072dcbe86c762f3976"
 dependencies = [
  "anyhow",
  "curve25519-dalek 2.1.3",
@@ -539,7 +539,7 @@ dependencies = [
  "schnorrkel",
  "serde",
  "serde-hex",
- "sp-core 22.0.0",
+ "sp-core 21.0.0",
  "structopt",
  "subxt",
  "tokio",
@@ -2984,8 +2984,8 @@ dependencies = [
 
 [[package]]
 name = "kate-recovery"
-version = "0.9.0"
-source = "git+https://github.com/availproject/avail-core?tag=avail-core/v0.5.0#3e972524dce089d73140a2e32c83084e5c9c418c"
+version = "0.9.1"
+source = "git+https://github.com/availproject/avail-core?branch=main#1c341788275f88aa334c1d674eb029403fa45c52"
 dependencies = [
  "avail-core",
  "derive_more",
@@ -2996,8 +2996,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
- "sp-arithmetic 17.0.0",
- "sp-std 9.0.0",
+ "sp-arithmetic 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sp-std 5.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "static_assertions",
  "thiserror-no-std",
 ]
@@ -6211,21 +6211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-arithmetic"
-version = "17.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0241327405688cac3fcc29114fd35f99224e321daa37e19920e50e4b2fdd0645"
-dependencies = [
- "integer-sqrt",
- "num-traits",
- "parity-scale-codec",
- "scale-info",
- "serde",
- "sp-std 9.0.0",
- "static_assertions",
-]
-
-[[package]]
 name = "sp-beefy"
 version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v0.9.37#6fa7fe1326ecaab9921c2c3888530ad679cfbb87"
@@ -6799,32 +6784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-io"
-version = "24.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff6194309bfe055d93177c6c9d2ed4c7b66040617cf3003a15e509c432cf3b62"
-dependencies = [
- "bytes",
- "ed25519 1.5.3",
- "ed25519-dalek 1.0.1",
- "libsecp256k1",
- "log",
- "parity-scale-codec",
- "rustversion",
- "secp256k1",
- "sp-core 22.0.0",
- "sp-externalities 0.20.0",
- "sp-keystore 0.28.0",
- "sp-runtime-interface 18.0.0",
- "sp-state-machine 0.29.0",
- "sp-std 9.0.0",
- "sp-tracing 11.0.0",
- "sp-trie 23.0.0",
- "tracing",
- "tracing-core",
-]
-
-[[package]]
 name = "sp-keystore"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6889,19 +6848,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-keystore"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6eda1d2572a15340927a9f7db75ffe74366b645eaf9212015b4a96ad8e9d4c46"
-dependencies = [
- "parity-scale-codec",
- "parking_lot 0.12.1",
- "sp-core 22.0.0",
- "sp-externalities 0.20.0",
- "thiserror",
-]
-
-[[package]]
 name = "sp-mmr-primitives"
 version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v0.9.37#6fa7fe1326ecaab9921c2c3888530ad679cfbb87"
@@ -6956,17 +6902,6 @@ name = "sp-panic-handler"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebd2de46003fa8212426838ca71cd42ee36a26480ba9ffea983506ce03131033"
-dependencies = [
- "backtrace",
- "lazy_static",
- "regex",
-]
-
-[[package]]
-name = "sp-panic-handler"
-version = "9.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c67eb0a0d11d3017ef43c975068ba76c7b0e83aca1ee3d68ba0ce270ecebe7"
 dependencies = [
  "backtrace",
  "lazy_static",
@@ -7324,28 +7259,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-state-machine"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2e84d8ed3acc6aed5a3d5cfd500fb5b99c1e299c86086b2fe82c3e4be93178f"
-dependencies = [
- "hash-db 0.16.0",
- "log",
- "parity-scale-codec",
- "parking_lot 0.12.1",
- "rand 0.8.5",
- "smallvec 1.11.0",
- "sp-core 22.0.0",
- "sp-externalities 0.20.0",
- "sp-panic-handler 9.0.0",
- "sp-std 9.0.0",
- "sp-trie 23.0.0",
- "thiserror",
- "tracing",
- "trie-db 0.27.1",
-]
-
-[[package]]
 name = "sp-std"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7596,30 +7509,6 @@ dependencies = [
  "schnellru",
  "sp-core 21.0.0",
  "sp-std 8.0.0",
- "thiserror",
- "tracing",
- "trie-db 0.27.1",
- "trie-root 0.18.0",
-]
-
-[[package]]
-name = "sp-trie"
-version = "23.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf63ea90ffb5d61048d8fb2fac669114dac198fc2739e913e615f0fd2c36c3e7"
-dependencies = [
- "ahash 0.8.3",
- "hash-db 0.16.0",
- "hashbrown 0.13.2",
- "lazy_static",
- "memory-db 0.32.0",
- "nohash-hasher",
- "parity-scale-codec",
- "parking_lot 0.12.1",
- "scale-info",
- "schnellru",
- "sp-core 22.0.0",
- "sp-std 9.0.0",
  "thiserror",
  "tracing",
  "trie-db 0.27.1",
