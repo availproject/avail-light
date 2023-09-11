@@ -82,15 +82,23 @@ impl RpcClient {
 		Ok((client, node))
 	}
 
-	async fn connect_to_available_rpc(
+	async fn connect_to_available_rpc_and_return_call<T, F, Fut>(
 		full_nodes: &[String],
 		expected_version: &ExpectedVersion<'static>,
 		expected_genesis_hash: Option<H256>,
-	) -> Result<(avail::Client, Node)> {
+		mut f: F,
+	) -> Result<(avail::Client, Node, T)>
+	where
+		F: FnMut(avail::Client) -> Fut + Copy,
+		Fut: std::future::Future<Output = Result<T>>,
+	{
 		full_nodes
 			.iter()
 			.map(|address| {
 				Self::connect(address, expected_version, expected_genesis_hash)
+					.and_then(move |(client, node)| {
+						f(client.clone()).map_ok(|ret| (client, node, ret))
+					})
 					.inspect_err(move |error| warn!(address, %error, "Skipping connection"))
 			})
 			.collect::<futures::stream::FuturesUnordered<_>>()
@@ -126,9 +134,13 @@ impl RpcClient {
 		} else {
 			None
 		};
-		let (client, node) =
-			Self::connect_to_available_rpc(&nodes, &expected_version, expected_genesis_hash)
-				.await?;
+		let (client, node, ()) = Self::connect_to_available_rpc_and_return_call(
+			&nodes,
+			&expected_version,
+			expected_genesis_hash,
+			|_| futures::future::ok(()),
+		)
+		.await?;
 
 		info!(?node.genesis_hash);
 		if let Some(db) = &db {
@@ -170,39 +182,31 @@ impl RpcClient {
 		}
 		let last_node = self.current_node().await;
 
-		let (ok, client) = backoff::future::retry(self.backoff.clone(), || async {
+		let (client, node, ok) = backoff::future::retry(self.backoff.clone(), || async {
 			let mut f = f;
 			let mut nodes = self.nodes.clone();
 			// Shuffle nodes discarding the last one
 			Self::shuffle_full_nodes(&mut nodes, Some(&last_node.host));
 			// Trying to find some node which is available
-			let (client, node) = Self::connect_to_available_rpc(
+			Self::connect_to_available_rpc_and_return_call(
 				&nodes,
 				&self.expected_version,
 				Some(last_node.genesis_hash),
+				move |cl| f(cl).map_err(anyhow::Error::from),
 			)
 			.await
-			.map_err(backoff::Error::transient)?;
-
-			match f(client.clone()).await {
-				// If closure works then we found a new working full node
-				Ok(ok) => Ok((ok, (client, node))),
-				Err(error) => {
-					warn!(%error, "Failed to connect to node. Trying to reach to another one");
-					Err(backoff::Error::transient(anyhow::Error::from(error)))
-				},
-			}
+			.map_err(backoff::Error::transient)
 		})
 		.await
 		.context("Failed to reach to any node")?;
 
 		// Update last full node in DB
 		if let Some(db) = &self.db {
-			crate::data::store_last_full_node_ws_in_db(db.clone(), client.1.host.clone())?;
+			crate::data::store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
 		}
 
 		// And in structure
-		*self.client.write().await = client;
+		*self.client.write().await = (client, node);
 
 		Ok(ok)
 	}
