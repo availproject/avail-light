@@ -1,6 +1,7 @@
 use anyhow::Context;
 use avail_subxt::api::runtime_types::sp_core::bounded::bounded_vec::BoundedVec;
 use base64::{engine::general_purpose, DecodeError, Engine};
+use derive_more::From;
 use hyper::{http, StatusCode};
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
@@ -357,35 +358,11 @@ pub fn handle_result(result: Result<impl Reply, impl Reply>) -> impl Reply {
 	}
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, From)]
 #[serde(tag = "topic", rename_all = "kebab-case")]
 pub enum WsResponse {
 	Error(Error),
 	Version(Response<Version>),
 	Status(Response<Status>),
 	DataTransactionSubmitted(Response<SubmitResponse>),
-}
-
-impl From<Response<Version>> for WsResponse {
-	fn from(value: Response<Version>) -> Self {
-		WsResponse::Version(value)
-	}
-}
-
-impl From<Response<Status>> for WsResponse {
-	fn from(value: Response<Status>) -> Self {
-		WsResponse::Status(value)
-	}
-}
-
-impl From<Response<SubmitResponse>> for WsResponse {
-	fn from(value: Response<SubmitResponse>) -> Self {
-		WsResponse::DataTransactionSubmitted(value)
-	}
-}
-
-impl From<Error> for WsResponse {
-	fn from(value: Error) -> Self {
-		WsResponse::Error(value)
-	}
 }
