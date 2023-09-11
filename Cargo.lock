@@ -472,6 +472,7 @@ dependencies = [
  "chrono",
  "clap 4.3.23",
  "confy",
+ "derive_more",
  "dusk-plonk",
  "futures",
  "hex",
