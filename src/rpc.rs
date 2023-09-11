@@ -220,7 +220,7 @@ impl RpcClient {
 		Ok(ok)
 	}
 
-	pub fn with_client_subscribe<T, F, Fut>(self, f: F) -> impl Stream<Item = anyhow::Result<T>>
+	fn with_client_subscribe<T, F, Fut>(self, f: F) -> impl Stream<Item = anyhow::Result<T>>
 	where
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<
@@ -247,6 +247,29 @@ impl RpcClient {
 				}
 			}
 		}
+	}
+
+	pub fn subscribe_finalized_block_headers(
+		self,
+	) -> impl Stream<Item = anyhow::Result<avail_subxt::primitives::Header>> {
+		self.with_client_subscribe(|client| async move {
+			client.rpc().subscribe_finalized_block_headers().await
+		})
+	}
+
+	pub fn subscribe_grandpa_justifications(
+		self,
+	) -> impl Stream<Item = anyhow::Result<GrandpaJustification>> {
+		self.with_client_subscribe(|client| async move {
+			client
+				.rpc()
+				.subscribe(
+					"grandpa_subscribeJustifications",
+					avail_subxt::rpc::rpc_params![],
+					"grandpa_unsubscribeJustifications",
+				)
+				.await
+		})
 	}
 
 	pub async fn get_block_hash(&self, block: u32) -> Result<H256> {

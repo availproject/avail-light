@@ -1,8 +1,5 @@
 use anyhow::{anyhow, Result};
-use avail_subxt::{
-	primitives::{grandpa::AuthorityId, Header},
-	rpc::rpc_params,
-};
+use avail_subxt::primitives::{grandpa::AuthorityId, Header};
 use codec::Encode;
 use futures::prelude::*;
 use rocksdb::DB;
@@ -51,9 +48,6 @@ async fn subscribe_check_and_process(
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 ) -> Result<()> {
-	let header_subscription = rpc.clone().with_client_subscribe(|client| async move {
-		client.rpc().subscribe_finalized_block_headers().await
-	});
 	// Get the hash of the head (finalized)
 	let last_finalized_block_hash = rpc.get_chain_head_hash().await?;
 
@@ -75,6 +69,7 @@ async fn subscribe_check_and_process(
 	tokio::spawn({
 		let msg_sender = msg_sender.clone();
 		let state = state.clone();
+		let header_subscription = rpc.clone().subscribe_finalized_block_headers();
 		async move {
 			futures::pin_mut!(header_subscription);
 			while let Some(Ok(header)) = header_subscription.next().await {
@@ -110,27 +105,17 @@ async fn subscribe_check_and_process(
 		}
 	});
 
-	// Subscribe to justifications.
-	let justification_subscription = rpc
-		.clone()
-		.with_client_subscribe::<GrandpaJustification, _, _>(|client| async move {
-			client
-				.rpc()
-				.subscribe(
-					"grandpa_subscribeJustifications",
-					rpc_params![],
-					"grandpa_unsubscribeJustifications",
-				)
-				.await
-		});
-
 	// Task that produces justifications concurrently and just passes the justification to the main task.
-	tokio::spawn(async move {
-		futures::pin_mut!(justification_subscription);
-		while let Some(Ok(justification)) = justification_subscription.next().await {
-			msg_sender
-				.send(Messages::Justification(justification))
-				.expect("Receiver should not be dropped.");
+	tokio::spawn({
+		// Subscribe to justifications.
+		let justification_subscription = rpc.clone().subscribe_grandpa_justifications();
+		async move {
+			futures::pin_mut!(justification_subscription);
+			while let Some(Ok(justification)) = justification_subscription.next().await {
+				msg_sender
+					.send(Messages::Justification(justification))
+					.expect("Receiver should not be dropped.");
+			}
 		}
 	});
 
