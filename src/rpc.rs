@@ -227,7 +227,7 @@ impl RpcClient {
 		T: serde::de::DeserializeOwned,
 	{
 		async_stream::stream! {
-			loop {
+			'outer: loop  {
 				let mut stream = match self.with_client(f).await {
 					Ok(s) => s,
 					Err(err) => {
@@ -240,7 +240,7 @@ impl RpcClient {
 					// We need to return, as stream has ended
 					let Some(result) = stream.next().await else { return };
 					// If we received error that means that we need to find a new client
-					let Ok(res) = result else { break };
+					let Ok(res) = result else { continue 'outer };
 					yield Ok(res);
 				}
 			}
