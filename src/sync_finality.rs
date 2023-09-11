@@ -1,22 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
-use avail_subxt::{
-	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
-	primitives::Header,
-	rpc::rpc_params,
-};
+use avail_subxt::{api::runtime_types::sp_core::crypto::KeyTypeId, primitives::Header};
 use codec::{Decode, Encode};
-use futures::future::join_all;
+use futures::prelude::*;
+use futures::stream::FuturesUnordered;
 use rocksdb::DB;
-use serde::de::{self};
+use serde::de;
 use serde::Deserialize;
-use sp_core::{
-	blake2_256,
-	bytes::from_hex,
-	ed25519::{self},
-	twox_128, Pair, H256,
-};
+use sp_core::{blake2_256, bytes::from_hex, ed25519, Pair, H256};
 // use subxt::rpc_params;
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
@@ -87,79 +79,35 @@ pub fn new(db: Arc<DB>, rpc_client: RpcClient) -> impl SyncFinality {
 	SyncFinalityImpl { db, rpc_client }
 }
 
-const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
-const GRANDPA_KEY_LEN: usize = 32;
-
 async fn get_valset_at_genesis(
 	rpc_client: RpcClient,
 	genesis_hash: H256,
 ) -> Result<Vec<ed25519::Public>> {
-	let mut k1 = twox_128("Session".as_bytes()).to_vec();
-	let mut k2 = twox_128("KeyOwner".as_bytes()).to_vec();
-	k1.append(&mut k2);
-
 	// Get validator set from genesis (Substrate Account ID)
 	let validator_set_pre = rpc_client
-		.with_client(move |client| async move {
-			let validators_key = api::storage().session().validators();
-			client
-				.storage()
-				.at(genesis_hash)
-				.fetch(&validators_key)
-				.await
-		})
-		.await
-		.context("Couldn't get initial validator set")?
+		.get_session_valset_by_hash(genesis_hash)
+		.await?
 		.ok_or_else(|| anyhow!("Validator set is empty!"))?;
 
 	// Get all grandpa session keys from genesis (GRANDPA ed25519 keys)
 	let grandpa_keys_and_account = rpc_client
-		.with_client(|client| {
-			let k1 = k1.clone();
-			async move {
-				client
-					.rpc()
-					// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
-					// Perhaps there is a better way, but I don't know it
-					.storage_keys_paged(&k1, 1000, None, Some(genesis_hash))
-					.await
-			}
-		})
-		.await
-		.context("Couldn't get storage keys associated with key owners!")?
-		.into_iter()
-		// throw away the beginning, we don't need it
-		.map(|e| e.0[k1.len()..].to_vec())
-		.filter(|e| {
-			// exclude the actual key (at the end of the storage key) from search, we may find "gran" by accident
-			e[..(e.len() - GRANDPA_KEY_LEN)]
-				.windows(GRANDPA_KEY_ID.len())
-				.any(|e| e == GRANDPA_KEY_ID)
-		})
-		.map(|e| e.as_slice()[e.len() - GRANDPA_KEY_LEN..].to_vec())
-		.map(|e| ed25519::Public::from_raw(e.try_into().expect("Vector isn't 32 bytes long")))
+		.all_grandpa_session_keys_since(genesis_hash)
+		.await?
 		.map(|e| {
-			let c = rpc_client.clone();
-			async move {
-				let k = c
-					.with_client(|client| async move {
-						let session_key_key_owner = api::storage()
-							.session()
-							.key_owner(KeyTypeId(sp_core::crypto::key_types::GRANDPA.0), e.0);
-						client
-							.storage()
-							.at(genesis_hash)
-							.fetch(&session_key_key_owner)
-							.await
-					})
-					.await
-					.expect("Couldn't get session key owner for grandpa key!")
-					.expect("Result is empty (grandpa key has no owner?)");
-				(e, k)
-			}
-		});
-
-	let grandpa_keys_and_account = join_all(grandpa_keys_and_account).await;
+			rpc_client
+				.get_session_key_owner(
+					KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
+					e,
+					genesis_hash,
+				)
+				.map_ok(move |maybe_k| maybe_k.map(|k| (e, k)))
+		})
+		.collect::<FuturesUnordered<_>>()
+		.try_collect::<Vec<_>>()
+		.await?
+		.into_iter()
+		.collect::<Option<Vec<_>>>()
+		.expect("Result is empty (grandpa key has no owner?)");
 
 	// Filter just the keys that are found in the initial validator set
 	let validator_set = grandpa_keys_and_account
@@ -206,12 +154,8 @@ pub async fn sync_finality(
 		validator_set = get_valset_at_genesis(rpc_client.clone(), gen_hash).await?;
 		// Get set_id from genesis. Should be 0.
 		set_id = rpc_client
-			.with_client(|client| async move {
-				let set_id_key = api::storage().grandpa().current_set_id();
-				client.storage().at(gen_hash).fetch(&set_id_key).await
-			})
-			.await
-			.context(format!("Couldn't get set_id at {}", gen_hash))?
+			.get_grandpa_set_id(gen_hash)
+			.await?
 			.context("Set_id is empty?")?;
 		info!("Set ID at genesis is {set_id}");
 	}
@@ -244,18 +188,9 @@ pub async fn sync_finality(
 			continue;
 		}
 
-		let proof: WrappedProof = rpc_client
-			.with_client(|client| async move {
-				client
-					.rpc()
-					.request("grandpa_proveFinality", rpc_params![curr_block_num])
-					.await
-			})
-			.await
-			.context(format!(
-				"Couldn't get finality proof for block no. {}",
-				curr_block_num
-			))?;
+		let proof = rpc_client
+			.get_grandpa_finality_proof(curr_block_num)
+			.await?;
 		let proof_block_hash = proof.0.block;
 		let p_h = rpc_client
 			.get_header_by_hash(proof_block_hash)

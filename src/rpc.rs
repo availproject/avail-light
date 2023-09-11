@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use avail_subxt::utils::AccountId32;
 use avail_subxt::{
 	avail, build_client,
 	primitives::Header as DaHeader,
@@ -22,6 +23,7 @@ use std::{collections::HashSet, fmt::Display};
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
+use crate::sync_finality::WrappedProof;
 use crate::{consts::EXPECTED_NETWORK_VERSION, types::*};
 
 #[derive(Debug, Clone)]
@@ -169,7 +171,7 @@ impl RpcClient {
 		self.client.read().await.1.clone()
 	}
 
-	pub async fn with_client<F, Fut, T>(&self, mut f: F) -> Result<T>
+	async fn with_client<F, Fut, T>(&self, mut f: F) -> Result<T>
 	where
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
@@ -263,6 +265,7 @@ impl RpcClient {
 			.await?
 			.ok_or_else(|| anyhow!("Header with hash {hash:?} not found"))
 	}
+
 	pub async fn get_valset_by_hash(&self, hash: H256) -> Result<Vec<ed25519::Public>> {
 		let grandpa_valset: Vec<(ed25519::Public, u64)> = self
 			.with_client(move |client| async move {
@@ -281,6 +284,104 @@ impl RpcClient {
 	pub async fn get_valset_by_block_number(&self, block: u32) -> Result<Vec<ed25519::Public>> {
 		let hash = self.get_block_hash(block).await?;
 		self.get_valset_by_hash(hash).await
+	}
+
+	pub async fn get_session_valset_by_hash(&self, hash: H256) -> Result<Option<Vec<AccountId32>>> {
+		self.with_client(move |client| async move {
+			let validators_key = avail_subxt::api::storage().session().validators();
+			client.storage().at(hash).fetch(&validators_key).await
+		})
+		.await
+		.context("Couldn't get initial validator set")
+	}
+
+	fn storage_key(keys: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Vec<u8> {
+		let mut storage_key = Vec::new();
+		for k in keys {
+			storage_key.extend_from_slice(&sp_core::twox_128(k.as_ref()));
+		}
+		storage_key
+	}
+
+	pub async fn all_grandpa_session_keys_since(
+		&self,
+		hash: H256,
+	) -> Result<impl Iterator<Item = ed25519::Public>> {
+		const GRANDPA_KEY_ID: [u8; 4] = *b"gran";
+		const GRANDPA_KEY_LEN: usize = 32;
+
+		let key = Self::storage_key(["Session".as_bytes(), b"KeyOwner"]);
+
+		let keys = self
+			.with_client(|client| {
+				let key = &key;
+				async move {
+					// TODO: Check paging
+					client
+						.rpc()
+						// Get all storage keys that correspond to Session_KeyOwner query, then filter by "gran"
+						// Perhaps there is a better way, but I don't know it
+						.storage_keys_paged(key, 1000, None, Some(hash))
+						.await
+				}
+			})
+			.await
+			.context("Couldn't get storage keys associated with key owners!")?
+			.into_iter()
+			// throw away the beginning, we don't need it
+			.map(move |e| e.0[key.len()..].to_vec())
+			.filter(|e| {
+				// exclude the actual key (at the end of the storage key) from search, we may find "gran" by accident
+				e[..(e.len() - GRANDPA_KEY_LEN)]
+					.windows(GRANDPA_KEY_ID.len())
+					.any(|e| e == GRANDPA_KEY_ID)
+			})
+			.map(|e| e.as_slice()[e.len() - GRANDPA_KEY_LEN..].to_vec())
+			.map(|e| ed25519::Public::from_raw(e.try_into().expect("Vector isn't 32 bytes long")));
+
+		Ok(keys)
+	}
+
+	pub async fn get_session_key_owner(
+		&self,
+		key_type: avail_subxt::api::runtime_types::sp_core::crypto::KeyTypeId,
+		key: ed25519::Public,
+		at: H256,
+	) -> Result<Option<AccountId32>> {
+		self.with_client(|client| {
+			let key_type = key_type.clone();
+			async move {
+				let session_key_key_owner = avail_subxt::api::storage()
+					.session()
+					.key_owner(key_type, key.0);
+				client.storage().at(at).fetch(&session_key_key_owner).await
+			}
+		})
+		.await
+		.context("Couldn't get session key owner for grandpa key!")
+	}
+
+	pub async fn get_grandpa_finality_proof(&self, block_n: u32) -> Result<WrappedProof> {
+		self.with_client(|client| async move {
+			client
+				.rpc()
+				.request(
+					"grandpa_proveFinality",
+					avail_subxt::rpc::rpc_params![block_n],
+				)
+				.await
+		})
+		.await
+		.with_context(|| format!("Couldn't get finality proof for block no. {block_n}",))
+	}
+
+	pub async fn get_grandpa_set_id(&self, at: H256) -> Result<Option<u64>> {
+		self.with_client(|client| async move {
+			let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+			client.storage().at(at).fetch(&set_id_key).await
+		})
+		.await
+		.with_context(|| format!("Couldn't get set_id at {at}"))
 	}
 
 	/// RPC for obtaining header of latest finalized block mined by network
