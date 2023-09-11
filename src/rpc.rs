@@ -10,6 +10,7 @@ use avail_subxt::{
 	utils::H256,
 };
 use futures::prelude::*;
+use itertools::Either;
 use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
@@ -173,17 +174,16 @@ impl RpcClient {
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T, subxt::error::Error>>,
 	{
-		// Try with current client
-		match f(self.current_client().await).await {
-			Ok(ok) => return Ok(ok),
-			Err(error) => {
-				warn!(%error, "Failed to connect to node. Trying to reach to another one");
-			},
-		}
-		let last_node = self.current_node().await;
+		let either = backoff::future::retry(self.backoff.clone(), move || async move {
+			// Try with current client
+			match f(self.current_client().await).await {
+				Ok(ok) => return Ok(Either::Left(ok)),
+				Err(error) => {
+					warn!(%error, "Failed to connect to node. Trying to reach to another one");
+				},
+			}
+			let last_node = self.current_node().await;
 
-		let (client, node, ok) = backoff::future::retry(self.backoff.clone(), || async {
-			let mut f = f;
 			let mut nodes = self.nodes.clone();
 			// Shuffle nodes discarding the last one
 			Self::shuffle_full_nodes(&mut nodes, Some(&last_node.host));
@@ -196,9 +196,16 @@ impl RpcClient {
 			)
 			.await
 			.map_err(backoff::Error::transient)
+			.map(Either::Right)
 		})
 		.await
 		.context("Failed to reach to any node")?;
+
+		let (client, node, ok) = match either {
+			// If current client succeeded we don't need to update DB and structure
+			Either::Left(ok) => return Ok(ok),
+			Either::Right(ret) => ret,
+		};
 
 		// Update last full node in DB
 		if let Some(db) = &self.db {
