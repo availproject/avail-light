@@ -1,6 +1,6 @@
 use super::{
 	transactions,
-	types::{Clients, Request, RequestType, Response, Status, Transaction, Version, WsResponse},
+	types::{Clients, Payload, Request, Response, Status, Transaction, Version, WsResponse},
 };
 use crate::{
 	api::v2::types::Error,
@@ -106,21 +106,16 @@ async fn handle_request(
 	state: Arc<Mutex<State>>,
 ) -> anyhow::Result<WsResponse> {
 	let request_id = request.request_id;
-	match request.request_type {
-		RequestType::Version => Ok(Response::new(request_id, version.clone()).into()),
-		RequestType::Status => {
-			let state = state.lock().expect("Cannot acquire state lock");
-
+	match request.payload {
+		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
+		Payload::Status => {
+			let state = state.lock().expect("State lock can be acquired");
 			let status = Status::new(config, node, &state);
 			Ok(Response::new(request_id, status).into())
 		},
-		RequestType::Submit => {
+		Payload::Submit(transaction) => {
 			let Some(submitter) = submitter else {
-				let message = "Submit feature is not configured.";
-				return Ok(Error::bad_request(request_id, message).into());
-			};
-			let Some(transaction) = request.message else {
-				return Ok(Error::bad_request(request_id, "Message is empty.").into());
+				return Ok(Error::bad_request(request_id, "Submit is not configured.").into());
 			};
 			if transaction.is_empty() {
 				return Ok(Error::bad_request(request_id, "Transaction is empty.").into());
