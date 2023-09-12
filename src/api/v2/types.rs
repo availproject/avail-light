@@ -244,19 +244,18 @@ impl Reply for SubscriptionId {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RequestType {
+#[serde(tag = "type", content = "message", rename_all = "kebab-case")]
+pub enum Payload {
 	Version,
 	Status,
-	Submit,
+	Submit(Transaction),
 }
 
 #[derive(Deserialize)]
 pub struct Request {
-	#[serde(rename = "type")]
-	pub request_type: RequestType,
+	#[serde(flatten)]
+	pub payload: Payload,
 	pub request_id: Uuid,
-	pub message: Option<Transaction>,
 }
 
 #[derive(Serialize, Deserialize)]
