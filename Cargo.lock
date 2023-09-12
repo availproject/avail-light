@@ -8563,6 +8563,7 @@ checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
 dependencies = [
  "getrandom 0.2.10",
  "rand 0.8.5",
+ "serde",
  "uuid-macro-internal",
 ]
 

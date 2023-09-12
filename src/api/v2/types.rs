@@ -11,6 +11,7 @@ use std::{
 	sync::Arc,
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use uuid::Uuid;
 use warp::{ws, Reply};
 
 use crate::{
@@ -254,18 +255,18 @@ pub enum RequestType {
 pub struct Request {
 	#[serde(rename = "type")]
 	pub request_type: RequestType,
-	pub request_id: String,
+	pub request_id: Uuid,
 	pub message: Option<Transaction>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Response<T> {
-	pub request_id: String,
+	pub request_id: Uuid,
 	pub message: T,
 }
 
 impl<T> Response<T> {
-	pub fn new(request_id: String, message: T) -> Self {
+	pub fn new(request_id: Uuid, message: T) -> Self {
 		Response {
 			request_id,
 			message,
@@ -292,13 +293,13 @@ pub enum ErrorCode {
 #[derive(Serialize, Deserialize)]
 pub struct Error {
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub request_id: Option<String>,
+	pub request_id: Option<Uuid>,
 	pub error_code: ErrorCode,
 	pub message: String,
 }
 
 impl Error {
-	fn new(request_id: Option<String>, error_code: ErrorCode, message: &str) -> Self {
+	fn new(request_id: Option<Uuid>, error_code: ErrorCode, message: &str) -> Self {
 		Error {
 			request_id,
 			error_code,
@@ -322,7 +323,7 @@ impl Error {
 		Self::new(None, ErrorCode::BadRequest, message)
 	}
 
-	pub fn bad_request(request_id: String, message: &str) -> Self {
+	pub fn bad_request(request_id: Uuid, message: &str) -> Self {
 		Self::new(Some(request_id), ErrorCode::BadRequest, message)
 	}
 
