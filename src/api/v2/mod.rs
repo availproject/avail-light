@@ -151,6 +151,7 @@ mod tests {
 	};
 	use test_case::test_case;
 	use tokio::sync::RwLock;
+	use uuid::Uuid;
 	use warp::test::WsClient;
 
 	fn v1() -> Version {
@@ -395,10 +396,10 @@ mod tests {
 	#[tokio::test]
 	async fn ws_route_version() {
 		let mut test = MockSetup::new(RuntimeConfig::default(), None).await;
-		let request = r#"{"type":"version","request_id":"1"}"#;
+		let request = r#"{"type":"version","request_id":"cae63fff-c4b8-4af9-b4fe-0605a5329aa0"}"#;
 		let response = test.ws_send_text(request).await;
 		assert_eq!(
-			r#"{"topic":"version","request_id":"1","message":{"version":"v1.0.0","network_version":"nv1.0.0"}}"#,
+			r#"{"topic":"version","request_id":"cae63fff-c4b8-4af9-b4fe-0605a5329aa0","message":{"version":"v1.0.0","network_version":"nv1.0.0"}}"#,
 			response
 		);
 	}
@@ -431,17 +432,18 @@ mod tests {
 			state.set_sync_data_verified(18);
 		}
 		let expected = format!(
-			r#"{{"topic":"status","request_id":"1","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#
+			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#
 		);
 
-		let status_request = r#"{"type":"status","request_id":"1"}"#;
+		let status_request =
+			r#"{"type":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2"}"#;
 		assert_eq!(expected, test.ws_send_text(status_request).await);
 	}
 
 	#[test_case("",  "Failed to parse request" ; "Empty request")]
 	#[test_case("abcd",  "Failed to parse request" ; "Invalid json")]
 	#[test_case("{}",  "Failed to parse request" ; "Empty json")]
-	#[test_case(r#"{"type":"unknown","request_id":"1","message":""}"#,  "Failed to parse request: Cannot parse json" ; "Wrong request type")]
+	#[test_case(r#"{"type":"unknown","request_id":"11043443-7e4c-4485-a21c-304b457b6cc7","message":""}"#,  "Failed to parse request: Cannot parse json" ; "Wrong request type")]
 	#[tokio::test]
 	async fn ws_route_bad_request(request: &str, expected: &str) {
 		let mut test = MockSetup::new(RuntimeConfig::default(), None).await;
@@ -449,13 +451,17 @@ mod tests {
 		assert!(response.contains(expected));
 	}
 
-	#[test_case(r#"{"type":"submit","request_id":"2","message":{"data":""}}"#, None, Some("2"), "Submit feature is not configured" ; "No submitter")]
-	#[test_case(r#"{"type":"submit","request_id":"3","message":{"data":"dHJhbnNhY3Rpb24K"}}"#, Some(false), Some("3"), "Signer is not configured" ; "No signer")]
-	#[test_case(r#"{"type":"submit","request_id":"4","message":null}"#, Some(false), Some("4"), "Message is empty" ; "Empty message")]
-	#[test_case(r#"{"type":"submit","request_id":"5","message":{"extrinsic":""}}"#, Some(false), Some("5"), "Transaction is empty" ; "Empty extrinsic")]
-	#[test_case(r#"{"type":"submit","request_id":"6","message":{"data":""}}"#, Some(true), Some("6"), "Transaction is empty" ; "Empty data")]
-	#[test_case(r#"{"type":"submit","request_id":"7","message":{"extrinsic":"bad"}}"#, Some(false), None, "Failed to parse request" ; "Bad extrinsic")]
-	#[test_case(r#"{"type":"submit","request_id":"8","message":{"data":"bad"}}"#, Some(true), None, "Failed to parse request" ; "Bad data")]
+	fn to_uuid(uuid: &str) -> Uuid {
+		Uuid::try_parse(uuid).unwrap()
+	}
+
+	#[test_case(r#"{"type":"submit","request_id":"16b24956-2e01-4ba8-bad5-456c561c87d7","message":{"data":""}}"#, None, Some("16b24956-2e01-4ba8-bad5-456c561c87d7"), "Submit feature is not configured" ; "No submitter")]
+	#[test_case(r#"{"type":"submit","request_id":"537a3c39-c029-4283-9612-17465bf7cfd1","message":{"data":"dHJhbnNhY3Rpb24K"}}"#, Some(false), Some("537a3c39-c029-4283-9612-17465bf7cfd1"), "Signer is not configured" ; "No signer")]
+	#[test_case(r#"{"type":"submit","request_id":"533e9c37-2bea-4fd1-9365-c77a0dae9211","message":null}"#, Some(false), Some("533e9c37-2bea-4fd1-9365-c77a0dae9211"), "Message is empty" ; "Empty message")]
+	#[test_case(r#"{"type":"submit","request_id":"36bc1f28-e093-422f-964b-1cb1b3882baf","message":{"extrinsic":""}}"#, Some(false), Some("36bc1f28-e093-422f-964b-1cb1b3882baf"), "Transaction is empty" ; "Empty extrinsic")]
+	#[test_case(r#"{"type":"submit","request_id":"cc60b2f3-d9ff-4c73-9632-d21d07f7b620","message":{"data":""}}"#, Some(true), Some("cc60b2f3-d9ff-4c73-9632-d21d07f7b620"), "Transaction is empty" ; "Empty data")]
+	#[test_case(r#"{"type":"submit","request_id":"9181df86-22f0-42a1-a965-60adb9fc6bdc","message":{"extrinsic":"bad"}}"#, Some(false), None, "Failed to parse request" ; "Bad extrinsic")]
+	#[test_case(r#"{"type":"submit","request_id":"78cd7b7b-ba70-48e9-a1da-96b370db4d8f","message":{"data":"bad"}}"#, Some(true), None, "Failed to parse request" ; "Bad data")]
 	#[tokio::test]
 	async fn ws_route_submit_bad_requests(
 		request: &str,
@@ -464,7 +470,7 @@ mod tests {
 		expected: &str,
 	) {
 		let submitter = signer.map(|has_signer| MockSubmitter { has_signer });
-		let expected_request_id = expected_request_id.map(|value| value.to_string());
+		let expected_request_id = expected_request_id.map(to_uuid);
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 		let response = test.ws_send_text(request).await;
 		let WsResponse::Error(error) = serde_json::from_str(&response).unwrap() else {
@@ -480,7 +486,7 @@ mod tests {
 		let submitter = Some(MockSubmitter { has_signer: true });
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 
-		let request = r#"{"type":"submit","request_id":"1","message":{"data":"dHJhbnNhY3Rpb24K"}}"#;
+		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"data":"dHJhbnNhY3Rpb24K"}}"#;
 		let response = test.ws_send_text(request).await;
 
 		let WsResponse::DataTransactionSubmitted(response) =
@@ -488,7 +494,8 @@ mod tests {
 		else {
 			panic!("Invalid response");
 		};
-		assert_eq!(response.request_id, "1".to_string());
+		let expected_request_id = to_uuid("fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a");
+		assert_eq!(response.request_id, expected_request_id);
 		assert_eq!(response.message.index, 0);
 	}
 
@@ -497,8 +504,7 @@ mod tests {
 		let submitter = Some(MockSubmitter { has_signer: true });
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 
-		let request =
-			r#"{"type":"submit","request_id":"1","message":{"extrinsic":"dHJhbnNhY3Rpb24K"}}"#;
+		let request = r#"{"type":"submit","request_id":"fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a","message":{"extrinsic":"dHJhbnNhY3Rpb24K"}}"#;
 		let response = test.ws_send_text(request).await;
 
 		let WsResponse::DataTransactionSubmitted(response) =
@@ -506,7 +512,8 @@ mod tests {
 		else {
 			panic!("Invalid response");
 		};
-		assert_eq!(response.request_id, "1".to_string());
+		let expected_request_id = to_uuid("fca2ff0c-7a26-42a2-a6f0-d0aeeaba8a9a");
+		assert_eq!(response.request_id, expected_request_id);
 		assert_eq!(response.message.index, 0);
 	}
 }
