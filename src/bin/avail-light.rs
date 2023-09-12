@@ -340,20 +340,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
 
-	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
-		rpc_client.clone(),
-		message_tx,
-		error_sender.clone(),
-		state.clone(),
-		db.clone(),
-	));
-
-	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
+	let light_client =
+		avail_light::light_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
 		header_receiver: message_rx,
-		error_sender,
+		error_sender: error_sender.clone(),
 	};
 
 	tokio::task::spawn(avail_light::light_client::run(
@@ -361,9 +354,18 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(&cfg).into(),
 		pp,
 		ot_metrics,
-		state,
+		state.clone(),
 		lc_channels,
 	));
+
+	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
+		rpc_client,
+		message_tx,
+		error_sender,
+		state,
+		db,
+	));
+
 	Ok(())
 }
 
