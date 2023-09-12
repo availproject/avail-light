@@ -22,7 +22,10 @@ use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::{
+	broadcast,
+	mpsc::{channel, Sender},
+};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -335,7 +338,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		state.clone(),
 	));
 
-	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
+	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
 		rpc_client.clone(),

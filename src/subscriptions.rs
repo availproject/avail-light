@@ -11,7 +11,10 @@ use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::mpsc::{unbounded_channel, Sender};
+use tokio::sync::{
+	broadcast,
+	mpsc::{unbounded_channel, Sender},
+};
 use tracing::{error, info, trace};
 
 use crate::{
@@ -23,7 +26,7 @@ use crate::{
 
 pub async fn finalized_headers(
 	rpc_client: Client,
-	message_tx: Sender<(Header, Instant)>,
+	message_tx: broadcast::Sender<(Header, Instant)>,
 	error_sender: Sender<anyhow::Error>,
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
@@ -47,7 +50,7 @@ enum Messages {
 // Verifies the justifications. Then sends the header off to be processed by LC.
 async fn subscribe_check_and_process(
 	subxt_client: Client,
-	message_tx: Sender<(Header, Instant)>,
+	message_tx: broadcast::Sender<(Header, Instant)>,
 	state: Arc<Mutex<State>>,
 	db: Arc<DB>,
 ) -> Result<()> {
@@ -257,7 +260,7 @@ async fn subscribe_check_and_process(
 						},
 					};
 
-					message_tx.send((header, received_at)).await?;
+					message_tx.send((header, received_at))?;
 				}
 
 				info!("Sending finalized block {}", header.number);
@@ -265,7 +268,7 @@ async fn subscribe_check_and_process(
 				last_finalized_block_header = header.clone();
 
 				// Finally, send the verified block (header)
-				message_tx.send((header, received_at)).await?;
+				message_tx.send((header, received_at))?;
 			} else {
 				trace!("Matched pair of header/justification not found.");
 				justifications.push(justification);

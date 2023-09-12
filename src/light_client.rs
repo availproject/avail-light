@@ -36,7 +36,7 @@ use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{broadcast, mpsc::Sender};
 use tracing::{error, info};
 
 use crate::{
@@ -375,7 +375,7 @@ pub async fn process_block(
 
 pub struct Channels {
 	pub block_sender: Option<Sender<BlockVerified>>,
-	pub header_receiver: Receiver<(Header, Instant)>,
+	pub header_receiver: broadcast::Receiver<(Header, Instant)>,
 	pub error_sender: Sender<anyhow::Error>,
 }
 
@@ -399,7 +399,15 @@ pub async fn run(
 ) {
 	info!("Starting light client...");
 
-	while let Some((header, received_at)) = channels.header_receiver.recv().await {
+	loop {
+		let (header, received_at) = match channels.header_receiver.recv().await {
+			Ok(value) => value,
+			Err(error) => {
+				error!("Cannot receive message: {error}");
+				return;
+			},
+		};
+
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
