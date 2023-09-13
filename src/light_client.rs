@@ -14,8 +14,8 @@
 //!
 //! # Notes
 //!
-//! In case delay is configured, block processing is delayed for configured time.  
-//! In case RPC is disabled, RPC calls will be skipped.  
+//! In case delay is configured, block processing is delayed for configured time.
+//! In case RPC is disabled, RPC calls will be skipped.
 //! In case partition is configured, block partition is fetched and inserted into DHT.
 
 use anyhow::{Context, Result};
@@ -34,7 +34,7 @@ use rocksdb::DB;
 use sp_core::blake2_256;
 use std::{
 	sync::{Arc, Mutex},
-	time::{Instant, SystemTime},
+	time::Instant,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
@@ -138,7 +138,7 @@ pub async fn process_block(
 		"Processing finalized block",
 	);
 
-	let begin = SystemTime::now();
+	let begin = Instant::now();
 
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
 	let Some(dimensions) = Dimensions::new(rows, cols) else {
@@ -216,8 +216,8 @@ pub async fn process_block(
 		let count = verified.len() - unverified.len();
 		info!(
 			block_number,
-			"Completed {count} verification rounds in \t{:?}",
-			begin.elapsed()?
+			elapsed = ?begin.elapsed(),
+			"Completed {count} verification rounds",
 		);
 
 		// write confidence factor into on-disk database
@@ -249,7 +249,7 @@ pub async fn process_block(
 		.store_block_header_in_db(header, block_number)
 		.context("Failed to store block header in DB")?;
 
-	let mut begin = SystemTime::now();
+	let mut begin = Instant::now();
 	if let Some(partition) = &cfg.block_matrix_partition {
 		let positions: Vec<Position> = dimensions
 			.iter_extended_partition_positions(partition)
@@ -293,7 +293,7 @@ pub async fn process_block(
 			}
 		}
 
-		let begin = SystemTime::now();
+		let begin = Instant::now();
 
 		let rpc_fetched_data_cells = rpc_fetched
 			.iter()
@@ -306,7 +306,7 @@ pub async fn process_block(
 			.insert_rows_into_dht(block_number, rpc_fetched_data_rows)
 			.await;
 		let success_rate: f64 = dht_insert_rows_success_rate.into();
-		let time_elapsed = begin.elapsed()?.as_secs_f64();
+		let time_elapsed = begin.elapsed();
 
 		info!(
 			block_number,
@@ -317,27 +317,26 @@ pub async fn process_block(
 
 		info!(
 			block_number,
-			"partition_dht_rows_insert_time_elapsed" = time_elapsed,
+			"partition_dht_rows_insert_time_elapsed" = ?time_elapsed,
 			"{rows_len} rows inserted into DHT"
 		);
 
-		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed))?;
+		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed.as_secs_f64()))?;
 	}
 
-	let partition_time_elapsed = begin.elapsed()?;
+	let partition_time_elapsed = begin.elapsed();
 	let rpc_fetched_len = rpc_fetched.len();
 	info!(
 		block_number,
-		"partition_retrieve_time_elapsed" = partition_time_elapsed.as_secs_f64(),
+		"partition_retrieve_time_elapsed" = ?partition_time_elapsed,
 		"partition_cells_fetched" = rpc_fetched_len,
-		"Partition cells received. Time elapsed: \t{:?}",
-		partition_time_elapsed
+		"Partition cells received",
 	);
 	metrics.record(MetricValue::RPCCallDuration(
 		partition_time_elapsed.as_secs_f64(),
 	))?;
 
-	begin = SystemTime::now();
+	begin = Instant::now();
 
 	let dht_insert_success_rate = light_client
 		.insert_cells_into_dht(block_number, rpc_fetched)
@@ -350,12 +349,11 @@ pub async fn process_block(
 
 	metrics.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
 
-	let dht_put_time_elapsed = begin.elapsed()?;
+	let dht_put_time_elapsed = begin.elapsed();
 	info!(
 		block_number,
-		"partition_dht_insert_time_elapsed" = dht_put_time_elapsed.as_secs_f64(),
-		"{rpc_fetched_len} cells inserted into DHT. Time elapsed: \t{:?}",
-		dht_put_time_elapsed
+		elapsed = ?dht_put_time_elapsed,
+		"{rpc_fetched_len} cells inserted into DHT",
 	);
 
 	metrics.record(MetricValue::DHTPutDuration(

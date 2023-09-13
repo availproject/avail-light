@@ -412,6 +412,7 @@ async fn process_block(
 /// * `app_id` - Application ID
 /// * `block_receive` - Channel used to receive header of verified block
 /// * `pp` - Public parameters (i.e. SRS) needed for proof verification
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,

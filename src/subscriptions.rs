@@ -142,7 +142,7 @@ async fn subscribe_check_and_process(
 		match msg_receiver
 			.recv()
 			.await
-			.ok_or(anyhow!("All senders dropped!"))?
+			.ok_or_else(|| anyhow!("All senders dropped!"))?
 		{
 			Messages::Justification(justification) => {
 				info!(
@@ -193,7 +193,7 @@ async fn subscribe_check_and_process(
 						);
 						is_ok
 							.then(|| precommit.clone().id)
-							.ok_or(anyhow!("Not signed by this signature!"))
+							.ok_or_else(|| anyhow!("Not signed by this signature!"))
 					})
 					.collect::<Result<Vec<_>>>();
 				let Ok(signer_addresses) = signer_addresses else {

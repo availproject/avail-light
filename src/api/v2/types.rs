@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use kate_recovery::matrix::Partition;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -216,7 +216,7 @@ impl TryFrom<ws::Message> for Request {
 	type Error = anyhow::Error;
 
 	fn try_from(value: ws::Message) -> Result<Self, Self::Error> {
-		serde_json::from_slice(value.as_bytes()).map_err(|error| anyhow!("{error}"))
+		serde_json::from_slice(value.as_bytes()).context("Failed to parse json request")
 	}
 }
 

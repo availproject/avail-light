@@ -13,7 +13,7 @@
 //!
 //! # Notes
 //!
-//! In case RPC is disabled, RPC calls will be skipped.  
+//! In case RPC is disabled, RPC calls will be skipped.
 
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -25,7 +25,7 @@ use mockall::automock;
 use rocksdb::DB;
 use std::{
 	sync::{Arc, Mutex},
-	time::SystemTime,
+	time::Instant,
 };
 use tokio::sync::mpsc::Sender;
 use tracing::{error, info, warn};
@@ -83,7 +83,7 @@ impl SyncClient for SyncClientImpl {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(DaHeader, H256)> {
 		rpc::get_header_by_block_number(&self.rpc_client, block_number)
 			.await
-			.context("Failed to get block {block_number} by block number")
+			.with_context(|| format!("Failed to get block {block_number} by block number"))
 	}
 
 	fn store_block_header_in_db(&self, header: DaHeader, block_number: u32) -> Result<()> {
@@ -143,12 +143,9 @@ async fn process_block(
 	// if block header look up fails, only then comes here for
 	// fetching and storing block header as part of (light weight)
 	// syncing process
-	let begin = SystemTime::now();
+	let begin = Instant::now();
 
-	let (header, header_hash) = sync_client
-		.get_header_by_block_number(block_number)
-		.await
-		.context("Failed to get block {block_number} by block number")?;
+	let (header, header_hash) = sync_client.get_header_by_block_number(block_number).await?;
 
 	let app_lookup = extract_app_lookup(&header.extension);
 
@@ -158,11 +155,7 @@ async fn process_block(
 		.store_block_header_in_db(header.clone(), block_number)
 		.context("Failed to store block header in DB")?;
 
-	info!(
-		block_number,
-		"Synced block header: \t{:?}",
-		begin.elapsed()?
-	);
+	info!(block_number, elapsed = ?begin.elapsed(), "Synced block header");
 
 	// If it's found that this certain block is not verified
 	// then it'll be verified now
@@ -173,7 +166,7 @@ async fn process_block(
 		return Ok(());
 	};
 
-	let begin = SystemTime::now();
+	let begin = Instant::now();
 
 	let (rows, cols, _, commitment) = extract_kate(&header.extension);
 	let dimensions = Dimensions::new(rows, cols).context("Invalid dimensions")?;
@@ -223,8 +216,8 @@ async fn process_block(
 
 	info!(
 		block_number,
-		"Completed {cells_len} verification rounds: \t{:?}",
-		begin.elapsed()?
+		elapsed = ?begin.elapsed(),
+		"Completed {cells_len} verification rounds",
 	);
 
 	// write confidence factor into on-disk database

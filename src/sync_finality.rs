@@ -8,7 +8,7 @@ use avail_subxt::{
 	rpc::rpc_params,
 };
 use codec::{Decode, Encode};
-use futures_util::future::join_all;
+use futures::future::join_all;
 use rocksdb::DB;
 use serde::de::{self};
 use serde::Deserialize;
@@ -107,7 +107,7 @@ async fn get_valset_at_genesis(
 		.fetch(&validators_key)
 		.await
 		.context("Couldn't get initial validator set")?
-		.ok_or(anyhow!("Validator set is empty!"))?;
+		.ok_or_else(|| anyhow!("Validator set is empty!"))?;
 
 	// Get all grandpa session keys from genesis (GRANDPA ed25519 keys)
 	let grandpa_keys_and_account = rpc_client
@@ -292,7 +292,7 @@ pub async fn sync_finality(
 				);
 				is_ok
 					.then(|| precommit.clone().id)
-					.ok_or(anyhow!("Not signed by this signature!"))
+					.ok_or_else(|| anyhow!("Not signed by this signature!"))
 			})
 			.collect::<Result<Vec<_>>>();
 
