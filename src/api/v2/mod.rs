@@ -132,7 +132,7 @@ mod tests {
 	use super::{submit_route, transactions, types::Transaction};
 	use crate::{
 		api::v2::types::{
-			DataFields, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topics, Version,
+			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
 		rpc::Node,
@@ -241,18 +241,18 @@ mod tests {
 		assert_eq!(response.body(), &expected);
 	}
 
-	fn all_topics() -> HashSet<Topics> {
+	fn all_topics() -> HashSet<Topic> {
 		vec![
-			Topics::HeaderVerified,
-			Topics::ConfidenceAchieved,
-			Topics::DataVerified,
+			Topic::HeaderVerified,
+			Topic::ConfidenceAchieved,
+			Topic::DataVerified,
 		]
 		.into_iter()
 		.collect()
 	}
 
-	fn all_data_fields() -> HashSet<DataFields> {
-		vec![DataFields::Extrinsic, DataFields::Data]
+	fn all_data_fields() -> HashSet<DataField> {
+		vec![DataField::Extrinsic, DataField::Data]
 			.into_iter()
 			.collect()
 	}

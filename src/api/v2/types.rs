@@ -195,7 +195,7 @@ impl Reply for Status {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
-pub enum Topics {
+pub enum Topic {
 	HeaderVerified,
 	ConfidenceAchieved,
 	DataVerified,
@@ -203,15 +203,15 @@ pub enum Topics {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
-pub enum DataFields {
+pub enum DataField {
 	Data,
 	Extrinsic,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Default)]
 pub struct Subscription {
-	pub topics: HashSet<Topics>,
-	pub data_fields: HashSet<DataFields>,
+	pub topics: HashSet<Topic>,
+	pub data_fields: HashSet<DataField>,
 }
 
 pub type Sender = UnboundedSender<Result<ws::Message, warp::Error>>;
