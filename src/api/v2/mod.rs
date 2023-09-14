@@ -8,11 +8,9 @@ use crate::{
 };
 use avail_subxt::avail;
 use std::{
-	collections::HashMap,
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::RwLock;
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
@@ -102,7 +100,7 @@ pub fn routes(
 	config: RuntimeConfig,
 	node_client: avail::Client,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	let ws_clients: WsClients = Arc::new(RwLock::new(HashMap::new()));
+	let ws_clients = WsClients::default();
 	let version = Version {
 		version,
 		network_version,
@@ -131,10 +129,7 @@ pub fn routes(
 
 #[cfg(test)]
 mod tests {
-	use super::{
-		submit_route, transactions,
-		types::{Transaction, WsClient},
-	};
+	use super::{submit_route, transactions, types::Transaction};
 	use crate::{
 		api::v2::types::{
 			DataFields, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topics, Version,
@@ -148,12 +143,11 @@ mod tests {
 	use kate_recovery::matrix::Partition;
 	use sp_core::H256;
 	use std::{
-		collections::{HashMap, HashSet},
+		collections::HashSet,
 		str::FromStr,
 		sync::{Arc, Mutex},
 	};
 	use test_case::test_case;
-	use tokio::sync::RwLock;
 	use uuid::Uuid;
 
 	fn v1() -> Version {
@@ -328,7 +322,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn subscriptions_route() {
-		let clients: WsClients = Arc::new(RwLock::new(HashMap::new()));
+		let clients = WsClients::default();
 		let route = super::subscriptions_route(clients.clone());
 
 		let body = r#"{"topics":["confidence-achieved","data-verified","header-verified"],"data_fields":["data","extrinsic"]}"#;
@@ -342,8 +336,9 @@ mod tests {
 		let SubscriptionId { subscription_id } = serde_json::from_slice(response.body()).unwrap();
 		assert!(uuid::Uuid::from_str(&subscription_id).is_ok());
 
-		let clients = clients.read().await;
+		let clients = clients.0.read().await;
 		let client = clients.get(&subscription_id).unwrap();
+
 		let expected = Subscription {
 			topics: all_topics(),
 			data_fields: all_data_fields(),
@@ -359,16 +354,10 @@ mod tests {
 	impl MockSetup {
 		async fn new(config: RuntimeConfig, submitter: Option<MockSubmitter>) -> Self {
 			let client_uuid = uuid::Uuid::new_v4().to_string();
-			let client = WsClient::new(Subscription {
-				topics: HashSet::new(),
-				data_fields: HashSet::new(),
-			});
-
-			let clients = Arc::new(RwLock::new(
-				[(client_uuid.clone(), client)]
-					.into_iter()
-					.collect::<HashMap<_, _>>(),
-			));
+			let clients = WsClients::default();
+			clients
+				.subscribe(client_uuid.clone(), Subscription::default())
+				.await;
 
 			let state = Arc::new(Mutex::new(State::default()));
 			let route = super::ws_route(

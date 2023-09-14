@@ -33,12 +33,10 @@ pub async fn connect(
 	let (sender, receiver) = mpsc::unbounded_channel();
 	let receiver_stream = UnboundedReceiverStream::new(receiver);
 
-	let mut clients = clients.write().await;
-	let Some(client) = clients.get_mut(&subscription_id) else {
+	if !clients.set_sender(&subscription_id, sender.clone()).await {
 		info!("Client is not subscribed");
 		return;
 	};
-	client.sender = Some(sender.clone());
 
 	tokio::task::spawn(receiver_stream.forward(web_socket_sender).map(|result| {
 		if let Err(error) = result {
