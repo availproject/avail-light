@@ -208,7 +208,7 @@ pub enum DataFields {
 	Extrinsic,
 }
 
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Default)]
 pub struct Subscription {
 	pub topics: HashSet<Topics>,
 	pub data_fields: HashSet<DataFields>,
@@ -230,7 +230,34 @@ impl WsClient {
 	}
 }
 
-pub type WsClients = Arc<RwLock<HashMap<String, WsClient>>>;
+#[derive(Clone)]
+pub struct WsClients(pub Arc<RwLock<HashMap<String, WsClient>>>);
+
+impl WsClients {
+	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> bool {
+		let mut clients = self.0.write().await;
+		let Some(client) = clients.get_mut(subscription_id) else {
+			return false;
+		};
+		client.sender = Some(sender);
+		true
+	}
+
+	pub async fn has_subscription(&self, subscription_id: &str) -> bool {
+		self.0.read().await.contains_key(subscription_id)
+	}
+
+	pub async fn subscribe(&self, subscription_id: String, subscription: Subscription) {
+		let mut clients = self.0.write().await;
+		clients.insert(subscription_id.clone(), WsClient::new(subscription));
+	}
+}
+
+impl Default for WsClients {
+	fn default() -> Self {
+		Self(Arc::new(RwLock::new(HashMap::new())))
+	}
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SubscriptionId {
