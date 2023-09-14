@@ -1,8 +1,8 @@
 use super::{
 	transactions,
 	types::{
-		Client, Clients, Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction,
-		Version,
+		Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction, Version,
+		WsClient, WsClients,
 	},
 	ws,
 };
@@ -22,11 +22,11 @@ use warp::{ws::Ws, Rejection, Reply};
 
 pub async fn subscriptions(
 	subscription: Subscription,
-	clients: Clients,
+	clients: WsClients,
 ) -> Result<SubscriptionId, Infallible> {
 	let subscription_id = Uuid::new_v4().to_string();
 	let mut clients = clients.write().await;
-	clients.insert(subscription_id.clone(), Client::new(subscription));
+	clients.insert(subscription_id.clone(), WsClient::new(subscription));
 	Ok(SubscriptionId { subscription_id })
 }
 
@@ -48,7 +48,7 @@ pub async fn submit(
 pub async fn ws(
 	subscription_id: String,
 	ws: Ws,
-	clients: Clients,
+	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,

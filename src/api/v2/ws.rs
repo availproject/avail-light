@@ -1,7 +1,7 @@
 use super::{
 	transactions,
 	types::{
-		Clients, Payload, Request, Response, Status, Transaction, Version, WsError, WsResponse,
+		Payload, Request, Response, Status, Transaction, Version, WsClients, WsError, WsResponse,
 	},
 };
 use crate::{
@@ -22,7 +22,7 @@ use warp::ws::{self, Message, WebSocket};
 pub async fn connect(
 	subscription_id: String,
 	web_socket: WebSocket,
-	clients: Clients,
+	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,

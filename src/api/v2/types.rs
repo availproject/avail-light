@@ -216,21 +216,21 @@ pub struct Subscription {
 
 pub type Sender = UnboundedSender<Result<ws::Message, warp::Error>>;
 
-pub struct Client {
+pub struct WsClient {
 	pub subscription: Subscription,
 	pub sender: Option<Sender>,
 }
 
-impl Client {
+impl WsClient {
 	pub fn new(subscription: Subscription) -> Self {
-		Client {
+		WsClient {
 			subscription,
 			sender: None,
 		}
 	}
 }
 
-pub type Clients = Arc<RwLock<HashMap<String, Client>>>;
+pub type WsClients = Arc<RwLock<HashMap<String, WsClient>>>;
 
 #[derive(Serialize, Deserialize)]
 pub struct SubscriptionId {
