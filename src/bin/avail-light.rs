@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_core::AppId;
 use avail_light::{
+	api,
 	consts::STATE_CF,
 	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
 };
@@ -282,8 +283,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number.saturating_sub(1);
 
+	#[cfg(feature = "api-v2")]
+	let ws_clients = api::v2::types::WsClients::default();
+
 	// Spawn tokio task which runs one http server for handling RPC
-	let server = avail_light::api::server::Server {
+	let server = api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		state: state.clone(),
@@ -291,6 +295,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
 		node_client: rpc_client.clone(),
+		#[cfg(feature = "api-v2")]
+		ws_clients: ws_clients.clone(),
 	};
 
 	tokio::task::spawn(server.run());
@@ -356,6 +362,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		ot_metrics,
 		state.clone(),
 		lc_channels,
+	));
+
+	#[cfg(feature = "api-v2")]
+	tokio::task::spawn(api::v2::publish_header_verified(
+		message_tx.subscribe(),
+		ws_clients,
 	));
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(

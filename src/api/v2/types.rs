@@ -1,18 +1,25 @@
 use anyhow::Context;
-use avail_subxt::api::runtime_types::bounded_collections::bounded_vec::BoundedVec;
+use avail_subxt::api::runtime_types::{
+	avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
+	bounded_collections::bounded_vec::BoundedVec,
+};
 use base64::{engine::general_purpose, DecodeError, Engine};
+use codec::Encode;
 use derive_more::From;
 use hyper::{http, StatusCode};
-use kate_recovery::matrix::Partition;
-use serde::{Deserialize, Serialize};
-use sp_core::H256;
+use kate_recovery::{commitments, config, matrix::Partition};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use sp_core::{blake2_256, H256};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
-use warp::{ws, Reply};
+use warp::{
+	ws::{self, Message},
+	Reply,
+};
 
 use crate::{
 	rpc::Node,
@@ -214,6 +221,147 @@ pub struct Subscription {
 	pub data_fields: HashSet<DataField>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct HeaderMessage {
+	block_number: u32,
+	header: Header,
+}
+
+impl TryFrom<avail_subxt::primitives::Header> for HeaderMessage {
+	type Error = anyhow::Error;
+
+	fn try_from(header: avail_subxt::primitives::Header) -> Result<Self, Self::Error> {
+		let header: Header = header.try_into()?;
+		Ok(Self {
+			block_number: header.number,
+			header,
+		})
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Header {
+	hash: H256,
+	parent_hash: H256,
+	pub number: u32,
+	state_root: H256,
+	extrinsics_root: H256,
+	extension: Extension,
+}
+
+#[derive(Debug, Clone)]
+struct Commitment([u8; config::COMMITMENT_SIZE]);
+
+impl Serialize for Commitment {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		let hex_string = format!("0x{}", hex::encode(self.0));
+		serializer.serialize_str(&hex_string)
+	}
+}
+
+impl<'de> Deserialize<'de> for Commitment {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		const LEN: usize = config::COMMITMENT_SIZE * 2 + 2;
+
+		let s = String::deserialize(deserializer)?;
+
+		if !s.starts_with("0x") || s.len() != LEN {
+			let message = "Expected a hex string of correct length with 0x prefix";
+			return Err(de::Error::custom(message));
+		}
+
+		let decoded = hex::decode(&s[2..]).map_err(de::Error::custom)?;
+		let decoded_len = decoded.len();
+		let bytes: [u8; config::COMMITMENT_SIZE] = decoded
+			.try_into()
+			.map_err(|_| de::Error::invalid_length(decoded_len, &"Expected vector of 48 bytes"))?;
+
+		Ok(Commitment(bytes))
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct Extension {
+	rows: u16,
+	cols: u16,
+	data_root: Option<H256>,
+	commitments: Vec<Commitment>,
+	app_lookup: CompactDataLookup,
+}
+
+impl TryFrom<avail_subxt::primitives::Header> for Header {
+	type Error = anyhow::Error;
+
+	fn try_from(header: avail_subxt::primitives::Header) -> anyhow::Result<Self> {
+		Ok(Header {
+			hash: Encode::using_encoded(&header, blake2_256).into(),
+			parent_hash: header.parent_hash,
+			number: header.number,
+			state_root: header.state_root,
+			extrinsics_root: header.extrinsics_root,
+			extension: header.extension.try_into()?,
+		})
+	}
+}
+
+impl TryFrom<HeaderExtension> for Extension {
+	type Error = anyhow::Error;
+
+	fn try_from(value: HeaderExtension) -> Result<Self, Self::Error> {
+		match value {
+			HeaderExtension::V1(v1) => {
+				let commitments = commitments::from_slice(&v1.commitment.commitment)?
+					.into_iter()
+					.map(Commitment)
+					.collect::<Vec<_>>();
+				Ok(Extension {
+					rows: v1.commitment.rows,
+					cols: v1.commitment.cols,
+					data_root: Some(v1.commitment.data_root),
+					commitments,
+					app_lookup: v1.app_lookup,
+				})
+			},
+
+			HeaderExtension::V2(v2) => {
+				let commitments = commitments::from_slice(&v2.commitment.commitment)?
+					.into_iter()
+					.map(Commitment)
+					.collect::<Vec<_>>();
+
+				Ok(Extension {
+					rows: v2.commitment.rows,
+					cols: v2.commitment.cols,
+					data_root: v2.commitment.data_root,
+					commitments,
+					app_lookup: v2.app_lookup,
+				})
+			},
+		}
+	}
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "type", content = "message", rename_all = "kebab-case")]
+pub enum PublishMessage {
+	HeaderVerified(HeaderMessage),
+}
+
+impl TryFrom<PublishMessage> for Message {
+	type Error = anyhow::Error;
+	fn try_from(value: PublishMessage) -> Result<Self, Self::Error> {
+		serde_json::to_string(&value)
+			.map(ws::Message::text)
+			.context("Cannot serialize publish message")
+	}
+}
+
 pub type Sender = UnboundedSender<Result<ws::Message, warp::Error>>;
 
 pub struct WsClient {
@@ -227,6 +375,10 @@ impl WsClient {
 			subscription,
 			sender: None,
 		}
+	}
+
+	fn is_subscribed(&self, topic: &Topic) -> bool {
+		self.subscription.topics.contains(topic)
 	}
 }
 
@@ -250,6 +402,21 @@ impl WsClients {
 	pub async fn subscribe(&self, subscription_id: String, subscription: Subscription) {
 		let mut clients = self.0.write().await;
 		clients.insert(subscription_id.clone(), WsClient::new(subscription));
+	}
+
+	pub async fn publish(&self, topic: Topic, message: PublishMessage) -> anyhow::Result<()> {
+		let clients = self.0.read().await;
+		for (_, client) in clients.iter() {
+			if !client.is_subscribed(&topic) {
+				continue;
+			}
+			let message = message.clone().try_into()?;
+			if let Some(sender) = &client.sender {
+				let _ = sender.send(Ok(message));
+				// TODO: Aggregate errors
+			}
+		}
+		Ok(())
 	}
 }
 
