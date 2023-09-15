@@ -266,7 +266,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
-	let sync_end_block = block_header.number - 1;
+	let sync_end_block = block_header.number.saturating_sub(1);
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let server = avail_light::api::server::Server {
