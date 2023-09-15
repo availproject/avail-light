@@ -1,21 +1,25 @@
 use self::{
 	handlers::handle_rejection,
-	types::{Version, WsClients},
+	types::{HeaderMessage, PublishMessage, Version, WsClients},
 };
 use crate::{
+	api::v2::types::Topic,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
-use avail_subxt::avail;
+use avail_subxt::{avail, primitives::Header};
 use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
+	time::Instant,
 };
+use tokio::sync::broadcast;
+use tracing::{error, info};
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
 mod transactions;
-mod types;
+pub mod types;
 mod ws;
 
 async fn optionally<T>(value: Option<T>) -> Result<T, Rejection> {
@@ -92,6 +96,41 @@ fn ws_route(
 		.and_then(handlers::ws)
 }
 
+pub async fn publish_header_verified(
+	mut header_receiver: broadcast::Receiver<(Header, Instant)>,
+	clients: WsClients,
+) {
+	loop {
+		let (header, received_at) = match header_receiver.recv().await {
+			Ok(value) => value,
+			Err(error) => {
+				error!("Cannot receive message: {error}");
+				return;
+			},
+		};
+
+		let message: HeaderMessage = match header.try_into() {
+			Ok(header) => header,
+			Err(error) => {
+				error!("Cannot conver header: {error}");
+				continue;
+			},
+		};
+
+		if let Err(error) = clients
+			.publish(
+				Topic::HeaderVerified,
+				PublishMessage::HeaderVerified(message),
+			)
+			.await
+		{
+			error!("Cannot publish message: {error}");
+		} else {
+			info!(?received_at, "Header received");
+		}
+	}
+}
+
 pub fn routes(
 	version: String,
 	network_version: String,
@@ -99,8 +138,8 @@ pub fn routes(
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	node_client: avail::Client,
+	ws_clients: WsClients,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-	let ws_clients = WsClients::default();
 	let version = Version {
 		version,
 		network_version,

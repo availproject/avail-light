@@ -35,6 +35,8 @@ pub struct Server {
 	pub network_version: String,
 	pub node: Node,
 	pub node_client: avail::Client,
+	#[cfg(feature = "api-v2")]
+	pub ws_clients: v2::types::WsClients,
 }
 
 impl Server {
@@ -60,6 +62,7 @@ impl Server {
 			self.state.clone(),
 			self.cfg,
 			self.node_client.clone(),
+			self.ws_clients.clone(),
 		);
 
 		let cors = warp::cors()
