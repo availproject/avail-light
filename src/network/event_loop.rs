@@ -40,7 +40,7 @@ use super::{
 	client::{Command, NumSuccPut},
 	Behaviour, BehaviourEvent, Event,
 };
-use crate::telemetry::NetworkDumpEvent;
+use crate::{network::extract_ip, telemetry::NetworkDumpEvent};
 
 const PEER_ID: &str = "PeerID";
 const MULTIADDRESS: &str = "Multiaddress";
@@ -619,13 +619,20 @@ impl EventLoop {
 		debug!("{text}\n{header}\n{table}");
 
 		let mut current_multiaddress = "".to_string();
+
+		let mut current_ip = "".to_string();
+
 		if let Some(multiaddress) = self.dump_current_multiaddress() {
 			current_multiaddress = multiaddress.to_string();
+			if let Some(ip_addr) = extract_ip(multiaddress.clone()) {
+				current_ip = ip_addr;
+			}
 		}
 
 		let network_dump_event = NetworkDumpEvent {
 			routing_table_num_of_peers: total_peer_number,
 			current_multiaddress: current_multiaddress.to_string(),
+			current_ip: current_ip.to_string(),
 		};
 		if let Err(error) = self.network_stats_sender.send(network_dump_event).await {
 			error!("Cannot send network stats: {error}");

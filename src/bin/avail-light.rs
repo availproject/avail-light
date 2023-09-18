@@ -113,7 +113,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
-
+	let version = env!("CARGO_PKG_VERSION");
+	info!("Running Avail light client version: {version}");
 	info!("Using config: {cfg:?}");
 
 	if let Some(error) = parse_error {
@@ -147,6 +148,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			if !network_dump_event.current_multiaddress.is_empty() {
 				*network_stats_metrics.multiaddress.write().unwrap() =
 					network_dump_event.current_multiaddress;
+				*network_stats_metrics.ip.write().unwrap() = network_dump_event.current_ip;
 			}
 
 			let number = network_dump_event
