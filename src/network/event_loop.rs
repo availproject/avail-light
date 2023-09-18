@@ -37,7 +37,7 @@ use tokio::{
 use tracing::{debug, error, info, trace};
 
 use super::{
-	client::{Command, NumSuccPut},
+	client::{Command, DHTPutSuccess},
 	Behaviour, BehaviourEvent, Event,
 };
 use crate::telemetry::NetworkDumpEvent;
