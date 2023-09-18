@@ -293,37 +293,46 @@ pub enum ErrorCode {
 pub struct Error {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub request_id: Option<Uuid>,
+	#[serde(skip)]
+	pub cause: Option<anyhow::Error>,
 	pub error_code: ErrorCode,
 	pub message: String,
 }
 
 impl Error {
-	fn new(request_id: Option<Uuid>, error_code: ErrorCode, message: &str) -> Self {
+	fn new(
+		request_id: Option<Uuid>,
+		cause: Option<anyhow::Error>,
+		error_code: ErrorCode,
+		message: &str,
+	) -> Self {
 		Error {
 			request_id,
+			cause,
 			error_code,
 			message: message.to_string(),
 		}
 	}
 
 	pub fn not_found() -> Self {
-		Self::new(None, ErrorCode::NotFound, "Not Found")
+		Self::new(None, None, ErrorCode::NotFound, "Not Found")
 	}
 
-	pub fn internal_server_error() -> Self {
+	pub fn internal_server_error(cause: anyhow::Error) -> Self {
 		Self::new(
 			None,
+			Some(cause),
 			ErrorCode::InternalServerError,
 			"Internal Server Error",
 		)
 	}
 
 	pub fn bad_request_unknown(message: &str) -> Self {
-		Self::new(None, ErrorCode::BadRequest, message)
+		Self::new(None, None, ErrorCode::BadRequest, message)
 	}
 
 	pub fn bad_request(request_id: Uuid, message: &str) -> Self {
-		Self::new(Some(request_id), ErrorCode::BadRequest, message)
+		Self::new(Some(request_id), None, ErrorCode::BadRequest, message)
 	}
 
 	fn status(&self) -> StatusCode {
@@ -361,8 +370,13 @@ pub fn handle_result(result: Result<impl Reply, impl Reply>) -> impl Reply {
 #[derive(Serialize, Deserialize, From)]
 #[serde(tag = "topic", rename_all = "kebab-case")]
 pub enum WsResponse {
-	Error(Error),
 	Version(Response<Version>),
 	Status(Response<Status>),
 	DataTransactionSubmitted(Response<SubmitResponse>),
+}
+
+#[derive(Serialize, Deserialize, From)]
+#[serde(tag = "topic", rename_all = "kebab-case")]
+pub enum WsError {
+	Error(Error),
 }

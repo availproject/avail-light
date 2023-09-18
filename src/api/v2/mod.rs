@@ -49,8 +49,7 @@ fn status_route(
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || state.clone()))
-		.then(handlers::status)
-		.map(types::handle_result)
+		.map(handlers::status)
 }
 
 fn submit_route(
@@ -135,7 +134,7 @@ mod tests {
 	use crate::{
 		api::v2::types::{
 			Clients, DataFields, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topics,
-			Version, WsResponse,
+			Version, WsError, WsResponse,
 		},
 		rpc::Node,
 		types::{RuntimeConfig, State},
@@ -472,9 +471,7 @@ mod tests {
 		let expected_request_id = expected_request_id.map(to_uuid);
 		let mut test = MockSetup::new(RuntimeConfig::default(), submitter).await;
 		let response = test.ws_send_text(request).await;
-		let WsResponse::Error(error) = serde_json::from_str(&response).unwrap() else {
-			panic!("Invalid response");
-		};
+		let WsError::Error(error) = serde_json::from_str(&response).unwrap();
 		assert_eq!(error.error_code, ErrorCode::BadRequest);
 		assert_eq!(error.request_id, expected_request_id);
 		assert!(error.message.contains(expected));

@@ -16,7 +16,7 @@ use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
-use tracing::{error, info};
+use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
 
@@ -40,7 +40,7 @@ pub async fn submit(
 
 	submitter.submit(transaction).await.map_err(|error| {
 		error!(%error, "Submit transaction failed");
-		Error::internal_server_error()
+		Error::internal_server_error(error)
 	})
 }
 
@@ -73,20 +73,9 @@ pub async fn ws(
 	}))
 }
 
-pub async fn status(
-	config: RuntimeConfig,
-	node: Node,
-	state: Arc<Mutex<State>>,
-) -> Result<impl Reply, impl Reply> {
-	let state = match state.lock() {
-		Ok(state) => state,
-		Err(error) => {
-			info!("Cannot acquire lock for last_block: {error}");
-			return Err(Error::internal_server_error());
-		},
-	};
-
-	Ok(Status::new(&config, &node, &state))
+pub fn status(config: RuntimeConfig, node: Node, state: Arc<Mutex<State>>) -> impl Reply {
+	let state = state.lock().expect("Lock should be acquired");
+	Status::new(&config, &node, &state)
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
