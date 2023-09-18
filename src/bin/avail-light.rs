@@ -132,8 +132,22 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
+	// Check if bootstrap nodes were provided
+	let bootstrap_nodes = cfg
+		.bootstraps
+		.iter()
+		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
+		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
+		.context("Failed to parse bootstrap nodes")?;
+
+	let mut client_role = "lightclient".to_string();
+	// If not bootstrap nodes provided, the client is the bootstrap
+	if bootstrap_nodes.is_empty() {
+		client_role = "bootstrap".to_string();
+	}
+
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id)
+		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id, client_role)
 			.context("Unable to initialize OpenTelemetry service")?,
 	);
 
@@ -190,14 +204,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
-
-	// Check if bootstrap nodes were provided
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
 
 	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
 	// second client to establish connection and use it as bootstrap.

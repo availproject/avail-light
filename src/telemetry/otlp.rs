@@ -14,6 +14,7 @@ pub struct Metrics {
 	pub peer_id: String,
 	pub multiaddress: RwLock<String>,
 	pub ip: RwLock<String>,
+	pub role: String,
 }
 
 impl Metrics {
@@ -21,7 +22,7 @@ impl Metrics {
 		[
 			KeyValue::new("job", "avail_light_client"),
 			KeyValue::new("version", env!("CARGO_PKG_VERSION")),
-			KeyValue::new("role", "lightclient"),
+			KeyValue::new("role", self.role.clone()),
 			KeyValue::new("peerID", self.peer_id.clone()),
 			KeyValue::new("multiaddress", self.multiaddress.read().unwrap().clone()),
 			KeyValue::new("ip", self.ip.read().unwrap().clone()),
@@ -98,7 +99,7 @@ impl super::Metrics for Metrics {
 	}
 }
 
-pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
+pub fn initialize(endpoint: String, peer_id: String, role: String) -> Result<Metrics, Error> {
 	let export_config = ExportConfig {
 		endpoint,
 		timeout: Duration::from_secs(10),
@@ -126,5 +127,6 @@ pub fn initialize(endpoint: String, peer_id: String) -> Result<Metrics, Error> {
 		peer_id,
 		multiaddress: RwLock::new("".to_string()), // Default value is empty until first processed block triggers an update
 		ip: RwLock::new("".to_string()),
+		role,
 	})
 }
