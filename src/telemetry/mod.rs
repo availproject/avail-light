@@ -10,6 +10,7 @@ pub enum MetricCounter {
 pub struct NetworkDumpEvent {
 	pub routing_table_num_of_peers: usize,
 	pub current_multiaddress: String,
+	pub current_ip: String,
 }
 
 pub enum MetricValue {

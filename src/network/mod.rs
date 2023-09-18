@@ -10,11 +10,12 @@ use libp2p::{
 	identity,
 	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
+	multiaddr::Protocol,
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
 	relay::{self, client::Behaviour as RelayClient},
 	swarm::{NetworkBehaviour, SwarmBuilder},
-	PeerId, Transport,
+	Multiaddr, PeerId, Transport,
 };
 use libp2p_quic::{tokio::Transport as TokioQuic, Config as QuicConfig};
 use mem_store::{MemoryStore, MemoryStoreConfig};
@@ -193,4 +194,15 @@ pub fn keypair(cfg: LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)>
 	};
 	let peer_id = PeerId::from(keypair.public()).to_string();
 	Ok((keypair, peer_id))
+}
+
+fn extract_ip(multiaddress: Multiaddr) -> Option<String> {
+	for protocol in &multiaddress {
+		match protocol {
+			Protocol::Ip4(ip) => return Some(ip.to_string()),
+			Protocol::Ip6(ip) => return Some(ip.to_string()),
+			_ => continue,
+		}
+	}
+	None
 }
