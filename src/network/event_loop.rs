@@ -49,7 +49,7 @@ const STATUS: &str = "Status";
 #[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(oneshot::Sender<NumSuccPut>),
+	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
