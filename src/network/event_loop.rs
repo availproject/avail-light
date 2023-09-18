@@ -136,8 +136,6 @@ impl EventLoop {
 			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
-			pending_kad_query_batch: Default::default(),
-			pending_batch_complete: None,
 			network_stats_sender,
 			relay: RelayState {
 				id: PeerId::random(),
@@ -232,40 +230,20 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								if let Ok(put_record_ok) = result.as_ref() {
+							if let Some(QueryChannel::PutRecordBatch(success_tx)) =
+								self.pending_kad_queries.remove(&id)
+							{
+								if let Ok(record) = result {
 									// Remove local records for fat clients (memory optimization)
 									if self.kad_remove_local_record {
 										self.swarm
 											.behaviour_mut()
 											.kademlia
-											.remove_record(&put_record_ok.key);
+											.remove_record(&record.key);
 									}
-								};
-
-								// TODO: Handle or log errors
-								*v = match result {
-									Ok(_) => QueryState::Succeeded,
-									Err(error) => QueryState::Failed(error.into()),
-								};
-
-								let has_pending = self
-									.pending_kad_query_batch
-									.iter()
-									.any(|(_, qs)| matches!(qs, QueryState::Pending));
-
-								if !has_pending {
-									if let Some(QueryChannel::PutRecordBatch(ch)) =
-										self.pending_batch_complete.take()
-									{
-										let count_success = self
-											.pending_kad_query_batch
-											.iter()
-											.filter(|(_, qs)| matches!(qs, QueryState::Succeeded))
-											.count();
-
-										_ = ch.send(NumSuccPut(count_success));
-									}
+									// signal back that this PUT request was a success,
+									// so it can be accounted for
+									_ = success_tx.send(DHTPutSuccess::Single).await;
 								}
 							}
 						},
