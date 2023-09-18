@@ -78,7 +78,7 @@ impl Client {
 		put_batch_size: usize,
 	) -> Self {
 		Self {
-			sender,
+			cmd_sender: sender,
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
@@ -87,7 +87,7 @@ impl Client {
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::StartListening { addr, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -100,7 +100,7 @@ impl Client {
 		peer_addr: Multiaddr,
 	) -> Result<(), anyhow::Error> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::AddAddress {
 				peer_id,
 				peer_addr,
@@ -116,7 +116,7 @@ impl Client {
 	// with a required sender for event output
 	pub async fn events_stream(&self) -> ReceiverStream<Event> {
 		let (sender, receiver) = mpsc::channel(1000);
-		self.sender
+		self.cmd_sender
 			.send(Command::Stream { sender })
 			.await
 			.expect("Command receiver should not be dropped.");
@@ -130,7 +130,7 @@ impl Client {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.sender
+		self.cmd_sender
 			.send(Command::Bootstrap { sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -139,7 +139,7 @@ impl Client {
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
 		let (sender, receiver) = oneshot::channel();
-		self.sender
+		self.cmd_sender
 			.send(Command::GetKadRecord { key, sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -184,7 +184,7 @@ impl Client {
 
 	// Dump p2p network stats in a readable manner
 	pub async fn network_stats(&self) -> Result<()> {
-		self.sender
+		self.cmd_sender
 			.send(Command::NetworkObservabilityDump)
 			.await
 			.context("Command receiver should not be dropped.")
