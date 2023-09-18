@@ -92,20 +92,12 @@ struct BootstrapState {
 	timer: Interval,
 }
 
-enum QueryState {
-	Pending,
-	Succeeded,
-	Failed(anyhow::Error),
-}
-
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, QueryState>,
-	pending_batch_complete: Option<QueryChannel>,
 	network_stats_sender: Sender<NetworkDumpEvent>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
