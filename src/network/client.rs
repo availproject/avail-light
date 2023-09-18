@@ -22,7 +22,7 @@ use super::Event;
 
 #[derive(Clone)]
 pub struct Client {
-	sender: mpsc::Sender<Command>,
+	cmd_sender: mpsc::Sender<Command>,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
