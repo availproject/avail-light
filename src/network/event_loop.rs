@@ -507,10 +507,12 @@ impl EventLoop {
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
-				sender,
+				sender: chunk_success_sender,
 			} => {
-				let mut ids: HashMap<QueryId, QueryState> = Default::default();
-
+				// create channels to track individual PUT results needed for success count
+				let (put_result_tx, mut put_result_rx) =
+					mpsc::channel::<DHTPutSuccess>(records.len());
+				// go record by record and dispatch put requests through KAD
 				for record in records.as_ref() {
 					let query_id = self
 						.swarm
@@ -518,10 +520,30 @@ impl EventLoop {
 						.kademlia
 						.put_record(record.to_owned(), quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
-					ids.insert(query_id, QueryState::Pending);
+					// insert query id into pending KAD requests map
+					self.pending_kad_queries.insert(
+						query_id,
+						QueryChannel::PutRecordBatch(put_result_tx.clone()),
+					);
 				}
-				self.pending_kad_query_batch = ids;
-				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
+
+				// drop tx manually,
+				// ensure that only senders in spawned threads are still in use
+				// IMPORTANT: omitting this will make recv call sleep forever
+				drop(put_result_tx);
+
+				// wait here and count all successful put queries from this batch,
+				// but don't block event_loop
+				tokio::spawn(async move {
+					let mut num_success: usize = 0;
+					// increment count only while receiving single successful results
+					while let Some(DHTPutSuccess::Single) = put_result_rx.recv().await {
+						num_success += 1;
+					}
+					// send back counted successful puts
+					// signal back that this chunk of records is done
+					_ = chunk_success_sender.send(DHTPutSuccess::Batch(num_success));
+				});
 			},
 			Command::ReduceKademliaMapSize => {
 				self.swarm
