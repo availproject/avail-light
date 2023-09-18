@@ -1,18 +1,21 @@
 use super::{
 	transactions,
-	types::{Clients, Payload, Request, Response, Status, Transaction, Version, WsResponse},
+	types::{
+		Clients, Payload, Request, Response, Status, Transaction, Version, WsError, WsResponse,
+	},
 };
 use crate::{
-	api::v2::types::Error,
+	api::v2::types::{Error, Sender},
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
 use futures::{FutureExt, StreamExt};
+use serde::Serialize;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use warp::ws::{self, Message, WebSocket};
 
 #[allow(clippy::too_many_arguments)]
@@ -43,6 +46,16 @@ pub async fn connect(
 		}
 	}));
 
+	fn send<T: Serialize>(sender: Sender, message: T) -> anyhow::Result<()> {
+		let ws_message = serde_json::to_string(&message)
+			.map(ws::Message::text)
+			.context("Failed to serialize message")?;
+
+		sender
+			.send(Ok(ws_message))
+			.context("Failed to send message")
+	}
+
 	while let Some(result) = web_socket_receiver.next().await {
 		let message = match result {
 			Err(error) => {
@@ -53,58 +66,38 @@ pub async fn connect(
 			Ok(message) => message,
 		};
 
-		let request = match Request::try_from(message) {
-			Err(error) => {
-				warn!("Error handling web socket message: {error}");
-				let error =
-					Error::bad_request_unknown(&format!("Failed to parse request: {error}"));
-				if let Err(error) = send_response(sender.clone(), error.into()) {
-					error!("Failed to send error: {error}");
-				}
-				continue;
-			},
-			Ok(request) => request,
-		};
-
 		let submitter = submitter.clone();
 		let state = state.clone();
 
-		let response = handle_request(request, &version, &config, &node, submitter, state)
-			.await
-			.unwrap_or_else(|error| {
-				error!("Error handling web socket message: {error}");
-				Error::internal_server_error().into()
-			});
+		let send_result =
+			match handle_request(message, &version, &config, &node, submitter, state).await {
+				Ok(response) => send(sender.clone(), response),
+				Err(error) => {
+					if let Some(cause) = error.cause.as_ref() {
+						error!("Failed to handle request: {cause}");
+					};
+					send::<WsError>(sender.clone(), error.into())
+				},
+			};
 
-		if let Err(error) = send_response(sender.clone(), response) {
-			error!("Failed to send response: {error}");
+		if let Err(error) = send_result {
+			error!("Error sending message: {error}");
 		}
 	}
 }
 
-fn send_response(
-	sender: UnboundedSender<Result<Message, warp::Error>>,
-	response: WsResponse,
-) -> anyhow::Result<()> {
-	let message = serde_json::to_string(&response)
-		.map(ws::Message::text)
-		.map(Ok)
-		.context("Failed to serialize response message")?;
-
-	sender
-		.send(message)
-		.context("Failed to send response message")?;
-	Ok(())
-}
-
 async fn handle_request(
-	request: Request,
+	message: Message,
 	version: &Version,
 	config: &RuntimeConfig,
 	node: &Node,
 	submitter: Option<Arc<impl transactions::Submit>>,
 	state: Arc<Mutex<State>>,
-) -> anyhow::Result<WsResponse> {
+) -> Result<WsResponse, Error> {
+	let request = Request::try_from(message).map_err(|error| {
+		Error::bad_request_unknown(&format!("Failed to parse request: {error}"))
+	})?;
+
 	let request_id = request.request_id;
 	match request.payload {
 		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
@@ -115,17 +108,20 @@ async fn handle_request(
 		},
 		Payload::Submit(transaction) => {
 			let Some(submitter) = submitter else {
-				return Ok(Error::bad_request(request_id, "Submit is not configured.").into());
+				return Err(Error::bad_request(request_id, "Submit is not configured."));
 			};
 			if transaction.is_empty() {
-				return Ok(Error::bad_request(request_id, "Transaction is empty.").into());
+				return Err(Error::bad_request(request_id, "Transaction is empty."));
 			}
 			if matches!(transaction, Transaction::Data(_)) && !submitter.has_signer() {
-				return Ok(Error::bad_request(request_id, "Signer is not configured.").into());
+				return Err(Error::bad_request(request_id, "Signer is not configured."));
 			};
 
-			let submit_response = submitter.submit(transaction).await?;
-			Ok(Response::new(request_id, submit_response).into())
+			submitter
+				.submit(transaction)
+				.await
+				.map(|response| Response::new(request_id, response).into())
+				.map_err(Error::internal_server_error)
 		},
 	}
 }
