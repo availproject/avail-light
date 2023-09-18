@@ -146,37 +146,41 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
+	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
 		let mut num_success: usize = 0;
-		for records in records.chunks(self.put_batch_size).map(Into::into) {
-			let (sender, receiver) = oneshot::channel();
+		// split input batch records into chunks that will be sent consecutively
+		// these chunks are defined by the config parameter [put_batch_size]
+		for chunk in records.chunks(self.put_batch_size) {
+			// create oneshot for each chunk, through which will success counts be sent,
+			// only for the records in that chunk
+			let (chunk_result_tx, chunk_result_rx) = oneshot::channel::<DHTPutSuccess>();
 			if self
-				.sender
+				.cmd_sender
 				.send(Command::PutKadRecordBatch {
-					records,
+					records: chunk.into(),
 					quorum,
-					sender,
+					sender: chunk_result_tx,
 				})
 				.await
 				.context("Command receiver should not be dropped.")
 				.is_err()
 			{
-				return NumSuccPut(num_success);
+				return DHTPutSuccess::Batch(0);
 			}
-
-			num_success +=
-				if let Ok(NumSuccPut(num)) = receiver.await.context("Sender not to be dropped.") {
-					num
-				} else {
-					num_success
-				};
+			// wait here for successfully counted put operations from this chunk
+			// waiting in this manner introduces a back pressure from overwhelming the network
+			// with too many possible PUT request coming in from the whole batch
+			// this is the reason why input parameter vector of records is split into chunks
+			if let Ok(DHTPutSuccess::Batch(num)) = chunk_result_rx.await {
+				num_success += num;
+			}
 		}
-		NumSuccPut(num_success)
+		DHTPutSuccess::Batch(num_success)
 	}
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.sender
+		self.cmd_sender
 			.send(Command::ReduceKademliaMapSize)
 			.await
 			.context("Command receiver should not be dropped.")
@@ -300,12 +304,14 @@ impl Client {
 			return 1.0;
 		}
 		let len = records.len() as f32;
-
-		let num = self
+		if let DHTPutSuccess::Batch(num) = self
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
-			.await;
-
-		num.0 as f32 / len
+			.await
+		{
+			num as f32 / len
+		} else {
+			0.0
+		}
 	}
 
 	/// Inserts cells into the DHT.
@@ -324,7 +330,6 @@ impl Client {
 			.map(DHTCell)
 			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
 			.collect::<Vec<_>>();
-
 		self.insert_into_dht(records).await
 	}
 
@@ -373,7 +378,7 @@ pub enum Command {
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
 		quorum: Quorum,
-		sender: oneshot::Sender<NumSuccPut>,
+		sender: oneshot::Sender<DHTPutSuccess>,
 	},
 	ReduceKademliaMapSize,
 	NetworkObservabilityDump,
