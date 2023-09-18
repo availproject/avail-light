@@ -9,6 +9,7 @@ use avail_subxt::{
 	primitives::Header as DaHeader,
 	rpc::{types::BlockNumber, RpcParams},
 	utils::H256,
+	AvailConfig,
 };
 use futures::prelude::*;
 use itertools::Either;
@@ -24,6 +25,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
 use crate::sync_finality::WrappedProof;
+use crate::types::AvailSecretKey;
 use crate::{consts::EXPECTED_NETWORK_VERSION, types::*};
 
 #[derive(Debug, Clone)]
@@ -33,6 +35,15 @@ pub struct RpcClient {
 	expected_version: ExpectedVersion<'static>,
 	db: Option<Arc<DB>>,
 	backoff: backoff::ExponentialBackoff,
+}
+
+// TODO: Replace this with avail::PairSigner after implementing required traits in avail-subxt
+pub type AvailSigner = subxt::tx::PairSigner<AvailConfig, subxt::ext::sp_core::sr25519::Pair>;
+
+impl From<AvailSecretKey> for AvailSigner {
+	fn from(value: AvailSecretKey) -> Self {
+		AvailSigner::new(value.0)
+	}
 }
 
 impl RpcClient {
@@ -516,6 +527,43 @@ impl RpcClient {
 		})
 		.await
 		.context("Version couldn't be retrieved, error")
+	}
+
+	pub async fn ext_sign_and_submit_then_wait_for_finalized_success<Call: subxt::tx::TxPayload>(
+		&self,
+		call: &Call,
+		signer: &AvailSigner,
+		other_params: avail_subxt::primitives::AvailExtrinsicParams,
+	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
+		self.with_client(|client| {
+			let other_params = other_params.clone();
+			async move {
+				client
+					.tx()
+					.sign_and_submit_then_watch(call, signer, other_params)
+					.await?
+					.wait_for_finalized_success()
+					.await
+			}
+		})
+		.await
+	}
+
+	pub async fn ext_raw_submit_then_wait_for_finalized_success(
+		&self,
+		tx_bytes: Vec<u8>,
+	) -> Result<subxt::blocks::ExtrinsicEvents<AvailConfig>> {
+		self.with_client(|client| {
+			let tx_bytes = tx_bytes.clone();
+			async move {
+				subxt::tx::SubmittableExtrinsic::from_bytes(client, tx_bytes)
+					.submit_and_watch()
+					.await?
+					.wait_for_finalized_success()
+					.await
+			}
+		})
+		.await
 	}
 }
 
