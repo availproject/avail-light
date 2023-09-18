@@ -123,18 +123,10 @@ impl RpcClient {
 			.context("Failed to connect to a working node")
 	}
 
-	/// Shuffles full nodes to randomize access,
-	/// and pushes last full node to the end of a list
-	/// so we can try it if connection to other node fails
+	/// Shuffles full nodes to randomize access, removing last full node
 	fn shuffle_full_nodes(full_nodes: &mut Vec<String>, last_full_node: Option<&String>) {
-		let old_len = full_nodes.len();
 		full_nodes.retain(|node| Some(node) != last_full_node);
 		full_nodes.shuffle(&mut thread_rng());
-
-		// Pushing last full node to the end of a list, if it's only one left to try
-		if let (Some(node), true) = (last_full_node, old_len != full_nodes.len()) {
-			full_nodes.push(node.clone());
-		}
 	}
 
 	pub async fn new(
@@ -719,7 +711,6 @@ mod tests {
 
 			let mut shuffled = full_nodes.clone();
 			RpcClient::shuffle_full_nodes(&mut shuffled, last_full_node.as_ref());
-			prop_assert_eq!(shuffled.pop(), last_full_node);
 
 			// Assuming case when last full node occuring more than once in full nodes list
 			prop_assert!(shuffled.len() == full_nodes.len() - last_full_node_count);
