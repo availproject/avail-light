@@ -32,7 +32,10 @@ pub struct Client {
 }
 
 #[derive(Clone, Debug)]
-pub struct NumSuccPut(pub usize);
+pub enum DHTPutSuccess {
+	Batch(usize),
+	Single,
+}
 
 struct DHTCell(Cell);
 
