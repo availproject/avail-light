@@ -160,9 +160,14 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		while let Some(network_dump_event) = network_stats_receiver.recv().await {
 			// Set multiaddress for metric dispatch
 			if !network_dump_event.current_multiaddress.is_empty() {
-				*network_stats_metrics.multiaddress.write().unwrap() =
-					network_dump_event.current_multiaddress;
-				*network_stats_metrics.ip.write().unwrap() = network_dump_event.current_ip;
+				*network_stats_metrics
+					.multiaddress
+					.write()
+					.expect("unable to write metric multiaddress") = network_dump_event.current_multiaddress;
+				*network_stats_metrics
+					.ip
+					.write()
+					.expect("unable to write metric ip address") = network_dump_event.current_ip;
 			}
 
 			let number = network_dump_event
