@@ -106,21 +106,18 @@ impl RpcClient {
 		F: FnMut(avail::Client) -> Fut + Copy,
 		Fut: std::future::Future<Output = Result<T>>,
 	{
-		full_nodes
-			.iter()
-			.map(|address| {
-				Self::connect(address, expected_version, expected_genesis_hash)
-					.and_then(move |(client, node)| {
-						f(client.clone()).map_ok(|ret| (client, node, ret))
-					})
-					.inspect_err(move |error| warn!(address, %error, "Skipping connection"))
-			})
-			.collect::<futures::stream::FuturesUnordered<_>>()
-			.skip_while(|res| futures::future::ready(res.is_err()))
-			.map(Result::unwrap)
-			.next()
-			.await
-			.context("Failed to connect to a working node")
+		for address in full_nodes {
+			let result = Self::connect(address, expected_version, expected_genesis_hash)
+				.and_then(move |(client, node)| f(client.clone()).map_ok(|ret| (client, node, ret)))
+				.await;
+
+			match result {
+				Err(error) => warn!(address, %error, "Skipping connection"),
+				ok => return ok,
+			}
+		}
+
+		Err(anyhow::anyhow!("Failed to connect to a working node"))
 	}
 
 	/// Shuffles full nodes to randomize access, removing last full node
@@ -654,7 +651,7 @@ mod tests {
 	use crate::rpc::{ExpectedVersion, RpcClient};
 	use proptest::{
 		prelude::any_with,
-		prop_assert, prop_assert_eq, proptest,
+		prop_assert, proptest,
 		sample::size_range,
 		strategy::{BoxedStrategy, Strategy},
 	};
