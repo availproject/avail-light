@@ -113,7 +113,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
-	let version = env!("CARGO_PKG_VERSION");
+	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}");
 	info!("Using config: {cfg:?}");
 
