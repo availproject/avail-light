@@ -140,10 +140,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
 		.context("Failed to parse bootstrap nodes")?;
 
-	let mut client_role = "lightclient".to_string();
+	let mut client_role = "lightnode".to_string();
 	// If not bootstrap nodes provided, the client is the bootstrap
 	if bootstrap_nodes.is_empty() {
-		client_role = "bootstrap".to_string();
+		client_role = "bootnode".to_string();
 	}
 
 	let ot_metrics = Arc::new(
