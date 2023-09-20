@@ -512,6 +512,20 @@ impl EventLoop {
 				// create channels to track individual PUT results needed for success count
 				let (put_result_tx, mut put_result_rx) =
 					mpsc::channel::<DHTPutSuccess>(records.len());
+
+				// spawn new task that waits and count all successful put queries from this batch,
+				// but don't block event_loop
+				tokio::spawn(async move {
+					let mut num_success: usize = 0;
+					// increment count only while receiving single successful results
+					while let Some(DHTPutSuccess::Single) = put_result_rx.recv().await {
+						num_success += 1;
+					}
+					// send back counted successful puts
+					// signal back that this chunk of records is done
+					_ = chunk_success_sender.send(DHTPutSuccess::Batch(num_success));
+				});
+
 				// go record by record and dispatch put requests through KAD
 				for record in records.as_ref() {
 					let query_id = self
@@ -530,20 +544,7 @@ impl EventLoop {
 				// drop tx manually,
 				// ensure that only senders in spawned threads are still in use
 				// IMPORTANT: omitting this will make recv call sleep forever
-				drop(put_result_tx);
-
-				// wait here and count all successful put queries from this batch,
-				// but don't block event_loop
-				tokio::spawn(async move {
-					let mut num_success: usize = 0;
-					// increment count only while receiving single successful results
-					while let Some(DHTPutSuccess::Single) = put_result_rx.recv().await {
-						num_success += 1;
-					}
-					// send back counted successful puts
-					// signal back that this chunk of records is done
-					_ = chunk_success_sender.send(DHTPutSuccess::Batch(num_success));
-				});
+				// drop(put_result_tx);
 			},
 			Command::ReduceKademliaMapSize => {
 				self.swarm

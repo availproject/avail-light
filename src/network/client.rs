@@ -153,13 +153,13 @@ impl Client {
 		for chunk in records.chunks(self.put_batch_size) {
 			// create oneshot for each chunk, through which will success counts be sent,
 			// only for the records in that chunk
-			let (chunk_result_tx, chunk_result_rx) = oneshot::channel::<DHTPutSuccess>();
+			let (response_sender, response_receiver) = oneshot::channel::<DHTPutSuccess>();
 			if self
 				.cmd_sender
 				.send(Command::PutKadRecordBatch {
 					records: chunk.into(),
 					quorum,
-					sender: chunk_result_tx,
+					sender: response_sender,
 				})
 				.await
 				.context("Command receiver should not be dropped.")
@@ -171,7 +171,7 @@ impl Client {
 			// waiting in this manner introduces a back pressure from overwhelming the network
 			// with too many possible PUT request coming in from the whole batch
 			// this is the reason why input parameter vector of records is split into chunks
-			if let Ok(DHTPutSuccess::Batch(num)) = chunk_result_rx.await {
+			if let Ok(DHTPutSuccess::Batch(num)) = response_receiver.await {
 				num_success += num;
 			}
 		}
