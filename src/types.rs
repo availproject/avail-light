@@ -38,18 +38,19 @@ pub struct RuntimeVersionResult {
 }
 
 /// Light to app client channel message struct
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BlockVerified {
 	pub header_hash: H256,
 	pub block_num: u32,
 	pub dimensions: Dimensions,
 	pub lookup: DataLookup,
 	pub commitments: Vec<[u8; 48]>,
+	pub confidence: Option<f64>,
 }
 
-impl TryFrom<DaHeader> for BlockVerified {
+impl TryFrom<(DaHeader, Option<f64>)> for BlockVerified {
 	type Error = anyhow::Error;
-	fn try_from(header: DaHeader) -> Result<Self, Self::Error> {
+	fn try_from((header, confidence): (DaHeader, Option<f64>)) -> Result<Self, Self::Error> {
 		let hash: H256 = Encode::using_encoded(&header, blake2_256).into();
 		let enc_lookup = extract_app_lookup(&header.extension)
 			.map_err(|e| anyhow!("Invalid DataLookup: {}", e))?
@@ -63,6 +64,7 @@ impl TryFrom<DaHeader> for BlockVerified {
 			dimensions: Dimensions::new(rows, cols).context("Invalid dimensions")?,
 			lookup,
 			commitments: commitments::from_slice(&commitment)?,
+			confidence,
 		})
 	}
 }

@@ -35,7 +35,7 @@ use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, Mutex},
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::broadcast;
 use tracing::{debug, error, info, instrument};
 
 use crate::{
@@ -419,14 +419,22 @@ pub async fn run(
 	network_client: Client,
 	rpc_client: avail::Client,
 	app_id: AppId,
-	mut block_receive: Receiver<BlockVerified>,
+	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
 	sync_end_block: u32,
 ) {
 	info!("Starting for app {app_id}...");
 
-	while let Some(block) = block_receive.recv().await {
+	loop {
+		let block = match block_receive.recv().await {
+			Ok(block) => block,
+			Err(error) => {
+				error!("Cannot receive message: {error}");
+				return;
+			},
+		};
+
 		let block_number = block.block_num;
 		let dimensions = &block.dimensions;
 
@@ -510,6 +518,7 @@ mod tests {
 				],
 			]
 			.to_vec(),
+			confidence: None,
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()
@@ -566,6 +575,7 @@ mod tests {
 				],
 			]
 			.to_vec(),
+			confidence: None,
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()

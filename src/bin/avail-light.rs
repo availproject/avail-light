@@ -304,7 +304,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = channel::<avail_light::types::BlockVerified>(1 << 7);
+		let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
 		tokio::task::spawn(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -320,6 +320,25 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	} else {
 		None
 	};
+
+	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
+
+	#[cfg(feature = "api-v2")]
+	{
+		tokio::task::spawn(api::v2::publish(
+			api::v2::types::Topic::HeaderVerified,
+			message_tx.subscribe(),
+			ws_clients.clone(),
+		));
+
+		if let Some(sender) = block_tx.as_ref() {
+			tokio::task::spawn(api::v2::publish(
+				api::v2::types::Topic::ConfidenceAchieved,
+				sender.subscribe(),
+				ws_clients,
+			));
+		}
+	}
 
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
@@ -344,8 +363,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		state.clone(),
 	));
 
-	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
-
 	let light_client =
 		avail_light::light_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
@@ -362,12 +379,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		ot_metrics,
 		state.clone(),
 		lc_channels,
-	));
-
-	#[cfg(feature = "api-v2")]
-	tokio::task::spawn(api::v2::publish_header_verified(
-		message_tx.subscribe(),
-		ws_clients,
 	));
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(

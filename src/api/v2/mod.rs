@@ -1,20 +1,20 @@
 use self::{
 	handlers::handle_rejection,
-	types::{HeaderMessage, PublishMessage, Version, WsClients},
+	types::{PublishMessage, Version, WsClients},
 };
 use crate::{
 	api::v2::types::Topic,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
-use avail_subxt::{avail, primitives::Header};
+use avail_subxt::avail;
 use std::{
 	convert::Infallible,
+	fmt::Display,
 	sync::{Arc, Mutex},
-	time::Instant,
 };
 use tokio::sync::broadcast;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info};
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
@@ -96,43 +96,41 @@ fn ws_route(
 		.and_then(handlers::ws)
 }
 
-async fn publish_message(clients: &WsClients, topic: Topic, message: PublishMessage) {
-	match clients.publish(&topic, message).await {
-		Ok(results) => {
-			let published_messages = results.iter().filter(|&result| result.is_ok()).count();
-			info!(?topic, published_messages, "Message published");
-			for error in results.into_iter().filter_map(Result::err) {
-				warn!(?topic, "Cannot publish message to client: {error}")
-			}
-		},
-		Err(error) => error!(?topic, "Cannot publish message: {error}"),
-	}
-}
-
-pub async fn publish_header_verified(
-	mut header_receiver: broadcast::Receiver<(Header, Instant)>,
+pub async fn publish<T: Clone + TryInto<PublishMessage>>(
+	topic: Topic,
+	mut receiver: broadcast::Receiver<T>,
 	clients: WsClients,
-) {
+) where
+	<T as TryInto<PublishMessage>>::Error: Display,
+{
 	loop {
-		let (header, _) = match header_receiver.recv().await {
+		let message = match receiver.recv().await {
 			Ok(value) => value,
 			Err(error) => {
-				error!("Cannot receive message: {error}");
+				error!(?topic, "Cannot receive message: {error}");
 				return;
 			},
 		};
 
-		let message: HeaderMessage = match header.try_into() {
-			Ok(header) => header,
+		let message: PublishMessage = match message.try_into() {
+			Ok(message) => message,
 			Err(error) => {
-				error!("Cannot conver header: {error}");
+				error!(?topic, "Cannot create message: {error}");
 				continue;
 			},
 		};
 
-		let topic = Topic::HeaderVerified;
-		let message = PublishMessage::HeaderVerified(message);
-		publish_message(&clients, topic, message).await;
+		match clients.publish(&topic, message).await {
+			Ok(results) => {
+				let published = results.iter().filter(|&result| result.is_ok()).count();
+				let failed = results.iter().filter(|&result| result.is_err()).count();
+				info!(?topic, published, failed, "Message published to clients");
+				for error in results.into_iter().filter_map(Result::err) {
+					debug!(?topic, "Cannot publish message to client: {error}")
+				}
+			},
+			Err(error) => error!(?topic, "Cannot publish message: {error}"),
+		}
 	}
 }
 
