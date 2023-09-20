@@ -200,7 +200,7 @@ impl Reply for Status {
 	}
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum Topic {
 	HeaderVerified,
@@ -404,19 +404,19 @@ impl WsClients {
 		clients.insert(subscription_id.clone(), WsClient::new(subscription));
 	}
 
-	pub async fn publish(&self, topic: Topic, message: PublishMessage) -> anyhow::Result<()> {
+	pub async fn publish(
+		&self,
+		topic: &Topic,
+		message: PublishMessage,
+	) -> anyhow::Result<Vec<anyhow::Result<()>>> {
 		let clients = self.0.read().await;
-		for (_, client) in clients.iter() {
-			if !client.is_subscribed(&topic) {
-				continue;
-			}
-			let message = message.clone().try_into()?;
-			if let Some(sender) = &client.sender {
-				let _ = sender.send(Ok(message));
-				// TODO: Aggregate errors
-			}
-		}
-		Ok(())
+		let message: warp::ws::Message = message.try_into()?;
+		Ok(clients
+			.iter()
+			.filter(|(_, client)| client.is_subscribed(topic))
+			.flat_map(|(_, client)| &client.sender)
+			.map(|sender| sender.send(Ok(message.clone())).context("Send failed"))
+			.collect::<Vec<_>>())
 	}
 }
 

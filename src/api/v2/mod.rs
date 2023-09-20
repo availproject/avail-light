@@ -14,7 +14,7 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::broadcast;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use warp::{Filter, Rejection, Reply};
 
 mod handlers;
@@ -96,12 +96,25 @@ fn ws_route(
 		.and_then(handlers::ws)
 }
 
+async fn publish_message(clients: &WsClients, topic: Topic, message: PublishMessage) {
+	match clients.publish(&topic, message).await {
+		Ok(results) => {
+			let published_messages = results.iter().filter(|&result| result.is_ok()).count();
+			info!(?topic, published_messages, "Message published");
+			for error in results.into_iter().filter_map(Result::err) {
+				warn!(?topic, "Cannot publish message to client: {error}")
+			}
+		},
+		Err(error) => error!(?topic, "Cannot publish message: {error}"),
+	}
+}
+
 pub async fn publish_header_verified(
 	mut header_receiver: broadcast::Receiver<(Header, Instant)>,
 	clients: WsClients,
 ) {
 	loop {
-		let (header, received_at) = match header_receiver.recv().await {
+		let (header, _) = match header_receiver.recv().await {
 			Ok(value) => value,
 			Err(error) => {
 				error!("Cannot receive message: {error}");
@@ -117,17 +130,9 @@ pub async fn publish_header_verified(
 			},
 		};
 
-		if let Err(error) = clients
-			.publish(
-				Topic::HeaderVerified,
-				PublishMessage::HeaderVerified(message),
-			)
-			.await
-		{
-			error!("Cannot publish message: {error}");
-		} else {
-			info!(?received_at, "Header received");
-		}
+		let topic = Topic::HeaderVerified;
+		let message = PublishMessage::HeaderVerified(message);
+		publish_message(&clients, topic, message).await;
 	}
 }
 
