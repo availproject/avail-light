@@ -331,6 +331,7 @@ mod tests {
 	#[test_case("1.2" , "data_avail" , "1.2.9" , "data_avail" , true; "1.2/data_avail matches 1.2.9/data_avail/0")]
 	#[test_case("1.6" , "data_avail" , "1.6.1" , "no_data_avail" , false; "1.6/data_avail matches 1.6.1/no_data_avail/0")]
 	#[test_case("1.6" , "data_avail" , "1.7.0" , "data_avail" , false; "1.6/data_avail doesn't match 1.7.0/data_avail/0")]
+	#[test_case("1.7" , "data_avail" , "1.7.0" , "data_avail" , true; "1.7/data_avail matches 1.7.0/data_avail/0")]
 	fn test_version_match(
 		expected_version: &str,
 		expected_spec_name: &str,
