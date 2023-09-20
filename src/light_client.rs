@@ -126,7 +126,7 @@ pub async fn process_block(
 	header: &Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
-) -> Result<()> {
+) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlock);
 	metrics.record(MetricValue::TotalBlockNumber(header.number))?;
 
@@ -146,12 +146,12 @@ pub async fn process_block(
 			block_number,
 			"Skipping block with invalid dimensions {rows}x{cols}",
 		);
-		return Ok(());
+		return Ok(None);
 	};
 
 	if dimensions.cols().get() <= 2 {
 		error!(block_number, "more than 2 columns is required");
-		return Ok(());
+		return Ok(None);
 	}
 
 	let commitments = commitments::from_slice(&commitment)?;
@@ -207,13 +207,14 @@ pub async fn process_block(
 			"Failed to fetch {} cells",
 			positions.len() - cells.len()
 		);
-		return Ok(());
+		return Ok(None);
 	}
 
+	let mut condifence = None;
 	if !cfg.disable_proof_verification {
 		let (verified, unverified) =
 			proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
-		let count = verified.len() - unverified.len();
+		let count = verified.len().saturating_sub(unverified.len());
 		info!(
 			block_number,
 			elapsed = ?begin.elapsed(),
@@ -235,6 +236,7 @@ pub async fn process_block(
 			conf
 		);
 		metrics.record(MetricValue::BlockConfidence(conf))?;
+		condifence = Some(conf);
 	}
 
 	// push latest mined block's header into column family specified
@@ -372,11 +374,11 @@ pub async fn process_block(
 
 	metrics.record(MetricValue::HealthCheck())?;
 
-	Ok(())
+	Ok(condifence)
 }
 
 pub struct Channels {
-	pub block_sender: Option<Sender<BlockVerified>>,
+	pub block_sender: Option<broadcast::Sender<BlockVerified>>,
 	pub header_receiver: broadcast::Receiver<(Header, Instant)>,
 	pub error_sender: Sender<anyhow::Error>,
 }
@@ -415,7 +417,7 @@ pub async fn run(
 			tokio::time::sleep(seconds).await;
 		}
 
-		if let Err(error) = process_block(
+		let process_block_result = process_block(
 			&light_client,
 			&metrics,
 			&cfg,
@@ -424,16 +426,19 @@ pub async fn run(
 			received_at,
 			state.clone(),
 		)
-		.await
-		{
-			error!("Cannot process block: {error}");
-			if let Err(error) = channels.error_sender.send(error).await {
-				error!("Cannot send error message: {error}");
-			}
-			return;
-		}
+		.await;
+		let confidence = match process_block_result {
+			Ok(confidence) => confidence,
+			Err(error) => {
+				error!("Cannot process block: {error}");
+				if let Err(error) = channels.error_sender.send(error).await {
+					error!("Cannot send error message: {error}");
+				}
+				return;
+			},
+		};
 
-		let Ok(client_msg) = types::BlockVerified::try_from(header) else {
+		let Ok(client_msg) = types::BlockVerified::try_from((header, confidence)) else {
 			error!("Cannot create message from header");
 			continue;
 		};
@@ -441,7 +446,7 @@ pub async fn run(
 		// notify dht-based application client
 		// that newly mined block has been received
 		if let Some(ref channel) = channels.block_sender {
-			if let Err(error) = channel.send(client_msg).await {
+			if let Err(error) = channel.send(client_msg) {
 				error!("Cannot send block verified message: {error}");
 				continue;
 			}

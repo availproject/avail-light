@@ -378,3 +378,17 @@ When header verification is finished, the message is pushed to the light client 
   }
 }
 ```
+
+### Confidence achieved
+
+When high confidence in data availability is achieved, the message is pushed to the light client on the **confidence-achieved** topic:
+
+```json
+{
+  "topic": "confidence-achieved",
+  "message": {
+    "block_number": {block-number},
+    "confidence": {confidence} // Optional
+  }
+}
+```

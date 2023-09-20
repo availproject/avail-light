@@ -13,6 +13,7 @@ use sp_core::{blake2_256, H256};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
+	time::Instant,
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
@@ -23,7 +24,7 @@ use warp::{
 
 use crate::{
 	rpc::Node,
-	types::{self, block_matrix_partition_format, RuntimeConfig, State},
+	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig, State},
 };
 
 #[derive(Debug)]
@@ -349,10 +350,38 @@ impl TryFrom<HeaderExtension> for Extension {
 	}
 }
 
+impl TryFrom<(avail_subxt::primitives::Header, Instant)> for PublishMessage {
+	type Error = anyhow::Error;
+
+	fn try_from(value: (avail_subxt::primitives::Header, Instant)) -> Result<Self, Self::Error> {
+		let (header, _) = value;
+		header.try_into().map(PublishMessage::HeaderVerified)
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConfidenceMessage {
+	block_number: u32,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	confidence: Option<f64>,
+}
+
+impl TryFrom<BlockVerified> for PublishMessage {
+	type Error = anyhow::Error;
+
+	fn try_from(value: BlockVerified) -> Result<Self, Self::Error> {
+		Ok(PublishMessage::ConfidenceAchieved(ConfidenceMessage {
+			block_number: value.block_num,
+			confidence: value.confidence,
+		}))
+	}
+}
+
 #[derive(Serialize, Clone)]
 #[serde(tag = "type", content = "message", rename_all = "kebab-case")]
 pub enum PublishMessage {
 	HeaderVerified(HeaderMessage),
+	ConfidenceAchieved(ConfidenceMessage),
 }
 
 impl TryFrom<PublishMessage> for Message {

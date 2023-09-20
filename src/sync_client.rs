@@ -15,6 +15,16 @@
 //!
 //! In case RPC is disabled, RPC calls will be skipped.
 
+use crate::{
+	data::{
+		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
+		store_confidence_in_db,
+	},
+	network::Client,
+	proof, rpc,
+	types::{BlockVerified, State, SyncClientConfig},
+	utils::{calculate_confidence, extract_app_lookup, extract_kate},
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_subxt::{avail, primitives::Header as DaHeader, utils::H256};
@@ -27,19 +37,8 @@ use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::mpsc::Sender;
+use tokio::sync::broadcast;
 use tracing::{error, info, warn};
-
-use crate::{
-	data::{
-		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
-		store_confidence_in_db,
-	},
-	network::Client,
-	proof, rpc,
-	types::{BlockVerified, State, SyncClientConfig},
-	utils::{extract_app_lookup, extract_kate},
-};
 
 #[async_trait]
 #[automock]
@@ -129,7 +128,7 @@ async fn process_block(
 	block_number: u32,
 	cfg: &SyncClientConfig,
 	pp: Arc<PublicParameters>,
-	block_verified_sender: Option<Sender<BlockVerified>>,
+	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 ) -> Result<()> {
 	if sync_client
 		.block_header_in_db(block_number)
@@ -230,10 +229,12 @@ async fn process_block(
 		.await;
 	info!(block_number, "Cells inserted into DHT: {inserted_cells}");
 
-	let client_msg = BlockVerified::try_from(header).context("converting to message failed")?;
+	let confidence = Some(calculate_confidence(verified.len() as u32));
+	let client_msg =
+		BlockVerified::try_from((header, confidence)).context("converting to message failed")?;
 
 	if let Some(ref channel) = block_verified_sender {
-		if let Err(error) = channel.send(client_msg).await {
+		if let Err(error) = channel.send(client_msg) {
 			error!("Cannot send block verified message: {error}");
 		}
 	}
@@ -256,7 +257,7 @@ pub async fn run(
 	start_block: u32,
 	end_block: u32,
 	pp: Arc<PublicParameters>,
-	block_verified_sender: Option<Sender<BlockVerified>>,
+	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
 	if start_block >= end_block {
@@ -308,11 +309,10 @@ mod tests {
 	use hex_literal::hex;
 	use kate_recovery::testnet;
 	use mockall::predicate::eq;
-	use tokio::sync::mpsc::channel;
 
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
-		let (block_tx, _) = channel::<types::BlockVerified>(10);
+		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
 		let pp = Arc::new(testnet::public_params(1024));
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
@@ -445,7 +445,7 @@ mod tests {
 
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
-		let (block_tx, _) = channel::<types::BlockVerified>(10);
+		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
 		let pp = Arc::new(testnet::public_params(1024));
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
@@ -579,7 +579,7 @@ mod tests {
 	}
 	#[tokio::test]
 	pub async fn test_header_in_dbstore() {
-		let (block_tx, _) = channel::<types::BlockVerified>(10);
+		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
 		let pp = Arc::new(testnet::public_params(1024));
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
