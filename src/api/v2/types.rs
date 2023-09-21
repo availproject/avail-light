@@ -362,7 +362,10 @@ impl TryFrom<(avail_subxt::primitives::Header, Instant)> for PublishMessage {
 
 	fn try_from(value: (avail_subxt::primitives::Header, Instant)) -> Result<Self, Self::Error> {
 		let (header, _) = value;
-		header.try_into().map(PublishMessage::HeaderVerified)
+		header
+			.try_into()
+			.map(Box::new)
+			.map(PublishMessage::HeaderVerified)
 	}
 }
 
@@ -426,7 +429,7 @@ impl TryFrom<(u32, AppData)> for PublishMessage {
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "type", content = "message", rename_all = "kebab-case")]
 pub enum PublishMessage {
-	HeaderVerified(HeaderMessage),
+	HeaderVerified(Box<HeaderMessage>),
 	ConfidenceAchieved(ConfidenceMessage),
 	DataVerified(DataMessage),
 }
@@ -673,7 +676,7 @@ mod tests {
 	}
 
 	fn header_verified() -> PublishMessage {
-		PublishMessage::HeaderVerified(HeaderMessage {
+		PublishMessage::HeaderVerified(Box::new(HeaderMessage {
 			block_number: 1,
 			header: Header {
 				hash: H256::default(),
@@ -692,7 +695,7 @@ mod tests {
 					},
 				},
 			},
-		})
+		}))
 	}
 
 	fn confidence_achieved() -> PublishMessage {
