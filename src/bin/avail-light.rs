@@ -15,6 +15,7 @@ use avail_light::{
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
+use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::{
@@ -301,10 +302,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	tokio::task::spawn(server.run());
 
-	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+	let (block_tx, _data_rx) = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
 		let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
+		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
 		tokio::task::spawn(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -315,10 +317,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			pp.clone(),
 			state.clone(),
 			sync_end_block,
+			data_tx,
 		));
-		Some(block_tx)
+		(Some(block_tx), Some(data_rx))
 	} else {
-		None
+		(None, None)
 	};
 
 	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
@@ -335,6 +338,14 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			tokio::task::spawn(api::v2::publish(
 				api::v2::types::Topic::ConfidenceAchieved,
 				sender.subscribe(),
+				ws_clients.clone(),
+			));
+		}
+
+		if let Some(data_rx) = _data_rx {
+			tokio::task::spawn(api::v2::publish(
+				api::v2::types::Topic::DataVerified,
+				data_rx,
 				ws_clients,
 			));
 		}

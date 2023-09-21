@@ -392,3 +392,20 @@ When high confidence in data availability is achieved, the message is pushed to 
   }
 }
 ```
+
+### Data verified
+
+When high confidence in data availability is achieved, the message is pushed to the light client on the **data-verified** topic:
+
+```json
+{
+	"topic": "data-verified",
+	"message": {
+		"block_number": "{block-number}",
+		"data_transactions": [{
+			"data": "{base-64-encoded-data}", // Optional
+			"extrinsic": "{base-64-encoded-extrinsic}" // Optional
+		}]
+	}
+}
+```
