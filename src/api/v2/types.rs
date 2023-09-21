@@ -7,7 +7,7 @@ use base64::{engine::general_purpose, DecodeError, Engine};
 use codec::Encode;
 use derive_more::From;
 use hyper::{http, StatusCode};
-use kate_recovery::{commitments, config, matrix::Partition};
+use kate_recovery::{com::AppData, commitments, config, matrix::Partition};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use sp_core::{blake2_256, H256};
 use std::{
@@ -25,6 +25,7 @@ use warp::{
 use crate::{
 	rpc::Node,
 	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig, State},
+	utils::decode_app_data,
 };
 
 #[derive(Debug)]
@@ -94,8 +95,8 @@ pub struct Status {
 	pub partition: Option<Partition>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(try_from = "String")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Base64(pub Vec<u8>);
 
 impl From<Base64> for BoundedVec<u8> {
@@ -115,6 +116,12 @@ impl TryFrom<String> for Base64 {
 
 	fn try_from(value: String) -> Result<Self, Self::Error> {
 		general_purpose::STANDARD.decode(value).map(Base64)
+	}
+}
+
+impl From<Base64> for String {
+	fn from(value: Base64) -> Self {
+		general_purpose::STANDARD.encode(value.0)
 	}
 }
 
@@ -377,11 +384,51 @@ impl TryFrom<BlockVerified> for PublishMessage {
 	}
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataMessage {
+	block_number: u32,
+	data_transactions: Vec<DataTransaction>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataTransaction {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	data: Option<Base64>,
+	extrinsic: Base64,
+}
+
+impl TryFrom<Vec<u8>> for DataTransaction {
+	type Error = anyhow::Error;
+
+	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+		Ok(DataTransaction {
+			data: decode_app_data(&value)?.map(Base64),
+			extrinsic: Base64(value),
+		})
+	}
+}
+
+impl TryFrom<(u32, AppData)> for PublishMessage {
+	type Error = anyhow::Error;
+
+	fn try_from((block_number, app_data): (u32, AppData)) -> Result<Self, Self::Error> {
+		let data_transactions = app_data
+			.into_iter()
+			.map(TryFrom::try_from)
+			.collect::<anyhow::Result<Vec<_>>>()?;
+		Ok(PublishMessage::DataVerified(DataMessage {
+			block_number,
+			data_transactions,
+		}))
+	}
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "type", content = "message", rename_all = "kebab-case")]
 pub enum PublishMessage {
 	HeaderVerified(HeaderMessage),
 	ConfidenceAchieved(ConfidenceMessage),
+	DataVerified(DataMessage),
 }
 
 impl TryFrom<PublishMessage> for Message {

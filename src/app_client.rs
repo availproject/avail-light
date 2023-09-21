@@ -20,7 +20,8 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
 	com::{
-		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, Percent,
+		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
+		Percent,
 	},
 	commitments,
 	config::{self, CHUNK_SIZE},
@@ -281,7 +282,7 @@ async fn process_block(
 	app_id: AppId,
 	block: &BlockVerified,
 	pp: Arc<PublicParameters>,
-) -> Result<()> {
+) -> Result<AppData> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = block.dimensions;
@@ -398,7 +399,7 @@ async fn process_block(
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
 	debug!(block_number, "Stored {bytes_count} bytes into database");
 
-	Ok(())
+	Ok(data)
 }
 
 /// Runs application client.
@@ -423,6 +424,7 @@ pub async fn run(
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
 	sync_end_block: u32,
+	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -454,9 +456,14 @@ pub async fn run(
 			network_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};
-		if let Err(error) = process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
-			error!(block_number, "Cannot process block: {error}");
-		} else {
+		let data = match process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
+			Ok(data) => data,
+			Err(error) => {
+				error!(block_number, "Cannot process block: {error}");
+				return;
+			},
+		};
+		{
 			let mut state = state.lock().unwrap();
 			let synced = state
 				.confidence_achieved
@@ -471,8 +478,12 @@ pub async fn run(
 			if sync_end_block == block_number {
 				state.set_synced(true)
 			}
-			debug!(block_number, "Block processed");
 		}
+		if let Err(error) = data_verified_sender.send((block_number, data)) {
+			error!("Cannot send data verified message: {error}");
+			return;
+		}
+		debug!(block_number, "Block processed");
 	}
 }
 

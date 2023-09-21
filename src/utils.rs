@@ -1,14 +1,21 @@
+use anyhow::Context;
 use avail_core::{
 	data_lookup::compact::{CompactDataLookup, DataLookupItem},
 	data_lookup::Error as DataLookupError,
 	AppId, DataLookup,
 };
 use avail_subxt::{
-	api::runtime_types::avail_core::{
-		header::extension::HeaderExtension,
-		header::extension::{v1, v2},
+	api::runtime_types::{
+		avail_core::{
+			header::extension::HeaderExtension,
+			header::extension::{v1, v2},
+		},
+		da_control::pallet::Call,
+		da_runtime::RuntimeCall,
 	},
-	primitives::{grandpa::AuthorityId, grandpa::ConsensusLog, Header as DaHeader},
+	primitives::{
+		grandpa::AuthorityId, grandpa::ConsensusLog, AppUncheckedExtrinsic, Header as DaHeader,
+	},
 	utils::H256,
 };
 use codec::Decode;
@@ -16,6 +23,16 @@ use kate_recovery::{
 	data::Cell,
 	matrix::{Dimensions, Position},
 };
+
+pub fn decode_app_data(data: &[u8]) -> anyhow::Result<Option<Vec<u8>>> {
+	let extrisic: AppUncheckedExtrinsic =
+		<_ as Decode>::decode(&mut &data[..]).context("Couldn't decode AvailExtrinsic")?;
+
+	match extrisic.function {
+		RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Ok(Some(data.0)),
+		_ => Ok(None),
+	}
+}
 
 /// Calculates confidence from given number of verified cells
 pub fn calculate_confidence(count: u32) -> f64 {
