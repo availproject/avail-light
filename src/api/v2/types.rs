@@ -393,11 +393,27 @@ pub struct DataMessage {
 	data_transactions: Vec<DataTransaction>,
 }
 
+impl DataMessage {
+	fn apply_filter(&mut self, fields: &HashSet<DataField>) {
+		if !fields.contains(&DataField::Extrinsic) {
+			for transaction in &mut self.data_transactions {
+				transaction.extrinsic = None
+			}
+		}
+		if !fields.contains(&DataField::Data) && fields.contains(&DataField::Extrinsic) {
+			for transaction in &mut self.data_transactions {
+				transaction.data = None
+			}
+		}
+	}
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataTransaction {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	data: Option<Base64>,
-	extrinsic: Base64,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	extrinsic: Option<Base64>,
 }
 
 impl TryFrom<Vec<u8>> for DataTransaction {
@@ -406,7 +422,7 @@ impl TryFrom<Vec<u8>> for DataTransaction {
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Ok(DataTransaction {
 			data: decode_app_data(&value)?.map(Base64),
-			extrinsic: Base64(value),
+			extrinsic: Some(Base64(value)),
 		})
 	}
 }
@@ -432,6 +448,16 @@ pub enum PublishMessage {
 	HeaderVerified(Box<HeaderMessage>),
 	ConfidenceAchieved(ConfidenceMessage),
 	DataVerified(DataMessage),
+}
+
+impl PublishMessage {
+	fn apply_filter(&mut self, fields: &HashSet<DataField>) {
+		match self {
+			PublishMessage::HeaderVerified(_) => (),
+			PublishMessage::ConfidenceAchieved(_) => (),
+			PublishMessage::DataVerified(data) => data.apply_filter(fields),
+		}
+	}
 }
 
 impl TryFrom<PublishMessage> for Message {
@@ -460,6 +486,12 @@ impl WsClient {
 
 	fn is_subscribed(&self, topic: &Topic) -> bool {
 		self.subscription.topics.contains(topic)
+	}
+
+	fn sender_with_data_fields(&self) -> Option<(&Sender, &HashSet<DataField>)> {
+		self.sender
+			.as_ref()
+			.map(|sender| (sender, &self.subscription.data_fields))
 	}
 }
 
@@ -491,12 +523,20 @@ impl WsClients {
 		message: PublishMessage,
 	) -> anyhow::Result<Vec<anyhow::Result<()>>> {
 		let clients = self.0.read().await;
-		let message: warp::ws::Message = message.try_into()?;
 		Ok(clients
 			.iter()
 			.filter(|(_, client)| client.is_subscribed(topic))
-			.flat_map(|(_, client)| &client.sender)
-			.map(|sender| sender.send(Ok(message.clone())).context("Send failed"))
+			.flat_map(|(_, client)| client.sender_with_data_fields())
+			.map(|(sender, data_fields)| {
+				let mut message = message.clone();
+				message.apply_filter(data_fields);
+				message
+					.try_into()
+					.context("Cannot convert to ws message")
+					.and_then(|message: warp::ws::Message| {
+						sender.send(Ok(message)).context("Send failed")
+					})
+			})
 			.collect::<Vec<_>>())
 	}
 }
