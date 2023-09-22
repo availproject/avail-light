@@ -400,7 +400,7 @@ mod tests {
 			let client_uuid = uuid::Uuid::new_v4().to_string();
 			let clients = WsClients::default();
 			clients
-				.subscribe(client_uuid.clone(), Subscription::default())
+				.subscribe(&client_uuid, Subscription::default())
 				.await;
 
 			let state = Arc::new(Mutex::new(State::default()));
