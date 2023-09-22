@@ -399,9 +399,9 @@ impl WsClients {
 		self.0.read().await.contains_key(subscription_id)
 	}
 
-	pub async fn subscribe(&self, subscription_id: String, subscription: Subscription) {
+	pub async fn subscribe(&self, subscription_id: &str, subscription: Subscription) {
 		let mut clients = self.0.write().await;
-		clients.insert(subscription_id.clone(), WsClient::new(subscription));
+		clients.insert(subscription_id.to_string(), WsClient::new(subscription));
 	}
 
 	pub async fn publish(
@@ -573,4 +573,78 @@ pub enum WsResponse {
 #[serde(tag = "topic", rename_all = "kebab-case")]
 pub enum WsError {
 	Error(Error),
+}
+
+#[cfg(test)]
+mod tests {
+	use std::time::Duration;
+
+	use avail_subxt::api::runtime_types::avail_core::data_lookup::compact::CompactDataLookup;
+	use sp_core::H256;
+	use tokio::sync::mpsc;
+
+	use crate::api::v2::types::{Header, HeaderMessage, PublishMessage};
+
+	use super::{DataField, Subscription, Topic, WsClients};
+
+	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
+		Subscription {
+			topics: topics.into_iter().collect(),
+			data_fields: fields.into_iter().collect(),
+		}
+	}
+
+	fn header_verified() -> PublishMessage {
+		PublishMessage::HeaderVerified(HeaderMessage {
+			block_number: 1,
+			header: Header {
+				hash: H256::default(),
+				parent_hash: H256::default(),
+				number: 1,
+				state_root: H256::default(),
+				extrinsics_root: H256::default(),
+				extension: super::Extension {
+					rows: 1,
+					cols: 1,
+					data_root: None,
+					commitments: vec![],
+					app_lookup: CompactDataLookup {
+						size: 0,
+						index: vec![],
+					},
+				},
+			},
+		})
+	}
+
+	#[tokio::test]
+	async fn clients_publish() {
+		let clients = WsClients::default();
+		let subscription_1 = subscription(
+			vec![Topic::HeaderVerified, Topic::DataVerified],
+			vec![DataField::Extrinsic],
+		);
+		let subscription_2 = subscription(
+			vec![Topic::ConfidenceAchieved, Topic::DataVerified],
+			vec![DataField::Data],
+		);
+		let (sender_1, mut receiver_1) = mpsc::unbounded_channel();
+		let (sender_2, mut receiver_2) = mpsc::unbounded_channel();
+		clients.subscribe("1", subscription_1).await;
+		clients.subscribe("2", subscription_2).await;
+		clients.set_sender("1", sender_1).await;
+		clients.set_sender("2", sender_2).await;
+
+		tokio::task::spawn(async move {
+			for (topic, message) in vec![(Topic::HeaderVerified, header_verified())] {
+				let _ = clients.publish(&topic, message).await;
+			}
+		});
+
+		let _ = receiver_1.recv().await.unwrap();
+		tokio::select! {
+			Some(message) = receiver_2.recv() => if message.is_ok() { panic!("Shouldn't recieve") },
+			_ = tokio::time::sleep(Duration::from_millis(100)) => (),
+		};
+	}
 }

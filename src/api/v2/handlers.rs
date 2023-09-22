@@ -25,9 +25,7 @@ pub async fn subscriptions(
 	clients: WsClients,
 ) -> Result<SubscriptionId, Infallible> {
 	let subscription_id = Uuid::new_v4().to_string();
-	clients
-		.subscribe(subscription_id.clone(), subscription)
-		.await;
+	clients.subscribe(&subscription_id, subscription).await;
 	Ok(SubscriptionId { subscription_id })
 }
 
