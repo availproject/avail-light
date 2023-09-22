@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.6.0"
+version = "1.7.0"
 authors = ["Avail Team"]
 default-run = "avail-light"
 edition = "2021"
@@ -54,7 +54,7 @@ rocksdb = { version = "0.17.0", features = ["snappy", "multi-threaded-cf"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
 smallvec = "1.6.1"
-sp-core = { version = "*" }
+sp-core = { version = "21.0.0" }
 threadpool = "1.8.1"
 tokio = { version = "1.25", features = ["full"] }
 tokio-stream = "0.1.12"
