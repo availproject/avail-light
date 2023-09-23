@@ -13,11 +13,11 @@ use libp2p::{
 	multiaddr::Protocol,
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
+	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
 	relay::{self, client::Behaviour as RelayClient},
 	swarm::{NetworkBehaviour, SwarmBuilder},
 	Multiaddr, PeerId, Transport,
 };
-use libp2p_quic::{tokio::Transport as TokioQuic, Config as QuicConfig};
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self, Sender};
