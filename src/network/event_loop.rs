@@ -540,11 +540,6 @@ impl EventLoop {
 						QueryChannel::PutRecordBatch(put_result_tx.clone()),
 					);
 				}
-
-				// drop tx manually,
-				// ensure that only senders in spawned threads are still in use
-				// IMPORTANT: omitting this will make recv call sleep forever
-				// drop(put_result_tx);
 			},
 			Command::ReduceKademliaMapSize => {
 				self.swarm
