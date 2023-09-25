@@ -511,8 +511,7 @@ impl EventLoop {
 				sender: chunk_success_sender,
 			} => {
 				// create channels to track individual PUT results needed for success count
-				let (put_result_tx, mut put_result_rx) =
-					mpsc::channel::<DHTPutSuccess>(records.len());
+				let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(records.len());
 
 				// spawn new task that waits and count all successful put queries from this batch,
 				// but don't block event_loop
