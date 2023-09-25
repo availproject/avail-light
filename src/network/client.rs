@@ -31,7 +31,7 @@ pub struct Client {
 	put_batch_size: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DHTPutSuccess {
 	Batch(usize),
 	Single,

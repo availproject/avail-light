@@ -1,5 +1,5 @@
 use anyhow::Result;
-use async_std::stream::StreamExt;
+use futures::{future, FutureExt, StreamExt};
 use itertools::Either;
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
@@ -34,6 +34,7 @@ use tokio::{
 	},
 	time::{interval_at, Instant, Interval},
 };
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info, trace};
 
 use super::{
@@ -515,16 +516,16 @@ impl EventLoop {
 
 				// spawn new task that waits and count all successful put queries from this batch,
 				// but don't block event_loop
-				tokio::spawn(async move {
-					let mut num_success: usize = 0;
-					// increment count only while receiving single successful results
-					while let Some(DHTPutSuccess::Single) = put_result_rx.recv().await {
-						num_success += 1;
-					}
-					// send back counted successful puts
-					// signal back that this chunk of records is done
-					_ = chunk_success_sender.send(DHTPutSuccess::Batch(num_success));
-				});
+				tokio::spawn(
+					<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
+						// consider only while receiving single successful results
+						.filter(|item| future::ready(item == &DHTPutSuccess::Single))
+						.count()
+						.map(DHTPutSuccess::Batch)
+						// send back counted successful puts
+						// signal back that this chunk of records is done
+						.map(|successful_puts| chunk_success_sender.send(successful_puts)),
+				);
 
 				// go record by record and dispatch put requests through KAD
 				for record in records.as_ref() {
