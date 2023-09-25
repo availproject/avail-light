@@ -94,6 +94,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::KadRoutingTablePeerNum(number) => {
 				self.record_u64("kad_routing_table_peer_num", number.into())?;
 			},
+			super::MetricValue::HealthCheck() => {
+				self.record_u64("up", 1)?;
+			},
 		};
 		Ok(())
 	}

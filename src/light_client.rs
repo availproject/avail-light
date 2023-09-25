@@ -370,6 +370,8 @@ pub async fn process_block(
 		.await
 		.context("Unable to dump network stats")?;
 
+	metrics.record(MetricValue::HealthCheck())?;
+
 	Ok(())
 }
 
