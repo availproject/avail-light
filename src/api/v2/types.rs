@@ -1,5 +1,5 @@
 use anyhow::Context;
-use avail_subxt::api::runtime_types::sp_core::bounded::bounded_vec::BoundedVec;
+use avail_subxt::api::runtime_types::bounded_collections::bounded_vec::BoundedVec;
 use base64::{engine::general_purpose, DecodeError, Engine};
 use derive_more::From;
 use hyper::{http, StatusCode};
