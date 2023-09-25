@@ -377,7 +377,7 @@ impl TryFrom<BlockVerified> for PublishMessage {
 	}
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "type", content = "message", rename_all = "kebab-case")]
 pub enum PublishMessage {
 	HeaderVerified(HeaderMessage),
@@ -616,7 +616,7 @@ mod tests {
 
 	use crate::api::v2::types::{Header, HeaderMessage, PublishMessage};
 
-	use super::{DataField, Subscription, Topic, WsClients};
+	use super::{ConfidenceMessage, DataField, Subscription, Topic, WsClients};
 
 	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
 		Subscription {
@@ -648,6 +648,13 @@ mod tests {
 		})
 	}
 
+	fn confidence_achieved() -> PublishMessage {
+		PublishMessage::ConfidenceAchieved(ConfidenceMessage {
+			block_number: 1,
+			confidence: Some(1.0),
+		})
+	}
+
 	#[tokio::test]
 	async fn clients_publish() {
 		let clients = WsClients::default();
@@ -667,15 +674,27 @@ mod tests {
 		clients.set_sender("2", sender_2).await.unwrap();
 
 		tokio::task::spawn(async move {
-			for (topic, message) in vec![(Topic::HeaderVerified, header_verified())] {
+			for (topic, message) in vec![
+				(Topic::HeaderVerified, header_verified()),
+				(Topic::ConfidenceAchieved, confidence_achieved()),
+			] {
 				let _ = clients.publish(&topic, message).await;
 			}
 		});
 
-		let _ = receiver_1.recv().await.unwrap();
 		tokio::select! {
-			Some(message) = receiver_2.recv() => if message.is_ok() { panic!("Shouldn't recieve") },
-			_ = tokio::time::sleep(Duration::from_millis(100)) => (),
+			Some(message) = receiver_1.recv() => {
+				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
+				assert!(matches!(message, PublishMessage::HeaderVerified(_)));
+			},
+			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
+		};
+		tokio::select! {
+			Some(message) = receiver_2.recv() => {
+				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
+				assert!(matches!(message, PublishMessage::ConfidenceAchieved(_)));
+			},
+			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
 		};
 	}
 }
