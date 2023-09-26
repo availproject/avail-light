@@ -3,7 +3,7 @@ use event_loop::EventLoop;
 use futures::future::Either;
 use libp2p::{
 	autonat::{self, Behaviour as AutoNat},
-	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version, ConnectedPoint},
+	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version},
 	dcutr::Behaviour as Dcutr,
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
@@ -34,15 +34,6 @@ use crate::{
 	telemetry::NetworkDumpEvent,
 	types::{LibP2PConfig, SecretKey},
 };
-
-// Event enum encodes all used network event variants
-#[derive(Debug, Clone)]
-pub enum Event {
-	ConnectionEstablished {
-		peer_id: PeerId,
-		endpoint: ConnectedPoint,
-	},
-}
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]

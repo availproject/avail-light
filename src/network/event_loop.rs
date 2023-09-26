@@ -38,7 +38,7 @@ use tracing::{debug, error, info, trace};
 
 use super::{
 	client::{Command, NumSuccPut},
-	Behaviour, BehaviourEvent, Event,
+	Behaviour, BehaviourEvent,
 };
 use crate::{network::extract_ip, telemetry::NetworkDumpEvent};
 
@@ -101,7 +101,6 @@ enum QueryState {
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
-	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
@@ -141,7 +140,6 @@ impl EventLoop {
 		Self {
 			swarm,
 			command_receiver,
-			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			pending_kad_query_batch: Default::default(),
@@ -173,13 +171,6 @@ impl EventLoop {
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
-	}
-
-	// Notify function is used to send network events to all listeners
-	// through send channels that are able to send, otherwise channel is discarded
-	fn notify(&mut self, event: Event) {
-		self.output_senders
-			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, StreamError>) {
@@ -466,9 +457,6 @@ impl EventLoop {
 						peer_id, endpoint, ..
 					} => {
 						trace!("Connection established to: {peer_id:?} via: {endpoint:?}.");
-
-						// this event is of a particular interest for our first node in the network
-						self.notify(Event::ConnectionEstablished { peer_id, endpoint });
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						// remove error producing relay from pending dials
