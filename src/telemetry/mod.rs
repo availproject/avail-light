@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use mockall::automock;
 
 pub mod otlp;
@@ -33,7 +34,10 @@ pub enum MetricValue {
 }
 
 #[automock]
+#[async_trait]
 pub trait Metrics {
-	fn count(&self, counter: MetricCounter);
-	fn record(&self, value: MetricValue) -> Result<()>;
+	async fn count(&self, counter: MetricCounter);
+	async fn record(&self, value: MetricValue) -> Result<()>;
+	async fn set_multiaddress(&self, multiaddr: String);
+	async fn set_ip(&self, ip: String);
 }

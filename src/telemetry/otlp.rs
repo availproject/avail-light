@@ -1,37 +1,41 @@
 use anyhow::{Error, Ok, Result};
+use async_trait::async_trait;
 use opentelemetry_api::{
 	global,
 	metrics::{Counter, Meter},
 	KeyValue,
 };
 use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
-use std::{sync::RwLock, time::Duration};
+use std::time::Duration;
+use tokio::sync::RwLock;
+
+const METRICS_JOB_NAME: &str = "avail_light_client";
 
 #[derive(Debug)]
 pub struct Metrics {
-	pub meter: Meter,
-	pub session_block_counter: Counter<u64>,
-	pub peer_id: String,
-	pub multiaddress: RwLock<String>,
-	pub ip: RwLock<String>,
-	pub role: String,
+	meter: Meter,
+	session_block_counter: Counter<u64>,
+	peer_id: String,
+	multiaddress: RwLock<String>,
+	ip: RwLock<String>,
+	role: String,
 }
 
 impl Metrics {
-	fn attributes(&self) -> [KeyValue; 6] {
+	async fn attributes(&self) -> [KeyValue; 6] {
 		[
-			KeyValue::new("job", "avail_light_client"),
+			KeyValue::new("job", METRICS_JOB_NAME),
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.role.clone()),
 			KeyValue::new("peerID", self.peer_id.clone()),
-			KeyValue::new("multiaddress", self.multiaddress.read().unwrap().clone()),
-			KeyValue::new("ip", self.ip.read().unwrap().clone()),
+			KeyValue::new("multiaddress", self.multiaddress.read().await.clone()),
+			KeyValue::new("ip", self.ip.read().await.clone()),
 		]
 	}
 
-	fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
+	async fn record_u64(&self, name: &'static str, value: u64) -> Result<()> {
 		let instrument = self.meter.u64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes();
+		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_u64(&instrument, value, &attributes)
@@ -39,60 +43,72 @@ impl Metrics {
 		Ok(())
 	}
 
-	fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
+	async fn record_f64(&self, name: &'static str, value: f64) -> Result<()> {
 		let instrument = self.meter.f64_observable_gauge(name).try_init()?;
-		let attributes = self.attributes();
+		let attributes = self.attributes().await;
 		self.meter
 			.register_callback(&[instrument.as_any()], move |observer| {
 				observer.observe_f64(&instrument, value, &attributes)
 			})?;
 		Ok(())
 	}
+
+	async fn set_multiaddress(&self, multiaddr: String) {
+		let mut m = self.multiaddress.write().await;
+		*m = multiaddr;
+	}
+
+	async fn set_ip(&self, ip: String) {
+		let mut i = self.ip.write().await;
+		*i = ip;
+	}
 }
 
+#[async_trait]
 impl super::Metrics for Metrics {
-	fn count(&self, counter: super::MetricCounter) {
+	async fn count(&self, counter: super::MetricCounter) {
 		match counter {
 			super::MetricCounter::SessionBlock => {
-				self.session_block_counter.add(1, &self.attributes());
+				self.session_block_counter.add(1, &self.attributes().await);
 			},
 		}
 	}
 
-	fn record(&self, value: super::MetricValue) -> Result<()> {
+	async fn record(&self, value: super::MetricValue) -> Result<()> {
 		match value {
 			super::MetricValue::TotalBlockNumber(number) => {
-				self.record_u64("total_block_number", number.into())?;
+				self.record_u64("total_block_number", number.into()).await?;
 			},
 			super::MetricValue::DHTFetched(number) => {
-				self.record_f64("dht_fetched", number)?;
+				self.record_f64("dht_fetched", number).await?;
 			},
 			super::MetricValue::DHTFetchedPercentage(number) => {
-				self.record_f64("dht_fetched_percentage", number)?;
+				self.record_f64("dht_fetched_percentage", number).await?;
 			},
 			super::MetricValue::NodeRPCFetched(number) => {
-				self.record_f64("node_rpc_fetched", number)?;
+				self.record_f64("node_rpc_fetched", number).await?;
 			},
 			super::MetricValue::BlockConfidence(number) => {
-				self.record_f64("block_confidence", number)?;
+				self.record_f64("block_confidence", number).await?;
 			},
 			super::MetricValue::RPCCallDuration(number) => {
-				self.record_f64("rpc_call_duration", number)?;
+				self.record_f64("rpc_call_duration", number).await?;
 			},
 			super::MetricValue::DHTPutDuration(number) => {
-				self.record_f64("dht_put_duration", number)?;
+				self.record_f64("dht_put_duration", number).await?;
 			},
 			super::MetricValue::DHTPutSuccess(number) => {
-				self.record_f64("dht_put_success", number)?;
+				self.record_f64("dht_put_success", number).await?;
 			},
 			super::MetricValue::DHTPutRowsDuration(number) => {
-				self.record_f64("dht_put_rows_duration", number)?;
+				self.record_f64("dht_put_rows_duration", number).await?;
 			},
 			super::MetricValue::DHTPutRowsSuccess(number) => {
-				self.record_f64("dht_put_rows_success", number)?;
+				self.record_f64("dht_put_rows_success", number).await?;
 			},
 			super::MetricValue::KadRoutingTablePeerNum(number) => {
-				self.record_u64("kad_routing_table_peer_num", number.into())?;
+				self.record_u64("kad_routing_table_peer_num", number.into())
+					.await?;
 			},
 			super::MetricValue::HealthCheck() => {
 				self.record_u64("up", 1)?;
@@ -107,6 +123,14 @@ impl super::Metrics for Metrics {
 			},
 		};
 		Ok(())
+	}
+
+	async fn set_multiaddress(&self, multiaddr: String) {
+		self.set_multiaddress(multiaddr).await;
+	}
+
+	async fn set_ip(&self, ip: String) {
+		self.set_ip(ip);
 	}
 }
 
