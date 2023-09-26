@@ -666,7 +666,7 @@ mod tests {
 
 	use crate::api::v2::types::{Header, HeaderMessage, PublishMessage};
 
-	use super::{ConfidenceMessage, DataField, Subscription, Topic, WsClients};
+	use super::{ConfidenceMessage, DataField, DataMessage, Subscription, Topic, WsClients};
 
 	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
 		Subscription {
@@ -705,6 +705,13 @@ mod tests {
 		})
 	}
 
+	fn data_verified() -> PublishMessage {
+		PublishMessage::DataVerified(DataMessage {
+			block_number: 1,
+			data_transactions: vec![],
+		})
+	}
+
 	#[tokio::test]
 	async fn clients_publish() {
 		let clients = WsClients::default();
@@ -724,9 +731,10 @@ mod tests {
 		clients.set_sender("2", sender_2).await.unwrap();
 
 		tokio::task::spawn(async move {
-			for (topic, message) in vec![
+			for (topic, message) in [
 				(Topic::HeaderVerified, header_verified()),
 				(Topic::ConfidenceAchieved, confidence_achieved()),
+				(Topic::DataVerified, data_verified()),
 			] {
 				let _ = clients.publish(&topic, message).await;
 			}
@@ -743,6 +751,20 @@ mod tests {
 			Some(message) = receiver_2.recv() => {
 				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
 				assert!(matches!(message, PublishMessage::ConfidenceAchieved(_)));
+			},
+			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
+		};
+		tokio::select! {
+			Some(message) = receiver_1.recv() => {
+				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
+				assert!(matches!(message, PublishMessage::DataVerified(_)));
+			},
+			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
+		};
+		tokio::select! {
+			Some(message) = receiver_2.recv() => {
+				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
+				assert!(matches!(message, PublishMessage::DataVerified(_)));
 			},
 			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
 		};
