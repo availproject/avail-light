@@ -1,7 +1,6 @@
 #![doc = include_str!("../../README.md")]
 
 use anyhow::{anyhow, Context, Result};
-use async_std::stream::StreamExt;
 use avail_core::AppId;
 use avail_light::{
 	api,
@@ -15,12 +14,10 @@ use avail_light::{
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use kate_recovery::com::AppData;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::{
 	net::Ipv4Addr,
-	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
@@ -137,19 +134,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
-	// Check if bootstrap nodes were provided
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
-
-	let mut client_role = "lightnode".to_string();
-	// If not bootstrap nodes provided, the client is the bootstrap
-	if bootstrap_nodes.is_empty() {
-		client_role = "bootnode".to_string();
-	}
+	let client_role = "lightnode".to_string();
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id, client_role)
@@ -242,7 +227,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client.bootstrap(bootstrap_nodes).await?;
+	network_client.bootstrap(cfg.clone().bootstraps).await?;
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));

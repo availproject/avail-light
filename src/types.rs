@@ -214,7 +214,7 @@ pub struct RuntimeConfig {
 	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<(String, Multiaddr)>,
+	pub bootstraps: Vec<(PeerId, Multiaddr)>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
