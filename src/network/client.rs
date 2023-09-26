@@ -164,14 +164,6 @@ impl Client {
 			.context("Command receiver should not be dropped.")
 	}
 
-	// Dump p2p network stats in a readable manner
-	pub async fn network_stats(&self) -> Result<()> {
-		self.sender
-			.send(Command::NetworkObservabilityDump)
-			.await
-			.context("Command receiver should not be dropped.")
-	}
-
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
 	// Return type assumes that cell is not found in case when error is present.
 	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
@@ -352,8 +344,13 @@ pub enum Command {
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
 		quorum: Quorum,
-		sender: oneshot::Sender<NumSuccPut>,
+		response_sender: oneshot::Sender<NumSuccPut>,
+	},
+	CountDHTPeers {
+		response_sender: oneshot::Sender<usize>,
+	},
+	GetMultiaddress {
+		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
 	ReduceKademliaMapSize,
-	NetworkObservabilityDump,
 }

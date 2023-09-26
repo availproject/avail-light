@@ -553,9 +553,16 @@ impl EventLoop {
 					.store_mut()
 					.shrink_hashmap();
 			},
-			Command::NetworkObservabilityDump => {
-				self.dump_routing_table_stats().await;
-				self.dump_hash_map_block_stats();
+			Command::CountDHTPeers { response_sender } => {
+				let mut total_peers: usize = 0;
+				for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
+					total_peers += bucket.num_entries();
+				}
+				_ = response_sender.send(total_peers);
+			},
+			Command::GetMultiaddress { response_sender } => {
+				let last_address = self.swarm.external_addresses().last();
+				_ = response_sender.send(last_address.cloned());
 			},
 		}
 	}
