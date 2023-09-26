@@ -200,31 +200,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context("Listening on UDP not to fail.")?;
 
-	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
-	// second client to establish connection and use it as bootstrap.
-	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
-	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
-		info!("No bootstrap nodes, waiting for first peer to connect...");
-		let node = network_client
-			.events_stream()
-			.await
-			.find_map(|e| match e {
-				avail_light::network::Event::ConnectionEstablished { peer_id, endpoint } => {
-					if endpoint.is_listener() {
-						Some((peer_id, endpoint.get_remote_address().clone()))
-					} else {
-						None
-					}
-				},
-			})
-			// hang in there, until someone dials us
-			.await
-			.context("Connection is not established")?;
-		vec![node]
-	} else {
-		bootstrap_nodes
-	};
-
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client.bootstrap(cfg.clone().bootstraps).await?;
