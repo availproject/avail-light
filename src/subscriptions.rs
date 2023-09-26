@@ -1,9 +1,3 @@
-use crate::{
-	data::store_finality_sync_checkpoint,
-	rpc,
-	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
-	utils,
-};
 use anyhow::{anyhow, Result};
 use avail_subxt::{
 	avail::Client,
@@ -22,6 +16,13 @@ use tokio::sync::{
 	mpsc::{unbounded_channel, Sender},
 };
 use tracing::{error, info, trace};
+
+use crate::{
+	data::store_finality_sync_checkpoint,
+	rpc,
+	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
+	utils,
+};
 
 pub async fn finalized_headers(
 	rpc_client: Client,

@@ -295,12 +295,9 @@ pub struct RuntimeConfig {
 	/// Avail account secret key. (default: None)
 	#[serde(skip_serializing)]
 	pub avail_secret_key: Option<AvailSecretKey>,
-	/// Crawl block periodically to ensure availability. (default: false)
-	pub crawl_block: bool,
-	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
-	pub crawl_block_delay: u64,
-	/// Crawl block mode. Available modes are "cells", "rows" and "both" (default: "cells")
-	pub crawl_block_mode: CrawlMode,
+	#[cfg(feature = "crawl")]
+	#[serde(flatten)]
+	pub crawl: crate::crawl_client::CrawlConfig,
 }
 
 #[derive(Deserialize, Clone)]
@@ -512,14 +509,6 @@ impl From<&RuntimeConfig> for AppClientConfig {
 	}
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub enum CrawlMode {
-	Rows,
-	Cells,
-	Both,
-}
-
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
@@ -568,9 +557,8 @@ impl Default for RuntimeConfig {
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
 			avail_secret_key: None,
-			crawl_block: false,
-			crawl_block_delay: 20,
-			crawl_block_mode: CrawlMode::Cells,
+			#[cfg(feature = "crawl")]
+			crawl: crate::crawl_client::CrawlConfig::default(),
 		}
 	}
 }

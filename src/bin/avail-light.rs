@@ -6,9 +6,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::STATE_CF,
-	crawl_client,
 	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
-	types::Delay,
 };
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
@@ -24,7 +22,7 @@ use std::{
 	net::Ipv4Addr,
 	str::FromStr,
 	sync::{Arc, Mutex},
-	time::{Duration, Instant},
+	time::Instant,
 };
 use tokio::sync::{
 	broadcast,
@@ -354,6 +352,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		}
 	}
 
+	#[cfg(feature = "crawl")]
+	if cfg.crawl.crawl_block {
+		tokio::task::spawn(avail_light::crawl_client::run(
+			message_tx.subscribe(),
+			network_client.clone(),
+			cfg.crawl.crawl_block_delay,
+			ot_metrics.clone(),
+			cfg.crawl.crawl_block_mode,
+		));
+	}
+
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
@@ -390,21 +399,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		light_client,
 		(&cfg).into(),
 		pp,
-		ot_metrics.clone(),
+		ot_metrics,
 		state.clone(),
 		lc_channels,
 	));
-
-	if cfg.crawl_block {
-		let delay = Delay(Some(Duration::from_secs(cfg.crawl_block_delay)));
-		tokio::task::spawn(crawl_client::run(
-			message_tx.subscribe(),
-			network_client.clone(),
-			delay,
-			ot_metrics,
-			cfg.crawl_block_mode,
-		));
-	}
 
 	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
 		rpc_client,

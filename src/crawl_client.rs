@@ -1,11 +1,15 @@
 use crate::{
 	network::Client,
 	telemetry::{MetricValue, Metrics},
-	types::{self, CrawlMode, Delay},
+	types::{self, Delay},
 };
 use avail_subxt::primitives::Header;
 use kate_recovery::matrix::Partition;
-use std::{sync::Arc, time::Instant};
+use serde::{Deserialize, Serialize};
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
@@ -14,14 +18,44 @@ const ENTIRE_BLOCK: Partition = Partition {
 	fraction: 1,
 };
 
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum CrawlMode {
+	Rows,
+	Cells,
+	Both,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct CrawlConfig {
+	/// Crawl block periodically to ensure availability. (default: false)
+	pub crawl_block: bool,
+	/// Crawl block delay. Increment to ensure large block crawling (default: 20)
+	pub crawl_block_delay: u64,
+	/// Crawl block mode. Available modes are "cells", "rows" and "both" (default: "cells")
+	pub crawl_block_mode: CrawlMode,
+}
+
+impl Default for CrawlConfig {
+	fn default() -> Self {
+		Self {
+			crawl_block: false,
+			crawl_block_delay: 20,
+			crawl_block_mode: CrawlMode::Cells,
+		}
+	}
+}
+
 pub async fn run(
 	mut message_rx: broadcast::Receiver<(Header, Instant)>,
 	network_client: Client,
-	delay: Delay,
+	delay: u64,
 	metrics: Arc<impl Metrics>,
 	mode: CrawlMode,
 ) {
 	info!("Starting crawl client...");
+	let delay = Delay(Some(Duration::from_secs(delay)));
 
 	while let Ok((header, received_at)) = message_rx.recv().await {
 		let block = match types::BlockVerified::try_from((header, None)) {
@@ -48,20 +82,21 @@ pub async fn run(
 				.collect::<Vec<_>>();
 
 			let total = positions.len();
-			let (fetched, _) = network_client
+			let fetched = network_client
 				.fetch_cells_from_dht(block_number, &positions)
-				.await;
+				.await
+				.0
+				.len();
 
-			let success_rate = fetched.len() as f64 / total as f64;
+			let success_rate = fetched as f64 / total as f64;
 			info!(
 				block_number,
-				"Fetched {fetched} cells of {total}, success rate: {success_rate}",
-				fetched = fetched.len(),
+				success_rate, total, fetched, "Fetched block cells",
 			);
 			let _ = metrics.record(MetricValue::CrawlCellsSuccessRate(success_rate));
 		}
 
-		if mode == CrawlMode::Rows || mode == CrawlMode::Both {
+		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
 			let dimensions = block.dimensions;
 			let rows: Vec<u32> = (0..dimensions.extended_rows()).step_by(2).collect();
 			let total = rows.len();
@@ -76,7 +111,7 @@ pub async fn run(
 			let success_rate = fetched as f64 / total as f64;
 			info!(
 				block_number,
-				"Fetched {fetched} rows of {total}, success rate: {success_rate}"
+				success_rate, total, fetched, "Fetched block rows"
 			);
 			let _ = metrics.record(MetricValue::CrawlRowsSuccessRate(success_rate));
 		}
