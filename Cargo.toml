@@ -22,10 +22,10 @@ subxt = "0.29"
 
 # Internal deps
 # TODO: Change with tags
-avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", branch = "main" }
-avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", branch = "main" }
+avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "v1.7.0" }
+avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", tag = "v1.7.0" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", branch = "main" }
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "v1.7.0" }
 
 # Substrate
 anyhow = "1.0.41"
