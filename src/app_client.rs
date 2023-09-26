@@ -36,7 +36,7 @@ use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, Mutex},
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc::Sender};
 use tracing::{debug, error, info, instrument};
 
 use crate::{
@@ -425,6 +425,7 @@ pub async fn run(
 	state: Arc<Mutex<State>>,
 	sync_end_block: u32,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
+	error_sender: Sender<anyhow::Error>,
 ) {
 	info!("Starting for app {app_id}...");
 
@@ -433,6 +434,9 @@ pub async fn run(
 			Ok(block) => block,
 			Err(error) => {
 				error!("Cannot receive message: {error}");
+				if let Err(error) = error_sender.send(error.into()).await {
+					error!("Cannot send error message: {error}");
+				}
 				return;
 			},
 		};
@@ -460,6 +464,9 @@ pub async fn run(
 			Ok(data) => data,
 			Err(error) => {
 				error!(block_number, "Cannot process block: {error}");
+				if let Err(error) = error_sender.send(error).await {
+					error!("Cannot send error message: {error}");
+				}
 				return;
 			},
 		};
@@ -481,6 +488,9 @@ pub async fn run(
 		}
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
+			if let Err(error) = error_sender.send(error.into()).await {
+				error!("Cannot send error message: {error}");
+			}
 			return;
 		}
 		debug!(block_number, "Block processed");
