@@ -15,7 +15,7 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info};
+use tracing::error;
 use warp::ws::{self, Message, WebSocket};
 
 #[allow(clippy::too_many_arguments)]
@@ -33,8 +33,8 @@ pub async fn connect(
 	let (sender, receiver) = mpsc::unbounded_channel();
 	let receiver_stream = UnboundedReceiverStream::new(receiver);
 
-	if !clients.set_sender(&subscription_id, sender.clone()).await {
-		info!("Client is not subscribed");
+	if let Err(error) = clients.set_sender(&subscription_id, sender.clone()).await {
+		error!("Cannot set sender: {error}");
 		return;
 	};
 

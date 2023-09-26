@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use avail_subxt::api::runtime_types::{
 	avail_core::{data_lookup::compact::CompactDataLookup, header::extension::HeaderExtension},
 	bounded_collections::bounded_vec::BoundedVec,
@@ -386,13 +386,13 @@ impl WsClient {
 pub struct WsClients(pub Arc<RwLock<HashMap<String, WsClient>>>);
 
 impl WsClients {
-	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> bool {
+	pub async fn set_sender(&self, subscription_id: &str, sender: Sender) -> anyhow::Result<()> {
 		let mut clients = self.0.write().await;
 		let Some(client) = clients.get_mut(subscription_id) else {
-			return false;
+			return Err(anyhow!("Client is not subscribed"));
 		};
 		client.sender = Some(sender);
-		true
+		Ok(())
 	}
 
 	pub async fn has_subscription(&self, subscription_id: &str) -> bool {
@@ -632,8 +632,8 @@ mod tests {
 		let (sender_2, mut receiver_2) = mpsc::unbounded_channel();
 		clients.subscribe("1", subscription_1).await;
 		clients.subscribe("2", subscription_2).await;
-		clients.set_sender("1", sender_1).await;
-		clients.set_sender("2", sender_2).await;
+		clients.set_sender("1", sender_1).await.unwrap();
+		clients.set_sender("2", sender_2).await.unwrap();
 
 		tokio::task::spawn(async move {
 			for (topic, message) in vec![(Topic::HeaderVerified, header_verified())] {
