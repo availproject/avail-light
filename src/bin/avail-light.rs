@@ -318,6 +318,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			state.clone(),
 			sync_end_block,
 			data_tx,
+			error_sender.clone(),
 		));
 		(Some(block_tx), Some(data_rx))
 	} else {
