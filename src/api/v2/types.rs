@@ -267,7 +267,9 @@ impl<'de> Deserialize<'de> for Commitment {
 	where
 		D: Deserializer<'de>,
 	{
-		const LEN: usize = config::COMMITMENT_SIZE * 2 + 2;
+		const PREFIX_0X_LEN: usize = 2;
+		const HEX_ENCODED_BYTE_LEN: usize = 2;
+		const LEN: usize = (config::COMMITMENT_SIZE * HEX_ENCODED_BYTE_LEN) + PREFIX_0X_LEN;
 
 		let s = String::deserialize(deserializer)?;
 
