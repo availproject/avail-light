@@ -484,7 +484,10 @@ impl EventLoop {
 
 	async fn handle_command(&mut self, command: Command) {
 		match command {
-			Command::StartListening { addr, sender } => {
+			Command::StartListening {
+				addr,
+				response_sender: sender,
+			} => {
 				_ = match self.swarm.listen_on(addr) {
 					Ok(_) => sender.send(Ok(())),
 					Err(e) => sender.send(Err(e.into())),
@@ -493,7 +496,7 @@ impl EventLoop {
 			Command::AddAddress {
 				peer_id,
 				peer_addr,
-				sender,
+				response_sender: sender,
 			} => {
 				self.swarm
 					.behaviour_mut()
@@ -502,10 +505,9 @@ impl EventLoop {
 
 				self.pending_kad_routing.insert(peer_id, sender);
 			},
-			Command::Stream { sender } => {
-				self.output_senders.push(sender);
-			},
-			Command::Bootstrap { sender } => {
+			Command::Bootstrap {
+				response_sender: sender,
+			} => {
 				let query_id = self
 					.swarm
 					.behaviour_mut()
@@ -516,7 +518,10 @@ impl EventLoop {
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::Bootstrap(sender));
 			},
-			Command::GetKadRecord { key, sender } => {
+			Command::GetKadRecord {
+				key,
+				response_sender: sender,
+			} => {
 				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key);
 
 				self.pending_kad_queries
@@ -525,7 +530,7 @@ impl EventLoop {
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
-				sender,
+				response_sender: sender,
 			} => {
 				let mut ids: HashMap<QueryId, QueryState> = Default::default();
 

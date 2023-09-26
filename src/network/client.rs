@@ -78,26 +78,25 @@ impl Client {
 		}
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
-		let (sender, receiver) = oneshot::channel();
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+		let (response_sender, receiver) = oneshot::channel();
 		self.sender
-			.send(Command::StartListening { addr, sender })
+			.send(Command::StartListening {
+				addr,
+				response_sender,
+			})
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	pub async fn add_address(
-		&self,
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-	) -> Result<(), anyhow::Error> {
-		let (sender, receiver) = oneshot::channel();
+	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
+		let (response_sender, receiver) = oneshot::channel();
 		self.sender
 			.send(Command::AddAddress {
 				peer_id,
 				peer_addr,
-				sender,
+				response_sender,
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -105,22 +104,25 @@ impl Client {
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		let (sender, receiver) = oneshot::channel();
+		let (response_sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
 		self.sender
-			.send(Command::Bootstrap { sender })
+			.send(Command::Bootstrap { response_sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
-		let (sender, receiver) = oneshot::channel();
+		let (response_sender, receiver) = oneshot::channel();
 		self.sender
-			.send(Command::GetKadRecord { key, sender })
+			.send(Command::GetKadRecord {
+				key,
+				response_sender,
+			})
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
@@ -129,13 +131,13 @@ impl Client {
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
 		let mut num_success: usize = 0;
 		for records in records.chunks(self.put_batch_size).map(Into::into) {
-			let (sender, receiver) = oneshot::channel();
+			let (response_sender, receiver) = oneshot::channel();
 			if self
 				.sender
 				.send(Command::PutKadRecordBatch {
 					records,
 					quorum,
-					sender,
+					response_sender,
 				})
 				.await
 				.context("Command receiver should not be dropped.")
@@ -333,22 +335,19 @@ impl Client {
 pub enum Command {
 	StartListening {
 		addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
-	},
-	Stream {
-		sender: mpsc::Sender<Event>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	Bootstrap {
-		sender: oneshot::Sender<Result<()>>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	GetKadRecord {
 		key: Key,
-		sender: oneshot::Sender<Result<PeerRecord>>,
+		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
