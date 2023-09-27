@@ -95,7 +95,7 @@ pub struct Status {
 	pub partition: Option<Partition>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(try_from = "String", into = "String")]
 pub struct Base64(pub Vec<u8>);
 
@@ -706,7 +706,10 @@ mod tests {
 
 	use crate::api::v2::types::{Header, HeaderMessage, PublishMessage};
 
-	use super::{ConfidenceMessage, DataField, DataMessage, Subscription, Topic, WsClients};
+	use super::{
+		Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction, Subscription, Topic,
+		WsClients,
+	};
 
 	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
 		Subscription {
@@ -745,10 +748,17 @@ mod tests {
 		})
 	}
 
+	fn transaction_data() -> Option<Base64> {
+		Some(Base64(vec![0, 1, 2, 3, 4]))
+	}
+
 	fn data_verified() -> PublishMessage {
 		PublishMessage::DataVerified(DataMessage {
 			block_number: 1,
-			data_transactions: vec![],
+			data_transactions: vec![DataTransaction {
+				data: transaction_data(),
+				extrinsic: transaction_data(),
+			}],
 		})
 	}
 
@@ -797,14 +807,22 @@ mod tests {
 		tokio::select! {
 			Some(message) = receiver_1.recv() => {
 				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
-				assert!(matches!(message, PublishMessage::DataVerified(_)));
+				let PublishMessage::DataVerified(data) = message else {
+					panic!("Invalid message type");
+				};
+				assert!(data.data_transactions.iter().all(|tx| tx.data.is_none()));
+				assert!(data.data_transactions.iter().all(|tx| tx.extrinsic == transaction_data()));
 			},
 			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
 		};
 		tokio::select! {
 			Some(message) = receiver_2.recv() => {
 				let message: PublishMessage = serde_json::from_slice(message.unwrap().as_bytes()).unwrap();
-				assert!(matches!(message, PublishMessage::DataVerified(_)));
+				let PublishMessage::DataVerified(data) = message else {
+					panic!("Invalid message type");
+				};
+				assert!(data.data_transactions.iter().all(|tx| tx.extrinsic.is_none()));
+				assert!(data.data_transactions.iter().all(|tx| tx.data == transaction_data()));
 			},
 			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
 		};
