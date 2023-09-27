@@ -551,42 +551,43 @@ impl EventLoop {
 				}
 				_ = response_sender.send(total_peers);
 			},
+			Command::GetCellsInDHTPerBlock { response_sender } => {
+				let mut occurrence_map = HashMap::new();
+
+				for record in self
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.records_iter()
+				{
+					let vec_key = record.0.to_vec();
+					let record_key = str::from_utf8(&vec_key);
+
+					let (block_num, _) = record_key
+						.expect("unable to cast key to string")
+						.split_once(':')
+						.expect("unable to split the key string");
+
+					let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
+					*count += 1;
+				}
+				let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
+				sorted.sort_by(|a, b| a.0.cmp(b.0));
+				for (block_number, cell_count) in sorted {
+					trace!(
+						"Number of cells in DHT for block {:?}: {}",
+						block_number,
+						cell_count
+					);
+				}
+
+				_ = response_sender.send(Ok(()));
+			},
 			Command::GetMultiaddress { response_sender } => {
 				let last_address = self.swarm.external_addresses().last();
 				_ = response_sender.send(last_address.cloned());
 			},
-		}
-	}
-
-	fn dump_hash_map_block_stats(&mut self) {
-		let mut occurrence_map = HashMap::new();
-
-		for record in self
-			.swarm
-			.behaviour_mut()
-			.kademlia
-			.store_mut()
-			.records_iter()
-		{
-			let vec_key = record.0.to_vec();
-			let record_key = str::from_utf8(&vec_key);
-
-			let (block_num, _) = record_key
-				.expect("unable to cast key to string")
-				.split_once(':')
-				.expect("unable to split the key string");
-
-			let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
-			*count += 1;
-		}
-		let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
-		sorted.sort_by(|a, b| a.0.cmp(b.0));
-		for (block_number, cell_count) in sorted {
-			trace!(
-				"Number of cells in DHT for block {:?}: {}",
-				block_number,
-				cell_count
-			);
 		}
 	}
 

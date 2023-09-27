@@ -382,6 +382,9 @@ pub enum Command {
 	CountDHTPeers {
 		response_sender: oneshot::Sender<usize>,
 	},
+	GetCellsInDHTPerBlock {
+		response_sender: oneshot::Sender<Result<()>>,
+	},
 	GetMultiaddress {
 		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
