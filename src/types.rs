@@ -373,28 +373,19 @@ pub struct LibP2PConfig {
 	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
-	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		let relay_nodes = val
-			.relays
-			.iter()
-			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-			.expect("To be able to parse relay nodes values from config.");
-
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
-			is_relay: val.relays.is_empty(),
-			relays: relay_nodes,
+			relays: val.relays.clone(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}
