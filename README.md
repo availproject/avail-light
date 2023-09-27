@@ -290,6 +290,16 @@ Response:
 }
 ```
 
+### Health check
+
+To perform health check of the light client, run:
+
+```sh
+curl -I "localhost:7000/health"
+```
+
+200 OK is expected response.
+
 ## API reference
 
 In case of error, endpoints will return response with `500 Internal Server Error` status code, and descriptive error message.
