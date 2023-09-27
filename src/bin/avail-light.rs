@@ -5,7 +5,7 @@ use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::STATE_CF,
-	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
+	telemetry::{self},
 };
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
@@ -40,6 +40,8 @@ use tikv_jemallocator::Jemalloc;
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+const CLIENT_ROLE: &str = "lightnode";
 
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
@@ -134,46 +136,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
-	let client_role = "lightnode".to_string();
-
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id, client_role)
-			.context("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			peer_id,
+			CLIENT_ROLE.into(),
+		)
+		.context("Unable to initialize OpenTelemetry service")?,
 	);
-
-	let (network_stats_sender, mut network_stats_receiver) = channel::<NetworkDumpEvent>(100);
-
-	let network_stats_metrics = ot_metrics.clone();
-
-	// Network stats receiver
-	tokio::spawn(async move {
-		while let Some(network_dump_event) = network_stats_receiver.recv().await {
-			// Set multiaddress for metric dispatch
-			if !network_dump_event.current_multiaddress.is_empty() {
-				*network_stats_metrics
-					.multiaddress
-					.write()
-					.expect("unable to write metric multiaddress") = network_dump_event.current_multiaddress;
-				*network_stats_metrics
-					.ip
-					.write()
-					.expect("unable to write metric ip address") = network_dump_event.current_ip;
-			}
-
-			let number = network_dump_event
-				.routing_table_num_of_peers
-				.try_into()
-				.expect("usize should be u32");
-			let value = MetricValue::KadRoutingTablePeerNum(number);
-			if let Err(error) = &network_stats_metrics.record(value) {
-				error!("Error recording network stats metric: {error}");
-			}
-		}
-	});
 
 	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
-		network_stats_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
