@@ -106,8 +106,8 @@ impl super::Metrics for Metrics {
 			super::MetricValue::DHTPutRowsSuccess(number) => {
 				self.record_f64("dht_put_rows_success", number).await?;
 			},
-			super::MetricValue::KadRoutingTablePeerNum(number) => {
-				self.record_u64("kad_routing_table_peer_num", number.into())
+			super::MetricValue::KadRoutingPeerNum(number) => {
+				self.record_u64("kad_routing_table_peer_num", number as u64)
 					.await?;
 			},
 			super::MetricValue::HealthCheck() => {
@@ -130,7 +130,7 @@ impl super::Metrics for Metrics {
 	}
 
 	async fn set_ip(&self, ip: String) {
-		self.set_ip(ip);
+		self.set_ip(ip).await;
 	}
 }
 

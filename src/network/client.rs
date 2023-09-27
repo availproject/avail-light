@@ -7,6 +7,7 @@ use kate_recovery::{
 };
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
+	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
 use std::{
@@ -18,7 +19,7 @@ use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct Client {
-	sender: mpsc::Sender<Command>,
+	command_sender: mpsc::Sender<Command>,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -71,7 +72,7 @@ impl Client {
 		put_batch_size: usize,
 	) -> Self {
 		Self {
-			sender,
+			command_sender: sender,
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
@@ -80,7 +81,7 @@ impl Client {
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
 		let (response_sender, receiver) = oneshot::channel();
-		self.sender
+		self.command_sender
 			.send(Command::StartListening {
 				addr,
 				response_sender,
@@ -92,7 +93,7 @@ impl Client {
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
 		let (response_sender, receiver) = oneshot::channel();
-		self.sender
+		self.command_sender
 			.send(Command::AddAddress {
 				peer_id,
 				peer_addr,
@@ -109,7 +110,7 @@ impl Client {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.sender
+		self.command_sender
 			.send(Command::Bootstrap { response_sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
@@ -118,7 +119,7 @@ impl Client {
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
 		let (response_sender, receiver) = oneshot::channel();
-		self.sender
+		self.command_sender
 			.send(Command::GetKadRecord {
 				key,
 				response_sender,
@@ -133,7 +134,7 @@ impl Client {
 		for records in records.chunks(self.put_batch_size).map(Into::into) {
 			let (response_sender, receiver) = oneshot::channel();
 			if self
-				.sender
+				.command_sender
 				.send(Command::PutKadRecordBatch {
 					records,
 					quorum,
@@ -156,9 +157,27 @@ impl Client {
 		NumSuccPut(num_success)
 	}
 
+	pub async fn count_dht_entries(&self) -> Result<usize> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::CountDHTPeers { response_sender })
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver.await.context("Sender not to be dropped.")
+	}
+
+	async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::GetMultiaddress { response_sender })
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver.await.context("Sender not to be dropped.")
+	}
+
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.sender
+		self.command_sender
 			.send(Command::ReduceKademliaMapSize)
 			.await
 			.context("Command receiver should not be dropped.")
@@ -320,6 +339,20 @@ impl Client {
 			.collect::<Vec<_>>();
 
 		self.insert_into_dht(records).await
+	}
+
+	pub async fn get_multiaddress_and_ip(&self) -> Option<(String, String)> {
+		if let Ok(Some(addr)) = self.get_multiaddress().await {
+			for protocol in &addr {
+				match protocol {
+					Protocol::Ip4(ip) => return Some((addr.to_string(), ip.to_string())),
+					Protocol::Ip6(ip) => return Some((addr.to_string(), ip.to_string())),
+					_ => continue,
+				}
+			}
+			return None;
+		}
+		None
 	}
 }
 
