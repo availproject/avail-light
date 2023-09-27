@@ -130,7 +130,7 @@ pub async fn process_block(
 	header: &Header,
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
-) -> Result<()> {
+) -> Result<Option<f64>> {
 	metrics.count(MetricCounter::SessionBlock).await;
 	metrics
 		.record(MetricValue::TotalBlockNumber(header.number))
@@ -401,7 +401,7 @@ pub async fn process_block(
 			.await?
 	}
 
-	metrics.record(MetricValue::HealthCheck())?;
+	metrics.record(MetricValue::HealthCheck()).await?;
 
 	Ok(confidence)
 }

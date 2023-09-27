@@ -2,7 +2,6 @@
 
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use crate::utils::{extract_app_lookup, extract_kate};

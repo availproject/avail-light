@@ -14,6 +14,7 @@ use avail_light::{
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
+use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::{

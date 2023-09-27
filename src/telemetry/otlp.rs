@@ -111,7 +111,7 @@ impl super::Metrics for Metrics {
 					.await?;
 			},
 			super::MetricValue::HealthCheck() => {
-				self.record_u64("up", 1)?;
+				self.record_u64("up", 1).await?;
 			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
