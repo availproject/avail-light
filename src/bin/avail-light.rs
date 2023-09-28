@@ -302,7 +302,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	tokio::task::spawn(server.run());
 
-	let (block_tx, _data_rx) = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+	let (block_tx, data_rx) = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
 		let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
@@ -343,7 +343,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			));
 		}
 
-		if let Some(data_rx) = _data_rx {
+		if let Some(data_rx) = data_rx {
 			tokio::task::spawn(api::v2::publish(
 				api::v2::types::Topic::DataVerified,
 				data_rx,
@@ -351,6 +351,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			));
 		}
 	}
+	#[cfg(not(feature = "api-v2"))]
+	if let Some(mut data_rx) = data_rx {
+		tokio::task::spawn(async move {
+			loop {
+				// Discard app client messages if API V2 is not enabled
+				_ = data_rx.recv().await;
+			}
+		});
+	};
 
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
