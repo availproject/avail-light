@@ -352,6 +352,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		}
 	}
 
+	#[cfg(feature = "crawl")]
+	if cfg.crawl.crawl_block {
+		tokio::task::spawn(avail_light::crawl_client::run(
+			message_tx.subscribe(),
+			network_client.clone(),
+			cfg.crawl.crawl_block_delay,
+			ot_metrics.clone(),
+			cfg.crawl.crawl_block_mode,
+		));
+	}
+
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
