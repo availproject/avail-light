@@ -443,7 +443,7 @@ impl TryFrom<(u32, AppData)> for PublishMessage {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-#[serde(tag = "type", content = "message", rename_all = "kebab-case")]
+#[serde(tag = "topic", content = "message", rename_all = "kebab-case")]
 pub enum PublishMessage {
 	HeaderVerified(Box<HeaderMessage>),
 	ConfidenceAchieved(ConfidenceMessage),
