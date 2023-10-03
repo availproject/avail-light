@@ -115,11 +115,11 @@ impl super::Metrics for Metrics {
 			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
-				self.record_f64("crawl_cells_success_rate", number)?;
+				self.record_f64("crawl_cells_success_rate", number).await?;
 			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlRowsSuccessRate(number) => {
-				self.record_f64("crawl_rows_success_rate", number)?;
+				self.record_f64("crawl_rows_success_rate", number).await?;
 			},
 		};
 		Ok(())
