@@ -15,7 +15,7 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::error;
+use tracing::{error, log::warn};
 use warp::ws::{self, Message, WebSocket};
 
 #[allow(clippy::too_many_arguments)]
@@ -79,7 +79,7 @@ pub async fn connect(
 			};
 
 		if let Err(error) = send_result {
-			error!("Error sending message: {error}");
+			warn!("Error sending message: {error:#}");
 		}
 	}
 }

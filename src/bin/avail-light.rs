@@ -212,7 +212,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
 		.await
-		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+		.context("Failed to get chain header")?;
 
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
@@ -363,7 +363,7 @@ pub async fn main() -> Result<()> {
 	let (error_sender, mut error_receiver) = channel::<anyhow::Error>(1);
 
 	if let Err(error) = run(error_sender).await {
-		error!("{error}");
+		error!("{error:#}");
 		return Err(error);
 	};
 
