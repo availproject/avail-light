@@ -24,12 +24,15 @@ pub struct Client {
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
 	ttl: u64,
-	/// Number of records to be put in DHT simultaneuosly
+	/// Number of records to be put in DHT simultaneously
 	put_batch_size: usize,
 }
 
-#[derive(Clone, Debug)]
-pub struct NumSuccPut(pub usize);
+#[derive(Clone, Debug, PartialEq)]
+pub enum DHTPutSuccess {
+	Batch(usize),
+	Single,
+}
 
 struct DHTCell(Cell);
 
@@ -129,14 +132,18 @@ impl Client {
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> NumSuccPut {
+	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
 		let mut num_success: usize = 0;
-		for records in records.chunks(self.put_batch_size).map(Into::into) {
-			let (response_sender, receiver) = oneshot::channel();
+		// split input batch records into chunks that will be sent consecutively
+		// these chunks are defined by the config parameter [put_batch_size]
+		for chunk in records.chunks(self.put_batch_size) {
+			// create oneshot for each chunk, through which will success counts be sent,
+			// only for the records in that chunk
+			let (response_sender, response_receiver) = oneshot::channel::<DHTPutSuccess>();
 			if self
 				.command_sender
 				.send(Command::PutKadRecordBatch {
-					records,
+					records: chunk.into(),
 					quorum,
 					response_sender,
 				})
@@ -144,17 +151,17 @@ impl Client {
 				.context("Command receiver should not be dropped.")
 				.is_err()
 			{
-				return NumSuccPut(num_success);
+				return DHTPutSuccess::Batch(num_success);
 			}
-
-			num_success +=
-				if let Ok(NumSuccPut(num)) = receiver.await.context("Sender not to be dropped.") {
-					num
-				} else {
-					num_success
-				};
+			// wait here for successfully counted put operations from this chunk
+			// waiting in this manner introduces a back pressure from overwhelming the network
+			// with too many possible PUT request coming in from the whole batch
+			// this is the reason why input parameter vector of records is split into chunks
+			if let Ok(DHTPutSuccess::Batch(num)) = response_receiver.await {
+				num_success += num;
+			}
 		}
-		NumSuccPut(num_success)
+		DHTPutSuccess::Batch(num_success)
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
@@ -293,12 +300,14 @@ impl Client {
 			return 1.0;
 		}
 		let len = records.len() as f32;
-
-		let num = self
+		if let DHTPutSuccess::Batch(num) = self
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
-			.await;
-
-		num.0 as f32 / len
+			.await
+		{
+			num as f32 / len
+		} else {
+			0.0
+		}
 	}
 
 	/// Inserts cells into the DHT.
@@ -317,7 +326,6 @@ impl Client {
 			.map(DHTCell)
 			.map(|cell| (cell.reference(block), cell.dht_record(block, self.ttl)))
 			.collect::<Vec<_>>();
-
 		self.insert_into_dht(records).await
 	}
 
@@ -377,7 +385,7 @@ pub enum Command {
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
 		quorum: Quorum,
-		response_sender: oneshot::Sender<NumSuccPut>,
+		response_sender: oneshot::Sender<DHTPutSuccess>,
 	},
 	CountDHTPeers {
 		response_sender: oneshot::Sender<usize>,

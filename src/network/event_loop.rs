@@ -1,5 +1,5 @@
 use anyhow::Result;
-use async_std::stream::StreamExt;
+use futures::{future, FutureExt, StreamExt};
 use itertools::Either;
 use libp2p::{
 	autonat::{Event as AutonatEvent, NatStatus},
@@ -33,17 +33,18 @@ use tokio::{
 	},
 	time::{interval_at, Instant, Interval},
 };
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info, trace};
 
 use super::{
-	client::{Command, NumSuccPut},
+	client::{Command, DHTPutSuccess},
 	Behaviour, BehaviourEvent,
 };
 
 #[derive(Debug)]
 enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
-	PutRecordBatch(oneshot::Sender<NumSuccPut>),
+	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
@@ -86,19 +87,11 @@ struct BootstrapState {
 	timer: Interval,
 }
 
-enum QueryState {
-	Pending,
-	Succeeded,
-	Failed(anyhow::Error),
-}
-
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, QueryState>,
-	pending_batch_complete: Option<QueryChannel>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -134,8 +127,6 @@ impl EventLoop {
 			command_receiver,
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
-			pending_kad_query_batch: Default::default(),
-			pending_batch_complete: None,
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -222,40 +213,20 @@ impl EventLoop {
 							_ => (),
 						},
 						QueryResult::PutRecord(result) => {
-							if let Some(v) = self.pending_kad_query_batch.get_mut(&id) {
-								if let Ok(put_record_ok) = result.as_ref() {
+							if let Some(QueryChannel::PutRecordBatch(success_tx)) =
+								self.pending_kad_queries.remove(&id)
+							{
+								if let Ok(record) = result {
 									// Remove local records for fat clients (memory optimization)
 									if self.kad_remove_local_record {
 										self.swarm
 											.behaviour_mut()
 											.kademlia
-											.remove_record(&put_record_ok.key);
+											.remove_record(&record.key);
 									}
-								};
-
-								// TODO: Handle or log errors
-								*v = match result {
-									Ok(_) => QueryState::Succeeded,
-									Err(error) => QueryState::Failed(error.into()),
-								};
-
-								let has_pending = self
-									.pending_kad_query_batch
-									.iter()
-									.any(|(_, qs)| matches!(qs, QueryState::Pending));
-
-								if !has_pending {
-									if let Some(QueryChannel::PutRecordBatch(ch)) =
-										self.pending_batch_complete.take()
-									{
-										let count_success = self
-											.pending_kad_query_batch
-											.iter()
-											.filter(|(_, qs)| matches!(qs, QueryState::Succeeded))
-											.count();
-
-										_ = ch.send(NumSuccPut(count_success));
-									}
+									// signal back that this PUT request was a success,
+									// so it can be accounted for
+									_ = success_tx.send(DHTPutSuccess::Single).await;
 								}
 							}
 						},
@@ -521,10 +492,25 @@ impl EventLoop {
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
-				response_sender: sender,
+				response_sender: chunk_success_sender,
 			} => {
-				let mut ids: HashMap<QueryId, QueryState> = Default::default();
+				// create channels to track individual PUT results needed for success count
+				let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(records.len());
 
+				// spawn new task that waits and count all successful put queries from this batch,
+				// but don't block event_loop
+				tokio::spawn(
+					<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
+						// consider only while receiving single successful results
+						.filter(|item| future::ready(item == &DHTPutSuccess::Single))
+						.count()
+						.map(DHTPutSuccess::Batch)
+						// send back counted successful puts
+						// signal back that this chunk of records is done
+						.map(|successful_puts| chunk_success_sender.send(successful_puts)),
+				);
+
+				// go record by record and dispatch put requests through KAD
 				for record in records.as_ref() {
 					let query_id = self
 						.swarm
@@ -532,10 +518,12 @@ impl EventLoop {
 						.kademlia
 						.put_record(record.to_owned(), quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
-					ids.insert(query_id, QueryState::Pending);
+					// insert query id into pending KAD requests map
+					self.pending_kad_queries.insert(
+						query_id,
+						QueryChannel::PutRecordBatch(put_result_tx.clone()),
+					);
 				}
-				self.pending_kad_query_batch = ids;
-				self.pending_batch_complete = Some(QueryChannel::PutRecordBatch(sender));
 			},
 			Command::ReduceKademliaMapSize => {
 				self.swarm
