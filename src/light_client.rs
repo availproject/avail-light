@@ -60,7 +60,7 @@ pub trait LightClient {
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
-	async fn get_multiaddress_and_ip(&self) -> Option<(String, String)>;
+	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
 	async fn count_dht_entries(&self) -> Result<usize>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
