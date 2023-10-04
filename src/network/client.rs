@@ -141,7 +141,7 @@ impl Client {
 			// only for the records in that chunk
 			let (response_sender, response_receiver) = oneshot::channel::<DHTPutSuccess>();
 			if self
-				.cmd_sender
+				.command_sender
 				.send(Command::PutKadRecordBatch {
 					records: chunk.into(),
 					quorum,

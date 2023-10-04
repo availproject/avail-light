@@ -37,7 +37,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info, trace};
 
 use super::{
-	client::{Command, NumSuccPut},
+	client::{Command, DHTPutSuccess},
 	Behaviour, BehaviourEvent,
 };
 
@@ -92,8 +92,6 @@ pub struct EventLoop {
 	command_receiver: mpsc::Receiver<Command>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_kad_query_batch: HashMap<QueryId, QueryState>,
-	pending_batch_complete: Option<QueryChannel>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -129,8 +127,6 @@ impl EventLoop {
 			command_receiver,
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
-			pending_kad_query_batch: Default::default(),
-			pending_batch_complete: None,
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -496,7 +492,7 @@ impl EventLoop {
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
-				response_sender: sender,
+				response_sender: chunk_success_sender,
 			} => {
 				// create channels to track individual PUT results needed for success count
 				let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(records.len());
