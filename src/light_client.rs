@@ -637,9 +637,18 @@ mod tests {
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client.expect_get_multiaddress_and_ip().returning(|| {
+			Box::pin(async move { Ok(("multiaddress".to_string(), "ip".to_string())) })
+		});
+		mock_client
+			.expect_count_dht_entries()
+			.returning(|| Box::pin(async move { Ok(1) }));
+
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
 		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_set_multiaddress().returning(|_| ());
+		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
 			&Arc::new(mock_metrics),
@@ -763,10 +772,18 @@ mod tests {
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client.expect_get_multiaddress_and_ip().returning(|| {
+			Box::pin(async move { Ok(("multiaddress".to_string(), "ip".to_string())) })
+		});
+		mock_client
+			.expect_count_dht_entries()
+			.returning(|| Box::pin(async move { Ok(1) }));
 
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
 		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_set_multiaddress().returning(|_| ());
+		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
 			&Arc::new(mock_metrics),
