@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use kate_recovery::{
 	config,
@@ -341,18 +341,18 @@ impl Client {
 		self.insert_into_dht(records).await
 	}
 
-	pub async fn get_multiaddress_and_ip(&self) -> Option<(String, String)> {
+	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
 		if let Ok(Some(addr)) = self.get_multiaddress().await {
 			for protocol in &addr {
 				match protocol {
-					Protocol::Ip4(ip) => return Some((addr.to_string(), ip.to_string())),
-					Protocol::Ip6(ip) => return Some((addr.to_string(), ip.to_string())),
+					Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
+					Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
 					_ => continue,
 				}
 			}
-			return None;
+			return Err(anyhow!("No IP Address was present in Multiaddress"));
 		}
-		None
+		Err(anyhow!("No Multiaddress was present for Local Node"))
 	}
 }
 
