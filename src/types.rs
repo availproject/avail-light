@@ -2,7 +2,6 @@
 
 use std::fmt;
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use crate::utils::{extract_app_lookup, extract_kate};
@@ -214,11 +213,11 @@ pub struct RuntimeConfig {
 	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<(String, Multiaddr)>,
+	pub bootstraps: Vec<(PeerId, Multiaddr)>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<(String, Multiaddr)>,
+	pub relays: Vec<(PeerId, Multiaddr)>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -373,28 +372,19 @@ pub struct LibP2PConfig {
 	pub identify: IdentifyConfig,
 	pub autonat: AutoNATConfig,
 	pub kademlia: KademliaConfig,
-	pub is_relay: bool,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
 	fn from(val: &RuntimeConfig) -> Self {
-		let relay_nodes = val
-			.relays
-			.iter()
-			.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-			.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-			.expect("To be able to parse relay nodes values from config.");
-
 		Self {
 			secret_key: val.secret_key.clone(),
 			port: val.port,
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
-			is_relay: val.relays.is_empty(),
-			relays: relay_nodes,
+			relays: val.relays.clone(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}

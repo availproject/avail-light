@@ -9,8 +9,7 @@ use libp2p::{
 	},
 	identify::{Event as IdentifyEvent, Info},
 	kad::{
-		BootstrapOk, EntryView, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId,
-		QueryResult,
+		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
 	},
 	mdns::Event as MdnsEvent,
 	multiaddr::Protocol,
@@ -29,7 +28,7 @@ use std::str;
 use std::{collections::HashMap, time::Duration};
 use tokio::{
 	sync::{
-		mpsc::{self, Sender},
+		mpsc::{self},
 		oneshot,
 	},
 	time::{interval_at, Instant, Interval},
@@ -38,13 +37,8 @@ use tracing::{debug, error, info, trace};
 
 use super::{
 	client::{Command, NumSuccPut},
-	Behaviour, BehaviourEvent, Event,
+	Behaviour, BehaviourEvent,
 };
-use crate::{network::extract_ip, telemetry::NetworkDumpEvent};
-
-const PEER_ID: &str = "PeerID";
-const MULTIADDRESS: &str = "Multiaddress";
-const STATUS: &str = "Status";
 
 #[derive(Debug)]
 enum QueryChannel {
@@ -101,12 +95,10 @@ enum QueryState {
 pub struct EventLoop {
 	swarm: Swarm<Behaviour>,
 	command_receiver: mpsc::Receiver<Command>,
-	output_senders: Vec<mpsc::Sender<Event>>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	pending_kad_query_batch: HashMap<QueryId, QueryState>,
 	pending_batch_complete: Option<QueryChannel>,
-	network_stats_sender: Sender<NetworkDumpEvent>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -133,7 +125,6 @@ impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
 		command_receiver: mpsc::Receiver<Command>,
-		network_stats_sender: Sender<NetworkDumpEvent>,
 		relay_nodes: Vec<(PeerId, Multiaddr)>,
 		bootstrap_interval: Duration,
 		kad_remove_local_record: bool,
@@ -141,12 +132,10 @@ impl EventLoop {
 		Self {
 			swarm,
 			command_receiver,
-			output_senders: Vec::new(),
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
 			pending_kad_query_batch: Default::default(),
 			pending_batch_complete: None,
-			network_stats_sender,
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -173,13 +162,6 @@ impl EventLoop {
 				_ = self.bootstrap.timer.tick() => self.handle_periodic_bootstraps(),
 			}
 		}
-	}
-
-	// Notify function is used to send network events to all listeners
-	// through send channels that are able to send, otherwise channel is discarded
-	fn notify(&mut self, event: Event) {
-		self.output_senders
-			.retain(|tx| tx.try_send(event.clone()).is_ok());
 	}
 
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, StreamError>) {
@@ -466,9 +448,6 @@ impl EventLoop {
 						peer_id, endpoint, ..
 					} => {
 						trace!("Connection established to: {peer_id:?} via: {endpoint:?}.");
-
-						// this event is of a particular interest for our first node in the network
-						self.notify(Event::ConnectionEstablished { peer_id, endpoint });
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
 						// remove error producing relay from pending dials
@@ -496,7 +475,10 @@ impl EventLoop {
 
 	async fn handle_command(&mut self, command: Command) {
 		match command {
-			Command::StartListening { addr, sender } => {
+			Command::StartListening {
+				addr,
+				response_sender: sender,
+			} => {
 				_ = match self.swarm.listen_on(addr) {
 					Ok(_) => sender.send(Ok(())),
 					Err(e) => sender.send(Err(e.into())),
@@ -505,7 +487,7 @@ impl EventLoop {
 			Command::AddAddress {
 				peer_id,
 				peer_addr,
-				sender,
+				response_sender: sender,
 			} => {
 				self.swarm
 					.behaviour_mut()
@@ -514,10 +496,9 @@ impl EventLoop {
 
 				self.pending_kad_routing.insert(peer_id, sender);
 			},
-			Command::Stream { sender } => {
-				self.output_senders.push(sender);
-			},
-			Command::Bootstrap { sender } => {
+			Command::Bootstrap {
+				response_sender: sender,
+			} => {
 				let query_id = self
 					.swarm
 					.behaviour_mut()
@@ -528,7 +509,10 @@ impl EventLoop {
 				self.pending_kad_queries
 					.insert(query_id, QueryChannel::Bootstrap(sender));
 			},
-			Command::GetKadRecord { key, sender } => {
+			Command::GetKadRecord {
+				key,
+				response_sender: sender,
+			} => {
 				let query_id = self.swarm.behaviour_mut().kademlia.get_record(key);
 
 				self.pending_kad_queries
@@ -537,7 +521,7 @@ impl EventLoop {
 			Command::PutKadRecordBatch {
 				records,
 				quorum,
-				sender,
+				response_sender: sender,
 			} => {
 				let mut ids: HashMap<QueryId, QueryState> = Default::default();
 
@@ -560,87 +544,51 @@ impl EventLoop {
 					.store_mut()
 					.shrink_hashmap();
 			},
-			Command::NetworkObservabilityDump => {
-				self.dump_routing_table_stats().await;
-				self.dump_hash_map_block_stats();
+			Command::CountDHTPeers { response_sender } => {
+				let mut total_peers: usize = 0;
+				for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
+					total_peers += bucket.num_entries();
+				}
+				_ = response_sender.send(total_peers);
+			},
+			Command::GetCellsInDHTPerBlock { response_sender } => {
+				let mut occurrence_map = HashMap::new();
+
+				for record in self
+					.swarm
+					.behaviour_mut()
+					.kademlia
+					.store_mut()
+					.records_iter()
+				{
+					let vec_key = record.0.to_vec();
+					let record_key = str::from_utf8(&vec_key);
+
+					let (block_num, _) = record_key
+						.expect("unable to cast key to string")
+						.split_once(':')
+						.expect("unable to split the key string");
+
+					let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
+					*count += 1;
+				}
+				let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
+				sorted.sort_by(|a, b| a.0.cmp(b.0));
+				for (block_number, cell_count) in sorted {
+					trace!(
+						"Number of cells in DHT for block {:?}: {}",
+						block_number,
+						cell_count
+					);
+				}
+
+				_ = response_sender.send(Ok(()));
+			},
+			Command::GetMultiaddress { response_sender } => {
+				let last_address = self.swarm.external_addresses().last();
+				_ = response_sender.send(last_address.cloned());
 			},
 		}
-	}
-
-	fn dump_hash_map_block_stats(&mut self) {
-		let mut occurrence_map = HashMap::new();
-
-		for record in self
-			.swarm
-			.behaviour_mut()
-			.kademlia
-			.store_mut()
-			.records_iter()
-		{
-			let vec_key = record.0.to_vec();
-			let record_key = str::from_utf8(&vec_key);
-
-			let (block_num, _) = record_key
-				.expect("unable to cast key to string")
-				.split_once(':')
-				.expect("unable to split the key string");
-
-			let count = occurrence_map.entry(block_num.to_string()).or_insert(0);
-			*count += 1;
-		}
-		let mut sorted: Vec<(&String, &i32)> = occurrence_map.iter().collect();
-		sorted.sort_by(|a, b| a.0.cmp(b.0));
-		for (block_number, cell_count) in sorted {
-			trace!(
-				"Number of cells in DHT for block {:?}: {}",
-				block_number,
-				cell_count
-			);
-		}
-	}
-
-	async fn dump_routing_table_stats(&mut self) {
-		let num_of_buckets = self.swarm.behaviour_mut().kademlia.kbuckets().count();
-		debug!("Number of KBuckets: {:?} ", num_of_buckets);
-		let mut table: String = "".to_owned();
-		let mut total_peer_number: usize = 0;
-		for bucket in self.swarm.behaviour_mut().kademlia.kbuckets() {
-			total_peer_number += bucket.num_entries();
-			for EntryView { node, status } in bucket.iter().map(|r| r.to_owned()) {
-				let key = node.key.preimage().to_string();
-				let value = format!("{:?}", node.value);
-				let status = format!("{:?}", status);
-				table.push_str(&format! {"{key: <55} | {value: <100} | {status: <10}\n"});
-			}
-		}
-
-		let text = format!("Total number of peers in routing table: {total_peer_number}.");
-		let header = format!("{PEER_ID: <55} | {MULTIADDRESS: <100} | {STATUS: <10}",);
-		debug!("{text}\n{header}\n{table}");
-
-		let mut current_multiaddress = "".to_string();
-
-		let mut current_ip = "".to_string();
-
-		if let Some(multiaddress) = self.dump_current_multiaddress() {
-			current_multiaddress = multiaddress.to_string();
-			if let Some(ip_addr) = extract_ip(multiaddress.clone()) {
-				current_ip = ip_addr;
-			}
-		}
-
-		let network_dump_event = NetworkDumpEvent {
-			routing_table_num_of_peers: total_peer_number,
-			current_multiaddress: current_multiaddress.to_string(),
-			current_ip: current_ip.to_string(),
-		};
-		if let Err(error) = self.network_stats_sender.send(network_dump_event).await {
-			error!("Cannot send network stats: {error}");
-		};
-	}
-
-	fn dump_current_multiaddress(&mut self) -> Option<&Multiaddr> {
-		self.swarm.external_addresses().last()
 	}
 
 	fn handle_periodic_bootstraps(&mut self) {

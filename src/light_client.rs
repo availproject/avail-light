@@ -60,7 +60,8 @@ pub trait LightClient {
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32;
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>>;
 	async fn shrink_kademlia_map(&self) -> Result<()>;
-	async fn network_stats(&self) -> Result<()>;
+	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)>;
+	async fn count_dht_entries(&self) -> Result<usize>;
 	fn store_block_header_in_db(&self, header: &Header, block_number: u32) -> Result<()>;
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()>;
 }
@@ -90,9 +91,6 @@ impl LightClient for LightClientImpl {
 	async fn shrink_kademlia_map(&self) -> Result<()> {
 		self.network_client.shrink_kademlia_map().await
 	}
-	async fn network_stats(&self) -> Result<()> {
-		self.network_client.network_stats().await
-	}
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
 		self.network_client.insert_rows_into_dht(block, rows).await
 	}
@@ -107,6 +105,12 @@ impl LightClient for LightClientImpl {
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
 		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
+	}
+	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
+		self.network_client.get_multiaddress_and_ip().await
+	}
+	async fn count_dht_entries(&self) -> Result<usize> {
+		self.network_client.count_dht_entries().await
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
@@ -127,8 +131,10 @@ pub async fn process_block(
 	received_at: Instant,
 	state: Arc<Mutex<State>>,
 ) -> Result<Option<f64>> {
-	metrics.count(MetricCounter::SessionBlock);
-	metrics.record(MetricValue::TotalBlockNumber(header.number))?;
+	metrics.count(MetricCounter::SessionBlock).await;
+	metrics
+		.record(MetricValue::TotalBlockNumber(header.number))
+		.await?;
 
 	let block_number = header.number;
 	let header_hash: H256 = Encode::using_encoded(header, blake2_256).into();
@@ -174,11 +180,15 @@ pub async fn process_block(
 		"Number of cells fetched from DHT: {}",
 		cells_fetched.len()
 	);
-	metrics.record(MetricValue::DHTFetched(cells_fetched.len() as f64))?;
+	metrics
+		.record(MetricValue::DHTFetched(cells_fetched.len() as f64))
+		.await?;
 
-	metrics.record(MetricValue::DHTFetchedPercentage(
-		cells_fetched.len() as f64 / positions.len() as f64,
-	))?;
+	metrics
+		.record(MetricValue::DHTFetchedPercentage(
+			cells_fetched.len() as f64 / positions.len() as f64,
+		))
+		.await?;
 
 	let mut rpc_fetched = if cfg.disable_rpc {
 		vec![]
@@ -195,7 +205,9 @@ pub async fn process_block(
 		"Number of cells fetched from RPC: {}",
 		rpc_fetched.len()
 	);
-	metrics.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))?;
+	metrics
+		.record(MetricValue::NodeRPCFetched(rpc_fetched.len() as f64))
+		.await?;
 
 	let mut cells = vec![];
 	cells.extend(cells_fetched);
@@ -210,7 +222,7 @@ pub async fn process_block(
 		return Ok(None);
 	}
 
-	let mut condifence = None;
+	let mut confidence = None;
 	if !cfg.disable_proof_verification {
 		let (verified, unverified) =
 			proof::verify(block_number, dimensions, &cells, &commitments, pp)?;
@@ -235,8 +247,8 @@ pub async fn process_block(
 			"Confidence factor: {}",
 			conf
 		);
-		metrics.record(MetricValue::BlockConfidence(conf))?;
-		condifence = Some(conf);
+		metrics.record(MetricValue::BlockConfidence(conf)).await?;
+		confidence = Some(conf);
 	}
 
 	// push latest mined block's header into column family specified
@@ -315,7 +327,9 @@ pub async fn process_block(
 			"DHT PUT rows operation success rate: {dht_insert_rows_success_rate}"
 		);
 
-		metrics.record(MetricValue::DHTPutRowsSuccess(success_rate))?;
+		metrics
+			.record(MetricValue::DHTPutRowsSuccess(success_rate))
+			.await?;
 
 		info!(
 			block_number,
@@ -323,7 +337,9 @@ pub async fn process_block(
 			"{rows_len} rows inserted into DHT"
 		);
 
-		metrics.record(MetricValue::DHTPutRowsDuration(time_elapsed.as_secs_f64()))?;
+		metrics
+			.record(MetricValue::DHTPutRowsDuration(time_elapsed.as_secs_f64()))
+			.await?;
 	}
 
 	let partition_time_elapsed = begin.elapsed();
@@ -334,9 +350,11 @@ pub async fn process_block(
 		"partition_cells_fetched" = rpc_fetched_len,
 		"Partition cells received",
 	);
-	metrics.record(MetricValue::RPCCallDuration(
-		partition_time_elapsed.as_secs_f64(),
-	))?;
+	metrics
+		.record(MetricValue::RPCCallDuration(
+			partition_time_elapsed.as_secs_f64(),
+		))
+		.await?;
 
 	begin = Instant::now();
 
@@ -349,7 +367,9 @@ pub async fn process_block(
 		"DHT PUT operation success rate: {}", dht_insert_success_rate
 	);
 
-	metrics.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))?;
+	metrics
+		.record(MetricValue::DHTPutSuccess(dht_insert_success_rate as f64))
+		.await?;
 
 	let dht_put_time_elapsed = begin.elapsed();
 	info!(
@@ -358,23 +378,32 @@ pub async fn process_block(
 		"{rpc_fetched_len} cells inserted into DHT",
 	);
 
-	metrics.record(MetricValue::DHTPutDuration(
-		dht_put_time_elapsed.as_secs_f64(),
-	))?;
+	metrics
+		.record(MetricValue::DHTPutDuration(
+			dht_put_time_elapsed.as_secs_f64(),
+		))
+		.await?;
 
 	light_client
 		.shrink_kademlia_map()
 		.await
 		.context("Unable to perform Kademlia map shrink")?;
 
-	light_client
-		.network_stats()
-		.await
-		.context("Unable to dump network stats")?;
+	// dump what we have on the current p2p network
+	if let Ok((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
+		// set Multiaddress
+		metrics.set_multiaddress(multiaddr).await;
+		metrics.set_ip(ip).await;
+	}
+	if let Ok(counted_peers) = light_client.count_dht_entries().await {
+		metrics
+			.record(MetricValue::KadRoutingPeerNum(counted_peers))
+			.await?
+	}
 
-	metrics.record(MetricValue::HealthCheck())?;
+	metrics.record(MetricValue::HealthCheck()).await?;
 
-	Ok(condifence)
+	Ok(confidence)
 }
 
 pub struct Channels {
@@ -608,12 +637,18 @@ mod tests {
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client.expect_get_multiaddress_and_ip().returning(|| {
+			Box::pin(async move { Ok(("multiaddress".to_string(), "ip".to_string())) })
+		});
 		mock_client
-			.expect_network_stats()
-			.returning(|| Box::pin(async move { Ok(()) }));
+			.expect_count_dht_entries()
+			.returning(|| Box::pin(async move { Ok(1) }));
+
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
 		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_set_multiaddress().returning(|_| ());
+		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
 			&Arc::new(mock_metrics),
@@ -737,12 +772,18 @@ mod tests {
 		mock_client
 			.expect_shrink_kademlia_map()
 			.returning(|| Box::pin(async move { Ok(()) }));
+		mock_client.expect_get_multiaddress_and_ip().returning(|| {
+			Box::pin(async move { Ok(("multiaddress".to_string(), "ip".to_string())) })
+		});
 		mock_client
-			.expect_network_stats()
-			.returning(|| Box::pin(async move { Ok(()) }));
+			.expect_count_dht_entries()
+			.returning(|| Box::pin(async move { Ok(1) }));
+
 		let mut mock_metrics = telemetry::MockMetrics::new();
 		mock_metrics.expect_count().returning(|_| ());
 		mock_metrics.expect_record().returning(|_| Ok(()));
+		mock_metrics.expect_set_multiaddress().returning(|_| ());
+		mock_metrics.expect_set_ip().returning(|_| ());
 		process_block(
 			&mock_client,
 			&Arc::new(mock_metrics),

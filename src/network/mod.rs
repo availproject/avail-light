@@ -3,24 +3,23 @@ use event_loop::EventLoop;
 use futures::future::Either;
 use libp2p::{
 	autonat::{self, Behaviour as AutoNat},
-	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version, ConnectedPoint},
+	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version},
 	dcutr::Behaviour as Dcutr,
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
 	identity,
 	kad::{Kademlia, KademliaCaching, KademliaConfig},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
-	multiaddr::Protocol,
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
 	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
 	relay::{self, client::Behaviour as RelayClient},
 	swarm::{NetworkBehaviour, SwarmBuilder},
-	Multiaddr, PeerId, Transport,
+	PeerId, Transport,
 };
 use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc::{self};
 use tracing::info;
 
 mod client;
@@ -30,19 +29,7 @@ mod mem_store;
 pub mod network_analyzer;
 pub use client::Client;
 
-use crate::{
-	telemetry::NetworkDumpEvent,
-	types::{LibP2PConfig, SecretKey},
-};
-
-// Event enum encodes all used network event variants
-#[derive(Debug, Clone)]
-pub enum Event {
-	ConnectionEstablished {
-		peer_id: PeerId,
-		endpoint: ConnectedPoint,
-	},
-}
+use crate::types::{LibP2PConfig, SecretKey};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
@@ -58,7 +45,6 @@ pub struct Behaviour {
 
 pub fn init(
 	cfg: LibP2PConfig,
-	network_stats_sender: Sender<NetworkDumpEvent>,
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
@@ -165,7 +151,6 @@ pub fn init(
 		EventLoop::new(
 			swarm,
 			command_receiver,
-			network_stats_sender,
 			cfg.relays,
 			cfg.bootstrap_interval,
 			kad_remove_local_record,
@@ -194,15 +179,4 @@ pub fn keypair(cfg: LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)>
 	};
 	let peer_id = PeerId::from(keypair.public()).to_string();
 	Ok((keypair, peer_id))
-}
-
-fn extract_ip(multiaddress: Multiaddr) -> Option<String> {
-	for protocol in &multiaddress {
-		match protocol {
-			Protocol::Ip4(ip) => return Some(ip.to_string()),
-			Protocol::Ip6(ip) => return Some(ip.to_string()),
-			_ => continue,
-		}
-	}
-	None
 }

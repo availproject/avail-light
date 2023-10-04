@@ -1,16 +1,11 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use mockall::automock;
 
 pub mod otlp;
 
 pub enum MetricCounter {
 	SessionBlock,
-}
-
-pub struct NetworkDumpEvent {
-	pub routing_table_num_of_peers: usize,
-	pub current_multiaddress: String,
-	pub current_ip: String,
 }
 
 pub enum MetricValue {
@@ -24,7 +19,7 @@ pub enum MetricValue {
 	DHTPutSuccess(f64),
 	DHTPutRowsDuration(f64),
 	DHTPutRowsSuccess(f64),
-	KadRoutingTablePeerNum(u32),
+	KadRoutingPeerNum(usize),
 	HealthCheck(),
 	#[cfg(feature = "crawl")]
 	CrawlCellsSuccessRate(f64),
@@ -33,7 +28,10 @@ pub enum MetricValue {
 }
 
 #[automock]
+#[async_trait]
 pub trait Metrics {
-	fn count(&self, counter: MetricCounter);
-	fn record(&self, value: MetricValue) -> Result<()>;
+	async fn count(&self, counter: MetricCounter);
+	async fn record(&self, value: MetricValue) -> Result<()>;
+	async fn set_multiaddress(&self, multiaddr: String);
+	async fn set_ip(&self, ip: String);
 }

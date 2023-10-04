@@ -1,12 +1,11 @@
 #![doc = include_str!("../../README.md")]
 
 use anyhow::{anyhow, Context, Result};
-use async_std::stream::StreamExt;
 use avail_core::AppId;
 use avail_light::{
 	api,
 	consts::STATE_CF,
-	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
+	telemetry::{self},
 };
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
@@ -16,11 +15,10 @@ use avail_light::{
 use avail_subxt::primitives::Header;
 use clap::Parser;
 use kate_recovery::com::AppData;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::{
 	net::Ipv4Addr,
-	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
@@ -43,6 +41,8 @@ use tikv_jemallocator::Jemalloc;
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+const CLIENT_ROLE: &str = "lightnode";
 
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
@@ -137,58 +137,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
-	// Check if bootstrap nodes were provided
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
-
-	let mut client_role = "lightnode".to_string();
-	// If not bootstrap nodes provided, the client is the bootstrap
-	if bootstrap_nodes.is_empty() {
-		client_role = "bootnode".to_string();
-	}
-
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id, client_role)
-			.context("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			peer_id,
+			CLIENT_ROLE.into(),
+		)
+		.context("Unable to initialize OpenTelemetry service")?,
 	);
-
-	let (network_stats_sender, mut network_stats_receiver) = channel::<NetworkDumpEvent>(100);
-
-	let network_stats_metrics = ot_metrics.clone();
-
-	// Network stats receiver
-	tokio::spawn(async move {
-		while let Some(network_dump_event) = network_stats_receiver.recv().await {
-			// Set multiaddress for metric dispatch
-			if !network_dump_event.current_multiaddress.is_empty() {
-				*network_stats_metrics
-					.multiaddress
-					.write()
-					.expect("unable to write metric multiaddress") = network_dump_event.current_multiaddress;
-				*network_stats_metrics
-					.ip
-					.write()
-					.expect("unable to write metric ip address") = network_dump_event.current_ip;
-			}
-
-			let number = network_dump_event
-				.routing_table_num_of_peers
-				.try_into()
-				.expect("usize should be u32");
-			let value = MetricValue::KadRoutingTablePeerNum(number);
-			if let Err(error) = &network_stats_metrics.record(value) {
-				error!("Error recording network stats metric: {error}");
-			}
-		}
-	});
 
 	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
-		network_stats_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
@@ -215,34 +174,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context("Listening on UDP not to fail.")?;
 
-	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
-	// second client to establish connection and use it as bootstrap.
-	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
-	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
-		info!("No bootstrap nodes, waiting for first peer to connect...");
-		let node = network_client
-			.events_stream()
-			.await
-			.find_map(|e| match e {
-				avail_light::network::Event::ConnectionEstablished { peer_id, endpoint } => {
-					if endpoint.is_listener() {
-						Some((peer_id, endpoint.get_remote_address().clone()))
-					} else {
-						None
-					}
-				},
-			})
-			// hang in there, until someone dials us
-			.await
-			.context("Connection is not established")?;
-		vec![node]
-	} else {
-		bootstrap_nodes
-	};
-
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client.bootstrap(bootstrap_nodes).await?;
+	network_client.bootstrap(cfg.clone().bootstraps).await?;
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
