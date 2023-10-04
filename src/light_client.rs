@@ -390,7 +390,7 @@ pub async fn process_block(
 		.context("Unable to perform Kademlia map shrink")?;
 
 	// dump what we have on the current p2p network
-	if let Some((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
+	if let Ok((multiaddr, ip)) = light_client.get_multiaddress_and_ip().await {
 		// set Multiaddress
 		metrics.set_multiaddress(multiaddr).await;
 		metrics.set_ip(ip).await;
