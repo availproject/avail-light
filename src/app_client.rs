@@ -20,7 +20,8 @@ use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
 	com::{
-		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, Percent,
+		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
+		Percent,
 	},
 	commitments,
 	config::{self, CHUNK_SIZE},
@@ -35,7 +36,7 @@ use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, Mutex},
 };
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{broadcast, mpsc::Sender};
 use tracing::{debug, error, info, instrument};
 
 use crate::{
@@ -281,7 +282,7 @@ async fn process_block(
 	app_id: AppId,
 	block: &BlockVerified,
 	pp: Arc<PublicParameters>,
-) -> Result<()> {
+) -> Result<AppData> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = block.dimensions;
@@ -398,7 +399,7 @@ async fn process_block(
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
 	debug!(block_number, "Stored {bytes_count} bytes into database");
 
-	Ok(())
+	Ok(data)
 }
 
 /// Runs application client.
@@ -419,14 +420,27 @@ pub async fn run(
 	network_client: Client,
 	rpc_client: avail::Client,
 	app_id: AppId,
-	mut block_receive: Receiver<BlockVerified>,
+	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
 	sync_end_block: u32,
+	data_verified_sender: broadcast::Sender<(u32, AppData)>,
+	error_sender: Sender<anyhow::Error>,
 ) {
 	info!("Starting for app {app_id}...");
 
-	while let Some(block) = block_receive.recv().await {
+	loop {
+		let block = match block_receive.recv().await {
+			Ok(block) => block,
+			Err(error) => {
+				error!("Cannot receive message: {error}");
+				if let Err(error) = error_sender.send(error.into()).await {
+					error!("Cannot send error message: {error}");
+				}
+				return;
+			},
+		};
+
 		let block_number = block.block_num;
 		let dimensions = &block.dimensions;
 
@@ -446,9 +460,17 @@ pub async fn run(
 			network_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};
-		if let Err(error) = process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
-			error!(block_number, "Cannot process block: {error}");
-		} else {
+		let data = match process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
+			Ok(data) => data,
+			Err(error) => {
+				error!(block_number, "Cannot process block: {error}");
+				if let Err(error) = error_sender.send(error).await {
+					error!("Cannot send error message: {error}");
+				}
+				return;
+			},
+		};
+		{
 			let mut state = state.lock().unwrap();
 			let synced = state
 				.confidence_achieved
@@ -463,8 +485,15 @@ pub async fn run(
 			if sync_end_block == block_number {
 				state.set_synced(true)
 			}
-			debug!(block_number, "Block processed");
 		}
+		if let Err(error) = data_verified_sender.send((block_number, data)) {
+			error!("Cannot send data verified message: {error}");
+			if let Err(error) = error_sender.send(error.into()).await {
+				error!("Cannot send error message: {error}");
+			}
+			return;
+		}
+		debug!(block_number, "Block processed");
 	}
 }
 
@@ -510,6 +539,7 @@ mod tests {
 				],
 			]
 			.to_vec(),
+			confidence: None,
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()
@@ -566,6 +596,7 @@ mod tests {
 				],
 			]
 			.to_vec(),
+			confidence: None,
 		};
 		mock_client
 			.expect_fetch_rows_from_dht()

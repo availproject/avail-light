@@ -1,9 +1,4 @@
-use std::{
-	sync::Arc,
-	time::{Duration, Instant},
-};
-
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use kate_recovery::{
 	config,
@@ -12,17 +7,19 @@ use kate_recovery::{
 };
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
+	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
+use std::{
+	sync::Arc,
+	time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace};
-
-use super::Event;
 
 #[derive(Clone)]
 pub struct Client {
-	cmd_sender: mpsc::Sender<Command>,
+	command_sender: mpsc::Sender<Command>,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -78,69 +75,58 @@ impl Client {
 		put_batch_size: usize,
 	) -> Self {
 		Self {
-			cmd_sender: sender,
+			command_sender: sender,
 			dht_parallelization_limit,
 			ttl,
 			put_batch_size,
 		}
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<(), anyhow::Error> {
-		let (sender, receiver) = oneshot::channel();
-		self.cmd_sender
-			.send(Command::StartListening { addr, sender })
-			.await
-			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
-	}
-
-	pub async fn add_address(
-		&self,
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-	) -> Result<(), anyhow::Error> {
-		let (sender, receiver) = oneshot::channel();
-		self.cmd_sender
-			.send(Command::AddAddress {
-				peer_id,
-				peer_addr,
-				sender,
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+		let (response_sender, receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::StartListening {
+				addr,
+				response_sender,
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
-	// Events stream function creates a new stream of
-	// network events and sends a command to the Event loop
-	// with a required sender for event output
-	pub async fn events_stream(&self) -> ReceiverStream<Event> {
-		let (sender, receiver) = mpsc::channel(1000);
-		self.cmd_sender
-			.send(Command::Stream { sender })
+	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
+		let (response_sender, receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::AddAddress {
+				peer_id,
+				peer_addr,
+				response_sender,
+			})
 			.await
-			.expect("Command receiver should not be dropped.");
-
-		ReceiverStream::new(receiver)
+			.context("Command receiver should not be dropped.")?;
+		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		let (sender, receiver) = oneshot::channel();
+		let (response_sender, receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.cmd_sender
-			.send(Command::Bootstrap { sender })
+		self.command_sender
+			.send(Command::Bootstrap { response_sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
-		let (sender, receiver) = oneshot::channel();
-		self.cmd_sender
-			.send(Command::GetKadRecord { key, sender })
+		let (response_sender, receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::GetKadRecord {
+				key,
+				response_sender,
+			})
 			.await
 			.context("Command receiver should not be dropped.")?;
 		receiver.await.context("Sender not to be dropped.")?
@@ -159,13 +145,13 @@ impl Client {
 				.send(Command::PutKadRecordBatch {
 					records: chunk.into(),
 					quorum,
-					sender: response_sender,
+					response_sender,
 				})
 				.await
 				.context("Command receiver should not be dropped.")
 				.is_err()
 			{
-				return DHTPutSuccess::Batch(0);
+				return DHTPutSuccess::Batch(num_success);
 			}
 			// wait here for successfully counted put operations from this chunk
 			// waiting in this manner introduces a back pressure from overwhelming the network
@@ -178,18 +164,28 @@ impl Client {
 		DHTPutSuccess::Batch(num_success)
 	}
 
-	// Reduces the size of Kademlias underlying hashmap
-	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.cmd_sender
-			.send(Command::ReduceKademliaMapSize)
+	pub async fn count_dht_entries(&self) -> Result<usize> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::CountDHTPeers { response_sender })
 			.await
-			.context("Command receiver should not be dropped.")
+			.context("Command receiver not to be dropped.")?;
+		response_receiver.await.context("Sender not to be dropped.")
 	}
 
-	// Dump p2p network stats in a readable manner
-	pub async fn network_stats(&self) -> Result<()> {
-		self.cmd_sender
-			.send(Command::NetworkObservabilityDump)
+	async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::GetMultiaddress { response_sender })
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver.await.context("Sender not to be dropped.")
+	}
+
+	// Reduces the size of Kademlias underlying hashmap
+	pub async fn shrink_kademlia_map(&self) -> Result<()> {
+		self.command_sender
+			.send(Command::ReduceKademliaMapSize)
 			.await
 			.context("Command receiver should not be dropped.")
 	}
@@ -352,34 +348,53 @@ impl Client {
 
 		self.insert_into_dht(records).await
 	}
+
+	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
+		if let Ok(Some(addr)) = self.get_multiaddress().await {
+			for protocol in &addr {
+				match protocol {
+					Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
+					Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
+					_ => continue,
+				}
+			}
+			return Err(anyhow!("No IP Address was present in Multiaddress"));
+		}
+		Err(anyhow!("No Multiaddress was present for Local Node"))
+	}
 }
 
 #[derive(Debug)]
 pub enum Command {
 	StartListening {
 		addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
-		sender: oneshot::Sender<Result<()>>,
-	},
-	Stream {
-		sender: mpsc::Sender<Event>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	Bootstrap {
-		sender: oneshot::Sender<Result<()>>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	GetKadRecord {
 		key: Key,
-		sender: oneshot::Sender<Result<PeerRecord>>,
+		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
 		records: Arc<[Record]>,
 		quorum: Quorum,
-		sender: oneshot::Sender<DHTPutSuccess>,
+		response_sender: oneshot::Sender<DHTPutSuccess>,
+	},
+	CountDHTPeers {
+		response_sender: oneshot::Sender<usize>,
+	},
+	GetCellsInDHTPerBlock {
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	GetMultiaddress {
+		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
 	ReduceKademliaMapSize,
-	NetworkObservabilityDump,
 }

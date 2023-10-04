@@ -2,5 +2,6 @@
 **/*.rs.bk
 .env
 .DS_Store
-config.yaml
+config*.yaml
 avail_light_store
+avail_path*

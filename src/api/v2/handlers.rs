@@ -1,8 +1,8 @@
 use super::{
 	transactions,
 	types::{
-		Client, Clients, Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction,
-		Version,
+		Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction, Version,
+		WsClients,
 	},
 	ws,
 };
@@ -16,17 +16,16 @@ use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
-use tracing::{error, info};
+use tracing::error;
 use uuid::Uuid;
 use warp::{ws::Ws, Rejection, Reply};
 
 pub async fn subscriptions(
 	subscription: Subscription,
-	clients: Clients,
+	clients: WsClients,
 ) -> Result<SubscriptionId, Infallible> {
 	let subscription_id = Uuid::new_v4().to_string();
-	let mut clients = clients.write().await;
-	clients.insert(subscription_id.clone(), Client::new(subscription));
+	clients.subscribe(&subscription_id, subscription).await;
 	Ok(SubscriptionId { subscription_id })
 }
 
@@ -40,20 +39,22 @@ pub async fn submit(
 
 	submitter.submit(transaction).await.map_err(|error| {
 		error!(%error, "Submit transaction failed");
-		Error::internal_server_error()
+		Error::internal_server_error(error)
 	})
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn ws(
 	subscription_id: String,
 	ws: Ws,
-	clients: Clients,
+	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,
+	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) -> Result<impl Reply, Rejection> {
-	if !clients.read().await.contains_key(&subscription_id) {
+	if !clients.has_subscription(&subscription_id).await {
 		return Err(warp::reject::not_found());
 	}
 	// NOTE: Multiple connections to the same client are currently allowed
@@ -65,25 +66,15 @@ pub async fn ws(
 			version,
 			config,
 			node,
+			submitter.clone(),
 			state.clone(),
 		)
 	}))
 }
 
-pub async fn status(
-	config: RuntimeConfig,
-	node: Node,
-	state: Arc<Mutex<State>>,
-) -> Result<impl Reply, impl Reply> {
-	let state = match state.lock() {
-		Ok(state) => state,
-		Err(error) => {
-			info!("Cannot acquire lock for last_block: {error}");
-			return Err(Error::internal_server_error());
-		},
-	};
-
-	Ok(Status::new(&config, &node, &state))
+pub fn status(config: RuntimeConfig, node: Node, state: Arc<Mutex<State>>) -> impl Reply {
+	let state = state.lock().expect("Lock should be acquired");
+	Status::new(&config, &node, &state)
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {

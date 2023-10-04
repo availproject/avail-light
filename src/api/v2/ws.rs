@@ -1,6 +1,11 @@
-use super::types::{Clients, Request, RequestType, Response, ResponseTopic, Status, Version};
+use super::{
+	transactions,
+	types::{
+		Payload, Request, Response, Status, Transaction, Version, WsClients, WsError, WsResponse,
+	},
+};
 use crate::{
-	api::v2::types::Error,
+	api::v2::types::{Error, Sender},
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
@@ -8,30 +13,30 @@ use anyhow::Context;
 use futures::{FutureExt, StreamExt};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, info, warn};
+use tracing::{error, log::warn};
 use warp::ws::{self, Message, WebSocket};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn connect(
 	subscription_id: String,
 	web_socket: WebSocket,
-	clients: Clients,
+	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
 	node: Node,
+	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) {
 	let (web_socket_sender, mut web_socket_receiver) = web_socket.split();
 	let (sender, receiver) = mpsc::unbounded_channel();
 	let receiver_stream = UnboundedReceiverStream::new(receiver);
 
-	let mut clients = clients.write().await;
-	let Some(client) = clients.get_mut(&subscription_id) else {
-		info!("Client is not subscribed");
+	if let Err(error) = clients.set_sender(&subscription_id, sender.clone()).await {
+		error!("Cannot set sender: {error}");
 		return;
 	};
-	client.sender = Some(sender.clone());
 
 	tokio::task::spawn(receiver_stream.forward(web_socket_sender).map(|result| {
 		if let Err(error) = result {
@@ -39,93 +44,82 @@ pub async fn connect(
 		}
 	}));
 
+	fn send<T: Serialize>(sender: Sender, message: T) -> anyhow::Result<()> {
+		let ws_message = serde_json::to_string(&message)
+			.map(ws::Message::text)
+			.context("Failed to serialize message")?;
+
+		sender
+			.send(Ok(ws_message))
+			.context("Failed to send message")
+	}
+
 	while let Some(result) = web_socket_receiver.next().await {
-		match result {
-			Ok(message) if !message.is_text() => continue,
-			Ok(message) => {
-				if let Some(error) = match <Request>::try_from(message) {
-					Ok(request) => {
-						if let Err(error) = handle_websocket_message(
-							request,
-							sender.clone(),
-							&version,
-							&config,
-							&node,
-							state.clone(),
-						) {
-							error!("Error handling web socket message: {error}");
-							Some(Error::internal_server_error())
-						} else {
-							None
-						}
-					},
-					Err(error) => {
-						warn!("Error handling web socket message: {error}");
-						Some(Error::bad_request(
-							"Error handling web socket message: Failed to parse request"
-								.to_string(),
-						))
-					},
-				} {
-					if let Err(error) = sender.send(Ok(Message::text::<String>(error.into()))) {
-						error!("{error}");
-					};
-				};
-			},
+		let message = match result {
 			Err(error) => {
 				error!("Error receiving client message: {error}");
+				continue;
 			},
+			Ok(message) if !message.is_text() => continue,
+			Ok(message) => message,
+		};
+
+		let submitter = submitter.clone();
+		let state = state.clone();
+
+		let send_result =
+			match handle_request(message, &version, &config, &node, submitter, state).await {
+				Ok(response) => send(sender.clone(), response),
+				Err(error) => {
+					if let Some(cause) = error.cause.as_ref() {
+						error!("Failed to handle request: {cause}");
+					};
+					send::<WsError>(sender.clone(), error.into())
+				},
+			};
+
+		if let Err(error) = send_result {
+			warn!("Error sending message: {error:#}");
 		}
 	}
 }
 
-fn send_websocket_message<T: Serialize>(
-	sender: UnboundedSender<Result<Message, warp::Error>>,
-	response: Response<T>,
-) -> anyhow::Result<()> {
-	let message = serde_json::to_string(&response)
-		.map(ws::Message::text)
-		.map(Ok)
-		.context("Failed to serialize response message")?;
-
-	sender
-		.send(message)
-		.context("Failed to send response message")?;
-	Ok(())
-}
-
-fn handle_websocket_message(
-	request: Request,
-	sender: UnboundedSender<Result<Message, warp::Error>>,
+async fn handle_request(
+	message: Message,
 	version: &Version,
 	config: &RuntimeConfig,
 	node: &Node,
+	submitter: Option<Arc<impl transactions::Submit>>,
 	state: Arc<Mutex<State>>,
-) -> anyhow::Result<()> {
-	match request.request_type {
-		RequestType::Version => send_websocket_message(
-			sender,
-			Response {
-				topic: ResponseTopic::Version,
-				request_id: request.request_id,
-				message: version.clone(),
-			},
-		)?,
-		RequestType::Status => {
-			let state = state.lock().expect("Cannot acquire state lock");
+) -> Result<WsResponse, Error> {
+	let request = Request::try_from(message).map_err(|error| {
+		Error::bad_request_unknown(&format!("Failed to parse request: {error}"))
+	})?;
 
+	let request_id = request.request_id;
+	match request.payload {
+		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
+		Payload::Status => {
+			let state = state.lock().expect("State lock can be acquired");
 			let status = Status::new(config, node, &state);
-
-			send_websocket_message(
-				sender,
-				Response {
-					topic: ResponseTopic::Status,
-					request_id: request.request_id,
-					message: status,
-				},
-			)?;
+			Ok(Response::new(request_id, status).into())
 		},
-	};
+		Payload::Submit(transaction) => {
+			let Some(submitter) = submitter else {
+				return Err(Error::bad_request(request_id, "Submit is not configured."));
+			};
+			if transaction.is_empty() {
+				return Err(Error::bad_request(request_id, "Transaction is empty."));
+			}
+			if matches!(transaction, Transaction::Data(_)) && !submitter.has_signer() {
+				return Err(Error::bad_request(request_id, "Signer is not configured."));
+			};
 
-	Ok(())
+			submitter
+				.submit(transaction)
+				.await
+				.map(|response| Response::new(request_id, response).into())
+				.map_err(Error::internal_server_error)
+		},
+	}
 }

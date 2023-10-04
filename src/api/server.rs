@@ -25,7 +25,7 @@ use std::{
 	sync::{Arc, Mutex},
 };
 use tracing::info;
-use warp::Filter;
+use warp::{Filter, Reply};
 
 pub struct Server {
 	pub db: Arc<DB>,
@@ -35,6 +35,14 @@ pub struct Server {
 	pub network_version: String,
 	pub node: Node,
 	pub node_client: avail::Client,
+	#[cfg(feature = "api-v2")]
+	pub ws_clients: v2::types::WsClients,
+}
+
+fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
+	warp::head()
+		.and(warp::path("health"))
+		.map(|| warp::reply::with_status("", warp::http::StatusCode::OK))
 }
 
 impl Server {
@@ -60,6 +68,7 @@ impl Server {
 			self.state.clone(),
 			self.cfg,
 			self.node_client.clone(),
+			self.ws_clients.clone(),
 		);
 
 		let cors = warp::cors()
@@ -67,7 +76,7 @@ impl Server {
 			.allow_header("content-type")
 			.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-		let routes = v1_api;
+		let routes = health_route().or(v1_api);
 		#[cfg(feature = "api-v2")]
 		let routes = routes.or(v2_api);
 		let routes = routes.with(cors);

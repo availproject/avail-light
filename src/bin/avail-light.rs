@@ -1,11 +1,11 @@
 #![doc = include_str!("../../README.md")]
 
 use anyhow::{anyhow, Context, Result};
-use async_std::stream::StreamExt;
 use avail_core::AppId;
 use avail_light::{
+	api,
 	consts::STATE_CF,
-	telemetry::{self, MetricValue, Metrics, NetworkDumpEvent},
+	telemetry::{self},
 };
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
@@ -14,15 +14,18 @@ use avail_light::{
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
-use libp2p::{multiaddr::Protocol, Multiaddr, PeerId};
+use kate_recovery::com::AppData;
+use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::{
 	net::Ipv4Addr,
-	str::FromStr,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::{
+	broadcast,
+	mpsc::{channel, Sender},
+};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -38,6 +41,8 @@ use tikv_jemallocator::Jemalloc;
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+const CLIENT_ROLE: &str = "lightnode";
 
 /// Light Client for Avail Blockchain
 #[derive(Parser)]
@@ -113,7 +118,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
-
+	let version = clap::crate_version!();
+	info!("Running Avail light client version: {version}");
 	info!("Using config: {cfg:?}");
 
 	if let Some(error) = parse_error {
@@ -132,37 +138,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
 
 	let ot_metrics = Arc::new(
-		telemetry::otlp::initialize(cfg.ot_collector_endpoint.clone(), peer_id)
-			.context("Unable to initialize OpenTelemetry service")?,
+		telemetry::otlp::initialize(
+			cfg.ot_collector_endpoint.clone(),
+			peer_id,
+			CLIENT_ROLE.into(),
+		)
+		.context("Unable to initialize OpenTelemetry service")?,
 	);
-
-	let (network_stats_sender, mut network_stats_receiver) = channel::<NetworkDumpEvent>(100);
-
-	let network_stats_metrics = ot_metrics.clone();
-
-	// Network stats receiver
-	tokio::spawn(async move {
-		while let Some(network_dump_event) = network_stats_receiver.recv().await {
-			// Set multiaddress for metric dispatch
-			if !network_dump_event.current_multiaddress.is_empty() {
-				*network_stats_metrics.multiaddress.write().unwrap() =
-					network_dump_event.current_multiaddress;
-			}
-
-			let number = network_dump_event
-				.routing_table_num_of_peers
-				.try_into()
-				.expect("usize should be u32");
-			let value = MetricValue::KadRoutingTablePeerNum(number);
-			if let Err(error) = &network_stats_metrics.record(value) {
-				error!("Error recording network stats metric: {error}");
-			}
-		}
-	});
 
 	let (network_client, network_event_loop) = avail_light::network::init(
 		(&cfg).into(),
-		network_stats_sender,
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
 		cfg.put_batch_size,
@@ -189,42 +174,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context("Listening on UDP not to fail.")?;
 
-	// Check if bootstrap nodes were provided
-	let bootstrap_nodes = cfg
-		.bootstraps
-		.iter()
-		.map(|(a, b)| Ok((PeerId::from_str(a)?, b.clone())))
-		.collect::<Result<Vec<(PeerId, Multiaddr)>>>()
-		.context("Failed to parse bootstrap nodes")?;
-
-	// If the client is the first one on the network, and no bootstrap nodes, then wait for the
-	// second client to establish connection and use it as bootstrap.
-	// DHT requires node to be bootstrapped in order for Kademlia to be able to insert new records.
-	let bootstrap_nodes = if bootstrap_nodes.is_empty() {
-		info!("No bootstrap nodes, waiting for first peer to connect...");
-		let node = network_client
-			.events_stream()
-			.await
-			.find_map(|e| match e {
-				avail_light::network::Event::ConnectionEstablished { peer_id, endpoint } => {
-					if endpoint.is_listener() {
-						Some((peer_id, endpoint.get_remote_address().clone()))
-					} else {
-						None
-					}
-				},
-			})
-			// hang in there, until someone dials us
-			.await
-			.context("Connection is not established")?;
-		vec![node]
-	} else {
-		bootstrap_nodes
-	};
-
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client.bootstrap(bootstrap_nodes).await?;
+	network_client.bootstrap(cfg.clone().bootstraps).await?;
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
@@ -260,14 +212,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
 		.await
-		.context(format!("Failed to get chain header from {rpc_client:?}"))?;
+		.context("Failed to get chain header")?;
 
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
-	let sync_end_block = block_header.number - 1;
+	let sync_end_block = block_header.number.saturating_sub(1);
+
+	#[cfg(feature = "api-v2")]
+	let ws_clients = api::v2::types::WsClients::default();
 
 	// Spawn tokio task which runs one http server for handling RPC
-	let server = avail_light::api::server::Server {
+	let server = api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
 		state: state.clone(),
@@ -275,14 +230,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
 		node_client: rpc_client.clone(),
+		#[cfg(feature = "api-v2")]
+		ws_clients: ws_clients.clone(),
 	};
 
 	tokio::task::spawn(server.run());
 
-	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
+	let (block_tx, data_rx) = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = channel::<avail_light::types::BlockVerified>(1 << 7);
+		let (block_tx, block_rx) = broadcast::channel::<avail_light::types::BlockVerified>(1 << 7);
+		let (data_tx, data_rx) = broadcast::channel::<(u32, AppData)>(1 << 7);
 		tokio::task::spawn(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -293,11 +251,60 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			pp.clone(),
 			state.clone(),
 			sync_end_block,
+			data_tx,
+			error_sender.clone(),
 		));
-		Some(block_tx)
+		(Some(block_tx), Some(data_rx))
 	} else {
-		None
+		(None, None)
 	};
+
+	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
+
+	#[cfg(feature = "api-v2")]
+	{
+		tokio::task::spawn(api::v2::publish(
+			api::v2::types::Topic::HeaderVerified,
+			message_tx.subscribe(),
+			ws_clients.clone(),
+		));
+
+		if let Some(sender) = block_tx.as_ref() {
+			tokio::task::spawn(api::v2::publish(
+				api::v2::types::Topic::ConfidenceAchieved,
+				sender.subscribe(),
+				ws_clients.clone(),
+			));
+		}
+
+		if let Some(data_rx) = data_rx {
+			tokio::task::spawn(api::v2::publish(
+				api::v2::types::Topic::DataVerified,
+				data_rx,
+				ws_clients,
+			));
+		}
+	}
+	#[cfg(not(feature = "api-v2"))]
+	if let Some(mut data_rx) = data_rx {
+		tokio::task::spawn(async move {
+			loop {
+				// Discard app client messages if API V2 is not enabled
+				_ = data_rx.recv().await;
+			}
+		});
+	};
+
+	#[cfg(feature = "crawl")]
+	if cfg.crawl.crawl_block {
+		tokio::task::spawn(avail_light::crawl_client::run(
+			message_tx.subscribe(),
+			network_client.clone(),
+			cfg.crawl.crawl_block_delay,
+			ot_metrics.clone(),
+			cfg.crawl.crawl_block_mode,
+		));
+	}
 
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
@@ -322,22 +329,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		state.clone(),
 	));
 
-	let (message_tx, message_rx) = channel::<(Header, Instant)>(128);
-
-	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
-		rpc_client.clone(),
-		message_tx,
-		error_sender.clone(),
-		state.clone(),
-		db.clone(),
-	));
-
-	let light_client = avail_light::light_client::new(db, network_client, rpc_client);
+	let light_client =
+		avail_light::light_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
 		header_receiver: message_rx,
-		error_sender,
+		error_sender: error_sender.clone(),
 	};
 
 	tokio::task::spawn(avail_light::light_client::run(
@@ -345,9 +343,18 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(&cfg).into(),
 		pp,
 		ot_metrics,
-		state,
+		state.clone(),
 		lc_channels,
 	));
+
+	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
+		rpc_client,
+		message_tx,
+		error_sender,
+		state,
+		db,
+	));
+
 	Ok(())
 }
 
@@ -356,7 +363,7 @@ pub async fn main() -> Result<()> {
 	let (error_sender, mut error_receiver) = channel::<anyhow::Error>(1);
 
 	if let Err(error) = run(error_sender).await {
-		error!("{error}");
+		error!("{error:#}");
 		return Err(error);
 	};
 
