@@ -105,6 +105,50 @@ Content-Type: application/json
 - **available** - range of historical blocks with verified data availability (configured confidence has been achieved)
 - **app_data** - range of historical blocks with app data retrieved and verified
 
+## **GET** `/v2/blocks/{block_number}`
+
+Gets specified block status and confidence if applicable.
+
+- Use cases
+  - Polling the status of the block
+  - Querying historical block statuses
+
+If **block_number <= latest_block,** then the block is either processed or skipped, and possible statuses are:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "status": "unavailable|pending|verifying-header|verifying-confidence|verifying-data|finished",
+  "confidence": {confidence} // Optional
+}
+```
+
+- **status** - block status
+- **confidence** - data availability confidence, available if block processing is finished
+
+### Status
+
+- **unavailable** - block will not be processed if
+  \
+  **latest_block - sync_depth > block_number**
+- **pending** - block will be processed at some point in the future if
+  \
+  **latest_block - sync_depth ≤ block_number ≤ latest_block**
+- **verifying-header** - block processing is started, and the header finality is being checked
+- **verifying-confidence** - block header is verified and available, confidence is being checked
+- **verifying-data** - confidence is achieved, and data is being fetched and verified (if configured)
+- **finished** - block header is available, confidence is achieved, and data is available (if configured)
+
+This status does not give information on what is available. In the case of web sockets messages are already pushed, similar to case of the frequent polling, so header and confidence will be available if **verifying-header** and **verifying-confidence** has been successful.
+
+If **block_number > latest_block,** block status cannot yet be derived and the response on this and other endpoints with `/v2/blocks/{block_number}` prefix is:
+
+```yaml
+HTTP/1.1 404 Not Found
+```
+
 ## POST `/v2/submit`
 
 Submits application data to the avail network.\

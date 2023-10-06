@@ -56,6 +56,18 @@ fn status_route(
 		.map(handlers::status)
 }
 
+fn block_route(
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "blocks" / u32)
+		.and(warp::get())
+		.and(warp::any().map(move || config.clone()))
+		.and(warp::any().map(move || state.clone()))
+		.then(handlers::block)
+		.map(types::handle_result)
+}
+
 fn submit_route(
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -160,6 +172,7 @@ pub fn routes(
 
 	version_route(version.clone())
 		.or(status_route(config.clone(), node.clone(), state.clone()))
+		.or(block_route(config.clone(), state.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(
@@ -170,7 +183,7 @@ pub fn routes(
 
 #[cfg(test)]
 mod tests {
-	use super::{submit_route, transactions, types::Transaction};
+	use super::{block_route, submit_route, transactions, types::Transaction};
 	use crate::{
 		api::v2::types::{
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
@@ -280,6 +293,27 @@ mod tests {
 			r#"{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}"#
 		);
 		assert_eq!(response.body(), &expected);
+	}
+
+	#[test_case(1, 2)]
+	#[test_case(10, 11)]
+	#[test_case(10, 20)]
+	#[tokio::test]
+	async fn block_route_not_found(latest: u32, block_number: u32) {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State::default()));
+		{
+			let mut state = state.lock().unwrap();
+			state.latest = latest;
+		}
+		let route = super::block_route(config, state);
+		let response = warp::test::request()
+			.method("GET")
+			.path(&format!("/v2/blocks/{block_number}"))
+			.reply(&route)
+			.await;
+
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
 	}
 
 	fn all_topics() -> HashSet<Topic> {
