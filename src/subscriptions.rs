@@ -269,6 +269,7 @@ async fn subscribe_check_and_process(
 				last_finalized_block_header = header.clone();
 
 				// Finally, send the verified block (header)
+				state.lock().unwrap().header_verified.set(header.number);
 				message_tx.send((header, received_at))?;
 			} else {
 				trace!("Matched pair of header/justification not found.");

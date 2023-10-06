@@ -235,6 +235,30 @@ pub struct HeaderMessage {
 	header: Header,
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum BlockStatus {
+	Unavailable,
+	Pending,
+	VerifyingHeader,
+	VerifyingConfidence,
+	VerifyingData,
+	Finished,
+	Failed,
+}
+
+#[derive(Serialize, Deserialize, PartialEq)]
+pub struct Block {
+	pub status: BlockStatus,
+	pub confidence: Option<f64>,
+}
+
+impl Reply for Block {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
 impl TryFrom<avail_subxt::primitives::Header> for HeaderMessage {
 	type Error = anyhow::Error;
 

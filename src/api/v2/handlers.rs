@@ -1,7 +1,7 @@
 use super::{
 	transactions,
 	types::{
-		Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction, Version,
+		self, Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction, Version,
 		WsClients,
 	},
 	ws,
@@ -75,6 +75,40 @@ pub async fn ws(
 pub fn status(config: RuntimeConfig, node: Node, state: Arc<Mutex<State>>) -> impl Reply {
 	let state = state.lock().expect("Lock should be acquired");
 	Status::new(&config, &node, &state)
+}
+
+pub async fn block(
+	block_number: u32,
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+) -> Result<impl Reply, Error> {
+	let state = state.lock().expect("Lock should be acquired");
+
+	if state.latest < block_number {
+		return Err(Error::not_found());
+	}
+
+	let first_confidence_achieved = state
+		.confidence_achieved
+		.as_ref()
+		.map(|block_range| block_range.first);
+
+	let first_block = config
+		.sync_start_block
+		.or(first_confidence_achieved)
+		.unwrap_or(state.latest);
+
+	if first_block > block_number {
+		return Ok(types::Block {
+			status: types::BlockStatus::Unavailable,
+			confidence: None,
+		});
+	}
+
+	Ok(types::Block {
+		status: types::BlockStatus::Pending,
+		confidence: None,
+	})
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
