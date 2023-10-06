@@ -93,7 +93,9 @@ pub async fn run(
 				block_number,
 				success_rate, total, fetched, "Fetched block cells",
 			);
-			let _ = metrics.record(MetricValue::CrawlCellsSuccessRate(success_rate));
+			let _ = metrics
+				.record(MetricValue::CrawlCellsSuccessRate(success_rate))
+				.await;
 		}
 
 		if matches!(mode, CrawlMode::Cells | CrawlMode::Both) {
@@ -113,7 +115,9 @@ pub async fn run(
 				block_number,
 				success_rate, total, fetched, "Fetched block rows"
 			);
-			let _ = metrics.record(MetricValue::CrawlRowsSuccessRate(success_rate));
+			let _ = metrics
+				.record(MetricValue::CrawlRowsSuccessRate(success_rate))
+				.await;
 		}
 
 		let elapsed = start.elapsed();
