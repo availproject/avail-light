@@ -8,7 +8,7 @@ use libp2p::{
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
 	identity,
-	kad::{Kademlia, KademliaCaching, KademliaConfig},
+	kad::{Kademlia, KademliaCaching, KademliaConfig, Mode},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
@@ -48,7 +48,7 @@ pub fn init(
 	dht_parallelization_limit: usize,
 	ttl: u64,
 	put_batch_size: usize,
-	kad_remove_local_record: bool,
+	is_fat_client: bool,
 	id_keys: libp2p::identity::Keypair,
 ) -> Result<(Client, EventLoop)> {
 	let local_peer_id = PeerId::from(id_keys.public());
@@ -124,7 +124,7 @@ pub fn init(
 		..Default::default()
 	};
 
-	let behaviour = Behaviour {
+	let mut behaviour = Behaviour {
 		ping: Ping::new(PingConfig::new()),
 		identify: Identify::new(identify_cfg),
 		relay_client: relay_client_behaviour,
@@ -133,6 +133,10 @@ pub fn init(
 		auto_nat: AutoNat::new(local_peer_id, autonat_cfg),
 		mdns: Mdns::new(MdnsConfig::default(), local_peer_id)?,
 	};
+
+	if is_fat_client {
+		behaviour.kademlia.set_mode(Some(Mode::Server));
+	}
 
 	// Build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
@@ -153,7 +157,7 @@ pub fn init(
 			command_receiver,
 			cfg.relays,
 			cfg.bootstrap_interval,
-			kad_remove_local_record,
+			is_fat_client,
 		),
 	))
 }
