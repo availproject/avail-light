@@ -72,7 +72,7 @@ pub async fn connect(
 				Ok(response) => send(sender.clone(), response),
 				Err(error) => {
 					if let Some(cause) = error.cause.as_ref() {
-						error!("Failed to handle request: {cause}");
+						error!("Failed to handle request: {cause:#}");
 					};
 					send::<WsError>(sender.clone(), error.into())
 				},
