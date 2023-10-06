@@ -222,7 +222,7 @@ pub struct RuntimeConfig {
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
-	/// Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
+	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
 	pub confidence: f64,
 	/// File system path where RocksDB used by light client, stores its data.
 	pub avail_path: String,
@@ -238,7 +238,7 @@ pub struct RuntimeConfig {
 	pub disable_proof_verification: bool,
 	/// Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 	pub dht_parallelization_limit: usize,
-	/// Number of records to be inserted into DHT simultaneously
+	/// Number of records to be inserted into DHT simultaneously (default: 1000)
 	pub put_batch_size: usize,
 	/// Number of parallel queries for cell fetching via RPC from node (default: 8).
 	pub query_proof_rpc_parallel_tasks: usize,
@@ -527,7 +527,7 @@ impl Default for RuntimeConfig {
 			disable_rpc: false,
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,
-			put_batch_size: 100,
+			put_batch_size: 1000,
 			query_proof_rpc_parallel_tasks: 8,
 			block_processing_delay: None,
 			block_matrix_partition: None,
