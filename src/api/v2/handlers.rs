@@ -1,15 +1,17 @@
 use super::{
 	transactions,
 	types::{
-		self, Error, Status, SubmitResponse, Subscription, SubscriptionId, Transaction, Version,
-		WsClients,
+		Block, BlockStatus, Error, Status, SubmitResponse, Subscription, SubscriptionId,
+		Transaction, Version, WsClients,
 	},
 	ws,
 };
 use crate::{
 	api::v2::types::InternalServerError,
+	data::Database,
 	rpc::Node,
 	types::{RuntimeConfig, State},
+	utils::calculate_confidence,
 };
 use hyper::StatusCode;
 use std::{
@@ -81,6 +83,7 @@ pub async fn block(
 	block_number: u32,
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
+	db: impl Database,
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
@@ -99,16 +102,15 @@ pub async fn block(
 		.unwrap_or(state.latest);
 
 	if first_block > block_number {
-		return Ok(types::Block {
-			status: types::BlockStatus::Unavailable,
-			confidence: None,
-		});
+		return Ok(Block::new(BlockStatus::Unavailable, None));
 	}
 
-	Ok(types::Block {
-		status: types::BlockStatus::Pending,
-		confidence: None,
-	})
+	Ok(db
+		.get_confidence(block_number)
+		.map_err(Error::internal_server_error)?
+		.map(calculate_confidence)
+		.map(|confidence| Block::new(BlockStatus::Finished, Some(confidence)))
+		.unwrap_or_else(|| Block::new(BlockStatus::Pending, None)))
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {

@@ -64,6 +64,7 @@ impl Server {
 			self.cfg,
 			self.node_client.clone(),
 			self.ws_clients.clone(),
+			crate::data::RocksDB(self.db.clone()),
 		);
 
 		let cors = warp::cors()
