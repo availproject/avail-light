@@ -129,6 +129,19 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 		.map(|value| value.is_some())
 }
 
+pub trait Database: Clone + Send {
+	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>>;
+}
+
+#[derive(Clone)]
+pub struct RocksDB(pub Arc<DB>);
+
+impl Database for RocksDB {
+	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>> {
+		get_confidence_from_db(self.0.clone(), block_number)
+	}
+}
+
 /// Gets confidence factor from database for given block number
 pub fn get_confidence_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<u32>> {
 	let cf_handle = db

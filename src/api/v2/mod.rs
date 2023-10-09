@@ -4,6 +4,7 @@ use self::{
 };
 use crate::{
 	api::v2::types::Topic,
+	data::{Database, RocksDB},
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
@@ -59,13 +60,14 @@ fn status_route(
 fn block_route(
 	config: RuntimeConfig,
 	state: Arc<Mutex<State>>,
+	db: impl Database,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "blocks" / u32)
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
 		.and(warp::any().map(move || state.clone()))
+		.and(warp::any().map(move || db.clone()))
 		.then(handlers::block)
-		.map(types::handle_result)
 }
 
 fn submit_route(
@@ -145,6 +147,7 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 	}
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn routes(
 	version: String,
 	network_version: String,
@@ -153,6 +156,7 @@ pub fn routes(
 	config: RuntimeConfig,
 	node_client: avail::Client,
 	ws_clients: WsClients,
+	db: RocksDB,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let version = Version {
 		version,
@@ -172,7 +176,7 @@ pub fn routes(
 
 	version_route(version.clone())
 		.or(status_route(config.clone(), node.clone(), state.clone()))
-		.or(block_route(config.clone(), state.clone()))
+		.or(block_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(
@@ -189,6 +193,7 @@ mod tests {
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
 			WsClients, WsError, WsResponse,
 		},
+		data::Database,
 		rpc::Node,
 		types::{OptionBlockRange, RuntimeConfig, State},
 	};
@@ -306,7 +311,7 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = latest;
 		}
-		let route = super::block_route(config, state);
+		let route = super::block_route(config, state, MockDatabase {});
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -349,6 +354,15 @@ mod tests {
 
 		fn has_signer(&self) -> bool {
 			self.has_signer
+		}
+	}
+
+	#[derive(Clone)]
+	struct MockDatabase {}
+
+	impl Database for MockDatabase {
+		fn get_confidence(&self, _block_number: u32) -> anyhow::Result<Option<u32>> {
+			Ok(None)
 		}
 	}
 
