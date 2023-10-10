@@ -675,13 +675,6 @@ impl From<Error> for String {
 	}
 }
 
-pub fn handle_result(result: Result<impl Reply, impl Reply>) -> impl Reply {
-	match result {
-		Ok(ok) => ok.into_response(),
-		Err(err) => err.into_response(),
-	}
-}
-
 #[derive(Serialize, Deserialize, From)]
 #[serde(tag = "topic", rename_all = "kebab-case")]
 pub enum WsResponse {

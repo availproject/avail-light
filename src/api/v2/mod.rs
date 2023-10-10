@@ -64,7 +64,6 @@ fn submit_route(
 		.and_then(move || optionally(submitter.clone()))
 		.and(warp::body::json())
 		.then(handlers::submit)
-		.map(types::handle_result)
 }
 
 fn subscriptions_route(
