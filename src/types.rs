@@ -249,6 +249,8 @@ pub struct RuntimeConfig {
 	pub block_matrix_partition: Option<Partition>,
 	/// Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 	pub sync_start_block: Option<u32>,
+	/// Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the starting block at the point the LC is started and is only checked for new blocks. (default: true)
+	pub sync_finality_enable: bool,
 	/// Maximum number of cells per request for proof queries (default: 30).
 	pub max_cells_per_rpc: Option<usize>,
 	/// Threshold for the number of cells fetched via DHT for the app client (default: 5000)
@@ -532,6 +534,7 @@ impl Default for RuntimeConfig {
 			block_processing_delay: None,
 			block_matrix_partition: None,
 			sync_start_block: None,
+			sync_finality_enable: true,
 			max_cells_per_rpc: Some(30),
 			kad_record_ttl: 24 * 60 * 60,
 			threshold: 5000,

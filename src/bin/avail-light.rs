@@ -322,12 +322,20 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		));
 	}
 
-	let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
-	tokio::task::spawn(avail_light::sync_finality::run(
-		sync_finality,
-		error_sender.clone(),
-		state.clone(),
-	));
+	if cfg.sync_finality_enable {
+		let sync_finality = avail_light::sync_finality::new(db.clone(), rpc_client.clone());
+		tokio::task::spawn(avail_light::sync_finality::run(
+			sync_finality,
+			error_sender.clone(),
+			state.clone(),
+		));
+	} else {
+		let mut s = state
+			.lock()
+			.map_err(|e| anyhow!("State mutex is poisoned: {e:#}"))?;
+		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
+		s.set_finality_synced(true);
+	}
 
 	let light_client =
 		avail_light::light_client::new(db.clone(), network_client.clone(), rpc_client.clone());
