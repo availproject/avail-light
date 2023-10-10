@@ -273,6 +273,8 @@ pub async fn run(
 	for block_number in start_block..=end_block {
 		info!("Testing block {block_number}!");
 
+		state.lock().unwrap().sync_latest.replace(block_number);
+
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
 		let pp = pp.clone();
