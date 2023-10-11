@@ -35,7 +35,7 @@ use tracing_subscriber::{
 };
 
 #[cfg(feature = "network-analysis")]
-use avail_light::network::network_analyzer;
+use avail_light::network::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -191,7 +191,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await?;
 
 	#[cfg(feature = "network-analysis")]
-	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
+	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
 
 	let pp = Arc::new(kate_recovery::testnet::public_params(1024));
 	let raw_pp = pp.to_raw_var_bytes();
