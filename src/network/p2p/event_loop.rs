@@ -36,10 +36,7 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, info, trace};
 
-use super::{
-	client::{Command, DHTPutSuccess},
-	Behaviour, BehaviourEvent,
-};
+use super::{client::Command, Behaviour, BehaviourEvent, DHTPutSuccess};
 
 #[derive(Debug)]
 enum QueryChannel {

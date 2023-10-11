@@ -17,6 +17,8 @@ use std::{
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace};
 
+use super::DHTPutSuccess;
+
 #[derive(Clone)]
 pub struct Client {
 	command_sender: mpsc::Sender<Command>,
@@ -26,12 +28,6 @@ pub struct Client {
 	ttl: u64,
 	/// Number of records to be put in DHT simultaneously
 	put_batch_size: usize,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DHTPutSuccess {
-	Batch(usize),
-	Single,
 }
 
 struct DHTCell(Cell);
