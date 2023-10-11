@@ -1,10 +1,5 @@
 //! Shared light client structs and enums.
 
-use std::fmt;
-use std::num::NonZeroUsize;
-use std::str::FromStr;
-use std::time::{Duration, Instant};
-
 use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::anyhow;
 use anyhow::{Context, Result};
@@ -18,12 +13,29 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+
+use clap::Parser;
+use std::fmt;
+use std::num::NonZeroUsize;
+use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
+
+#[derive(Parser)]
+#[command(version)]
+pub struct CliOpts {
+	/// Path to the yaml configuration file
+	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
+	pub config: String,
+	#[arg(long, value_name = "appId")]
+	pub app_id: Option<u32>,
+	#[arg(long, value_name = "network")]
+	pub network: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -490,10 +502,9 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		}
 	}
 }
-
-impl Default for RuntimeConfig {
-	fn default() -> Self {
-		RuntimeConfig {
+impl RuntimeConfig {
+	pub fn default_lc() -> Self {
+		Self {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7000,
 			port: 37000,
@@ -543,6 +554,31 @@ impl Default for RuntimeConfig {
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 		}
+	}
+}
+
+impl Default for RuntimeConfig {
+	fn default() -> Self {
+		let opts = CliOpts::parse();
+
+		//TODO: Change the values to the new networks
+		const TESTNET_WS_NODE: &str = "wss://kate.avail.tools/ws";
+		const DEVNET_WS_NODE: &str = "wss://biryani-devnet.avail.tools/ws";
+
+		let mut config = Self::default_lc();
+
+		if let Some(network) = opts.network {
+			config.full_node_ws = match network.as_str() {
+				"testnet" => vec![TESTNET_WS_NODE.to_string()],
+				"devnet" => vec![DEVNET_WS_NODE.to_string()],
+				_ => return Self::default_lc(),
+			};
+		}
+		if let Some(app_id) = opts.app_id {
+			config.app_id = Some(app_id);
+		}
+
+		config
 	}
 }
 
@@ -660,4 +696,16 @@ impl<'de> Deserialize<'de> for GrandpaJustification {
 		Self::decode(&mut &encoded[..])
 			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
 	}
+}
+
+pub fn check_app_id() -> Option<u32> {
+	let args = std::env::args().collect::<Vec<_>>();
+	let app_id = args
+		.iter()
+		.find(|x| x.starts_with("--ac="))
+		.map(|x| x.split("=").nth(1));
+	match app_id {
+		Some(Some(x)) => return Some(x.parse::<u32>().unwrap()),
+		_ => return None,
+	};
 }
