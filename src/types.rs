@@ -33,7 +33,7 @@ pub struct CliOpts {
 	pub config: String,
 	#[arg(long, value_name = "appId")]
 	pub app_id: Option<u32>,
-	#[arg(long, value_name = "network")]
+	#[arg(short, long, value_name = "network")]
 	pub network: Option<String>,
 }
 
@@ -696,16 +696,4 @@ impl<'de> Deserialize<'de> for GrandpaJustification {
 		Self::decode(&mut &encoded[..])
 			.map_err(|codec_err| D::Error::custom(format!("Invalid decoding: {:?}", codec_err)))
 	}
-}
-
-pub fn check_app_id() -> Option<u32> {
-	let args = std::env::args().collect::<Vec<_>>();
-	let app_id = args
-		.iter()
-		.find(|x| x.starts_with("--ac="))
-		.map(|x| x.split("=").nth(1));
-	match app_id {
-		Some(Some(x)) => return Some(x.parse::<u32>().unwrap()),
-		_ => return None,
-	};
 }
