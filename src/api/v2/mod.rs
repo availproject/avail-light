@@ -178,7 +178,7 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		rpc::Node,
-		types::{RuntimeConfig, State},
+		types::{OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
 	use hyper::StatusCode;
@@ -259,15 +259,15 @@ mod tests {
 		{
 			let mut state = state.lock().unwrap();
 			state.latest = 30;
-			state.set_confidence_achieved(20);
-			state.set_confidence_achieved(29);
-			state.set_data_verified(20);
-			state.set_data_verified(29);
-			state.set_synced(false);
-			state.set_sync_confidence_achieved(10);
-			state.set_sync_confidence_achieved(19);
-			state.set_sync_data_verified(10);
-			state.set_sync_data_verified(18);
+			state.confidence_achieved.set(20);
+			state.confidence_achieved.set(29);
+			state.data_verified.set(20);
+			state.data_verified.set(29);
+			state.synced.replace(false);
+			state.sync_confidence_achieved.set(10);
+			state.sync_confidence_achieved.set(19);
+			state.sync_data_verified.set(10);
+			state.sync_data_verified.set(18);
 		}
 
 		let route = super::status_route(runtime_config, Node::default(), state);
@@ -454,15 +454,15 @@ mod tests {
 		{
 			let mut state = test.state.lock().unwrap();
 			state.latest = 30;
-			state.set_confidence_achieved(20);
-			state.set_confidence_achieved(29);
-			state.set_data_verified(20);
-			state.set_data_verified(29);
-			state.set_synced(false);
-			state.set_sync_confidence_achieved(10);
-			state.set_sync_confidence_achieved(19);
-			state.set_sync_data_verified(10);
-			state.set_sync_data_verified(18);
+			state.confidence_achieved.set(20);
+			state.confidence_achieved.set(29);
+			state.data_verified.set(20);
+			state.data_verified.set(29);
+			state.synced.replace(false);
+			state.sync_confidence_achieved.set(10);
+			state.sync_confidence_achieved.set(19);
+			state.sync_data_verified.set(10);
+			state.sync_data_verified.set(18);
 		}
 		let expected = format!(
 			r#"{{"topic":"status","request_id":"363c71fc-90f7-4276-a5b6-bec688bf01e2","message":{{"modes":["light","app","partition"],"app_id":1,"genesis_hash":"{GENESIS_HASH}","network":"{NETWORK}","blocks":{{"latest":30,"available":{{"first":20,"last":29}},"app_data":{{"first":20,"last":29}},"historical_sync":{{"synced":false,"available":{{"first":10,"last":19}},"app_data":{{"first":10,"last":18}}}}}},"partition":"1/10"}}}}"#

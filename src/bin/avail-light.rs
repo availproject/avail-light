@@ -310,7 +310,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
-		state.lock().unwrap().set_synced(false);
+		state.lock().unwrap().synced.replace(false);
 		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
 			(&cfg).into(),

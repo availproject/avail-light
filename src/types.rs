@@ -577,40 +577,26 @@ pub struct State {
 	pub finality_synced: bool,
 }
 
-impl State {
-	pub fn set_synced(&mut self, synced: bool) {
-		self.synced = Some(synced)
-	}
+pub trait OptionBlockRange {
+	fn set(&mut self, value: u32);
+	fn first(&self) -> Option<u32>;
+	fn last(&self) -> Option<u32>;
+}
 
-	pub fn set_confidence_achieved(&mut self, block_number: u32) {
-		match self.confidence_achieved.as_mut() {
-			Some(range) => range.last = block_number,
-			None => self.confidence_achieved = Some(BlockRange::init(block_number)),
+impl OptionBlockRange for Option<BlockRange> {
+	fn set(&mut self, value: u32) {
+		match self {
+			Some(range) => range.last = value,
+			None => *self = Some(BlockRange::init(value)),
 		};
 	}
 
-	pub fn set_data_verified(&mut self, block_number: u32) {
-		match self.data_verified.as_mut() {
-			Some(range) => range.last = block_number,
-			None => self.data_verified = Some(BlockRange::init(block_number)),
-		};
+	fn first(&self) -> Option<u32> {
+		self.as_ref().map(|range| range.first)
 	}
 
-	pub fn set_sync_confidence_achieved(&mut self, block_number: u32) {
-		match self.sync_confidence_achieved.as_mut() {
-			Some(range) => range.last = block_number,
-			None => self.sync_confidence_achieved = Some(BlockRange::init(block_number)),
-		};
-	}
-
-	pub fn set_sync_data_verified(&mut self, block_number: u32) {
-		match self.sync_data_verified.as_mut() {
-			Some(range) => range.last = block_number,
-			None => self.sync_data_verified = Some(BlockRange::init(block_number)),
-		};
-	}
-	pub fn set_finality_synced(&mut self, synced: bool) {
-		self.finality_synced = synced;
+	fn last(&self) -> Option<u32> {
+		self.as_ref().map(|range| range.last)
 	}
 }
 
