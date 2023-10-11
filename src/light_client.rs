@@ -44,7 +44,7 @@ use crate::{
 	network::Client,
 	proof, rpc,
 	telemetry::{MetricCounter, MetricValue, Metrics},
-	types::{self, BlockVerified, LightClientConfig, State},
+	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
 };
 
@@ -238,7 +238,7 @@ pub async fn process_block(
 			.store_confidence_in_db(verified.len() as u32, block_number)
 			.context("Failed to store confidence in DB")?;
 
-		state.lock().unwrap().set_confidence_achieved(block_number);
+		state.lock().unwrap().confidence_achieved.set(block_number);
 
 		let conf = calculate_confidence(verified.len() as u32);
 		info!(

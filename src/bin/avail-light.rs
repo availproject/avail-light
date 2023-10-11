@@ -310,7 +310,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
-		state.lock().unwrap().set_synced(false);
+		state.lock().unwrap().synced.replace(false);
 		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
 			(&cfg).into(),
@@ -334,7 +334,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			.lock()
 			.map_err(|e| anyhow!("State mutex is poisoned: {e:#}"))?;
 		warn!("Finality sync is disabled! Implicitly, blocks before LC startup will be considered verified as final");
-		s.set_finality_synced(true);
+		s.finality_synced = true;
 	}
 
 	let light_client =
