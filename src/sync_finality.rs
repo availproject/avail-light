@@ -330,8 +330,7 @@ pub async fn sync_finality(
 			)?;
 		}
 	}
-	let mut state = state.lock().unwrap();
-	state.set_finality_synced(true);
+	state.lock().unwrap().finality_synced = true;
 	info!("Finality is fully synced.");
 	Ok(())
 }

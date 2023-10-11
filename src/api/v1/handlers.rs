@@ -2,7 +2,7 @@ use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlock
 use crate::{
 	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{get_confidence_from_db, get_decoded_data_from_db},
-	types::{Mode, State},
+	types::{Mode, OptionBlockRange, State},
 	utils::calculate_confidence,
 };
 use anyhow::{Context, Result};
@@ -69,7 +69,7 @@ pub fn status(
 	db: Arc<DB>,
 ) -> ClientResponse<Status> {
 	let state = state.lock().unwrap();
-	let Some(last) = state.confidence_achieved.as_ref().map(|range| range.last) else {
+	let Some(last) = state.confidence_achieved.last() else {
 		return ClientResponse::NotFound;
 	};
 	let res = match get_confidence_from_db(db, last) {
@@ -92,7 +92,7 @@ pub fn status(
 pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockResponse> {
 	info!("Got request for latest block");
 	let state = state.lock().unwrap();
-	match state.confidence_achieved.as_ref().map(|range| range.last) {
+	match state.confidence_achieved.last() {
 		None => ClientResponse::NotFound,
 		Some(latest_block) => ClientResponse::Normal(LatestBlockResponse { latest_block }),
 	}
@@ -128,7 +128,7 @@ pub fn appdata(
 	}
 	info!("Got request for AppData for block {block_num}");
 	let state = state.lock().unwrap();
-	let last = state.confidence_achieved.as_ref().map(|range| range.last);
+	let last = state.confidence_achieved.last();
 	let decode = query.decode.unwrap_or(false);
 	let res = match decode_app_data_to_extrinsics(get_decoded_data_from_db(
 		db,

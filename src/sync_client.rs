@@ -22,7 +22,7 @@ use crate::{
 	},
 	network::Client,
 	proof, rpc,
-	types::{BlockVerified, State, SyncClientConfig},
+	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},
 };
 use anyhow::{anyhow, Context, Result};
@@ -281,15 +281,13 @@ pub async fn run(
 		{
 			error!(block_number, "Cannot process block: {error:#}");
 		} else {
-			state
-				.lock()
-				.unwrap()
-				.set_sync_confidence_achieved(block_number);
+			let mut state = state.lock().unwrap();
+			state.sync_confidence_achieved.set(block_number);
 		}
 	}
 
 	if block_verified_sender.is_none() {
-		state.lock().unwrap().set_synced(true);
+		state.lock().unwrap().synced.replace(true);
 	}
 }
 

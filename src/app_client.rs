@@ -43,7 +43,7 @@ use crate::{
 	data::store_encoded_data_in_db,
 	network::Client,
 	proof, rpc,
-	types::{AppClientConfig, BlockVerified, State},
+	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
 #[async_trait]
@@ -472,18 +472,15 @@ pub async fn run(
 		};
 		{
 			let mut state = state.lock().unwrap();
-			let synced = state
-				.confidence_achieved
-				.as_ref()
-				.map(|range| block_number < range.first)
-				.unwrap_or(false);
+			let first = state.confidence_achieved.first();
+			let synced = first.map(|first| block_number < first).unwrap_or(false);
 			if synced {
-				state.set_sync_data_verified(block_number);
+				state.sync_data_verified.set(block_number);
 			} else {
-				state.set_data_verified(block_number);
+				state.data_verified.set(block_number);
 			}
 			if sync_end_block == block_number {
-				state.set_synced(true)
+				state.synced.replace(true);
 			}
 		}
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
