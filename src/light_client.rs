@@ -41,7 +41,7 @@ use tracing::{error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
-	network::Client,
+	network::p2p::Client,
 	proof, rpc,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},

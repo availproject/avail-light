@@ -20,7 +20,7 @@ use crate::{
 		is_block_header_in_db, is_confidence_in_db, store_block_header_in_db,
 		store_confidence_in_db,
 	},
-	network::Client,
+	network::p2p::Client,
 	proof, rpc,
 	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use event_loop::EventLoop;
 use futures::future::Either;
+use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat::{self, Behaviour as AutoNat},
 	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version},
@@ -17,14 +18,13 @@ use libp2p::{
 	swarm::{NetworkBehaviour, SwarmBuilder},
 	PeerId, Transport,
 };
-use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self};
 use tracing::info;
 
 mod client;
 mod event_loop;
-mod mem_store;
+mod kad_mem_store;
 #[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 pub use client::Client;

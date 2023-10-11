@@ -10,6 +10,7 @@ use avail_light::{
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
+	network::p2p::{self},
 	types::{CliOpts, Mode, RuntimeConfig, State},
 };
 use avail_subxt::primitives::Header;
@@ -144,7 +145,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		info!("Fat client mode");
 	}
 
-	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
+	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
@@ -155,7 +156,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (network_client, network_event_loop) = avail_light::network::init(
+	let (network_client, network_event_loop) = p2p::init(
 		(&cfg).into(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,

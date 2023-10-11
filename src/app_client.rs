@@ -41,7 +41,7 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
-	network::Client,
+	network::p2p::Client,
 	proof, rpc,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
