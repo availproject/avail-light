@@ -20,7 +20,7 @@ use tracing::{error, info, trace};
 use crate::{
 	data::store_finality_sync_checkpoint,
 	rpc,
-	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, SignerMessage, State},
 	utils,
 };
 
@@ -260,6 +260,7 @@ async fn subscribe_check_and_process(
 						},
 					};
 
+					state.lock().unwrap().header_verified.set(header.number);
 					message_tx.send((header, received_at))?;
 				}
 
