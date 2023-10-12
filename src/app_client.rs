@@ -429,6 +429,18 @@ pub async fn run(
 ) {
 	info!("Starting for app {app_id}...");
 
+	fn set_data_verified_state(state: Arc<Mutex<State>>, sync_end_block: u32, block_number: u32) {
+		let mut state = state.lock().expect("State lock can be acquired");
+		let first = state.confidence_achieved.first();
+		match first.map(|first| block_number < first) {
+			Some(true) => state.sync_data_verified.set(block_number),
+			Some(false) | None => state.data_verified.set(block_number),
+		}
+		if sync_end_block == block_number {
+			state.synced.replace(true);
+		}
+	}
+
 	loop {
 		let block = match block_receive.recv().await {
 			Ok(block) => block,
@@ -451,6 +463,7 @@ pub async fn run(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
 			);
+			set_data_verified_state(state.clone(), sync_end_block, block_number);
 			continue;
 		}
 
@@ -470,19 +483,7 @@ pub async fn run(
 				return;
 			},
 		};
-		{
-			let mut state = state.lock().unwrap();
-			let first = state.confidence_achieved.first();
-			let synced = first.map(|first| block_number < first).unwrap_or(false);
-			if synced {
-				state.sync_data_verified.set(block_number);
-			} else {
-				state.data_verified.set(block_number);
-			}
-			if sync_end_block == block_number {
-				state.synced.replace(true);
-			}
-		}
+		set_data_verified_state(state.clone(), sync_end_block, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			if let Err(error) = error_sender.send(error.into()).await {

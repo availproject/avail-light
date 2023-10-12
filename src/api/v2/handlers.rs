@@ -1,7 +1,7 @@
 use super::{
 	transactions,
 	types::{
-		Block, BlockStatus, Error, Status, SubmitResponse, Subscription, SubscriptionId,
+		block_status, Block, Error, Status, SubmitResponse, Subscription, SubscriptionId,
 		Transaction, Version, WsClients,
 	},
 	ws,
@@ -87,30 +87,16 @@ pub async fn block(
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
-	if state.latest < block_number {
+	let Some(block_status) = block_status(&config, &state, block_number) else {
 		return Err(Error::not_found());
-	}
+	};
 
-	let first_confidence_achieved = state
-		.confidence_achieved
-		.as_ref()
-		.map(|block_range| block_range.first);
-
-	let first_block = config
-		.sync_start_block
-		.or(first_confidence_achieved)
-		.unwrap_or(state.latest);
-
-	if first_block > block_number {
-		return Ok(Block::new(BlockStatus::Unavailable, None));
-	}
-
-	Ok(db
+	let confidence = db
 		.get_confidence(block_number)
 		.map_err(Error::internal_server_error)?
-		.map(calculate_confidence)
-		.map(|confidence| Block::new(BlockStatus::Finished, Some(confidence)))
-		.unwrap_or_else(|| Block::new(BlockStatus::Pending, None)))
+		.map(calculate_confidence);
+
+	Ok(Block::new(block_status, confidence))
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
