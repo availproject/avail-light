@@ -43,7 +43,7 @@ data-avail --dev
 ```
 
 Create one yaml configuration file in the root of the project & put following content.
-Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found bellow.
+Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found below.
 
 ```yaml
 # config.yaml
@@ -92,7 +92,7 @@ autonat_throttle = 2
 autonat_retry_interval = 10
 # Interval in which the NAT should be tested again if max confidence was reached in a status. (default: 30 sec)
 autonat_refresh_interval = 30
-# AutoNat on init delay before starting the fist probe. (default: 5 sec)
+# AutoNat on init delay before starting the first probe. (default: 5 sec)
 autonat_boot_delay = 10
 # Sets application-specific version of the protocol family used by the peer. (default: "/avail_kad/id/1.0.0")
 identify_protocol = "/avail_kad/id/1.0.0"
@@ -106,7 +106,7 @@ relays = [["12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b", "/ip4/13.49.4
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 app_id = 0
-# Confidence threshold, used to calculate how many cells needs to be sampled to achieve desired confidence (default: 92.0).
+# Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
@@ -126,14 +126,14 @@ query_proof_rpc_parallel_tasks = 8
 max_cells_per_rpc = 30
 # Maximum number of parallel tasks spawned for GET and PUT operations on DHT (default: 20).
 dht_parallelization_limit = 20
-# Number of records to be put in DHT simultaneuosly (defaut: 100)
+# Number of records to be put in DHT simultaneously (default: 100)
 put_batch_size = 100
 # Number of seconds to postpone block processing after the block finalized message arrives. (default: 0).
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
 # Time-to-live for DHT entries in seconds (default: 24h).
-# Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this value - not greater than 1hr.
+# Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far below this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
 record_ttl = 86400
 # Sets the (re-)publication interval of stored records, in seconds. This interval should be significantly shorter than the record TTL, ensure records do not expire prematurely. (default: 12h).
@@ -196,7 +196,7 @@ Response:
 
 ### Fetching the confidence for given block
 
-To fetch the the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
+To fetch the confidence for specific block, which is already processed by application client, we can perform `GET` request on `/v1/confidece/{block_number}` endpoint.
 
 ```sh
 curl "http://localhost:7000/v1/confidence/1"
@@ -346,7 +346,7 @@ Given a block number, it returns the confidence computed by the light client for
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 #### Responses
 
@@ -380,7 +380,7 @@ Given a block number, it retrieves the hex-encoded extrinsics for the specified 
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 > Query parameters:
 
@@ -431,7 +431,7 @@ Retrieves the status of the latest block processed by the light client.
 
 > Path parameters:
 
-- `block_number` - block number (requred)
+- `block_number` - block number (required)
 
 #### Responses
 
