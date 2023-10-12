@@ -17,7 +17,6 @@ use crate::{
 };
 use anyhow::Context;
 use avail_subxt::avail;
-use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use std::{
 	net::SocketAddr,
@@ -54,10 +53,6 @@ impl Server {
 			app_id,
 			..
 		} = self.cfg.clone();
-
-		let port = (port.1 > 0)
-			.then(|| thread_rng().gen_range(port.0..=port.1))
-			.unwrap_or(port.0);
 
 		let v1_api = v1::routes(self.db.clone(), app_id, self.state.clone());
 		#[cfg(feature = "api-v2")]
