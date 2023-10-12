@@ -576,6 +576,7 @@ pub struct State {
 	pub confidence_achieved: Option<BlockRange>,
 	pub data_verified: Option<BlockRange>,
 	pub sync_latest: Option<u32>,
+	pub sync_header_verified: Option<BlockRange>,
 	pub sync_confidence_achieved: Option<BlockRange>,
 	pub sync_data_verified: Option<BlockRange>,
 	pub finality_synced: bool,

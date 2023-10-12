@@ -273,7 +273,12 @@ pub async fn run(
 	for block_number in start_block..=end_block {
 		info!("Testing block {block_number}!");
 
-		state.lock().unwrap().sync_latest.replace(block_number);
+		{
+			let mut state = state.lock().unwrap();
+			state.sync_latest.replace(block_number);
+			// TODO: Add proper header verification on sync
+			state.sync_header_verified.set(block_number);
+		}
 
 		// TODO: Should we handle unprocessed blocks differently?
 		let block_verified_sender = block_verified_sender.clone();
