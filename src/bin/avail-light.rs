@@ -126,7 +126,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	if cfg.clone().bootstraps.into_inner().is_empty() {
+	if cfg.bootstraps.is_empty() {
 		Err(anyhow!("Bootstrap node list must not be empty."))?
 	}
 
@@ -181,7 +181,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	network_client
-		.bootstrap(cfg.clone().bootstraps.into_inner())
+		.bootstrap(cfg.bootstraps.iter().map(Into::into).collect())
 		.await?;
 
 	#[cfg(feature = "network-analysis")]

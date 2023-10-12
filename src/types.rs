@@ -16,8 +16,6 @@ use kate_recovery::{
 	matrix::{Dimensions, Partition},
 };
 use libp2p::{Multiaddr, PeerId};
-use serde::de::{self, Visitor};
-use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
@@ -130,79 +128,39 @@ pub mod block_matrix_partition_format {
 		}
 	}
 }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "String")]
+pub struct CompactMultiaddress((PeerId, Multiaddr));
 
-#[derive(Serialize, Debug, Clone)]
-pub struct MultiaddressConfig(Vec<(PeerId, Multiaddr)>);
+impl TryFrom<String> for CompactMultiaddress {
+	type Error = anyhow::Error;
 
-impl MultiaddressConfig {
-	pub fn into_inner(self) -> Vec<(PeerId, Multiaddr)> {
-		self.0
+	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+		let Some((multiaddr, peer_id)) = value.rsplit_once('/') else {
+			return Err(anyhow!("Invalid multiaddress string"));
+		};
+		let peer_id = PeerId::from_str(peer_id)?;
+		let multiaddr = Multiaddr::from_str(multiaddr)?;
+		Ok(CompactMultiaddress((peer_id, multiaddr)))
 	}
 }
-struct MultiaddressConfigVisitor;
 
-impl<'de> Visitor<'de> for MultiaddressConfigVisitor {
-	type Value = MultiaddressConfig;
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(
+	untagged,
+	expecting = "Valid multiaddress/peer_id string or a tuple (peer_id, multiaddress) expected"
+)]
+pub enum MultiaddrConfig {
+	Compact(CompactMultiaddress),
+	PeerIdAndMultiaddr((PeerId, Multiaddr)),
+}
 
-	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-		formatter.write_str("a Vec<String> or a Vec<(PeerId, Multiaddr)>")
-	}
-
-	fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-	where
-		A: de::SeqAccess<'de>,
-	{
-		let mut bootstraps: Vec<(PeerId, Multiaddr)> = vec![];
-
-		while let Some(value) = seq.next_element::<serde_json::Value>()? {
-			match value {
-				// New single string address format
-				serde_json::Value::String(s) => {
-					if let Some(last_occurrence) = s.rfind('/') {
-						let (multiaddress, peer_id) = s.split_at(last_occurrence);
-
-						let peer_id =
-							PeerId::from_str(&peer_id[1..]).expect("Unable to parse PeerID"); // Skip the delimiter
-						let multiaddr = Multiaddr::from_str(multiaddress)
-							.expect("Unable to parse multiaddress format");
-						bootstraps.push((peer_id, multiaddr.clone()));
-					} else {
-						return Err(de::Error::custom("Invalid bootstrap multiaddress format"));
-					}
-				},
-				// Old Vec<(PeerId, Multiaddr)> format
-				serde_json::Value::Array(arr) => {
-					let mut multiaddress: Multiaddr = Multiaddr::empty();
-					let mut peer_id: PeerId = PeerId::random();
-					let mut is_peer_id_set = false;
-					for item in arr {
-						if let serde_json::Value::String(s) = item {
-							if !is_peer_id_set {
-								peer_id = PeerId::from_str(&s).expect("Unable to parse PeerID");
-								is_peer_id_set = true;
-							} else {
-								let multiaddr = Multiaddr::from_str(&s)
-									.expect("Unable to parse multiaddress format");
-								multiaddress = multiaddr;
-							}
-						}
-					}
-					bootstraps.push((peer_id, multiaddress));
-				},
-				_ => return Err(de::Error::custom("Invalid bootstrap multiaddress format")),
-			}
+impl From<&MultiaddrConfig> for (PeerId, Multiaddr) {
+	fn from(value: &MultiaddrConfig) -> Self {
+		match value {
+			MultiaddrConfig::Compact(CompactMultiaddress(value)) => value.clone(),
+			MultiaddrConfig::PeerIdAndMultiaddr(value) => value.clone(),
 		}
-
-		Ok(MultiaddressConfig(bootstraps))
-	}
-}
-
-impl<'de> Deserialize<'de> for MultiaddressConfig {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: Deserializer<'de>,
-	{
-		deserializer.deserialize_any(MultiaddressConfigVisitor)
 	}
 }
 
@@ -245,11 +203,11 @@ pub struct RuntimeConfig {
 	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: MultiaddressConfig,
+	pub bootstraps: Vec<MultiaddrConfig>,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: MultiaddressConfig,
+	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -418,7 +376,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
-			relays: val.relays.clone().into_inner(),
+			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}
@@ -548,9 +506,9 @@ impl Default for RuntimeConfig {
 			autonat_boot_delay: 5,
 			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			identify_agent: "avail-light-client/rust-client".to_string(),
-			bootstraps: MultiaddressConfig(Vec::new()),
+			bootstraps: vec![],
 			bootstrap_period: 300,
-			relays: MultiaddressConfig(Vec::new()),
+			relays: vec![],
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
