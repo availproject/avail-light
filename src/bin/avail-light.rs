@@ -176,7 +176,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client.bootstrap(cfg.clone().bootstraps).await?;
+	network_client
+		.bootstrap(cfg.clone().bootstraps.into_inner())
+		.await?;
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));

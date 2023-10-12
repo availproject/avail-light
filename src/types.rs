@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use crate::utils::{extract_app_lookup, extract_kate};
@@ -15,6 +16,8 @@ use kate_recovery::{
 	matrix::{Dimensions, Partition},
 };
 use libp2p::{Multiaddr, PeerId};
+use serde::de::{self, Visitor};
+use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
@@ -173,6 +176,81 @@ mod port_range_format {
 	}
 }
 
+#[derive(Serialize, Debug, Clone)]
+pub struct BootstrapConfig(Vec<(PeerId, Multiaddr)>);
+
+impl BootstrapConfig {
+	pub fn into_inner(self) -> Vec<(PeerId, Multiaddr)> {
+		self.0
+	}
+}
+struct BootstrapConfigVisitor;
+
+impl<'de> Visitor<'de> for BootstrapConfigVisitor {
+	type Value = BootstrapConfig;
+
+	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+		formatter.write_str("a Vec<String> or a Vec<(PeerId, Multiaddr)>")
+	}
+
+	fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+	where
+		A: de::SeqAccess<'de>,
+	{
+		let mut bootstraps: Vec<(PeerId, Multiaddr)> = vec![];
+
+		while let Some(value) = seq.next_element::<serde_json::Value>()? {
+			match value {
+				// New single string address format
+				serde_json::Value::String(s) => {
+					if let Some(last_occurrence) = s.rfind('/') {
+						let (multiaddress, peer_id) = s.split_at(last_occurrence);
+
+						let peer_id =
+							PeerId::from_str(&peer_id[1..]).expect("Unable to parse PeerID"); // Skip the delimiter
+						let multiaddr = Multiaddr::from_str(multiaddress)
+							.expect("Unable to parse multiaddress format");
+						bootstraps.push((peer_id, multiaddr.clone()));
+					} else {
+						return Err(de::Error::custom("Invalid bootstrap multiaddress format"));
+					}
+				},
+				// Old Vec<(PeerId, Multiaddr)> format
+				serde_json::Value::Array(arr) => {
+					let mut multiaddress: Multiaddr = Multiaddr::empty();
+					let mut peer_id: PeerId = PeerId::random();
+					let mut is_peer_id_set = false;
+					for item in arr {
+						if let serde_json::Value::String(s) = item {
+							if !is_peer_id_set {
+								peer_id = PeerId::from_str(&s).expect("Unable to parse PeerID");
+								is_peer_id_set = true;
+							} else {
+								let multiaddr = Multiaddr::from_str(&s)
+									.expect("Unable to parse multiaddress format");
+								multiaddress = multiaddr;
+							}
+						}
+					}
+					bootstraps.push((peer_id, multiaddress));
+				},
+				_ => return Err(de::Error::custom("Invalid bootstrap multiaddress format")),
+			}
+		}
+
+		Ok(BootstrapConfig(bootstraps))
+	}
+}
+
+impl<'de> Deserialize<'de> for BootstrapConfig {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		deserializer.deserialize_any(BootstrapConfigVisitor)
+	}
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum SecretKey {
@@ -213,7 +291,7 @@ pub struct RuntimeConfig {
 	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: Vec<(PeerId, Multiaddr)>,
+	pub bootstraps: BootstrapConfig,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
@@ -516,7 +594,7 @@ impl Default for RuntimeConfig {
 			autonat_boot_delay: 5,
 			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			identify_agent: "avail-light-client/rust-client".to_string(),
-			bootstraps: Vec::new(),
+			bootstraps: BootstrapConfig(Vec::new()),
 			bootstrap_period: 300,
 			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
