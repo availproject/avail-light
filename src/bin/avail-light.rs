@@ -126,6 +126,10 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
+	if cfg.clone().bootstraps.into_inner().is_empty() {
+		Err(anyhow!("Bootstrap node list must not be empty."))?
+	}
+
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// If in fat client mode, enable deleting local Kademlia records

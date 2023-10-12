@@ -98,7 +98,7 @@ autonat_boot_delay = 10
 identify_protocol = "/avail_kad/id/1.0.0"
 # Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 identify_agent = "avail-light-client/rust-client"
-# Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
+# Vector of Light Client bootstrap nodes, used to bootstrap the DHT (mandatory field).
 bootstraps = ["/ip4/13.51.79.255/udp/39000/quic-v1/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
 # Vector of Relay nodes, which are used for hole punching
 relays = ["/ip4/13.49.44.246/udp/39111/quic-v1/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b"]
