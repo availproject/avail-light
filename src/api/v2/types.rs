@@ -24,7 +24,9 @@ use warp::{
 
 use crate::{
 	rpc::Node,
-	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig, State},
+	types::{
+		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
+	},
 	utils::decode_app_data,
 };
 
@@ -245,6 +247,54 @@ pub enum BlockStatus {
 	VerifyingData,
 	Finished,
 	Failed,
+}
+
+pub fn block_status(
+	config: &RuntimeConfig,
+	state: &State,
+	block_number: u32,
+) -> Option<BlockStatus> {
+	if block_number > state.latest {
+		return None;
+	}
+
+	let first_block = state.confidence_achieved.first().unwrap_or(state.latest);
+	let first_sync_block = config.sync_start_block.unwrap_or(first_block);
+
+	if block_number < first_sync_block {
+		return Some(BlockStatus::Unavailable);
+	}
+
+	if block_number < first_block {
+		if state.sync_data_verified.contains(block_number) {
+			return Some(BlockStatus::Finished);
+		}
+		if state.sync_confidence_achieved.contains(block_number) {
+			return Some(BlockStatus::VerifyingData);
+		}
+		if state.sync_header_verified.contains(block_number) {
+			return Some(BlockStatus::VerifyingConfidence);
+		}
+		let is_sync_latest = state.sync_latest.map(|latest| block_number == latest);
+		if is_sync_latest.unwrap_or(false) {
+			return Some(BlockStatus::VerifyingHeader);
+		}
+	} else {
+		if state.data_verified.contains(block_number) {
+			return Some(BlockStatus::Finished);
+		}
+		if state.confidence_achieved.contains(block_number) {
+			return Some(BlockStatus::VerifyingData);
+		}
+		if state.header_verified.contains(block_number) {
+			return Some(BlockStatus::VerifyingConfidence);
+		}
+		if state.latest == block_number {
+			return Some(BlockStatus::VerifyingHeader);
+		}
+	}
+
+	Some(BlockStatus::Pending)
 }
 
 #[derive(Serialize, Deserialize, PartialEq)]
