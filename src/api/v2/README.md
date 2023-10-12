@@ -97,7 +97,7 @@ Content-Type: application/json
 - **latest** - block number of the latest [finalized](https://docs.substrate.io/learn/consensus/) block received from the node
 - **available** - range of blocks with verified data availability (configured confidence has been achieved)
 - **app_data** - range of blocks with app data retrieved and verified
-- **historical_sync** - state for historical blocks syncing up to configured block (ommited if historical sync is not configured)
+- **historical_sync** - state for historical blocks syncing up to configured block (omitted if historical sync is not configured)
 
 ### Historical sync
 
@@ -109,7 +109,7 @@ Content-Type: application/json
 
 Submits application data to the avail network.\
 In case of `data` transaction, data transaction is created, signed and submitted.\
-In case of `extrinsic`, externaly created and signed transaction is submitted. Only one field is allowed per request.\
+In case of `extrinsic`, externally created and signed transaction is submitted. Only one field is allowed per request.\
 Both `data` and `extrinsic` has to be encoded using base64 encoding.
 
 Request:
