@@ -131,51 +131,6 @@ pub mod block_matrix_partition_format {
 	}
 }
 
-mod port_range_format {
-	use serde::{self, Deserialize, Deserializer, Serializer};
-
-	pub fn serialize<S>(port_range: &(u16, u16), serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: Serializer,
-	{
-		if port_range.1 == 0 || port_range.1 <= port_range.0 {
-			let s = format!("{port}", port = port_range.0);
-			serializer.serialize_str(&s)
-		} else {
-			let s = format!(
-				"{port1}-{port2}",
-				port1 = port_range.0,
-				port2 = port_range.1
-			);
-			serializer.serialize_str(&s)
-		}
-	}
-
-	pub fn deserialize<'de, D>(deserializer: D) -> Result<(u16, u16), D::Error>
-	where
-		D: Deserializer<'de>,
-	{
-		let s = String::deserialize(deserializer)?;
-		let parts = s.split('-').collect::<Vec<_>>();
-		match parts.len() {
-			1 => {
-				let port = parts[0].parse::<u16>().map_err(serde::de::Error::custom)?;
-				Ok((port, 0))
-			},
-			2 => {
-				let port1 = parts[0].parse::<u16>().map_err(serde::de::Error::custom)?;
-				let port2 = parts[1].parse::<u16>().map_err(serde::de::Error::custom)?;
-				if port2 > port1 {
-					Ok((port1, port2))
-				} else {
-					Err(serde::de::Error::custom(format!("Invalid value {s}")))
-				}
-			},
-			_ => Err(serde::de::Error::custom(format!("Invalid value {s}"))),
-		}
-	}
-}
-
 #[derive(Serialize, Debug, Clone)]
 pub struct MultiaddressConfig(Vec<(PeerId, Multiaddr)>);
 
@@ -265,8 +220,7 @@ pub struct RuntimeConfig {
 	/// Light client HTTP server host name (default: 127.0.0.1).
 	pub http_server_host: String,
 	/// Light client HTTP server port (default: 7000).
-	#[serde(with = "port_range_format")]
-	pub http_server_port: (u16, u16),
+	pub http_server_port: u16,
 	/// Secret key for libp2p keypair. Can be either set to `seed` or to `key`.
 	/// If set to seed, keypair will be generated from that seed.
 	/// If set to key, a valid ed25519 private key must be provided, else the client will fail
@@ -583,7 +537,7 @@ impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
-			http_server_port: (7000, 0),
+			http_server_port: 7000,
 			port: 37000,
 			secret_key: None,
 			tcp_port_reuse: false,
