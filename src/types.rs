@@ -177,17 +177,17 @@ mod port_range_format {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct BootstrapConfig(Vec<(PeerId, Multiaddr)>);
+pub struct MultiaddressConfig(Vec<(PeerId, Multiaddr)>);
 
-impl BootstrapConfig {
+impl MultiaddressConfig {
 	pub fn into_inner(self) -> Vec<(PeerId, Multiaddr)> {
 		self.0
 	}
 }
-struct BootstrapConfigVisitor;
+struct MultiaddressConfigVisitor;
 
-impl<'de> Visitor<'de> for BootstrapConfigVisitor {
-	type Value = BootstrapConfig;
+impl<'de> Visitor<'de> for MultiaddressConfigVisitor {
+	type Value = MultiaddressConfig;
 
 	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
 		formatter.write_str("a Vec<String> or a Vec<(PeerId, Multiaddr)>")
@@ -238,16 +238,16 @@ impl<'de> Visitor<'de> for BootstrapConfigVisitor {
 			}
 		}
 
-		Ok(BootstrapConfig(bootstraps))
+		Ok(MultiaddressConfig(bootstraps))
 	}
 }
 
-impl<'de> Deserialize<'de> for BootstrapConfig {
+impl<'de> Deserialize<'de> for MultiaddressConfig {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 	where
 		D: Deserializer<'de>,
 	{
-		deserializer.deserialize_any(BootstrapConfigVisitor)
+		deserializer.deserialize_any(MultiaddressConfigVisitor)
 	}
 }
 
@@ -291,11 +291,11 @@ pub struct RuntimeConfig {
 	/// Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 	pub identify_agent: String,
 	/// Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-	pub bootstraps: BootstrapConfig,
+	pub bootstraps: MultiaddressConfig,
 	/// Defines a period of time in which periodic bootstraps will be repeated. (default: 300 sec)
 	pub bootstrap_period: u64,
 	/// Vector of Relay nodes, which are used for hole punching
-	pub relays: Vec<(PeerId, Multiaddr)>,
+	pub relays: MultiaddressConfig,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
 	pub full_node_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -464,7 +464,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			identify: val.into(),
 			autonat: val.into(),
 			kademlia: val.into(),
-			relays: val.relays.clone(),
+			relays: val.relays.clone().into_inner(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
 		}
 	}
@@ -594,9 +594,9 @@ impl Default for RuntimeConfig {
 			autonat_boot_delay: 5,
 			identify_protocol: "/avail_kad/id/1.0.0".to_string(),
 			identify_agent: "avail-light-client/rust-client".to_string(),
-			bootstraps: BootstrapConfig(Vec::new()),
+			bootstraps: MultiaddressConfig(Vec::new()),
 			bootstrap_period: 300,
-			relays: Vec::new(),
+			relays: MultiaddressConfig(Vec::new()),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
