@@ -52,13 +52,13 @@ http_server_host = "127.0.0.1"
 http_server_port = "7000"
 
 secret_key = { seed = "avail" }
-libp2p_port = "37000"
+port = "37000"
 
 full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-bootstraps = [["12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN", "/ip4/127.0.0.1/tcp/37000"]]
+bootstraps = ["/ip4/127.0.0.1/tcp/37000/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
 ```
 
 Now, run the client:
@@ -99,9 +99,9 @@ identify_protocol = "/avail_kad/id/1.0.0"
 # Sets agent version that is sent to peers. (default: "avail-light-client/rust-client")
 identify_agent = "avail-light-client/rust-client"
 # Vector of Light Client bootstrap nodes, used to bootstrap DHT. If not set, light client acts as a bootstrap node, waiting for first peer to connect for DHT bootstrap (default: empty).
-bootstraps = [["12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds", "/ip4/13.51.79.255/udp/39000/quic-v1"]]
+bootstraps = ["/ip4/13.51.79.255/udp/39000/quic-v1/12D3KooWE2xXc6C2JzeaCaEg7jvZLogWyjLsB5dA3iw5o3KcF9ds"]
 # Vector of Relay nodes, which are used for hole punching
-relays = [["12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b", "/ip4/13.49.44.246/udp/39111/quic-v1"]]
+relays = ["/ip4/13.49.44.246/udp/39111/quic-v1/12D3KooWBETtE42fN7DZ5QsGgi7qfrN3jeYdXmBPL4peVTDmgG9b"]
 # WebSocket endpoint of a full node for subscribing to the latest header, etc (default: ws://127.0.0.1:9944).
 full_node_ws = ["ws://127.0.0.1:9944"]
 # ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
@@ -190,7 +190,7 @@ Response:
 
 ```json
 {
-	"latest_block": 10
+ "latest_block": 10
 }
 ```
 
@@ -206,9 +206,9 @@ Response:
 
 ```json
 {
-	"block": 1,
-	"confidence": 93.75,
-	"serialised_confidence": "5232467296"
+ "block": 1,
+ "confidence": 93.75,
+ "serialised_confidence": "5232467296"
 }
 ```
 
@@ -229,10 +229,10 @@ Response:
 
 ```json
 {
-	"block": 46,
-	"extrinsics": [
-		"ZXhhbXBsZQ=="
-	]
+ "block": 46,
+ "extrinsics": [
+  "ZXhhbXBsZQ=="
+ ]
 }
 ```
 
@@ -258,7 +258,7 @@ Response:
 
 ```json
 {
-	"AppClient": 1
+ "AppClient": 1
 }
 ```
 
@@ -272,9 +272,9 @@ Response:
 
 ```json
 {
-	"block_num": 10,
-	"confidence": 93.75,
-	"app_id": 1
+ "block_num": 10,
+ "confidence": 93.75,
+ "app_id": 1
 }
 ```
 
@@ -288,7 +288,7 @@ Response:
 
 ```json
 {
-	"latest_block": 255
+ "latest_block": 255
 }
 ```
 
@@ -394,10 +394,10 @@ If application data is available, and decode is `false` or unspecified:
 
 ```json
 {
-	"block": 1,
-	"extrinsics": [
-		"0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
-	]
+ "block": 1,
+ "extrinsics": [
+  "0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
+ ]
 }
 ```
 
