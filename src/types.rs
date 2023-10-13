@@ -13,6 +13,7 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+use std::str::FromStr;
 
 use clap::Parser;
 use std::fmt;
