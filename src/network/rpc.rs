@@ -29,6 +29,49 @@ impl Node {
 	}
 }
 
+struct Nodes {
+	list: Vec<Node>,
+	current_index: usize,
+}
+
+impl Nodes {
+	pub fn next(&mut self) -> Option<Node> {
+		// we have exhausted all nodes from the list
+		// this is the last one
+		if self.current_index == self.list.len() - 1 {
+			None
+		} else {
+			// increment current index
+			self.current_index += 1;
+			self.get_current()
+		}
+	}
+
+	pub fn get_current(&self) -> Option<Node> {
+		let node = &self.list[self.current_index];
+		Some(node.clone())
+	}
+
+	pub fn populate(&mut self, nodes: &[String], last_known_node: Option<String>) {
+		let mut candidates = nodes.to_owned();
+		candidates.retain(|node| Some(node) != last_known_node.as_ref());
+
+		self.list = candidates
+			.iter()
+			.map(|s| Node {
+				genesis_hash: Default::default(),
+				spec_version: Default::default(),
+				system_version: Default::default(),
+				host: s.to_string(),
+			})
+			.collect();
+	}
+
+	fn shuffle(&mut self) {
+		self.list.shuffle(&mut thread_rng());
+	}
+}
+
 pub struct ExpectedVersion<'a> {
 	pub version: &'a str,
 	pub spec_name: &'a str,
