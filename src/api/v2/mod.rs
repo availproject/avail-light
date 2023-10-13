@@ -311,7 +311,7 @@ mod tests {
 			let mut state = state.lock().unwrap();
 			state.latest = latest;
 		}
-		let route = super::block_route(config, state, MockDatabase {});
+		let route = super::block_route(config, state, MockDatabase::default());
 		let response = warp::test::request()
 			.method("GET")
 			.path(&format!("/v2/blocks/{block_number}"))
@@ -319,6 +319,36 @@ mod tests {
 			.await;
 
 		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	#[tokio::test]
+	async fn block_route_finished() {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State::default()));
+		{
+			let mut state = state.lock().unwrap();
+			state.latest = 10;
+			state.header_verified.set(10);
+			state.data_verified.set(10);
+		}
+		let route = super::block_route(
+			config,
+			state,
+			MockDatabase {
+				confidence: Some(4),
+			},
+		);
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/10")
+			.reply(&route)
+			.await;
+
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			response.body(),
+			r#"{"status":"finished","confidence":93.75}"#
+		);
 	}
 
 	fn all_topics() -> HashSet<Topic> {
@@ -357,12 +387,14 @@ mod tests {
 		}
 	}
 
-	#[derive(Clone)]
-	struct MockDatabase {}
+	#[derive(Clone, Default)]
+	struct MockDatabase {
+		confidence: Option<u32>,
+	}
 
 	impl Database for MockDatabase {
 		fn get_confidence(&self, _block_number: u32) -> anyhow::Result<Option<u32>> {
-			Ok(None)
+			Ok(self.confidence)
 		}
 	}
 

@@ -87,7 +87,7 @@ pub async fn block(
 ) -> Result<impl Reply, Error> {
 	let state = state.lock().expect("Lock should be acquired");
 
-	let Some(block_status) = block_status(&config, &state, block_number) else {
+	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
 		return Err(Error::not_found());
 	};
 

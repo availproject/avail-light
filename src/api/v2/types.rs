@@ -237,7 +237,7 @@ pub struct HeaderMessage {
 	header: Header,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum BlockStatus {
 	Unavailable,
@@ -246,11 +246,10 @@ pub enum BlockStatus {
 	VerifyingConfidence,
 	VerifyingData,
 	Finished,
-	Failed,
 }
 
 pub fn block_status(
-	config: &RuntimeConfig,
+	sync_start_block: &Option<u32>,
 	state: &State,
 	block_number: u32,
 ) -> Option<BlockStatus> {
@@ -258,8 +257,8 @@ pub fn block_status(
 		return None;
 	}
 
-	let first_block = state.confidence_achieved.first().unwrap_or(state.latest);
-	let first_sync_block = config.sync_start_block.unwrap_or(first_block);
+	let first_block = state.header_verified.first().unwrap_or(state.latest);
+	let first_sync_block = sync_start_block.unwrap_or(first_block);
 
 	if block_number < first_sync_block {
 		return Some(BlockStatus::Unavailable);
@@ -777,11 +776,14 @@ mod tests {
 	use sp_core::H256;
 	use tokio::sync::mpsc;
 
-	use crate::api::v2::types::{Header, HeaderMessage, PublishMessage};
+	use crate::{
+		api::v2::types::{BlockStatus, Header, HeaderMessage, PublishMessage},
+		types::{OptionBlockRange, State},
+	};
 
 	use super::{
-		Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction, Subscription, Topic,
-		WsClients,
+		block_status, Base64, ConfidenceMessage, DataField, DataMessage, DataTransaction,
+		Subscription, Topic, WsClients,
 	};
 
 	fn subscription(topics: Vec<Topic>, fields: Vec<DataField>) -> Subscription {
@@ -899,5 +901,151 @@ mod tests {
 			},
 			_ = tokio::time::sleep(Duration::from_millis(100)) => panic!("Message isn't received"),
 		};
+	}
+
+	#[test]
+	fn block_status_none() {
+		let mut state = State::default();
+		assert_eq!(block_status(&None, &state, 1), None);
+		state.latest = 10;
+		assert_ne!(block_status(&None, &state, 1), None);
+		assert_eq!(block_status(&None, &state, 11), None);
+	}
+
+	#[test]
+	fn block_status_unavailable() {
+		let state = State {
+			latest: 10,
+			..Default::default()
+		};
+		let unavailable = Some(BlockStatus::Unavailable);
+		assert_eq!(block_status(&Some(1), &state, 0), unavailable);
+		assert_eq!(block_status(&Some(10), &state, 0), unavailable);
+		assert_eq!(block_status(&Some(10), &state, 9), unavailable);
+		assert_ne!(block_status(&Some(9), &state, 9), unavailable);
+	}
+
+	#[test]
+	fn block_status_pending() {
+		let state = State {
+			latest: 5,
+			..Default::default()
+		};
+		let pending = Some(BlockStatus::Pending);
+		assert_eq!(block_status(&Some(0), &state, 0), pending);
+		assert_eq!(block_status(&Some(0), &state, 1), pending);
+		assert_eq!(block_status(&Some(0), &state, 4), pending);
+		assert_ne!(block_status(&Some(0), &state, 5), pending);
+	}
+
+	#[test]
+	fn block_status_verifying_header() {
+		let mut state = State::default();
+		let verifying_header = Some(BlockStatus::VerifyingHeader);
+		assert_eq!(block_status(&Some(0), &state, 0), verifying_header);
+		state.latest = 1;
+		assert_eq!(block_status(&Some(0), &state, 1), verifying_header);
+		state.latest = 10;
+		assert_eq!(block_status(&Some(0), &state, 10), verifying_header);
+		state.latest = 11;
+		assert_ne!(block_status(&Some(10), &state, 10), verifying_header);
+
+		let mut state = State {
+			latest: 5,
+			sync_latest: Some(1),
+			..Default::default()
+		};
+		assert_eq!(block_status(&Some(1), &state, 1), verifying_header);
+		state.sync_latest = Some(2);
+		assert_eq!(block_status(&Some(1), &state, 2), verifying_header);
+		assert_ne!(block_status(&Some(1), &state, 3), verifying_header);
+	}
+
+	#[test]
+	fn block_status_verifying_confidence() {
+		let mut state = State::default();
+		let verifying_confidence = Some(BlockStatus::VerifyingConfidence);
+		state.latest = 10;
+		state.header_verified.set(1);
+		assert_eq!(block_status(&None, &state, 1), verifying_confidence);
+		state.confidence_achieved.set(1);
+		state.header_verified.set(5);
+		state.confidence_achieved.set(4);
+		assert_eq!(block_status(&None, &state, 5), verifying_confidence);
+		assert_ne!(block_status(&None, &state, 4), verifying_confidence);
+		assert_ne!(block_status(&None, &state, 6), verifying_confidence);
+
+		let mut state = State {
+			latest: 10,
+			..Default::default()
+		};
+		state.sync_header_verified.set(1);
+		assert_eq!(block_status(&Some(1), &state, 1), verifying_confidence);
+		state.sync_confidence_achieved.set(1);
+		state.sync_header_verified.set(5);
+		state.sync_confidence_achieved.set(4);
+		assert_eq!(block_status(&Some(1), &state, 5), verifying_confidence);
+		assert_ne!(block_status(&Some(1), &state, 4), verifying_confidence);
+		assert_ne!(block_status(&Some(1), &state, 6), verifying_confidence);
+	}
+
+	#[test]
+	fn block_status_verifying_data() {
+		let mut state = State::default();
+		let verifying_data = Some(BlockStatus::VerifyingData);
+		state.latest = 10;
+		state.header_verified.set(1);
+		state.confidence_achieved.set(1);
+		assert_eq!(block_status(&None, &state, 1), verifying_data);
+		state.data_verified.set(1);
+		state.header_verified.set(5);
+		state.confidence_achieved.set(5);
+		state.data_verified.set(4);
+		assert_eq!(block_status(&None, &state, 5), verifying_data);
+		assert_ne!(block_status(&None, &state, 4), verifying_data);
+		assert_ne!(block_status(&None, &state, 6), verifying_data);
+
+		let mut state = State {
+			latest: 10,
+			..Default::default()
+		};
+		state.sync_header_verified.set(1);
+		state.sync_confidence_achieved.set(1);
+		assert_eq!(block_status(&Some(1), &state, 1), verifying_data);
+		state.sync_data_verified.set(1);
+		state.sync_header_verified.set(5);
+		state.sync_confidence_achieved.set(5);
+		state.sync_data_verified.set(4);
+		assert_eq!(block_status(&Some(1), &state, 5), verifying_data);
+		assert_ne!(block_status(&Some(1), &state, 4), verifying_data);
+		assert_ne!(block_status(&Some(1), &state, 6), verifying_data);
+	}
+
+	#[test]
+	fn block_status_finished() {
+		let mut state = State::default();
+		let finished = Some(BlockStatus::Finished);
+		state.latest = 10;
+		state.header_verified.set(1);
+		state.data_verified.set(1);
+		assert_eq!(block_status(&None, &state, 1), finished);
+		state.header_verified.set(5);
+		state.data_verified.set(5);
+		assert_eq!(block_status(&None, &state, 4), finished);
+		assert_eq!(block_status(&None, &state, 5), finished);
+		assert_ne!(block_status(&None, &state, 6), finished);
+
+		let mut state = State {
+			latest: 10,
+			..Default::default()
+		};
+		state.sync_header_verified.set(1);
+		state.sync_data_verified.set(1);
+		assert_eq!(block_status(&Some(1), &state, 1), finished);
+		state.sync_header_verified.set(5);
+		state.sync_data_verified.set(5);
+		assert_eq!(block_status(&Some(1), &state, 4), finished);
+		assert_eq!(block_status(&Some(1), &state, 5), finished);
+		assert_ne!(block_status(&Some(1), &state, 6), finished);
 	}
 }
