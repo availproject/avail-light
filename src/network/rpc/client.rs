@@ -2,10 +2,9 @@ use anyhow::{Context, Result};
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use kate_recovery::{data::Cell, matrix::Position};
 use sp_core::ed25519::Public;
-use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::types::RuntimeVersionResult;
+use crate::types::RuntimeVersion;
 
 #[derive(Clone)]
 pub struct Client {
@@ -144,7 +143,7 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	pub async fn get_runtime_version(&self) -> Result<RuntimeVersionResult> {
+	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
 		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::GetRuntimeVersion { response_sender })
@@ -200,13 +199,21 @@ pub enum Command {
 		block_hash: H256,
 		response_sender: oneshot::Sender<Result<u64>>,
 	},
+	GetCurrentSetIdByBlockNumber {
+		block_number: u32,
+		response_sender: oneshot::Sender<Result<u64>>,
+	},
+	GetHeaderByBlockNumber {
+		block_number: u32,
+		response_sender: oneshot::Sender<Result<(DaHeader, H256)>>,
+	},
 	GetKateRows {
 		rows: Vec<u32>,
 		block_hash: H256,
 		response_sender: oneshot::Sender<Result<Vec<Option<Vec<u8>>>>>,
 	},
 	GetKateProof {
-		positions: Arc<[Position]>,
+		positions: Vec<Position>,
 		block_hash: H256,
 		response_sender: oneshot::Sender<Result<Vec<Cell>>>,
 	},
@@ -214,6 +221,6 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<String>>,
 	},
 	GetRuntimeVersion {
-		response_sender: oneshot::Sender<Result<RuntimeVersionResult>>,
+		response_sender: oneshot::Sender<Result<RuntimeVersion>>,
 	},
 }
