@@ -7,31 +7,39 @@ use subxt::rpc::{types::BlockNumber, RpcParams};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, instrument, warn};
 
+use super::{client::Command, ExpectedVersion, Nodes, CELL_WITH_PROOF_SIZE};
 use crate::types::RuntimeVersion;
 
-use super::{client::Command, ExpectedVersion, Nodes, CELL_WITH_PROOF_SIZE};
-
+#[derive(Clone)]
 pub enum Event {
 	HeaderUpdate { header: Header, instant: Instant },
 }
 
 pub struct EventLoop {
-	subxt_client: avail::Client,
+	subxt_client: Option<avail::Client>,
 	command_receiver: mpsc::Receiver<Command>,
 	event_sender: broadcast::Sender<Event>,
 	nodes: Nodes,
 }
 
 impl EventLoop {
-	pub async fn new(
-		&self,
-		mut nodes: Nodes,
+	pub fn new(
+		nodes: Nodes,
 		command_receiver: mpsc::Receiver<Command>,
 		event_sender: broadcast::Sender<Event>,
-		expected_version: ExpectedVersion<'_>,
-	) -> Result<EventLoop> {
+	) -> EventLoop {
+		Self {
+			subxt_client: None,
+			command_receiver,
+			event_sender,
+			nodes,
+		}
+	}
+
+	async fn create_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
 		// shuffle passed Nodes and start try to connect the first one
-		let node = nodes
+		let node = self
+			.nodes
 			.reset()
 			.ok_or_else(|| anyhow!("RPC WS Nodes list must not be empty"))?;
 
@@ -41,6 +49,8 @@ impl EventLoop {
 		};
 
 		let client = build_client(&node.host, false).await?;
+		// client was built successfully, keep it
+		self.subxt_client.replace(client);
 		let system_version = self.get_system_version().await?;
 		let runtime_version = self.get_runtime_version().await?;
 
@@ -58,21 +68,18 @@ impl EventLoop {
 			node.host
 		);
 
-		Ok(Self {
-			subxt_client: client,
-			command_receiver,
-			event_sender,
-			nodes,
-		})
+		Ok(())
 	}
 
-	pub async fn run(mut self) {
+	pub async fn run(mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
+		self.create_client(expected_version).await?;
+
 		loop {
 			tokio::select! {
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the RPC Event Loop
-					None => return,
+					None => return Err(anyhow!("RPC Event Loop shutting down")),
 				}
 			}
 		}
@@ -165,7 +172,9 @@ impl EventLoop {
 	}
 
 	async fn get_system_version(&self) -> Result<String> {
-		self.subxt_client
+		let Some(client) = &self.subxt_client else { return  Err(anyhow!("RPC client not initialized"))};
+
+		client
 			.rpc()
 			.system_version()
 			.await
@@ -173,7 +182,9 @@ impl EventLoop {
 	}
 
 	async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-		self.subxt_client
+		let Some(client) = &self.subxt_client else {return Err(anyhow!("RPC client not initialized"))};
+
+		client
 			.rpc()
 			.request("state_getRuntimeVersion", RpcParams::new())
 			.await
@@ -181,7 +192,9 @@ impl EventLoop {
 	}
 
 	async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
-		self.subxt_client
+		let Some(client) = &self.subxt_client else { return  Err(anyhow!("RPC client not initialized"))};
+
+		client
 			.rpc()
 			.block_hash(Some(BlockNumber::from(block_number)))
 			.await?
@@ -189,7 +202,9 @@ impl EventLoop {
 	}
 
 	async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
-		self.subxt_client
+		let Some(client) = &self.subxt_client else { return  Err(anyhow!("RPC client not initialized"))};
+
+		client
 			.rpc()
 			.header(Some(block_hash))
 			.await?
@@ -197,8 +212,9 @@ impl EventLoop {
 	}
 
 	async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		let valset = self
-			.subxt_client
+		let Some(client) = &self.subxt_client else { return  Err(anyhow!("RPC client not initialized"))};
+
+		let valset = client
 			.runtime_api()
 			.at(block_hash)
 			.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
@@ -213,8 +229,10 @@ impl EventLoop {
 	}
 
 	async fn get_chain_head_header(&self) -> Result<Header> {
-		let head = self.subxt_client.rpc().finalized_head().await?;
-		self.subxt_client
+		let Some(client) = &self.subxt_client else { return Err(anyhow!("RPC client not initialized"))};
+
+		let head = client.rpc().finalized_head().await?;
+		client
 			.rpc()
 			.header(Some(head))
 			.await?
@@ -222,7 +240,9 @@ impl EventLoop {
 	}
 
 	async fn get_chain_head_hash(&self) -> Result<H256> {
-		self.subxt_client
+		let Some(client) = &self.subxt_client else { return Err(anyhow!("RPC client not initialized"))};
+
+		client
 			.rpc()
 			.finalized_head()
 			.await
@@ -230,8 +250,10 @@ impl EventLoop {
 	}
 
 	async fn get_set_id_by_hash(&self, block_hash: H256) -> Result<u64> {
+		let Some(client) = &self.subxt_client else { return Err(anyhow!("RPC client not initialized"))};
+
 		let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
-		self.subxt_client
+		client
 			.storage()
 			.at(block_hash)
 			.fetch(&set_id_key)
@@ -255,11 +277,13 @@ impl EventLoop {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
+		let Some(client) = &self.subxt_client else { return Err(anyhow!("RPC client not initialized"))};
+
 		let mut params = RpcParams::new();
 		params.push(rows)?;
 		params.push(block_hash)?;
 
-		self.subxt_client
+		client
 			.rpc()
 			.request("kate_queryRows", params)
 			.await
@@ -267,12 +291,13 @@ impl EventLoop {
 	}
 
 	async fn get_kate_proof(&self, positions: &[Position], block_hash: H256) -> Result<Vec<Cell>> {
+		let Some(client) = &self.subxt_client else { return Err(anyhow!("RPC client not initialized"))};
+
 		let mut params = RpcParams::new();
 		params.push(&positions)?;
 		params.push(block_hash)?;
 
-		let proofs: Vec<u8> = self
-			.subxt_client
+		let proofs: Vec<u8> = client
 			.rpc()
 			.request("kate_queryProof", params)
 			.await
