@@ -5,6 +5,7 @@ use sp_core::ed25519::Public;
 use std::time::Instant;
 use subxt::rpc::{types::BlockNumber, RpcParams};
 use tokio::sync::{broadcast, mpsc};
+use tokio_stream::wrappers::BroadcastStream;
 use tracing::{info, instrument, warn};
 
 use super::{client::Command, ExpectedVersion, Nodes, CELL_WITH_PROOF_SIZE};
@@ -83,6 +84,12 @@ impl EventLoop {
 				}
 			}
 		}
+	}
+
+	pub fn subscribe(&self) -> BroadcastStream<Event> {
+		// convert the broadcast receiver into a RPC Event stream
+		let event_receiver = self.event_sender.subscribe();
+		BroadcastStream::new(event_receiver)
 	}
 
 	async fn handle_command(&self, command: Command) {
