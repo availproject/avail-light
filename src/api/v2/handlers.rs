@@ -1,18 +1,19 @@
 use super::{
 	transactions,
 	types::{
-		block_status, Block, Error, Status, SubmitResponse, Subscription, SubscriptionId,
-		Transaction, Version, WsClients,
+		block_status, Block, BlockStatus, Error, Header, Status, SubmitResponse, Subscription,
+		SubscriptionId, Transaction, Version, WsClients,
 	},
 	ws,
 };
 use crate::{
-	api::v2::types::InternalServerError,
+	api::v2::types::{ErrorCode, InternalServerError},
 	data::Database,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };
+use anyhow::anyhow;
 use hyper::StatusCode;
 use std::{
 	convert::Infallible,
@@ -39,10 +40,10 @@ pub async fn submit(
 		return Err(Error::not_found());
 	};
 
-	submitter.submit(transaction).await.map_err(|error| {
-		error!(%error, "Submit transaction failed");
-		Error::internal_server_error(error)
-	})
+	submitter
+		.submit(transaction)
+		.await
+		.map_err(Error::internal_server_error)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -79,6 +80,19 @@ pub fn status(config: RuntimeConfig, node: Node, state: Arc<Mutex<State>>) -> im
 	Status::new(&config, &node, &state)
 }
 
+pub fn log_internal_server_error(result: Result<impl Reply, Error>) -> Result<impl Reply, Error> {
+	if let Err(Error {
+		error_code: ErrorCode::InternalServerError,
+		cause: Some(error),
+		message,
+		..
+	}) = result.as_ref()
+	{
+		error!("{message}: {error:#}");
+	}
+	result
+}
+
 pub async fn block(
 	block_number: u32,
 	config: RuntimeConfig,
@@ -97,6 +111,31 @@ pub async fn block(
 		.map(calculate_confidence);
 
 	Ok(Block::new(block_status, confidence))
+}
+
+pub async fn block_header(
+	block_number: u32,
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+	db: impl Database,
+) -> Result<Header, Error> {
+	let state = state.lock().expect("Lock should be acquired");
+
+	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
+		return Err(Error::not_found());
+	};
+
+	if matches!(
+		block_status,
+		BlockStatus::Unavailable | BlockStatus::Pending | BlockStatus::VerifyingHeader
+	) {
+		return Err(Error::bad_request_unknown("Block header is not available"));
+	};
+
+	db.get_header(block_number)
+		.and_then(|header| header.ok_or_else(|| anyhow!("Header not found")))
+		.and_then(|header| header.try_into())
+		.map_err(Error::internal_server_error)
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {

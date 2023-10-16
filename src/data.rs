@@ -93,6 +93,18 @@ pub fn get_decoded_data_from_db<T: Decode>(
 	}
 }
 
+/// Gets the block header from database
+pub fn get_block_header_from_db(db: Arc<DB>, block_number: u32) -> Result<Option<DaHeader>> {
+	let handle = db
+		.cf_handle(BLOCK_HEADER_CF)
+		.context("Failed to get cf handle")?;
+
+	db.get_cf(&handle, block_number.to_be_bytes())
+		.context("Failed to get block header")?
+		.map(|value| serde_json::from_slice(&value).context("Failed to deserialize header"))
+		.transpose()
+}
+
 /// Checks if block header for given block number is in database
 pub fn is_block_header_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 	let handle = db
@@ -131,6 +143,7 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 
 pub trait Database: Clone + Send {
 	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>>;
+	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>>;
 }
 
 #[derive(Clone)]
@@ -139,6 +152,10 @@ pub struct RocksDB(pub Arc<DB>);
 impl Database for RocksDB {
 	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>> {
 		get_confidence_from_db(self.0.clone(), block_number)
+	}
+
+	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>> {
+		get_block_header_from_db(self.0.clone(), block_number)
 	}
 }
 

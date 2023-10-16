@@ -327,13 +327,19 @@ impl TryFrom<avail_subxt::primitives::Header> for HeaderMessage {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Header {
+pub struct Header {
 	hash: H256,
 	parent_hash: H256,
 	pub number: u32,
 	state_root: H256,
 	extrinsics_root: H256,
 	extension: Extension,
+}
+
+impl Reply for Header {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
 }
 
 #[derive(Debug, Clone)]
