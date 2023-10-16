@@ -98,9 +98,9 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let opts = CliOpts::parse();
-	let config_path = &opts.config;
-	let cfg: RuntimeConfig = confy::load_path(config_path)
-		.context(format!("Failed to load configuration from {config_path}"))?;
+
+	let mut cfg: RuntimeConfig = RuntimeConfig::default();
+	cfg.load_runtime_config(opts.network, opts.app_id, opts.config)?;
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 

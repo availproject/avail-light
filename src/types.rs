@@ -13,6 +13,7 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+use std::path::Path;
 use std::str::FromStr;
 
 use clap::Parser;
@@ -30,8 +31,8 @@ pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 #[command(version)]
 pub struct CliOpts {
 	/// Path to the yaml configuration file
-	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
-	pub config: String,
+	#[arg(short, long, value_name = "FILE")]
+	pub config: Option<String>,
 	#[arg(long, value_name = "appId")]
 	pub app_id: Option<u32>,
 	#[arg(short, long, value_name = "network")]
@@ -503,9 +504,9 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		}
 	}
 }
-impl RuntimeConfig {
-	pub fn default_lc() -> Self {
-		Self {
+impl Default for RuntimeConfig {
+	fn default() -> Self {
+		RuntimeConfig {
 			http_server_host: "127.0.0.1".to_owned(),
 			http_server_port: 7000,
 			port: 37000,
@@ -558,28 +559,59 @@ impl RuntimeConfig {
 	}
 }
 
-impl Default for RuntimeConfig {
-	fn default() -> Self {
-		let opts = CliOpts::parse();
+impl RuntimeConfig {
+	pub fn load_runtime_config(
+		&mut self,
+		network: Option<String>,
+		app_id: Option<u32>,
+		config_file: Option<String>,
+	) -> Result<()> {
+		self.app_id = app_id;
+		if let Some(network) = network {
+			match network.as_str() {
+				"biryani" => {
+					let bootstrap: (PeerId, Multiaddr) = (
+						PeerId::from_str("12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf")
+							.context("unable to parse default bootstrap peerID")?,
+						Multiaddr::from_str(
+							"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1",
+						)
+						.context("unable to parse default bootstrap multi-address")?,
+					);
+					self.full_node_ws = vec!["wss://biryani-devnet.avail.tools:443/ws".to_string()];
+					self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+					return Ok(());
+				},
+				"local" => {
+					let bootstrap: (PeerId, Multiaddr) = (
+						PeerId::from_str("12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz")
+							.context("unable to parse default bootstrap peerID")?,
+						Multiaddr::from_str("/ip4/127.0.0.1/udp/37000/quic-v1")
+							.context("unable to parse default bootstrap multi-address")?,
+					);
+					self.full_node_ws = vec!["ws://127.0.0.1:9944".to_string()];
+					self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+					return Ok(());
+				},
 
-		//TODO: Change the values to the new networks
-		const TESTNET_WS_NODE: &str = "wss://kate.avail.tools/ws";
-		const DEVNET_WS_NODE: &str = "wss://biryani-devnet.avail.tools/ws";
-
-		let mut config = Self::default_lc();
-
-		if let Some(network) = opts.network {
-			config.full_node_ws = match network.as_str() {
-				"testnet" => vec![TESTNET_WS_NODE.to_string()],
-				"devnet" => vec![DEVNET_WS_NODE.to_string()],
-				_ => return Self::default_lc(),
-			};
+				_ => {
+					return Err(anyhow!("Provided network doesn't exist."));
+				},
+			}
 		}
-		if let Some(app_id) = opts.app_id {
-			config.app_id = Some(app_id);
-		}
+		// Custom configuration (config file required)
+		else {
+			let config_path =
+				config_file.context("No network or config file parameter provided.")?;
+			if !Path::new(&config_path).exists() {
+				return Err(anyhow!("Provided config file doesn't exist."));
+			}
 
-		config
+			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
+				.context(format!("Failed to load configuration from {config_path}"))?;
+			*self = cfg;
+		};
+		Ok(())
 	}
 }
 
