@@ -109,10 +109,6 @@ Content-Type: application/json
 
 Gets specified block status and confidence if applicable.
 
-- Use cases
-  - Polling the status of the block
-  - Querying historical block statuses
-
 If **block_number <= latest_block,** then the block is either processed or skipped, and possible statuses are:
 
 ```yaml
@@ -147,6 +143,48 @@ If **block_number > latest_block,** block status cannot yet be derived and the r
 
 ```yaml
 HTTP/1.1 404 Not Found
+```
+
+## **GET** `/v2/blocks/{block_number}/header`
+
+Gets the block header if it is available.
+
+If **block_status = "verifying-confidence|verifying-data|finished"**, the header is available, and the response is:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "hash": "{hash}",
+  "parent_hash": "{parent-hash}",
+  "number": {number},
+  "state_root": "{state-root}",
+  "extrinsics_root": "{extrinsics-root}",
+  "extension": {
+    "rows": {rows},
+    "cols": {cols},
+    "data_root": "{data-root}", // Optional
+    "commitments": [
+      "{commitment}", ...
+    ],
+    "app_lookup": {
+      "size": {size},
+      "index": [
+        {
+          "app_id": {app-id},
+          "start": {start}
+        }
+      ]
+    }
+  }
+}
+```
+
+If **block_status = "unavailable|pending|verifying-header"**, header is not available and response is:
+
+```yaml
+HTTP/1.1 400 Bad Request
 ```
 
 ## POST `/v2/submit`

@@ -1,5 +1,5 @@
 use self::{
-	handlers::handle_rejection,
+	handlers::{handle_rejection, log_internal_server_error},
 	types::{PublishMessage, Version, WsClients},
 };
 use crate::{
@@ -68,6 +68,21 @@ fn block_route(
 		.and(warp::any().map(move || state.clone()))
 		.and(warp::any().map(move || db.clone()))
 		.then(handlers::block)
+		.map(log_internal_server_error)
+}
+
+fn block_header_route(
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+	db: impl Database,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "blocks" / u32 / "header")
+		.and(warp::get())
+		.and(warp::any().map(move || config.clone()))
+		.and(warp::any().map(move || state.clone()))
+		.and(warp::any().map(move || db.clone()))
+		.then(handlers::block_header)
+		.map(log_internal_server_error)
 }
 
 fn submit_route(
@@ -78,6 +93,7 @@ fn submit_route(
 		.and_then(move || optionally(submitter.clone()))
 		.and(warp::body::json())
 		.then(handlers::submit)
+		.map(log_internal_server_error)
 }
 
 fn subscriptions_route(
@@ -177,6 +193,11 @@ pub fn routes(
 	version_route(version.clone())
 		.or(status_route(config.clone(), node.clone(), state.clone()))
 		.or(block_route(config.clone(), state.clone(), db.clone()))
+		.or(block_header_route(
+			config.clone(),
+			state.clone(),
+			db.clone(),
+		))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(
@@ -187,7 +208,7 @@ pub fn routes(
 
 #[cfg(test)]
 mod tests {
-	use super::{block_route, submit_route, transactions, types::Transaction};
+	use super::{block_header_route, block_route, submit_route, transactions, types::Transaction};
 	use crate::{
 		api::v2::types::{
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
@@ -195,9 +216,17 @@ mod tests {
 		},
 		data::Database,
 		rpc::Node,
-		types::{OptionBlockRange, RuntimeConfig, State},
+		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
+	use avail_subxt::{
+		api::runtime_types::avail_core::{
+			data_lookup::compact::CompactDataLookup,
+			header::extension::{v2, HeaderExtension},
+			kate_commitment::v2::KateCommitment,
+		},
+		primitives::Header as DaHeader,
+	};
 	use hyper::StatusCode;
 	use kate_recovery::matrix::Partition;
 	use sp_core::H256;
@@ -206,6 +235,7 @@ mod tests {
 		str::FromStr,
 		sync::{Arc, Mutex},
 	};
+	use subxt::config::substrate::Digest;
 	use test_case::test_case;
 	use uuid::Uuid;
 
@@ -336,6 +366,7 @@ mod tests {
 			state,
 			MockDatabase {
 				confidence: Some(4),
+				..Default::default()
 			},
 		);
 		let response = warp::test::request()
@@ -348,6 +379,90 @@ mod tests {
 		assert_eq!(
 			response.body(),
 			r#"{"status":"finished","confidence":93.75}"#
+		);
+	}
+
+	#[test_case(0, r#"Block header is not available"#  ; "Block is unavailable")]
+	#[test_case(6, r#"Block header is not available"#  ; "Block is pending")]
+	#[test_case(10, r#"Block header is not available"#  ; "Block is in verifying-header state")]
+	#[tokio::test]
+	async fn block_header_route_bad_request(block_number: u32, expected: &str) {
+		let config = RuntimeConfig {
+			sync_start_block: Some(1),
+			..Default::default()
+		};
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			sync_latest: Some(5),
+			header_verified: Some(BlockRange::init(9)),
+			..Default::default()
+		}));
+
+		let route = super::block_header_route(config, state, MockDatabase::default());
+		let response = warp::test::request()
+			.method("GET")
+			.path(&format!("/v2/blocks/{block_number}/header"))
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+		assert_eq!(response.body(), expected);
+	}
+
+	#[tokio::test]
+	async fn block_header_route_not_found() {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			..Default::default()
+		}));
+
+		let route = super::block_header_route(config, state, MockDatabase::default());
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/11/header")
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	fn header() -> DaHeader {
+		DaHeader {
+			parent_hash: H256::default(),
+			number: 1,
+			state_root: H256::default(),
+			extrinsics_root: H256::default(),
+			extension: HeaderExtension::V2(v2::HeaderExtension {
+				commitment: KateCommitment::default(),
+				app_lookup: CompactDataLookup {
+					size: 0,
+					index: vec![],
+				},
+			}),
+			digest: Digest { logs: vec![] },
+		}
+	}
+
+	#[tokio::test]
+	async fn block_header_route_ok() {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State {
+			latest: 1,
+			header_verified: Some(BlockRange::init(1)),
+			..Default::default()
+		}));
+		let database = MockDatabase {
+			header: Some(header()),
+			..Default::default()
+		};
+		let route = super::block_header_route(config, state, database);
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/1/header")
+			.reply(&route)
+			.await;
+		assert_eq!(
+			response.body(),
+			r#"{"hash":"0x02419eab253b08659745c684e0bb26c15f327336d46c2c1e76e6cb67f734f79f","parent_hash":"0x0000000000000000000000000000000000000000000000000000000000000000","number":1,"state_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extrinsics_root":"0x0000000000000000000000000000000000000000000000000000000000000000","extension":{"rows":0,"cols":0,"data_root":null,"commitments":[],"app_lookup":{"size":0,"index":[]}}}"#
 		);
 	}
 
@@ -390,11 +505,16 @@ mod tests {
 	#[derive(Clone, Default)]
 	struct MockDatabase {
 		confidence: Option<u32>,
+		header: Option<DaHeader>,
 	}
 
 	impl Database for MockDatabase {
-		fn get_confidence(&self, _block_number: u32) -> anyhow::Result<Option<u32>> {
+		fn get_confidence(&self, _: u32) -> anyhow::Result<Option<u32>> {
 			Ok(self.confidence)
+		}
+
+		fn get_header(&self, _: u32) -> anyhow::Result<Option<DaHeader>> {
+			Ok(self.header.clone())
 		}
 	}
 
