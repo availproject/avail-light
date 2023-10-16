@@ -1,12 +1,16 @@
-use anyhow::Result;
 use avail_subxt::utils::H256;
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use std::{collections::HashSet, fmt::Display};
+use rocksdb::DB;
+use std::{
+	collections::HashSet,
+	fmt::Display,
+	sync::{Arc, Mutex},
+};
 use tokio::sync::{broadcast, mpsc};
 use tracing::debug;
 
-use crate::consts::EXPECTED_NETWORK_VERSION;
+use crate::{consts::EXPECTED_NETWORK_VERSION, types::State};
 
 use self::{client::Client, event_loop::EventLoop};
 
@@ -115,15 +119,16 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
-pub fn init(nodes: Nodes) -> Result<(Client, EventLoop)> {
-	// create sender channel for Event Loop Commands
+pub fn init(db: Arc<DB>, state: Arc<Mutex<State>>, nodes: Nodes) -> (Client, EventLoop) {
+	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
-	let (event_sender, event_receiver) = broadcast::channel(1000);
+	// create output channel for RPC Subscription Events
+	let (event_sender, _) = broadcast::channel(1000);
 
-	Ok((
+	(
 		Client::new(command_sender),
-		EventLoop::new(nodes, command_receiver, event_sender),
-	))
+		EventLoop::new(db, state, nodes, command_receiver, event_sender),
+	)
 }
 
 /// Generates random cell positions for sampling
