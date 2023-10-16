@@ -5,10 +5,15 @@ use avail_subxt::{
 	utils::H256,
 	AvailConfig,
 };
+use codec::Encode;
 use futures::Stream;
 use kate_recovery::{data::Cell, matrix::Position};
 use rocksdb::DB;
-use sp_core::ed25519::{self, Public};
+use sp_core::{
+	blake2_256,
+	ed25519::{self, Public},
+	Pair,
+};
 use std::{
 	sync::{Arc, Mutex},
 	time::Instant,
@@ -19,17 +24,21 @@ use subxt::{
 };
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{info, instrument, warn};
+use tracing::{info, instrument, trace, warn};
 
 use super::{client::Command, ExpectedVersion, Nodes, CELL_WITH_PROOF_SIZE};
 use crate::{
-	types::{GrandpaJustification, RuntimeVersion, State},
+	data::store_finality_sync_checkpoint,
+	types::{FinalitySyncCheckpoint, GrandpaJustification, RuntimeVersion, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Event {
-	HeaderUpdate { header: Header, instant: Instant },
+	HeaderUpdate {
+		header: Header,
+		received_at: Instant,
+	},
 }
 
 enum Subscription {
@@ -156,7 +165,7 @@ impl EventLoop {
 		Ok(header_subscription.merge(justification_subscription))
 	}
 
-	async fn set_finalized_block_data(&mut self) -> Result<()> {
+	async fn gather_block_data(&mut self) -> Result<()> {
 		// get the Hash of the Finalized Head
 		let last_finalized_block_hash = self.get_chain_head_hash().await?;
 
@@ -188,7 +197,7 @@ impl EventLoop {
 		// try to create RPC Subscription Stream
 		let mut subscriptions_stream = self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
-		self.set_finalized_block_data().await?;
+		self.gather_block_data().await?;
 
 		loop {
 			tokio::select! {
@@ -197,7 +206,8 @@ impl EventLoop {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the RPC Event Loop
 					None => return Err(anyhow!("RPC Event Loop shutting down")),
-				}
+				},
+				else => self.output_verified_block_headers().await,
 			}
 		}
 	}
@@ -247,6 +257,137 @@ impl EventLoop {
 				);
 				self.block_data.justifications.push(justification);
 			},
+		}
+	}
+
+	async fn output_verified_block_headers(&mut self) {
+		while let Some(justification) = self.block_data.justifications.pop() {
+			// iterate through Headers and try to find a matching one
+			if let Some(pos) = self
+				.block_data
+				.unverified_headers
+				.iter()
+				.map(|(h, _)| Encode::using_encoded(h, blake2_256).into())
+				.position(|hash| justification.commit.target_hash == hash)
+			{
+				// basically, pop it out of the collection
+				let (header, received_at) = self.block_data.unverified_headers.swap_remove(pos);
+				// form a message which is signed in the Justification, it's a triplet of a Precommit,
+				// round number and set_id (taken from Substrate code)
+				let signed_message = Encode::encode(&(
+					&SignerMessage::PrecommitMessage(
+						justification.commit.precommits[0].clone().precommit,
+					),
+					&justification.round,
+					&self.block_data.current_valset.set_id, // Set ID is needed here.
+				));
+
+				// verify all the Signatures of the Justification signs,
+				// verify the hash of the block and extract all the signer addresses
+				let signer_addresses = justification
+					.commit
+					.precommits
+					.iter()
+					.map(|precommit| {
+						let is_ok = <ed25519::Pair as Pair>::verify(
+							&precommit.signature,
+							&signed_message,
+							&precommit.id,
+						);
+						is_ok
+							.then(|| precommit.clone().id)
+							.ok_or_else(|| anyhow!("Not signed by this signature!"))
+					})
+					.collect::<Result<Vec<_>>>();
+
+				let signer_addresses = signer_addresses.unwrap();
+				// match all the Signer addresses to the Current Validator Set
+				let num_matched_addresses = signer_addresses
+					.iter()
+					.filter(|x| {
+						self.block_data
+							.current_valset
+							.validator_set
+							.iter()
+							.any(|e| e.0.eq(&x.0))
+					})
+					.count();
+
+				info!(
+					"Number of matching signatures: {num_matched_addresses}/{} for block {}",
+					self.block_data.current_valset.validator_set.len(),
+					header.number
+				);
+
+				assert!(
+					num_matched_addresses
+						< self.block_data.current_valset.validator_set.len() * 2 / 3,
+					"Not signed by the supermajority of the validator set."
+				);
+
+				// store Finality Checkpoint if finality is synced
+				let state = self.state.lock().unwrap();
+				if !state.finality_synced {
+					info!("Storing finality checkpoint at block {}", header.number);
+					store_finality_sync_checkpoint(
+						self.db.clone(),
+						FinalitySyncCheckpoint {
+							set_id: self.block_data.current_valset.set_id,
+							number: header.number,
+							validator_set: self.block_data.current_valset.validator_set.clone(),
+						},
+					)
+					.unwrap();
+				}
+
+				// try and get get all the skipped blocks, if they exist
+				if let Some(last_header) = self.block_data.last_finalized_block_header.as_ref() {
+					for bl_num in (last_header.number + 1)..header.number {
+						info!("Sending skipped block {bl_num}");
+						let (header, received_at) = match self
+							.block_data
+							.unverified_headers
+							.iter()
+							.position(|(h, _)| h.number == bl_num)
+						{
+							Some(pos) => {
+								info!("Fetching header from unverified headers");
+								self.block_data.unverified_headers.swap_remove(pos)
+							},
+							None => {
+								info!("Fetching header from RPC");
+								(
+									self.get_header_by_block_number(bl_num).await.unwrap().0,
+									Instant::now(),
+								)
+							},
+						};
+						// send as output event
+						self.event_sender
+							.send(Event::HeaderUpdate {
+								header,
+								received_at,
+							})
+							.unwrap();
+					}
+				}
+
+				info!("Sending finalized block {}", header.number);
+				// reset Last Finalized Block Header
+				self.block_data.last_finalized_block_header = Some(header.clone());
+
+				// finally, send the Verified Block Header
+				self.event_sender
+					.send(Event::HeaderUpdate {
+						header,
+						received_at,
+					})
+					.unwrap();
+			} else {
+				trace!("Matched pair of header/justification not found.");
+				self.block_data.justifications.push(justification);
+				break;
+			}
 		}
 	}
 
