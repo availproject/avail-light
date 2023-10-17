@@ -179,9 +179,9 @@ put_batch_size = 100
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
- # Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
- # starting block at the point the LC is started and is only checked for new blocks. (default: true)
- sync_finality_enable = true
+# Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
+# starting block at the point the LC is started and is only checked for new blocks. (default: true)
+sync_finality_enable = true
 # Time-to-live for DHT entries in seconds (default: 24h).
 # Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
@@ -222,7 +222,7 @@ max_kad_provided_keys = 1024
 - Immediately after starting a fresh light client, block sync is executed from a starting block set with the `sync_start_block` config parameter. The sync process is using both the DHT and RPC for that purpose.
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
-- When an LC is freshly connected to a network, block finality is synced from the first block. Block finality check can be disabled with the `sync_finality_enable` flag
+- When an LC is freshly connected to a network, block finality is synced from the first block. If the LC is connected to a non-archive node on a long running network, initial validator sets won't be available and the finality checks will fail. In that case we recommend disabling the `sync_finality_enable` flag
 - When switching between the networks (i.e. Biryani and local devnet), LC state in the `avail_path` directory has to be cleared
 - OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
