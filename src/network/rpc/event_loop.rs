@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
-	api::data_availability::calls::types::SubmitData,
+	api::{
+		self, data_availability::calls::types::SubmitData,
+		runtime_types::sp_core::crypto::KeyTypeId,
+	},
 	avail::{self},
 	build_client,
 	primitives::{grandpa::AuthorityId, AvailExtrinsicParams, Header},
@@ -23,15 +26,19 @@ use std::{
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	rpc_params,
-	storage::Storage,
+	storage::StorageKey,
 	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
+	utils::AccountId32,
 	OnlineClient,
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{
+	broadcast::{self, Receiver},
+	mpsc,
+};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tracing::{info, instrument, trace, warn};
 
-use super::{client::Command, ExpectedVersion, Nodes, CELL_WITH_PROOF_SIZE};
+use super::{client::Command, ExpectedVersion, Nodes, WrappedProof, CELL_WITH_PROOF_SIZE};
 use crate::{
 	data::store_finality_sync_checkpoint,
 	types::{FinalitySyncCheckpoint, GrandpaJustification, RuntimeVersion, SignerMessage, State},
@@ -116,7 +123,7 @@ impl EventLoop {
 		// client was built successfully, keep it
 		self.subxt_client.replace(client);
 		let system_version = self.get_system_version().await?;
-		let runtime_version = self.get_runtime_version().await?;
+		let runtime_version = self.request_runtime_version().await?;
 
 		let version = format!(
 			"v/{}/{}/{}",
@@ -179,7 +186,7 @@ impl EventLoop {
 			.get_validator_set_by_hash(last_finalized_block_hash)
 			.await?;
 		// fetch the set ID from storage at current height
-		let set_id = self.get_set_id_by_hash(last_finalized_block_hash).await?;
+		let set_id = self.fetch_set_id_at(last_finalized_block_hash).await?;
 		// set Current Valset
 		info!("Current set: {:?}", (validator_set.clone(), set_id));
 		self.block_data.current_valset = CurrentValidators {
@@ -217,10 +224,8 @@ impl EventLoop {
 		}
 	}
 
-	pub fn subscribe(&mut self) -> BroadcastStream<Event> {
-		// convert the broadcast receiver into a RPC Event stream
-		let event_receiver = self.event_sender.subscribe();
-		BroadcastStream::new(event_receiver)
+	pub fn subscribe(&mut self) -> Receiver<Event> {
+		self.event_sender.subscribe()
 	}
 
 	fn handle_subscription_stream(&mut self, subscription: Subscription) {
@@ -400,12 +405,12 @@ impl EventLoop {
 				let res = self.get_system_version().await;
 				_ = response_sender.send(res);
 			},
-			Command::GetRuntimeVersion { response_sender } => {
-				let res = self.get_runtime_version().await;
+			Command::RequestRuntimeVersion { response_sender } => {
+				let res = self.request_runtime_version().await;
 				_ = response_sender.send(res);
 			},
 			Command::GetBlockHash {
-				block_num,
+				block_number: block_num,
 				response_sender,
 			} => {
 				let res = self.get_block_hash(block_num).await;
@@ -426,7 +431,7 @@ impl EventLoop {
 				_ = response_sender.send(res);
 			},
 			Command::GetValidatorSetByBlockNumber {
-				block_num,
+				block_number: block_num,
 				response_sender,
 			} => {
 				let res = self.get_validator_set_by_block_number(block_num).await;
@@ -439,13 +444,6 @@ impl EventLoop {
 			Command::GetChainHeadHash { response_sender } => {
 				let res = self.get_chain_head_hash().await;
 				_ = response_sender.send(res)
-			},
-			Command::GetCurrentSetIdByHash {
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.get_set_id_by_hash(block_hash).await;
-				_ = response_sender.send(res);
 			},
 			Command::GetCurrentSetIdByBlockNumber {
 				block_number,
@@ -461,20 +459,20 @@ impl EventLoop {
 				let res = self.get_header_by_block_number(block_number).await;
 				_ = response_sender.send(res);
 			},
-			Command::GetKateRows {
+			Command::RequestKateRows {
 				rows,
 				block_hash,
 				response_sender,
 			} => {
-				let res = self.get_kate_rows(rows, block_hash).await;
+				let res = self.request_kate_rows(rows, block_hash).await;
 				_ = response_sender.send(res);
 			},
-			Command::GetKateProof {
+			Command::RequestKateProof {
 				positions,
 				block_hash,
 				response_sender,
 			} => {
-				let res = self.get_kate_proof(&positions, block_hash).await;
+				let res = self.request_kate_proof(&positions, block_hash).await;
 				_ = response_sender.send(res)
 			},
 			Command::GetConnectedNode { response_sender } => {
@@ -484,11 +482,18 @@ impl EventLoop {
 					.ok_or_else(|| anyhow!("No connected node at the moment"));
 				_ = response_sender.send(node);
 			},
-			Command::StorageAt {
+			Command::GetValidatorSetAt {
+				block_hash: genesis_hash,
+				response_sender,
+			} => {
+				let res = self.get_validator_set_at(genesis_hash).await;
+				_ = response_sender.send(res);
+			},
+			Command::FetchSetIdAt {
 				block_hash,
 				response_sender,
 			} => {
-				let res = self.storage_at(block_hash);
+				let res = self.fetch_set_id_at(block_hash).await;
 				_ = response_sender.send(res);
 			},
 			Command::SubmitFromBytesAndWatch {
@@ -509,7 +514,37 @@ impl EventLoop {
 					.await;
 				_ = response_sender.send(res);
 			},
-			Command::GetPagedStorageKeys { response_sender } => {},
+			Command::GetPagedStorageKeys {
+				key,
+				count,
+				start_key,
+				hash,
+				response_sender,
+			} => {
+				let res = self
+					.get_paged_storage_keys(&key, count, start_key.as_deref(), hash)
+					.await;
+				_ = response_sender.send(res);
+			},
+			Command::GetSessionKeyOwnerAt {
+				block_hash,
+				public_key,
+				response_sender,
+			} => {
+				let res = self.get_session_key_owner_at(block_hash, public_key).await;
+				_ = response_sender.send(res);
+			},
+			Command::RequestFinalityProof {
+				block_number,
+				response_sender,
+			} => {
+				let res = self.request_finality_proof(block_number).await;
+				_ = response_sender.send(res);
+			},
+			Command::GetGenesisHash { response_sender } => {
+				let res = self.get_genesis_hash();
+				_ = response_sender.send(res);
+			},
 		}
 	}
 
@@ -521,12 +556,12 @@ impl EventLoop {
 			.context("Failed to retrieve System version")
 	}
 
-	async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
+	async fn request_runtime_version(&self) -> Result<RuntimeVersion> {
 		self.unpack_client()?
 			.rpc()
 			.request("state_getRuntimeVersion", RpcParams::new())
 			.await
-			.context("Failed to retrieve Runtime version")
+			.map_err(|e| anyhow!("Failed to retrieve Runtime version. Error: {e}"))
 	}
 
 	async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
@@ -578,11 +613,11 @@ impl EventLoop {
 			.rpc()
 			.finalized_head()
 			.await
-			.context("Can not get finalized head hash")
+			.map_err(|e| anyhow!(e))
 	}
 
-	async fn get_set_id_by_hash(&self, block_hash: H256) -> Result<u64> {
-		let set_id_key = avail_subxt::api::storage().grandpa().current_set_id();
+	async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
+		let set_id_key = api::storage().grandpa().current_set_id();
 
 		self.unpack_client()?
 			.storage()
@@ -594,7 +629,7 @@ impl EventLoop {
 
 	async fn get_set_id_by_block_number(&self, block_number: u32) -> Result<u64> {
 		let block_hash = self.get_block_hash(block_number).await?;
-		self.get_set_id_by_hash(block_hash).await
+		self.fetch_set_id_at(block_hash).await
 	}
 
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
@@ -603,7 +638,7 @@ impl EventLoop {
 	}
 
 	#[instrument(skip_all, level = "trace")]
-	async fn get_kate_rows(
+	async fn request_kate_rows(
 		&self,
 		rows: Vec<u32>,
 		block_hash: H256,
@@ -616,10 +651,14 @@ impl EventLoop {
 			.rpc()
 			.request("kate_queryRows", params)
 			.await
-			.context("Failed to get Kate rows")
+			.map_err(|e| anyhow!("Failed to query Kate Rows. Error: {e}"))
 	}
 
-	async fn get_kate_proof(&self, positions: &[Position], block_hash: H256) -> Result<Vec<Cell>> {
+	async fn request_kate_proof(
+		&self,
+		positions: &[Position],
+		block_hash: H256,
+	) -> Result<Vec<Cell>> {
 		let mut params = RpcParams::new();
 		params.push(&positions)?;
 		params.push(block_hash)?;
@@ -629,7 +668,7 @@ impl EventLoop {
 			.rpc()
 			.request("kate_queryProof", params)
 			.await
-			.context("Failed to fetch proofs")?;
+			.map_err(|e| anyhow!("Failed to query Kate Proof. Error: {e}"))?;
 
 		let i = proofs
 			.chunks_exact(CELL_WITH_PROOF_SIZE)
@@ -642,13 +681,16 @@ impl EventLoop {
 			.collect::<Vec<_>>())
 	}
 
-	// #[cfg(feature = "api-v2")]
-	fn storage_at(
-		&self,
-		block_hash: H256,
-	) -> Result<Storage<AvailConfig, OnlineClient<AvailConfig>>> {
-		let client = self.unpack_client()?;
-		Ok(client.storage().at(block_hash))
+	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
+		// get validator set from genesis (Substrate Account ID)
+		let validators_key = api::storage().session().validators();
+
+		self.unpack_client()?
+			.storage()
+			.at(block_hash)
+			.fetch(&validators_key)
+			.await
+			.map_err(|e| anyhow!(e))
 	}
 
 	// #[cfg(feature = "api-v2")]
@@ -675,5 +717,55 @@ impl EventLoop {
 			.submit_and_watch()
 			.await
 			.map_err(|e| anyhow!(e))
+	}
+
+	async fn get_paged_storage_keys(
+		&self,
+		key: &[u8],
+		count: u32,
+		start_key: Option<&[u8]>,
+		hash: Option<H256>,
+	) -> Result<Vec<StorageKey>> {
+		self.unpack_client()?
+			.rpc()
+			.storage_keys_paged(key, count, start_key, hash)
+			.await
+			.map_err(|e| anyhow!(e))
+	}
+
+	async fn get_session_key_owner_at(
+		&self,
+		block_hash: H256,
+		public_key: ed25519::Public,
+	) -> Result<Option<AccountId32>> {
+		let session_key_key_owner = api::storage().session().key_owner(
+			KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
+			public_key.0,
+		);
+
+		self.unpack_client()?
+			.storage()
+			.at(block_hash)
+			.fetch(&session_key_key_owner)
+			.await
+			.map_err(|e| anyhow!(e))
+	}
+
+	async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof> {
+		let mut params = RpcParams::new();
+		params.push(block_number)?;
+
+		let res: WrappedProof = self
+			.unpack_client()?
+			.rpc()
+			.request("grandpa_proveFinality", params)
+			.await
+			.map_err(|e| anyhow!("Request failed at Finality Proof. Error: {e}"))?;
+		Ok(res)
+	}
+
+	fn get_genesis_hash(&self) -> Result<H256> {
+		let client = self.unpack_client()?;
+		Ok(client.genesis_hash())
 	}
 }

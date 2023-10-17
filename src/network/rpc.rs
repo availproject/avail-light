@@ -1,7 +1,10 @@
-use avail_subxt::utils::H256;
+use avail_subxt::{primitives::Header, utils::H256};
+use codec::Decode;
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use rocksdb::DB;
+use serde::{de, Deserialize};
+use sp_core::bytes::from_hex;
 use std::{
 	collections::HashSet,
 	fmt::Display,
@@ -10,7 +13,10 @@ use std::{
 use tokio::sync::{broadcast, mpsc};
 use tracing::debug;
 
-use crate::{consts::EXPECTED_NETWORK_VERSION, types::State};
+use crate::{
+	consts::EXPECTED_NETWORK_VERSION,
+	types::{GrandpaJustification, State},
+};
 
 mod client;
 mod event_loop;
@@ -20,6 +26,41 @@ use event_loop::EventLoop;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WrappedJustification(pub GrandpaJustification);
+
+impl Decode for WrappedJustification {
+	fn decode<I: codec::Input>(input: &mut I) -> std::result::Result<Self, codec::Error> {
+		let j: Vec<u8> = Decode::decode(input)?;
+		let jj: GrandpaJustification = Decode::decode(&mut &j[..])?;
+		Ok(WrappedJustification(jj))
+	}
+}
+
+#[derive(Debug, Deserialize, Decode, Clone)]
+pub struct FinalityProof {
+	/// The hash of block F for which justification is provided.
+	pub block: H256,
+	/// Justification of the block F.
+	pub justification: WrappedJustification,
+	/// The set of headers in the range (B; F] that we believe are unknown to the caller. Ordered.
+	pub unknown_headers: Vec<Header>,
+}
+
+#[derive(Debug, Decode, Clone)]
+pub struct WrappedProof(pub FinalityProof);
+
+impl<'de> Deserialize<'de> for WrappedProof {
+	fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		let data = from_hex(&String::deserialize(deserializer)?)
+			.map_err(|e| de::Error::custom(format!("{:?}", e)))?;
+		Decode::decode(&mut &data[..]).map_err(|e| de::Error::custom(format!("{:?}", e)))
+	}
+}
 
 #[derive(Clone)]
 pub struct Node {
