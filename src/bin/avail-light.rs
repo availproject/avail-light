@@ -10,7 +10,7 @@ use avail_light::{
 use avail_light::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
 	data::store_last_full_node_ws_in_db,
-	types::{Mode, RuntimeConfig, State},
+	types::{CliOpts, Mode, RuntimeConfig, State},
 };
 use avail_subxt::primitives::Header;
 use clap::Parser;
@@ -45,13 +45,6 @@ static GLOBAL: Jemalloc = Jemalloc;
 const CLIENT_ROLE: &str = "lightnode";
 
 /// Light Client for Avail Blockchain
-#[derive(Parser)]
-#[command(version)]
-struct CliOpts {
-	/// Path to the yaml configuration file
-	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
-	config: String,
-}
 
 fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut confidence_cf_opts = Options::default();
@@ -105,9 +98,9 @@ fn parse_log_level(log_level: &str, default: Level) -> (Level, Option<ParseLevel
 
 async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let opts = CliOpts::parse();
-	let config_path = &opts.config;
-	let cfg: RuntimeConfig = confy::load_path(config_path)
-		.context(format!("Failed to load configuration from {config_path}"))?;
+
+	let mut cfg: RuntimeConfig = RuntimeConfig::default();
+	cfg.load_runtime_config(opts.network, opts.app_id, opts.config)?;
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 

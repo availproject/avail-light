@@ -1,10 +1,5 @@
 //! Shared light client structs and enums.
 
-use std::fmt;
-use std::num::NonZeroUsize;
-use std::str::FromStr;
-use std::time::{Duration, Instant};
-
 use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::anyhow;
 use anyhow::{Context, Result};
@@ -18,12 +13,31 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+use std::path::Path;
+use std::str::FromStr;
+
+use clap::Parser;
+use std::fmt;
+use std::num::NonZeroUsize;
+use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
+
+#[derive(Parser)]
+#[command(version)]
+pub struct CliOpts {
+	/// Path to the yaml configuration file
+	#[arg(short, long, value_name = "FILE")]
+	pub config: Option<String>,
+	#[arg(long, value_name = "appId")]
+	pub app_id: Option<u32>,
+	#[arg(short, long, value_name = "network")]
+	pub network: Option<Network>,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -490,7 +504,6 @@ impl From<&RuntimeConfig> for AppClientConfig {
 		}
 	}
 }
-
 impl Default for RuntimeConfig {
 	fn default() -> Self {
 		RuntimeConfig {
@@ -543,6 +556,84 @@ impl Default for RuntimeConfig {
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 		}
+	}
+}
+
+#[derive(Clone)]
+pub enum Network {
+	Local,
+	Biryani,
+}
+
+impl FromStr for Network {
+	type Err = String;
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		match s {
+			"local" => Ok(Network::Local),
+			"biryani" => Ok(Network::Biryani),
+			_ => Err("valid values are: local, biryani".to_string()),
+		}
+	}
+}
+
+impl Network {
+	fn peer_id(&self) -> &str {
+		match self {
+			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
+			Network::Biryani => "12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf",
+		}
+	}
+
+	fn multiaddr(&self) -> &str {
+		match self {
+			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
+			Network::Biryani => {
+				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
+			},
+		}
+	}
+
+	fn full_node_ws(&self) -> &str {
+		match self {
+			Network::Local => "ws://127.0.0.1:9944",
+			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
+		}
+	}
+}
+
+impl RuntimeConfig {
+	pub fn load_runtime_config(
+		&mut self,
+		network: Option<Network>,
+		app_id: Option<u32>,
+		config_file: Option<String>,
+	) -> Result<()> {
+		if config_file.is_some() {
+			let config_path =
+				config_file.context("No network or config file parameter provided.")?;
+			if !Path::new(&config_path).exists() {
+				return Err(anyhow!("Provided config file doesn't exist."));
+			}
+			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
+				.context(format!("Failed to load configuration from {config_path}"))?;
+			*self = cfg;
+		}
+
+		if let Some(network) = network {
+			let bootstrap: (PeerId, Multiaddr) = (
+				PeerId::from_str(network.peer_id())
+					.context("unable to parse default bootstrap peerID")?,
+				Multiaddr::from_str(network.multiaddr())
+					.context("unable to parse default bootstrap multi-address")?,
+			);
+			self.full_node_ws = vec![network.full_node_ws().to_string()];
+			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		}
+
+		self.app_id = app_id;
+
+		Ok(())
 	}
 }
 
