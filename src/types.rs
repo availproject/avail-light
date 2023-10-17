@@ -587,7 +587,7 @@ impl Network {
 
 	fn multiaddr(&self) -> &str {
 		match self {
-			Network::Local => "/ip4/127.0.0.1/udp/37000/quic-v1",
+			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
 			Network::Biryani => {
 				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
 			},
