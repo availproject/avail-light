@@ -36,7 +36,7 @@ pub struct CliOpts {
 	#[arg(long, value_name = "appId")]
 	pub app_id: Option<u32>,
 	#[arg(short, long, value_name = "network")]
-	pub network: Option<String>,
+	pub network: Option<Network>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -559,48 +559,68 @@ impl Default for RuntimeConfig {
 	}
 }
 
+#[derive(Clone)]
+pub enum Network {
+	Local,
+	Biryani,
+}
+
+impl FromStr for Network {
+	type Err = String;
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		match s {
+			"local" => Ok(Network::Local),
+			"biryani" => Ok(Network::Biryani),
+			_ => Err("valid values are: local, biryani".to_string()),
+		}
+	}
+}
+
+impl Network {
+	fn peer_id(&self) -> &str {
+		match self {
+			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
+			Network::Biryani => "12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf",
+		}
+	}
+
+	fn multiaddr(&self) -> &str {
+		match self {
+			Network::Local => "/ip4/127.0.0.1/udp/37000/quic-v1",
+			Network::Biryani => {
+				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
+			},
+		}
+	}
+
+	fn full_node_ws(&self) -> &str {
+		match self {
+			Network::Local => "ws://127.0.0.1:9944",
+			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
+		}
+	}
+}
+
 impl RuntimeConfig {
 	pub fn load_runtime_config(
 		&mut self,
-		network: Option<String>,
+		network: Option<Network>,
 		app_id: Option<u32>,
 		config_file: Option<String>,
 	) -> Result<()> {
 		self.app_id = app_id;
 		if let Some(network) = network {
-			match network.as_str() {
-				"biryani" => {
-					let bootstrap: (PeerId, Multiaddr) = (
-						PeerId::from_str("12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf")
-							.context("unable to parse default bootstrap peerID")?,
-						Multiaddr::from_str(
-							"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1",
-						)
-						.context("unable to parse default bootstrap multi-address")?,
-					);
-					self.full_node_ws = vec!["wss://biryani-devnet.avail.tools:443/ws".to_string()];
-					self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
-					return Ok(());
-				},
-				"local" => {
-					let bootstrap: (PeerId, Multiaddr) = (
-						PeerId::from_str("12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz")
-							.context("unable to parse default bootstrap peerID")?,
-						Multiaddr::from_str("/ip4/127.0.0.1/udp/37000/quic-v1")
-							.context("unable to parse default bootstrap multi-address")?,
-					);
-					self.full_node_ws = vec!["ws://127.0.0.1:9944".to_string()];
-					self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
-					return Ok(());
-				},
-
-				_ => {
-					return Err(anyhow!("Provided network doesn't exist."));
-				},
-			}
-		}
-		// Custom configuration (config file required)
-		else {
+			let bootstrap: (PeerId, Multiaddr) = (
+				PeerId::from_str(network.peer_id())
+					.context("unable to parse default bootstrap peerID")?,
+				Multiaddr::from_str(network.multiaddr())
+					.context("unable to parse default bootstrap multi-address")?,
+			);
+			self.full_node_ws = vec![network.full_node_ws().to_string()];
+			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+		} else {
+			// Custom configuration (config file required)
 			let config_path =
 				config_file.context("No network or config file parameter provided.")?;
 			if !Path::new(&config_path).exists() {
@@ -610,7 +630,7 @@ impl RuntimeConfig {
 			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
 				.context(format!("Failed to load configuration from {config_path}"))?;
 			*self = cfg;
-		};
+		}
 		Ok(())
 	}
 }
