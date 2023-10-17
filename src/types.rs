@@ -610,6 +610,17 @@ impl RuntimeConfig {
 		config_file: Option<String>,
 	) -> Result<()> {
 		self.app_id = app_id;
+		if config_file.is_some() {
+			let config_path =
+				config_file.context("No network or config file parameter provided.")?;
+			if !Path::new(&config_path).exists() {
+				return Err(anyhow!("Provided config file doesn't exist."));
+			}
+			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
+				.context(format!("Failed to load configuration from {config_path}"))?;
+			*self = cfg;
+		}
+
 		if let Some(network) = network {
 			let bootstrap: (PeerId, Multiaddr) = (
 				PeerId::from_str(network.peer_id())
@@ -619,18 +630,8 @@ impl RuntimeConfig {
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
-		} else {
-			// Custom configuration (config file required)
-			let config_path =
-				config_file.context("No network or config file parameter provided.")?;
-			if !Path::new(&config_path).exists() {
-				return Err(anyhow!("Provided config file doesn't exist."));
-			}
-
-			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
-				.context(format!("Failed to load configuration from {config_path}"))?;
-			*self = cfg;
 		}
+
 		Ok(())
 	}
 }
