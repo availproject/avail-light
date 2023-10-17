@@ -5,10 +5,10 @@ use self::{
 use crate::{
 	api::v2::types::Topic,
 	data::{Database, RocksDB},
+	network::rpc::{Client, Node},
 	rpc::Node,
 	types::{RuntimeConfig, State},
 };
-use avail_subxt::avail;
 use std::{
 	convert::Infallible,
 	fmt::Display,
@@ -185,7 +185,7 @@ pub fn routes(
 	node: Node,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
-	node_client: avail::Client,
+	node_client: Client,
 	ws_clients: WsClients,
 	db: RocksDB,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -234,8 +234,10 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::Database,
+		network::rpc::Node,
 		rpc::Node,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
+		types::{RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::{

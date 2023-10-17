@@ -12,11 +12,11 @@ use tracing::debug;
 
 use crate::{consts::EXPECTED_NETWORK_VERSION, types::State};
 
-use self::{client::Client, event_loop::EventLoop};
-
 mod client;
 mod event_loop;
 
+pub use client::Client;
+use event_loop::EventLoop;
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
@@ -64,10 +64,8 @@ impl Nodes {
 		Some(node.clone())
 	}
 
-	pub fn init(&mut self, nodes: &[String], last_known_node: Option<String>) -> Self {
-		let mut candidates = nodes.to_owned();
-		candidates.retain(|node| Some(node) != last_known_node.as_ref());
-
+	pub fn new(nodes: &[String]) -> Self {
+		let candidates = nodes.to_owned();
 		Self {
 			list: candidates
 				.iter()
@@ -119,7 +117,7 @@ impl Display for ExpectedVersion<'_> {
 	}
 }
 
-pub fn init(db: Arc<DB>, state: Arc<Mutex<State>>, nodes: Nodes) -> (Client, EventLoop) {
+pub fn init(db: Arc<DB>, state: Arc<Mutex<State>>, nodes: &[String]) -> (Client, EventLoop) {
 	// create channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(1000);
 	// create output channel for RPC Subscription Events
@@ -127,7 +125,7 @@ pub fn init(db: Arc<DB>, state: Arc<Mutex<State>>, nodes: Nodes) -> (Client, Eve
 
 	(
 		Client::new(command_sender),
-		EventLoop::new(db, state, nodes, command_receiver, event_sender),
+		EventLoop::new(db, state, Nodes::new(nodes), command_receiver, event_sender),
 	)
 }
 

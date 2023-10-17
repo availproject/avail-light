@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
 	api::v2::types::{Error, Sender},
-	rpc::Node,
+	network::rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;

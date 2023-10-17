@@ -23,10 +23,12 @@ use warp::{
 };
 
 use crate::{
+	network::rpc::Node,
 	rpc::Node,
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
+	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig, State},
 	utils::decode_app_data,
 };
 

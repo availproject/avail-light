@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
-	avail, build_client,
-	primitives::{grandpa::AuthorityId, Header},
+	api::data_availability::calls::types::SubmitData,
+	avail::{self},
+	build_client,
+	primitives::{grandpa::AuthorityId, AvailExtrinsicParams, Header},
 	utils::H256,
 	AvailConfig,
 };
@@ -20,7 +22,10 @@ use std::{
 };
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
-	rpc_params, OnlineClient,
+	rpc_params,
+	storage::Storage,
+	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
+	OnlineClient,
 };
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
@@ -95,7 +100,7 @@ impl EventLoop {
 		}
 	}
 
-	async fn create_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
+	async fn create_subxt_client(&mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
 		// shuffle passed Nodes and start try to connect the first one
 		let node = self
 			.nodes
@@ -193,7 +198,7 @@ impl EventLoop {
 
 	pub async fn run(mut self, expected_version: ExpectedVersion<'_>) -> Result<()> {
 		// try and create Subxt Client
-		self.create_client(expected_version).await?;
+		self.create_subxt_client(expected_version).await?;
 		// try to create RPC Subscription Stream
 		let mut subscriptions_stream = self.stream_subscriptions().await?;
 		// try to get latest Finalized Block Data and set values
@@ -356,10 +361,8 @@ impl EventLoop {
 							},
 							None => {
 								info!("Fetching header from RPC");
-								(
-									self.get_header_by_block_number(bl_num).await.unwrap().0,
-									Instant::now(),
-								)
+								let a = self.get_header_by_block_number(bl_num).await.unwrap().0;
+								(a, Instant::now())
 							},
 						};
 						// send as output event
@@ -474,6 +477,39 @@ impl EventLoop {
 				let res = self.get_kate_proof(&positions, block_hash).await;
 				_ = response_sender.send(res)
 			},
+			Command::GetConnectedNode { response_sender } => {
+				let node = self
+					.nodes
+					.get_current()
+					.ok_or_else(|| anyhow!("No connected node at the moment"));
+				_ = response_sender.send(node);
+			},
+			Command::StorageAt {
+				block_hash,
+				response_sender,
+			} => {
+				let res = self.storage_at(block_hash);
+				_ = response_sender.send(res);
+			},
+			Command::SubmitFromBytesAndWatch {
+				tx_bytes,
+				response_sender,
+			} => {
+				let res = self.submit_from_bytes_and_watch(tx_bytes).await;
+				_ = response_sender.send(res);
+			},
+			Command::SubmitSignedAndWatch {
+				extrinsic,
+				pair_signer,
+				params,
+				response_sender,
+			} => {
+				let res = self
+					.submit_signed_and_watch(extrinsic, pair_signer, params)
+					.await;
+				_ = response_sender.send(res);
+			},
+			Command::GetPagedStorageKeys { response_sender } => {},
 		}
 	}
 
@@ -604,5 +640,40 @@ impl EventLoop {
 			.zip(i)
 			.map(|(&position, &content)| Cell { position, content })
 			.collect::<Vec<_>>())
+	}
+
+	// #[cfg(feature = "api-v2")]
+	fn storage_at(
+		&self,
+		block_hash: H256,
+	) -> Result<Storage<AvailConfig, OnlineClient<AvailConfig>>> {
+		let client = self.unpack_client()?;
+		Ok(client.storage().at(block_hash))
+	}
+
+	// #[cfg(feature = "api-v2")]
+	async fn submit_signed_and_watch(
+		&self,
+		extrinsic: Payload<SubmitData>,
+		pair_signer: PairSigner<AvailConfig, avail::Pair>,
+		params: AvailExtrinsicParams,
+	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
+		self.unpack_client()?
+			.tx()
+			.sign_and_submit_then_watch(&extrinsic, &pair_signer, params)
+			.await
+			.map_err(|e| anyhow!(e))
+	}
+
+	// #[cfg(feature = "api-v2")]
+	async fn submit_from_bytes_and_watch(
+		&self,
+		tx_bytes: Vec<u8>,
+	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
+		let client = self.unpack_client()?;
+		SubmittableExtrinsic::from_bytes(client.clone(), tx_bytes)
+			.submit_and_watch()
+			.await
+			.map_err(|e| anyhow!(e))
 	}
 }

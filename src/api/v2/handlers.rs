@@ -8,8 +8,10 @@ use super::{
 	ws,
 };
 use crate::{
+	api::v2::types::InternalServerError,
 	api::v2::types::{ErrorCode, InternalServerError},
 	data::Database,
+	network::rpc::Node,
 	rpc::Node,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,

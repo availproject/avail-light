@@ -11,11 +11,12 @@
 use crate::api::v2;
 use crate::{
 	api::v1,
-	rpc::Node,
+	network::rpc::{self, Node},
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
 use avail_subxt::avail;
+use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use std::{
 	net::SocketAddr,

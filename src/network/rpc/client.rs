@@ -1,9 +1,21 @@
 use anyhow::{Context, Result};
-use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use avail_subxt::{
+	api::data_availability::calls::types::SubmitData,
+	avail::Pair,
+	primitives::{AvailExtrinsicParams, Header as DaHeader},
+	utils::H256,
+	AvailConfig,
+};
 use kate_recovery::{data::Cell, matrix::Position};
 use sp_core::ed25519::Public;
+use subxt::{
+	storage::Storage,
+	tx::{PairSigner, Payload, TxProgress},
+	OnlineClient,
+};
 use tokio::sync::{mpsc, oneshot};
 
+use super::Node;
 use crate::types::RuntimeVersion;
 
 #[derive(Clone)]
@@ -115,8 +127,8 @@ impl Client {
 
 	pub async fn get_kate_proof(
 		&self,
-		positions: &[Position],
 		block_hash: H256,
+		positions: &[Position],
 	) -> Result<Vec<Cell>> {
 		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
@@ -170,6 +182,74 @@ impl Client {
 			.await
 			.map(|header| (header, hash))
 	}
+
+	pub async fn get_connected_node(&self) -> Result<Node> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::GetConnectedNode { response_sender })
+			.await
+			.context("RPC Command Receiver not be dropped")?;
+		response_receiver
+			.await
+			.context("RPC Command Sender not to be dropped.")?
+	}
+	// #[cfg(feature = "api-v2")]
+	pub async fn storage_at(
+		&self,
+		block_hash: H256,
+	) -> Result<Storage<AvailConfig, OnlineClient<AvailConfig>>> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::StorageAt {
+				response_sender,
+				block_hash,
+			})
+			.await
+			.context("RPC Command Receiver not be dropped")?;
+		response_receiver
+			.await
+			.context("RPC Command Sender not to be dropped.")?
+	}
+
+	// #[cfg(feature = "api-v2")]
+	pub async fn submit_signed_and_watch(
+		&self,
+		extrinsic: Payload<SubmitData>,
+		pair_signer: PairSigner<AvailConfig, Pair>,
+		params: AvailExtrinsicParams,
+	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::SubmitSignedAndWatch {
+				extrinsic,
+				pair_signer,
+				params,
+				response_sender,
+			})
+			.await
+			.context("RPC Command Receiver not be dropped")?;
+		response_receiver
+			.await
+			.context("RPC Command Sender not to be dropped.")?
+	}
+
+	// #[cfg(feature = "api-v2")]
+	pub async fn submit_from_bytes_and_watch(
+		&self,
+		tx_bytes: Vec<u8>,
+	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::SubmitFromBytesAndWatch {
+				tx_bytes,
+				response_sender,
+			})
+			.await
+			.context("RPC Command Receiver not be dropped")?;
+		response_receiver
+			.await
+			.context("RPC Command Sender not to be dropped.")?
+	}
 }
 
 pub enum Command {
@@ -222,5 +302,31 @@ pub enum Command {
 	},
 	GetRuntimeVersion {
 		response_sender: oneshot::Sender<Result<RuntimeVersion>>,
+	},
+	GetConnectedNode {
+		response_sender: oneshot::Sender<Result<Node>>,
+	},
+	// #[cfg(feature = "api-v2")]
+	StorageAt {
+		block_hash: H256,
+		response_sender: oneshot::Sender<Result<Storage<AvailConfig, OnlineClient<AvailConfig>>>>,
+	},
+	// #[cfg(feature = "api-v2")]
+	SubmitFromBytesAndWatch {
+		tx_bytes: Vec<u8>,
+		response_sender:
+			oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>,
+	},
+	// #[cfg(feature = "api-v2")]
+	SubmitSignedAndWatch {
+		extrinsic: Payload<SubmitData>,
+		pair_signer: PairSigner<AvailConfig, Pair>,
+		params: AvailExtrinsicParams,
+		response_sender:
+			oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>,
+	},
+	// #[cfg(feature = "api-v2")]
+	GetPagedStorageKeys {
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 }
