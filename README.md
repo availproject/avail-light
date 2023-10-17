@@ -15,7 +15,7 @@
 
 - Listening on the Avail network for finalized blocks
 - Random sampling and proof verification of a predetermined number of cells (`{row, col}` pairs) on each new block. After successful block verification, confidence is calculated for a number of _cells_ (`N`) in a matrix, with `N` depending on the percentage of certainty the light client wants to achieve.
-- Data reconstruction through application client (WIP).
+- Data reconstruction through application client.
 - HTTP endpoints exposing relevant data, both from the light and application clients
 
 ### Modes of Operation
@@ -32,18 +32,57 @@ Once the data is received, light client verifies individual cells and calculates
 3. **Fat-Client Mode**: The client retrieves larger contiguous chunks of the matrix on each block via RPC calls to an Avail node, and stores them on the DHT. This mode is activated when the `block_matrix_partition` parameter is set in the config file, and is mainly used with the `disable_proof_verification` flag because of the resource cost of cell validation.
    **IMPORTANT**: disabling proof verification introduces a trust assumption towards the node, that the data provided is correct.
 
-4. **Crawl-Client Mode**: Active if the `crawl` feature is enabled, and `crawl_block` parameter is set to `true`. The client crawls cells from DHT for entire block, and calculates success rate. Crawled cell proofs are not being verified, nor rows commitment equality check is being performed. Every block crawling is delayed by `crawl_block_delay` parameter. Delay should be enough so crawling of large block can be compensated. Success rate is emmited in logs and metrics. Crawler can be run in three modes: `cells`, `rows` and `both`. Default mode is `cells`, and it can be configured by `crawl_block_mode` parameter.
+4. **Crawl-Client Mode**: Active if the `crawl` feature is enabled, and `crawl_block` parameter is set to `true`. The client crawls cells from DHT for entire block, and calculates success rate. Crawled cell proofs are not being verified, nor rows commitment equality check is being performed. Every block crawling is delayed by `crawl_block_delay` parameter. Delay should be enough so crawling of large block can be compensated. Success rate is emitted in logs and metrics. Crawler can be run in three modes: `cells`, `rows` and `both`. Default mode is `cells`, and it can be configured by `crawl_block_mode` parameter.
 
 ## Installation
 
-Suppose you are already running our [node](https://github.com/availproject/avail). For this setup we will run it in dev mode:
+Download the Light Client from the [releases](https://github.com/availproject/avail-light/releases) page.
+
+Light Client can also be built from the source:
 
 ```sh
-data-avail --dev
+git clone https://github.com/availproject/avail-light.git
+cd avail-light
+cargo build --release
 ```
 
-Create one yaml configuration file in the root of the project & put following content.
-Config example is for a light client connecting to a local node using a local bootstrap, detailed config specs can be found bellow.
+Resulting `avail-light` binary can be found in the `target/release` directory.
+
+## Usage
+
+### Testnet
+
+The quickest way to run the Avail Light Client is to connect it to Avail testnet, using `--network` flag.
+
+```sh
+./avail-light --network biryani
+```
+
+You can also specify a configuration file to supplement the default configuration:
+
+```sh
+./avail-light --config config.yaml --network biryani
+```
+
+### Local development
+
+For local development, a couple of prerequisites have to be met.
+
+1. Run the Avail [node](https://github.com/availproject/avail). For this setup, we'll run it in `dev` mode:
+
+```sh
+./data-avail --dev
+```
+
+2. A [bootstrap](https://github.com/availproject/avail-light-bootstrap) node is required for deploying the Light Client(s) locally. Once the bootstrap has been downloaded and started, run the following command:
+
+```sh
+./avail-light --network local
+```
+
+Configuration file can also be used for the local deployment, as was the case for the testnet.
+
+Example configuration file:
 
 ```yaml
 # config.yaml
@@ -58,16 +97,24 @@ full_node_ws = ["ws://127.0.0.1:9944"]
 app_id = 0
 confidence = 92.0
 avail_path = "avail_path"
-bootstraps = ["/ip4/127.0.0.1/tcp/37000/quic-v1/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
+bootstraps = ["/ip4/127.0.0.1/tcp/39000/quic-v1/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8xmVDusg272icWsaNHWzN"]
 ```
 
-Now, run the client:
+Full configuration reference can be found [below](#configuration-reference).
 
-```bash
-cargo run -- -c config.yaml
-```
+## Options
 
-## Config reference
+- `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
+  - `biryani`: Biryani Testnet
+  - `local`: For local development
+- `--config`: Location of the configuration file
+- `--appId`: The `appID` parameter for the application client
+
+## Flags
+
+- `--version`: Light Client version
+
+## Configuration reference
 
 ```yaml
 log_level = "info"
@@ -132,6 +179,9 @@ put_batch_size = 100
 block_processing_delay = 0
 # Starting block of the syncing process. Omitting it will disable syncing. (default: None).
 sync_start_block = 0
+# Enable or disable synchronizing finality. If disabled, finality is assumed to be verified until the 
+# starting block at the point the LC is started and is only checked for new blocks. (default: true)
+sync_finality_enable = true
 # Time-to-live for DHT entries in seconds (default: 24h).
 # Default value is set for light clients. Due to the heavy duty nature of the fat clients, it is recommended to be set far bellow this value - not greater than 1hr.
 # Record TTL, publication and replication intervals are co-dependent: TTL >> publication_interval >> replication_interval.
@@ -169,10 +219,11 @@ max_kad_provided_keys = 1024
 
 ## Notes
 
-- When running the first light client in a network, it becomes a bootstrap client. Once its execution is started, it is paused until a second light client has been started and connected to it, so that the DHT bootstrap mechanism can complete successfully.
 - Immediately after starting a fresh light client, block sync is executed from a starting block set with the `sync_start_block` config parameter. The sync process is using both the DHT and RPC for that purpose.
 - In order to spin up a fat client, config needs to contain the `block_matrix_partition` parameter set to a fraction of matrix. It is recommended to set the `disable_proof_verification` to true, because of the resource costs of proof verification.
 - `sync_start_block` needs to be set correspondingly to the blocks cached on the connected node (if downloading data via RPC).
+- When an LC is freshly connected to a network, block finality is synced from the first block. If the LC is connected to a non-archive node on a long running network, initial validator sets won't be available and the finality checks will fail. In that case we recommend disabling the `sync_finality_enable` flag
+- When switching between the networks (i.e. Biryani and local devnet), LC state in the `avail_path` directory has to be cleared
 - OpenTelemetry push metrics are used for light client observability
 - In order to use network analyzer, the light client has to be compiled with `--features 'network-analysis'` flag; when running the LC with network analyzer, sufficient capabilities have to be given to the client in order for it to have the permissions needed to listen on socket: `sudo setcap cap_net_raw,cap_net_admin=eip /path/to/light/client/binary`
 
