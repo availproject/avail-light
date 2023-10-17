@@ -609,7 +609,6 @@ impl RuntimeConfig {
 		app_id: Option<u32>,
 		config_file: Option<String>,
 	) -> Result<()> {
-		self.app_id = app_id;
 		if config_file.is_some() {
 			let config_path =
 				config_file.context("No network or config file parameter provided.")?;
@@ -631,6 +630,8 @@ impl RuntimeConfig {
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		}
+
+		self.app_id = app_id;
 
 		Ok(())
 	}
