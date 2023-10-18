@@ -37,7 +37,7 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info, Subscriber};
+use tracing::{error, info};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
