@@ -5,6 +5,7 @@ use avail_core::AppId;
 use avail_subxt::primitives::Header as DaHeader;
 use avail_subxt::utils::H256;
 use codec::{Decode, Encode};
+use kate_recovery::com::AppData;
 use rocksdb::DB;
 use std::sync::Arc;
 
@@ -144,6 +145,7 @@ pub fn is_confidence_in_db(db: Arc<DB>, block_number: u32) -> Result<bool> {
 pub trait Database: Clone + Send {
 	fn get_confidence(&self, block_number: u32) -> Result<Option<u32>>;
 	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>>;
+	fn get_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>>;
 }
 
 #[derive(Clone)]
@@ -156,6 +158,10 @@ impl Database for RocksDB {
 
 	fn get_header(&self, block_number: u32) -> Result<Option<DaHeader>> {
 		get_block_header_from_db(self.0.clone(), block_number)
+	}
+
+	fn get_data(&self, app_id: u32, block_number: u32) -> Result<Option<AppData>> {
+		get_decoded_data_from_db(self.0.clone(), app_id, block_number)
 	}
 }
 

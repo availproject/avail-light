@@ -1,6 +1,6 @@
 use self::{
 	handlers::{handle_rejection, log_internal_server_error},
-	types::{PublishMessage, Version, WsClients},
+	types::{DataQuery, PublishMessage, Version, WsClients},
 };
 use crate::{
 	api::v2::types::Topic,
@@ -82,6 +82,21 @@ fn block_header_route(
 		.and(warp::any().map(move || state.clone()))
 		.and(warp::any().map(move || db.clone()))
 		.then(handlers::block_header)
+		.map(log_internal_server_error)
+}
+
+fn block_data_route(
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+	db: impl Database,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+	warp::path!("v2" / "blocks" / u32 / "data")
+		.and(warp::get())
+		.and(warp::query::<DataQuery>())
+		.and(warp::any().map(move || config.clone()))
+		.and(warp::any().map(move || state.clone()))
+		.and(warp::any().map(move || db.clone()))
+		.then(handlers::block_data)
 		.map(log_internal_server_error)
 }
 
@@ -198,6 +213,7 @@ pub fn routes(
 			state.clone(),
 			db.clone(),
 		))
+		.or(block_data_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
 		.or(ws_route(
@@ -208,7 +224,10 @@ pub fn routes(
 
 #[cfg(test)]
 mod tests {
-	use super::{block_header_route, block_route, submit_route, transactions, types::Transaction};
+	use super::{
+		block_data_route, block_header_route, block_route, submit_route, transactions,
+		types::Transaction,
+	};
 	use crate::{
 		api::v2::types::{
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
@@ -228,7 +247,7 @@ mod tests {
 		primitives::Header as DaHeader,
 	};
 	use hyper::StatusCode;
-	use kate_recovery::matrix::Partition;
+	use kate_recovery::{com::AppData, matrix::Partition};
 	use sp_core::H256;
 	use std::{
 		collections::HashSet,
@@ -466,6 +485,120 @@ mod tests {
 		);
 	}
 
+	#[test_case(0, r#"Block data is not available"#  ; "Block is unavailable")]
+	#[test_case(6, r#"Block data is not available"#  ; "Block is pending")]
+	#[test_case(8, r#"Block data is not available"#  ; "Block is in verifying-data state")]
+	#[test_case(9, r#"Block data is not available"#  ; "Block is in verifying-confidence state")]
+	#[test_case(10, r#"Block data is not available"#  ; "Block is in verifying-header state")]
+	#[tokio::test]
+	async fn block_data_route_bad_request(block_number: u32, expected: &str) {
+		let config = RuntimeConfig {
+			app_id: Some(1),
+			sync_start_block: Some(1),
+			..Default::default()
+		};
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			sync_latest: Some(5),
+			header_verified: Some(BlockRange::init(10)),
+			confidence_achieved: Some(BlockRange::init(9)),
+			data_verified: Some(BlockRange::init(8)),
+			..Default::default()
+		}));
+
+		let route = super::block_data_route(config, state, MockDatabase::default());
+		let response = warp::test::request()
+			.method("GET")
+			.path(&format!("/v2/blocks/{block_number}/data"))
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+		assert_eq!(response.body(), expected);
+	}
+
+	#[tokio::test]
+	async fn block_data_route_not_found() {
+		let config = RuntimeConfig::default();
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			..Default::default()
+		}));
+
+		let route = super::block_data_route(config, state, MockDatabase::default());
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/11/data")
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::NOT_FOUND);
+	}
+
+	#[tokio::test]
+	async fn block_data_route_ok_empty() {
+		let config = RuntimeConfig {
+			app_id: Some(1),
+			..Default::default()
+		};
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			header_verified: Some(BlockRange::init(5)),
+			confidence_achieved: Some(BlockRange::init(5)),
+			data_verified: Some(BlockRange::init(5)),
+			..Default::default()
+		}));
+
+		let route = super::block_data_route(config, state, MockDatabase::default());
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/5/data")
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			response.body(),
+			r#"{"block_number":5,"data_transactions":[]}"#
+		);
+	}
+
+	#[tokio::test]
+	async fn block_data_route_ok() {
+		let config = RuntimeConfig {
+			app_id: Some(1),
+			..Default::default()
+		};
+		let state = Arc::new(Mutex::new(State {
+			latest: 10,
+			header_verified: Some(BlockRange::init(5)),
+			confidence_achieved: Some(BlockRange::init(5)),
+			data_verified: Some(BlockRange::init(5)),
+			..Default::default()
+		}));
+		let db = MockDatabase {
+			app_data: Some(vec![vec![
+				189, 1, 132, 0, 212, 53, 147, 199, 21, 253, 211, 28, 97, 20, 26, 189, 4, 169, 159,
+				214, 130, 44, 133, 88, 133, 76, 205, 227, 154, 86, 132, 231, 165, 109, 162, 125, 1,
+				50, 12, 43, 176, 19, 42, 23, 73, 70, 223, 198, 180, 103, 34, 60, 246, 184, 49, 140,
+				113, 174, 234, 229, 95, 71, 18, 92, 158, 185, 168, 140, 126, 12, 191, 156, 50, 234,
+				8, 4, 68, 137, 5, 156, 94, 209, 7, 169, 105, 62, 63, 1, 122, 253, 195, 112, 173,
+				239, 21, 73, 163, 240, 106, 109, 131, 0, 4, 0, 4, 29, 1, 20, 116, 101, 115, 116,
+				10,
+			]]),
+			..Default::default()
+		};
+
+		let route = super::block_data_route(config, state, db);
+		let response = warp::test::request()
+			.method("GET")
+			.path("/v2/blocks/5/data")
+			.reply(&route)
+			.await;
+		assert_eq!(response.status(), StatusCode::OK);
+		assert_eq!(
+			response.body(),
+			r#"{"block_number":5,"data_transactions":[{"data":"dGVzdAo=","extrinsic":"vQGEANQ1k8cV/dMcYRQavQSpn9aCLIVYhUzN45pWhOelbaJ9ATIMK7ATKhdJRt/GtGciPPa4MYxxrurlX0cSXJ65qIx+DL+cMuoIBESJBZxe0QepaT4/AXr9w3Ct7xVJo/BqbYMABAAEHQEUdGVzdAo="}]}"#
+		);
+	}
+
 	fn all_topics() -> HashSet<Topic> {
 		vec![
 			Topic::HeaderVerified,
@@ -506,6 +639,7 @@ mod tests {
 	struct MockDatabase {
 		confidence: Option<u32>,
 		header: Option<DaHeader>,
+		app_data: Option<AppData>,
 	}
 
 	impl Database for MockDatabase {
@@ -515,6 +649,10 @@ mod tests {
 
 		fn get_header(&self, _: u32) -> anyhow::Result<Option<DaHeader>> {
 			Ok(self.header.clone())
+		}
+
+		fn get_data(&self, _app_id: u32, _: u32) -> anyhow::Result<Option<AppData>> {
+			Ok(self.app_data.clone())
 		}
 	}
 

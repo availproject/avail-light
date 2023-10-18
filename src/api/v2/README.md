@@ -187,6 +187,32 @@ If **block_status = "unavailable|pending|verifying-header"**, header is not avai
 HTTP/1.1 400 Bad Request
 ```
 
+## **GET** `/v2/blocks/{block_number}/data?fields=data,extrinsic`
+
+Gets the block data if available. Query parameter `fields` specifies whether to return decoded data and encoded extrinsic (with signature). If `fields` parameter is omitted, response contains **hash** and **data**, while **extrinsic** is omitted.
+
+If **block_status = "finished"**, data is available and the response is:
+
+```yaml
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "data_transactions": [
+    {
+      "data": "{base-64-encoded-data}" // Optional
+      "extrinsic": "{base-64-encoded-extrinsic}", // Optional
+    }
+  ]
+}
+```
+
+If **block_status** is not **“finished”**, or **app** mode is not enabled, data is not available and the response is:
+
+```yaml
+HTTP/1.1 400 Bad Request
+```
+
 ## POST `/v2/submit`
 
 Submits application data to the avail network.\

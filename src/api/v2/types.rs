@@ -472,25 +472,44 @@ impl TryFrom<BlockVerified> for PublishMessage {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(try_from = "String")]
+pub struct FieldsQueryParameter(pub HashSet<DataField>);
+
+impl TryFrom<String> for FieldsQueryParameter {
+	type Error = anyhow::Error;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		value
+			.split(',')
+			.map(|part| format!(r#""{part}""#))
+			.map(|part| serde_json::from_str(&part).context("Cannot deserialize field"))
+			.collect::<anyhow::Result<HashSet<_>>>()
+			.map(FieldsQueryParameter)
+	}
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DataQuery {
+	pub fields: Option<FieldsQueryParameter>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataResponse {
+	pub block_number: u32,
+	pub data_transactions: Vec<DataTransaction>,
+}
+
+impl Reply for DataResponse {
+	fn into_response(self) -> warp::reply::Response {
+		warp::reply::json(&self).into_response()
+	}
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataMessage {
 	block_number: u32,
 	data_transactions: Vec<DataTransaction>,
-}
-
-impl DataMessage {
-	fn apply_filter(&mut self, fields: &HashSet<DataField>) {
-		if !fields.contains(&DataField::Extrinsic) {
-			for transaction in &mut self.data_transactions {
-				transaction.extrinsic = None
-			}
-		}
-		if !fields.contains(&DataField::Data) && fields.contains(&DataField::Extrinsic) {
-			for transaction in &mut self.data_transactions {
-				transaction.data = None
-			}
-		}
-	}
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -509,6 +528,19 @@ impl TryFrom<Vec<u8>> for DataTransaction {
 			data: decode_app_data(&value)?.map(Base64),
 			extrinsic: Some(Base64(value)),
 		})
+	}
+}
+
+pub fn filter_fields(data_transactions: &mut [DataTransaction], fields: &HashSet<DataField>) {
+	if !fields.contains(&DataField::Extrinsic) {
+		for transaction in data_transactions.iter_mut() {
+			transaction.extrinsic = None
+		}
+	}
+	if !fields.contains(&DataField::Data) && fields.contains(&DataField::Extrinsic) {
+		for transaction in data_transactions.iter_mut() {
+			transaction.data = None
+		}
 	}
 }
 
@@ -540,7 +572,9 @@ impl PublishMessage {
 		match self {
 			PublishMessage::HeaderVerified(_) => (),
 			PublishMessage::ConfidenceAchieved(_) => (),
-			PublishMessage::DataVerified(data) => data.apply_filter(fields),
+			PublishMessage::DataVerified(data) => {
+				filter_fields(&mut data.data_transactions, fields)
+			},
 		}
 	}
 }
