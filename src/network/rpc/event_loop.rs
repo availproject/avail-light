@@ -332,8 +332,8 @@ impl EventLoop {
 				);
 
 				// store Finality Checkpoint if finality is synced
-				let state = self.state.lock().unwrap();
-				if !state.finality_synced {
+				let finality_synced = self.state.lock().unwrap().finality_synced;
+				if !finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
 					store_finality_sync_checkpoint(
 						self.db.clone(),
