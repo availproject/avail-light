@@ -24,7 +24,7 @@ use warp::{
 
 use crate::{
 	network::rpc::Node,
-	rpc::Node,
+	network::rpc::{Event as RpcEvent, Node},
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
@@ -444,15 +444,16 @@ impl TryFrom<HeaderExtension> for Extension {
 	}
 }
 
-impl TryFrom<(avail_subxt::primitives::Header, Instant)> for PublishMessage {
+impl TryFrom<RpcEvent> for PublishMessage {
 	type Error = anyhow::Error;
 
-	fn try_from(value: (avail_subxt::primitives::Header, Instant)) -> Result<Self, Self::Error> {
-		let (header, _) = value;
-		header
-			.try_into()
-			.map(Box::new)
-			.map(PublishMessage::HeaderVerified)
+	fn try_from(value: RpcEvent) -> Result<Self, Self::Error> {
+		match value {
+			RpcEvent::HeaderUpdate { header, .. } => header
+				.try_into()
+				.map(Box::new)
+				.map(PublishMessage::HeaderVerified),
+		}
 	}
 }
 
