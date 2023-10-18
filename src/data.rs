@@ -37,6 +37,35 @@ fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Optio
 		.context("Couldn't get app_data from db")
 }
 
+/// Initializes Rocks Database
+pub fn init_db(path: &str) -> Result<Arc<DB>> {
+	let mut confidence_cf_opts = Options::default();
+	confidence_cf_opts.set_max_write_buffer_number(16);
+
+	let mut block_header_cf_opts = Options::default();
+	block_header_cf_opts.set_max_write_buffer_number(16);
+
+	let mut app_data_cf_opts = Options::default();
+	app_data_cf_opts.set_max_write_buffer_number(16);
+
+	let mut state_cf_opts = Options::default();
+	state_cf_opts.set_max_write_buffer_number(16);
+
+	let cf_opts = vec![
+		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
+		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
+		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
+		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
+	];
+
+	let mut db_opts = Options::default();
+	db_opts.create_if_missing(true);
+	db_opts.create_missing_column_families(true);
+
+	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
+	Ok(Arc::new(db))
+}
+
 /// Encodes and stores app data into database under the `app_id:block_number` key
 pub fn store_encoded_data_in_db<T: Encode>(
 	db: Arc<DB>,

@@ -3,21 +3,18 @@
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
 use avail_light::{
-	api,
-	consts::STATE_CF,
+	api, data,
 	network::rpc,
 	telemetry::{self},
 };
 use avail_light::{
-	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
+	consts::EXPECTED_NETWORK_VERSION,
 	network::p2p::{self},
 	types::{CliOpts, Mode, RuntimeConfig, State},
 };
 use clap::Parser;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use std::{fs, path::Path};
 use std::{
 	net::Ipv4Addr,
 	sync::{Arc, Mutex},
@@ -49,33 +46,12 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 };
 
 /// Light Client for Avail Blockchain
-
-fn init_db(path: &str) -> Result<Arc<DB>> {
-	let mut confidence_cf_opts = Options::default();
-	confidence_cf_opts.set_max_write_buffer_number(16);
-
-	let mut block_header_cf_opts = Options::default();
-	block_header_cf_opts.set_max_write_buffer_number(16);
-
-	let mut app_data_cf_opts = Options::default();
-	app_data_cf_opts.set_max_write_buffer_number(16);
-
-	let mut state_cf_opts = Options::default();
-	state_cf_opts.set_max_write_buffer_number(16);
-
-	let cf_opts = vec![
-		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
-		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
-	];
-
-	let mut db_opts = Options::default();
-	db_opts.create_if_missing(true);
-	db_opts.create_missing_column_families(true);
-
-	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
-	Ok(Arc::new(db))
+#[derive(Parser)]
+#[command(version)]
+struct CliOpts {
+	/// Path to the yaml configuration file
+	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
+	config: String,
 }
 
 fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
@@ -123,18 +99,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	if opts.clean && Path::new(&cfg.avail_path).exists() {
-		info!("Cleaning up local state directory");
-		fs::remove_dir_all(&cfg.avail_path).context("Failed to remove local state directory")?;
-	}
-
-	if cfg.bootstraps.is_empty() {
-		Err(anyhow!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
-	}
-
-	let db = init_db(&cfg.avail_path).context(
-		"Cannot initialize database. Try running with '--clean' flag for a clean deployment.",
-	)?;
+	let db = data::init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
