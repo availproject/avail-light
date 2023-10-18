@@ -14,38 +14,8 @@ use crate::{
 	types::FinalitySyncCheckpoint,
 };
 
-const LAST_FULL_NODE_WS_KEY: &str = "last_full_node_ws";
 const GENESIS_HASH_KEY: &str = "genesis_hash";
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
-
-pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> Result<()> {
-	let cf_handle = db.cf_handle(STATE_CF).context("Failed to get cf handle")?;
-
-	db.put_cf(
-		&cf_handle,
-		LAST_FULL_NODE_WS_KEY.as_bytes(),
-		last_full_node_ws,
-	)
-	.context("Failed to write last full node ws to db")
-}
-
-pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.context("Couldn't get column handle from db")?;
-
-	let result = db
-		.get_cf(&cf_handle, LAST_FULL_NODE_WS_KEY.as_bytes())
-		.context("Couldn't get last full node ws from db")?;
-
-	let Some(last_full_node_ws) = result else {
-		return Ok(None);
-	};
-
-	Ok(std::str::from_utf8(&last_full_node_ws)
-		.map(String::from)
-		.map(Some)?)
-}
 
 fn store_data_in_db(db: Arc<DB>, app_id: AppId, block_number: u32, data: &[u8]) -> Result<()> {
 	let key = format!("{}:{block_number}", app_id.0);
