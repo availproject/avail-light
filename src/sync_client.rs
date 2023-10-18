@@ -104,7 +104,7 @@ impl SyncClient for SyncClientImpl {
 	}
 
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		self.rpc_client.query_kate_proof(hash, positions).await
+		self.rpc_client.request_kate_proof(hash, positions).await
 	}
 
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {

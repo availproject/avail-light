@@ -105,7 +105,7 @@ impl LightClient for LightClientImpl {
 			.await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		self.rpc_client.query_kate_proof(hash, positions).await
+		self.rpc_client.request_kate_proof(hash, positions).await
 	}
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
 		self.p2p_client.get_multiaddress_and_ip().await

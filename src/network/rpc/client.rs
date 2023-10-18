@@ -93,7 +93,7 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	pub async fn get_kate_rows(
+	pub async fn request_kate_rows(
 		&self,
 		rows: Vec<u32>,
 		block_hash: H256,
@@ -112,7 +112,7 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	pub async fn query_kate_proof(
+	pub async fn request_kate_proof(
 		&self,
 		block_hash: H256,
 		positions: &[Position],

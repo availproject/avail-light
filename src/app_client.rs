@@ -196,7 +196,7 @@ impl AppClient for AppClientImpl {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		self.rpc_client.get_kate_rows(rows, block_hash).await
+		self.rpc_client.request_kate_rows(rows, block_hash).await
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
