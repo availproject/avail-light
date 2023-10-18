@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use event_loop::EventLoop;
 use futures::future::Either;
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
@@ -28,6 +27,7 @@ mod kad_mem_store;
 #[cfg(feature = "network-analysis")]
 pub mod network_analyzer;
 pub use client::Client;
+use event_loop::EventLoop;
 
 use crate::types::{LibP2PConfig, SecretKey};
 
