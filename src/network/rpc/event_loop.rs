@@ -224,10 +224,6 @@ impl EventLoop {
 		}
 	}
 
-	pub fn subscribe(&mut self) -> Receiver<Event> {
-		self.event_sender.subscribe()
-	}
-
 	fn handle_subscription_stream(&mut self, subscription: Subscription) {
 		match subscription {
 			Subscription::Header(header) => {
