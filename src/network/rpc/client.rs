@@ -1,19 +1,20 @@
-use anyhow::{Context, Result};
+#[cfg(feature = "api-v2")]
 use avail_subxt::{
-	api::data_availability::calls::types::SubmitData,
-	avail::Pair,
-	primitives::{AvailExtrinsicParams, Header},
-	utils::H256,
-	AvailConfig,
+	api::data_availability::calls::types::SubmitData, avail::Pair,
+	primitives::AvailExtrinsicParams, AvailConfig,
 };
-use kate_recovery::{data::Cell, matrix::Position};
-use sp_core::ed25519::{self, Public};
+#[cfg(feature = "api-v2")]
 use subxt::{
 	storage::StorageKey,
 	tx::{PairSigner, Payload, TxProgress},
-	utils::AccountId32,
 	OnlineClient,
 };
+
+use anyhow::{Context, Result};
+use avail_subxt::{primitives::Header, utils::H256};
+use kate_recovery::{data::Cell, matrix::Position};
+use sp_core::ed25519::{self, Public};
+use subxt::{storage::StorageKey, utils::AccountId32};
 use tokio::sync::{mpsc, oneshot};
 
 use super::{Node, WrappedProof};
