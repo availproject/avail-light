@@ -10,10 +10,7 @@ use libp2p::{
 	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
-use std::{
-	sync::Arc,
-	time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace};
 
@@ -387,7 +384,7 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
-		records: Arc<[Record]>,
+		records: Vec<Record>,
 		quorum: Quorum,
 		response_sender: oneshot::Sender<DHTPutSuccess>,
 	},
