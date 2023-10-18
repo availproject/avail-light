@@ -51,7 +51,7 @@ pub struct CliOpts {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeVersionResult {
+pub struct RuntimeVersion {
 	apis: Vec<(String, u32)>,
 	authoring_version: u32,
 	impl_name: String,
@@ -233,7 +233,7 @@ pub struct RuntimeConfig {
 	/// Vector of Relay nodes, which are used for hole punching
 	pub relays: Vec<MultiaddrConfig>,
 	/// WebSocket endpoint of full node for subscribing to latest header, etc (default: [ws://127.0.0.1:9944]).
-	pub full_node_ws: Vec<String>,
+	pub full_nodes_ws: Vec<String>,
 	/// ID of application used to start application client. If app_id is not set, or set to 0, application client is not started (default: 0).
 	pub app_id: Option<u32>,
 	/// Confidence threshold, used to calculate how many cells need to be sampled to achieve desired confidence (default: 92.0).
@@ -341,7 +341,7 @@ pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
-	pub full_node_ws: Vec<String>,
+	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
@@ -368,7 +368,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			.map(|v| Duration::from_secs(v.into()));
 
 		LightClientConfig {
-			full_node_ws: val.full_node_ws.clone(),
+			full_nodes_ws: val.full_nodes_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
@@ -531,8 +531,8 @@ impl Default for RuntimeConfig {
 			identify_agent: "avail-light-client/rust-client".to_string(),
 			bootstraps: vec![],
 			bootstrap_period: 300,
-			relays: vec![],
-			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
+			relays: Vec::new(),
+			full_nodes_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,
 			avail_path: "avail_path".to_owned(),
