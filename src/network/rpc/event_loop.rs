@@ -1,12 +1,16 @@
+#[cfg(feature = "api-v2")]
+use api::data_availability::calls::types::SubmitData;
+#[cfg(feature = "api-v2")]
+use avail_subxt::primitives::AvailExtrinsicParams;
+#[cfg(feature = "api-v2")]
+use subxt::tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress};
+
 use anyhow::{anyhow, Context, Result};
 use avail_subxt::{
-	api::{
-		self, data_availability::calls::types::SubmitData,
-		runtime_types::sp_core::crypto::KeyTypeId,
-	},
+	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail::{self},
 	build_client,
-	primitives::{grandpa::AuthorityId, AvailExtrinsicParams, Header},
+	primitives::{grandpa::AuthorityId, Header},
 	utils::H256,
 	AvailConfig,
 };
@@ -27,7 +31,6 @@ use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	rpc_params,
 	storage::StorageKey,
-	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
 	utils::AccountId32,
 	OnlineClient,
 };
@@ -489,6 +492,7 @@ impl EventLoop {
 				let res = self.fetch_set_id_at(block_hash).await;
 				_ = response_sender.send(res);
 			},
+			#[cfg(feature = "api-v2")]
 			Command::SubmitFromBytesAndWatch {
 				tx_bytes,
 				response_sender,
@@ -496,6 +500,7 @@ impl EventLoop {
 				let res = self.submit_from_bytes_and_watch(tx_bytes).await;
 				_ = response_sender.send(res);
 			},
+			#[cfg(feature = "api-v2")]
 			Command::SubmitSignedAndWatch {
 				extrinsic,
 				pair_signer,
@@ -686,7 +691,7 @@ impl EventLoop {
 			.map_err(|e| anyhow!(e))
 	}
 
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	async fn submit_signed_and_watch(
 		&self,
 		extrinsic: Payload<SubmitData>,
@@ -700,7 +705,7 @@ impl EventLoop {
 			.map_err(|e| anyhow!(e))
 	}
 
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	async fn submit_from_bytes_and_watch(
 		&self,
 		tx_bytes: Vec<u8>,

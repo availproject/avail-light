@@ -209,7 +209,7 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	pub async fn submit_signed_and_watch(
 		&self,
 		extrinsic: Payload<SubmitData>,
@@ -231,7 +231,7 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	pub async fn submit_from_bytes_and_watch(
 		&self,
 		tx_bytes: Vec<u8>,
@@ -375,13 +375,13 @@ pub enum Command {
 		block_hash: H256,
 		response_sender: oneshot::Sender<Result<Option<Vec<AccountId32>>>>,
 	},
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	SubmitFromBytesAndWatch {
 		tx_bytes: Vec<u8>,
 		response_sender:
 			oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>,
 	},
-	// #[cfg(feature = "api-v2")]
+	#[cfg(feature = "api-v2")]
 	SubmitSignedAndWatch {
 		extrinsic: Payload<SubmitData>,
 		pair_signer: PairSigner<AvailConfig, Pair>,
