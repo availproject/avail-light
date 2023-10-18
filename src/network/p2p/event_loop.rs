@@ -508,12 +508,12 @@ impl EventLoop {
 				);
 
 				// go record by record and dispatch put requests through KAD
-				for record in records.as_ref() {
+				for record in records {
 					let query_id = self
 						.swarm
 						.behaviour_mut()
 						.kademlia
-						.put_record(record.to_owned(), quorum)
+						.put_record(record, quorum)
 						.expect("Unable to perform batch Kademlia PUT operation.");
 					// insert query id into pending KAD requests map
 					self.pending_kad_queries.insert(
