@@ -31,11 +31,8 @@ use subxt::{
 	utils::AccountId32,
 	OnlineClient,
 };
-use tokio::sync::{
-	broadcast::{self, Receiver},
-	mpsc,
-};
-use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+use tokio::sync::{broadcast::Sender, mpsc};
+use tokio_stream::StreamExt;
 use tracing::{info, instrument, trace, warn};
 
 use super::{client::Command, ExpectedVersion, Nodes, WrappedProof, CELL_WITH_PROOF_SIZE};
@@ -73,7 +70,7 @@ struct BlockData {
 pub struct EventLoop {
 	subxt_client: Option<avail::Client>,
 	command_receiver: mpsc::Receiver<Command>,
-	event_sender: broadcast::Sender<Event>,
+	event_sender: Sender<Event>,
 	nodes: Nodes,
 	db: Arc<DB>,
 	state: Arc<Mutex<State>>,
@@ -86,7 +83,7 @@ impl EventLoop {
 		state: Arc<Mutex<State>>,
 		nodes: Nodes,
 		command_receiver: mpsc::Receiver<Command>,
-		event_sender: broadcast::Sender<Event>,
+		event_sender: Sender<Event>,
 	) -> EventLoop {
 		Self {
 			subxt_client: None,
