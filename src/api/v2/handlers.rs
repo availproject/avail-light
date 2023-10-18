@@ -1,8 +1,9 @@
 use super::{
 	transactions,
 	types::{
-		block_status, Block, BlockStatus, Error, Header, Status, SubmitResponse, Subscription,
-		SubscriptionId, Transaction, Version, WsClients,
+		block_status, filter_fields, Block, BlockStatus, DataQuery, DataResponse, DataTransaction,
+		Error, FieldsQueryParameter, Header, Status, SubmitResponse, Subscription, SubscriptionId,
+		Transaction, Version, WsClients,
 	},
 	ws,
 };
@@ -136,6 +137,54 @@ pub async fn block_header(
 		.and_then(|header| header.ok_or_else(|| anyhow!("Header not found")))
 		.and_then(|header| header.try_into())
 		.map_err(Error::internal_server_error)
+}
+
+pub async fn block_data(
+	block_number: u32,
+	query: DataQuery,
+	config: RuntimeConfig,
+	state: Arc<Mutex<State>>,
+	db: impl Database,
+) -> Result<DataResponse, Error> {
+	let state = state.lock().expect("Lock should be acquired");
+
+	let Some(app_id) = config.app_id else {
+		return Err(Error::not_found());
+	};
+
+	let Some(block_status) = block_status(&config.sync_start_block, &state, block_number) else {
+		return Err(Error::not_found());
+	};
+
+	if block_status != BlockStatus::Finished {
+		return Err(Error::bad_request_unknown("Block data is not available"));
+	};
+
+	let data = db
+		.get_data(app_id, block_number)
+		.map_err(Error::internal_server_error)?;
+
+	let Some(data) = data else {
+		return Ok(DataResponse {
+			block_number,
+			data_transactions: vec![],
+		});
+	};
+
+	let mut data_transactions: Vec<DataTransaction> = data
+		.into_iter()
+		.map(DataTransaction::try_from)
+		.collect::<anyhow::Result<_>>()
+		.map_err(Error::internal_server_error)?;
+
+	if let Some(FieldsQueryParameter(fields)) = &query.fields {
+		filter_fields(&mut data_transactions, fields);
+	}
+
+	Ok(DataResponse {
+		block_number,
+		data_transactions,
+	})
 }
 
 pub async fn handle_rejection(error: Rejection) -> Result<impl Reply, Rejection> {
