@@ -20,7 +20,7 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{avail, primitives::Header, utils::H256};
+use avail_subxt::{primitives::Header, utils::H256};
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use futures::future::join_all;
@@ -37,12 +37,15 @@ use std::{
 	time::Instant,
 };
 use tokio::sync::{broadcast, mpsc::Sender};
-use tracing::{error, info};
+use tracing::{error, info, Subscriber};
 
 use crate::{
 	data::{store_block_header_in_db, store_confidence_in_db},
-	network::p2p::Client,
-	proof, rpc,
+	network::{
+		p2p::Client as P2pClient,
+		rpc::{self, Client as RpcClient, Event},
+	},
+	proof,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{self, BlockVerified, LightClientConfig, OptionBlockRange, State},
 	utils::{calculate_confidence, extract_kate},
@@ -69,14 +72,14 @@ pub trait LightClient {
 #[derive(Clone)]
 struct LightClientImpl {
 	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
+	p2p_client: P2pClient,
+	rpc_client: RpcClient,
 }
 
-pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> impl LightClient {
+pub fn new(db: Arc<DB>, p2p_client: P2pClient, rpc_client: RpcClient) -> impl LightClient {
 	LightClientImpl {
 		db,
-		network_client,
+		p2p_client,
 		rpc_client,
 	}
 }
@@ -84,33 +87,31 @@ pub fn new(db: Arc<DB>, network_client: Client, rpc_client: avail::Client) -> im
 #[async_trait]
 impl LightClient for LightClientImpl {
 	async fn insert_cells_into_dht(&self, block: u32, cells: Vec<Cell>) -> f32 {
-		self.network_client
-			.insert_cells_into_dht(block, cells)
-			.await
+		self.p2p_client.insert_cells_into_dht(block, cells).await
 	}
 	async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.network_client.shrink_kademlia_map().await
+		self.p2p_client.shrink_kademlia_map().await
 	}
 	async fn insert_rows_into_dht(&self, block: u32, rows: Vec<(RowIndex, Vec<u8>)>) -> f32 {
-		self.network_client.insert_rows_into_dht(block, rows).await
+		self.p2p_client.insert_rows_into_dht(block, rows).await
 	}
 	async fn fetch_cells_from_dht(
 		&self,
 		positions: &[Position],
 		block_number: u32,
 	) -> (Vec<Cell>, Vec<Position>) {
-		self.network_client
+		self.p2p_client
 			.fetch_cells_from_dht(block_number, positions)
 			.await
 	}
 	async fn get_kate_proof(&self, hash: H256, positions: &[Position]) -> Result<Vec<Cell>> {
-		rpc::get_kate_proof(&self.rpc_client, hash, positions).await
+		self.rpc_client.query_kate_proof(hash, positions).await
 	}
 	async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
-		self.network_client.get_multiaddress_and_ip().await
+		self.p2p_client.get_multiaddress_and_ip().await
 	}
 	async fn count_dht_entries(&self) -> Result<usize> {
-		self.network_client.count_dht_entries().await
+		self.p2p_client.count_dht_entries().await
 	}
 	fn store_confidence_in_db(&self, count: u32, block_number: u32) -> Result<()> {
 		store_confidence_in_db(self.db.clone(), block_number, count)
@@ -408,7 +409,7 @@ pub async fn process_block(
 
 pub struct Channels {
 	pub block_sender: Option<broadcast::Sender<BlockVerified>>,
-	pub header_receiver: broadcast::Receiver<(Header, Instant)>,
+	pub rpc_event_receiver: broadcast::Receiver<Event>,
 	pub error_sender: Sender<anyhow::Error>,
 }
 
@@ -433,8 +434,13 @@ pub async fn run(
 	info!("Starting light client...");
 
 	loop {
-		let (header, received_at) = match channels.header_receiver.recv().await {
-			Ok(value) => value,
+		let (header, received_at) = match channels.rpc_event_receiver.recv().await {
+			Ok(event) => match event {
+				Event::HeaderUpdate {
+					header,
+					received_at,
+				} => (header, received_at),
+			},
 			Err(error) => {
 				error!("Cannot receive message: {error}");
 				return;
@@ -485,10 +491,8 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-	use super::rpc::cell_count_for_confidence;
 	use super::*;
-	use crate::telemetry;
-	use crate::types::RuntimeConfig;
+	use crate::{network::rpc::cell_count_for_confidence, telemetry, types::RuntimeConfig};
 	use avail_subxt::{
 		api::runtime_types::avail_core::{
 			data_lookup::compact::CompactDataLookup,
