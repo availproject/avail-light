@@ -70,9 +70,29 @@ jobs:
               name: avail-light-apple-arm64-binary
               path: target/maxperf/avail-light-apple-arm64.tar.gz
 
+  binary_apple_x86_64:
+    runs-on: macos-latest
+    steps:
+          - uses: actions/checkout@v2
+          - name: install cargo deps and build avail
+            shell: bash
+            run: |
+              curl https://sh.rustup.rs -sSf | sh -s -- -y
+              source "$HOME/.cargo/env"
+              rustup target add x86_64-apple-darwin
+              cargo build --profile maxperf -p avail-light
+              mv target/maxperf/avail-light target/maxperf/avail-light-apple-x86_64
+              pushd target/maxperf/
+              tar czf avail-light-apple-x86_64.tar.gz avail-light-apple-x86_64
+              popd
+          - uses: actions/upload-artifact@v2
+            with:
+              name: avail-light-apple-x86_64-binary
+              path: target/maxperf/avail-light-apple-x86_64.tar.gz
+
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
   binary_publish:
-    needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64]
+    needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64, binary_apple_x86_64]
     runs-on: ubuntu-latest
     steps:
          - uses: actions/download-artifact@v2
@@ -84,6 +104,9 @@ jobs:
          - uses: actions/download-artifact@v2
            with:
              name: avail-light-apple-arm64-binary
+         - uses: actions/download-artifact@v2
+           with:
+             name: avail-light-apple-x86_64-binary
          - name: Prepare
            id: prepare
            run: |
