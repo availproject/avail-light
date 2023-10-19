@@ -9,8 +9,6 @@ use opentelemetry_otlp::{ExportConfig, Protocol, WithExportConfig};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-const METRICS_JOB_NAME: &str = "avail_light_client";
-
 #[derive(Debug)]
 pub struct Metrics {
 	meter: Meter,
@@ -22,9 +20,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
-	async fn attributes(&self) -> [KeyValue; 6] {
+	async fn attributes(&self) -> [KeyValue; 5] {
 		[
-			KeyValue::new("job", METRICS_JOB_NAME),
 			KeyValue::new("version", clap::crate_version!()),
 			KeyValue::new("role", self.role.clone()),
 			KeyValue::new("peerID", self.peer_id.clone()),
