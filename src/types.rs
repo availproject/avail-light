@@ -631,7 +631,9 @@ impl RuntimeConfig {
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		}
 
-		self.app_id = app_id;
+		if self.app_id.is_none() {
+			self.app_id = app_id;
+		}
 
 		Ok(())
 	}
