@@ -8,7 +8,6 @@
 //! * `/v1/confidence/{block_number}` - returns calculated confidence for a given block number
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
-#[cfg(feature = "api-v2")]
 use crate::api::v2;
 use crate::{
 	api::v1,
@@ -34,7 +33,6 @@ pub struct Server {
 	pub network_version: String,
 	pub node: Node,
 	pub node_client: avail::Client,
-	#[cfg(feature = "api-v2")]
 	pub ws_clients: v2::types::WsClients,
 }
 
@@ -55,7 +53,6 @@ impl Server {
 		} = self.cfg.clone();
 
 		let v1_api = v1::routes(self.db.clone(), app_id, self.state.clone());
-		#[cfg(feature = "api-v2")]
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
@@ -72,10 +69,7 @@ impl Server {
 			.allow_header("content-type")
 			.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-		let routes = health_route().or(v1_api);
-		#[cfg(feature = "api-v2")]
-		let routes = routes.or(v2_api);
-		let routes = routes.with(cors);
+		let routes = health_route().or(v1_api).or(v2_api).with(cors);
 
 		let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 			.context("Unable to parse host address from config")

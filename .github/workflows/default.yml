@@ -58,7 +58,7 @@ jobs:
         with:
           command: test
           # TODO: Replace with "--benches --tests --all-features" when CI is fixed for other features
-          args: --benches --tests --features "default,api-v2,crawl"
+          args: --benches --tests --features "default,crawl"
         env:
           RUSTFLAGS: "-C instrument-coverage"
           LLVM_PROFILE_FILE: "profile-%p-%m.profraw"

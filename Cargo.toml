@@ -72,7 +72,6 @@ opentelemetry_sdk = { version = "0.20.0", features = ["metrics", "rt-tokio"] }
 [features]
 network-analysis = []
 crawl = []
-api-v2 = []
 default = []
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
