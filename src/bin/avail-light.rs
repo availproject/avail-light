@@ -217,7 +217,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number.saturating_sub(1);
 
-	#[cfg(feature = "api-v2")]
 	let ws_clients = api::v2::types::WsClients::default();
 
 	// Spawn tokio task which runs one http server for handling RPC
@@ -229,7 +228,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),
 		node,
 		node_client: rpc_client.clone(),
-		#[cfg(feature = "api-v2")]
 		ws_clients: ws_clients.clone(),
 	};
 
@@ -259,40 +257,27 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	};
 
 	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
+	tokio::task::spawn(api::v2::publish(
+		api::v2::types::Topic::HeaderVerified,
+		message_tx.subscribe(),
+		ws_clients.clone(),
+	));
 
-	#[cfg(feature = "api-v2")]
-	{
+	if let Some(sender) = block_tx.as_ref() {
 		tokio::task::spawn(api::v2::publish(
-			api::v2::types::Topic::HeaderVerified,
-			message_tx.subscribe(),
+			api::v2::types::Topic::ConfidenceAchieved,
+			sender.subscribe(),
 			ws_clients.clone(),
 		));
-
-		if let Some(sender) = block_tx.as_ref() {
-			tokio::task::spawn(api::v2::publish(
-				api::v2::types::Topic::ConfidenceAchieved,
-				sender.subscribe(),
-				ws_clients.clone(),
-			));
-		}
-
-		if let Some(data_rx) = data_rx {
-			tokio::task::spawn(api::v2::publish(
-				api::v2::types::Topic::DataVerified,
-				data_rx,
-				ws_clients,
-			));
-		}
 	}
-	#[cfg(not(feature = "api-v2"))]
-	if let Some(mut data_rx) = data_rx {
-		tokio::task::spawn(async move {
-			loop {
-				// Discard app client messages if API V2 is not enabled
-				_ = data_rx.recv().await;
-			}
-		});
-	};
+
+	if let Some(data_rx) = data_rx {
+		tokio::task::spawn(api::v2::publish(
+			api::v2::types::Topic::DataVerified,
+			data_rx,
+			ws_clients,
+		));
+	}
 
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
