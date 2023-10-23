@@ -102,6 +102,9 @@ bootstraps = ["/ip4/127.0.0.1/tcp/39000/quic-v1/12D3KooWMm1c4pzeLPGkkCJMAgFbsfQ8
 
 Full configuration reference can be found [below](#configuration-reference).
 
+_NOTE_
+Flags and options take precedence to the configuration file if both are set (i.e. `--port` option overwrites the `port` parameter from the config file).
+
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
@@ -109,10 +112,16 @@ Full configuration reference can be found [below](#configuration-reference).
   - `local`: For local development
 - `--config`: Location of the configuration file
 - `--appId`: The `appID` parameter for the application client
+- `--port`: LibP2P listener port
+- `--verbosity`: Log level. Possible values are:
+  - `trace`
+  - `debug`
+  - `info`
 
 ## Flags
 
 - `--version`: Light Client version
+- `--clean`: Remove previous state dir set in `avail_path` config parameter
 
 ## Configuration reference
 

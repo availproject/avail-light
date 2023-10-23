@@ -40,7 +40,7 @@ pub struct CliOpts {
 	pub network: Option<Network>,
 	/// Run a clean light client, deleting existing avail_path folder
 	#[arg(long)]
-	pub tmp: bool,
+	pub clean: bool,
 	/// P2P port
 	#[arg(short, long)]
 	pub port: Option<u16>,

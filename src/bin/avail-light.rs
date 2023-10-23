@@ -17,7 +17,7 @@ use clap::Parser;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use std::fs;
+use std::{fs, path::Path};
 use std::{
 	net::Ipv4Addr,
 	sync::{Arc, Mutex},
@@ -120,20 +120,18 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		warn!("Using default log level: {}", error);
 	}
 
-	if opts.tmp {
+	if opts.clean && Path::new(&cfg.avail_path).exists() {
 		info!("Cleaning up local state directory");
-		let binary_dir = std::env::current_exe()?
-			.parent()
-			.ok_or(anyhow!("Failed to get parent directory of the binary"))?
-			.join(&cfg.avail_path);
-		fs::remove_dir_all(binary_dir).context("Failed to remove local state directory")?;
+		fs::remove_dir_all(&cfg.avail_path).context("Failed to remove local state directory")?;
 	}
 
 	if cfg.bootstraps.is_empty() {
-		Err(anyhow!("Bootstrap node list must not be empty."))?
+		Err(anyhow!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
+	let db = init_db(&cfg.avail_path).context(
+		"Cannot initialize database. Try running with '--clean' flag for a clean deployment.",
+	)?;
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
