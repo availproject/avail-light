@@ -137,7 +137,7 @@ async fn process_block(
 	{
 		// TODO: If block header storing fails, that block will be skipped upon restart
 		// Better option would be to check for confidence
-		info!("Block header ${block_number} already in DB");
+		info!("Block header {block_number} already in DB");
 		return Ok(());
 	};
 
