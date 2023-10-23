@@ -17,6 +17,7 @@ use clap::Parser;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
+use std::fs;
 use std::{
 	net::Ipv4Addr,
 	sync::{Arc, Mutex},
@@ -100,7 +101,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let opts = CliOpts::parse();
 
 	let mut cfg: RuntimeConfig = RuntimeConfig::default();
-	cfg.load_runtime_config(opts.network, opts.app_id, opts.config)?;
+	cfg.load_runtime_config(&opts)?;
 
 	let (log_level, parse_error) = parse_log_level(&cfg.log_level, Level::INFO);
 
@@ -117,6 +118,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
+	}
+
+	if opts.tmp {
+		info!("Cleaning up local state directory");
+		let binary_dir = std::env::current_exe()?
+			.parent()
+			.ok_or(anyhow!("Failed to get parent directory of the binary"))?
+			.join(&cfg.avail_path);
+		fs::remove_dir_all(binary_dir).context("Failed to remove local state directory")?;
 	}
 
 	if cfg.bootstraps.is_empty() {
