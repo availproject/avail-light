@@ -13,7 +13,9 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint,store_block_header_in_db},
+	data::{
+		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
+	},
 	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
