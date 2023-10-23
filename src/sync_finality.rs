@@ -13,9 +13,8 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
-	network::rpc::{self, WrappedProof},
-	types::{FinalitySyncCheckpoint, SignerMessage, State},
+	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint,store_block_header_in_db},
+	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -148,6 +147,8 @@ pub async fn sync_finality(
 	let last_block_num = from_header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
+	let db = sync_finality.get_db();
+
 	let mut prev_hash = rpc_client
 		.get_block_hash(curr_block_num - 1)
 		.await
@@ -167,12 +168,12 @@ pub async fn sync_finality(
 		from_header = rpc_client
 			.get_header_by_hash(hash)
 			.await
-			.context(format!("Couldn't get header for {}", hash))?;
-		assert_eq!(
-			from_header.parent_hash, prev_hash,
-			"Parent hash doesn't match!"
-		);
-		prev_hash = from_header.using_encoded(blake2_256).into();
+			.context(format!("Couldn't get header for {}", hash))?
+			.context(format!("Header for hash {} not found!", hash))?;
+		store_block_header_in_db(db.clone(), curr_block_num, &header)?;
+
+		assert_eq!(header.parent_hash, prev_hash, "Parent hash doesn't match!");
+		prev_hash = header.using_encoded(blake2_256).into();
 
 		let next_validator_set = filter_auth_set_changes(&from_header);
 		if next_validator_set.is_empty() {
