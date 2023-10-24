@@ -213,18 +213,17 @@ impl EventLoop {
 
 		loop {
 			tokio::select! {
-				subscription = subscriptions_stream.next() => self.handle_subscription_stream(subscription.expect("RPC Subscription stream should be infinite")),
+				subscription = subscriptions_stream.next() => self.handle_subscription_stream(subscription.expect("RPC Subscription stream should be infinite")).await,
 				command = self.command_receiver.recv() => match command {
 					Some(c) => self.handle_command(c).await,
 					// Command channel closed, thus shutting down the RPC Event Loop
 					None => return Err(anyhow!("RPC Event Loop shutting down")),
 				},
-				else => self.output_verified_block_headers().await,
 			}
 		}
 	}
 
-	fn handle_subscription_stream(&mut self, subscription: Subscription) {
+	async fn handle_subscription_stream(&mut self, subscription: Subscription) {
 		match subscription {
 			Subscription::Header(header) => {
 				let received_at = Instant::now();
@@ -264,9 +263,11 @@ impl EventLoop {
 				self.block_data.justifications.push(justification);
 			},
 		}
+		// check headers
+		self.verify_and_output_block_headers().await;
 	}
 
-	async fn output_verified_block_headers(&mut self) {
+	async fn verify_and_output_block_headers(&mut self) {
 		while let Some(justification) = self.block_data.justifications.pop() {
 			// iterate through Headers and try to find a matching one
 			if let Some(pos) = self
