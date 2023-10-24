@@ -13,13 +13,12 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
-use std::path::Path;
 use std::str::FromStr;
 
 use clap::Parser;
-use std::fmt;
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
+use std::{fmt, fs};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
@@ -33,10 +32,21 @@ pub struct CliOpts {
 	/// Path to the yaml configuration file
 	#[arg(short, long, value_name = "FILE")]
 	pub config: Option<String>,
+	/// AppID for application client
 	#[arg(long, value_name = "appId")]
 	pub app_id: Option<u32>,
+	/// Testnet or devnet selection
 	#[arg(short, long, value_name = "network")]
 	pub network: Option<Network>,
+	/// Run a clean light client, deleting existing avail_path folder
+	#[arg(long)]
+	pub clean: bool,
+	/// P2P port
+	#[arg(short, long)]
+	pub port: Option<u16>,
+	/// Log level
+	#[arg(long)]
+	pub verbosity: Option<LogLevel>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -602,25 +612,54 @@ impl Network {
 	}
 }
 
+#[derive(Clone)]
+pub enum LogLevel {
+	Info,
+	Debug,
+	Trace,
+	Warn,
+	Error,
+}
+
+impl FromStr for LogLevel {
+	type Err = String;
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		match s {
+			"trace" => Ok(LogLevel::Trace),
+			"debug" => Ok(LogLevel::Debug),
+			"info" => Ok(LogLevel::Info),
+			"warn" => Ok(LogLevel::Warn),
+			"error" => Ok(LogLevel::Error),
+			_ => Err("valid values are: trace, debug and info".to_string()),
+		}
+	}
+}
+
+impl ToString for LogLevel {
+	fn to_string(&self) -> String {
+		match self {
+			LogLevel::Info => "INFO".to_string(),
+			LogLevel::Debug => "DEBUG".to_string(),
+			LogLevel::Trace => "TRACE".to_string(),
+			LogLevel::Warn => "WARN".to_string(),
+			LogLevel::Error => "ERROR".to_string(),
+		}
+	}
+}
+
 impl RuntimeConfig {
-	pub fn load_runtime_config(
-		&mut self,
-		network: Option<Network>,
-		app_id: Option<u32>,
-		config_file: Option<String>,
-	) -> Result<()> {
-		if config_file.is_some() {
-			let config_path =
-				config_file.context("No network or config file parameter provided.")?;
-			if !Path::new(&config_path).exists() {
-				return Err(anyhow!("Provided config file doesn't exist."));
-			}
-			let cfg: RuntimeConfig = confy::load_path(config_path.clone())
-				.context(format!("Failed to load configuration from {config_path}"))?;
+	pub fn load_runtime_config(&mut self, opts: &CliOpts) -> Result<()> {
+		if let Some(config_path) = &opts.config {
+			fs::metadata(config_path)
+				.map_err(|_| anyhow!("Provided config file doesn't exist."))?;
+			let cfg: RuntimeConfig = confy::load_path(config_path)
+				.context(format!("Failed to load configuration from {}", config_path))?;
 			*self = cfg;
 		}
 
-		if let Some(network) = network {
+		// Flags override the config parameters
+		if let Some(network) = &opts.network {
 			let bootstrap: (PeerId, Multiaddr) = (
 				PeerId::from_str(network.peer_id())
 					.context("unable to parse default bootstrap peerID")?,
@@ -631,9 +670,15 @@ impl RuntimeConfig {
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		}
 
-		if app_id.is_some() {
-			self.app_id = app_id;
+		if let Some(loglvl) = &opts.verbosity {
+			self.log_level = loglvl.to_string();
 		}
+
+		if let Some(port) = opts.port {
+			self.port = port;
+		}
+
+		self.app_id = opts.app_id.or(self.app_id);
 
 		Ok(())
 	}
