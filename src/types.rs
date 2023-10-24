@@ -617,6 +617,8 @@ pub enum LogLevel {
 	Info,
 	Debug,
 	Trace,
+	Warn,
+	Error,
 }
 
 impl FromStr for LogLevel {
@@ -627,6 +629,8 @@ impl FromStr for LogLevel {
 			"trace" => Ok(LogLevel::Trace),
 			"debug" => Ok(LogLevel::Debug),
 			"info" => Ok(LogLevel::Info),
+			"warn" => Ok(LogLevel::Warn),
+			"error" => Ok(LogLevel::Error),
 			_ => Err("valid values are: trace, debug and info".to_string()),
 		}
 	}
@@ -638,6 +642,8 @@ impl ToString for LogLevel {
 			LogLevel::Info => "INFO".to_string(),
 			LogLevel::Debug => "DEBUG".to_string(),
 			LogLevel::Trace => "TRACE".to_string(),
+			LogLevel::Warn => "WARN".to_string(),
+			LogLevel::Error => "ERROR".to_string(),
 		}
 	}
 }
