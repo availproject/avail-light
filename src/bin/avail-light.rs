@@ -43,7 +43,11 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-const CLIENT_ROLE: &str = "lightnode";
+const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
+	"crawler"
+} else {
+	"lightnode"
+};
 
 /// Light Client for Avail Blockchain
 
