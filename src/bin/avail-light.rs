@@ -169,7 +169,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let state = Arc::new(Mutex::new(State::default()));
 	let (rpc_client, rpc_events, rpc_event_loop) =
-		rpc::init(db.clone(), state.clone(), &cfg.full_nodes_ws);
+		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
 	// spawn the RPC Network task for Event Loop to run in the background
 	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
 
