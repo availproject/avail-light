@@ -6,7 +6,6 @@ use crate::{
 	api::v2::types::Topic,
 	data::{Database, RocksDB},
 	network::rpc::{Client, Node},
-	rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use std::{
@@ -235,9 +234,7 @@ mod tests {
 		},
 		data::Database,
 		network::rpc::Node,
-		rpc::Node,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
-		types::{RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
 	use avail_subxt::{

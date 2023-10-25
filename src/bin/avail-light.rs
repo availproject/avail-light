@@ -16,7 +16,9 @@ use clap::Parser;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{
+	fs,
 	net::Ipv4Addr,
+	path::Path,
 	sync::{Arc, Mutex},
 };
 use tokio::sync::{
@@ -46,13 +48,6 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 };
 
 /// Light Client for Avail Blockchain
-#[derive(Parser)]
-#[command(version)]
-struct CliOpts {
-	/// Path to the yaml configuration file
-	#[arg(short, long, value_name = "FILE", default_value_t = String::from("config.yaml"))]
-	config: String,
-}
 
 fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
 	FmtSubscriber::builder()
@@ -97,6 +92,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);
+	}
+
+	if opts.clean && Path::new(&cfg.avail_path).exists() {
+		info!("Cleaning up local state directory");
+		fs::remove_dir_all(&cfg.avail_path).context("Failed to remove local state directory")?;
+	}
+
+	if cfg.bootstraps.is_empty() {
+		Err(anyhow!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
 	let db = data::init_db(&cfg.avail_path).context("Cannot initialize database")?;
@@ -150,7 +154,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	p2p_client.bootstrap(cfg.clone().bootstraps).await?;
+	p2p_client
+		.bootstrap(cfg.clone().bootstraps.iter().map(Into::into).collect())
+		.await?;
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
@@ -227,13 +233,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(None, None)
 	};
 
-	#[cfg(feature = "api-v2")]
-	{
-		tokio::task::spawn(api::v2::publish(
-			api::v2::types::Topic::HeaderVerified,
-			rpc_events.subscribe(),
-			ws_clients.clone(),
-		));
+	tokio::task::spawn(api::v2::publish(
+		api::v2::types::Topic::HeaderVerified,
+		rpc_events.subscribe(),
+		ws_clients.clone(),
+	));
 
 	if let Some(sender) = block_tx.as_ref() {
 		tokio::task::spawn(api::v2::publish(

@@ -666,7 +666,7 @@ impl RuntimeConfig {
 				Multiaddr::from_str(network.multiaddr())
 					.context("unable to parse default bootstrap multi-address")?,
 			);
-			self.full_node_ws = vec![network.full_node_ws().to_string()];
+			self.full_nodes_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
 		}
 

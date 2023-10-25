@@ -13,7 +13,6 @@ use sp_core::{blake2_256, H256};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
-	time::Instant,
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
@@ -23,12 +22,10 @@ use warp::{
 };
 
 use crate::{
-	network::rpc::Node,
 	network::rpc::{Event as RpcEvent, Node},
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
-	types::{self, block_matrix_partition_format, BlockVerified, RuntimeConfig, State},
 	utils::decode_app_data,
 };
 

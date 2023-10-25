@@ -42,7 +42,7 @@ use tracing::{debug, error, info, instrument};
 use crate::{
 	data::store_encoded_data_in_db,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
-	proof, rpc,
+	proof,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 

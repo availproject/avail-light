@@ -2,11 +2,10 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
-use avail_subxt::primitives::Header as DaHeader;
-use avail_subxt::utils::H256;
+use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::{Decode, Encode};
 use kate_recovery::com::AppData;
-use rocksdb::DB;
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::sync::Arc;
 
 use crate::{

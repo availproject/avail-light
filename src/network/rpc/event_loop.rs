@@ -1,16 +1,10 @@
-#[cfg(feature = "api-v2")]
-use api::data_availability::calls::types::SubmitData;
-#[cfg(feature = "api-v2")]
-use avail_subxt::primitives::AvailExtrinsicParams;
-#[cfg(feature = "api-v2")]
-use subxt::tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress};
-
 use anyhow::{anyhow, Context, Result};
+use api::data_availability::calls::types::SubmitData;
 use avail_subxt::{
 	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
 	avail::{self},
 	build_client,
-	primitives::{grandpa::AuthorityId, Header},
+	primitives::{grandpa::AuthorityId, AvailExtrinsicParams, Header},
 	utils::H256,
 	AvailConfig,
 };
@@ -31,6 +25,7 @@ use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	rpc_params,
 	storage::StorageKey,
+	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
 	utils::AccountId32,
 	OnlineClient,
 };
@@ -41,7 +36,10 @@ use tracing::{info, instrument, trace, warn};
 use super::{client::Command, ExpectedVersion, Nodes, WrappedProof, CELL_WITH_PROOF_SIZE};
 use crate::{
 	data::store_finality_sync_checkpoint,
-	types::{FinalitySyncCheckpoint, GrandpaJustification, RuntimeVersion, SignerMessage, State},
+	types::{
+		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RuntimeVersion,
+		SignerMessage, State,
+	},
 	utils::filter_auth_set_changes,
 };
 
@@ -382,6 +380,11 @@ impl EventLoop {
 				self.block_data.last_finalized_block_header = Some(header.clone());
 
 				// finally, send the Verified Block Header
+				self.state
+					.lock()
+					.unwrap()
+					.header_verified
+					.set(header.number);
 				self.event_sender
 					.send(Event::HeaderUpdate {
 						header,
@@ -493,7 +496,6 @@ impl EventLoop {
 				let res = self.fetch_set_id_at(block_hash).await;
 				_ = response_sender.send(res);
 			},
-			#[cfg(feature = "api-v2")]
 			Command::SubmitFromBytesAndWatch {
 				tx_bytes,
 				response_sender,
@@ -501,7 +503,6 @@ impl EventLoop {
 				let res = self.submit_from_bytes_and_watch(tx_bytes).await;
 				_ = response_sender.send(res);
 			},
-			#[cfg(feature = "api-v2")]
 			Command::SubmitSignedAndWatch {
 				extrinsic,
 				pair_signer,
@@ -692,7 +693,6 @@ impl EventLoop {
 			.map_err(|e| anyhow!(e))
 	}
 
-	#[cfg(feature = "api-v2")]
 	async fn submit_signed_and_watch(
 		&self,
 		extrinsic: Payload<SubmitData>,
@@ -706,7 +706,6 @@ impl EventLoop {
 			.map_err(|e| anyhow!(e))
 	}
 
-	#[cfg(feature = "api-v2")]
 	async fn submit_from_bytes_and_watch(
 		&self,
 		tx_bytes: Vec<u8>,

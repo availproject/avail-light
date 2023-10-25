@@ -1,20 +1,19 @@
-#[cfg(feature = "api-v2")]
+use anyhow::{Context, Result};
 use avail_subxt::{
-	api::data_availability::calls::types::SubmitData, avail::Pair,
-	primitives::AvailExtrinsicParams, AvailConfig,
+	api::data_availability::calls::types::SubmitData,
+	avail::Pair,
+	primitives::{AvailExtrinsicParams, Header},
+	utils::H256,
+	AvailConfig,
 };
-#[cfg(feature = "api-v2")]
+use kate_recovery::{data::Cell, matrix::Position};
+use sp_core::ed25519::{self, Public};
 use subxt::{
 	storage::StorageKey,
 	tx::{PairSigner, Payload, TxProgress},
+	utils::AccountId32,
 	OnlineClient,
 };
-
-use anyhow::{Context, Result};
-use avail_subxt::{primitives::Header, utils::H256};
-use kate_recovery::{data::Cell, matrix::Position};
-use sp_core::ed25519::{self, Public};
-use subxt::{storage::StorageKey, utils::AccountId32};
 use tokio::sync::{mpsc, oneshot};
 
 use super::{Node, WrappedProof};
@@ -210,7 +209,6 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	#[cfg(feature = "api-v2")]
 	pub async fn submit_signed_and_watch(
 		&self,
 		extrinsic: Payload<SubmitData>,
@@ -232,7 +230,6 @@ impl Client {
 			.context("RPC Command Sender not to be dropped.")?
 	}
 
-	#[cfg(feature = "api-v2")]
 	pub async fn submit_from_bytes_and_watch(
 		&self,
 		tx_bytes: Vec<u8>,
@@ -376,13 +373,11 @@ pub enum Command {
 		block_hash: H256,
 		response_sender: oneshot::Sender<Result<Option<Vec<AccountId32>>>>,
 	},
-	#[cfg(feature = "api-v2")]
 	SubmitFromBytesAndWatch {
 		tx_bytes: Vec<u8>,
 		response_sender:
 			oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>,
 	},
-	#[cfg(feature = "api-v2")]
 	SubmitSignedAndWatch {
 		extrinsic: Payload<SubmitData>,
 		pair_signer: PairSigner<AvailConfig, Pair>,

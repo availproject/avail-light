@@ -25,7 +25,7 @@ use crate::{
 		rpc::{self, Client as RpcClient},
 	},
 	proof,
-	types::{BlockVerified, State, SyncClientConfig},
+	types::{BlockVerified, OptionBlockRange, State, SyncClientConfig},
 	utils::{calculate_confidence, extract_app_lookup, extract_kate},
 };
 use anyhow::{anyhow, Context, Result};

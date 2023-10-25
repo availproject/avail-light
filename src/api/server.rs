@@ -15,8 +15,6 @@ use crate::{
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
-use avail_subxt::avail;
-use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use std::{
 	net::SocketAddr,
@@ -33,7 +31,7 @@ pub struct Server {
 	pub version: String,
 	pub network_version: String,
 	pub node: Node,
-	pub node_client: avail::Client,
+	pub node_client: rpc::Client,
 	pub ws_clients: v2::types::WsClients,
 }
 

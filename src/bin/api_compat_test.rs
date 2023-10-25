@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use anyhow::Result;
 use avail_light::{
 	data,
@@ -8,6 +6,7 @@ use avail_light::{
 };
 use clap::Parser;
 use kate_recovery::matrix::Position;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser)]
 struct CommandArgs {
