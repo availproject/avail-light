@@ -325,8 +325,10 @@ impl EventLoop {
 				);
 
 				assert!(
-					num_matched_addresses
-						< self.block_data.current_valset.validator_set.len() * 2 / 3,
+					is_signed_by_supermajority(
+						num_matched_addresses,
+						self.block_data.current_valset.validator_set.len()
+					),
 					"Not signed by the supermajority of the validator set."
 				);
 
@@ -765,5 +767,28 @@ impl EventLoop {
 	fn get_genesis_hash(&self) -> Result<H256> {
 		let client = self.unpack_client()?;
 		Ok(client.genesis_hash())
+	}
+}
+
+
+fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) -> bool {
+	num_signatures >= (validator_set_size * 2 / 3) + 1
+}
+
+#[cfg(test)]
+mod tests {
+	use test_case::test_case;
+	#[test_case(1, 1 => true)]
+	#[test_case(1, 2 => false)]
+	#[test_case(2, 2 => true)]
+	#[test_case(2, 3 => false)]
+	#[test_case(3, 3 => true)]
+	#[test_case(3, 4 => true)]
+	#[test_case(4, 5 => true)]
+	#[test_case(66, 100 => false)]
+	#[test_case(67, 100 => true)]
+	fn check_supermajority_condition(num_signatures: usize, validator_set_size: usize) -> bool {
+		use crate::network::rpc::event_loop::is_signed_by_supermajority;
+		is_signed_by_supermajority(num_signatures, validator_set_size)
 	}
 }

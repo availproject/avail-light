@@ -80,7 +80,7 @@ tikv-jemallocator = "0.5"
 [dev-dependencies]
 hex-literal = "0.4.0"
 proptest = "1.0.0"
-test-case = "1.2.3"
+test-case = "3.2.1"
 
 [profile.debug-fast]
 inherits = "release"
