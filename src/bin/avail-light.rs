@@ -192,7 +192,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
 
-	let pp = Arc::new(kate_recovery::testnet::public_params(1024));
+	let pp = Arc::new(kate_recovery::testnet_v2::public_params());
 	let raw_pp = pp.to_raw_var_bytes();
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();

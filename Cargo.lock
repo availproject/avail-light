@@ -431,7 +431,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "avail-core"
 version = "0.5.1"
-source = "git+https://github.com/availproject/avail-core?tag=v1.7.1#1199298303b03e33fc51d85a076ce54c7dc3876d"
+source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#75ee006660865e5995a070f994fcd3200eb81c8f"
 dependencies = [
  "binary-merkle-tree",
  "derive_more",
@@ -2935,7 +2935,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.9.1"
-source = "git+https://github.com/availproject/avail-core?tag=v1.7.1#1199298303b03e33fc51d85a076ce54c7dc3876d"
+source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#75ee006660865e5995a070f994fcd3200eb81c8f"
 dependencies = [
  "avail-core",
  "derive_more",
@@ -7456,7 +7456,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "digest 0.10.7",
  "rand 0.8.5",
  "static_assertions",
