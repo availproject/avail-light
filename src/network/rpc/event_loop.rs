@@ -770,7 +770,6 @@ impl EventLoop {
 	}
 }
 
-
 fn is_signed_by_supermajority(num_signatures: usize, validator_set_size: usize) -> bool {
 	num_signatures >= (validator_set_size * 2 / 3) + 1
 }
