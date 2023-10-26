@@ -32,7 +32,7 @@ use tracing_subscriber::{
 };
 
 #[cfg(feature = "network-analysis")]
-use avail_light::network::analyzer;
+use avail_light::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;

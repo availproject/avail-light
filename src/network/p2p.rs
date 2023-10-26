@@ -22,7 +22,7 @@ use tokio::sync::mpsc::{self};
 use tracing::info;
 
 #[cfg(feature = "network-analysis")]
-mod analyzer;
+pub mod analyzer;
 mod client;
 mod event_loop;
 mod kad_mem_store;
