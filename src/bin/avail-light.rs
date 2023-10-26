@@ -166,6 +166,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let state = Arc::new(Mutex::new(State::default()));
 	let (rpc_client, rpc_events, rpc_event_loop) =
 		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
+
+	let publish_rpc_event_receiver = rpc_events.subscribe();
+	let lc_rpc_event_receiver = rpc_events.subscribe();
+	let first_header_rpc_event_receiver = rpc_events.subscribe();
+
 	// spawn the RPC Network task for Event Loop to run in the background
 	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
 
@@ -183,7 +188,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	}
 
 	info!("Waiting for first finalized header...");
-	let block_header = rpc::wait_for_finalized_header(rpc_events.subscribe(), 30).await?;
+	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60).await?;
 
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number.saturating_sub(1);
@@ -229,7 +234,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	tokio::task::spawn(api::v2::publish(
 		api::v2::types::Topic::HeaderVerified,
-		rpc_events.subscribe(),
+		publish_rpc_event_receiver,
 		ws_clients.clone(),
 	));
 
@@ -297,7 +302,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
-		rpc_event_receiver: rpc_events.subscribe(),
+		rpc_event_receiver: lc_rpc_event_receiver,
 		error_sender: error_sender.clone(),
 	};
 
