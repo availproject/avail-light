@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::{
 	sync::{broadcast, mpsc},
-	time,
+	time::{self, timeout},
 };
 use tracing::debug;
 
@@ -232,13 +232,9 @@ pub async fn wait_for_finalized_header(
 	timeout_seconds: u64,
 ) -> anyhow::Result<Header> {
 	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
-	let mut timer = time::interval_at(time::Instant::now() + timeout_seconds, timeout_seconds);
-	tokio::select! {
-		event = rpc_events_receiver.recv() => match event {
-			Ok(rpc::Event::HeaderUpdate { header, .. }) => Ok(header),
-			Err(error) => Err(anyhow!("Failed to receive finalized header: {error}")),
-		},
-		_ = timer.tick() => Err(anyhow!("Timeout on waiting for first finalized header")),
-
+	match timeout(timeout_seconds, rpc_events_receiver.recv()).await {
+		Ok(Ok(rpc::Event::HeaderUpdate { header, .. })) => Ok(header),
+		Ok(Err(error)) => Err(anyhow!("Failed to receive finalized header: {error}")),
+		Err(_) => Err(anyhow!("Timeout on waiting for first finalized header")),
 	}
 }
