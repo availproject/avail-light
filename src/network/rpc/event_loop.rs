@@ -512,7 +512,7 @@ impl EventLoop {
 				response_sender,
 			} => {
 				let res = self
-					.submit_signed_and_watch(extrinsic, pair_signer, params)
+					.submit_signed_and_watch(extrinsic, pair_signer.as_ref(), params)
 					.await;
 				_ = response_sender.send(res);
 			},
@@ -698,12 +698,12 @@ impl EventLoop {
 	async fn submit_signed_and_watch(
 		&self,
 		extrinsic: Payload<SubmitData>,
-		pair_signer: PairSigner<AvailConfig, avail::Pair>,
+		pair_signer: &PairSigner<AvailConfig, avail::Pair>,
 		params: AvailExtrinsicParams,
 	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
 		self.unpack_client()?
 			.tx()
-			.sign_and_submit_then_watch(&extrinsic, &pair_signer, params)
+			.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
 			.await
 			.map_err(|e| anyhow!(e))
 	}

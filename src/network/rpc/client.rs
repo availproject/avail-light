@@ -219,7 +219,7 @@ impl Client {
 		self.command_sender
 			.send(Command::SubmitSignedAndWatch {
 				extrinsic,
-				pair_signer,
+				pair_signer: Box::new(pair_signer),
 				params,
 				response_sender,
 			})
@@ -380,7 +380,7 @@ pub enum Command {
 	},
 	SubmitSignedAndWatch {
 		extrinsic: Payload<SubmitData>,
-		pair_signer: PairSigner<AvailConfig, Pair>,
+		pair_signer: Box<PairSigner<AvailConfig, Pair>>,
 		params: AvailExtrinsicParams,
 		response_sender:
 			oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>,
