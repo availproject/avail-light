@@ -223,10 +223,7 @@ pub fn routes(
 
 #[cfg(test)]
 mod tests {
-	use super::{
-		block_data_route, block_header_route, block_route, submit_route, transactions,
-		types::Transaction,
-	};
+	use super::{transactions, types::Transaction};
 	use crate::{
 		api::v2::types::{
 			DataField, ErrorCode, SubmitResponse, Subscription, SubscriptionId, Topic, Version,
