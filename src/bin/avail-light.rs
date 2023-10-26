@@ -170,6 +170,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let publish_rpc_event_receiver = rpc_events.subscribe();
 	let lc_rpc_event_receiver = rpc_events.subscribe();
 	let first_header_rpc_event_receiver = rpc_events.subscribe();
+	#[cfg(feature = "crawl")]
+	let crawler_rpc_event_receiver = rpc_events.subscribe();
 
 	// spawn the RPC Network task for Event Loop to run in the background
 	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
@@ -257,8 +259,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	#[cfg(feature = "crawl")]
 	if cfg.crawl.crawl_block {
 		tokio::task::spawn(avail_light::crawl_client::run(
-			message_tx.subscribe(),
-			network_client.clone(),
+			crawler_rpc_event_receiver,
+			p2p_client.clone(),
 			cfg.crawl.crawl_block_delay,
 			ot_metrics.clone(),
 			cfg.crawl.crawl_block_mode,
