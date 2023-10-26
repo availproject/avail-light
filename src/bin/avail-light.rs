@@ -2,14 +2,10 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
-use avail_light::{
-	api, data,
-	network::rpc,
-	telemetry::{self},
-};
+use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
 	consts::EXPECTED_NETWORK_VERSION,
-	network::p2p::{self},
+	network::p2p,
 	types::{CliOpts, Mode, RuntimeConfig, State},
 };
 use clap::Parser;
@@ -186,10 +182,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
 	}
 
-	let block_header = rpc_client
-		.get_chain_head_header()
-		.await
-		.context("Failed to get chain header")?;
+	info!("Waiting for first finalized header...");
+	let block_header = rpc::wait_for_finalized_header(rpc_events.subscribe(), 30).await?;
 
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number.saturating_sub(1);
@@ -288,6 +282,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			sync_finality,
 			error_sender.clone(),
 			state.clone(),
+			block_header.clone(),
 		));
 	} else {
 		let mut s = state

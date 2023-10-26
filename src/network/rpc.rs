@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use avail_subxt::{primitives::Header, utils::H256};
 use codec::Decode;
 use kate_recovery::matrix::{Dimensions, Position};
@@ -10,11 +11,15 @@ use std::{
 	fmt::Display,
 	sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::{
+	sync::{broadcast, mpsc},
+	time,
+};
 use tracing::debug;
 
 use crate::{
 	consts::EXPECTED_NETWORK_VERSION,
+	network::rpc,
 	types::{GrandpaJustification, State},
 };
 
@@ -220,4 +225,20 @@ pub fn cell_count_for_confidence(confidence: f64) -> u32 {
 		cell_count = (-((1f64 - (99f64 / 100f64)).log2())).ceil() as u32;
 	}
 	cell_count
+}
+
+pub async fn wait_for_finalized_header(
+	mut rpc_events_receiver: broadcast::Receiver<Event>,
+	timeout_seconds: u64,
+) -> anyhow::Result<Header> {
+	let timeout_seconds = time::Duration::from_secs(timeout_seconds);
+	let mut timer = time::interval_at(time::Instant::now() + timeout_seconds, timeout_seconds);
+	tokio::select! {
+		event = rpc_events_receiver.recv() => match event {
+			Ok(rpc::Event::HeaderUpdate { header, .. }) => Ok(header),
+			Err(error) => Err(anyhow!("Failed to receive finalized header: {error}")),
+		},
+		_ = timer.tick() => Err(anyhow!("Timeout on waiting for first finalized header")),
+
+	}
 }

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use avail_subxt::primitives::Header;
 use codec::Encode;
 use futures::future::join_all;
 use rocksdb::DB;
@@ -104,8 +105,9 @@ pub async fn run(
 	sync_finality_impl: impl SyncFinality,
 	error_sender: Sender<anyhow::Error>,
 	state: Arc<Mutex<State>>,
+	from_header: Header,
 ) {
-	if let Err(err) = sync_finality(sync_finality_impl, state).await {
+	if let Err(err) = sync_finality(sync_finality_impl, state, from_header).await {
 		error!("Cannot sync finality {err}");
 		if let Err(error) = error_sender.send(err).await {
 			error!("Cannot send error message: {error}");
@@ -116,6 +118,7 @@ pub async fn run(
 pub async fn sync_finality(
 	sync_finality: impl SyncFinality,
 	state: Arc<Mutex<State>>,
+	mut from_header: Header,
 ) -> Result<()> {
 	let rpc_client = sync_finality.get_client();
 	let gen_hash = rpc_client.get_genesis_hash().await?;
@@ -142,15 +145,7 @@ pub async fn sync_finality(
 		info!("Set ID at genesis is {set_id}");
 	}
 
-	let head = rpc_client
-		.get_chain_head_hash()
-		.await
-		.context("Couldn't get finalized head!")?;
-	let mut header = rpc_client
-		.get_header_by_hash(head)
-		.await
-		.context("Couldn't get finalized head header!")?;
-	let last_block_num = header.number;
+	let last_block_num = from_header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
 	let mut prev_hash = rpc_client
@@ -169,14 +164,17 @@ pub async fn sync_finality(
 				"Couldn't get hash for block no. {}",
 				curr_block_num
 			))?;
-		header = rpc_client
+		from_header = rpc_client
 			.get_header_by_hash(hash)
 			.await
 			.context(format!("Couldn't get header for {}", hash))?;
-		assert_eq!(header.parent_hash, prev_hash, "Parent hash doesn't match!");
-		prev_hash = header.using_encoded(blake2_256).into();
+		assert_eq!(
+			from_header.parent_hash, prev_hash,
+			"Parent hash doesn't match!"
+		);
+		prev_hash = from_header.using_encoded(blake2_256).into();
 
-		let next_validator_set = filter_auth_set_changes(&header);
+		let next_validator_set = filter_auth_set_changes(&from_header);
 		if next_validator_set.is_empty() {
 			curr_block_num += 1;
 			continue;
