@@ -21,11 +21,11 @@ use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self};
 use tracing::info;
 
+#[cfg(feature = "network-analysis")]
+pub mod analyzer;
 mod client;
 mod event_loop;
 mod kad_mem_store;
-#[cfg(feature = "network-analysis")]
-pub mod network_analyzer;
 pub use client::Client;
 use event_loop::EventLoop;
 
