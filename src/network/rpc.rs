@@ -89,7 +89,7 @@ pub struct Nodes {
 }
 
 impl Nodes {
-	pub fn next(&mut self) -> Option<Node> {
+	pub fn next_node(&mut self) -> Option<Node> {
 		// we have exhausted all nodes from the list
 		// this is the last one
 		if self.current_index == self.list.len() - 1 {
