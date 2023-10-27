@@ -37,6 +37,7 @@ use kate_recovery::{data::Cell, matrix::Position};
 use mockall::automock;
 use rocksdb::DB;
 use std::{
+	ops::Range,
 	sync::{Arc, Mutex},
 	time::Instant,
 };
@@ -254,25 +255,22 @@ async fn process_block(
 pub async fn run(
 	sync_client: impl SyncClient,
 	cfg: SyncClientConfig,
-	start_block: u32,
-	end_block: u32,
+	sync_range: Range<u32>,
 	pp: Arc<PublicParameters>,
 	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
-	// This condition doesn't apply if latest and start_block are 0,
-	// since end_block and latest will be the same, due to saturating sub
-	if start_block > end_block {
-		warn!("There are no blocks to sync from {start_block} to {end_block}");
+	if sync_range.is_empty() {
+		warn!("There are no blocks to sync for range {sync_range:?}");
 		return;
 	}
-	let sync_blocks_depth = end_block - start_block;
+	let sync_blocks_depth = sync_range.len();
 	if sync_blocks_depth >= 250 {
 		warn!("In order to process {sync_blocks_depth} blocks behind latest block, connected nodes needs to be archive nodes!");
 	}
 
-	info!("Syncing block headers from {start_block} to {end_block}");
-	for block_number in start_block..=end_block {
+	info!("Syncing block headers for {sync_range:?}");
+	for block_number in sync_range {
 		info!("Testing block {block_number}!");
 
 		{
