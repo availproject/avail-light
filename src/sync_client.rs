@@ -260,7 +260,9 @@ pub async fn run(
 	block_verified_sender: Option<broadcast::Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
-	if start_block >= end_block {
+	// This condition doesn't apply if latest and start_block are 0,
+	// since end_block and latest will be the same, due to saturating sub
+	if start_block > end_block {
 		warn!("There are no blocks to sync from {start_block} to {end_block}");
 		return;
 	}
