@@ -24,73 +24,67 @@ pub struct Client {
 	command_sender: mpsc::Sender<Command>,
 }
 
+// Takes command sender and function that creates command from response sender,
+// and sends command to command sender, waiting on response receiver for result
+async fn execute_sync<F, C, T>(sender: &mpsc::Sender<C>, command_fn: F) -> anyhow::Result<T>
+where
+	C: Send + Sync + 'static,
+	F: FnOnce(oneshot::Sender<Result<T>>) -> C,
+{
+	let (response_sender, response_receiver) = oneshot::channel();
+	sender
+		.send(command_fn(response_sender))
+		.await
+		.context("receiver should not be dropped")?;
+	response_receiver
+		.await
+		.context("sender should not be dropped")?
+}
+
 impl Client {
 	pub fn new(command_sender: mpsc::Sender<Command>) -> Self {
 		Self { command_sender }
 	}
 
-	pub async fn get_block_hash(&self, block_num: u32) -> Result<H256> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetBlockHash {
-				block_number: block_num,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+	async fn execute_sync<F, T>(&self, command_fn: F) -> anyhow::Result<T>
+	where
+		F: FnOnce(oneshot::Sender<Result<T>>) -> Command,
+	{
+		execute_sync(&self.command_sender, command_fn).await
+	}
+
+	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {
+		self.execute_sync(|response_sender| Command::GetBlockHash {
+			block_number,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_header_by_hash(&self, block_hash: H256) -> Result<Header> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetHeaderByHash {
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetHeaderByHash {
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_validator_set_by_hash(&self, block_hash: H256) -> Result<Vec<Public>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetValidatorSetByHash {
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetValidatorSetByHash {
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_chain_head_header(&self) -> Result<Header> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetChainHeadHeader { response_sender })
+		self.execute_sync(|response_sender| Command::GetChainHeadHeader { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 
 	pub async fn get_chain_head_hash(&self) -> Result<H256> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetChainHeadHash { response_sender })
+		self.execute_sync(|response_sender| Command::GetChainHeadHash { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 
 	pub async fn request_kate_rows(
@@ -98,18 +92,12 @@ impl Client {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::RequestKateRows {
-				rows,
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::RequestKateRows {
+			rows,
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn request_kate_proof(
@@ -117,40 +105,22 @@ impl Client {
 		block_hash: H256,
 		positions: &[Position],
 	) -> Result<Vec<Cell>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::RequestKateProof {
-				positions: positions.into(),
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::RequestKateProof {
+			positions: positions.into(),
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_system_version(&self) -> Result<String> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetSystemVersion { response_sender })
+		self.execute_sync(|response_sender| Command::GetSystemVersion { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 
 	pub async fn get_runtime_version(&self) -> Result<RuntimeVersion> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::RequestRuntimeVersion { response_sender })
+		self.execute_sync(|response_sender| Command::RequestRuntimeVersion { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 
 	pub async fn get_validator_set_by_block_number(&self, block_num: u32) -> Result<Vec<Public>> {
@@ -171,42 +141,24 @@ impl Client {
 	}
 
 	pub async fn get_connected_node(&self) -> Result<Node> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetConnectedNode { response_sender })
+		self.execute_sync(|response_sender| Command::GetConnectedNode { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 
 	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::FetchSetIdAt {
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::FetchSetIdAt {
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetValidatorSetAt {
-				block_hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetValidatorSetAt {
+			block_hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn submit_signed_and_watch(
@@ -215,36 +167,24 @@ impl Client {
 		pair_signer: PairSigner<AvailConfig, Pair>,
 		params: AvailExtrinsicParams,
 	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::SubmitSignedAndWatch {
-				extrinsic,
-				pair_signer: Box::new(pair_signer),
-				params,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::SubmitSignedAndWatch {
+			extrinsic,
+			pair_signer: Box::new(pair_signer),
+			params,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn submit_from_bytes_and_watch(
 		&self,
 		tx_bytes: Vec<u8>,
 	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::SubmitFromBytesAndWatch {
-				tx_bytes,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::SubmitFromBytesAndWatch {
+			tx_bytes,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_paged_storage_keys(
@@ -254,20 +194,14 @@ impl Client {
 		start_key: Option<Vec<u8>>,
 		hash: Option<H256>,
 	) -> Result<Vec<StorageKey>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetPagedStorageKeys {
-				key,
-				count,
-				start_key,
-				hash,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetPagedStorageKeys {
+			key,
+			count,
+			start_key,
+			hash,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_session_key_owner_at(
@@ -275,43 +209,25 @@ impl Client {
 		block_hash: H256,
 		public_key: ed25519::Public,
 	) -> Result<Option<AccountId32>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetSessionKeyOwnerAt {
-				block_hash,
-				public_key,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetSessionKeyOwnerAt {
+			block_hash,
+			public_key,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::RequestFinalityProof {
-				block_number,
-				response_sender,
-			})
-			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::RequestFinalityProof {
+			block_number,
+			response_sender,
+		})
+		.await
 	}
 
 	pub async fn get_genesis_hash(&self) -> Result<H256> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetGenesisHash { response_sender })
+		self.execute_sync(|response_sender| Command::GetGenesisHash { response_sender })
 			.await
-			.context("RPC Command Receiver not be dropped")?;
-		response_receiver
-			.await
-			.context("RPC Command Sender not to be dropped.")?
 	}
 }
 
