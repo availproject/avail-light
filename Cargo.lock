@@ -431,7 +431,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "avail-core"
 version = "0.5.1"
-source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#75ee006660865e5995a070f994fcd3200eb81c8f"
+source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#c26660d4f9f5978655bfdb26e2764e85b0bb9c28"
 dependencies = [
  "binary-merkle-tree",
  "derive_more",
@@ -2935,7 +2935,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.9.1"
-source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#75ee006660865e5995a070f994fcd3200eb81c8f"
+source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#c26660d4f9f5978655bfdb26e2764e85b0bb9c28"
 dependencies = [
  "avail-core",
  "derive_more",

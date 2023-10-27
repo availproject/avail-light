@@ -501,13 +501,13 @@ mod tests {
 	use crate::types::{AppClientConfig, RuntimeConfig};
 	use avail_core::DataLookup;
 	use hex_literal::hex;
-	use kate_recovery::{matrix::Dimensions, testnet_v2};
+	use kate_recovery::{matrix::Dimensions, testnet};
 
 	#[tokio::test]
 	async fn test_process_blocks_without_rpc() {
 		let mut cfg = AppClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
-		let pp = Arc::new(testnet_v2::public_params());
+		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 128).unwrap();
 		let mut mock_client = MockAppClient::new();
 		let dht_fetched_rows: Vec<Option<Vec<u8>>> = [
@@ -562,7 +562,7 @@ mod tests {
 	#[tokio::test]
 	async fn test_process_block_with_rpc() {
 		let cfg = AppClientConfig::from(&RuntimeConfig::default());
-		let pp = Arc::new(testnet_v2::public_params());
+		let pp = Arc::new(testnet::public_params(1024));
 		let dimensions: Dimensions = Dimensions::new(1, 16).unwrap();
 		let mut mock_client = MockAppClient::new();
 		// let dht_missing_rows: Vec<u32> = vec![0];
