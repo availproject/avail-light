@@ -34,6 +34,7 @@ use rand_chacha::ChaChaRng;
 use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
+	ops::Range,
 	sync::{Arc, Mutex},
 };
 use tokio::sync::{broadcast, mpsc::Sender};
@@ -423,22 +424,25 @@ pub async fn run(
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
-	sync_end_block: u32,
+	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 	error_sender: Sender<anyhow::Error>,
 ) {
 	info!("Starting for app {app_id}...");
 
-	fn set_data_verified_state(state: Arc<Mutex<State>>, sync_end_block: u32, block_number: u32) {
+	fn set_data_verified_state(
+		state: Arc<Mutex<State>>,
+		sync_range: &Range<u32>,
+		block_number: u32,
+	) {
 		let mut state = state.lock().expect("State lock can be acquired");
-		let first = state.confidence_achieved.first();
-		match first.map(|first| block_number < first) {
-			Some(true) => state.sync_data_verified.set(block_number),
-			Some(false) | None => state.data_verified.set(block_number),
+		match sync_range.contains(&block_number) {
+			true => state.sync_data_verified.set(block_number),
+			false => state.data_verified.set(block_number),
 		}
-		if sync_end_block == block_number {
+		if state.synced == Some(false) && sync_range.clone().last() == Some(block_number) {
 			state.synced.replace(true);
-		}
+		};
 	}
 
 	loop {
@@ -463,7 +467,7 @@ pub async fn run(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
 			);
-			set_data_verified_state(state.clone(), sync_end_block, block_number);
+			set_data_verified_state(state.clone(), &sync_range, block_number);
 			continue;
 		}
 
@@ -483,7 +487,7 @@ pub async fn run(
 				return;
 			},
 		};
-		set_data_verified_state(state.clone(), sync_end_block, block_number);
+		set_data_verified_state(state.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			if let Err(error) = error_sender.send(error.into()).await {

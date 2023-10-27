@@ -193,7 +193,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let block_header = rpc::wait_for_finalized_header(first_header_rpc_event_receiver, 60).await?;
 
 	state.lock().unwrap().latest = block_header.number;
-	let sync_end_block = block_header.number.saturating_sub(1);
+	let sync_range = cfg.sync_range(block_header.number);
 
 	let ws_clients = api::v2::types::WsClients::default();
 
@@ -225,7 +225,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			block_rx,
 			pp.clone(),
 			state.clone(),
-			sync_end_block,
+			sync_range.clone(),
 			data_tx,
 			error_sender.clone(),
 		));
@@ -270,13 +270,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let sync_client =
 		avail_light::sync_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
-	if let Some(sync_start_block) = cfg.sync_start_block {
+	if cfg.sync_start_block.is_some() {
 		state.lock().unwrap().synced.replace(false);
 		tokio::task::spawn(avail_light::sync_client::run(
 			sync_client,
 			(&cfg).into(),
-			sync_start_block,
-			sync_end_block,
+			sync_range,
 			pp.clone(),
 			block_tx.clone(),
 			state.clone(),

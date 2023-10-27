@@ -13,6 +13,7 @@ use kate_recovery::{
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
 use sp_core::{blake2_256, bytes, ed25519};
+use std::ops::Range;
 use std::str::FromStr;
 
 use clap::Parser;
@@ -649,6 +650,12 @@ impl ToString for LogLevel {
 }
 
 impl RuntimeConfig {
+	/// A range bounded inclusively below and exclusively above
+	pub fn sync_range(&self, end: u32) -> Range<u32> {
+		let start = self.sync_start_block.unwrap_or(end);
+		Range { start, end }
+	}
+
 	pub fn load_runtime_config(&mut self, opts: &CliOpts) -> Result<()> {
 		if let Some(config_path) = &opts.config {
 			fs::metadata(config_path)
