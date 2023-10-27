@@ -24,33 +24,24 @@ pub struct Client {
 	command_sender: mpsc::Sender<Command>,
 }
 
-// Takes command sender and function that creates command from response sender,
-// and sends command to command sender, waiting on response receiver for result
-async fn execute_sync<F, C, T>(sender: &mpsc::Sender<C>, command_fn: F) -> anyhow::Result<T>
-where
-	C: Send + Sync + 'static,
-	F: FnOnce(oneshot::Sender<Result<T>>) -> C,
-{
-	let (response_sender, response_receiver) = oneshot::channel();
-	sender
-		.send(command_fn(response_sender))
-		.await
-		.context("receiver should not be dropped")?;
-	response_receiver
-		.await
-		.context("sender should not be dropped")?
-}
-
 impl Client {
 	pub fn new(command_sender: mpsc::Sender<Command>) -> Self {
 		Self { command_sender }
 	}
 
-	async fn execute_sync<F, T>(&self, command_fn: F) -> anyhow::Result<T>
+	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
 	where
 		F: FnOnce(oneshot::Sender<Result<T>>) -> Command,
 	{
-		execute_sync(&self.command_sender, command_fn).await
+		let (response_sender, response_receiver) = oneshot::channel();
+		let command = command_with_sender(response_sender);
+		self.command_sender
+			.send(command)
+			.await
+			.context("receiver should not be dropped")?;
+		response_receiver
+			.await
+			.context("sender should not be dropped")?
 	}
 
 	pub async fn get_block_hash(&self, block_number: u32) -> Result<H256> {

@@ -1,3 +1,4 @@
+use super::DHTPutSuccess;
 use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use kate_recovery::{
@@ -13,8 +14,6 @@ use libp2p::{
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace};
-
-use super::DHTPutSuccess;
 
 #[derive(Clone)]
 pub struct Client {
@@ -75,62 +74,53 @@ impl Client {
 		}
 	}
 
-	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
+	where
+		F: FnOnce(oneshot::Sender<T>) -> Command,
+	{
 		let (response_sender, response_receiver) = oneshot::channel();
+		let command = command_with_sender(response_sender);
 		self.command_sender
-			.send(Command::StartListening {
-				addr,
-				response_sender,
-			})
+			.send(command)
 			.await
-			.context("Command receiver should not be dropped.")?;
+			.context("receiver should not be dropped")?;
 		response_receiver
 			.await
-			.context("Sender not to be dropped.")?
+			.context("sender should not be dropped")
+	}
+
+	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| Command::StartListening {
+			addr,
+			response_sender,
+		})
+		.await?
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::AddAddress {
-				peer_id,
-				peer_addr,
-				response_sender,
-			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::AddAddress {
+			peer_id,
+			peer_addr,
+			response_sender,
+		})
+		.await?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		let (response_sender, response_receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.command_sender
-			.send(Command::Bootstrap { response_sender })
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::Bootstrap { response_sender })
+			.await?
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetKadRecord {
-				key,
-				response_sender,
-			})
-			.await
-			.context("Command receiver should not be dropped.")?;
-		response_receiver
-			.await
-			.context("Sender not to be dropped.")?
+		self.execute_sync(|response_sender| Command::GetKadRecord {
+			key,
+			response_sender,
+		})
+		.await?
 	}
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
@@ -140,55 +130,39 @@ impl Client {
 		for chunk in records.chunks(self.put_batch_size) {
 			// create oneshot for each chunk, through which will success counts be sent,
 			// only for the records in that chunk
-			let (response_sender, response_receiver) = oneshot::channel::<DHTPutSuccess>();
-			if self
-				.command_sender
-				.send(Command::PutKadRecordBatch {
+			match self
+				.execute_sync(|response_sender| Command::PutKadRecordBatch {
 					records: chunk.into(),
 					quorum,
 					response_sender,
 				})
 				.await
-				.context("Command receiver should not be dropped.")
-				.is_err()
 			{
-				return DHTPutSuccess::Batch(num_success);
-			}
-			// wait here for successfully counted put operations from this chunk
-			// waiting in this manner introduces a back pressure from overwhelming the network
-			// with too many possible PUT request coming in from the whole batch
-			// this is the reason why input parameter vector of records is split into chunks
-			if let Ok(DHTPutSuccess::Batch(num)) = response_receiver.await {
-				num_success += num;
+				Ok(DHTPutSuccess::Single) => num_success += 1,
+				// wait here for successfully counted put operations from this chunk
+				// waiting in this manner introduces a back pressure from overwhelming the network
+				// with too many possible PUT request coming in from the whole batch
+				// this is the reason why input parameter vector of records is split into chunks
+				Ok(DHTPutSuccess::Batch(num)) => num_success += num,
+				Err(_) => return DHTPutSuccess::Batch(num_success),
 			}
 		}
 		DHTPutSuccess::Batch(num_success)
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::CountDHTPeers { response_sender })
+		self.execute_sync(|response_sender| Command::CountDHTPeers { response_sender })
 			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver.await.context("Sender not to be dropped.")
 	}
 
 	async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
-		let (response_sender, response_receiver) = oneshot::channel();
-		self.command_sender
-			.send(Command::GetMultiaddress { response_sender })
+		self.execute_sync(|response_sender| Command::GetMultiaddress { response_sender })
 			.await
-			.context("Command receiver not to be dropped.")?;
-		response_receiver.await.context("Sender not to be dropped.")
 	}
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.command_sender
-			.send(Command::ReduceKademliaMapSize)
-			.await
-			.context("Command receiver should not be dropped.")
+		self.execute_sync(|_| Command::ReduceKademliaMapSize).await
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
