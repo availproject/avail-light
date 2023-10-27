@@ -1,5 +1,5 @@
 use crate::{
-	network::Client,
+	network::p2p::Client,
 	telemetry::{MetricValue, Metrics},
 	types::{self, Delay},
 };

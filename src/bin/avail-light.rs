@@ -3,25 +3,23 @@
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
 use avail_light::{
-	api,
-	consts::STATE_CF,
+	api, data,
+	network::rpc,
 	telemetry::{self},
 };
 use avail_light::{
-	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, EXPECTED_NETWORK_VERSION},
-	data::store_last_full_node_ws_in_db,
+	consts::EXPECTED_NETWORK_VERSION,
+	network::p2p::{self},
 	types::{CliOpts, Mode, RuntimeConfig, State},
 };
-use avail_subxt::primitives::Header;
 use clap::Parser;
 use kate_recovery::com::AppData;
 use libp2p::{multiaddr::Protocol, Multiaddr};
-use rocksdb::{ColumnFamilyDescriptor, Options, DB};
-use std::{fs, path::Path};
 use std::{
+	fs,
 	net::Ipv4Addr,
+	path::Path,
 	sync::{Arc, Mutex},
-	time::Instant,
 };
 use tokio::sync::{
 	broadcast,
@@ -34,7 +32,7 @@ use tracing_subscriber::{
 };
 
 #[cfg(feature = "network-analysis")]
-use avail_light::network::network_analyzer;
+use avail_light::network::p2p::analyzer;
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -50,34 +48,6 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 };
 
 /// Light Client for Avail Blockchain
-
-fn init_db(path: &str) -> Result<Arc<DB>> {
-	let mut confidence_cf_opts = Options::default();
-	confidence_cf_opts.set_max_write_buffer_number(16);
-
-	let mut block_header_cf_opts = Options::default();
-	block_header_cf_opts.set_max_write_buffer_number(16);
-
-	let mut app_data_cf_opts = Options::default();
-	app_data_cf_opts.set_max_write_buffer_number(16);
-
-	let mut state_cf_opts = Options::default();
-	state_cf_opts.set_max_write_buffer_number(16);
-
-	let cf_opts = vec![
-		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
-		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
-		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
-		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
-	];
-
-	let mut db_opts = Options::default();
-	db_opts.create_if_missing(true);
-	db_opts.create_missing_column_families(true);
-
-	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
-	Ok(Arc::new(db))
-}
 
 fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
 	FmtSubscriber::builder()
@@ -133,9 +103,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		Err(anyhow!("Bootstrap node list must not be empty. Either use a '--network' flag or add a list of bootstrap nodes in the configuration file"))?
 	}
 
-	let db = init_db(&cfg.avail_path).context(
-		"Cannot initialize database. Try running with '--clean' flag for a clean deployment.",
-	)?;
+	let db = data::init_db(&cfg.avail_path).context("Cannot initialize database")?;
 
 	// If in fat client mode, enable deleting local Kademlia records
 	// This is a fat client memory optimization
@@ -144,7 +112,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		info!("Fat client mode");
 	}
 
-	let (id_keys, peer_id) = avail_light::network::keypair((&cfg).into())?;
+	let (id_keys, peer_id) = p2p::keypair((&cfg).into())?;
 
 	let ot_metrics = Arc::new(
 		telemetry::otlp::initialize(
@@ -155,7 +123,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.context("Unable to initialize OpenTelemetry service")?,
 	);
 
-	let (network_client, network_event_loop) = avail_light::network::init(
+	// raise new P2P Network Client and Event Loop
+	let (p2p_client, p2p_event_loop) = p2p::init(
 		(&cfg).into(),
 		cfg.dht_parallelization_limit,
 		cfg.kad_record_ttl,
@@ -165,15 +134,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	)
 	.context("Failed to init Network Service")?;
 
-	// Spawn the network task for it to run in the background
-	tokio::spawn(network_event_loop.run());
+	// spawn the P2P Network task for Event Loop run in the background
+	tokio::spawn(p2p_event_loop.run());
 
 	// Start listening on provided port
 	let port = cfg.port;
 	info!("Listening on port: {port}");
 
 	// always listen on UDP to prioritize QUIC
-	network_client
+	p2p_client
 		.start_listening(
 			Multiaddr::empty()
 				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
@@ -185,12 +154,12 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
-	network_client
-		.bootstrap(cfg.bootstraps.iter().map(Into::into).collect())
+	p2p_client
+		.bootstrap(cfg.clone().bootstraps.iter().map(Into::into).collect())
 		.await?;
 
 	#[cfg(feature = "network-analysis")]
-	tokio::task::spawn(network_analyzer::start_traffic_analyzer(cfg.port, 10));
+	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
 
 	let pp = Arc::new(kate_recovery::testnet::public_params(1024));
 	let raw_pp = pp.to_raw_var_bytes();
@@ -198,17 +167,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
 
-	let last_full_node_ws = avail_light::data::get_last_full_node_ws_from_db(db.clone())?;
+	let state = Arc::new(Mutex::new(State::default()));
+	let (rpc_client, rpc_events, rpc_event_loop) =
+		rpc::init(db.clone(), state.clone(), &cfg.full_node_ws);
+	// spawn the RPC Network task for Event Loop to run in the background
+	tokio::spawn(rpc_event_loop.run(EXPECTED_NETWORK_VERSION));
 
-	let (rpc_client, node) = avail_light::rpc::connect_to_the_full_node(
-		&cfg.full_node_ws,
-		last_full_node_ws,
-		EXPECTED_NETWORK_VERSION,
-	)
-	.await?;
-
-	store_last_full_node_ws_in_db(db.clone(), node.host.clone())?;
-
+	let node = rpc_client.get_connected_node().await?;
 	info!("Genesis hash: {:?}", node.genesis_hash);
 	if let Some(stored_genesis_hash) = avail_light::data::get_genesis_hash(db.clone())? {
 		if !node.genesis_hash.eq(&stored_genesis_hash) {
@@ -221,11 +186,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		avail_light::data::store_genesis_hash(db.clone(), node.genesis_hash)?;
 	}
 
-	let block_header = avail_light::rpc::get_chain_head_header(&rpc_client)
+	let block_header = rpc_client
+		.get_chain_head_header()
 		.await
 		.context("Failed to get chain header")?;
 
-	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number.saturating_sub(1);
 
@@ -253,7 +218,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tokio::task::spawn(avail_light::app_client::run(
 			(&cfg).into(),
 			db.clone(),
-			network_client.clone(),
+			p2p_client.clone(),
 			rpc_client.clone(),
 			AppId(app_id),
 			block_rx,
@@ -268,10 +233,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		(None, None)
 	};
 
-	let (message_tx, message_rx) = broadcast::channel::<(Header, Instant)>(128);
 	tokio::task::spawn(api::v2::publish(
 		api::v2::types::Topic::HeaderVerified,
-		message_tx.subscribe(),
+		rpc_events.subscribe(),
 		ws_clients.clone(),
 	));
 
@@ -303,7 +267,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	}
 
 	let sync_client =
-		avail_light::sync_client::new(db.clone(), network_client.clone(), rpc_client.clone());
+		avail_light::sync_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
 	if let Some(sync_start_block) = cfg.sync_start_block {
 		state.lock().unwrap().synced.replace(false);
@@ -334,11 +298,11 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	}
 
 	let light_client =
-		avail_light::light_client::new(db.clone(), network_client.clone(), rpc_client.clone());
+		avail_light::light_client::new(db.clone(), p2p_client.clone(), rpc_client.clone());
 
 	let lc_channels = avail_light::light_client::Channels {
 		block_sender: block_tx,
-		header_receiver: message_rx,
+		rpc_event_receiver: rpc_events.subscribe(),
 		error_sender: error_sender.clone(),
 	};
 
@@ -349,14 +313,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		ot_metrics,
 		state.clone(),
 		lc_channels,
-	));
-
-	tokio::task::spawn(avail_light::subscriptions::finalized_headers(
-		rpc_client,
-		message_tx,
-		error_sender,
-		state,
-		db,
 	));
 
 	Ok(())

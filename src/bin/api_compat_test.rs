@@ -1,93 +1,104 @@
 use anyhow::Result;
-use avail_light::rpc;
+use avail_light::{
+	data,
+	network::rpc::{self, ExpectedVersion},
+	types::State,
+};
 use clap::Parser;
 use kate_recovery::matrix::Position;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser)]
 struct CommandArgs {
 	#[arg(short, long, value_name = "URL", default_value_t = String::from("ws://localhost:9944"))]
 	url: String,
+	#[arg(short, long, value_name = "path", default_value_t = String::from("avail_path"))]
+	avail_path: String,
 }
+
+const EXPECTED_NETWORK_VERSION: ExpectedVersion = ExpectedVersion {
+	version: "1.7",
+	spec_name: "data-avail",
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
 	let command_args = CommandArgs::parse();
-
 	println!("Using URL: {}", command_args.url);
-	let client = avail_subxt::build_client(command_args.url, false)
-		.await
-		.unwrap_or_else(|e| {
-			eprintln!("Couldn't establish connection with node: {e}");
-			std::process::exit(2);
-		});
+	println!("Using Path: {}", command_args.avail_path);
+	let db = data::init_db(&command_args.avail_path)?;
+	let state = Arc::new(Mutex::new(State::default()));
+
+	let (rpc_client, _, event_loop) = rpc::init(db, state, &[command_args.url]);
+	tokio::spawn(event_loop.run(EXPECTED_NETWORK_VERSION));
 
 	let mut correct: bool = true;
 
 	print!("Testing system version... ");
-	let res = rpc::get_system_version(&client).await;
+	let res = rpc_client.get_system_version().await;
 	res_helper(&res, &mut correct);
 	if let Ok(v) = res {
 		println!("Reported system version: {v}")
 	};
 
 	print!("Testing runtime version... ");
-	let res = rpc::get_runtime_version(&client).await;
+	let res = rpc_client.get_runtime_version().await;
 	res_helper(&res, &mut correct);
 	if let Ok(v) = res {
 		println!("Reported runtime version: {v:?}")
 	};
 
 	print!("Testing get head block header... ");
-	let res = rpc::get_chain_head_header(&client).await;
+	let res = rpc_client.get_chain_head_header().await;
 	let number = res.as_ref().unwrap().number; // TODO: Properly handle and skip if not working
 	res_helper(&res, &mut correct);
 
 	print!("Testing get head block hash... ");
-	let res = rpc::get_chain_head_hash(&client).await;
+	let res = rpc_client.get_chain_head_hash().await;
 	let hash = *res.as_ref().unwrap(); // TODO: Properly handle and skip if not working
 	res_helper(&res, &mut correct);
 
 	print!("Testing get block hash at height {number}... ");
-	let res = rpc::get_block_hash(&client, number).await;
+	let res = rpc_client.get_block_hash(number).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get header at height 1... ");
-	let res = rpc::get_header_by_block_number(&client, number).await;
+	let res = rpc_client.get_header_by_block_number(number).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get header by hash... ");
-	let res = rpc::get_header_by_hash(&client, hash).await;
+	let res = rpc_client.get_header_by_hash(hash).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get valset at height 1... ");
-	let res = rpc::get_valset_by_block_number(&client, number).await;
+	let res = rpc_client.get_validator_set_by_block_number(number).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get valset by hash... ");
-	let res = rpc::get_valset_by_hash(&client, hash).await;
+	let res = rpc_client.get_validator_set_by_hash(hash).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get set_id at height 1... ");
-	let res = rpc::get_set_id_by_block_number(&client, number).await;
+	let res = rpc_client.fetch_set_id_at(hash).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get set_id by hash... ");
-	let res = rpc::get_set_id_by_hash(&client, hash).await;
+	let res = rpc_client.get_current_set_id_by_block_number(number).await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get_kate_proof for cell 0... ");
-	let res = rpc::get_kate_proof(
-		&client,
-		hash,
-		&[Position {
-			..Default::default()
-		}],
-	)
-	.await;
+	let res = rpc_client
+		.request_kate_proof(
+			hash,
+			&[Position {
+				..Default::default()
+			}],
+		)
+		.await;
 	res_helper(&res, &mut correct);
 
 	print!("Testing get_kate_row for row 0... ");
-	let res = rpc::get_kate_rows(&client, vec![0], hash).await;
+	let res = rpc_client.request_kate_rows(vec![0], hash).await;
 	res_helper(&res, &mut correct);
 
 	println!("Done");

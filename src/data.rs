@@ -2,11 +2,10 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
-use avail_subxt::primitives::Header as DaHeader;
-use avail_subxt::utils::H256;
+use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use codec::{Decode, Encode};
 use kate_recovery::com::AppData;
-use rocksdb::DB;
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::sync::Arc;
 
 use crate::{
@@ -14,38 +13,8 @@ use crate::{
 	types::FinalitySyncCheckpoint,
 };
 
-const LAST_FULL_NODE_WS_KEY: &str = "last_full_node_ws";
 const GENESIS_HASH_KEY: &str = "genesis_hash";
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
-
-pub fn store_last_full_node_ws_in_db(db: Arc<DB>, last_full_node_ws: String) -> Result<()> {
-	let cf_handle = db.cf_handle(STATE_CF).context("Failed to get cf handle")?;
-
-	db.put_cf(
-		&cf_handle,
-		LAST_FULL_NODE_WS_KEY.as_bytes(),
-		last_full_node_ws,
-	)
-	.context("Failed to write last full node ws to db")
-}
-
-pub fn get_last_full_node_ws_from_db(db: Arc<DB>) -> Result<Option<String>> {
-	let cf_handle = db
-		.cf_handle(STATE_CF)
-		.context("Couldn't get column handle from db")?;
-
-	let result = db
-		.get_cf(&cf_handle, LAST_FULL_NODE_WS_KEY.as_bytes())
-		.context("Couldn't get last full node ws from db")?;
-
-	let Some(last_full_node_ws) = result else {
-		return Ok(None);
-	};
-
-	Ok(std::str::from_utf8(&last_full_node_ws)
-		.map(String::from)
-		.map(Some)?)
-}
 
 fn store_data_in_db(db: Arc<DB>, app_id: AppId, block_number: u32, data: &[u8]) -> Result<()> {
 	let key = format!("{}:{block_number}", app_id.0);
@@ -65,6 +34,35 @@ fn get_data_from_db(db: Arc<DB>, app_id: u32, block_number: u32) -> Result<Optio
 
 	db.get_cf(&cf_handle, key.as_bytes())
 		.context("Couldn't get app_data from db")
+}
+
+/// Initializes Rocks Database
+pub fn init_db(path: &str) -> Result<Arc<DB>> {
+	let mut confidence_cf_opts = Options::default();
+	confidence_cf_opts.set_max_write_buffer_number(16);
+
+	let mut block_header_cf_opts = Options::default();
+	block_header_cf_opts.set_max_write_buffer_number(16);
+
+	let mut app_data_cf_opts = Options::default();
+	app_data_cf_opts.set_max_write_buffer_number(16);
+
+	let mut state_cf_opts = Options::default();
+	state_cf_opts.set_max_write_buffer_number(16);
+
+	let cf_opts = vec![
+		ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, confidence_cf_opts),
+		ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, block_header_cf_opts),
+		ColumnFamilyDescriptor::new(APP_DATA_CF, app_data_cf_opts),
+		ColumnFamilyDescriptor::new(STATE_CF, state_cf_opts),
+	];
+
+	let mut db_opts = Options::default();
+	db_opts.create_if_missing(true);
+	db_opts.create_missing_column_families(true);
+
+	let db = DB::open_cf_descriptors(&db_opts, path, cf_opts)?;
+	Ok(Arc::new(db))
 }
 
 /// Encodes and stores app data into database under the `app_id:block_number` key

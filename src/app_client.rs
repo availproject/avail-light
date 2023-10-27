@@ -15,7 +15,7 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_core::AppId;
-use avail_subxt::{avail, utils::H256};
+use avail_subxt::utils::H256;
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
@@ -41,8 +41,8 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
-	network::Client,
-	proof, rpc,
+	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
+	proof,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
@@ -79,8 +79,8 @@ trait AppClient {
 #[derive(Clone)]
 struct AppClientImpl {
 	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
+	p2p_client: P2pClient,
+	rpc_client: RpcClient,
 }
 
 #[async_trait]
@@ -106,7 +106,7 @@ impl AppClient for AppClientImpl {
 		);
 		let (fetched, unfetched) = fetch_verified(
 			pp.clone(),
-			&self.network_client,
+			&self.p2p_client,
 			block_number,
 			dimensions,
 			commitments,
@@ -126,7 +126,7 @@ impl AppClient for AppClientImpl {
 
 		let (missing_fetched, _) = fetch_verified(
 			pp,
-			&self.network_client,
+			&self.p2p_client,
 			block_number,
 			dimensions,
 			commitments,
@@ -186,7 +186,7 @@ impl AppClient for AppClientImpl {
 		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
-		self.network_client
+		self.p2p_client
 			.fetch_rows_from_dht(block_number, dimensions, row_indexes)
 			.await
 	}
@@ -196,7 +196,7 @@ impl AppClient for AppClientImpl {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		rpc::get_kate_rows(&self.rpc_client, rows, block_hash).await
+		self.rpc_client.request_kate_rows(rows, block_hash).await
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
@@ -255,13 +255,13 @@ fn data_cell(
 
 async fn fetch_verified(
 	pp: Arc<PublicParameters>,
-	network_client: &Client,
+	p2p_client: &P2pClient,
 	block_number: u32,
 	dimensions: Dimensions,
 	commitments: &[[u8; config::COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
-	let (mut fetched, mut unfetched) = network_client
+	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
@@ -417,8 +417,8 @@ async fn process_block(
 pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
+	network_client: P2pClient,
+	rpc_client: RpcClient,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
@@ -470,7 +470,7 @@ pub async fn run(
 		let db_clone = db.clone();
 		let app_client = AppClientImpl {
 			db: db_clone,
-			network_client: network_client.clone(),
+			p2p_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};
 		let data = match process_block(app_client, &cfg, app_id, &block, pp.clone()).await {

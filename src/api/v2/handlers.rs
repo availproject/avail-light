@@ -10,7 +10,7 @@ use super::{
 use crate::{
 	api::v2::types::{ErrorCode, InternalServerError},
 	data::Database,
-	rpc::Node,
+	network::rpc::Node,
 	types::{RuntimeConfig, State},
 	utils::calculate_confidence,
 };

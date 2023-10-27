@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use event_loop::EventLoop;
 use futures::future::Either;
+use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
 	autonat::{self, Behaviour as AutoNat},
 	core::{muxing::StreamMuxerBox, transport::OrTransport, upgrade::Version},
@@ -17,20 +17,30 @@ use libp2p::{
 	swarm::{NetworkBehaviour, SwarmBuilder},
 	PeerId, Transport,
 };
-use mem_store::{MemoryStore, MemoryStoreConfig};
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self};
 use tracing::info;
 
+#[cfg(feature = "network-analysis")]
+pub mod analyzer;
 mod client;
 mod event_loop;
-mod mem_store;
-#[cfg(feature = "network-analysis")]
-pub mod network_analyzer;
+mod kad_mem_store;
 pub use client::Client;
+use event_loop::EventLoop;
 
 use crate::types::{LibP2PConfig, SecretKey};
 
+// DHTPutSuccess enum is used to signal back and then
+// count the successful DHT Put operations.
+// Used for single or batch operations.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DHTPutSuccess {
+	Batch(usize),
+	Single,
+}
+
+// Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
 pub struct Behaviour {
@@ -43,6 +53,8 @@ pub struct Behaviour {
 	dcutr: Dcutr,
 }
 
+// Init function initializes all needed needed configs for the functioning
+// p2p network Client and network Event Loop
 pub fn init(
 	cfg: LibP2PConfig,
 	dht_parallelization_limit: usize,
@@ -58,7 +70,7 @@ pub fn init(
 		id_keys.public()
 	);
 
-	// Create Transport
+	// create Transport
 	// init relay transport configuration used in relay clients
 	let (relay_client_transport, relay_client_behaviour) = relay::client::new(local_peer_id);
 	let transport = {
@@ -111,7 +123,7 @@ pub fn init(
 		.disjoint_query_paths(cfg.kademlia.disjoint_query_paths)
 		.set_record_filtering(libp2p::kad::KademliaStoreInserts::FilterBoth);
 
-	// create Indetify Protocol Config
+	// create Identify Protocol Config
 	let identify_cfg = identify::Config::new(cfg.identify.protocol_version, id_keys.public())
 		.with_agent_version(cfg.identify.agent_version);
 	// create AutoNAT Client Config
@@ -162,6 +174,8 @@ pub fn init(
 	))
 }
 
+// Keypair function creates identity Keypair for a local node.
+// From such generated keypair it derives multihash identifier of the local peer.
 pub fn keypair(cfg: LibP2PConfig) -> Result<(libp2p::identity::Keypair, String)> {
 	let keypair = match cfg.secret_key {
 		// If seed is provided, generate secret key from seed

@@ -51,7 +51,7 @@ pub struct CliOpts {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct RuntimeVersionResult {
+pub struct RuntimeVersion {
 	apis: Vec<(String, u32)>,
 	authoring_version: u32,
 	impl_name: String,
@@ -341,7 +341,7 @@ pub struct Delay(pub Option<Duration>);
 
 /// Light client configuration (see [RuntimeConfig] for details)
 pub struct LightClientConfig {
-	pub full_node_ws: Vec<String>,
+	pub full_nodes_ws: Vec<String>,
 	pub confidence: f64,
 	pub disable_rpc: bool,
 	pub dht_parallelization_limit: usize,
@@ -368,7 +368,7 @@ impl From<&RuntimeConfig> for LightClientConfig {
 			.map(|v| Duration::from_secs(v.into()));
 
 		LightClientConfig {
-			full_node_ws: val.full_node_ws.clone(),
+			full_nodes_ws: val.full_node_ws.clone(),
 			confidence: val.confidence,
 			disable_rpc: val.disable_rpc,
 			dht_parallelization_limit: val.dht_parallelization_limit,
@@ -531,7 +531,7 @@ impl Default for RuntimeConfig {
 			identify_agent: "avail-light-client/rust-client".to_string(),
 			bootstraps: vec![],
 			bootstrap_period: 300,
-			relays: vec![],
+			relays: Vec::new(),
 			full_node_ws: vec!["ws://127.0.0.1:9944".to_owned()],
 			app_id: None,
 			confidence: 92.0,

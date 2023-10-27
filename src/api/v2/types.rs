@@ -13,7 +13,6 @@ use sp_core::{blake2_256, H256};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Arc,
-	time::Instant,
 };
 use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
@@ -23,7 +22,7 @@ use warp::{
 };
 
 use crate::{
-	rpc::Node,
+	network::rpc::{Event as RpcEvent, Node},
 	types::{
 		self, block_matrix_partition_format, BlockVerified, OptionBlockRange, RuntimeConfig, State,
 	},
@@ -442,15 +441,16 @@ impl TryFrom<HeaderExtension> for Extension {
 	}
 }
 
-impl TryFrom<(avail_subxt::primitives::Header, Instant)> for PublishMessage {
+impl TryFrom<RpcEvent> for PublishMessage {
 	type Error = anyhow::Error;
 
-	fn try_from(value: (avail_subxt::primitives::Header, Instant)) -> Result<Self, Self::Error> {
-		let (header, _) = value;
-		header
-			.try_into()
-			.map(Box::new)
-			.map(PublishMessage::HeaderVerified)
+	fn try_from(value: RpcEvent) -> Result<Self, Self::Error> {
+		match value {
+			RpcEvent::HeaderUpdate { header, .. } => header
+				.try_into()
+				.map(Box::new)
+				.map(PublishMessage::HeaderVerified),
+		}
 	}
 }
 
