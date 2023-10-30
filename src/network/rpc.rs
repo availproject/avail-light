@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use avail_subxt::{primitives::Header, utils::H256};
+use async_trait::async_trait;
+use avail_subxt::{avail, primitives::Header, utils::H256};
 use codec::Decode;
 use kate_recovery::matrix::{Dimensions, Position};
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -32,6 +33,16 @@ const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
 pub const CELL_WITH_PROOF_SIZE: usize = CELL_SIZE + PROOF_SIZE;
 pub use event_loop::Event;
+
+#[async_trait]
+pub trait Command {
+	async fn run(&mut self, client: &avail::Client) -> anyhow::Result<(), anyhow::Error>;
+	fn abort(&mut self, error: anyhow::Error);
+}
+
+type SendableCommand = Box<dyn Command + Send + Sync>;
+type CommandSender = mpsc::Sender<SendableCommand>;
+type CommandReceiver = mpsc::Receiver<SendableCommand>;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WrappedJustification(pub GrandpaJustification);

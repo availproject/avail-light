@@ -1,16 +1,14 @@
 use anyhow::{anyhow, Context, Result};
-use api::data_availability::calls::types::SubmitData;
 use avail_subxt::{
-	api::{self, runtime_types::sp_core::crypto::KeyTypeId},
+	api::{self},
 	avail::{self},
 	build_client,
-	primitives::{grandpa::AuthorityId, AvailExtrinsicParams, Header},
+	primitives::{grandpa::AuthorityId, Header},
 	utils::H256,
 	AvailConfig,
 };
 use codec::Encode;
 use futures::Stream;
-use kate_recovery::{data::Cell, matrix::Position};
 use rocksdb::DB;
 use sp_core::{
 	blake2_256,
@@ -23,17 +21,13 @@ use std::{
 };
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
-	rpc_params,
-	storage::StorageKey,
-	tx::{PairSigner, Payload, SubmittableExtrinsic, TxProgress},
-	utils::AccountId32,
-	OnlineClient,
+	rpc_params, OnlineClient,
 };
-use tokio::sync::{broadcast::Sender, mpsc};
+use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
-use tracing::{info, instrument, trace, warn};
+use tracing::{info, trace, warn};
 
-use super::{client::Command, ExpectedVersion, Nodes, WrappedProof, CELL_WITH_PROOF_SIZE};
+use super::{CommandReceiver, ExpectedVersion, Nodes, SendableCommand};
 use crate::{
 	data::store_finality_sync_checkpoint,
 	types::{
@@ -70,7 +64,7 @@ struct BlockData {
 
 pub struct EventLoop {
 	subxt_client: Option<avail::Client>,
-	command_receiver: mpsc::Receiver<Command>,
+	command_receiver: CommandReceiver,
 	event_sender: Sender<Event>,
 	nodes: Nodes,
 	db: Arc<DB>,
@@ -83,7 +77,7 @@ impl EventLoop {
 		db: Arc<DB>,
 		state: Arc<Mutex<State>>,
 		nodes: Nodes,
-		command_receiver: mpsc::Receiver<Command>,
+		command_receiver: CommandReceiver,
 		event_sender: Sender<Event>,
 	) -> EventLoop {
 		Self {
@@ -401,152 +395,10 @@ impl EventLoop {
 		}
 	}
 
-	async fn handle_command(&self, command: Command) {
-		match command {
-			Command::GetSystemVersion { response_sender } => {
-				let res = self.get_system_version().await;
-				_ = response_sender.send(res);
-			},
-			Command::RequestRuntimeVersion { response_sender } => {
-				let res = self.request_runtime_version().await;
-				_ = response_sender.send(res);
-			},
-			Command::GetBlockHash {
-				block_number: block_num,
-				response_sender,
-			} => {
-				let res = self.get_block_hash(block_num).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetHeaderByHash {
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.get_header_by_hash(block_hash).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetValidatorSetByHash {
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.get_validator_set_by_hash(block_hash).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetValidatorSetByBlockNumber {
-				block_number: block_num,
-				response_sender,
-			} => {
-				let res = self.get_validator_set_by_block_number(block_num).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetChainHeadHeader { response_sender } => {
-				let res = self.get_chain_head_header().await;
-				_ = response_sender.send(res);
-			},
-			Command::GetChainHeadHash { response_sender } => {
-				let res = self.get_chain_head_hash().await;
-				_ = response_sender.send(res)
-			},
-			Command::GetCurrentSetIdByBlockNumber {
-				block_number,
-				response_sender,
-			} => {
-				let res = self.get_set_id_by_block_number(block_number).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetHeaderByBlockNumber {
-				block_number,
-				response_sender,
-			} => {
-				let res = self.get_header_by_block_number(block_number).await;
-				_ = response_sender.send(res);
-			},
-			Command::RequestKateRows {
-				rows,
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.request_kate_rows(rows, block_hash).await;
-				_ = response_sender.send(res);
-			},
-			Command::RequestKateProof {
-				positions,
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.request_kate_proof(&positions, block_hash).await;
-				_ = response_sender.send(res)
-			},
-			Command::GetConnectedNode { response_sender } => {
-				let node = self
-					.nodes
-					.get_current()
-					.ok_or_else(|| anyhow!("No connected node at the moment"));
-				_ = response_sender.send(node);
-			},
-			Command::GetValidatorSetAt {
-				block_hash: genesis_hash,
-				response_sender,
-			} => {
-				let res = self.get_validator_set_at(genesis_hash).await;
-				_ = response_sender.send(res);
-			},
-			Command::FetchSetIdAt {
-				block_hash,
-				response_sender,
-			} => {
-				let res = self.fetch_set_id_at(block_hash).await;
-				_ = response_sender.send(res);
-			},
-			Command::SubmitFromBytesAndWatch {
-				tx_bytes,
-				response_sender,
-			} => {
-				let res = self.submit_from_bytes_and_watch(tx_bytes).await;
-				_ = response_sender.send(res);
-			},
-			Command::SubmitSignedAndWatch {
-				extrinsic,
-				pair_signer,
-				params,
-				response_sender,
-			} => {
-				let res = self
-					.submit_signed_and_watch(extrinsic, pair_signer.as_ref(), params)
-					.await;
-				_ = response_sender.send(res);
-			},
-			Command::GetPagedStorageKeys {
-				key,
-				count,
-				start_key,
-				hash,
-				response_sender,
-			} => {
-				let res = self
-					.get_paged_storage_keys(&key, count, start_key.as_deref(), hash)
-					.await;
-				_ = response_sender.send(res);
-			},
-			Command::GetSessionKeyOwnerAt {
-				block_hash,
-				public_key,
-				response_sender,
-			} => {
-				let res = self.get_session_key_owner_at(block_hash, public_key).await;
-				_ = response_sender.send(res);
-			},
-			Command::RequestFinalityProof {
-				block_number,
-				response_sender,
-			} => {
-				let res = self.request_finality_proof(block_number).await;
-				_ = response_sender.send(res);
-			},
-			Command::GetGenesisHash { response_sender } => {
-				let res = self.get_genesis_hash();
-				_ = response_sender.send(res);
-			},
+	async fn handle_command(&self, mut command: SendableCommand) {
+		let client = self.unpack_client().unwrap();
+		if let Err(err) = command.run(client).await {
+			_ = command.abort(anyhow!(err));
 		}
 	}
 
@@ -593,23 +445,6 @@ impl EventLoop {
 		Ok(valset.iter().map(|e| e.0).collect())
 	}
 
-	async fn get_validator_set_by_block_number(&self, block_number: u32) -> Result<Vec<Public>> {
-		let block_hash = self.get_block_hash(block_number).await?;
-		self.get_validator_set_by_hash(block_hash).await
-	}
-
-	async fn get_chain_head_header(&self) -> Result<Header> {
-		let client = self.unpack_client()?;
-
-		let head = client.rpc().finalized_head().await?;
-
-		client
-			.rpc()
-			.header(Some(head))
-			.await?
-			.ok_or_else(|| anyhow!("Couldn't get the latest finalized header"))
-	}
-
 	async fn get_chain_head_hash(&self) -> Result<H256> {
 		self.unpack_client()?
 			.rpc()
@@ -629,144 +464,9 @@ impl EventLoop {
 			.ok_or_else(|| anyhow!("The set_id should exist"))
 	}
 
-	async fn get_set_id_by_block_number(&self, block_number: u32) -> Result<u64> {
-		let block_hash = self.get_block_hash(block_number).await?;
-		self.fetch_set_id_at(block_hash).await
-	}
-
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
 		let hash = self.get_block_hash(block_number).await?;
 		self.get_header_by_hash(hash).await.map(|e| (e, hash))
-	}
-
-	#[instrument(skip_all, level = "trace")]
-	async fn request_kate_rows(
-		&self,
-		rows: Vec<u32>,
-		block_hash: H256,
-	) -> Result<Vec<Option<Vec<u8>>>> {
-		let mut params = RpcParams::new();
-		params.push(rows)?;
-		params.push(block_hash)?;
-
-		self.unpack_client()?
-			.rpc()
-			.request("kate_queryRows", params)
-			.await
-			.map_err(|e| anyhow!("Failed to query Kate Rows. Error: {e}"))
-	}
-
-	async fn request_kate_proof(
-		&self,
-		positions: &[Position],
-		block_hash: H256,
-	) -> Result<Vec<Cell>> {
-		let mut params = RpcParams::new();
-		params.push(positions)?;
-		params.push(block_hash)?;
-
-		let proofs: Vec<u8> = self
-			.unpack_client()?
-			.rpc()
-			.request("kate_queryProof", params)
-			.await
-			.map_err(|e| anyhow!("Failed to query Kate Proof. Error: {e}"))?;
-
-		let i = proofs
-			.chunks_exact(CELL_WITH_PROOF_SIZE)
-			.map(|chunk| chunk.try_into().expect("chunks of 80 bytes size"));
-
-		Ok(positions
-			.iter()
-			.zip(i)
-			.map(|(&position, &content)| Cell { position, content })
-			.collect::<Vec<_>>())
-	}
-
-	async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
-		// get validator set from genesis (Substrate Account ID)
-		let validators_key = api::storage().session().validators();
-
-		self.unpack_client()?
-			.storage()
-			.at(block_hash)
-			.fetch(&validators_key)
-			.await
-			.map_err(|e| anyhow!(e))
-	}
-
-	async fn submit_signed_and_watch(
-		&self,
-		extrinsic: Payload<SubmitData>,
-		pair_signer: &PairSigner<AvailConfig, avail::Pair>,
-		params: AvailExtrinsicParams,
-	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		self.unpack_client()?
-			.tx()
-			.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
-			.await
-			.map_err(|e| anyhow!(e))
-	}
-
-	async fn submit_from_bytes_and_watch(
-		&self,
-		tx_bytes: Vec<u8>,
-	) -> Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>> {
-		let client = self.unpack_client()?;
-		SubmittableExtrinsic::from_bytes(client.clone(), tx_bytes)
-			.submit_and_watch()
-			.await
-			.map_err(|e| anyhow!(e))
-	}
-
-	async fn get_paged_storage_keys(
-		&self,
-		key: &[u8],
-		count: u32,
-		start_key: Option<&[u8]>,
-		hash: Option<H256>,
-	) -> Result<Vec<StorageKey>> {
-		self.unpack_client()?
-			.rpc()
-			.storage_keys_paged(key, count, start_key, hash)
-			.await
-			.map_err(|e| anyhow!(e))
-	}
-
-	async fn get_session_key_owner_at(
-		&self,
-		block_hash: H256,
-		public_key: ed25519::Public,
-	) -> Result<Option<AccountId32>> {
-		let session_key_key_owner = api::storage().session().key_owner(
-			KeyTypeId(sp_core::crypto::key_types::GRANDPA.0),
-			public_key.0,
-		);
-
-		self.unpack_client()?
-			.storage()
-			.at(block_hash)
-			.fetch(&session_key_key_owner)
-			.await
-			.map_err(|e| anyhow!(e))
-	}
-
-	async fn request_finality_proof(&self, block_number: u32) -> Result<WrappedProof> {
-		let mut params = RpcParams::new();
-		params.push(block_number)?;
-
-		let res: WrappedProof = self
-			.unpack_client()?
-			.rpc()
-			.request("grandpa_proveFinality", params)
-			.await
-			.map_err(|e| anyhow!("Request failed at Finality Proof. Error: {e}"))?;
-		Ok(res)
-	}
-
-	fn get_genesis_hash(&self) -> Result<H256> {
-		let client = self.unpack_client()?;
-		Ok(client.genesis_hash())
 	}
 }
 
