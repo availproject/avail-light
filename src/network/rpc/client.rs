@@ -40,12 +40,16 @@ impl Command for GetBlockHash {
 		&mut self,
 		client: &avail_subxt::avail::Client,
 	) -> anyhow::Result<(), anyhow::Error> {
-		let res = get_block_hash(client, self.block_number).await?;
+		let hash = client
+			.rpc()
+			.block_hash(Some(BlockNumber::from(self.block_number)))
+			.await?
+			.ok_or_else(|| anyhow!("Block with number: {} not found", self.block_number))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
+			_ = sender.send(Ok(hash));
 		}
 		Ok(())
 	}
@@ -70,12 +74,16 @@ impl Command for GetHeaderByHash {
 		&mut self,
 		client: &avail_subxt::avail::Client,
 	) -> anyhow::Result<(), anyhow::Error> {
-		let res = get_header_by_hash(client, self.block_hash).await?;
+		let header = client
+			.rpc()
+			.header(Some(self.block_hash))
+			.await?
+			.ok_or_else(|| anyhow!("Block Header with hash: {:?} not found", self.block_hash))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
+			_ = sender.send(Ok(header));
 		}
 		Ok(())
 	}
@@ -108,179 +116,6 @@ impl Command for GetValidatorSetByHash {
 			.iter()
 			.map(|e| e.0)
 			.collect();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetValidatorSetByBlockNumber {
-	block_number: u32,
-	response_sender: Option<oneshot::Sender<Result<Vec<Public>>>>,
-}
-
-#[async_trait]
-impl Command for GetValidatorSetByBlockNumber {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let block_hash = get_block_hash(client, self.block_number).await?;
-		// TODO: This should probably be split into two Commands
-		let valset: Vec<Public> = client
-			.runtime_api()
-			.at(block_hash)
-			.call_raw::<Vec<(Public, u64)>>("GrandpaApi_grandpa_authorities", None)
-			.await?
-			.iter()
-			.map(|e| e.0)
-			.collect();
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(valset));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetChainHeadHeader {
-	response_sender: Option<oneshot::Sender<Result<Header>>>,
-}
-
-#[async_trait]
-impl Command for GetChainHeadHeader {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let head = client.rpc().finalized_head().await?;
-		let res = client
-			.rpc()
-			.header(Some(head))
-			.await?
-			.ok_or_else(|| anyhow!("Couldn't get the latest finalized header"))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetChainHeadHash {
-	response_sender: Option<oneshot::Sender<Result<H256>>>,
-}
-
-#[async_trait]
-impl Command for GetChainHeadHash {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let res = client.rpc().finalized_head().await?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetCurrentSetIdByBlockNumber {
-	block_number: u32,
-	response_sender: Option<oneshot::Sender<Result<u64>>>,
-}
-
-#[async_trait]
-impl Command for GetCurrentSetIdByBlockNumber {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let block_hash = get_block_hash(client, self.block_number).await?;
-		let set_id_key = api::storage().grandpa().current_set_id();
-
-		let res = client
-			.clone()
-			.storage()
-			.at(block_hash)
-			.fetch(&set_id_key)
-			.await?
-			.ok_or_else(|| anyhow!("The set_id should exist"))?;
-
-		// send result back
-		// TODO: consider what to do if this results with None
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Ok(res));
-		}
-		Ok(())
-	}
-
-	fn abort(&mut self, error: anyhow::Error) {
-		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		if let Some(sender) = self.response_sender.take() {
-			_ = sender.send(Err(error));
-		}
-	}
-}
-
-struct GetHeaderByBlockNumber {
-	block_number: u32,
-	response_sender: Option<oneshot::Sender<Result<(Header, H256)>>>,
-}
-
-#[async_trait]
-impl Command for GetHeaderByBlockNumber {
-	async fn run(
-		&mut self,
-		client: &avail_subxt::avail::Client,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let hash = get_block_hash(client, self.block_number).await?;
-		// TODO: This should probably be split into two Commands
-		let res = get_header_by_hash(client, hash).await.map(|e| (e, hash))?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
@@ -729,6 +564,35 @@ impl Command for GetGenesisHash {
 	}
 }
 
+struct GetFinalizedHeadHash {
+	response_sender: Option<oneshot::Sender<Result<H256>>>,
+}
+
+#[async_trait]
+impl Command for GetFinalizedHeadHash {
+	async fn run(
+		&mut self,
+		client: &avail_subxt::avail::Client,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let head = client.rpc().finalized_head().await?;
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		if let Some(sender) = self.response_sender.take() {
+			_ = sender.send(Ok(head));
+		}
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		// TODO: maybe wrap error with specific error message per Command type implementation
+		if let Some(sender) = self.response_sender.take() {
+			_ = sender.send(Err(error));
+		}
+	}
+}
+
 // struct GetConnectedNode {
 // 	response_sender: oneshot::Sender<Result<Node>>,
 // }
@@ -780,22 +644,18 @@ impl Client {
 		.await
 	}
 
-	pub async fn get_chain_head_header(&self) -> Result<Header> {
+	pub async fn get_finalized_head_hash(&self) -> Result<H256> {
 		self.execute_sync(|response_sender| {
-			Box::new(GetChainHeadHeader {
+			Box::new(GetFinalizedHeadHash {
 				response_sender: Some(response_sender),
 			})
 		})
 		.await
 	}
 
-	pub async fn get_chain_head_hash(&self) -> Result<H256> {
-		self.execute_sync(|response_sender| {
-			Box::new(GetChainHeadHash {
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
+	pub async fn get_chain_head_header(&self) -> Result<Header> {
+		let finalized_hash = self.get_finalized_head_hash().await?;
+		self.get_header_by_hash(finalized_hash).await
 	}
 
 	pub async fn request_kate_rows(
@@ -851,6 +711,16 @@ impl Client {
 		self.get_validator_set_by_hash(hash).await
 	}
 
+	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
+		self.execute_sync(|response_sender| {
+			Box::new(FetchSetIdAt {
+				block_hash,
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
+
 	pub async fn get_current_set_id_by_block_number(&self, block_num: u32) -> Result<u64> {
 		let hash = self.get_block_hash(block_num).await?;
 		self.fetch_set_id_at(hash).await
@@ -867,16 +737,6 @@ impl Client {
 	// 	self.execute_sync(|response_sender| GetConnectedNode { response_sender })
 	// 		.await
 	// }
-
-	pub async fn fetch_set_id_at(&self, block_hash: H256) -> Result<u64> {
-		self.execute_sync(|response_sender| {
-			Box::new(FetchSetIdAt {
-				block_hash,
-				response_sender: Some(response_sender),
-			})
-		})
-		.await
-	}
 
 	pub async fn get_validator_set_at(&self, block_hash: H256) -> Result<Option<Vec<AccountId32>>> {
 		self.execute_sync(|response_sender| {
@@ -970,27 +830,4 @@ impl Client {
 		})
 		.await
 	}
-}
-
-async fn get_block_hash(client: &avail_subxt::avail::Client, block_number: u32) -> Result<H256> {
-	let res = client
-		.rpc()
-		.block_hash(Some(BlockNumber::from(block_number)))
-		.await?
-		.ok_or_else(|| anyhow!("Block with number: {} not found", block_number))?;
-
-	Ok(res)
-}
-
-async fn get_header_by_hash(
-	client: &avail_subxt::avail::Client,
-	block_hash: H256,
-) -> Result<Header> {
-	let res = client
-		.rpc()
-		.header(Some(block_hash))
-		.await?
-		.ok_or_else(|| anyhow!("Block Header with hash: {block_hash:?} not found"))?;
-
-	Ok(res)
 }

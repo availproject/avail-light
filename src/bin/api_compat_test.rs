@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
 	res_helper(&res, &mut correct);
 
 	print!("Testing get head block hash... ");
-	let res = rpc_client.get_chain_head_hash().await;
+	let res = rpc_client.get_finalized_head_hash().await;
 	let hash = *res.as_ref().unwrap(); // TODO: Properly handle and skip if not working
 	res_helper(&res, &mut correct);
 
