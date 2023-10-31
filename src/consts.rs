@@ -1,6 +1,6 @@
 //! Column family names and other constants.
 
-use crate::rpc::ExpectedVersion;
+use crate::network::rpc::ExpectedVersion;
 
 /// Column family for confidence factor
 pub const CONFIDENCE_FACTOR_CF: &str = "avail_light_confidence_factor_cf";

@@ -1,13 +1,10 @@
-use crate::types::AvailSecretKey;
+use crate::{network::rpc, types::AvailSecretKey};
 
 use super::types::{SubmitResponse, Transaction};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use avail_subxt::{api, avail, primitives::AvailExtrinsicParams, AvailConfig};
-use subxt::{
-	ext::sp_core::sr25519::Pair,
-	tx::{PairSigner, SubmittableExtrinsic},
-};
+use avail_subxt::{api, primitives::AvailExtrinsicParams, AvailConfig};
+use subxt::{ext::sp_core::sr25519::Pair, tx::PairSigner};
 
 #[async_trait]
 pub trait Submit {
@@ -26,7 +23,7 @@ impl From<AvailSecretKey> for AvailSigner {
 
 #[derive(Clone)]
 pub struct Submitter {
-	pub node_client: avail::Client,
+	pub node_client: rpc::Client,
 	pub app_id: u32,
 	pub pair_signer: Option<AvailSigner>,
 }
@@ -42,13 +39,12 @@ impl Submit for Submitter {
 				let extrinsic = api::tx().data_availability().submit_data(data.into());
 				let params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
 				self.node_client
-					.tx()
-					.sign_and_submit_then_watch(&extrinsic, pair_signer, params)
+					.submit_signed_and_watch(extrinsic, pair_signer.to_owned(), params)
 					.await?
 			},
 			Transaction::Extrinsic(extrinsic) => {
-				SubmittableExtrinsic::from_bytes(self.node_client.clone(), extrinsic.into())
-					.submit_and_watch()
+				self.node_client
+					.submit_from_bytes_and_watch(extrinsic.into())
 					.await?
 			},
 		};

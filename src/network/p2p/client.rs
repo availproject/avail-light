@@ -10,12 +10,11 @@ use libp2p::{
 	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
-use std::{
-	sync::Arc,
-	time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, trace};
+
+use super::DHTPutSuccess;
 
 #[derive(Clone)]
 pub struct Client {
@@ -26,12 +25,6 @@ pub struct Client {
 	ttl: u64,
 	/// Number of records to be put in DHT simultaneously
 	put_batch_size: usize,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DHTPutSuccess {
-	Batch(usize),
-	Single,
 }
 
 struct DHTCell(Cell);
@@ -83,7 +76,7 @@ impl Client {
 	}
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
-		let (response_sender, receiver) = oneshot::channel();
+		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::StartListening {
 				addr,
@@ -91,11 +84,13 @@ impl Client {
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		let (response_sender, receiver) = oneshot::channel();
+		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::AddAddress {
 				peer_id,
@@ -104,11 +99,13 @@ impl Client {
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		let (response_sender, receiver) = oneshot::channel();
+		let (response_sender, response_receiver) = oneshot::channel();
 		for (peer, addr) in nodes {
 			self.add_address(peer, addr.clone()).await?;
 		}
@@ -117,11 +114,13 @@ impl Client {
 			.send(Command::Bootstrap { response_sender })
 			.await
 			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
-		let (response_sender, receiver) = oneshot::channel();
+		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::GetKadRecord {
 				key,
@@ -129,7 +128,9 @@ impl Client {
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
-		receiver.await.context("Sender not to be dropped.")?
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
@@ -383,7 +384,7 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
-		records: Arc<[Record]>,
+		records: Vec<Record>,
 		quorum: Quorum,
 		response_sender: oneshot::Sender<DHTPutSuccess>,
 	},

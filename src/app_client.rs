@@ -15,7 +15,7 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use avail_core::AppId;
-use avail_subxt::{avail, utils::H256};
+use avail_subxt::utils::H256;
 use codec::Encode;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
@@ -34,6 +34,7 @@ use rand_chacha::ChaChaRng;
 use rocksdb::DB;
 use std::{
 	collections::{HashMap, HashSet},
+	ops::Range,
 	sync::{Arc, Mutex},
 };
 use tokio::sync::{broadcast, mpsc::Sender};
@@ -41,8 +42,8 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
 	data::store_encoded_data_in_db,
-	network::Client,
-	proof, rpc,
+	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
+	proof,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
@@ -79,8 +80,8 @@ trait AppClient {
 #[derive(Clone)]
 struct AppClientImpl {
 	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
+	p2p_client: P2pClient,
+	rpc_client: RpcClient,
 }
 
 #[async_trait]
@@ -106,7 +107,7 @@ impl AppClient for AppClientImpl {
 		);
 		let (fetched, unfetched) = fetch_verified(
 			pp.clone(),
-			&self.network_client,
+			&self.p2p_client,
 			block_number,
 			dimensions,
 			commitments,
@@ -126,7 +127,7 @@ impl AppClient for AppClientImpl {
 
 		let (missing_fetched, _) = fetch_verified(
 			pp,
-			&self.network_client,
+			&self.p2p_client,
 			block_number,
 			dimensions,
 			commitments,
@@ -186,7 +187,7 @@ impl AppClient for AppClientImpl {
 		dimensions: Dimensions,
 		row_indexes: &[u32],
 	) -> Vec<Option<Vec<u8>>> {
-		self.network_client
+		self.p2p_client
 			.fetch_rows_from_dht(block_number, dimensions, row_indexes)
 			.await
 	}
@@ -196,7 +197,7 @@ impl AppClient for AppClientImpl {
 		rows: Vec<u32>,
 		block_hash: H256,
 	) -> Result<Vec<Option<Vec<u8>>>> {
-		rpc::get_kate_rows(&self.rpc_client, rows, block_hash).await
+		self.rpc_client.request_kate_rows(rows, block_hash).await
 	}
 
 	fn store_encoded_data_in_db<T: Encode + 'static>(
@@ -255,13 +256,13 @@ fn data_cell(
 
 async fn fetch_verified(
 	pp: Arc<PublicParameters>,
-	network_client: &Client,
+	p2p_client: &P2pClient,
 	block_number: u32,
 	dimensions: Dimensions,
 	commitments: &[[u8; config::COMMITMENT_SIZE]],
 	positions: &[Position],
 ) -> Result<(Vec<Cell>, Vec<Position>)> {
-	let (mut fetched, mut unfetched) = network_client
+	let (mut fetched, mut unfetched) = p2p_client
 		.fetch_cells_from_dht(block_number, positions)
 		.await;
 
@@ -417,28 +418,31 @@ async fn process_block(
 pub async fn run(
 	cfg: AppClientConfig,
 	db: Arc<DB>,
-	network_client: Client,
-	rpc_client: avail::Client,
+	network_client: P2pClient,
+	rpc_client: RpcClient,
 	app_id: AppId,
 	mut block_receive: broadcast::Receiver<BlockVerified>,
 	pp: Arc<PublicParameters>,
 	state: Arc<Mutex<State>>,
-	sync_end_block: u32,
+	sync_range: Range<u32>,
 	data_verified_sender: broadcast::Sender<(u32, AppData)>,
 	error_sender: Sender<anyhow::Error>,
 ) {
 	info!("Starting for app {app_id}...");
 
-	fn set_data_verified_state(state: Arc<Mutex<State>>, sync_end_block: u32, block_number: u32) {
+	fn set_data_verified_state(
+		state: Arc<Mutex<State>>,
+		sync_range: &Range<u32>,
+		block_number: u32,
+	) {
 		let mut state = state.lock().expect("State lock can be acquired");
-		let first = state.confidence_achieved.first();
-		match first.map(|first| block_number < first) {
-			Some(true) => state.sync_data_verified.set(block_number),
-			Some(false) | None => state.data_verified.set(block_number),
+		match sync_range.contains(&block_number) {
+			true => state.sync_data_verified.set(block_number),
+			false => state.data_verified.set(block_number),
 		}
-		if sync_end_block == block_number {
+		if state.synced == Some(false) && sync_range.clone().last() == Some(block_number) {
 			state.synced.replace(true);
-		}
+		};
 	}
 
 	loop {
@@ -463,14 +467,14 @@ pub async fn run(
 				block_number,
 				"Skipping block with no cells for app {app_id}"
 			);
-			set_data_verified_state(state.clone(), sync_end_block, block_number);
+			set_data_verified_state(state.clone(), &sync_range, block_number);
 			continue;
 		}
 
 		let db_clone = db.clone();
 		let app_client = AppClientImpl {
 			db: db_clone,
-			network_client: network_client.clone(),
+			p2p_client: network_client.clone(),
 			rpc_client: rpc_client.clone(),
 		};
 		let data = match process_block(app_client, &cfg, app_id, &block, pp.clone()).await {
@@ -483,7 +487,7 @@ pub async fn run(
 				return;
 			},
 		};
-		set_data_verified_state(state.clone(), sync_end_block, block_number);
+		set_data_verified_state(state.clone(), &sync_range, block_number);
 		if let Err(error) = data_verified_sender.send((block_number, data)) {
 			error!("Cannot send data verified message: {error}");
 			if let Err(error) = error_sender.send(error.into()).await {
