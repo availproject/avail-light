@@ -188,6 +188,62 @@ impl Command for GetKadRecord {
 	}
 }
 
+struct PutKadRecordBatch {
+	records: Vec<Record>,
+	quorum: Quorum,
+	response_sender: Option<oneshot::Sender<DHTPutSuccess>>,
+}
+
+#[async_trait]
+impl Command for PutKadRecordBatch {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		event_entries: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		// create channels to track individual PUT results needed for success count
+		let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(self.records.len());
+
+		// spawn new task that waits and count all successful put queries from this batch,
+		// but don't block event_loop
+		tokio::spawn(async move {
+			let response_sender = self.response_sender.unwrap();
+
+			<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
+				// consider only while receiving single successful results
+				.filter(|item| future::ready(item == &DHTPutSuccess::Single))
+				.count()
+				.map(DHTPutSuccess::Batch)
+				// send back counted successful puts
+				// signal back that this chunk of records is done
+				.map(|successful_puts| response_sender.send(successful_puts))
+		});
+
+		// go record by record and dispatch put requests through KAD
+		for record in self.records {
+			let query_id = swarm
+				.behaviour_mut()
+				.kademlia
+				.put_record(record, self.quorum)
+				.expect("Unable to perform batch Kademlia PUT operation.");
+			// insert response channel into KAD Queries pending map
+			event_entries.pending_kad_queries.insert(
+				query_id,
+				QueryChannel::PutRecordBatch(put_result_tx.clone()),
+			);
+		}
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(DHTPutSuccess::Batch(0))
+			.expect("PutKadRecordBatch receiver dropped");
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: CommandSender,
