@@ -401,7 +401,7 @@ impl EventLoop {
 	async fn handle_command(&self, mut command: SendableCommand) {
 		let client = self.unpack_client().unwrap();
 		if let Err(err) = command.run(client).await {
-			_ = command.abort(anyhow!(err));
+			command.abort(anyhow!(err));
 		}
 	}
 
