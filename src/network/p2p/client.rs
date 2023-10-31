@@ -127,6 +127,36 @@ impl Command for AddAddress {
 	}
 }
 
+struct Bootstrap {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+#[async_trait]
+impl Command for Bootstrap {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		event_entries: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let query_id = swarm.behaviour_mut().kademlia.bootstrap()?;
+
+		// insert response channel into KAD Queries pending map
+		let response_sender = self.response_sender.unwrap();
+		event_entries
+			.pending_kad_queries
+			.insert(query_id, super::QueryChannel::Bootstrap(response_sender));
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Err(error))
+			.expect("Bootstrap receiver dropped");
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: CommandSender,
