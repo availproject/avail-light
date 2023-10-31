@@ -244,6 +244,40 @@ impl Command for PutKadRecordBatch {
 	}
 }
 
+struct CountDHTPeers {
+	response_sender: Option<oneshot::Sender<usize>>,
+}
+
+#[async_trait]
+impl Command for CountDHTPeers {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		_: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let mut total_peers: usize = 0;
+		for bucket in swarm.behaviour_mut().kademlia.kbuckets() {
+			total_peers += bucket.num_entries();
+		}
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(total_peers)
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(0)
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: CommandSender,
