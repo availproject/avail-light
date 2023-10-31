@@ -157,6 +157,37 @@ impl Command for Bootstrap {
 	}
 }
 
+struct GetKadRecord {
+	key: Key,
+	response_sender: Option<oneshot::Sender<Result<PeerRecord>>>,
+}
+
+#[async_trait]
+impl Command for GetKadRecord {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		event_entries: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let query_id = swarm.behaviour_mut().kademlia.get_record(self.key);
+
+		// insert response channel into KAD Queries pending map
+		let response_sender = self.response_sender.unwrap();
+		event_entries
+			.pending_kad_queries
+			.insert(query_id, super::QueryChannel::GetRecord(response_sender));
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Err(error))
+			.expect("GetKadRecord receiver dropped");
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: CommandSender,
