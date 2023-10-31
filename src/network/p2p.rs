@@ -40,6 +40,32 @@ pub enum DHTPutSuccess {
 	Single,
 }
 
+#[derive(Debug)]
+enum QueryChannel {
+	GetRecord(oneshot::Sender<Result<PeerRecord>>),
+	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
+	Bootstrap(oneshot::Sender<Result<()>>),
+}
+
+pub struct EventLoopEntries {
+	pending_kad_queries: HashMap<QueryId, QueryChannel>,
+	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+}
+
+#[async_trait]
+pub trait Command {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		event_entries: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error>;
+	fn abort(&mut self, error: anyhow::Error);
+}
+
+type SendableCommand = Box<dyn Command + Send + Sync>;
+type CommandSender = mpsc::Sender<SendableCommand>;
+type CommandReceiver = mpsc::Receiver<SendableCommand>;
+
 // Behaviour struct is used to derive delegated Libp2p behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
