@@ -1,5 +1,6 @@
-use super::DHTPutSuccess;
+use super::{Behaviour, Command, CommandSender, DHTPutSuccess, EventLoopEntries, SendableCommand};
 use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
 use futures::future::join_all;
 use kate_recovery::{
 	config,
@@ -9,15 +10,15 @@ use kate_recovery::{
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	multiaddr::Protocol,
-	Multiaddr, PeerId,
+	Multiaddr, PeerId, Swarm,
 };
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tracing::{debug, trace};
 
 #[derive(Clone)]
 pub struct Client {
-	command_sender: mpsc::Sender<Command>,
+	command_sender: CommandSender,
 	/// Number of cells to fetch in parallel
 	dht_parallelization_limit: usize,
 	/// Cell time to live in DHT (in seconds)
@@ -66,7 +67,11 @@ struct StartListening {
 
 #[async_trait]
 impl Command for StartListening {
-	async fn run(&mut self, swarm: Swarm<Behaviour>) -> anyhow::Result<(), anyhow::Error> {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		_: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
 		let res = swarm.listen_on(self.addr)?;
 
 		// send result back
@@ -80,15 +85,51 @@ impl Command for StartListening {
 
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
-		// TODO: maybe wrap error with specific error message per Command type implementation
-		let sender = self.response_sender.unwrap();
-		_ = sender.send(Err(error));
+		self.response_sender
+			.unwrap()
+			.send(Err(error))
+			.expect("StartListening receiver dropped");
+	}
+}
+
+struct AddAddress {
+	peer_id: PeerId,
+	peer_addr: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+#[async_trait]
+impl Command for AddAddress {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		event_entries: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let res = swarm
+			.behaviour_mut()
+			.kademlia
+			.add_address(&self.peer_id, self.peer_addr);
+
+		// insert response channel into KAD Routing pending map
+		let response_sender = self.response_sender.unwrap();
+		event_entries
+			.pending_kad_routing
+			.insert(self.peer_id, response_sender);
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Err(error))
+			.expect("AddAddress receiver dropped");
 	}
 }
 
 impl Client {
 	pub fn new(
-		sender: mpsc::Sender<Command>,
+		sender: CommandSender,
 		dht_parallelization_limit: usize,
 		ttl: u64,
 		put_batch_size: usize,
@@ -103,7 +144,7 @@ impl Client {
 
 	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
 	where
-		F: FnOnce(oneshot::Sender<T>) -> Command,
+		F: FnOnce(oneshot::Sender<T>) -> SendableCommand,
 	{
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_with_sender(response_sender);
