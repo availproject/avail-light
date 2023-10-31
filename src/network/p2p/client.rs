@@ -330,6 +330,59 @@ impl Command for GetCellsInDHTPerBlock {
 	}
 }
 
+struct GetMultiaddress {
+	response_sender: Option<oneshot::Sender<Result<Multiaddr>>>,
+}
+
+#[async_trait]
+impl Command for GetMultiaddress {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		_: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		let last_address = swarm
+			.external_addresses()
+			.last()
+			.ok_or_else(|| anyhow!("The last_address should exist"))?;
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Ok(last_address.clone()))
+			.expect("CountDHTPeers receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Err(error))
+			.expect("CountDHTPeers receiver dropped");
+	}
+}
+
+struct ReduceKademliaMapSize {}
+
+#[async_trait]
+impl Command for ReduceKademliaMapSize {
+	async fn run(
+		&mut self,
+		swarm: Swarm<Behaviour>,
+		_: EventLoopEntries,
+	) -> anyhow::Result<(), anyhow::Error> {
+		swarm.behaviour_mut().kademlia.store_mut().shrink_hashmap();
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		trace!("No possible errors for ReduceKademliaMapSize");
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: CommandSender,
