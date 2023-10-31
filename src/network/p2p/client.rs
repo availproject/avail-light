@@ -1,7 +1,13 @@
-use super::{Behaviour, Command, CommandSender, DHTPutSuccess, EventLoopEntries, SendableCommand};
+use super::{
+	Behaviour, Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel,
+	SendableCommand,
+};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
-use futures::future::join_all;
+use futures::{
+	future::{self, join_all},
+	FutureExt, StreamExt,
+};
 use kate_recovery::{
 	config,
 	data::Cell,
@@ -12,8 +18,13 @@ use libp2p::{
 	multiaddr::Protocol,
 	Multiaddr, PeerId, Swarm,
 };
-use std::time::{Duration, Instant};
-use tokio::sync::oneshot;
+use std::str;
+use std::{
+	collections::HashMap,
+	time::{Duration, Instant},
+};
+use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace};
 
 #[derive(Clone)]
@@ -191,7 +202,7 @@ impl Command for GetKadRecord {
 struct PutKadRecordBatch {
 	records: Vec<Record>,
 	quorum: Quorum,
-	response_sender: Option<oneshot::Sender<DHTPutSuccess>>,
+	response_sender: Option<oneshot::Sender<Result<DHTPutSuccess>>>,
 }
 
 #[async_trait]
@@ -216,7 +227,7 @@ impl Command for PutKadRecordBatch {
 				.map(DHTPutSuccess::Batch)
 				// send back counted successful puts
 				// signal back that this chunk of records is done
-				.map(|successful_puts| response_sender.send(successful_puts))
+				.map(|successful_puts| response_sender.send(Ok(successful_puts)))
 		});
 
 		// go record by record and dispatch put requests through KAD
@@ -239,13 +250,13 @@ impl Command for PutKadRecordBatch {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.unwrap()
-			.send(DHTPutSuccess::Batch(0))
+			.send(Err(error))
 			.expect("PutKadRecordBatch receiver dropped");
 	}
 }
 
 struct CountDHTPeers {
-	response_sender: Option<oneshot::Sender<usize>>,
+	response_sender: Option<oneshot::Sender<Result<usize>>>,
 }
 
 #[async_trait]
@@ -264,7 +275,7 @@ impl Command for CountDHTPeers {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.unwrap()
-			.send(total_peers)
+			.send(Ok(total_peers))
 			.expect("CountDHTPeers receiver dropped");
 		Ok(())
 	}
@@ -273,7 +284,7 @@ impl Command for CountDHTPeers {
 		// TODO: consider what to do if this results with None
 		self.response_sender
 			.unwrap()
-			.send(0)
+			.send(Err(error))
 			.expect("CountDHTPeers receiver dropped");
 	}
 }
@@ -400,7 +411,7 @@ impl Client {
 
 	async fn execute_sync<F, T>(&self, command_with_sender: F) -> Result<T>
 	where
-		F: FnOnce(oneshot::Sender<T>) -> SendableCommand,
+		F: FnOnce(oneshot::Sender<Result<T>>) -> SendableCommand,
 	{
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_with_sender(response_sender);
@@ -410,24 +421,28 @@ impl Client {
 			.context("receiver should not be dropped")?;
 		response_receiver
 			.await
-			.context("sender should not be dropped")
+			.context("sender should not be dropped")?
 	}
 
 	pub async fn start_listening(&self, addr: Multiaddr) -> Result<()> {
-		self.execute_sync(|response_sender| Command::StartListening {
-			addr,
-			response_sender,
+		self.execute_sync(|response_sender| {
+			Box::new(StartListening {
+				addr,
+				response_sender: Some(response_sender),
+			})
 		})
-		.await?
+		.await
 	}
 
 	pub async fn add_address(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
-		self.execute_sync(|response_sender| Command::AddAddress {
-			peer_id,
-			peer_addr,
-			response_sender,
+		self.execute_sync(|response_sender| {
+			Box::new(AddAddress {
+				peer_id,
+				peer_addr,
+				response_sender: Some(response_sender),
+			})
 		})
-		.await?
+		.await
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
@@ -435,19 +450,29 @@ impl Client {
 			self.add_address(peer, addr.clone()).await?;
 		}
 
-		self.execute_sync(|response_sender| Command::Bootstrap { response_sender })
-			.await?
+		self.execute_sync(|response_sender| {
+			Box::new(Bootstrap {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
-		self.execute_sync(|response_sender| Command::GetKadRecord {
-			key,
-			response_sender,
+		self.execute_sync(|response_sender| {
+			Box::new(GetKadRecord {
+				key,
+				response_sender: Some(response_sender),
+			})
 		})
-		.await?
+		.await
 	}
 
-	async fn put_kad_record_batch(&self, records: Vec<Record>, quorum: Quorum) -> DHTPutSuccess {
+	async fn put_kad_record_batch(
+		&self,
+		records: Vec<Record>,
+		quorum: Quorum,
+	) -> Result<DHTPutSuccess> {
 		let mut num_success: usize = 0;
 		// split input batch records into chunks that will be sent consecutively
 		// these chunks are defined by the config parameter [put_batch_size]
@@ -455,10 +480,12 @@ impl Client {
 			// create oneshot for each chunk, through which will success counts be sent,
 			// only for the records in that chunk
 			match self
-				.execute_sync(|response_sender| Command::PutKadRecordBatch {
-					records: chunk.into(),
-					quorum,
-					response_sender,
+				.execute_sync(|response_sender| {
+					Box::new(PutKadRecordBatch {
+						records: chunk.into(),
+						quorum,
+						response_sender: Some(response_sender),
+					})
 				})
 				.await
 			{
@@ -468,25 +495,34 @@ impl Client {
 				// with too many possible PUT request coming in from the whole batch
 				// this is the reason why input parameter vector of records is split into chunks
 				Ok(DHTPutSuccess::Batch(num)) => num_success += num,
-				Err(_) => return DHTPutSuccess::Batch(num_success),
-			}
+				Err(err) => return Err(err),
+			};
 		}
-		DHTPutSuccess::Batch(num_success)
+		Ok(DHTPutSuccess::Batch(num_success))
 	}
 
 	pub async fn count_dht_entries(&self) -> Result<usize> {
-		self.execute_sync(|response_sender| Command::CountDHTPeers { response_sender })
-			.await
+		self.execute_sync(|response_sender| {
+			Box::new(CountDHTPeers {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
-	async fn get_multiaddress(&self) -> Result<Option<Multiaddr>> {
-		self.execute_sync(|response_sender| Command::GetMultiaddress { response_sender })
-			.await
+	async fn get_multiaddress(&self) -> Result<Multiaddr> {
+		self.execute_sync(|response_sender| {
+			Box::new(GetMultiaddress {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.execute_sync(|_| Command::ReduceKademliaMapSize).await
+		self.execute_sync(|_| Box::new(ReduceKademliaMapSize {}))
+			.await
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
@@ -599,7 +635,7 @@ impl Client {
 			return 1.0;
 		}
 		let len = records.len() as f32;
-		if let DHTPutSuccess::Batch(num) = self
+		if let Ok(DHTPutSuccess::Batch(num)) = self
 			.put_kad_record_batch(records.into_iter().map(|e| e.1).collect(), Quorum::One)
 			.await
 		{
@@ -649,51 +685,14 @@ impl Client {
 	}
 
 	pub async fn get_multiaddress_and_ip(&self) -> Result<(String, String)> {
-		if let Ok(Some(addr)) = self.get_multiaddress().await {
-			for protocol in &addr {
-				match protocol {
-					Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
-					Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
-					_ => continue,
-				}
+		let addr = self.get_multiaddress().await?;
+		for protocol in &addr {
+			match protocol {
+				Protocol::Ip4(ip) => return Ok((addr.to_string(), ip.to_string())),
+				Protocol::Ip6(ip) => return Ok((addr.to_string(), ip.to_string())),
+				_ => continue,
 			}
-			return Err(anyhow!("No IP Address was present in Multiaddress"));
 		}
-		Err(anyhow!("No Multiaddress was present for Local Node"))
+		Err(anyhow!("No IP Address was present in Multiaddress"))
 	}
-}
-
-#[derive(Debug)]
-pub enum Command {
-	StartListening {
-		addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	AddAddress {
-		peer_id: PeerId,
-		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	Bootstrap {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetKadRecord {
-		key: Key,
-		response_sender: oneshot::Sender<Result<PeerRecord>>,
-	},
-	PutKadRecordBatch {
-		records: Vec<Record>,
-		quorum: Quorum,
-		response_sender: oneshot::Sender<DHTPutSuccess>,
-	},
-	CountDHTPeers {
-		response_sender: oneshot::Sender<usize>,
-	},
-	GetCellsInDHTPerBlock {
-		response_sender: oneshot::Sender<Result<()>>,
-	},
-	GetMultiaddress {
-		response_sender: oneshot::Sender<Option<Multiaddr>>,
-	},
-	ReduceKademliaMapSize,
 }
