@@ -431,7 +431,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "avail-core"
 version = "0.5.1"
-source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#c26660d4f9f5978655bfdb26e2764e85b0bb9c28"
+source = "git+https://github.com/availproject/avail-core?branch=main#4ab4fbccec027ec9b2e930d6d6c96117c6460a16"
 dependencies = [
  "binary-merkle-tree",
  "derive_more",
@@ -442,13 +442,13 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "serde",
- "sp-arithmetic 16.0.0",
- "sp-core 21.0.0",
- "sp-io 23.0.0",
+ "sp-arithmetic 7.0.0",
+ "sp-core 8.0.0",
+ "sp-io 8.0.0",
  "sp-runtime 24.0.0",
  "sp-runtime-interface 17.0.0",
- "sp-std 8.0.0",
- "sp-trie 22.0.0",
+ "sp-std 6.0.0",
+ "sp-trie 8.0.0",
  "static_assertions",
  "thiserror-no-std",
 ]
@@ -2935,7 +2935,7 @@ dependencies = [
 [[package]]
 name = "kate-recovery"
 version = "0.9.1"
-source = "git+https://github.com/availproject/avail-core?branch=toufeeq/srs#c26660d4f9f5978655bfdb26e2764e85b0bb9c28"
+source = "git+https://github.com/availproject/avail-core?branch=main#4ab4fbccec027ec9b2e930d6d6c96117c6460a16"
 dependencies = [
  "avail-core",
  "derive_more",
@@ -2946,8 +2946,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
- "sp-arithmetic 16.0.0",
- "sp-std 8.0.0",
+ "sp-arithmetic 7.0.0",
+ "sp-std 6.0.0",
  "static_assertions",
  "thiserror-no-std",
 ]

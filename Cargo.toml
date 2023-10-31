@@ -22,10 +22,10 @@ subxt = "0.29"
 
 # Internal deps
 # TODO: switch back to tag after companion PR is merged
-avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", branch = "toufeeq/srs" }
+avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", branch = "main" }
 avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", branch = "main" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", branch = "toufeeq/srs" }
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", branch = "main" }
 
 # Substrate
 anyhow = "1.0.41"

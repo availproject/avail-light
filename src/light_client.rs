@@ -498,7 +498,7 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::testnet_v2;
+	use kate_recovery::couscous;
 
 	#[test]
 	fn test_cell_count_for_confidence() {
@@ -522,7 +522,7 @@ mod tests {
 	async fn test_process_block_with_rpc() {
 		let mut mock_client = MockLightClient::new();
 		let cfg = LightClientConfig::from(&RuntimeConfig::default());
-		let pp = Arc::new(testnet_v2::public_params());
+		let pp = Arc::new(couscous::public_params());
 		let cells_fetched: Vec<Cell> = vec![];
 		let cells_unfetched = [
 			Position { row: 1, col: 3 },
@@ -667,7 +667,7 @@ mod tests {
 		let mut mock_client = MockLightClient::new();
 		let mut cfg = LightClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
-		let pp = Arc::new(testnet_v2::public_params());
+		let pp = Arc::new(couscous::public_params());
 		let cells_unfetched: Vec<Position> = vec![];
 		let header = Header {
 			parent_hash: hex!("c454470d840bc2583fcf881be4fd8a0f6daeac3a20d83b9fd4865737e56c9739")
