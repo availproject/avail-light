@@ -8,7 +8,6 @@ use kate_recovery::{
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	multiaddr::Protocol,
-	swarm::DialError,
 	Multiaddr, PeerId,
 };
 use std::time::{Duration, Instant};
@@ -403,7 +402,7 @@ pub enum Command {
 	DialAddress {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
-		response_sender: oneshot::Sender<Result<(), DialError>>,
+		response_sender: oneshot::Sender<Result<()>>,
 	},
 	Bootstrap {
 		response_sender: oneshot::Sender<Result<()>>,

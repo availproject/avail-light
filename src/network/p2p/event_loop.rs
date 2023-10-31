@@ -19,7 +19,7 @@ use libp2p::{
 	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
-		ConnectionError, DialError, StreamUpgradeError, SwarmEvent,
+		ConnectionError, StreamUpgradeError, SwarmEvent,
 	},
 	Multiaddr, PeerId, Swarm,
 };
@@ -89,7 +89,7 @@ pub struct EventLoop {
 	command_receiver: mpsc::Receiver<Command>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
-	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<(), DialError>>>,
+	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -433,7 +433,7 @@ impl EventLoop {
 							debug!("OutgoingConnectionError by peer: {peer_id:?}. Error: {error}.");
 							// Notify the connections we're waiting on an error has occured
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
-								_ = ch.send(Err(error));
+								_ = ch.send(Err(error.into()));
 							}
 							// remove error producing relay from pending dials
 							// if the peer giving us problems is the chosen relay
@@ -488,8 +488,8 @@ impl EventLoop {
 						.addresses(vec![peer_addr])
 						.build(),
 				);
-				if res.is_err() {
-					_ = sender.send(res);
+				if let Err(e) = res {
+					_ = sender.send(Err(e.into()));
 					return;
 				}
 				self.pending_swarm_events.insert(peer_id, sender);
