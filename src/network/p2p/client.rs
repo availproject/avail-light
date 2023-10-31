@@ -119,7 +119,7 @@ impl Client {
 			.context("Sender not to be dropped.")?;
 		match res {
 			Ok(_) => Ok(()),
-			Err(e) => Err(e.into()),
+			Err(e) => Err(e),
 		}
 	}
 
