@@ -19,7 +19,7 @@ use libp2p::{
 	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
-		ConnectionError, StreamUpgradeError, SwarmEvent,
+		ConnectionError, DialError, StreamUpgradeError, SwarmEvent,
 	},
 	Multiaddr, PeerId, Swarm,
 };
@@ -89,6 +89,7 @@ pub struct EventLoop {
 	command_receiver: mpsc::Receiver<Command>,
 	pending_kad_queries: HashMap<QueryId, QueryChannel>,
 	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	pending_swarm_events: HashMap<PeerId, oneshot::Sender<Result<(), DialError>>>,
 	relay: RelayState,
 	bootstrap: BootstrapState,
 	kad_remove_local_record: bool,
@@ -124,6 +125,7 @@ impl EventLoop {
 			command_receiver,
 			pending_kad_queries: Default::default(),
 			pending_kad_routing: Default::default(),
+			pending_swarm_events: Default::default(),
 			relay: RelayState {
 				id: PeerId::random(),
 				address: Multiaddr::empty(),
@@ -383,7 +385,7 @@ impl EventLoop {
 						cause,
 						..
 					} => {
-						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
+						debug!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
 						if let Some(cause) = cause {
 							match cause {
@@ -413,15 +415,27 @@ impl EventLoop {
 						trace!("Incoming connection error from address: {send_back_addr:?}. Local address: {local_addr:?}. Error: {error:?}.")
 					},
 					SwarmEvent::ConnectionEstablished {
-						peer_id, endpoint, ..
+						peer_id,
+						endpoint,
+						established_in,
+						..
 					} => {
-						trace!("Connection established to: {peer_id:?} via: {endpoint:?}.");
+						trace!("Connection established to: {peer_id:?} via: {endpoint:?} in {established_in:?}. ");
+						// Notify the connections we're waiting on that we've connected successfully
+						if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
+							_ = ch.send(Ok(()));
+						}
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						// remove error producing relay from pending dials
-						trace!("Outgoing connection error: {error:?}");
+						debug!("Outgoing connection error: {error:?}");
+
 						if let Some(peer_id) = peer_id {
-							trace!("Error produced by peer with PeerId: {peer_id:?}");
+							debug!("OutgoingConnectionError by peer: {peer_id:?}. Error: {error}.");
+							// Notify the connections we're waiting on an error has occured
+							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
+								_ = ch.send(Err(error));
+							}
+							// remove error producing relay from pending dials
 							// if the peer giving us problems is the chosen relay
 							// just remove it by resetting the reservation state slot
 							if self.relay.id == peer_id {
@@ -463,6 +477,22 @@ impl EventLoop {
 					.add_address(&peer_id, peer_addr);
 
 				self.pending_kad_routing.insert(peer_id, sender);
+			},
+			Command::DialAddress {
+				peer_id,
+				peer_addr,
+				response_sender: sender,
+			} => {
+				let res = self.swarm.dial(
+					DialOpts::peer_id(peer_id)
+						.addresses(vec![peer_addr])
+						.build(),
+				);
+				if res.is_err() {
+					_ = sender.send(res);
+					return;
+				}
+				self.pending_swarm_events.insert(peer_id, sender);
 			},
 			Command::Bootstrap {
 				response_sender: sender,
