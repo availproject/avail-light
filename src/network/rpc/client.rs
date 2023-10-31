@@ -21,7 +21,7 @@ use subxt::{
 };
 use tokio::sync::oneshot;
 
-use super::{Command, CommandSender, Node, SendableCommand, WrappedProof, CELL_WITH_PROOF_SIZE};
+use super::{Command, CommandSender, SendableCommand, WrappedProof, CELL_WITH_PROOF_SIZE};
 use crate::types::RuntimeVersion;
 
 #[derive(Clone)]

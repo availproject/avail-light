@@ -6,7 +6,6 @@ use super::{
 };
 use crate::{
 	api::v2::types::{Error, Sender},
-	network::rpc::Node,
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
@@ -25,7 +24,6 @@ pub async fn connect(
 	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) {
@@ -67,16 +65,15 @@ pub async fn connect(
 		let submitter = submitter.clone();
 		let state = state.clone();
 
-		let send_result =
-			match handle_request(message, &version, &config, &node, submitter, state).await {
-				Ok(response) => send(sender.clone(), response),
-				Err(error) => {
-					if let Some(cause) = error.cause.as_ref() {
-						error!("Failed to handle request: {cause:#}");
-					};
-					send::<WsError>(sender.clone(), error.into())
-				},
-			};
+		let send_result = match handle_request(message, &version, &config, submitter, state).await {
+			Ok(response) => send(sender.clone(), response),
+			Err(error) => {
+				if let Some(cause) = error.cause.as_ref() {
+					error!("Failed to handle request: {cause:#}");
+				};
+				send::<WsError>(sender.clone(), error.into())
+			},
+		};
 
 		if let Err(error) = send_result {
 			warn!("Error sending message: {error:#}");
@@ -88,7 +85,6 @@ async fn handle_request(
 	message: Message,
 	version: &Version,
 	config: &RuntimeConfig,
-	node: &Node,
 	submitter: Option<Arc<impl transactions::Submit>>,
 	state: Arc<Mutex<State>>,
 ) -> Result<WsResponse, Error> {
@@ -101,7 +97,7 @@ async fn handle_request(
 		Payload::Version => Ok(Response::new(request_id, version.clone()).into()),
 		Payload::Status => {
 			let state = state.lock().expect("State lock can be acquired");
-			let status = Status::new(config, node, &state);
+			let status = Status::new(config, &state);
 			Ok(Response::new(request_id, status).into())
 		},
 		Payload::Submit(transaction) => {

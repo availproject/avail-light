@@ -5,7 +5,7 @@ use self::{
 use crate::{
 	api::v2::types::Topic,
 	data::{Database, RocksDB},
-	network::rpc::{Client, Node},
+	network::rpc::Client,
 	types::{RuntimeConfig, State},
 };
 use std::{
@@ -45,13 +45,11 @@ fn version_route(
 
 fn status_route(
 	config: RuntimeConfig,
-	node: Node,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	warp::path!("v2" / "status")
 		.and(warp::get())
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.map(handlers::status)
 }
@@ -124,7 +122,6 @@ fn ws_route(
 	clients: WsClients,
 	version: Version,
 	config: RuntimeConfig,
-	node: Node,
 	submitter: Option<Arc<impl transactions::Submit + Clone + Send + Sync + 'static>>,
 	state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -133,7 +130,6 @@ fn ws_route(
 		.and(with_ws_clients(clients))
 		.and(warp::any().map(move || version.clone()))
 		.and(warp::any().map(move || config.clone()))
-		.and(warp::any().map(move || node.clone()))
 		.and(warp::any().map(move || submitter.clone()))
 		.and(warp::any().map(move || state.clone()))
 		.and_then(handlers::ws)
@@ -181,7 +177,6 @@ pub async fn publish<T: Clone + TryInto<PublishMessage>>(
 pub fn routes(
 	version: String,
 	network_version: String,
-	node: Node,
 	state: Arc<Mutex<State>>,
 	config: RuntimeConfig,
 	node_client: Client,
@@ -205,7 +200,7 @@ pub fn routes(
 	});
 
 	version_route(version.clone())
-		.or(status_route(config.clone(), node.clone(), state.clone()))
+		.or(status_route(config.clone(), state.clone()))
 		.or(block_route(config.clone(), state.clone(), db.clone()))
 		.or(block_header_route(
 			config.clone(),
@@ -215,9 +210,7 @@ pub fn routes(
 		.or(block_data_route(config.clone(), state.clone(), db.clone()))
 		.or(subscriptions_route(ws_clients.clone()))
 		.or(submit_route(submitter.clone()))
-		.or(ws_route(
-			ws_clients, version, config, node, submitter, state,
-		))
+		.or(ws_route(ws_clients, version, config, submitter, state))
 		.recover(handle_rejection)
 }
 
@@ -230,7 +223,6 @@ mod tests {
 			WsClients, WsError, WsResponse,
 		},
 		data::Database,
-		network::rpc::Node,
 		types::{BlockRange, OptionBlockRange, RuntimeConfig, State},
 	};
 	use async_trait::async_trait;
@@ -279,21 +271,10 @@ mod tests {
 		);
 	}
 
-	impl Default for Node {
-		fn default() -> Self {
-			Self {
-				host: "{host}".to_string(),
-				system_version: "{system_version}".to_string(),
-				spec_version: 0,
-				genesis_hash: H256::from_str(GENESIS_HASH).unwrap(),
-			}
-		}
-	}
-
 	#[tokio::test]
 	async fn status_route_defaults() {
 		let state = Arc::new(Mutex::new(State::default()));
-		let route = super::status_route(RuntimeConfig::default(), Node::default(), state);
+		let route = super::status_route(RuntimeConfig::default(), state);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -332,7 +313,7 @@ mod tests {
 			state.sync_data_verified.set(18);
 		}
 
-		let route = super::status_route(runtime_config, Node::default(), state);
+		let route = super::status_route(runtime_config, state);
 		let response = warp::test::request()
 			.method("GET")
 			.path("/v2/status")
@@ -739,7 +720,6 @@ mod tests {
 				clients.clone(),
 				v1(),
 				config.clone(),
-				Node::default(),
 				submitter.map(Arc::new),
 				state.clone(),
 			);

@@ -1,5 +1,6 @@
 //! Shared light client structs and enums.
 
+use crate::network::rpc::Node as RpcNode;
 use crate::utils::{extract_app_lookup, extract_kate};
 use anyhow::anyhow;
 use anyhow::{Context, Result};
@@ -720,6 +721,7 @@ pub struct State {
 	pub sync_confidence_achieved: Option<BlockRange>,
 	pub sync_data_verified: Option<BlockRange>,
 	pub finality_synced: bool,
+	pub connected_node: RpcNode,
 }
 
 pub trait OptionBlockRange {

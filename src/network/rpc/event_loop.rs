@@ -27,9 +27,9 @@ use tokio::sync::broadcast::Sender;
 use tokio_stream::StreamExt;
 use tracing::{info, trace, warn};
 
-use super::{CommandReceiver, ExpectedVersion, Nodes, SendableCommand};
+use super::{CommandReceiver, ExpectedVersion, Node, Nodes, SendableCommand};
 use crate::{
-	data::store_finality_sync_checkpoint,
+	data::{self, store_finality_sync_checkpoint},
 	types::{
 		FinalitySyncCheckpoint, GrandpaJustification, OptionBlockRange, RuntimeVersion,
 		SignerMessage, State,
@@ -107,11 +107,14 @@ impl EventLoop {
 			.ok_or_else(|| anyhow!("RPC WS Nodes list must not be empty"))?;
 
 		let log_warn = |error| {
-			warn!("Skipping connection to {:?}: {error}", node.host);
+			warn!("Skipping connection to {:?}: {error}", node.clone().host);
 			error
 		};
 
 		let client = build_client(&node.host, false).await?;
+		// connecting to the selected node was a success,
+		// put it in the state, for all to use
+		self.store_node_data(node.clone())?;
 		// client was built successfully, keep it
 		self.subxt_client.replace(client);
 		let system_version = self.get_system_version().await?;
@@ -467,6 +470,24 @@ impl EventLoop {
 	async fn get_header_by_block_number(&self, block_number: u32) -> Result<(Header, H256)> {
 		let hash = self.get_block_hash(block_number).await?;
 		self.get_header_by_hash(hash).await.map(|e| (e, hash))
+	}
+
+	fn store_node_data(&self, node: Node) -> Result<()> {
+		self.state.lock().unwrap().connected_node = node.clone();
+
+		info!("Genesis hash: {:?}", node.genesis_hash);
+		if let Some(stored_genesis_hash) = data::get_genesis_hash(self.db.clone())? {
+			if !node.genesis_hash.eq(&stored_genesis_hash) {
+				Err(anyhow!(
+					"Genesis hash doesn't match the stored one! Clear the db or change nodes."
+				))?
+			}
+		} else {
+			info!("No genesis hash is found in the db, storing the new hash now.");
+			data::store_genesis_hash(self.db.clone(), node.genesis_hash)?;
+		}
+
+		Ok(())
 	}
 }
 

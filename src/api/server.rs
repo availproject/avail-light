@@ -11,7 +11,7 @@
 use crate::api::v2;
 use crate::{
 	api::v1,
-	network::rpc::{self, Node},
+	network::rpc::{self},
 	types::{RuntimeConfig, State},
 };
 use anyhow::Context;
@@ -30,7 +30,6 @@ pub struct Server {
 	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
-	pub node: Node,
 	pub node_client: rpc::Client,
 	pub ws_clients: v2::types::WsClients,
 }
@@ -55,7 +54,6 @@ impl Server {
 		let v2_api = v2::routes(
 			self.version.clone(),
 			self.network_version.clone(),
-			self.node,
 			self.state.clone(),
 			self.cfg,
 			self.node_client.clone(),
