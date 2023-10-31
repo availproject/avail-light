@@ -59,6 +59,33 @@ impl DHTRow {
 	}
 }
 
+struct StartListening {
+	addr: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+#[async_trait]
+impl Command for StartListening {
+	async fn run(&mut self, swarm: Swarm<Behaviour>) -> anyhow::Result<(), anyhow::Error> {
+		let res = swarm.listen_on(self.addr)?;
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.unwrap()
+			.send(Ok(()))
+			.expect("StartListening receiver dropped");
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		// TODO: maybe wrap error with specific error message per Command type implementation
+		let sender = self.response_sender.unwrap();
+		_ = sender.send(Err(error));
+	}
+}
+
 impl Client {
 	pub fn new(
 		sender: mpsc::Sender<Command>,
