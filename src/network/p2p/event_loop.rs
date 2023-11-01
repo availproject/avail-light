@@ -435,7 +435,7 @@ impl EventLoop {
 			&mut self.pending_kad_queries,
 			&mut self.pending_kad_routing,
 		)) {
-			_ = command.abort(anyhow!(err));
+			command.abort(anyhow!(err));
 		}
 	}
 
