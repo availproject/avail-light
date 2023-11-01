@@ -57,6 +57,9 @@ pub async fn run(
 	mode: CrawlMode,
 ) {
 	info!("Starting crawl client...");
+	if let Err(error) = metrics.record(MetricValue::CrawlBlockDelay(delay)).await {
+		error!("Cannot record crawl block delay: {}", error);
+	}
 	let delay = Delay(Some(Duration::from_secs(delay)));
 
 	while let Ok(rpc::Event::HeaderUpdate {
