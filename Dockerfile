@@ -28,5 +28,5 @@ WORKDIR /app
 COPY --from=builder /app/config.yaml /app/config.yaml
 COPY --from=builder /app/avail-light /usr/local/bin
 
-EXPOSE 7001 37000 39000 39000/tcp
+EXPOSE 80 443 7001 37000 39000 39000/tcp
 CMD ["/usr/local/bin/avail-light", "-c", "/app/config.yaml"]
