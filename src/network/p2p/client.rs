@@ -208,6 +208,7 @@ impl Command for PutKadRecordBatch {
 				// send back counted successful puts
 				// signal back that this chunk of records is done
 				.map(|successful_puts| response_sender.send(Ok(successful_puts)))
+				.await
 		});
 
 		// go record by record and dispatch put requests through KAD
@@ -215,7 +216,7 @@ impl Command for PutKadRecordBatch {
 			let query_id = entries
 				.behavior_mut()
 				.kademlia
-				.put_record(record, self.quorum.clone())
+				.put_record(record, self.quorum)
 				.expect("Unable to perform batch Kademlia PUT operation.");
 			// insert response channel into KAD Queries pending map
 			entries.insert_query(
