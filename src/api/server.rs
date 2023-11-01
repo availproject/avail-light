@@ -37,8 +37,9 @@ pub struct Server {
 
 fn health_route() -> impl Filter<Extract = impl Reply, Error = warp::Rejection> + Clone {
 	warp::head()
+		.or(warp::get())
 		.and(warp::path("health"))
-		.map(|| warp::reply::with_status("", warp::http::StatusCode::OK))
+		.map(|_| warp::reply::with_status("", warp::http::StatusCode::OK))
 }
 
 impl Server {
