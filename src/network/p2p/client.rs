@@ -354,17 +354,28 @@ impl Command for GetMultiaddress {
 	}
 }
 
-struct ReduceKademliaMapSize {}
+struct ReduceKademliaMapSize {
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
 
 #[async_trait]
 impl Command for ReduceKademliaMapSize {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
 		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
+
+		// send result back
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Ok(()))
+			.expect("CountDHTPeers receiver dropped");
 		Ok(())
 	}
 
 	fn abort(&mut self, _: anyhow::Error) {
+		// theres should be no errors from running this Command
 		// TODO: consider what to do if this results with None
 		debug!("No possible errors for ReduceKademliaMapSize");
 	}
@@ -497,8 +508,12 @@ impl Client {
 
 	// Reduces the size of Kademlias underlying hashmap
 	pub async fn shrink_kademlia_map(&self) -> Result<()> {
-		self.execute_sync(|_| Box::new(ReduceKademliaMapSize {}))
-			.await
+		self.execute_sync(|response_sender| {
+			Box::new(ReduceKademliaMapSize {
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
 	}
 
 	// Since callers ignores DHT errors, debug logs are used to observe DHT behavior.
