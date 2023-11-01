@@ -384,7 +384,7 @@ impl<'de> Deserialize<'de> for Commitment {
 struct Extension {
 	rows: u16,
 	cols: u16,
-	data_root: Option<H256>,
+	data_root: H256,
 	commitments: Vec<Commitment>,
 	app_lookup: CompactDataLookup,
 }
@@ -417,7 +417,7 @@ impl TryFrom<HeaderExtension> for Extension {
 				Ok(Extension {
 					rows: v1.commitment.rows,
 					cols: v1.commitment.cols,
-					data_root: Some(v1.commitment.data_root),
+					data_root: v1.commitment.data_root,
 					commitments,
 					app_lookup: v1.app_lookup,
 				})
@@ -845,7 +845,7 @@ mod tests {
 				extension: super::Extension {
 					rows: 1,
 					cols: 1,
-					data_root: None,
+					data_root: H256::default(),
 					commitments: vec![],
 					app_lookup: CompactDataLookup {
 						size: 0,
