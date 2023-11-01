@@ -138,8 +138,6 @@ http_server_port = 7000
 secret_key = { seed={seed} }
 # P2P service port (default: 37000).
 port = 37000
-# Configures TCP port reuse for local sockets, which implies reuse of listening ports for outgoing connections to enhance NAT traversal capabilities (default: false)
-tcp_port_reuse = bool
 # Configures AutoNAT behaviour to reject probes as a server for clients that are observed at a non-global ip address (default: false)
 autonat_only_global_ips = false
 # AutoNat throttle period for re-using a peer as server for a dial-request. (default: 1 sec)
@@ -250,7 +248,7 @@ Response:
 
 ```json
 {
-	"latest_block": 10
+ "latest_block": 10
 }
 ```
 
@@ -266,9 +264,9 @@ Response:
 
 ```json
 {
-	"block": 1,
-	"confidence": 93.75,
-	"serialised_confidence": "5232467296"
+ "block": 1,
+ "confidence": 93.75,
+ "serialised_confidence": "5232467296"
 }
 ```
 
@@ -289,10 +287,10 @@ Response:
 
 ```json
 {
-	"block": 46,
-	"extrinsics": [
-		"ZXhhbXBsZQ=="
-	]
+ "block": 46,
+ "extrinsics": [
+  "ZXhhbXBsZQ=="
+ ]
 }
 ```
 
@@ -318,7 +316,7 @@ Response:
 
 ```json
 {
-	"AppClient": 1
+ "AppClient": 1
 }
 ```
 
@@ -332,9 +330,9 @@ Response:
 
 ```json
 {
-	"block_num": 10,
-	"confidence": 93.75,
-	"app_id": 1
+ "block_num": 10,
+ "confidence": 93.75,
+ "app_id": 1
 }
 ```
 
@@ -348,7 +346,7 @@ Response:
 
 ```json
 {
-	"latest_block": 255
+ "latest_block": 255
 }
 ```
 
@@ -454,10 +452,10 @@ If application data is available, and decode is `false` or unspecified:
 
 ```json
 {
-	"block": 1,
-	"extrinsics": [
-		"0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
-	]
+ "block": 1,
+ "extrinsics": [
+  "0xc5018400d43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d01308e88ca257b65514b7b44fc1913a6a9af6abc34c3d22761b0e425674d68df7de26be1c8533a7bbd01fdb3a8daa5af77df6d3fb0a67cde8241f461f4fe16f188000000041d011c6578616d706c65"
+ ]
 }
 ```
 
