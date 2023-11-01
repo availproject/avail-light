@@ -2,7 +2,6 @@ use super::{
 	Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel, SendableCommand,
 };
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use futures::{
 	future::{self, join_all},
 	FutureExt, StreamExt,
@@ -106,7 +105,6 @@ struct AddAddress {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
 impl Command for AddAddress {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -134,7 +132,6 @@ struct Bootstrap {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
 impl Command for Bootstrap {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -161,7 +158,6 @@ struct GetKadRecord {
 	response_sender: Option<oneshot::Sender<Result<PeerRecord>>>,
 }
 
-#[async_trait]
 impl Command for GetKadRecord {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -189,7 +185,6 @@ struct PutKadRecordBatch {
 	response_sender: Option<oneshot::Sender<Result<DHTPutSuccess>>>,
 }
 
-#[async_trait]
 impl Command for PutKadRecordBatch {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -240,7 +235,6 @@ struct CountDHTPeers {
 	response_sender: Option<oneshot::Sender<Result<usize>>>,
 }
 
-#[async_trait]
 impl Command for CountDHTPeers {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -273,7 +267,6 @@ struct GetCellsInDHTPerBlock {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
 impl Command for GetCellsInDHTPerBlock {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut occurrence_map = HashMap::new();
@@ -324,7 +317,6 @@ struct GetMultiaddress {
 	response_sender: Option<oneshot::Sender<Result<Multiaddr>>>,
 }
 
-#[async_trait]
 impl Command for GetMultiaddress {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
@@ -358,7 +350,6 @@ struct ReduceKademliaMapSize {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
 impl Command for ReduceKademliaMapSize {
 	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut entries = event_entries;
