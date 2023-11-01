@@ -1,6 +1,5 @@
 use super::{
-	Behaviour, Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel,
-	SendableCommand,
+	Command, CommandSender, DHTPutSuccess, EventLoopEntries, QueryChannel, SendableCommand,
 };
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -16,7 +15,7 @@ use kate_recovery::{
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	multiaddr::Protocol,
-	Multiaddr, PeerId, Swarm,
+	Multiaddr, PeerId,
 };
 use std::str;
 use std::{
@@ -76,18 +75,15 @@ struct StartListening {
 	response_sender: Option<oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
 impl Command for StartListening {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		_: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let res = swarm.listen_on(self.addr)?;
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		_ = entries.swarm().listen_on(self.addr.clone())?;
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Ok(()))
 			.expect("StartListening receiver dropped");
@@ -97,6 +93,7 @@ impl Command for StartListening {
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("StartListening receiver dropped");
@@ -111,27 +108,22 @@ struct AddAddress {
 
 #[async_trait]
 impl Command for AddAddress {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		event_entries: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let res = swarm
-			.behaviour_mut()
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		_ = entries
+			.behavior_mut()
 			.kademlia
-			.add_address(&self.peer_id, self.peer_addr);
+			.add_address(&self.peer_id, self.peer_addr.clone());
 
 		// insert response channel into KAD Routing pending map
-		let response_sender = self.response_sender.unwrap();
-		event_entries
-			.pending_kad_routing
-			.insert(self.peer_id, response_sender);
+		entries.insert_routing(self.peer_id, self.response_sender.take().unwrap());
 		Ok(())
 	}
 
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("AddAddress receiver dropped");
@@ -144,24 +136,20 @@ struct Bootstrap {
 
 #[async_trait]
 impl Command for Bootstrap {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		event_entries: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let query_id = swarm.behaviour_mut().kademlia.bootstrap()?;
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		let query_id = entries.behavior_mut().kademlia.bootstrap()?;
 
 		// insert response channel into KAD Queries pending map
-		let response_sender = self.response_sender.unwrap();
-		event_entries
-			.pending_kad_queries
-			.insert(query_id, super::QueryChannel::Bootstrap(response_sender));
+		let response_sender = self.response_sender.take().unwrap();
+		entries.insert_query(query_id, super::QueryChannel::Bootstrap(response_sender));
 		Ok(())
 	}
 
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("Bootstrap receiver dropped");
@@ -175,24 +163,20 @@ struct GetKadRecord {
 
 #[async_trait]
 impl Command for GetKadRecord {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		event_entries: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let query_id = swarm.behaviour_mut().kademlia.get_record(self.key);
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		let query_id = entries.behavior_mut().kademlia.get_record(self.key.clone());
 
 		// insert response channel into KAD Queries pending map
-		let response_sender = self.response_sender.unwrap();
-		event_entries
-			.pending_kad_queries
-			.insert(query_id, super::QueryChannel::GetRecord(response_sender));
+		let response_sender = self.response_sender.take().unwrap();
+		entries.insert_query(query_id, super::QueryChannel::GetRecord(response_sender));
 		Ok(())
 	}
 
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("GetKadRecord receiver dropped");
@@ -207,19 +191,15 @@ struct PutKadRecordBatch {
 
 #[async_trait]
 impl Command for PutKadRecordBatch {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		event_entries: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
 		// create channels to track individual PUT results needed for success count
 		let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(self.records.len());
 
 		// spawn new task that waits and count all successful put queries from this batch,
 		// but don't block event_loop
+		let response_sender = self.response_sender.take().unwrap();
 		tokio::spawn(async move {
-			let response_sender = self.response_sender.unwrap();
-
 			<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
 				// consider only while receiving single successful results
 				.filter(|item| future::ready(item == &DHTPutSuccess::Single))
@@ -231,14 +211,14 @@ impl Command for PutKadRecordBatch {
 		});
 
 		// go record by record and dispatch put requests through KAD
-		for record in self.records {
-			let query_id = swarm
-				.behaviour_mut()
+		for record in self.records.clone() {
+			let query_id = entries
+				.behavior_mut()
 				.kademlia
-				.put_record(record, self.quorum)
+				.put_record(record, self.quorum.clone())
 				.expect("Unable to perform batch Kademlia PUT operation.");
 			// insert response channel into KAD Queries pending map
-			event_entries.pending_kad_queries.insert(
+			entries.insert_query(
 				query_id,
 				QueryChannel::PutRecordBatch(put_result_tx.clone()),
 			);
@@ -249,6 +229,7 @@ impl Command for PutKadRecordBatch {
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("PutKadRecordBatch receiver dropped");
@@ -261,19 +242,17 @@ struct CountDHTPeers {
 
 #[async_trait]
 impl Command for CountDHTPeers {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		_: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
 		let mut total_peers: usize = 0;
-		for bucket in swarm.behaviour_mut().kademlia.kbuckets() {
+		for bucket in entries.behavior_mut().kademlia.kbuckets() {
 			total_peers += bucket.num_entries();
 		}
 
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Ok(total_peers))
 			.expect("CountDHTPeers receiver dropped");
@@ -283,6 +262,7 @@ impl Command for CountDHTPeers {
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("CountDHTPeers receiver dropped");
@@ -295,14 +275,11 @@ struct GetCellsInDHTPerBlock {
 
 #[async_trait]
 impl Command for GetCellsInDHTPerBlock {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		_: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut occurrence_map = HashMap::new();
+		let mut entries = event_entries;
 
-		for record in swarm.behaviour_mut().kademlia.store_mut().records_iter() {
+		for record in entries.behavior_mut().kademlia.store_mut().records_iter() {
 			let vec_key = record.0.to_vec();
 			let record_key = str::from_utf8(&vec_key);
 
@@ -326,6 +303,7 @@ impl Command for GetCellsInDHTPerBlock {
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Ok(()))
 			.expect("GetCellsInDHTPerBlock receiver dropped");
@@ -335,6 +313,7 @@ impl Command for GetCellsInDHTPerBlock {
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("GetCellsInDHTPerBlock receiver dropped");
@@ -347,12 +326,10 @@ struct GetMultiaddress {
 
 #[async_trait]
 impl Command for GetMultiaddress {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		_: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		let last_address = swarm
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		let last_address = entries
+			.swarm()
 			.external_addresses()
 			.last()
 			.ok_or_else(|| anyhow!("The last_address should exist"))?;
@@ -360,6 +337,7 @@ impl Command for GetMultiaddress {
 		// send result back
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Ok(last_address.clone()))
 			.expect("CountDHTPeers receiver dropped");
@@ -369,6 +347,7 @@ impl Command for GetMultiaddress {
 	fn abort(&mut self, error: anyhow::Error) {
 		// TODO: consider what to do if this results with None
 		self.response_sender
+			.take()
 			.unwrap()
 			.send(Err(error))
 			.expect("CountDHTPeers receiver dropped");
@@ -379,18 +358,15 @@ struct ReduceKademliaMapSize {}
 
 #[async_trait]
 impl Command for ReduceKademliaMapSize {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		_: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error> {
-		swarm.behaviour_mut().kademlia.store_mut().shrink_hashmap();
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
 		Ok(())
 	}
 
-	fn abort(&mut self, error: anyhow::Error) {
+	fn abort(&mut self, _: anyhow::Error) {
 		// TODO: consider what to do if this results with None
-		trace!("No possible errors for ReduceKademliaMapSize");
+		debug!("No possible errors for ReduceKademliaMapSize");
 	}
 }
 
