@@ -8,17 +8,21 @@ use libp2p::{
 	dns::TokioDnsConfig,
 	identify::{self, Behaviour as Identify},
 	identity,
-	kad::{Kademlia, KademliaCaching, KademliaConfig, Mode},
+	kad::{Kademlia, KademliaCaching, KademliaConfig, Mode, PeerRecord, QueryId},
 	mdns::{tokio::Behaviour as Mdns, Config as MdnsConfig},
 	noise::Config as NoiseConfig,
 	ping::{Behaviour as Ping, Config as PingConfig},
 	quic::{tokio::Transport as TokioQuic, Config as QuicConfig},
 	relay::{self, client::Behaviour as RelayClient},
 	swarm::{NetworkBehaviour, SwarmBuilder},
-	PeerId, Transport,
+	PeerId, Swarm, Transport,
 };
 use multihash::{self, Hasher};
-use tokio::sync::mpsc::{self};
+use std::collections::HashMap;
+use tokio::sync::{
+	mpsc::{self},
+	oneshot,
+};
 use tracing::info;
 
 #[cfg(feature = "network-analysis")]
@@ -41,24 +45,50 @@ pub enum DHTPutSuccess {
 }
 
 #[derive(Debug)]
-enum QueryChannel {
+pub enum QueryChannel {
 	GetRecord(oneshot::Sender<Result<PeerRecord>>),
 	PutRecordBatch(mpsc::Sender<DHTPutSuccess>),
 	Bootstrap(oneshot::Sender<Result<()>>),
 }
 
-pub struct EventLoopEntries {
-	pending_kad_queries: HashMap<QueryId, QueryChannel>,
-	pending_kad_routing: HashMap<PeerId, oneshot::Sender<Result<()>>>,
+pub struct EventLoopEntries<'a> {
+	swarm: &'a mut Swarm<Behaviour>,
+	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
+	pending_kad_routing: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
 }
 
-#[async_trait]
+impl<'a> EventLoopEntries<'a> {
+	pub fn new(
+		swarm: &'a mut Swarm<Behaviour>,
+		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
+		pending_kad_routing: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	) -> Self {
+		Self {
+			swarm,
+			pending_kad_queries,
+			pending_kad_routing,
+		}
+	}
+
+	pub fn insert_query(&mut self, query_id: QueryId, result_sender: QueryChannel) {
+		self.pending_kad_queries.insert(query_id, result_sender);
+	}
+
+	pub fn insert_routing(&mut self, peer_id: PeerId, result_sender: oneshot::Sender<Result<()>>) {
+		self.pending_kad_routing.insert(peer_id, result_sender);
+	}
+
+	pub fn behavior_mut(&mut self) -> &mut Behaviour {
+		self.swarm.behaviour_mut()
+	}
+
+	pub fn swarm(&mut self) -> &mut Swarm<Behaviour> {
+		&mut self.swarm
+	}
+}
+
 pub trait Command {
-	async fn run(
-		&mut self,
-		swarm: Swarm<Behaviour>,
-		event_entries: EventLoopEntries,
-	) -> anyhow::Result<(), anyhow::Error>;
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
 	fn abort(&mut self, error: anyhow::Error);
 }
 
@@ -179,7 +209,6 @@ pub fn init(
 	// Build the Swarm, connecting the lower transport logic with the
 	// higher layer network behaviour logic
 	let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build();
-
 	// create sender channel for Event Loop Commands
 	let (command_sender, command_receiver) = mpsc::channel(10000);
 
