@@ -199,7 +199,7 @@ impl Command for PutKadRecordBatch {
 		// spawn new task that waits and count all successful put queries from this batch,
 		// but don't block event_loop
 		let response_sender = self.response_sender.take().unwrap();
-		tokio::spawn(async move {
+		tokio::spawn(
 			<ReceiverStream<DHTPutSuccess>>::from(put_result_rx)
 				// consider only while receiving single successful results
 				.filter(|item| future::ready(item == &DHTPutSuccess::Single))
@@ -207,9 +207,8 @@ impl Command for PutKadRecordBatch {
 				.map(DHTPutSuccess::Batch)
 				// send back counted successful puts
 				// signal back that this chunk of records is done
-				.map(|successful_puts| response_sender.send(Ok(successful_puts)))
-				.await
-		});
+				.map(|successful_puts| response_sender.send(Ok(successful_puts))),
+		);
 
 		// go record by record and dispatch put requests through KAD
 		for record in self.records.clone() {
