@@ -134,10 +134,11 @@ impl Command for GetValidatorSetByHash {
 	}
 }
 
+type KateRowsSender = oneshot::Sender<Result<Vec<Option<Vec<u8>>>>>;
 struct RequestKateRows {
 	rows: Vec<u32>,
 	block_hash: H256,
-	response_sender: Option<oneshot::Sender<Result<Vec<Option<Vec<u8>>>>>>,
+	response_sender: Option<KateRowsSender>,
 }
 
 #[async_trait]
@@ -349,10 +350,10 @@ impl Command for GetValidatorSetAt {
 	}
 }
 
+type FromBytesSender = oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>;
 struct SubmitFromBytesAndWatch {
 	tx_bytes: Vec<u8>,
-	response_sender:
-		Option<oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>>,
+	response_sender: Option<FromBytesSender>,
 }
 
 #[async_trait]
@@ -383,12 +384,12 @@ impl Command for SubmitFromBytesAndWatch {
 	}
 }
 
+type SignedSender = oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>;
 struct SubmitSignedAndWatch {
 	extrinsic: Payload<SubmitData>,
 	pair_signer: PairSigner<AvailConfig, Pair>,
 	params: AvailExtrinsicParams,
-	response_sender:
-		Option<oneshot::Sender<Result<TxProgress<AvailConfig, OnlineClient<AvailConfig>>>>>,
+	response_sender: Option<SignedSender>,
 }
 
 #[async_trait]
@@ -608,7 +609,7 @@ impl Client {
 	{
 		let (response_sender, response_receiver) = oneshot::channel();
 		let command = command_with_sender(response_sender);
-		_ = self.command_sender.send(command).await?;
+		self.command_sender.send(command).await?;
 		response_receiver
 			.await
 			.context("sender should not be dropped")?
