@@ -83,7 +83,7 @@ impl<'a> EventLoopEntries<'a> {
 	}
 
 	pub fn swarm(&mut self) -> &mut Swarm<Behaviour> {
-		&mut self.swarm
+		self.swarm
 	}
 }
 
