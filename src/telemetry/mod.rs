@@ -27,7 +27,7 @@ pub enum MetricValue {
 	#[cfg(feature = "crawl")]
 	CrawlRowsSuccessRate(f64),
 	#[cfg(feature = "crawl")]
-	CrawlBlockDelay(u64),
+	CrawlBlockDelay(f64),
 }
 
 #[automock]

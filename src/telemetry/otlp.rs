@@ -123,7 +123,7 @@ impl super::Metrics for Metrics {
 			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlBlockDelay(number) => {
-				self.record_u64("crawl_block_delay", number).await?;
+				self.record_f64("crawl_block_delay", number).await?;
 			},
 		};
 		Ok(())
