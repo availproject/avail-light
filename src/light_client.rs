@@ -448,6 +448,12 @@ pub async fn run(
 		};
 
 		if let Some(seconds) = cfg.block_processing_delay.sleep_duration(received_at) {
+			if let Err(error) = metrics
+				.record(MetricValue::BlockProcessingDelay(seconds.as_secs_f64()))
+				.await
+			{
+				error!("Cannot record crawl block delay: {}", error);
+			}
 			info!("Sleeping for {seconds:?} seconds");
 			tokio::time::sleep(seconds).await;
 		}

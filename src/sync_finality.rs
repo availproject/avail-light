@@ -13,7 +13,9 @@ use tokio::sync::mpsc::Sender;
 use tracing::{error, info, trace};
 
 use crate::{
-	data::{get_finality_sync_checkpoint, store_finality_sync_checkpoint},
+	data::{
+		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
+	},
 	network::rpc::{self, WrappedProof},
 	types::{FinalitySyncCheckpoint, SignerMessage, State},
 	utils::filter_auth_set_changes,
@@ -148,6 +150,8 @@ pub async fn sync_finality(
 	let last_block_num = from_header.number;
 
 	info!("Syncing finality from {curr_block_num} up to block no. {last_block_num}");
+	let db = sync_finality.get_db();
+
 	let mut prev_hash = rpc_client
 		.get_block_hash(curr_block_num - 1)
 		.await
@@ -168,6 +172,8 @@ pub async fn sync_finality(
 			.get_header_by_hash(hash)
 			.await
 			.context(format!("Couldn't get header for {}", hash))?;
+		store_block_header_in_db(db.clone(), curr_block_num, &from_header)?;
+
 		assert_eq!(
 			from_header.parent_hash, prev_hash,
 			"Parent hash doesn't match!"

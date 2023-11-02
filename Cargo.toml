@@ -21,7 +21,6 @@ bench = false
 subxt = "0.29"
 
 # Internal deps
-# TODO: switch back to tag after companion PR is merged
 avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0-rc-1" }
 avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", tag = "v1.8.0.0-rc1" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
