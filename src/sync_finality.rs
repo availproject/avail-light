@@ -174,7 +174,10 @@ pub async fn sync_finality(
 			.context(format!("Couldn't get header for {}", hash))?;
 		store_block_header_in_db(db.clone(), curr_block_num, &from_header)?;
 
-		assert_eq!(from_header.parent_hash, prev_hash, "Parent hash doesn't match!");
+		assert_eq!(
+			from_header.parent_hash, prev_hash,
+			"Parent hash doesn't match!"
+		);
 		prev_hash = from_header.using_encoded(blake2_256).into();
 
 		let next_validator_set = filter_auth_set_changes(&from_header);
