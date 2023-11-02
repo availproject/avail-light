@@ -151,7 +151,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	p2p_client
-		.bootstrap(cfg.clone().bootstraps.iter().map(Into::into).collect())
+		.bootstrap_on_startup(cfg.clone().bootstraps.iter().map(Into::into).collect())
 		.await?;
 
 	#[cfg(feature = "network-analysis")]

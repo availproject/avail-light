@@ -54,19 +54,19 @@ pub enum QueryChannel {
 pub struct EventLoopEntries<'a> {
 	swarm: &'a mut Swarm<Behaviour>,
 	pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-	pending_kad_routing: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+	pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
 }
 
 impl<'a> EventLoopEntries<'a> {
 	pub fn new(
 		swarm: &'a mut Swarm<Behaviour>,
 		pending_kad_queries: &'a mut HashMap<QueryId, QueryChannel>,
-		pending_kad_routing: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
+		pending_swarm_events: &'a mut HashMap<PeerId, oneshot::Sender<Result<()>>>,
 	) -> Self {
 		Self {
 			swarm,
 			pending_kad_queries,
-			pending_kad_routing,
+			pending_swarm_events,
 		}
 	}
 
@@ -74,8 +74,12 @@ impl<'a> EventLoopEntries<'a> {
 		self.pending_kad_queries.insert(query_id, result_sender);
 	}
 
-	pub fn insert_routing(&mut self, peer_id: PeerId, result_sender: oneshot::Sender<Result<()>>) {
-		self.pending_kad_routing.insert(peer_id, result_sender);
+	pub fn insert_swarm_event(
+		&mut self,
+		peer_id: PeerId,
+		result_sender: oneshot::Sender<Result<()>>,
+	) {
+		self.pending_swarm_events.insert(peer_id, result_sender);
 	}
 
 	pub fn behavior_mut(&mut self) -> &mut Behaviour {

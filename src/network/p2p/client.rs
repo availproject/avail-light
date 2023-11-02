@@ -14,6 +14,7 @@ use kate_recovery::{
 use libp2p::{
 	kad::{record::Key, PeerRecord, Quorum, Record},
 	multiaddr::Protocol,
+	swarm::dial_opts::DialOpts,
 	Multiaddr, PeerId,
 };
 use std::str;
@@ -113,8 +114,8 @@ impl Command for AddAddress {
 			.kademlia
 			.add_address(&self.peer_id, self.peer_addr.clone());
 
-		// insert response channel into KAD Routing pending map
-		entries.insert_routing(self.peer_id, self.response_sender.take().unwrap());
+		// insert response channel into Swarm Events pending map
+		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
 		Ok(())
 	}
 
@@ -332,7 +333,7 @@ impl Command for GetMultiaddress {
 			.take()
 			.unwrap()
 			.send(Ok(last_address.clone()))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("GetMultiaddress receiver dropped");
 		Ok(())
 	}
 
@@ -342,7 +343,7 @@ impl Command for GetMultiaddress {
 			.take()
 			.unwrap()
 			.send(Err(error))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("GetMultiaddress receiver dropped");
 	}
 }
 
@@ -361,7 +362,7 @@ impl Command for ReduceKademliaMapSize {
 			.take()
 			.unwrap()
 			.send(Ok(()))
-			.expect("CountDHTPeers receiver dropped");
+			.expect("ReduceKademliaMapSize receiver dropped");
 		Ok(())
 	}
 
@@ -369,6 +370,36 @@ impl Command for ReduceKademliaMapSize {
 		// theres should be no errors from running this Command
 		// TODO: consider what to do if this results with None
 		debug!("No possible errors for ReduceKademliaMapSize");
+	}
+}
+
+struct DialPeer {
+	peer_id: PeerId,
+	peer_address: Multiaddr,
+	response_sender: Option<oneshot::Sender<Result<()>>>,
+}
+
+impl Command for DialPeer {
+	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+		let mut entries = event_entries;
+		entries.swarm().dial(
+			DialOpts::peer_id(self.peer_id)
+				.addresses(vec![self.peer_address.clone()])
+				.build(),
+		)?;
+
+		// insert response channel into Swarm Events pending map
+		entries.insert_swarm_event(self.peer_id, self.response_sender.take().unwrap());
+		Ok(())
+	}
+
+	fn abort(&mut self, error: anyhow::Error) {
+		// TODO: consider what to do if this results with None
+		self.response_sender
+			.take()
+			.unwrap()
+			.send(Err(error))
+			.expect("DialPeer receiver dropped");
 	}
 }
 
@@ -423,17 +454,34 @@ impl Client {
 		.await
 	}
 
-	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
-		for (peer, addr) in nodes {
-			self.add_address(peer, addr.clone()).await?;
-		}
+	pub async fn dial_peer(&self, peer_id: PeerId, peer_address: Multiaddr) -> Result<()> {
+		self.execute_sync(|response_sender| {
+			Box::new(DialPeer {
+				peer_id,
+				peer_address,
+				response_sender: Some(response_sender),
+			})
+		})
+		.await
+	}
 
+	pub async fn bootstrap(&self) -> Result<()> {
 		self.execute_sync(|response_sender| {
 			Box::new(Bootstrap {
 				response_sender: Some(response_sender),
 			})
 		})
 		.await
+	}
+
+	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
+		for (peer, addr) in nodes {
+			self.dial_peer(peer, addr.clone())
+				.await
+				.context("Dialing Bootstrap peer failed.")?;
+			self.add_address(peer, addr).await?;
+		}
+		self.bootstrap().await
 	}
 
 	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
