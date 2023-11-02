@@ -129,7 +129,9 @@ impl EventLoop {
 		);
 
 		if !expected_version.matches(&system_version, &runtime_version.spec_name) {
-			log_warn(anyhow!("Expected {expected_version}, found {version}"));
+			return Err(log_warn(anyhow!(
+				"Expected {expected_version}, found {version}"
+			)));
 		}
 
 		info!(
