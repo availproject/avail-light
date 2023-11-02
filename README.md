@@ -49,12 +49,16 @@ cargo build --release
 Resulting `avail-light` binary can be found in the `target/release` directory.
 
 ### Installation using Docker
+
 Alternatively, you can use Docker to build and run the light client locally. Keep in mind that Docker image will
 fail unless you have provided a `config.yaml` during the build process:
+
 ```sh
 docker build -t avail-light .
 ```
+
 It will cache the dependencies on the first build, after which you can run the image like:
+
 ```sh
 docker run avail-light
 ```
