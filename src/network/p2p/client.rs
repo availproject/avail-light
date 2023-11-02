@@ -104,9 +104,32 @@ impl Client {
 			.context("Sender not to be dropped.")?
 	}
 
+	pub async fn dial_peer(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::DialAddress {
+				peer_id,
+				peer_addr,
+				response_sender,
+			})
+			.await
+			.context("Command receiver should not be dropped.")?;
+		let res = response_receiver
+			.await
+			.context("Sender not to be dropped.")?;
+		match res {
+			Ok(_) => Ok(()),
+			Err(e) => Err(e),
+		}
+	}
+
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		let (response_sender, response_receiver) = oneshot::channel();
+
 		for (peer, addr) in nodes {
+			self.dial_peer(peer, addr.clone())
+				.await
+				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
 		}
 
@@ -372,6 +395,11 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<()>>,
 	},
 	AddAddress {
+		peer_id: PeerId,
+		peer_addr: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
+	DialAddress {
 		peer_id: PeerId,
 		peer_addr: Multiaddr,
 		response_sender: oneshot::Sender<Result<()>>,
