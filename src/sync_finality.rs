@@ -16,7 +16,8 @@ use crate::{
 	data::{
 		get_finality_sync_checkpoint, store_block_header_in_db, store_finality_sync_checkpoint,
 	},
-	types::{FinalitySyncCheckpoint, GrandpaJustification, SignerMessage, State},
+	network::rpc::{self, WrappedProof},
+	types::{FinalitySyncCheckpoint, SignerMessage, State},
 	utils::filter_auth_set_changes,
 };
 
@@ -170,12 +171,11 @@ pub async fn sync_finality(
 		from_header = rpc_client
 			.get_header_by_hash(hash)
 			.await
-			.context(format!("Couldn't get header for {}", hash))?
-			.context(format!("Header for hash {} not found!", hash))?;
-		store_block_header_in_db(db.clone(), curr_block_num, &header)?;
+			.context(format!("Couldn't get header for {}", hash))?;
+		store_block_header_in_db(db.clone(), curr_block_num, &from_header)?;
 
-		assert_eq!(header.parent_hash, prev_hash, "Parent hash doesn't match!");
-		prev_hash = header.using_encoded(blake2_256).into();
+		assert_eq!(from_header.parent_hash, prev_hash, "Parent hash doesn't match!");
+		prev_hash = from_header.using_encoded(blake2_256).into();
 
 		let next_validator_set = filter_auth_set_changes(&from_header);
 		if next_validator_set.is_empty() {
