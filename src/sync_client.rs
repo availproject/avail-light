@@ -271,8 +271,6 @@ pub async fn run(
 
 	info!("Syncing block headers for {sync_range:?}");
 	for block_number in sync_range {
-		info!("Testing block {block_number}!");
-
 		{
 			let mut state = state.lock().unwrap();
 			state.sync_latest.replace(block_number);

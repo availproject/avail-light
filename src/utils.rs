@@ -55,7 +55,7 @@ pub(crate) fn extract_kate(extension: &HeaderExtension) -> (u16, u16, H256, Vec<
 		}) => (
 			kate.rows,
 			kate.cols,
-			kate.data_root.unwrap_or_default(),
+			kate.data_root,
 			kate.commitment.clone(),
 		),
 	}

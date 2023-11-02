@@ -161,11 +161,11 @@ impl TryFrom<String> for CompactMultiaddress {
 	type Error = anyhow::Error;
 
 	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
-		let Some((multiaddr, peer_id)) = value.rsplit_once('/') else {
+		let Some((_, peer_id)) = value.rsplit_once('/') else {
 			return Err(anyhow!("Invalid multiaddress string"));
 		};
 		let peer_id = PeerId::from_str(peer_id)?;
-		let multiaddr = Multiaddr::from_str(multiaddr)?;
+		let multiaddr = Multiaddr::from_str(&value)?;
 		Ok(CompactMultiaddress((peer_id, multiaddr)))
 	}
 }
