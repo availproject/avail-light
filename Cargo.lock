@@ -509,7 +509,7 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.4.0"
-source = "git+https://github.com/availproject/avail.git?tag=v1.7.2#0fd1b21757cb3095fb3d15a47a0ef0f239a491eb"
+source = "git+https://github.com/availproject/avail.git?branch=main#757d10c819c848beb32da4885b858005aacc33f6"
 dependencies = [
  "anyhow",
  "curve25519-dalek 2.1.3",
