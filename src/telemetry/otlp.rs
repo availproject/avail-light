@@ -110,6 +110,9 @@ impl super::Metrics for Metrics {
 			super::MetricValue::HealthCheck() => {
 				self.record_u64("up", 1).await?;
 			},
+			super::MetricValue::BlockProcessingDelay(number) => {
+				self.record_f64("block_processing_delay", number).await?;
+			},
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlCellsSuccessRate(number) => {
 				self.record_f64("crawl_cells_success_rate", number).await?;
@@ -117,6 +120,10 @@ impl super::Metrics for Metrics {
 			#[cfg(feature = "crawl")]
 			super::MetricValue::CrawlRowsSuccessRate(number) => {
 				self.record_f64("crawl_rows_success_rate", number).await?;
+			},
+			#[cfg(feature = "crawl")]
+			super::MetricValue::CrawlBlockDelay(number) => {
+				self.record_f64("crawl_block_delay", number).await?;
 			},
 		};
 		Ok(())
