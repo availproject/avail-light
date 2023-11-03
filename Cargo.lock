@@ -2946,8 +2946,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
- "sp-arithmetic 7.0.0",
- "sp-std 6.0.0",
+ "sp-arithmetic 16.0.0",
+ "sp-std 8.0.0",
  "static_assertions",
  "thiserror-no-std",
 ]
