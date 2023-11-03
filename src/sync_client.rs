@@ -311,13 +311,13 @@ mod tests {
 		config::substrate::Digest,
 	};
 	use hex_literal::hex;
-	use kate_recovery::testnet;
+	use kate_recovery::couscous;
 	use mockall::predicate::eq;
 
 	#[tokio::test]
 	pub async fn test_process_blocks_without_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let mut cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		cfg.disable_rpc = true;
 		let mut mock_client = MockSyncClient::new();
@@ -450,7 +450,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_process_blocks_with_rpc() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		let header: DaHeader = DaHeader {
@@ -584,7 +584,7 @@ mod tests {
 	#[tokio::test]
 	pub async fn test_header_in_dbstore() {
 		let (block_tx, _) = broadcast::channel::<types::BlockVerified>(10);
-		let pp = Arc::new(testnet::public_params(1024));
+		let pp = Arc::new(couscous::public_params());
 		let cfg = SyncClientConfig::from(&RuntimeConfig::default());
 		let mut mock_client = MockSyncClient::new();
 		mock_client
