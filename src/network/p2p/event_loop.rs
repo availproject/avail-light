@@ -619,13 +619,10 @@ impl EventLoop {
 		// we have to exchange observed addresses
 		// in this case we're waiting on relay to tell us our own
 		if peer_id == self.relay.id && !self.relay.is_circuit_established {
-			match self.swarm.listen_on(
-				self.relay
-					.address
-					.clone()
-					.with(Protocol::P2p(peer_id))
-					.with(Protocol::P2pCircuit),
-			) {
+			match self
+				.swarm
+				.listen_on(self.relay.address.clone().with(Protocol::P2pCircuit))
+			{
 				Ok(_) => {
 					info!("Relay circuit established with relay: {peer_id:?}");
 					self.relay.is_circuit_established = true;
