@@ -36,7 +36,7 @@ jobs:
             default: true
 
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@v2
 
       - name: Check `TOML`, `JSON`, and `MarkDown` formatting
         uses: dprint/check@v2.1

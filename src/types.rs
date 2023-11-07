@@ -574,6 +574,7 @@ impl Default for RuntimeConfig {
 pub enum Network {
 	Local,
 	Biryani,
+	Goldberg,
 }
 
 impl FromStr for Network {
@@ -583,7 +584,8 @@ impl FromStr for Network {
 		match s {
 			"local" => Ok(Network::Local),
 			"biryani" => Ok(Network::Biryani),
-			_ => Err("valid values are: local, biryani".to_string()),
+			"goldberg" => Ok(Network::Goldberg),
+			_ => Err("valid values are: local, biryani, goldberg".to_string()),
 		}
 	}
 }
@@ -593,6 +595,7 @@ impl Network {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
 			Network::Biryani => "12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf",
+			Network::Goldberg => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
 
@@ -602,6 +605,9 @@ impl Network {
 			Network::Biryani => {
 				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
 			},
+			Network::Goldberg => {
+				"/dns/bootnode.1.lightclient.goldberg.avail.tools/udp/37000/quic-v1"
+			},
 		}
 	}
 
@@ -609,6 +615,7 @@ impl Network {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
 			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
+			Network::Goldberg => "wss://goldberg.avail.tools/ws",
 		}
 	}
 }
