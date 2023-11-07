@@ -76,8 +76,7 @@ struct StartListening {
 }
 
 impl Command for StartListening {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		_ = entries.swarm().listen_on(self.addr.clone())?;
 
 		// send result back
@@ -107,8 +106,7 @@ struct AddAddress {
 }
 
 impl Command for AddAddress {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		_ = entries
 			.behavior_mut()
 			.kademlia
@@ -134,8 +132,7 @@ struct Bootstrap {
 }
 
 impl Command for Bootstrap {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let query_id = entries.behavior_mut().kademlia.bootstrap()?;
 
 		// insert response channel into KAD Queries pending map
@@ -160,8 +157,7 @@ struct GetKadRecord {
 }
 
 impl Command for GetKadRecord {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let query_id = entries.behavior_mut().kademlia.get_record(self.key.clone());
 
 		// insert response channel into KAD Queries pending map
@@ -187,8 +183,7 @@ struct PutKadRecordBatch {
 }
 
 impl Command for PutKadRecordBatch {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		// create channels to track individual PUT results needed for success count
 		let (put_result_tx, put_result_rx) = mpsc::channel::<DHTPutSuccess>(self.records.len());
 
@@ -237,8 +232,7 @@ struct CountDHTPeers {
 }
 
 impl Command for CountDHTPeers {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut total_peers: usize = 0;
 		for bucket in entries.behavior_mut().kademlia.kbuckets() {
 			total_peers += bucket.num_entries();
@@ -269,10 +263,8 @@ struct GetCellsInDHTPerBlock {
 }
 
 impl Command for GetCellsInDHTPerBlock {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let mut occurrence_map = HashMap::new();
-		let mut entries = event_entries;
-
 		for record in entries.behavior_mut().kademlia.store_mut().records_iter() {
 			let vec_key = record.0.to_vec();
 			let record_key = str::from_utf8(&vec_key);
@@ -319,8 +311,7 @@ struct GetMultiaddress {
 }
 
 impl Command for GetMultiaddress {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		let last_address = entries
 			.swarm()
 			.external_addresses()
@@ -352,8 +343,7 @@ struct ReduceKademliaMapSize {
 }
 
 impl Command for ReduceKademliaMapSize {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		entries.behavior_mut().kademlia.store_mut().shrink_hashmap();
 
 		// send result back
@@ -380,8 +370,7 @@ struct DialPeer {
 }
 
 impl Command for DialPeer {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
-		let mut entries = event_entries;
+	fn run(&mut self, mut entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error> {
 		entries.swarm().dial(
 			DialOpts::peer_id(self.peer_id)
 				.addresses(vec![self.peer_address.clone()])
