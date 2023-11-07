@@ -55,7 +55,7 @@ Resulting `avail-light` binary can be found in the `target/release` directory.
 The quickest way to run the Avail Light Client is to connect it to Avail testnet, using `--network` flag.
 
 ```sh
-./avail-light --network biryani
+./avail-light --network goldberg
 ```
 
 You can also specify a configuration file to supplement the default configuration:
