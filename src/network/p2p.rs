@@ -92,7 +92,7 @@ impl<'a> EventLoopEntries<'a> {
 }
 
 pub trait Command {
-	fn run(&mut self, event_entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
+	fn run(&mut self, entries: EventLoopEntries) -> anyhow::Result<(), anyhow::Error>;
 	fn abort(&mut self, error: anyhow::Error);
 }
 
