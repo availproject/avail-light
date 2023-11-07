@@ -615,7 +615,7 @@ impl Network {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
 			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
-			Network::Goldberg => "wss://goldberg.avail.tools/ws",
+			Network::Goldberg => "wss://goldberg.avail.tools:443/ws",
 		}
 	}
 }
