@@ -108,8 +108,9 @@ Flags and options take precedence to the configuration file if both are set (i.e
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
-  - `biryani`: Biryani Testnet
-  - `local`: For local development
+  - `biryani`: Biryani Devnet
+  - `goldberg`: Goldberg Testnet
+  - `local`: Local development
 - `--config`: Location of the configuration file
 - `--appId`: The `appID` parameter for the application client
 - `--port`: LibP2P listener port
@@ -117,6 +118,8 @@ Flags and options take precedence to the configuration file if both are set (i.e
   - `trace`
   - `debug`
   - `info`
+  - `warn`
+  - `error`
 
 ## Flags
 

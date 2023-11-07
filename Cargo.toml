@@ -1,6 +1,6 @@
 [package]
 name = "avail-light"
-version = "1.7.2"
+version = "1.7.3"
 authors = ["Avail Team"]
 default-run = "avail-light"
 edition = "2021"
@@ -21,10 +21,10 @@ bench = false
 subxt = "0.29"
 
 # Internal deps
-avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0-rc-1" }
-avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", tag = "v1.8.0.0-rc1" }
+avail-core = { version = "0.5", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0" }
+avail-subxt = { version = "0.4", git = "https://github.com/availproject/avail.git", tag = "v1.8.0.0" }
 dusk-plonk = { git = "https://github.com/availproject/plonk.git", tag = "v0.12.0-polygon-2" }
-kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0-rc-1" }
+kate-recovery = { version = "0.9", git = "https://github.com/availproject/avail-core", tag = "node-v1.8.0.0" }
 
 # Substrate
 anyhow = "1.0.41"
