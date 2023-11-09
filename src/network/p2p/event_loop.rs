@@ -154,6 +154,7 @@ impl EventLoop {
 		}
 	}
 
+	#[tracing::instrument(level = "trace", skip(self))]
 	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, StreamError>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
@@ -165,24 +166,24 @@ impl EventLoop {
 						old_peer,
 						..
 					} => {
-						debug!("Routing updated. Peer: {peer:?}. is_new_peer: {is_new_peer:?}. Addresses: {addresses:#?}. Old peer: {old_peer:#?}");
+						trace!("Routing updated. Peer: {peer:?}. is_new_peer: {is_new_peer:?}. Addresses: {addresses:#?}. Old peer: {old_peer:#?}");
 						if let Some(ch) = self.pending_kad_routing.remove(&peer) {
 							_ = ch.send(Ok(()));
 						}
 					},
 					KademliaEvent::RoutablePeer { peer, address } => {
-						debug!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
+						trace!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
 					KademliaEvent::UnroutablePeer { peer } => {
-						debug!("UnroutablePeer. Peer: {peer:?}");
+						trace!("UnroutablePeer. Peer: {peer:?}");
 					},
 					KademliaEvent::PendingRoutablePeer { peer, address } => {
-						debug!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
+						trace!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord { source, record, .. } = request {
-							let key = &record.as_ref().expect("msg").key;
+							let key = &record.as_ref().expect("No record found").key;
 							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
 
 							_ = self
@@ -190,7 +191,7 @@ impl EventLoop {
 								.behaviour_mut()
 								.kademlia
 								.store_mut()
-								.put(record.expect("msg"));
+								.put(record.expect("No record found"));
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
@@ -217,6 +218,7 @@ impl EventLoop {
 							{
 								if let Ok(record) = result {
 									// Remove local records for fat clients (memory optimization)
+									debug!("Pruning local records on fat client");
 									if self.kad_remove_local_record {
 										self.swarm
 											.behaviour_mut()
@@ -234,7 +236,7 @@ impl EventLoop {
 								peer,
 								num_remaining,
 							}) => {
-								trace!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
+								debug!("BootstrapOK event. PeerID: {peer:?}. Num remaining: {num_remaining:?}.");
 								if num_remaining == 0 {
 									if let Some(QueryChannel::Bootstrap(ch)) =
 										self.pending_kad_queries.remove(&id)
@@ -246,7 +248,7 @@ impl EventLoop {
 								}
 							},
 							Err(err) => {
-								trace!("Bootstrap error event. Error: {err:?}.");
+								debug!("Bootstrap error event. Error: {err:?}.");
 								if let Some(QueryChannel::Bootstrap(ch)) =
 									self.pending_kad_queries.remove(&id)
 								{
@@ -293,20 +295,20 @@ impl EventLoop {
 							});
 					},
 					IdentifyEvent::Sent { peer_id } => {
-						debug!("Identity Sent event to: {peer_id:?}");
+						trace!("Identity Sent event to: {peer_id:?}");
 					},
 					IdentifyEvent::Pushed { peer_id } => {
-						debug!("Identify Pushed event. PeerId: {peer_id:?}");
+						trace!("Identify Pushed event. PeerId: {peer_id:?}");
 					},
 					IdentifyEvent::Error { peer_id, error } => {
-						debug!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
+						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 					},
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
 				MdnsEvent::Discovered(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
-						debug!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+						trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 						self.swarm
 							.behaviour_mut()
 							.kademlia
@@ -315,7 +317,7 @@ impl EventLoop {
 				},
 				MdnsEvent::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
-						debug!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
+						trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 
 						if self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
 							self.swarm
@@ -328,10 +330,10 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				AutonatEvent::InboundProbe(e) => {
-					debug!("AutoNat Inbound Probe: {:#?}", e);
+					trace!("AutoNat Inbound Probe: {:#?}", e);
 				},
 				AutonatEvent::OutboundProbe(e) => {
-					debug!("AutoNat Outbound Probe: {:#?}", e);
+					trace!("AutoNat Outbound Probe: {:#?}", e);
 				},
 				AutonatEvent::StatusChanged { old, new } => {
 					debug!(
@@ -348,29 +350,29 @@ impl EventLoop {
 				},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
-				debug! {"Relay Client Event: {event:#?}"};
+				trace! {"Relay Client Event: {event:#?}"};
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => match event {
 				DcutrEvent::RemoteInitiatedDirectConnectionUpgrade {
 					remote_peer_id,
 					remote_relayed_addr,
 				} => {
-					debug!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
+					trace!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
 				},
 				DcutrEvent::InitiatedDirectConnectionUpgrade {
 					remote_peer_id,
 					local_relayed_addr,
 				} => {
-					debug!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
+					trace!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
 				},
 				DcutrEvent::DirectConnectionUpgradeSucceeded { remote_peer_id } => {
-					debug!("Hole punching succeeded with: {remote_peer_id:#?}")
+					trace!("Hole punching succeeded with: {remote_peer_id:#?}")
 				},
 				DcutrEvent::DirectConnectionUpgradeFailed {
 					remote_peer_id,
 					error,
 				} => {
-					debug!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
+					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
 				},
 			},
 			swarm_event => {
@@ -385,7 +387,7 @@ impl EventLoop {
 						cause,
 						..
 					} => {
-						debug!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
+						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
 						if let Some(cause) = cause {
 							match cause {
@@ -427,10 +429,10 @@ impl EventLoop {
 						}
 					},
 					SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-						debug!("Outgoing connection error: {error:?}");
+						trace!("Outgoing connection error: {error:?}");
 
 						if let Some(peer_id) = peer_id {
-							debug!("OutgoingConnectionError by peer: {peer_id:?}. Error: {error}.");
+							trace!("OutgoingConnectionError by peer: {peer_id:?}. Error: {error}.");
 							// Notify the connections we're waiting on an error has occured
 							if let Some(ch) = self.pending_swarm_events.remove(&peer_id) {
 								_ = ch.send(Err(error.into()));
@@ -447,7 +449,7 @@ impl EventLoop {
 						peer_id: Some(peer),
 						connection_id,
 					} => {
-						debug!("Dialing: {}, on connection: {}", peer, connection_id);
+						trace!("Dialing: {}, on connection: {}", peer, connection_id);
 					},
 					_ => {},
 				}

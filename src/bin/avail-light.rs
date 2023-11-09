@@ -21,9 +21,11 @@ use tokio::sync::{
 	broadcast,
 	mpsc::{channel, Sender},
 };
+use tracing::Subscriber;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::{
-	fmt::format::{self, DefaultFields, Format, Full, Json},
+	fmt::format::{self, DefaultFields, Format, Json},
 	FmtSubscriber,
 };
 
@@ -52,9 +54,9 @@ fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json
 		.finish()
 }
 
-fn default_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Full>> {
+fn default_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_max_level(log_level)
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.with_span_events(format::FmtSpan::CLOSE)
 		.finish()
 }
