@@ -183,15 +183,18 @@ impl EventLoop {
 					KademliaEvent::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord { source, record, .. } = request {
-							let key = &record.as_ref().expect("No record found").key;
-							trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
+							match record {
+								Some(rec) => {
+									let key = &rec.key;
+									trace!("Inbound PUT request record key: {key:?}. Source: {source:?}",);
 
-							_ = self
-								.swarm
-								.behaviour_mut()
-								.kademlia
-								.store_mut()
-								.put(record.expect("No record found"));
+									_ = self.swarm.behaviour_mut().kademlia.store_mut().put(rec);
+								},
+								None => {
+									debug!("Received empty cell record from: {source:?}");
+									return;
+								},
+							}
 						}
 					},
 					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
