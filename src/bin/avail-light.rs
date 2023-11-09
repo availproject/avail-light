@@ -25,7 +25,7 @@ use tracing::Subscriber;
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::{
-	fmt::format::{self, DefaultFields, Format, Json},
+	fmt::format::{self},
 	FmtSubscriber,
 };
 
@@ -47,9 +47,9 @@ const CLIENT_ROLE: &str = if cfg!(feature = "crawl") {
 
 /// Light Client for Avail Blockchain
 
-fn json_subscriber(log_level: Level) -> FmtSubscriber<DefaultFields, Format<Json>> {
+fn json_subscriber(log_level: Level) -> impl Subscriber + Send + Sync {
 	FmtSubscriber::builder()
-		.with_max_level(log_level)
+		.with_env_filter(EnvFilter::new(format!("avail_light={log_level}")))
 		.event_format(format::json())
 		.finish()
 }
