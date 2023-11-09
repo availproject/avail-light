@@ -224,7 +224,7 @@ impl Client {
 
 		match self.get_kad_record(record_key).await {
 			Ok(peer_record) => {
-				debug!("Fetched cell {reference} from the DHT");
+				trace!("Fetched cell {reference} from the DHT");
 
 				let try_content: Result<[u8; config::COMMITMENT_SIZE + config::CHUNK_SIZE], _> =
 					peer_record.record.value.try_into();
@@ -237,7 +237,7 @@ impl Client {
 				Some(Cell { position, content })
 			},
 			Err(error) => {
-				debug!("Cell {reference} not found in the DHT: {error}");
+				trace!("Cell {reference} not found in the DHT: {error}");
 				None
 			},
 		}
