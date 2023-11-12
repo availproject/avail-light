@@ -243,7 +243,7 @@ mod tests {
 
 	use super::*;
 	use libp2p::{
-		kad::{record::Key, KBucketDistance},
+		kad::{KBucketDistance, RecordKey},
 		multihash::Multihash,
 	};
 	use proptest::{
@@ -265,9 +265,9 @@ mod tests {
 		KBucketKey::new(r.key.clone()).distance(&KBucketKey::from(r.provider))
 	}
 
-	fn arb_key() -> impl Strategy<Value = Key> {
+	fn arb_key() -> impl Strategy<Value = RecordKey> {
 		any::<[u8; 32]>().prop_map(|hash| {
-			Key::from(Multihash::<MULTIHASH_SIZE>::wrap(SHA_256_MH, &hash).unwrap())
+			RecordKey::from(Multihash::<MULTIHASH_SIZE>::wrap(SHA_256_MH, &hash).unwrap())
 		})
 	}
 

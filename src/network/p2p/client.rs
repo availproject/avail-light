@@ -6,7 +6,7 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
-	kad::{record::Key, PeerRecord, Quorum, Record},
+	kad::{PeerRecord, Quorum, Record, RecordKey},
 	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
@@ -142,7 +142,7 @@ impl Client {
 			.context("Sender not to be dropped.")?
 	}
 
-	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
+	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::GetKadRecord {
@@ -218,7 +218,7 @@ impl Client {
 	// Return type assumes that cell is not found in case when error is present.
 	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
@@ -250,7 +250,7 @@ impl Client {
 	) -> Option<(u32, Vec<u8>)> {
 		let row_index = RowIndex(row_index);
 		let reference = row_index.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
@@ -408,7 +408,7 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<()>>,
 	},
 	GetKadRecord {
-		key: Key,
+		key: RecordKey,
 		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
