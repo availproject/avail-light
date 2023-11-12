@@ -290,7 +290,7 @@ pub struct RuntimeConfig {
 	pub replication_factor: u16,
 	/// Sets the amount of time to keep connections alive when they're idle. (default: 30s).
 	/// NOTE: libp2p default value is 10s, but because of Avail block time of 20s the value has been increased
-	pub connection_idle_timeout: u32,
+	pub connection_idle_timeout: u64,
 	/// Sets the timeout for a single Kademlia query. (default: 60s).
 	pub query_timeout: u32,
 	/// Sets the allowed level of parallelism for iterative Kademlia queries. (default: 3).
@@ -391,6 +391,7 @@ pub struct LibP2PConfig {
 	pub kademlia: KademliaConfig,
 	pub relays: Vec<(PeerId, Multiaddr)>,
 	pub bootstrap_interval: Duration,
+	pub connection_idle_timeout: Duration,
 }
 
 impl From<&RuntimeConfig> for LibP2PConfig {
@@ -403,6 +404,7 @@ impl From<&RuntimeConfig> for LibP2PConfig {
 			kademlia: val.into(),
 			relays: val.relays.iter().map(Into::into).collect(),
 			bootstrap_interval: Duration::from_secs(val.bootstrap_period),
+			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout),
 		}
 	}
 }
@@ -413,7 +415,6 @@ pub struct KademliaConfig {
 	pub record_replication_factor: NonZeroUsize,
 	pub record_replication_interval: Option<Duration>,
 	pub publication_interval: Option<Duration>,
-	pub connection_idle_timeout: Duration,
 	pub query_timeout: Duration,
 	pub query_parallelism: NonZeroUsize,
 	pub caching_max_peers: u16,
@@ -431,7 +432,6 @@ impl From<&RuntimeConfig> for KademliaConfig {
 				.expect("Invalid replication factor"),
 			record_replication_interval: Some(Duration::from_secs(val.replication_interval.into())),
 			publication_interval: Some(Duration::from_secs(val.publication_interval.into())),
-			connection_idle_timeout: Duration::from_secs(val.connection_idle_timeout.into()),
 			query_timeout: Duration::from_secs(val.query_timeout.into()),
 			query_parallelism: std::num::NonZeroUsize::new(val.query_parallelism as usize)
 				.expect("Invalid query parallelism value"),
