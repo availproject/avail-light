@@ -150,6 +150,15 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		.await
 		.context("Listening on UDP not to fail.")?;
 
+	p2p_client
+		.start_listening(
+			Multiaddr::empty()
+				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+				.with(Protocol::Tcp(port)),
+		)
+		.await
+		.context("Listening on TCP not to fail.")?;
+
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	p2p_client

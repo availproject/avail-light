@@ -5,7 +5,7 @@ use libp2p::{
 	kad::{self, Mode},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	yamux, PeerId, SwarmBuilder,
+	tcp, yamux, PeerId, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use tokio::sync::mpsc::{self};
@@ -64,6 +64,11 @@ pub fn init(
 	// higher layer network behaviour logic
 	let mut swarm = SwarmBuilder::with_existing_identity(id_keys)
 		.with_tokio()
+		.with_tcp(
+			tcp::Config::default().port_reuse(true).nodelay(true),
+			noise::Config::new,
+			yamux::Config::default,
+		)?
 		.with_quic()
 		.with_dns()?
 		.with_relay_client(noise::Config::new, yamux::Config::default)?
@@ -110,10 +115,14 @@ pub fn init(
 				ping: ping::Behaviour::new(ping::Config::new()),
 				identify: identify::Behaviour::new(identify_cfg),
 				relay_client,
-				dcutr: dcutr::Behaviour::new(local_peer_id),
-				kademlia: kad::Behaviour::with_config(local_peer_id, kad_store, kad_cfg),
-				auto_nat: autonat::Behaviour::new(local_peer_id, autonat_cfg),
-				mdns: mdns::Behaviour::new(mdns::Config::default(), local_peer_id)?,
+				dcutr: dcutr::Behaviour::new(key.public().to_peer_id()),
+				kademlia: kad::Behaviour::with_config(
+					key.public().to_peer_id(),
+					kad_store,
+					kad_cfg,
+				),
+				auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
+				mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
 			})
 		})?
 		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
