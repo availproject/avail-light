@@ -428,6 +428,18 @@ impl EventLoop {
 
 	async fn handle_command(&mut self, command: Command) {
 		match command {
+			Command::AddAutonatServer {
+				peer_id,
+				peer_address,
+				response_sender,
+			} => {
+				self.swarm
+					.behaviour_mut()
+					.auto_nat
+					.add_server(peer_id, Some(peer_address));
+
+				_ = response_sender.send(Ok(()));
+			},
 			Command::StartListening {
 				addr,
 				response_sender: sender,

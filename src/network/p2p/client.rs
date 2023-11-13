@@ -114,13 +114,24 @@ impl Client {
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
-		let res = response_receiver
+		response_receiver
 			.await
-			.context("Sender not to be dropped.")?;
-		match res {
-			Ok(_) => Ok(()),
-			Err(e) => Err(e),
-		}
+			.context("Sender not to be dropped.")?
+	}
+
+	async fn add_autonat_server(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::AddAutonatServer {
+				peer_id,
+				peer_address: peer_addr,
+				response_sender,
+			})
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
@@ -131,6 +142,7 @@ impl Client {
 				.await
 				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
+			self.add_autonat_server(peer, addr.clone()).await?;
 		}
 
 		self.command_sender
@@ -426,4 +438,9 @@ pub enum Command {
 		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
 	ReduceKademliaMapSize,
+	AddAutonatServer {
+		peer_id: PeerId,
+		peer_address: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
 }
