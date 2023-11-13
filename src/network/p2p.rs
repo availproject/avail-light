@@ -1,15 +1,9 @@
 use anyhow::{Context, Result};
 use kad_mem_store::{MemoryStore, MemoryStoreConfig};
 use libp2p::{
-	autonat::{self},
-	dcutr::{self},
-	identify::{self},
-	identity,
+	autonat, dcutr, identify, identity,
 	kad::{self, Mode},
-	mdns::{self},
-	noise::{self},
-	ping::{self},
-	relay::{self},
+	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
 	yamux, PeerId, SwarmBuilder,
 };
@@ -22,10 +16,10 @@ pub mod analyzer;
 mod client;
 mod event_loop;
 mod kad_mem_store;
-pub use client::Client;
-use event_loop::EventLoop;
 
 use crate::types::{LibP2PConfig, SecretKey};
+pub use client::Client;
+use event_loop::EventLoop;
 
 // DHTPutSuccess enum is used to signal back and then
 // count the successful DHT Put operations.
@@ -76,7 +70,7 @@ pub fn init(
 		.with_behaviour(|key, relay_client| {
 			// configure Kademlia Memory Store
 			let kad_store = MemoryStore::with_config(
-				local_peer_id,
+				key.public().to_peer_id(),
 				MemoryStoreConfig {
 					max_records: cfg.kademlia.max_kad_record_number, // ~2hrs
 					max_value_bytes: cfg.kademlia.max_kad_record_size + 1,

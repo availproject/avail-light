@@ -2,10 +2,10 @@ use anyhow::Result;
 use futures::{future, FutureExt, StreamExt};
 use libp2p::{
 	autonat::{self, NatStatus},
-	dcutr::{self},
+	dcutr,
 	identify::{self, Info},
 	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, PeerRecord, QueryId, QueryResult},
-	mdns::{self},
+	mdns,
 	multiaddr::Protocol,
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
