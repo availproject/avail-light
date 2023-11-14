@@ -347,7 +347,7 @@ impl EventLoop {
 			swarm_event => {
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
-						info!("Local node is listening on {:?}", address);
+						debug!("Local node is listening on {:?}", address);
 					},
 					SwarmEvent::ConnectionClosed {
 						peer_id,

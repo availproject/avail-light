@@ -12,7 +12,7 @@ use libp2p::{
 };
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use super::DHTPutSuccess;
 
@@ -142,7 +142,22 @@ impl Client {
 				.await
 				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
-			self.add_autonat_server(peer, addr.clone()).await?;
+
+			// Re-form the bootstrap address for autonat bootstrap TCP listener
+			let autonat_addr = addr.replace(1, |protocol| {
+				if let Protocol::Udp(port) = protocol {
+					// TCP listener on bootstrap listens on default port + 1
+					return Some(Protocol::Tcp(port + 1));
+				}
+				None
+			});
+
+			if let Some(mut autonat_addr) = autonat_addr {
+				autonat_addr.pop();
+				self.add_autonat_server(peer, autonat_addr).await?;
+			} else {
+				warn!("Unable to re-form autonat server multi-address.")
+			}
 		}
 
 		self.command_sender

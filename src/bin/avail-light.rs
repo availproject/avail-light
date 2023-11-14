@@ -137,7 +137,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Start listening on provided port
 	let port = cfg.port;
-	info!("Listening on port: {port}");
 
 	// always listen on UDP to prioritize QUIC
 	p2p_client
@@ -149,21 +148,25 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		)
 		.await
 		.context("Listening on UDP not to fail.")?;
+	info!("Listening for QUIC on port: {port}");
 
 	p2p_client
 		.start_listening(
 			Multiaddr::empty()
 				.with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-				.with(Protocol::Tcp(port)),
+				.with(Protocol::Tcp(port + 1)),
 		)
 		.await
 		.context("Listening on TCP not to fail.")?;
+	info!("Listening for TCP on port: {port}");
 
 	// wait here for bootstrap to finish
 	info!("Bootstraping the DHT with bootstrap nodes...");
 	p2p_client
 		.bootstrap(cfg.clone().bootstraps.iter().map(Into::into).collect())
 		.await?;
+
+	info!("Bootstrap done");
 
 	#[cfg(feature = "network-analysis")]
 	tokio::task::spawn(analyzer::start_traffic_analyzer(cfg.port, 10));
