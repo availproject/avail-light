@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use anyhow::{Context, Result};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
+use bip39::{Language, Mnemonic, MnemonicType};
 use codec::{Decode, Encode};
 use kate_recovery::{
 	commitments,
@@ -17,11 +18,10 @@ use std::ops::Range;
 use std::str::FromStr;
 
 use clap::Parser;
+use std::fs;
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
-use std::{fmt, fs};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
-use subxt::ext::sp_runtime::app_crypto::SecretStringError;
 
 const CELL_SIZE: usize = 32;
 const PROOF_SIZE: usize = 48;
@@ -308,34 +308,9 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
-	/// Avail account secret key. (default: None)
-	#[serde(skip_serializing)]
-	pub avail_secret_key: Option<AvailSecretKey>,
 	#[cfg(feature = "crawl")]
 	#[serde(flatten)]
 	pub crawl: crate::crawl_client::CrawlConfig,
-}
-
-#[derive(Deserialize, Clone)]
-#[serde(try_from = "String")]
-pub struct AvailSecretKey(pub Pair);
-
-impl fmt::Debug for AvailSecretKey {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_tuple("AvailSecretKey")
-			.field(&self.0.public())
-			.finish()
-	}
-}
-
-impl TryFrom<String> for AvailSecretKey {
-	type Error = SecretStringError;
-
-	fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
-		Pair::from_string_with_seed(&value, None)
-			.map(|(pair, _)| pair)
-			.map(AvailSecretKey)
-	}
 }
 
 pub struct Delay(pub Option<Duration>);
@@ -563,7 +538,6 @@ impl Default for RuntimeConfig {
 			max_kad_record_number: 2400000,
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
-			avail_secret_key: None,
 			#[cfg(feature = "crawl")]
 			crawl: crate::crawl_client::CrawlConfig::default(),
 		}
@@ -695,6 +669,36 @@ impl RuntimeConfig {
 		self.app_id = opts.app_id.or(self.app_id);
 
 		Ok(())
+	}
+}
+
+pub struct IdentityConfig {
+	/// Avail account secret key. (secret is generated if it is not configured)
+	pub avail_secret_key: Pair,
+}
+
+impl IdentityConfig {
+	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
+		#[derive(Default, Serialize, Deserialize)]
+		struct Config {
+			pub avail_secret_key: Option<String>,
+		}
+
+		let mut config: Config = confy::load_path(path)?;
+
+		let phrase = match config.avail_secret_key.as_ref() {
+			None => Mnemonic::new(MnemonicType::Words24, Language::English).into_phrase(),
+			Some(phrase) => phrase.to_owned(),
+		};
+
+		if config.avail_secret_key.is_none() {
+			config.avail_secret_key = Some(phrase.clone());
+			confy::store_path(path, &config)?;
+		}
+
+		let (avail_secret_key, _) = Pair::from_string_with_seed(&phrase, password)?;
+
+		Ok(IdentityConfig { avail_secret_key })
 	}
 }
 

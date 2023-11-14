@@ -37,10 +37,6 @@ pub async fn submit(
 	submitter: Arc<impl transactions::Submit>,
 	transaction: Transaction,
 ) -> Result<SubmitResponse, Error> {
-	if matches!(&transaction, Transaction::Data(_)) && !submitter.has_signer() {
-		return Err(Error::not_found());
-	};
-
 	submitter
 		.submit(transaction)
 		.await

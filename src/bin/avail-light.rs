@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_core::AppId;
+use avail_light::types::IdentityConfig;
 use avail_light::{api, data, network::rpc, telemetry};
 use avail_light::{
 	consts::EXPECTED_NETWORK_VERSION,
@@ -84,6 +85,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		tracing::subscriber::set_global_default(default_subscriber(log_level))
 			.expect("global default subscriber is set")
 	}
+
+	let identity_cfg = IdentityConfig::load_or_init("identity.toml", None)?;
+
 	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}");
 	info!("Using config: {cfg:?}");
@@ -203,6 +207,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let server = api::server::Server {
 		db: db.clone(),
 		cfg: cfg.clone(),
+		identity_cfg,
 		state: state.clone(),
 		version: format!("v{}", clap::crate_version!()),
 		network_version: EXPECTED_NETWORK_VERSION.to_string(),

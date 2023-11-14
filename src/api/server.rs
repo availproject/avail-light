@@ -9,6 +9,7 @@
 //! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
 
 use crate::api::v2;
+use crate::types::IdentityConfig;
 use crate::{
 	api::v1,
 	network::rpc::{self, Node},
@@ -27,6 +28,7 @@ use warp::{Filter, Reply};
 pub struct Server {
 	pub db: Arc<DB>,
 	pub cfg: RuntimeConfig,
+	pub identity_cfg: IdentityConfig,
 	pub state: Arc<Mutex<State>>,
 	pub version: String,
 	pub network_version: String,
@@ -59,6 +61,7 @@ impl Server {
 			self.node,
 			self.state.clone(),
 			self.cfg,
+			self.identity_cfg,
 			self.node_client.clone(),
 			self.ws_clients.clone(),
 			crate::data::RocksDB(self.db.clone()),
