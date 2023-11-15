@@ -126,6 +126,10 @@ Flags and options take precedence to the configuration file if both are set (i.e
 - `--version`: Light Client version
 - `--clean`: Remove previous state dir set in `avail_path` config parameter
 
+## Identity
+
+In the Avail network, a light client's identity can be configured using the `identity.toml` file. If not specified, a secret seed phrase will be generated and stored in the identity file when the light client starts. To use an existing seed phrase, set the `avail_secret_seed_phrase` entry in the `identity.toml` file. Seed phrase will be used to derive Sr25519 key pair for signing.
+
 ## Configuration reference
 
 ```yaml

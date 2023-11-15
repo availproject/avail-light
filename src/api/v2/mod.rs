@@ -198,7 +198,7 @@ pub fn routes(
 	};
 
 	let app_id = config.app_id.as_ref();
-	let pair_signer = <PairSigner<AvailConfig, Pair>>::new(identity_config.avail_secret_key);
+	let pair_signer = <PairSigner<AvailConfig, Pair>>::new(identity_config.avail_key_pair);
 
 	let submitter = app_id.map(|&app_id| {
 		Arc::new(transactions::Submitter {
