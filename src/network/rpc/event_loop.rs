@@ -301,9 +301,14 @@ impl EventLoop {
 							&signed_message,
 							&precommit.id,
 						);
-						is_ok
-							.then(|| precommit.clone().id)
-							.ok_or_else(|| anyhow!("Not signed by this signature!"))
+						is_ok.then(|| precommit.clone().id).ok_or_else(|| {
+							anyhow!(
+								"Not signed by this signature! Sig id: {:?}, set_id: {}, justification: {:?}",
+								&precommit.id,
+								self.block_data.current_valset.set_id,
+								justification
+							)
+						})
 					})
 					.collect::<Result<Vec<_>>>();
 
