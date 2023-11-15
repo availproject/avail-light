@@ -118,6 +118,7 @@ impl EventLoop {
 		};
 
 		let client = build_client(&node.host, false).await?;
+		let genesis_hash = client.genesis_hash();
 		// client was built successfully, keep it
 		self.subxt_client.replace(client);
 		let system_version = self.get_system_version().await?;
@@ -138,6 +139,10 @@ impl EventLoop {
 			"Connection established to the Node: {:?} <{version}>",
 			node.host
 		);
+		let current_node = self.nodes.get_current_mut();
+		current_node.spec_version = runtime_version.spec_version;
+		current_node.system_version = system_version;
+		current_node.genesis_hash = genesis_hash;
 
 		Ok(())
 	}
