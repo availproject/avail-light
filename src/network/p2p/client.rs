@@ -143,20 +143,26 @@ impl Client {
 				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
 
-			// Re-form the bootstrap address for autonat bootstrap TCP listener
-			let autonat_addr = addr.replace(1, |protocol| {
-				if let Protocol::Udp(port) = protocol {
-					// TCP listener on bootstrap listens on default port + 1
-					return Some(Protocol::Tcp(port + 1));
+			// Re-form the bootstrap Udp protocol part of the multiaddress for the autonat bootstrap TCP listener
+			// check for UDP protocol parts
+			if let Some(Protocol::Udp(port)) = addr
+				.iter()
+				.find(|protocol| matches!(protocol, Protocol::Udp(_)))
+			{
+				// take the IP Protocol part
+				if let Some(ip_part) = addr
+					.iter()
+					.find(|protocol| matches!(protocol, Protocol::Ip4(_)))
+				{
+					// crate new address for the same IP with TCP Protocol
+					let addr = Multiaddr::empty()
+						.with(ip_part)
+						.with(Protocol::Tcp(port + 1));
+					// add this address as Autonat server
+					self.add_autonat_server(peer, addr).await?;
+				} else {
+					warn!("Unable to re-form autonat server multi-address.")
 				}
-				None
-			});
-
-			if let Some(mut autonat_addr) = autonat_addr {
-				autonat_addr.pop();
-				self.add_autonat_server(peer, autonat_addr).await?;
-			} else {
-				warn!("Unable to re-form autonat server multi-address.")
 			}
 		}
 
