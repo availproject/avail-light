@@ -120,6 +120,7 @@ Flags and options take precedence to the configuration file if both are set (i.e
   - `info`
   - `warn`
   - `error`
+- `--avail-passphrase <PASSPHRASE>`: Avail secret seed phrase password, flag is optional
 
 ## Flags
 
