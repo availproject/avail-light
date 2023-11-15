@@ -86,11 +86,13 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			.expect("global default subscriber is set")
 	}
 
-	let identity_cfg = IdentityConfig::load_or_init("identity.toml", None)?;
+	let identity_cfg =
+		IdentityConfig::load_or_init("identity.toml", opts.avail_passphrase.as_deref())?;
 
 	let version = clap::crate_version!();
 	info!("Running Avail light client version: {version}");
 	info!("Using config: {cfg:?}");
+	info!("Avail address is: {}", &identity_cfg.avail_address);
 
 	if let Some(error) = parse_error {
 		warn!("Using default log level: {}", error);

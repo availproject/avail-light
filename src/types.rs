@@ -48,6 +48,9 @@ pub struct CliOpts {
 	/// Log level
 	#[arg(long)]
 	pub verbosity: Option<LogLevel>,
+	/// Avail secret seed phrase password
+	#[arg(long)]
+	pub avail_passphrase: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -676,6 +679,7 @@ impl RuntimeConfig {
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
 	pub avail_key_pair: Pair,
+	/// Avail ss58 address
 	pub avail_address: String,
 }
 
