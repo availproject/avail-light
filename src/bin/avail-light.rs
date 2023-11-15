@@ -121,6 +121,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			cfg.ot_collector_endpoint.clone(),
 			peer_id,
 			CLIENT_ROLE.into(),
+			identity_cfg.avail_address.clone(),
 		)
 		.context("Unable to initialize OpenTelemetry service")?,
 	);
