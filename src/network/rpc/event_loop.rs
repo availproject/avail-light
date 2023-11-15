@@ -273,6 +273,7 @@ impl EventLoop {
 	}
 
 	async fn verify_and_output_block_headers(&mut self) {
+		let mut finality_synced = false;
 		while let Some(justification) = self.block_data.justifications.pop() {
 			// iterate through Headers and try to find a matching one
 			if let Some(pos) = self
@@ -344,8 +345,11 @@ impl EventLoop {
 					"Not signed by the supermajority of the validator set."
 				);
 
+				// To avoid locking the global state all the time, after finality is synced, it will not be necessary to read the state
+				if !finality_synced {
+					finality_synced = self.state.lock().unwrap().finality_synced;
+				}
 				// store Finality Checkpoint if finality is synced
-				let finality_synced = self.state.lock().unwrap().finality_synced;
 				if finality_synced {
 					info!("Storing finality checkpoint at block {}", header.number);
 					store_finality_sync_checkpoint(
