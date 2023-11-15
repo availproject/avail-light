@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use avail_core::DataLookup;
 use avail_subxt::{primitives::Header as DaHeader, utils::H256};
 use bip39::{Language, Mnemonic, MnemonicType};
+use clap::Parser;
 use codec::{Decode, Encode};
 use kate_recovery::{
 	commitments,
@@ -13,13 +14,12 @@ use kate_recovery::{
 };
 use libp2p::{Multiaddr, PeerId};
 use serde::{de::Error, Deserialize, Serialize};
+use sp_core::crypto::Ss58Codec;
 use sp_core::{blake2_256, bytes, ed25519};
-use std::ops::Range;
-use std::str::FromStr;
-
-use clap::Parser;
 use std::fs;
 use std::num::NonZeroUsize;
+use std::ops::Range;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 use subxt::ext::sp_core::{sr25519::Pair, Pair as _};
 
@@ -676,6 +676,7 @@ impl RuntimeConfig {
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
 	pub avail_key_pair: Pair,
+	pub avail_address: String,
 }
 
 impl IdentityConfig {
@@ -698,8 +699,12 @@ impl IdentityConfig {
 		}
 
 		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
+		let avail_address = avail_key_pair.public().to_ss58check();
 
-		Ok(IdentityConfig { avail_key_pair })
+		Ok(IdentityConfig {
+			avail_key_pair,
+			avail_address,
+		})
 	}
 }
 
