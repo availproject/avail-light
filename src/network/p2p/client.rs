@@ -6,13 +6,13 @@ use kate_recovery::{
 	matrix::{Dimensions, Position, RowIndex},
 };
 use libp2p::{
-	kad::{record::Key, PeerRecord, Quorum, Record},
+	kad::{PeerRecord, Quorum, Record, RecordKey},
 	multiaddr::Protocol,
 	Multiaddr, PeerId,
 };
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use super::DHTPutSuccess;
 
@@ -114,13 +114,24 @@ impl Client {
 			})
 			.await
 			.context("Command receiver should not be dropped.")?;
-		let res = response_receiver
+		response_receiver
 			.await
-			.context("Sender not to be dropped.")?;
-		match res {
-			Ok(_) => Ok(()),
-			Err(e) => Err(e),
-		}
+			.context("Sender not to be dropped.")?
+	}
+
+	async fn add_autonat_server(&self, peer_id: PeerId, peer_addr: Multiaddr) -> Result<()> {
+		let (response_sender, response_receiver) = oneshot::channel();
+		self.command_sender
+			.send(Command::AddAutonatServer {
+				peer_id,
+				peer_address: peer_addr,
+				response_sender,
+			})
+			.await
+			.context("Command receiver not to be dropped.")?;
+		response_receiver
+			.await
+			.context("Sender not to be dropped.")?
 	}
 
 	pub async fn bootstrap(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
@@ -131,6 +142,28 @@ impl Client {
 				.await
 				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
+
+			// Re-form the bootstrap Udp protocol part of the multiaddress for the autonat bootstrap TCP listener
+			// check for UDP protocol parts
+			if let Some(Protocol::Udp(port)) = addr
+				.iter()
+				.find(|protocol| matches!(protocol, Protocol::Udp(_)))
+			{
+				// take the IP Protocol part
+				if let Some(ip_part) = addr
+					.iter()
+					.find(|protocol| matches!(protocol, Protocol::Ip4(_)))
+				{
+					// crate new address for the same IP with TCP Protocol
+					let addr = Multiaddr::empty()
+						.with(ip_part)
+						.with(Protocol::Tcp(port + 1));
+					// add this address as Autonat server
+					self.add_autonat_server(peer, addr).await?;
+				} else {
+					warn!("Unable to re-form autonat server multi-address.")
+				}
+			}
 		}
 
 		self.command_sender
@@ -142,7 +175,7 @@ impl Client {
 			.context("Sender not to be dropped.")?
 	}
 
-	async fn get_kad_record(&self, key: Key) -> Result<PeerRecord> {
+	async fn get_kad_record(&self, key: RecordKey) -> Result<PeerRecord> {
 		let (response_sender, response_receiver) = oneshot::channel();
 		self.command_sender
 			.send(Command::GetKadRecord {
@@ -218,7 +251,7 @@ impl Client {
 	// Return type assumes that cell is not found in case when error is present.
 	async fn fetch_cell_from_dht(&self, block_number: u32, position: Position) -> Option<Cell> {
 		let reference = position.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
@@ -250,7 +283,7 @@ impl Client {
 	) -> Option<(u32, Vec<u8>)> {
 		let row_index = RowIndex(row_index);
 		let reference = row_index.reference(block_number);
-		let record_key = Key::from(reference.as_bytes().to_vec());
+		let record_key = RecordKey::from(reference.as_bytes().to_vec());
 
 		trace!("Getting DHT record for reference {}", reference);
 
@@ -408,7 +441,7 @@ pub enum Command {
 		response_sender: oneshot::Sender<Result<()>>,
 	},
 	GetKadRecord {
-		key: Key,
+		key: RecordKey,
 		response_sender: oneshot::Sender<Result<PeerRecord>>,
 	},
 	PutKadRecordBatch {
@@ -426,4 +459,9 @@ pub enum Command {
 		response_sender: oneshot::Sender<Option<Multiaddr>>,
 	},
 	ReduceKademliaMapSize,
+	AddAutonatServer {
+		peer_id: PeerId,
+		peer_address: Multiaddr,
+		response_sender: oneshot::Sender<Result<()>>,
+	},
 }

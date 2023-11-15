@@ -1,25 +1,15 @@
 use anyhow::Result;
 use futures::{future, FutureExt, StreamExt};
-use itertools::Either;
 use libp2p::{
-	autonat::{Event as AutonatEvent, NatStatus},
-	dcutr::{
-		inbound::UpgradeError as InboundUpgradeError,
-		outbound::UpgradeError as OutboundUpgradeError, Event as DcutrEvent,
-	},
-	identify::{Event as IdentifyEvent, Info},
-	kad::{
-		BootstrapOk, GetRecordOk, InboundRequest, KademliaEvent, PeerRecord, QueryId, QueryResult,
-	},
-	mdns::Event as MdnsEvent,
+	autonat::{self, NatStatus},
+	dcutr,
+	identify::{self, Info},
+	kad::{self, BootstrapOk, GetRecordOk, InboundRequest, PeerRecord, QueryId, QueryResult},
+	mdns,
 	multiaddr::Protocol,
-	relay::{
-		inbound::stop::FatalUpgradeError as InboundStopFatalUpgradeError,
-		outbound::hop::FatalUpgradeError as OutboundHopFatalUpgradeError,
-	},
 	swarm::{
 		dial_opts::{DialOpts, PeerCondition},
-		ConnectionError, StreamUpgradeError, SwarmEvent,
+		ConnectionError, SwarmEvent,
 	},
 	Multiaddr, PeerId, Swarm,
 };
@@ -95,23 +85,6 @@ pub struct EventLoop {
 	kad_remove_local_record: bool,
 }
 
-type IoError = Either<
-	Either<Either<Either<std::io::Error, std::io::Error>, void::Void>, void::Void>,
-	void::Void,
->;
-
-type StopOrHopError = Either<
-	StreamUpgradeError<Either<InboundStopFatalUpgradeError, OutboundHopFatalUpgradeError>>,
-	void::Void,
->;
-
-type InOrOutError =
-	Either<StreamUpgradeError<Either<InboundUpgradeError, OutboundUpgradeError>>, void::Void>;
-
-type IoStopOrHopError = Either<IoError, StopOrHopError>;
-
-type StreamError = Either<IoStopOrHopError, InOrOutError>;
-
 impl EventLoop {
 	pub fn new(
 		swarm: Swarm<Behaviour>,
@@ -155,11 +128,11 @@ impl EventLoop {
 	}
 
 	#[tracing::instrument(level = "trace", skip(self))]
-	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent, StreamError>) {
+	async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
 		match event {
 			SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
 				match event {
-					KademliaEvent::RoutingUpdated {
+					kad::Event::RoutingUpdated {
 						peer,
 						is_new_peer,
 						addresses,
@@ -171,16 +144,16 @@ impl EventLoop {
 							_ = ch.send(Ok(()));
 						}
 					},
-					KademliaEvent::RoutablePeer { peer, address } => {
+					kad::Event::RoutablePeer { peer, address } => {
 						trace!("RoutablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
-					KademliaEvent::UnroutablePeer { peer } => {
+					kad::Event::UnroutablePeer { peer } => {
 						trace!("UnroutablePeer. Peer: {peer:?}");
 					},
-					KademliaEvent::PendingRoutablePeer { peer, address } => {
+					kad::Event::PendingRoutablePeer { peer, address } => {
 						trace!("Pending routablePeer. Peer: {peer:?}.  Address: {address:?}");
 					},
-					KademliaEvent::InboundRequest { request } => {
+					kad::Event::InboundRequest { request } => {
 						trace!("Inbound request: {:?}", request);
 						if let InboundRequest::PutRecord { source, record, .. } = request {
 							match record {
@@ -197,7 +170,7 @@ impl EventLoop {
 							}
 						}
 					},
-					KademliaEvent::OutboundQueryProgressed { id, result, .. } => match result {
+					kad::Event::OutboundQueryProgressed { id, result, .. } => match result {
 						QueryResult::GetRecord(result) => match result {
 							Ok(GetRecordOk::FoundRecord(record)) => {
 								if let Some(QueryChannel::GetRecord(ch)) =
@@ -261,11 +234,12 @@ impl EventLoop {
 						},
 						_ => {},
 					},
+					_ => {},
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
 				match event {
-					IdentifyEvent::Received {
+					identify::Event::Received {
 						peer_id,
 						info: Info { listen_addrs, .. },
 					} => {
@@ -297,19 +271,19 @@ impl EventLoop {
 								}
 							});
 					},
-					IdentifyEvent::Sent { peer_id } => {
+					identify::Event::Sent { peer_id } => {
 						trace!("Identity Sent event to: {peer_id:?}");
 					},
-					IdentifyEvent::Pushed { peer_id } => {
+					identify::Event::Pushed { peer_id, .. } => {
 						trace!("Identify Pushed event. PeerId: {peer_id:?}");
 					},
-					IdentifyEvent::Error { peer_id, error } => {
+					identify::Event::Error { peer_id, error } => {
 						trace!("Identify Error event. PeerId: {peer_id:?}. Error: {error:?}");
 					},
 				}
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
-				MdnsEvent::Discovered(addrs_list) => {
+				mdns::Event::Discovered(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
 						trace!("MDNS got peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 						self.swarm
@@ -318,11 +292,17 @@ impl EventLoop {
 							.add_address(&peer_id, multiaddr);
 					}
 				},
-				MdnsEvent::Expired(addrs_list) => {
+				mdns::Event::Expired(addrs_list) => {
 					for (peer_id, multiaddr) in addrs_list {
 						trace!("MDNS got expired peer with ID: {peer_id:#?} and Address: {multiaddr:#?}");
 
-						if self.swarm.behaviour_mut().mdns.has_node(&peer_id) {
+						if self
+							.swarm
+							.behaviour_mut()
+							.mdns
+							.discovered_nodes()
+							.any(|&p| p == peer_id)
+						{
 							self.swarm
 								.behaviour_mut()
 								.kademlia
@@ -332,13 +312,13 @@ impl EventLoop {
 				},
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
-				AutonatEvent::InboundProbe(e) => {
+				autonat::Event::InboundProbe(e) => {
 					trace!("AutoNat Inbound Probe: {:#?}", e);
 				},
-				AutonatEvent::OutboundProbe(e) => {
+				autonat::Event::OutboundProbe(e) => {
 					trace!("AutoNat Outbound Probe: {:#?}", e);
 				},
-				AutonatEvent::StatusChanged { old, new } => {
+				autonat::Event::StatusChanged { old, new } => {
 					debug!(
 						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
 						old, new
@@ -355,33 +335,19 @@ impl EventLoop {
 			SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
 				trace! {"Relay Client Event: {event:#?}"};
 			},
-			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => match event {
-				DcutrEvent::RemoteInitiatedDirectConnectionUpgrade {
-					remote_peer_id,
-					remote_relayed_addr,
-				} => {
-					trace!("Remote with ID: {remote_peer_id:#?} initiated Direct Connection Upgrade through address: {remote_relayed_addr:#?}");
-				},
-				DcutrEvent::InitiatedDirectConnectionUpgrade {
-					remote_peer_id,
-					local_relayed_addr,
-				} => {
-					trace!("Local node initiated Direct Connection Upgrade with remote: {remote_peer_id:#?} on address: {local_relayed_addr:#?}");
-				},
-				DcutrEvent::DirectConnectionUpgradeSucceeded { remote_peer_id } => {
-					trace!("Hole punching succeeded with: {remote_peer_id:#?}")
-				},
-				DcutrEvent::DirectConnectionUpgradeFailed {
-					remote_peer_id,
-					error,
-				} => {
-					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {error:#?}");
+			SwarmEvent::Behaviour(BehaviourEvent::Dcutr(dcutr::Event {
+				remote_peer_id,
+				result,
+			})) => match result {
+				Ok(_) => trace!("Hole punching succeeded with: {remote_peer_id:#?}"),
+				Err(err) => {
+					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
 				},
 			},
 			swarm_event => {
 				match swarm_event {
 					SwarmEvent::NewListenAddr { address, .. } => {
-						info!("Local node is listening on {:?}", address);
+						debug!("Local node is listening on {:?}", address);
 					},
 					SwarmEvent::ConnectionClosed {
 						peer_id,
@@ -392,16 +358,9 @@ impl EventLoop {
 					} => {
 						trace!("Connection closed. PeerID: {peer_id:?}. Address: {:?}. Num established: {num_established:?}. Cause: {cause:?}", endpoint.get_remote_address());
 
-						if let Some(cause) = cause {
-							match cause {
-								// remove peer with failed connection
-								ConnectionError::IO(_) | ConnectionError::Handler(_) => {
-									self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
-								},
-								// ignore Keep alive timeout error
-								// and allow redials for this type of error
-								_ => {},
-							}
+						if let Some(ConnectionError::IO(_)) = cause {
+							// remove peer with failed connection
+							self.swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
 						}
 					},
 					SwarmEvent::IncomingConnection {
@@ -462,6 +421,18 @@ impl EventLoop {
 
 	async fn handle_command(&mut self, command: Command) {
 		match command {
+			Command::AddAutonatServer {
+				peer_id,
+				peer_address,
+				response_sender,
+			} => {
+				self.swarm
+					.behaviour_mut()
+					.auto_nat
+					.add_server(peer_id, Some(peer_address));
+
+				_ = response_sender.send(Ok(()));
+			},
 			Command::StartListening {
 				addr,
 				response_sender: sender,
