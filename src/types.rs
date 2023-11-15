@@ -674,31 +674,31 @@ impl RuntimeConfig {
 
 pub struct IdentityConfig {
 	/// Avail account secret key. (secret is generated if it is not configured)
-	pub avail_secret_key: Pair,
+	pub avail_key_pair: Pair,
 }
 
 impl IdentityConfig {
 	pub fn load_or_init(path: &str, password: Option<&str>) -> Result<Self> {
 		#[derive(Default, Serialize, Deserialize)]
 		struct Config {
-			pub avail_secret_key: Option<String>,
+			pub avail_secret_seed_phrase: Option<String>,
 		}
 
 		let mut config: Config = confy::load_path(path)?;
 
-		let phrase = match config.avail_secret_key.as_ref() {
+		let phrase = match config.avail_secret_seed_phrase.as_ref() {
 			None => Mnemonic::new(MnemonicType::Words24, Language::English).into_phrase(),
 			Some(phrase) => phrase.to_owned(),
 		};
 
-		if config.avail_secret_key.is_none() {
-			config.avail_secret_key = Some(phrase.clone());
+		if config.avail_secret_seed_phrase.is_none() {
+			config.avail_secret_seed_phrase = Some(phrase.clone());
 			confy::store_path(path, &config)?;
 		}
 
-		let (avail_secret_key, _) = Pair::from_string_with_seed(&phrase, password)?;
+		let (avail_key_pair, _) = Pair::from_string_with_seed(&phrase, password)?;
 
-		Ok(IdentityConfig { avail_secret_key })
+		Ok(IdentityConfig { avail_key_pair })
 	}
 }
 
