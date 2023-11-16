@@ -12,7 +12,7 @@ use libp2p::{
 };
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use super::DHTPutSuccess;
 
@@ -143,27 +143,8 @@ impl Client {
 				.context("Error dialing bootstrap peer")?;
 			self.add_address(peer, addr.clone()).await?;
 
-			// Re-form the bootstrap Udp protocol part of the multiaddress for the autonat bootstrap TCP listener
-			// check for UDP protocol parts
-			if let Some(Protocol::Udp(port)) = addr
-				.iter()
-				.find(|protocol| matches!(protocol, Protocol::Udp(_)))
-			{
-				// take the IP Protocol part
-				if let Some(ip_part) = addr
-					.iter()
-					.find(|protocol| matches!(protocol, Protocol::Ip4(_)))
-				{
-					// crate new address for the same IP with TCP Protocol
-					let addr = Multiaddr::empty()
-						.with(ip_part)
-						.with(Protocol::Tcp(port + 1));
-					// add this address as Autonat server
-					self.add_autonat_server(peer, addr).await?;
-				} else {
-					warn!("Unable to re-form autonat server multi-address.")
-				}
-			}
+			// add proper address for auto-nat servers
+			self.add_autonat_server(peer, autonat_address(addr)).await?;
 		}
 
 		self.command_sender
@@ -464,4 +445,30 @@ pub enum Command {
 		peer_address: Multiaddr,
 		response_sender: oneshot::Sender<Result<()>>,
 	},
+}
+
+/// This utility function takes the Multiaddress as parameter and searches for
+/// the Protocol::Udp(_) part of it, and replaces it with a TCP variant, while
+/// shifting the port number by 1 up.
+///
+/// Used to setup a proper Multiaddress for AutoNat servers on TCP.
+fn autonat_address(addr: Multiaddr) -> Multiaddr {
+	let mut stacks = addr.iter().collect::<Vec<_>>();
+	// search for the first occurrence of Protocol::Udp, to replace it with Tcp variant
+	stacks.iter_mut().find_map(|protocol| {
+		if let Protocol::Udp(port) = protocol {
+			// replace the UDP variant, moving the port number 1 forward
+			*protocol = Protocol::Tcp(*port + 1);
+			Some(protocol)
+		} else {
+			None
+		}
+	});
+
+	let mut addr = Multiaddr::empty();
+	for stack in stacks {
+		addr.push(stack)
+	}
+
+	addr
 }
