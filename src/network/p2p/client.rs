@@ -149,14 +149,13 @@ impl Client {
 				.iter()
 				.find(|protocol| matches!(protocol, Protocol::Udp(_)))
 			{
-				// take the IP Protocol part
-				if let Some(ip_part) = addr
-					.iter()
-					.find(|protocol| matches!(protocol, Protocol::Ip4(_)))
-				{
+				// take the DNS or IP protocol part
+				if let Some(address_part) = addr.iter().find(|protocol| {
+					matches!(protocol, Protocol::Ip4(_)) || matches!(protocol, Protocol::Dns(_))
+				}) {
 					// crate new address for the same IP with TCP Protocol
 					let addr = Multiaddr::empty()
-						.with(ip_part)
+						.with(address_part)
 						.with(Protocol::Tcp(port + 1));
 					// add this address as Autonat server
 					self.add_autonat_server(peer, addr).await?;
