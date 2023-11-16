@@ -105,6 +105,15 @@ Full configuration reference can be found [below](#configuration-reference).
 _NOTE_
 Flags and options take precedence to the configuration file if both are set (i.e. `--port` option overwrites the `port` parameter from the config file).
 
+Example identity file:
+
+_WARNING:_ This file contains a private key. Please ensure only authorized access and prefer using encrypted storage.
+
+```toml
+# identity.toml
+avail_secret_seed_phrase = "bottom drive obey lake curtain smoke basket hold race lonely fit walk//Alice"
+```
+
 ## Options
 
 - `--network <NETWORK>`: Select a network for the Light Client to connect. Possible values are:
