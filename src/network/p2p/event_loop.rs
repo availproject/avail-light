@@ -11,7 +11,7 @@ use libp2p::{
 		dial_opts::{DialOpts, PeerCondition},
 		ConnectionError, SwarmEvent,
 	},
-	Multiaddr, PeerId, Swarm,
+	upnp, Multiaddr, PeerId, Swarm,
 };
 use rand::seq::SliceRandom;
 use std::{collections::HashMap, time::Duration};
@@ -333,6 +333,20 @@ impl EventLoop {
 				Ok(_) => trace!("Hole punching succeeded with: {remote_peer_id:#?}"),
 				Err(err) => {
 					trace!("Hole punching failed with: {remote_peer_id:#?}. Error: {err:#?}")
+				},
+			},
+			SwarmEvent::Behaviour(BehaviourEvent::Upnp(event)) => match event {
+				upnp::Event::NewExternalAddr(addr) => {
+					info!("New external address: {addr}");
+				},
+				upnp::Event::GatewayNotFound => {
+					info!("Gateway does not support UPnP");
+				},
+				upnp::Event::NonRoutableGateway => {
+					info!("Gateway is not exposed directly to the public Internet, i.e. it itself has a private IP address.");
+				},
+				upnp::Event::ExpiredExternalAddr(addr) => {
+					info!("Gateway address expired: {addr}");
 				},
 			},
 			swarm_event => {

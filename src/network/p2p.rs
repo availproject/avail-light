@@ -5,7 +5,7 @@ use libp2p::{
 	kad::{self, Mode, PeerRecord, QueryId},
 	mdns, noise, ping, relay,
 	swarm::NetworkBehaviour,
-	tcp, yamux, PeerId, Swarm, SwarmBuilder,
+	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
 };
 use multihash::{self, Hasher};
 use std::collections::HashMap;
@@ -101,6 +101,7 @@ pub struct Behaviour {
 	auto_nat: autonat::Behaviour,
 	relay_client: relay::client::Behaviour,
 	dcutr: dcutr::Behaviour,
+	upnp: upnp::tokio::Behaviour,
 }
 
 // Init function initializes all needed needed configs for the functioning
@@ -183,6 +184,7 @@ pub fn init(
 				),
 				auto_nat: autonat::Behaviour::new(key.public().to_peer_id(), autonat_cfg),
 				mdns: mdns::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?,
+				upnp: upnp::tokio::Behaviour::default(),
 			})
 		})?
 		.with_swarm_config(|c| c.with_idle_connection_timeout(cfg.connection_idle_timeout))
