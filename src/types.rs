@@ -539,7 +539,7 @@ impl Default for RuntimeConfig {
 			avail_path: "avail_path".to_owned(),
 			log_level: "INFO".to_owned(),
 			log_format_json: false,
-			ot_collector_endpoint: "http://otelcollector.avail.tools:4317".to_string(),
+			ot_collector_endpoint: "http://127.0.0.1:4317".to_string(),
 			disable_rpc: false,
 			disable_proof_verification: false,
 			dht_parallelization_limit: 20,
@@ -573,7 +573,6 @@ impl Default for RuntimeConfig {
 #[derive(Clone)]
 pub enum Network {
 	Local,
-	Biryani,
 	Goldberg,
 }
 
@@ -583,7 +582,6 @@ impl FromStr for Network {
 	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
 		match s {
 			"local" => Ok(Network::Local),
-			"biryani" => Ok(Network::Biryani),
 			"goldberg" => Ok(Network::Goldberg),
 			_ => Err("valid values are: local, biryani, goldberg".to_string()),
 		}
@@ -594,7 +592,6 @@ impl Network {
 	fn peer_id(&self) -> &str {
 		match self {
 			Network::Local => "12D3KooWStAKPADXqJ7cngPYXd2mSANpdgh1xQ34aouufHA2xShz",
-			Network::Biryani => "12D3KooWGTgyoXMJ55ASQFR1p44esRn6BJUqBuKhVuQPqFueA9Uf",
 			Network::Goldberg => "12D3KooWBkLsNGaD3SpMaRWtAmWVuiZg1afdNSPbtJ8M8r9ArGRT",
 		}
 	}
@@ -602,9 +599,6 @@ impl Network {
 	fn multiaddr(&self) -> &str {
 		match self {
 			Network::Local => "/ip4/127.0.0.1/udp/39000/quic-v1",
-			Network::Biryani => {
-				"/dns/bootnode-lightnode-001.biryani-devnet.avail.tools/udp/37000/quic-v1"
-			},
 			Network::Goldberg => {
 				"/dns/bootnode.1.lightclient.goldberg.avail.tools/udp/37000/quic-v1"
 			},
@@ -614,8 +608,14 @@ impl Network {
 	fn full_node_ws(&self) -> &str {
 		match self {
 			Network::Local => "ws://127.0.0.1:9944",
-			Network::Biryani => "wss://biryani-devnet.avail.tools:443/ws",
 			Network::Goldberg => "wss://goldberg.avail.tools:443/ws",
+		}
+	}
+
+	fn ot_collector_endpoint(&self) -> &str {
+		match self {
+			Network::Local => "http://127.0.0.1:4317",
+			Network::Goldberg => "http://otel.lightclient.goldberg.avail.tools:4317",
 		}
 	}
 }
@@ -682,6 +682,7 @@ impl RuntimeConfig {
 			);
 			self.full_node_ws = vec![network.full_node_ws().to_string()];
 			self.bootstraps = vec![MultiaddrConfig::PeerIdAndMultiaddr(bootstrap)];
+			self.ot_collector_endpoint = network.ot_collector_endpoint().to_string();
 		}
 
 		if let Some(loglvl) = &opts.verbosity {

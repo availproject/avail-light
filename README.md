@@ -169,8 +169,8 @@ app_id = 0
 confidence = 92.0
 # File system path where RocksDB used by light client, stores its data. (default: avail_path)
 avail_path = "avail_path"
-# OpenTelemetry Collector endpoint (default: `http://otelcollector.avail.tools:4317`)
-ot_collector_endpoint = "http://otelcollector.avail.tools:4317"
+# OpenTelemetry Collector endpoint (default: `http://127.0.0.1:4317`)
+ot_collector_endpoint = "http://127.0.0.1:4317"
 # If set to true, logs are displayed in JSON format, which is used for structured logging. Otherwise, plain text format is used (default: false).
 log_format_json = true
 # Fraction and number of the block matrix part to fetch (e.g. 2/20 means second 1/20 part of a matrix). This is the parameter that determines whether the client behaves as fat client or light client (default: None)
